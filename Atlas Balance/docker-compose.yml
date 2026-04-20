@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: atlas_balance_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: atlas_balance
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${ATLAS_BALANCE_POSTGRES_PASSWORD:?Set ATLAS_BALANCE_POSTGRES_PASSWORD in a local .env file or environment variable}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

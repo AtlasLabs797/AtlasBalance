@@ -1,0 +1,15 @@
+# Archivos locales generados tras instalar o probar una release extraida.
+INSTALL_CREDENTIALS_ONCE.txt
+atlas-balance.runtime.json
+*.log
+logs/
+backups/
+exports/
+updates/
+certs/*.pfx
+certs/*.key
+certs/*.pem
+postgres-data/
+postgresql/
+api/appsettings.Production.json
+watchdog/appsettings.Production.json

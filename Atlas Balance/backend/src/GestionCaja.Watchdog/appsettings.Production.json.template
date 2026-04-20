@@ -1,0 +1,22 @@
+{
+  "WatchdogSettings": {
+    "SharedSecret": "GENERAR-SHARED-SECRET-MINIMO-32-CARACTERES-AQUI",
+    "ApiServiceName": "AtlasBalance.API",
+    "PostgresBinPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
+    "BackupPath": "C:\\AtlasBalance\\backups",
+    "StateFilePath": "C:\\AtlasBalance\\watchdog-state.json",
+    "DbHost": "localhost",
+    "DbPort": "5432",
+    "DbName": "atlas_balance",
+    "DbUser": "atlas_balance_app",
+    "DbPassword": "CAMBIAR_PASSWORD_POSTGRES_AQUI",
+    "DockerPostgresContainer": "atlas_balance_db",
+    "UpdateSourceRoot": "C:\\AtlasBalance\\updates",
+    "UpdateTargetPath": "C:\\AtlasBalance\\api"
+  },
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+# Local secrets and environment
+.env
+.env.*
+!/.env.example
+backend/**/appsettings.Development.json
+backend/**/appsettings.Production.json
+backend/**/.dataprotection-keys/
+
+# Build artifacts
+backend/**/bin/
+backend/**/obj/
+frontend/node_modules/
+frontend/dist/
+
+# Runtime output
+Atlas Balance Release/*
+!Atlas Balance Release/.gitkeep
+backend/src/GestionCaja.API/wwwroot/assets/
+backend/src/GestionCaja.API/wwwroot/index.html
+logs/
+*.log
+pgdata/
+
+# Certificates
+*.pem
+*.key
+*.crt
+*.pfx

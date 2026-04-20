@@ -1,0 +1,290 @@
+@font-face {
+  font-family: "National Park";
+  src: url("/fonts/NationalPark-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "National Park";
+  src: url("/fonts/NationalPark-Bold.ttf") format("truetype");
+  font-weight: 700 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Hind Madurai";
+  src: url("/fonts/HindMadurai-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Hind Madurai";
+  src: url("/fonts/HindMadurai-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Hind Madurai";
+  src: url("/fonts/HindMadurai-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Hind Madurai";
+  src: url("/fonts/HindMadurai-Bold.ttf") format("truetype");
+  font-weight: 700 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atlas Mono";
+  src: url("/fonts/JetBrainsMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Atlas Mono";
+  src: url("/fonts/JetBrainsMono-Bold.ttf") format("truetype");
+  font-weight: 700 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bg-app: #f3f7fb;
+  --bg-canvas: #f7fafc;
+  --bg-surface: #fbfcfe;
+  --bg-surface-soft: #f1f5fa;
+  --bg-surface-muted: #e9eff6;
+  --bg-input: #fbfcfe;
+  --bg-hover: #e9eff6;
+  --bg-selected: #e6eefc;
+
+  --border-soft: rgba(23, 33, 52, 0.10);
+  --border-strong: rgba(23, 33, 52, 0.18);
+  --border-focus: #285bd9;
+
+  --text-primary: #172033;
+  --text-secondary: #536174;
+  --text-muted: #5f6b7a;
+  --text-inverse: #f8fbff;
+  --text-link: #244fbd;
+
+  --accent-primary: #285bd9;
+  --accent-primary-hover: #214cad;
+  --accent-primary-soft: #e6eefc;
+
+  --success-bg: #eaf8f0;
+  --success-text: #176a3a;
+  --warning-bg: #fff4df;
+  --warning-text: #8a5200;
+  --danger-bg: #fdecef;
+  --danger-text: #a82234;
+  --info-bg: #eaf1ff;
+  --info-text: #315fcf;
+
+  --amount-positive: #176a3a;
+  --amount-negative: #a82234;
+
+  --chart-ingresos: #2f9f68;
+  --chart-egresos: #c94a5a;
+  --chart-saldo: #285bd9;
+  --chart-grid: rgba(23, 33, 52, 0.10);
+
+  --row-flagged-bg: #fff2bd;
+  --row-flagged-border: rgba(172, 118, 0, 0.42);
+
+  --color-bg-primary: var(--bg-surface);
+  --color-bg-secondary: var(--bg-app);
+  --color-bg-tertiary: var(--bg-surface-muted);
+  --color-bg-input: var(--bg-input);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-selected: var(--bg-selected);
+  --color-bg-danger: var(--danger-bg);
+  --color-bg-warning: var(--warning-bg);
+  --color-bg-success: var(--success-bg);
+
+  --color-button-secondary-bg: var(--bg-surface-soft);
+  --color-button-secondary-hover: var(--bg-surface-muted);
+  --color-button-secondary-border: var(--border-strong);
+  --color-button-secondary-text: var(--text-primary);
+
+  --color-bg-sidebar: rgba(255, 255, 255, 0.78);
+  --color-sidebar-text: #445266;
+  --color-sidebar-active-bg: var(--accent-primary-soft);
+  --color-sidebar-active-text: #214cad;
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverse: var(--text-inverse);
+  --color-text-link: var(--text-link);
+  --color-text-danger: var(--danger-text);
+  --color-text-success: var(--success-text);
+  --color-amount-positive: var(--amount-positive);
+  --color-amount-negative: var(--amount-negative);
+
+  --color-border-primary: var(--border-soft);
+  --color-border-focus: var(--border-focus);
+  --color-border-danger: rgba(168, 34, 52, 0.34);
+
+  --color-accent: var(--accent-primary);
+  --color-accent-hover: var(--accent-primary-hover);
+  --color-danger: var(--danger-text);
+  --color-danger-hover: #8f1d2c;
+  --color-success: var(--success-text);
+  --color-warning: var(--warning-text);
+
+  --chart-color-ingresos: var(--chart-ingresos);
+  --chart-color-egresos: var(--chart-egresos);
+  --chart-color-saldo: var(--chart-saldo);
+
+  --color-row-flagged: var(--row-flagged-bg);
+  --color-row-flagged-border: var(--row-flagged-border);
+
+  --font-family-heading: "Hind Madurai", "National Park", "Aptos Display", "Segoe UI", sans-serif;
+  --font-family: "National Park", "Aptos", "Segoe UI", sans-serif;
+  --font-family-mono: "Atlas Mono", "JetBrains Mono", "SF Mono", monospace;
+
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-base: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  --font-size-kpi: clamp(2rem, 3vw, 2.75rem);
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-heavy: 800;
+
+  --line-height-tight: 1.18;
+  --line-height-normal: 1.55;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+  --space-10: 4rem;
+  --space-xxs: var(--space-1);
+  --space-xs: var(--space-2);
+  --space-sm: var(--space-3);
+  --space-md: var(--space-4);
+  --space-lg: var(--space-5);
+  --space-xl: var(--space-6);
+  --space-2xl: var(--space-8);
+  --space-3xl: var(--space-10);
+
+  --sidebar-width: 252px;
+  --sidebar-collapsed-width: 72px;
+  --topbar-height: 68px;
+
+  --border-radius-sm: 8px;
+  --border-radius-md: 12px;
+  --border-radius-lg: 18px;
+  --border-radius-full: 999px;
+  --radius-control: 12px;
+  --radius-card: 18px;
+  --radius-panel: 24px;
+  --radius-shell: 30px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 2px 10px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.06);
+  --shadow-lg: 0 12px 28px rgba(16, 24, 40, 0.08);
+  --shadow-overlay: 0 24px 60px rgba(16, 24, 40, 0.14);
+  --shadow-card: 0 8px 24px rgba(16, 24, 40, 0.06);
+  --shadow-card-hover: 0 12px 28px rgba(16, 24, 40, 0.08);
+  --shadow-shell: 0 24px 60px rgba(16, 24, 40, 0.10);
+
+  --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-instant: 120ms;
+  --duration-fast: 180ms;
+  --duration-base: 240ms;
+  --duration-slow: 420ms;
+  --transition-fast: var(--duration-fast) var(--ease-premium);
+  --transition-normal: var(--duration-base) var(--ease-premium);
+
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal-backdrop: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}
+
+[data-theme="dark"] {
+  --bg-app: #12171f;
+  --bg-canvas: #151b24;
+  --bg-surface: #1b2330;
+  --bg-surface-soft: #202a38;
+  --bg-surface-muted: #293545;
+  --bg-input: #161d27;
+  --bg-hover: #242f3e;
+  --bg-selected: #233558;
+
+  --border-soft: rgba(216, 226, 240, 0.10);
+  --border-strong: rgba(216, 226, 240, 0.18);
+  --border-focus: #82a4ff;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #b7c2d2;
+  --text-muted: #98a6ba;
+  --text-inverse: #101720;
+  --text-link: #a8bdff;
+
+  --accent-primary: #82a4ff;
+  --accent-primary-hover: #a8bdff;
+  --accent-primary-soft: rgba(130, 164, 255, 0.14);
+
+  --success-bg: rgba(81, 185, 124, 0.14);
+  --success-text: #8de0ae;
+  --warning-bg: rgba(209, 144, 44, 0.16);
+  --warning-text: #f3c270;
+  --danger-bg: rgba(216, 74, 91, 0.16);
+  --danger-text: #ff9aa7;
+  --info-bg: rgba(130, 164, 255, 0.14);
+  --info-text: #b9c9ff;
+
+  --amount-positive: #8de0ae;
+  --amount-negative: #ff9aa7;
+
+  --chart-ingresos: #78d99c;
+  --chart-egresos: #ff8795;
+  --chart-saldo: #9fb6ff;
+  --chart-grid: rgba(216, 226, 240, 0.10);
+
+  --row-flagged-bg: rgba(255, 196, 70, 0.18);
+  --row-flagged-border: rgba(255, 213, 112, 0.42);
+
+  --color-bg-sidebar: rgba(27, 35, 48, 0.82);
+  --color-sidebar-text: #c0cbda;
+  --color-sidebar-active-bg: rgba(130, 164, 255, 0.16);
+  --color-sidebar-active-text: #d5ddff;
+
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.34);
+  --shadow-overlay: 0 24px 60px rgba(0, 0, 0, 0.48);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.26);
+  --shadow-card-hover: 0 14px 32px rgba(0, 0, 0, 0.34);
+  --shadow-shell: 0 24px 60px rgba(0, 0, 0, 0.44);
+}
