@@ -1,0 +1,118 @@
+:root {
+  color-scheme: light;
+
+  --bg-app: #F5F8FC;
+  --bg-canvas: #F8FAFD;
+  --bg-surface: #FFFFFF;
+  --bg-surface-soft: #F2F6FC;
+  --bg-surface-muted: #EEF3FA;
+
+  --border-soft: rgba(23, 33, 52, 0.08);
+  --border-strong: rgba(23, 33, 52, 0.14);
+
+  --text-primary: #1E2430;
+  --text-secondary: #6E7787;
+  --text-muted: #98A2B3;
+  --text-inverse: #FFFFFF;
+
+  --accent-primary: #4C7DFF;
+  --accent-primary-hover: #3F6FEF;
+  --accent-primary-soft: #EAF1FF;
+  --accent-primary-soft-2: #DCE8FF;
+
+  --accent-teal: #58C7C2;
+  --accent-teal-soft: #E8FAF8;
+  --accent-indigo: #6C72FF;
+  --accent-indigo-soft: #ECEEFF;
+  --accent-lilac: #9B8CFF;
+  --accent-lilac-soft: #F1EEFF;
+
+  --success: #2FB36D;
+  --success-soft: #EAF8F0;
+  --warning: #F5A524;
+  --warning-soft: #FFF4DF;
+  --danger: #E05666;
+  --danger-soft: #FDECEF;
+
+  --font-sans: "Inter", "Geist", "SF Pro Display", system-ui, sans-serif;
+
+  --fs-display: 32px;
+  --fs-section: 20px;
+  --fs-card-title: 14px;
+  --fs-kpi-hero: 36px;
+  --fs-kpi-secondary: 24px;
+  --fs-body: 14px;
+  --fs-meta: 12px;
+  --fs-table: 13px;
+
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  --lh-tight: 1.1;
+  --lh-base: 1.45;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 8px 24px rgba(16, 24, 40, 0.06);
+  --shadow-card-hover: 0 12px 28px rgba(16, 24, 40, 0.08);
+  --shadow-shell: 0 24px 60px rgba(16, 24, 40, 0.10);
+
+  --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 180ms;
+  --duration-base: 240ms;
+  --duration-slow: 420ms;
+
+  --sidebar-width: 248px;
+  --header-height: 72px;
+  --card-padding: 24px;
+  --page-gutter: 24px;
+  --grid-gap: 24px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app: #0F141C;
+  --bg-canvas: #111722;
+  --bg-surface: #151C26;
+  --bg-surface-soft: #1A2230;
+  --bg-surface-muted: #202A39;
+
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --text-primary: #F2F5FA;
+  --text-secondary: #A7B0C0;
+  --text-muted: #7F8A9E;
+  --text-inverse: #0F141C;
+
+  --accent-primary-soft: rgba(76, 125, 255, 0.18);
+  --accent-primary-soft-2: rgba(76, 125, 255, 0.24);
+  --accent-teal-soft: rgba(88, 199, 194, 0.18);
+  --accent-indigo-soft: rgba(108, 114, 255, 0.18);
+  --accent-lilac-soft: rgba(155, 140, 255, 0.18);
+
+  --success-soft: rgba(47, 179, 109, 0.18);
+  --warning-soft: rgba(245, 165, 36, 0.18);
+  --danger-soft: rgba(224, 86, 102, 0.18);
+
+  --shadow-card: 0 10px 26px rgba(0, 0, 0, 0.24);
+  --shadow-card-hover: 0 14px 32px rgba(0, 0, 0, 0.28);
+  --shadow-shell: 0 28px 64px rgba(0, 0, 0, 0.36);
+}

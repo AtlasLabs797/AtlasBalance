@@ -1,0 +1,51 @@
+﻿{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_app;Password=CAMBIAR_PASSWORD_AQUI"
+  },
+  "JwtSettings": {
+    "Secret": "GENERAR-CLAVE-SECRETA-MINIMO-32-CARACTERES-AQUI",
+    "AccessTokenExpMinutes": 60,
+    "RefreshTokenExpDays": 7
+  },
+  "SeedAdmin": {
+    "Email": "admin@atlasbalance.local",
+    "Password": "CAMBIAR_PASSWORD_ADMIN_INICIAL_AQUI"
+  },
+  "WatchdogSettings": {
+    "BaseUrl": "http://localhost:5001",
+    "SharedSecret": "GENERAR-SHARED-SECRET-MINIMO-32-CARACTERES-AQUI",
+    "PostgresBinPath": "C:\\Program Files\\PostgreSQL\\14\\bin",
+    "StateFilePath": "C:\\AtlasBalance\\watchdog-state.json",
+    "DockerPostgresContainer": "atlas_balance_db",
+    "UpdateSourceRoot": "C:\\AtlasBalance\\updates",
+    "UpdateTargetPath": "C:\\AtlasBalance\\api"
+  },
+  "GitHubSettings": {
+    "UpdateToken": "PEGAR_TOKEN_FINE_GRAINED_READ_ONLY_O_USAR_VARIABLE_GITHUB_UPDATE_TOKEN"
+  },
+  "DataProtection": {
+    "KeysPath": "C:\\ProgramData\\AtlasBalance\\keys"
+  },
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://0.0.0.0:443",
+        "Certificate": {
+          "Path": "C:/AtlasBalance/certs/atlas-balance.pfx",
+          "Password": "CAMBIAR_PASSWORD_CERTIFICADO_AQUI"
+        }
+      }
+    }
+  },
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft": "Warning",
+        "Microsoft.EntityFrameworkCore": "Warning",
+        "Hangfire": "Warning"
+      }
+    }
+  },
+  "AllowedHosts": "CAMBIAR_HOST_PUBLICO_AQUI"
+}

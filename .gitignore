@@ -1,0 +1,72 @@
+# Project buckets excluded from GitHub
+Otros/
+Skills/
+
+# Release packages are distributed through GitHub Releases, not Git history
+/Atlas Balance/Atlas Balance Release/*
+!/Atlas Balance/Atlas Balance Release/.gitkeep
+
+# Backend
+Atlas Balance/backend/**/bin/
+Atlas Balance/backend/**/obj/
+Atlas Balance/backend/**/*.user
+Atlas Balance/backend/**/.vs/
+Atlas Balance/backend/**/appsettings.Production.json
+Atlas Balance/backend/**/appsettings.Development.json
+Atlas Balance/backend/**/.dataprotection-keys/
+
+# Frontend build artifacts copied to wwwroot (generados por npm run build + Build-Release.ps1)
+Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/
+Atlas Balance/backend/src/GestionCaja.API/wwwroot/index.html
+Atlas Balance/backend/src/GestionCaja.API/wwwroot/fonts/
+Atlas Balance/backend/src/GestionCaja.API/wwwroot/logos/
+
+# Frontend
+Atlas Balance/frontend/node_modules/
+Atlas Balance/frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+.claude/
+artifacts/
+.codex-logs/
+.tmp*/
+tmp*
+test-results/
+Atlas Balance/backend/src/GestionCaja.Watchdog/watchdog-state.json
+
+# Environment
+.env
+.env.local
+.env.production
+Atlas Balance/frontend/.env.*
+*.env.local
+
+# Local API smoke artifacts with credentials/cookies
+Atlas Balance/backend/src/GestionCaja.API/phase*.json
+Atlas Balance/backend/src/GestionCaja.API/phase*.cookies.txt
+Atlas Balance/backend/src/GestionCaja.API/*.cookies.txt
+
+# Certificates (never commit)
+*.pem
+*.key
+*.crt
+*.pfx
+
+# Docker
+pgdata/
+
+# OS
+desktop.ini
