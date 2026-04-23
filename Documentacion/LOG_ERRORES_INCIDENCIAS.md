@@ -215,3 +215,9 @@
 - Contexto: `phase2-smoke.ps1`, `phase2-smoke-curl.ps1`, `Otros/Raiz anterior/SPEC.md` y `CORRECCIONES.md` contenian passwords/usuarios concretos.
 - Causa: artefactos antiguos de pruebas y planificacion quedaron con datos reales aunque viven en `Otros/` (fuera del repo principal, pero presentes en la maquina de trabajo).
 - Solucion aplicada: los scripts leen las passwords de `ATLAS_SMOKE_ADMIN_PASSWORD`/`ATLAS_SMOKE_TEST_PASSWORD` (fallan si no existen). Los documentos historicos sustituyen los valores por placeholders.
+
+### 2026-04-23 - V-01.02 - `PuedeVerDashboard` otorgaba acceso global de extractos
+
+- Contexto: `ExtractosController.GetAllowedAccountIds` consideraba un permiso global con `PuedeVerDashboard=true` como acceso total y devolvia todas las cuentas, ampliando el alcance de `/api/extractos` para usuarios no admin.
+- Causa: desalineacion respecto a `UserAccessService`, que solo interpreta `Agregar/Editar/Eliminar/Importar` como permisos de acceso global de datos.
+- Solucion aplicada: se elimino `PuedeVerDashboard` del criterio de acceso global en `GetAllowedAccountIds` y en `CanViewTitular` dentro de `ExtractosController`.

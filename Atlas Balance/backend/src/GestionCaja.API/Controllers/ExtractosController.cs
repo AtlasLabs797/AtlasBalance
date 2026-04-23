@@ -590,7 +590,7 @@ public sealed class ExtractosController : ControllerBase
         if (!perms.Any()) return [];
         if (perms.Any(p => p.CuentaId is null && p.TitularId is null &&
                            (p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas ||
-                            p.PuedeImportar || p.PuedeVerDashboard)))
+                            p.PuedeImportar)))
         {
             return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
         }
@@ -618,7 +618,7 @@ public sealed class ExtractosController : ControllerBase
 
         if (perms.Any(p => p.CuentaId is null && p.TitularId is null &&
                            (p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas ||
-                            p.PuedeImportar || p.PuedeVerDashboard)))
+                            p.PuedeImportar)))
         {
             return true;
         }

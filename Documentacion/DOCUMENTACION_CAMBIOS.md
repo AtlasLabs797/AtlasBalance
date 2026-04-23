@@ -6763,3 +6763,33 @@ Regla de trabajo desde ahora:
 - Volver a correr `dotnet test` y `dotnet build -c Release` tras los cambios en middleware, backup/export y controladores de integracion antes del proximo paquete de release.
 - Regenerar cualquier paquete existente en `Atlas Balance/Atlas Balance Release/` si se publico con los csproj antiguos, porque podia contener `appsettings.Development.json` dentro del zip.
 - Rotar los secretos de desarrollo (`JwtSettings:SecretKey`, `WatchdogSettings:SharedSecret`, `SeedAdmin:Password`, `ConnectionStrings:DefaultConnection`) si alguna vez salieron de esta maquina, ya que hasta este cambio viajaban empaquetados al publicar.
+
+---
+## 2026-04-23 - Fix seguridad permisos dashboard en extractos (V-01.02)
+
+**Version:** V-01.02
+
+**Trabajo realizado:** Se corrigio la validacion de alcance global en `ExtractosController` para que un permiso global con solo `PuedeVerDashboard` no otorgue acceso transversal a extractos/cuentas.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Cambios implementados:**
+- `GetAllowedAccountIds` deja de tratar `PuedeVerDashboard` como permiso de acceso global de datos; ahora solo cuenta `Agregar/Editar/Eliminar/Importar`.
+- `CanViewTitular` se alinea con el mismo criterio para evitar inconsistencias de alcance dentro del mismo controlador.
+- Se mantiene el comportamiento para admins y para permisos explicitos por `CuentaId`/`TitularId`.
+
+**Comandos ejecutados:**
+- `sed -n '540,660p' 'Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs'`
+- `sed -n '60,130p' 'Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs'`
+- `dotnet --version`
+- `git diff -- 'Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs'`
+
+**Resultado de verificacion:**
+- Verificacion estatica OK: el criterio de acceso global del controlador queda alineado con `UserAccessService` (sin `PuedeVerDashboard`).
+- No se pudieron ejecutar tests/build porque `dotnet` no esta disponible en este entorno.
+
+**Pendientes:**
+- Ejecutar `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release` en un entorno con SDK .NET instalado.
