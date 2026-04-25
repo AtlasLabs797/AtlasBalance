@@ -6,6 +6,7 @@ using GestionCaja.API.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace GestionCaja.API.Tests;
@@ -104,6 +105,36 @@ public sealed class IntegrationAuthMiddlewareTests
         logs[0].CodigoRespuesta.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
+    [Fact]
+    public async Task InvalidBearer_Should_RateLimit_Before_Revalidating_Token()
+    {
+        await using var db = BuildDbContext();
+        var clock = new FakeClock(new DateTime(2026, 4, 18, 12, 30, 0, DateTimeKind.Utc));
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var tokenService = new CountingInvalidTokenService();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IntegrationSecurity:InvalidAuthLimitPerMinute"] = "2"
+            })
+            .Build();
+
+        var middleware = new IntegrationAuthMiddleware(
+            _ => Task.CompletedTask,
+            cache,
+            clock,
+            configuration);
+
+        (await InvokeWithTokenAsync(middleware, db, tokenService, "bad-token-1", CancellationToken.None))
+            .Should().Be(StatusCodes.Status401Unauthorized);
+        (await InvokeWithTokenAsync(middleware, db, tokenService, "bad-token-2", CancellationToken.None))
+            .Should().Be(StatusCodes.Status401Unauthorized);
+        (await InvokeWithTokenAsync(middleware, db, tokenService, "bad-token-3", CancellationToken.None))
+            .Should().Be(StatusCodes.Status429TooManyRequests);
+
+        tokenService.ValidateCalls.Should().Be(2);
+    }
+
     private static async Task<int> InvokeWithTokenAsync(
         IntegrationAuthMiddleware middleware,
         AppDbContext db,
@@ -131,5 +162,23 @@ public sealed class IntegrationAuthMiddlewareTests
         }
 
         public DateTime UtcNow { get; set; }
+    }
+
+    private sealed class CountingInvalidTokenService : IIntegrationTokenService
+    {
+        public int ValidateCalls { get; private set; }
+
+        public string GeneratePlainToken() => "sk_test_invalid";
+
+        public string ComputeSha256(string value) => value;
+
+        public Task<IntegrationToken?> ValidateActiveTokenAsync(string? plainToken, CancellationToken cancellationToken)
+        {
+            ValidateCalls++;
+            return Task.FromResult<IntegrationToken?>(null);
+        }
+
+        public Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)
+            => Task.FromResult(false);
     }
 }

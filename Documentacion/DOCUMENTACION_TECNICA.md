@@ -1,5 +1,88 @@
 # Documentacion tecnica
 
+## 2026-04-25 - V-01.03 - Paquete release Windows x64 generado
+
+### Que cambio
+
+- Se genero el paquete `AtlasBalance-V-01.03-win-x64` en `Atlas Balance/Atlas Balance Release`.
+- Se genero el ZIP `AtlasBalance-V-01.03-win-x64.zip` para distribucion.
+- `scripts/Build-Release.ps1` recompilo el frontend y reemplazo `GestionCaja.API/wwwroot` con el bundle de produccion actual.
+- API y Watchdog quedaron publicados como self-contained `win-x64`.
+- El paquete incluye scripts operativos, `VERSION`, `README.md`, `documentacion.md`, `.gitignore` y `version.json`.
+
+### Reglas tecnicas
+
+- Los artefactos de `Atlas Balance/Atlas Balance Release` no deben entrar en commits normales; van como assets de GitHub Releases.
+- Si se cambia documentacion incluida en el paquete despues de generar el ZIP, hay que regenerar el release. No hacerlo seria publicar un paquete con instrucciones atrasadas.
+- `version.json` debe conservar `source_path = C:\AtlasBalance\updates\V-01.03\api` para actualizaciones de esta version.
+
+### Verificacion
+
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.03`: OK.
+- Carpeta generada: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.03-win-x64`.
+- ZIP generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.03-win-x64.zip`.
+- `version.json` y `VERSION` empaquetados: `V-01.03`.
+- Barrido de `api` empaquetada: sin `*Development*`, `*.template` ni `.env`.
+
+## 2026-04-25 - V-01.03 - Hardening de seguridad post-auditoria
+
+### Que cambio
+
+- Se agregaron `SecurityStamp` y `PasswordChangedAt` a `USUARIOS` mediante la migracion `UserSessionHardening`.
+- Los access tokens incluyen `security_stamp`; `UserStateMiddleware` lo valida contra BD en cada request API autenticado.
+- Cambios/reset de password, borrado de usuario y reuse de refresh token rotan el stamp y revocan refresh tokens activos.
+- Login usa throttle por cliente/email y deja de distinguir externamente usuario bloqueado de credenciales invalidas.
+- Reuse de refresh token revocado escala a incidente: revoca sesiones activas, rota stamp y registra `REFRESH_TOKEN_REUSE_DETECTED`.
+- Passwords de usuarios y seed admin pasan a minimo 12 caracteres y bloqueo de passwords comunes.
+- `IntegrationAuthMiddleware` corta bearer invalido repetido por IP/minuto antes de consultar tokens activos.
+- `app_update_check_url` queda limitado a HTTPS del repo oficial `AtlasLabs797/AtlasBalance`.
+- Backups, exportaciones, descargas y rutas Watchdog validan la ruta cruda antes de `Path.GetFullPath`.
+- `INSTALL_CREDENTIALS_ONCE.txt` se borra automaticamente con tarea programada SYSTEM a las 24 horas.
+- `postcss` queda resuelto a `8.5.10`.
+
+### Impacto operativo
+
+- Tras desplegar esta version, los access tokens antiguos sin `security_stamp` dejan de ser validos. Eso es correcto: los usuarios tendran que autenticarse otra vez.
+- La URL de actualizaciones ya no acepta endpoints arbitrarios; si se necesita otro canal de releases, primero hay que ampliar la allowlist de forma explicita.
+- `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
+
+### Verificacion
+
+- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`: OK, 0 warnings, 0 errores.
+- `dotnet test '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-build`: 94/94 OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `npm.cmd audit --audit-level=moderate`: 0 vulnerabilidades.
+- `dotnet list '.\Atlas Balance\backend\GestionCaja.sln' package --vulnerable --include-transitive`: sin vulnerabilidades.
+- Parser PowerShell sobre `scripts/Instalar-AtlasBalance.ps1`: OK.
+
+## 2026-04-20 - V-01.03 - Apertura de version
+
+### Que cambio
+
+- `V-01.03` pasa a ser la version activa del sistema.
+- Backend: `Directory.Build.props` sube a `1.3.0` y `InformationalVersion` a `V-01.03`.
+- Frontend: `package.json` y `package-lock.json` suben a `1.3.0`; `appVersion` pasa a `V-01.03`.
+- `Atlas Balance/VERSION`, `SeedData`, `Build-Release.ps1` e `Instalar-AtlasBalance.ps1` quedan alineados con `V-01.03`.
+- `Documentacion/Versiones/v-01.02.md` queda cerrada como version publicada.
+- `Documentacion/Versiones/v-01.03.md` queda como archivo activo de trabajo.
+
+### Por que
+
+`V-01.02` ya fue publicada. Seguir metiendo cambios ahi seria versionado barro: funciona hasta que alguien necesita saber que demonios se desplego.
+
+### Reglas tecnicas
+
+- Todo cambio nuevo debe documentarse bajo `V-01.03`.
+- El siguiente paquete debe generarse con `scripts/Build-Release.ps1 -Version V-01.03`.
+- No reutilizar assets ni notas de release de `V-01.02` para publicar `V-01.03`.
+
+### Verificacion
+
+- `git diff --check`: OK; solo avisos esperados de normalizacion LF/CRLF.
+- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`: OK, 0 warnings, 0 errores.
+- `npm.cmd run build`: OK con `atlas-balance-frontend@1.3.0`.
+
 ## 2026-04-20 - V-01.02 - Release autonoma con scripts one-click
 
 ### Que cambio
@@ -216,3 +299,44 @@ El repositorio oficial debe contener el proyecto util para desarrollo, documenta
 - Subir a GitHub como Git: codigo, documentacion, configuracion y scripts.
 - Subir a GitHub Releases: ZIP, carpetas empaquetadas y binarios generados de release.
 - No subir nunca: `Otros/`, `Skills/`, secretos, `.env`, logs, cookies, tokens, certificados privados, `node_modules`, `bin/obj` ni artefactos locales sensibles.
+
+## 2026-04-23 - V-01.03 - Cierre de fuga de alcance global en extractos
+
+### Que cambio
+
+- `ExtractosController.GetAllowedAccountIds` y `CanViewTitular` dejaron de tratar `PuedeVerDashboard` global como permiso global de datos.
+- El alcance global en extractos queda restringido a permisos de datos reales: `PuedeAgregarLineas`, `PuedeEditarLineas`, `PuedeEliminarLineas` o `PuedeImportar`.
+- Se agrego regresion automatizada en `ExtractosControllerTests` para impedir que `/api/extractos` devuelva datos cross-account a perfiles dashboard-only globales.
+
+### Por que
+
+La logica local de `ExtractosController` estaba mas permisiva que `UserAccessService`. Esa divergencia abria una fuga de datos financieros entre cuentas.
+
+### Verificacion
+
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~GestionCaja.API.Tests.ExtractosControllerTests|FullyQualifiedName~GestionCaja.API.Tests.UserAccessServiceTests"`: 8/8 OK.
+
+## 2026-04-24 - V-01.03 - Frontend alineado con permisos reales de cuenta
+
+### Que cambio
+
+- `frontend/src/stores/permisosStore.ts` diferencia entre alcance de cuenta y permiso global solo de dashboard.
+- Una fila global `cuenta_id = null`, `titular_id = null` ya no habilita `canViewCuenta` ni contamina `getColumnasVisibles/getColumnasEditables` salvo que conceda acceso global de datos (`agregar`, `editar`, `eliminar`, `importar`).
+- `frontend/src/pages/CuentasPage.tsx` ya no ofrece enlaces o botones a `/dashboard/cuenta/:id` para cuentas sin acceso real; muestra `Sin acceso`.
+- `frontend/src/pages/CuentaDetailPage.tsx` intercepta `403` del backend y redirige a `/dashboard` en vez de dejar al usuario atrapado en un error de carga.
+
+### Por que
+
+El backend ya estaba bien. El frontend seguia mintiendo: enseñaba rutas de cuenta a perfiles `dashboard-only` globales, como si pudieran abrirlas. Eso no filtraba datos, pero era UX rota y semantica de permisos incoherente.
+
+### Reglas tecnicas
+
+- En frontend, el acceso a cuenta no debe inferirse de cualquier permiso coincidente. Una fila global solo vale como acceso de cuenta si equivale a acceso global de datos.
+- Los estados visuales de apertura de cuenta tienen que apoyarse en la misma semantica que backend. Si backend va a responder `403`, frontend no debe mostrar un CTA operativo.
+- Cuando una ruta depende de datos protegidos y el backend responde `403`, la pantalla debe redirigir o cerrar el paso de forma limpia, no quedarse en un error generico.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`: OK; `wwwroot` actualizado con el bundle corregido.

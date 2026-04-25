@@ -51,6 +51,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.Rol);
             entity.HasIndex(e => e.Activo);
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.SecurityStamp).HasMaxLength(64).IsRequired();
         });
 
         modelBuilder.Entity<UsuarioEmail>(entity =>

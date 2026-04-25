@@ -299,6 +299,11 @@ public sealed class BackupService : IBackupService
             throw new InvalidOperationException($"Configuración '{configKey}' contiene segmentos de traversal.");
         }
 
+        if (!Path.IsPathRooted(trimmed) && !LooksLikeWindowsRootedPath(trimmed))
+        {
+            throw new InvalidOperationException($"Configuracion '{configKey}' debe ser una ruta absoluta.");
+        }
+
         string fullPath;
         try
         {
@@ -315,5 +320,13 @@ public sealed class BackupService : IBackupService
         }
 
         return fullPath;
+    }
+
+    private static bool LooksLikeWindowsRootedPath(string value)
+    {
+        return value.Length >= 3 &&
+               char.IsLetter(value[0]) &&
+               value[1] == ':' &&
+               (value[2] == '\\' || value[2] == '/');
     }
 }

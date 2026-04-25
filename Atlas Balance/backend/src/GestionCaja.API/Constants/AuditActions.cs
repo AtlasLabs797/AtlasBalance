@@ -6,6 +6,9 @@ public static class AuditActions
     public const string Logout = "LOGOUT";
     public const string LoginFailed = "LOGIN_FAILED";
     public const string AccountLocked = "ACCOUNT_LOCKED";
+    public const string PasswordChanged = "PASSWORD_CHANGED";
+    public const string PasswordReset = "PASSWORD_RESET";
+    public const string RefreshTokenReuseDetected = "REFRESH_TOKEN_REUSE_DETECTED";
     public const string CreateUsuario = "CREATE_USUARIO";
     public const string UpdateUsuario = "UPDATE_USUARIO";
     public const string DeleteUsuario = "DELETE_USUARIO";

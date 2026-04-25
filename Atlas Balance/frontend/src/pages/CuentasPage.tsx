@@ -109,6 +109,7 @@ export default function CuentasPage() {
   const navigate = useNavigate();
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
+  const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
   const isAdmin = usuario?.rol === 'ADMIN';
   const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
 
@@ -510,30 +511,52 @@ export default function CuentasPage() {
                   <span>Detalle</span>
                 </div>
 
-                {saldosCuentaRows.map((item) => (
-                  <Link
-                    className="cuentas-balance-row"
-                    key={item.cuenta_id}
-                    to={`/dashboard/cuenta/${item.cuenta_id}`}
-                    aria-label={`Abrir dashboard de cuenta ${item.cuenta_nombre}`}
-                  >
-                    <span className="cuentas-balance-account">
-                      <span className="cuentas-balance-avatar" aria-hidden="true">
-                        {getCuentaInitials(item.cuenta_nombre)}
+                {saldosCuentaRows.map((item) => {
+                  const canOpenDashboardCuenta = canViewCuenta(item.cuenta_id, item.titular_id);
+
+                  return canOpenDashboardCuenta ? (
+                    <Link
+                      className="cuentas-balance-row"
+                      key={item.cuenta_id}
+                      to={`/dashboard/cuenta/${item.cuenta_id}`}
+                      aria-label={`Abrir dashboard de cuenta ${item.cuenta_nombre}`}
+                    >
+                      <span className="cuentas-balance-account">
+                        <span className="cuentas-balance-avatar" aria-hidden="true">
+                          {getCuentaInitials(item.cuenta_nombre)}
+                        </span>
+                        <span className="cuentas-balance-copy">
+                          <span className="cuentas-balance-name">{item.cuenta_nombre}</span>
+                          <span className="cuentas-balance-owner">{item.titular_nombre}</span>
+                        </span>
                       </span>
-                      <span className="cuentas-balance-copy">
-                        <span className="cuentas-balance-name">{item.cuenta_nombre}</span>
-                        <span className="cuentas-balance-owner">{item.titular_nombre}</span>
+                      <span className="cuentas-balance-bank">{item.banco_nombre || 'N/A'}</span>
+                      <span className="cuentas-balance-currency">{item.divisa}</span>
+                      <SignedAmount value={item.saldo_actual}>
+                        {formatCurrency(item.saldo_actual, item.divisa)}
+                      </SignedAmount>
+                      <span className="cuentas-balance-open" aria-hidden="true">Abrir</span>
+                    </Link>
+                  ) : (
+                    <div className="cuentas-balance-row" key={item.cuenta_id} aria-disabled="true">
+                      <span className="cuentas-balance-account">
+                        <span className="cuentas-balance-avatar" aria-hidden="true">
+                          {getCuentaInitials(item.cuenta_nombre)}
+                        </span>
+                        <span className="cuentas-balance-copy">
+                          <span className="cuentas-balance-name">{item.cuenta_nombre}</span>
+                          <span className="cuentas-balance-owner">{item.titular_nombre}</span>
+                        </span>
                       </span>
-                    </span>
-                    <span className="cuentas-balance-bank">{item.banco_nombre || 'N/A'}</span>
-                    <span className="cuentas-balance-currency">{item.divisa}</span>
-                    <SignedAmount value={item.saldo_actual}>
-                      {formatCurrency(item.saldo_actual, item.divisa)}
-                    </SignedAmount>
-                    <span className="cuentas-balance-open" aria-hidden="true">Abrir</span>
-                  </Link>
-                ))}
+                      <span className="cuentas-balance-bank">{item.banco_nombre || 'N/A'}</span>
+                      <span className="cuentas-balance-currency">{item.divisa}</span>
+                      <SignedAmount value={item.saldo_actual}>
+                        {formatCurrency(item.saldo_actual, item.divisa)}
+                      </SignedAmount>
+                      <span className="dashboard-open-link dashboard-open-link--disabled">Sin acceso</span>
+                    </div>
+                  );
+                })}
               </div>
 
               {evolucion ? (
@@ -616,6 +639,7 @@ export default function CuentasPage() {
             const fallbackSaldo = typeof item.saldo_actual === 'number' ? item.saldo_actual : null;
             const saldoValue = saldoCuenta?.saldo ?? fallbackSaldo;
             const saldoCurrency = saldoCuenta?.divisa ?? item.divisa;
+            const canOpenDashboardCuenta = canViewCuenta(item.id, item.titular_id);
 
             return (
               <article className="titular-card cuenta-card" key={item.id}>
@@ -659,7 +683,7 @@ export default function CuentasPage() {
                 </div>
                 {(canSeeDashboard || isAdmin) ? (
                   <div className="phase2-row-actions">
-                    {canSeeDashboard && !item.deleted_at ? (
+                    {canSeeDashboard && !item.deleted_at && canOpenDashboardCuenta ? (
                       <button
                         type="button"
                         className="cuenta-open-button"
@@ -667,6 +691,9 @@ export default function CuentasPage() {
                       >
                         Abrir
                       </button>
+                    ) : null}
+                    {canSeeDashboard && !item.deleted_at && !canOpenDashboardCuenta ? (
+                      <span className="dashboard-open-link dashboard-open-link--disabled">Sin acceso</span>
                     ) : null}
                     {isAdmin ? (
                       <button type="button" onClick={() => startEdit(item.id)} disabled={saving}>Editar</button>

@@ -86,4 +86,41 @@ public class ExportacionServiceTests
             }
         }
     }
+
+    [Fact]
+    public async Task ExportarCuentaAsync_Should_Reject_Relative_Export_Path()
+    {
+        await using var db = BuildDbContext();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "export_path",
+            Valor = "exports",
+            Tipo = "string",
+            Descripcion = "Ruta relativa insegura"
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular QA",
+            Tipo = TipoTitular.EMPRESA
+        });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta QA",
+            Divisa = "EUR",
+            Activa = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = new ExportacionService(db, new AuditService(db));
+
+        var act = () => service.ExportarCuentaAsync(cuentaId, TipoProceso.MANUAL, null, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*ruta absoluta*");
+    }
 }

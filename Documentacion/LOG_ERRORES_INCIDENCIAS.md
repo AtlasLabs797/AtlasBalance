@@ -1,5 +1,37 @@
 ﻿# Log de errores e incidencias
 
+## 2026-04-25 - V-01.03 - Auditoria profunda de seguridad y hardening aplicado
+
+### Sesiones no revocadas tras reset/cambio de password
+
+- Contexto: el reset admin y algunos cambios de estado cambiaban credenciales o usuario sin invalidar sesiones ya emitidas.
+- Causa: JWT sin estado de sesion y refresh tokens activos aunque el password cambiara.
+- Solucion aplicada: `SecurityStamp` en usuario, claim en access token, validacion en `UserStateMiddleware`, migracion `UserSessionHardening`, rotacion de stamp y revocacion de refresh tokens en cambio/reset/delete y reuse.
+
+### Login y bearer de integracion con rate limit incompleto
+
+- Contexto: login exponia diferencias utiles para enumeracion/bloqueo y la integracion OpenClaw consultaba BD antes de limitar bearer invalido repetido.
+- Causa: bloqueo de cuenta demasiado distinguible y rate limit aplicado tarde.
+- Solucion aplicada: respuesta generica para bloqueos, throttle por cliente/email antes de insistir, umbral de bloqueo global mas alto, y rate limit por IP/minuto para bearer invalido antes de consultar tokens.
+
+### URL de actualizaciones y rutas configurables demasiado permisivas
+
+- Contexto: `app_update_check_url`, `backup_path`, `export_path`, rutas de descarga/exportacion y rutas Watchdog pasaban por normalizacion que podia ocultar entradas relativas o destinos no oficiales.
+- Causa: confianza excesiva en configuracion admin y `Path.GetFullPath` usado antes de validar si la ruta era explicitamente absoluta.
+- Solucion aplicada: allowlist HTTPS estricta a `github.com/AtlasLabs797/AtlasBalance` o `api.github.com/repos/AtlasLabs797/AtlasBalance/...`; validacion de rutas crudas antes de normalizar; bloqueo de traversal y rutas relativas.
+
+### Dependencia frontend vulnerable
+
+- Contexto: `npm audit` marco `postcss <8.5.10` como vulnerabilidad moderada de XSS en serializacion CSS.
+- Causa: dependencia transitiva resuelta a `postcss@8.5.9`.
+- Solucion aplicada: `npm.cmd update postcss`, lockfile resuelto a `postcss@8.5.10`.
+
+### Credenciales iniciales one-shot persistentes
+
+- Contexto: `INSTALL_CREDENTIALS_ONCE.txt` quedaba con ACL restringida, pero podia sobrevivir si nadie lo borraba.
+- Causa: flujo operativo manual.
+- Solucion aplicada: el instalador registra una tarea programada SYSTEM para borrar el archivo automaticamente a las 24 horas.
+
 ## 2026-04-20 - V-01.02 - Release sin scripts one-click completos
 
 - Contexto: la carpeta de release solo conservaba `.gitkeep` hasta generar paquete, y el empaquetado no incluia scripts `install/update/uninstall/start` con esos nombres.
@@ -215,3 +247,17 @@
 - Contexto: `phase2-smoke.ps1`, `phase2-smoke-curl.ps1`, `Otros/Raiz anterior/SPEC.md` y `CORRECCIONES.md` contenian passwords/usuarios concretos.
 - Causa: artefactos antiguos de pruebas y planificacion quedaron con datos reales aunque viven en `Otros/` (fuera del repo principal, pero presentes en la maquina de trabajo).
 - Solucion aplicada: los scripts leen las passwords de `ATLAS_SMOKE_ADMIN_PASSWORD`/`ATLAS_SMOKE_TEST_PASSWORD` (fallan si no existen). Los documentos historicos sustituyen los valores por placeholders.
+
+## 2026-04-23 - V-01.03 - ExtractosController concedia alcance global con dashboard-only
+
+- Contexto: `GET /api/extractos` usaba `GetAllowedAccountIds`, y ese helper concedia acceso a todas las cuentas si existia permiso global con `PuedeVerDashboard=true`.
+- Causa: logica de autorizacion local mas permisiva que `UserAccessService`.
+- Solucion aplicada: `GetAllowedAccountIds` y `CanViewTitular` ahora solo conceden alcance global con permisos de datos (`agregar`, `editar`, `eliminar`, `importar`), excluyendo `PuedeVerDashboard`.
+- Verificacion: test de regresion en `ExtractosControllerTests` + ejecucion de `ExtractosControllerTests` y `UserAccessServiceTests` (8/8 OK).
+
+## 2026-04-24 - V-01.03 - Frontend mostraba dashboards de cuenta a perfiles dashboard-only globales
+
+- Contexto: tras cerrar la fuga de datos en extractos, el frontend seguia ofreciendo enlaces y botones a `/dashboard/cuenta/:id` desde `CuentasPage` y otras vistas, aunque el backend ya bloqueaba ese detalle para perfiles con permiso global solo de dashboard.
+- Causa: `permisosStore.canViewCuenta` trataba cualquier fila global (`cuenta_id/titular_id null`) como acceso de cuenta, sin distinguir si era solo `PuedeVerDashboard`.
+- Solucion aplicada: `canViewCuenta`, `canAddInCuenta`, `canEditCuenta`, `canDeleteInCuenta`, `canImportInCuenta`, `getColumnasVisibles` y `getColumnasEditables` pasan a ignorar filas globales `dashboard-only`; solo cuentan filas scopeadas de cuenta/titular o filas globales con acceso global de datos. `CuentasPage` muestra `Sin acceso` en vez de CTA operativos y `CuentaDetailPage` redirige al dashboard si recibe `403`.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR` OK.

@@ -6,6 +6,7 @@ using GestionCaja.API.Models;
 using GestionCaja.API.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 
 namespace GestionCaja.API.Middleware;
 
@@ -17,6 +18,7 @@ public static class IntegrationHttpContextItemKeys
 public sealed class IntegrationAuthMiddleware
 {
     private const string RedactedMarker = "[REDACTED]";
+    private const int DefaultInvalidAuthLimitPerMinute = 30;
 
     private static readonly HashSet<string> SensitiveQueryKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -37,12 +39,17 @@ public sealed class IntegrationAuthMiddleware
     private readonly IMemoryCache _cache;
     private readonly IClock _clock;
     private readonly object _rateLimitLock = new();
+    private readonly object _invalidAuthRateLimitLock = new();
+    private readonly int _invalidAuthLimitPerMinute;
 
-    public IntegrationAuthMiddleware(RequestDelegate next, IMemoryCache cache, IClock clock)
+    public IntegrationAuthMiddleware(RequestDelegate next, IMemoryCache cache, IClock clock, IConfiguration? configuration = null)
     {
         _next = next;
         _cache = cache;
         _clock = clock;
+        _invalidAuthLimitPerMinute = Math.Max(
+            1,
+            configuration?.GetValue<int?>("IntegrationSecurity:InvalidAuthLimitPerMinute") ?? DefaultInvalidAuthLimitPerMinute);
     }
 
     public async Task InvokeAsync(HttpContext context, AppDbContext dbContext, IIntegrationTokenService integrationTokenService)
@@ -55,13 +62,23 @@ public sealed class IntegrationAuthMiddleware
 
         var authHeader = context.Request.Headers.Authorization.ToString();
         var plainToken = ExtractBearerToken(authHeader);
+        if (IsInvalidAuthRateLimited(context))
+        {
+            context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("RATE_LIMITED: Demasiados intentos con token invalido"));
+            return;
+        }
+
         var integrationToken = await integrationTokenService.ValidateActiveTokenAsync(plainToken, CancellationToken.None);
         if (integrationToken is null)
         {
+            RecordInvalidAuthFailure(context);
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("UNAUTHORIZED: Token de integracion invalido o revocado"));
             return;
         }
+
+        ClearInvalidAuthFailures(context);
 
         var limit = await ResolveRateLimitAsync(dbContext, CancellationToken.None);
         if (!TryConsumeRateLimit(integrationToken.Id, limit))
@@ -198,6 +215,40 @@ public sealed class IntegrationAuthMiddleware
             _cache.Set(currentKey, currentCount + 1, TimeSpan.FromMinutes(2));
             return true;
         }
+    }
+
+    private bool IsInvalidAuthRateLimited(HttpContext context)
+    {
+        var key = BuildInvalidAuthRateLimitKey(context);
+        lock (_invalidAuthRateLimitLock)
+        {
+            return _cache.TryGetValue<int>(key, out var count) &&
+                   count >= _invalidAuthLimitPerMinute;
+        }
+    }
+
+    private void RecordInvalidAuthFailure(HttpContext context)
+    {
+        var key = BuildInvalidAuthRateLimitKey(context);
+        lock (_invalidAuthRateLimitLock)
+        {
+            var count = _cache.Get<int>(key) + 1;
+            _cache.Set(key, count, TimeSpan.FromMinutes(2));
+        }
+    }
+
+    private void ClearInvalidAuthFailures(HttpContext context)
+    {
+        _cache.Remove(BuildInvalidAuthRateLimitKey(context));
+    }
+
+    private string BuildInvalidAuthRateLimitKey(HttpContext context)
+    {
+        var ipAddress = context.Connection.RemoteIpAddress?.ToString();
+        var client = string.IsNullOrWhiteSpace(ipAddress) ? "unknown" : ipAddress;
+        var now = _clock.UtcNow;
+        var currentMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
+        return $"integration:invalid-auth:{client}:{currentMinute:yyyyMMddHHmm}";
     }
 
 }

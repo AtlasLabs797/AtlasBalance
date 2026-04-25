@@ -89,17 +89,44 @@ public sealed class WatchdogOperationsServiceTests
         Directory.Delete(root, recursive: true);
     }
 
+    [Fact]
+    public async Task StartRestoreAsync_Should_Reject_Relative_Backup_Path()
+    {
+        var root = CreateTempDirectory();
+        var backupFile = Path.Combine(root, "backup.dump");
+        await File.WriteAllTextAsync(backupFile, "not-a-real-dump");
+
+        var originalDirectory = Environment.CurrentDirectory;
+        try
+        {
+            Directory.SetCurrentDirectory(root);
+            var stateStore = new FakeWatchdogStateStore();
+            var service = CreateService(stateStore, backupPathRoot: root);
+
+            var accepted = await service.StartRestoreAsync("backup.dump", CancellationToken.None);
+
+            accepted.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDirectory);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static WatchdogOperationsService CreateService(
         FakeWatchdogStateStore stateStore,
         string? updateSourceRoot = null,
-        string? updateTargetPath = null)
+        string? updateTargetPath = null,
+        string? backupPathRoot = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["WatchdogSettings:ApiServiceName"] = $"FakeService-{Guid.NewGuid():N}",
                 ["WatchdogSettings:UpdateSourceRoot"] = updateSourceRoot,
-                ["WatchdogSettings:UpdateTargetPath"] = updateTargetPath
+                ["WatchdogSettings:UpdateTargetPath"] = updateTargetPath,
+                ["WatchdogSettings:BackupPath"] = backupPathRoot
             })
             .Build();
 

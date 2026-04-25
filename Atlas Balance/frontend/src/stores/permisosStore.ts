@@ -18,6 +18,12 @@ interface PermisosState {
 
 const isAdmin = () => useAuthStore.getState().usuario?.rol === 'ADMIN';
 
+const grantsGlobalDataAccess = (permiso: PermisoUsuario) =>
+  permiso.puede_agregar_lineas ||
+  permiso.puede_editar_lineas ||
+  permiso.puede_eliminar_lineas ||
+  permiso.puede_importar;
+
 const getMatchingPermisos = (
   permisos: PermisoUsuario[],
   cuentaId: string,
@@ -27,6 +33,15 @@ const getMatchingPermisos = (
     (p) =>
       (p.cuenta_id === null || p.cuenta_id === cuentaId) &&
       (p.titular_id === null || p.titular_id === titularId)
+  );
+
+const getCuentaPermisos = (
+  permisos: PermisoUsuario[],
+  cuentaId: string,
+  titularId?: string | null
+) =>
+  getMatchingPermisos(permisos, cuentaId, titularId).filter(
+    (p) => p.cuenta_id !== null || p.titular_id !== null || grantsGlobalDataAccess(p)
   );
 
 const mergeColumnRules = (
@@ -51,27 +66,27 @@ export const usePermisosStore = create<PermisosState>((set, get) => ({
 
   canViewCuenta: (cuentaId, titularId) => {
     if (isAdmin()) return true;
-    return getMatchingPermisos(get().permisos, cuentaId, titularId).length > 0;
+    return getCuentaPermisos(get().permisos, cuentaId, titularId).length > 0;
   },
 
   canAddInCuenta: (cuentaId, titularId) => {
     if (isAdmin()) return true;
-    return getMatchingPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_agregar_lineas);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_agregar_lineas);
   },
 
   canEditCuenta: (cuentaId, titularId) => {
     if (isAdmin()) return true;
-    return getMatchingPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_editar_lineas);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_editar_lineas);
   },
 
   canDeleteInCuenta: (cuentaId, titularId) => {
     if (isAdmin()) return true;
-    return getMatchingPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_eliminar_lineas);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_eliminar_lineas);
   },
 
   canImportInCuenta: (cuentaId, titularId) => {
     if (isAdmin()) return true;
-    return getMatchingPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_importar);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_importar);
   },
 
   canViewDashboard: () => {
@@ -81,11 +96,11 @@ export const usePermisosStore = create<PermisosState>((set, get) => ({
 
   getColumnasVisibles: (cuentaId, titularId) => {
     if (isAdmin()) return null;
-    return mergeColumnRules(getMatchingPermisos(get().permisos, cuentaId, titularId), 'columnas_visibles');
+    return mergeColumnRules(getCuentaPermisos(get().permisos, cuentaId, titularId), 'columnas_visibles');
   },
 
   getColumnasEditables: (cuentaId, titularId) => {
     if (isAdmin()) return null;
-    return mergeColumnRules(getMatchingPermisos(get().permisos, cuentaId, titularId), 'columnas_editables');
+    return mergeColumnRules(getCuentaPermisos(get().permisos, cuentaId, titularId), 'columnas_editables');
   },
 }));

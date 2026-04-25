@@ -74,7 +74,7 @@ public sealed class ConfiguracionControllerTests
             General = new UpdateGeneralConfigRequest
             {
                 AppBaseUrl = "https://app.local",
-                AppUpdateCheckUrl = "https://updates.local/version.json",
+                AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
                 BackupPath = "C:\\backups",
                 ExportPath = "C:\\exports"
             },
@@ -90,11 +90,42 @@ public sealed class ConfiguracionControllerTests
         var smtpPassword = await db.Configuraciones.SingleAsync(x => x.Clave == "smtp_password");
         smtpPassword.Valor.Should().Be("super-secret");
         var updateUrl = await db.Configuraciones.SingleAsync(x => x.Clave == "app_update_check_url");
-        updateUrl.Valor.Should().Be("https://updates.local/version.json");
+        updateUrl.Valor.Should().Be(ConfigurationDefaults.UpdateCheckUrl);
 
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.UpdateConfiguracion);
         audit.DetallesJson.Should().NotContain("super-secret");
         audit.DetallesJson.Should().Contain("[REDACTED]");
+    }
+
+    [Fact]
+    public async Task Update_Should_Reject_NonOfficial_Update_Check_Url()
+    {
+        await using var db = BuildDbContext();
+        var controller = BuildController(db);
+
+        var result = await controller.Update(new UpdateConfiguracionRequest
+        {
+            Smtp = new UpdateSmtpConfigRequest
+            {
+                Host = "smtp.local",
+                Port = 587,
+                User = "user",
+                Password = "",
+                From = "noreply@test.local"
+            },
+            General = new UpdateGeneralConfigRequest
+            {
+                AppBaseUrl = "https://app.local",
+                AppUpdateCheckUrl = "http://localhost/internal",
+                BackupPath = "C:\\backups",
+                ExportPath = "C:\\exports"
+            },
+            Dashboard = new UpdateDashboardConfigRequest()
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Configuraciones.AnyAsync(x => x.Clave == "app_update_check_url")).Should().BeFalse();
+        (await db.Auditorias.AnyAsync()).Should().BeFalse();
     }
 
     private static ConfiguracionController BuildController(AppDbContext db)

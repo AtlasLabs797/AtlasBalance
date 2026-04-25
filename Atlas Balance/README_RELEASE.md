@@ -1,4 +1,4 @@
-# Atlas Balance V-01.02 - release Windows x64
+# Atlas Balance V-01.03 - release Windows x64
 
 Este paquete es autonomo para servidor Windows: el frontend ya esta compilado, el backend y Watchdog van publicados self-contained y la base de datos se prepara desde el instalador.
 

@@ -1,4 +1,6 @@
 using GestionCaja.API.Models;
+using GestionCaja.API.Constants;
+using GestionCaja.API.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace GestionCaja.API.Data;
@@ -41,7 +43,9 @@ public static class SeedData
             Rol = RolUsuario.ADMIN,
             Activo = true,
             PrimerLogin = true,
-            FechaCreacion = now
+            FechaCreacion = now,
+            SecurityStamp = UserSessionState.CreateSecurityStamp(),
+            PasswordChangedAt = now
         });
 
         context.DivisasActivas.AddRange(
@@ -65,7 +69,7 @@ public static class SeedData
             ["backup_retention_weeks"] = ("6", "int", "Semanas de retención de backups"),
             ["backup_path"] = ("C:/AtlasBalance/backups", "string", "Ruta de almacenamiento de backups"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
-            ["app_version"] = ("V-01.02", "string", "Versión instalada"),
+            ["app_version"] = ("V-01.03", "string", "Versión instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "URL del servidor de actualizaciones"),
             ["smtp_host"] = ("", "string", "Host SMTP"),
             ["smtp_port"] = ("587", "int", "Puerto SMTP"),
@@ -112,14 +116,13 @@ public static class SeedData
             throw new InvalidOperationException("SeedAdmin:Password must be configured before first startup.");
         }
 
-        if (configuredPassword.Length < 8)
+        if (!SecurityPolicy.TryValidatePassword(configuredPassword, out var passwordError))
         {
-            throw new InvalidOperationException("SeedAdmin:Password must contain at least 8 characters.");
+            throw new InvalidOperationException($"SeedAdmin:Password is not valid: {passwordError}.");
         }
 
         if (!isDevelopment &&
-            (configuredPassword.Length < 12 ||
-             LooksLikePlaceholder(configuredPassword)))
+            LooksLikePlaceholder(configuredPassword))
         {
             throw new InvalidOperationException("SeedAdmin:Password must be a real non-default production password.");
         }

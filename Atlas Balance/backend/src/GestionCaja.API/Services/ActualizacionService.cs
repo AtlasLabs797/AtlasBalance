@@ -51,7 +51,7 @@ public sealed class ActualizacionService : IActualizacionService
             .Select(c => c.Valor)
             .FirstOrDefaultAsync(cancellationToken);
 
-        checkUrl = ResolveConfiguredUpdateUrl(checkUrl);
+        checkUrl = ResolveConfiguredUpdateUrl(checkUrl, _logger);
 
         try
         {
@@ -112,7 +112,7 @@ public sealed class ActualizacionService : IActualizacionService
                 .Select(c => c.Valor)
                 .FirstOrDefaultAsync(cancellationToken);
 
-            checkUrl = ResolveConfiguredUpdateUrl(checkUrl);
+            checkUrl = ResolveConfiguredUpdateUrl(checkUrl, _logger);
 
             try
             {
@@ -182,11 +182,15 @@ public sealed class ActualizacionService : IActualizacionService
         return assembly.GetName().Version?.ToString() ?? "0.0.0";
     }
 
-    private static string ResolveConfiguredUpdateUrl(string? configuredUrl)
+    private static string ResolveConfiguredUpdateUrl(string? configuredUrl, ILogger logger)
     {
-        return string.IsNullOrWhiteSpace(configuredUrl)
-            ? ConfigurationDefaults.UpdateCheckUrl
-            : configuredUrl.Trim();
+        if (ConfigurationDefaults.TryNormalizeUpdateCheckUrl(configuredUrl, out var normalizedUrl))
+        {
+            return normalizedUrl;
+        }
+
+        logger.LogWarning("Update check URL no permitida; se usara el endpoint oficial de Atlas Balance.");
+        return ConfigurationDefaults.UpdateCheckUrl;
     }
 
     private async Task<UpdateCheckHttpResponse> GetUpdateCheckBodyAsync(string checkUrl, CancellationToken cancellationToken)
@@ -260,6 +264,11 @@ public sealed class ActualizacionService : IActualizacionService
             return false;
         }
 
+        if (!IsExplicitlyRooted(sourcePath) || !IsExplicitlyRooted(sourceRoot))
+        {
+            return false;
+        }
+
         try
         {
             var fullSource = EnsureTrailingSeparator(Path.GetFullPath(sourcePath));
@@ -277,6 +286,15 @@ public sealed class ActualizacionService : IActualizacionService
         return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
             ? path
             : $"{path}{Path.DirectorySeparatorChar}";
+    }
+
+    private static bool IsExplicitlyRooted(string path)
+    {
+        return Path.IsPathRooted(path) ||
+               (path.Length >= 3 &&
+                char.IsLetter(path[0]) &&
+                path[1] == ':' &&
+                (path[2] == '\\' || path[2] == '/'));
     }
 
     private readonly record struct UpdateCheckHttpResponse(int StatusCode, bool IsSuccessStatusCode, string Body);

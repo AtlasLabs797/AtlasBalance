@@ -213,6 +213,11 @@ public sealed class ExportacionesController : ControllerBase
             return false;
         }
 
+        if (!IsExplicitlyRooted(exportRoot))
+        {
+            return false;
+        }
+
         try
         {
             var fullFilePath = Path.GetFullPath(filePath);
@@ -230,5 +235,14 @@ public sealed class ExportacionesController : ControllerBase
         return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
             ? path
             : $"{path}{Path.DirectorySeparatorChar}";
+    }
+
+    private static bool IsExplicitlyRooted(string path)
+    {
+        return Path.IsPathRooted(path) ||
+               (path.Length >= 3 &&
+                char.IsLetter(path[0]) &&
+                path[1] == ':' &&
+                (path[2] == '\\' || path[2] == '/'));
     }
 }

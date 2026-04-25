@@ -1,4 +1,5 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,6 +10,7 @@ using GestionCaja.API.DTOs;
 using GestionCaja.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 
 namespace GestionCaja.API.Services;
@@ -24,18 +26,24 @@ public interface IAuthService
 
 public sealed class AuthService : IAuthService
 {
-    private const int MaxFailedLoginAttempts = 5;
+    private const int MaxFailedLoginAttempts = 20;
+    private const int MaxLoginFailuresPerClientAndEmail = 5;
+    private static readonly object LoginRateLimitLock = new();
     private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan LoginFailureWindow = TimeSpan.FromMinutes(15);
+    private static readonly IMemoryCache FallbackMemoryCache = new MemoryCache(new MemoryCacheOptions());
 
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly IAuditService _auditService;
+    private readonly IMemoryCache _cache;
 
-    public AuthService(AppDbContext dbContext, IConfiguration configuration, IAuditService auditService)
+    public AuthService(AppDbContext dbContext, IConfiguration configuration, IAuditService auditService, IMemoryCache? cache = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _auditService = auditService;
+        _cache = cache ?? FallbackMemoryCache;
     }
 
     public async Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken)
@@ -47,11 +55,7 @@ public sealed class AuthService : IAuthService
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
         var now = DateTime.UtcNow;
-
-        var usuario = await _dbContext.Usuarios
-            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail && u.Activo, cancellationToken);
-
-        if (usuario is null)
+        if (IsLoginThrottled(normalizedEmail, ipAddress))
         {
             await _auditService.LogAsync(
                 null,
@@ -59,13 +63,36 @@ public sealed class AuthService : IAuthService
                 "USUARIOS",
                 null,
                 ipAddress,
-                JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "usuario_no_encontrado" }),
+                JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
                 cancellationToken);
+            throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+        }
+
+        var usuario = await _dbContext.Usuarios
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail && u.Activo, cancellationToken);
+
+        if (usuario is null)
+        {
+            var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
+            await _auditService.LogAsync(
+                null,
+                AuditActions.LoginFailed,
+                "USUARIOS",
+                null,
+                ipAddress,
+                JsonSerializer.Serialize(new { email = normalizedEmail, motivo = throttled ? "rate_limited" : "usuario_no_encontrado" }),
+                cancellationToken);
+            if (throttled)
+            {
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+            }
+
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
         }
 
         if (usuario.LockedUntil.HasValue && usuario.LockedUntil.Value > now)
         {
+            var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
             await _auditService.LogAsync(
                 usuario.Id,
                 AuditActions.AccountLocked,
@@ -74,11 +101,30 @@ public sealed class AuthService : IAuthService
                 ipAddress,
                 JsonSerializer.Serialize(new { email = normalizedEmail, locked_until = usuario.LockedUntil }),
                 cancellationToken);
-            throw new AuthException("Usuario bloqueado temporalmente por intentos fallidos", StatusCodes.Status423Locked);
+            if (throttled)
+            {
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+            }
+
+            throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
         }
 
         if (!BCrypt.Net.BCrypt.Verify(password, usuario.PasswordHash))
         {
+            var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
+            if (throttled)
+            {
+                await _auditService.LogAsync(
+                    usuario.Id,
+                    AuditActions.LoginFailed,
+                    "USUARIOS",
+                    usuario.Id,
+                    ipAddress,
+                    JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
+                    cancellationToken);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+            }
+
             usuario.FailedLoginAttempts += 1;
             var lockTriggered = false;
             if (usuario.FailedLoginAttempts >= MaxFailedLoginAttempts)
@@ -119,7 +165,7 @@ public sealed class AuthService : IAuthService
 
             if (lockTriggered)
             {
-                throw new AuthException("Usuario bloqueado temporalmente por intentos fallidos", StatusCodes.Status423Locked);
+                throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
             }
 
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
@@ -128,6 +174,8 @@ public sealed class AuthService : IAuthService
         usuario.FailedLoginAttempts = 0;
         usuario.LockedUntil = null;
         usuario.FechaUltimaLogin = now;
+        UserSessionState.EnsureSecurityStamp(usuario);
+        ClearLoginFailures(normalizedEmail, ipAddress);
 
         var tokens = await IssueTokensAsync(usuario, ipAddress, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -166,8 +214,22 @@ public sealed class AuthService : IAuthService
                 .Include(rt => rt.Usuario)
                 .FirstOrDefaultAsync(rt => rt.TokenHash == refreshHash, cancellationToken);
 
-            if (storedToken is null || storedToken.RevocadoEn.HasValue || storedToken.ExpiraEn <= now)
+            if (storedToken is null || storedToken.ExpiraEn <= now)
             {
+                throw new AuthException("Refresh token inválido o expirado", StatusCodes.Status401Unauthorized);
+            }
+
+            if (storedToken.RevocadoEn.HasValue)
+            {
+                if (!string.IsNullOrWhiteSpace(storedToken.ReemplazadoPor))
+                {
+                    await RevokeSessionsAfterRefreshReuseAsync(storedToken, now, ipAddress, cancellationToken);
+                    if (tx is not null)
+                    {
+                        await tx.CommitAsync(cancellationToken);
+                    }
+                }
+
                 throw new AuthException("Refresh token inválido o expirado", StatusCodes.Status401Unauthorized);
             }
 
@@ -181,6 +243,8 @@ public sealed class AuthService : IAuthService
             {
                 throw new AuthException("Usuario bloqueado temporalmente por intentos fallidos", StatusCodes.Status423Locked);
             }
+
+            UserSessionState.EnsureSecurityStamp(usuario);
 
             var replacement = GenerateRefreshToken();
             var replacementHash = ComputeSha256(replacement);
@@ -256,9 +320,9 @@ public sealed class AuthService : IAuthService
             throw new AuthException("Contraseña actual requerida", StatusCodes.Status400BadRequest);
         }
 
-        if (string.IsNullOrWhiteSpace(passwordNueva) || passwordNueva.Length < 8)
+        if (!SecurityPolicy.TryValidatePassword(passwordNueva, out var passwordError))
         {
-            throw new AuthException("La nueva contraseña debe tener al menos 8 caracteres", StatusCodes.Status400BadRequest);
+            throw new AuthException(passwordError, StatusCodes.Status400BadRequest);
         }
 
         var usuario = await _dbContext.Usuarios.FirstOrDefaultAsync(u => u.Id == userId && u.Activo, cancellationToken);
@@ -272,10 +336,11 @@ public sealed class AuthService : IAuthService
             throw new AuthException("Contraseña actual incorrecta", StatusCodes.Status400BadRequest);
         }
 
+        var now = DateTime.UtcNow;
         usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(passwordNueva, workFactor: 12);
         usuario.PrimerLogin = false;
+        UserSessionState.RotateAfterPasswordChange(usuario, now);
 
-        var now = DateTime.UtcNow;
         var activeRefreshTokens = await _dbContext.RefreshTokens
             .Where(rt => rt.UsuarioId == userId && rt.RevocadoEn == null && rt.ExpiraEn > now)
             .ToListAsync(cancellationToken);
@@ -299,11 +364,11 @@ public sealed class AuthService : IAuthService
         await _dbContext.SaveChangesAsync(cancellationToken);
         await _auditService.LogAsync(
             userId,
-            AuditActions.UpdateUsuario,
+            AuditActions.PasswordChanged,
             "USUARIOS",
             userId,
             ipAddress: ipAddress,
-            detallesJson: JsonSerializer.Serialize(new { cambio_password = true, usuario.PrimerLogin }),
+            detallesJson: JsonSerializer.Serialize(new { cambio_password = true, usuario.PrimerLogin, refresh_tokens_revocados = activeRefreshTokens.Count }),
             cancellationToken: cancellationToken);
 
         return await BuildAuthResultAsync(usuario, accessToken, newRefreshToken, cancellationToken);
@@ -376,6 +441,7 @@ public sealed class AuthService : IAuthService
 
     private string GenerateAccessToken(Usuario usuario)
     {
+        UserSessionState.EnsureSecurityStamp(usuario);
         var jwtSecret = _configuration["JwtSettings:Secret"]
             ?? throw new InvalidOperationException("JwtSettings:Secret is required");
         var issuer = _configuration["JwtSettings:Issuer"] ?? "atlas-balance-api";
@@ -384,14 +450,22 @@ public sealed class AuthService : IAuthService
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expires = DateTime.UtcNow.AddMinutes(GetAccessTokenExpMinutes());
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, usuario.Id.ToString()),
             new Claim(ClaimTypes.NameIdentifier, usuario.Id.ToString()),
             new Claim(ClaimTypes.Email, usuario.Email),
             new Claim(ClaimTypes.Name, usuario.NombreCompleto),
-            new Claim(ClaimTypes.Role, usuario.Rol.ToString())
+            new Claim(ClaimTypes.Role, usuario.Rol.ToString()),
+            new Claim(AuthClaimNames.SecurityStamp, usuario.SecurityStamp)
         };
+
+        if (usuario.PasswordChangedAt.HasValue)
+        {
+            claims.Add(new Claim(
+                AuthClaimNames.PasswordChangedAt,
+                new DateTimeOffset(usuario.PasswordChangedAt.Value).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+        }
 
         var token = new JwtSecurityToken(
             issuer: issuer,
@@ -401,6 +475,79 @@ public sealed class AuthService : IAuthService
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private bool IsLoginThrottled(string normalizedEmail, string? ipAddress)
+    {
+        var key = BuildLoginFailureCacheKey(normalizedEmail, ipAddress);
+        lock (LoginRateLimitLock)
+        {
+            return _cache.TryGetValue<int>(key, out var count) &&
+                   count >= MaxLoginFailuresPerClientAndEmail;
+        }
+    }
+
+    private bool RecordLoginFailure(string normalizedEmail, string? ipAddress)
+    {
+        var key = BuildLoginFailureCacheKey(normalizedEmail, ipAddress);
+        lock (LoginRateLimitLock)
+        {
+            var count = _cache.Get<int>(key) + 1;
+            _cache.Set(key, count, LoginFailureWindow);
+            return count >= MaxLoginFailuresPerClientAndEmail;
+        }
+    }
+
+    private void ClearLoginFailures(string normalizedEmail, string? ipAddress)
+    {
+        _cache.Remove(BuildLoginFailureCacheKey(normalizedEmail, ipAddress));
+    }
+
+    private static string BuildLoginFailureCacheKey(string normalizedEmail, string? ipAddress)
+    {
+        var client = string.IsNullOrWhiteSpace(ipAddress) ? "unknown" : ipAddress.Trim();
+        return $"auth:login-failures:{ComputeSha256($"{client}|{normalizedEmail}")}";
+    }
+
+    private async Task RevokeSessionsAfterRefreshReuseAsync(
+        RefreshToken reusedToken,
+        DateTime now,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var usuario = reusedToken.Usuario ?? await _dbContext.Usuarios
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == reusedToken.UsuarioId, cancellationToken);
+        if (usuario is null)
+        {
+            return;
+        }
+
+        UserSessionState.RotateSecurityStamp(usuario);
+        var activeRefreshTokens = await _dbContext.RefreshTokens
+            .IgnoreQueryFilters()
+            .Where(rt => rt.UsuarioId == usuario.Id && rt.RevocadoEn == null && rt.ExpiraEn > now)
+            .ToListAsync(cancellationToken);
+
+        foreach (var activeRefreshToken in activeRefreshTokens)
+        {
+            activeRefreshToken.RevocadoEn = now;
+        }
+
+        await _auditService.LogAsync(
+            usuario.Id,
+            AuditActions.RefreshTokenReuseDetected,
+            "USUARIOS",
+            usuario.Id,
+            ipAddress,
+            JsonSerializer.Serialize(new
+            {
+                refresh_token_id = reusedToken.Id,
+                refresh_tokens_revocados = activeRefreshTokens.Count
+            }),
+            cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static string GenerateRefreshToken()
