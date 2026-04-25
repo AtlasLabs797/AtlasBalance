@@ -8,6 +8,57 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-04-25 - Publicacion GitHub V-01.03
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Publicacion del contenido versionable de `V-01.03` en GitHub, excluyendo `Otros/`, `Skills/` y paquetes generados de `Atlas Balance/Atlas Balance Release`.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- Validada la rama local `V-01.03` contra la version actual.
+- Confirmado remoto oficial `https://github.com/AtlasLabs797/AtlasBalance.git`.
+- Staged del contenido versionable del proyecto sin incluir directorios excluidos.
+- Commit principal creado: `1155bac` (`Publica V-01.03`).
+- Push realizado a `origin/V-01.03`.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre `CLAUDE.md`, `Documentacion/Versiones/version_actual.md` y `Documentacion/Versiones/v-01.03.md`.
+- `git status --short --branch`
+- `git remote -v`
+- `gh --version`
+- `gh auth status`
+- `git ls-remote --heads origin V-01.03`
+- `git diff --check`
+- `dotnet test ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-restore`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `npm.cmd audit --audit-level=low`
+- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`
+- `git add -A -- .`
+- `git config user.name "Codex"`
+- `git config user.email "codex@atlasbalance.local"`
+- `git commit -m "Publica V-01.03"`
+- `git push -u origin V-01.03`
+
+**Resultado de verificacion:**
+- `git diff --check`: OK.
+- Tests backend Release: 94/94 OK.
+- Frontend lint: OK.
+- Frontend build: OK.
+- `npm audit`: 0 vulnerabilidades.
+- NuGet vulnerable: sin paquetes vulnerables.
+- `Otros/`, `Skills/` y paquetes de release quedaron fuera del commit.
+- Rama remota creada correctamente: `origin/V-01.03`.
+- `gh` esta instalado, pero no autenticado; no se creo PR desde esta sesion.
+
+**Pendientes:**
+- Crear PR si se quiere revisar/mergear desde GitHub.
+- Publicar el ZIP `AtlasBalance-V-01.03-win-x64.zip` como asset de GitHub Release, no como archivo versionado.
+
 ## 2026-04-25 - Generacion release Windows x64 V-01.03
 
 **Version:** V-01.03
