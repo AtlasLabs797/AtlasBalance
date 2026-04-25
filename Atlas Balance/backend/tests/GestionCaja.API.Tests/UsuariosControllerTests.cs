@@ -45,7 +45,7 @@ public class UsuariosControllerTests
             }
         };
 
-        var credentialValue = string.Concat("QaUser", "1234!");
+        var credentialValue = string.Concat("QaUser", "123456!");
         var request = new CreateUsuarioRequest
         {
             Email = "controller.test@atlasbalance.local",
@@ -88,5 +88,77 @@ public class UsuariosControllerTests
 
         var auditRows = await db.Auditorias.Where(x => x.EntidadId == created.Id && x.TipoAccion == AuditActions.CreateUsuario).ToListAsync();
         auditRows.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Actualizar_Should_Revoke_Sessions_When_Admin_Resets_Password()
+    {
+        await using var db = BuildDbContext();
+        var audit = new AuditService(db);
+        var controller = new UsuariosController(db, audit);
+        var adminId = Guid.NewGuid();
+        controller.ControllerContext = BuildControllerContext(adminId);
+
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "reset.target@atlasbalance.local",
+            NombreCompleto = "Reset Target",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!", workFactor: 12),
+            Rol = RolUsuario.EMPLEADO,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        db.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = user.Id,
+            TokenHash = "token-hash",
+            ExpiraEn = DateTime.UtcNow.AddDays(1),
+            CreadoEn = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var originalStamp = user.SecurityStamp;
+
+        var request = new UpdateUsuarioRequest
+        {
+            Email = user.Email,
+            NombreCompleto = user.NombreCompleto,
+            Rol = user.Rol,
+            Activo = true,
+            PrimerLogin = false,
+            PasswordNueva = "ResetPass12345!",
+            Emails = new[] { user.Email },
+            Permisos = Array.Empty<SavePermisoUsuarioRequest>()
+        };
+
+        var result = await controller.Actualizar(user.Id, request, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        persisted.SecurityStamp.Should().NotBe(originalStamp);
+        persisted.PasswordChangedAt.Should().NotBeNull();
+        BCrypt.Net.BCrypt.Verify("ResetPass12345!", persisted.PasswordHash).Should().BeTrue();
+        (await db.RefreshTokens.SingleAsync(x => x.UsuarioId == user.Id)).RevocadoEn.Should().NotBeNull();
+        (await db.Auditorias.AnyAsync(x => x.EntidadId == user.Id && x.TipoAccion == AuditActions.PasswordReset)).Should().BeTrue();
+    }
+
+    private static ControllerContext BuildControllerContext(Guid adminId)
+    {
+        var identity = new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, adminId.ToString()),
+            new Claim(ClaimTypes.Role, "ADMIN")
+        }, "TestAuth");
+
+        return new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(identity)
+            }
+        };
     }
 }

@@ -85,6 +85,34 @@ public sealed class ActualizacionServiceTests
     }
 
     [Fact]
+    public async Task CheckVersionDisponible_Should_Not_Request_Unsafe_Configured_Url()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = "http://localhost/internal"
+        });
+        await db.SaveChangesAsync();
+
+        Uri? requestedUri = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requestedUri = request.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"tag_name":"v99.0.0","name":"Release 99"}""")
+            };
+        });
+        var service = BuildService(db, handler);
+
+        var result = await service.CheckVersionDisponibleAsync(CancellationToken.None);
+
+        requestedUri.Should().Be(new Uri("https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest"));
+        result.VersionDisponible.Should().Be("v99.0.0");
+    }
+
+    [Fact]
     public async Task CheckVersionDisponible_Should_Send_GitHub_Token_When_Configured()
     {
         await using var db = BuildDbContext();

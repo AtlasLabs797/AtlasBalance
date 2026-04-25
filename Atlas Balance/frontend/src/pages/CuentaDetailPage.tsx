@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { AxiosError } from 'axios';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
@@ -63,6 +64,7 @@ export default function CuentaDetailPage() {
   const [notesStatus, setNotesStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forbidden, setForbidden] = useState(false);
 
   const allowedDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
   const canImport = Boolean(cuentaId) && summary ? canImportInCuenta(cuentaId, summary.titular_id) : false;
@@ -93,6 +95,7 @@ export default function CuentaDetailPage() {
 
     setLoading(true);
     setError(null);
+    setForbidden(false);
 
     try {
       const [summaryRes, rowsRes] = await Promise.all([
@@ -105,6 +108,13 @@ export default function CuentaDetailPage() {
       setSummary(summaryRes.data);
       setRows(rowsRes.data.data ?? []);
     } catch (err) {
+      if (err instanceof AxiosError && err.response?.status === 403) {
+        setForbidden(true);
+        setSummary(null);
+        setRows([]);
+        return;
+      }
+
       setError(extractErrorMessage(err, 'No se pudo cargar la cuenta'));
     } finally {
       setLoading(false);
@@ -292,6 +302,10 @@ export default function CuentaDetailPage() {
   }
 
   if (!id) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (forbidden) {
     return <Navigate to="/dashboard" replace />;
   }
 

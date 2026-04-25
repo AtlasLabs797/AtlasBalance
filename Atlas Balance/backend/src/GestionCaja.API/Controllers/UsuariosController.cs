@@ -384,9 +384,9 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = "Email, nombre y password son obligatorios" });
         }
 
-        if (request.Password.Length < 8)
+        if (!SecurityPolicy.TryValidatePassword(request.Password, out var passwordError))
         {
-            return BadRequest(new { error = "Password mínimo 8 caracteres" });
+            return BadRequest(new { error = passwordError });
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
@@ -411,7 +411,9 @@ public sealed class UsuariosController : ControllerBase
             Rol = request.Rol,
             Activo = request.Activo,
             PrimerLogin = request.PrimerLogin,
-            FechaCreacion = DateTime.UtcNow
+            FechaCreacion = DateTime.UtcNow,
+            SecurityStamp = UserSessionState.CreateSecurityStamp(),
+            PasswordChangedAt = DateTime.UtcNow
         };
 
         _dbContext.Usuarios.Add(usuario);
@@ -491,19 +493,33 @@ public sealed class UsuariosController : ControllerBase
             permisos = await LoadPermisosAuditSnapshotAsync(id, cancellationToken)
         };
 
+        var shouldRevokeForDeactivation = usuario.Activo && !request.Activo;
+
         usuario.Email = normalizedEmail;
         usuario.NombreCompleto = request.NombreCompleto.Trim();
         usuario.Rol = request.Rol;
         usuario.Activo = request.Activo;
         usuario.PrimerLogin = request.PrimerLogin;
 
+        var passwordChanged = false;
+        var revokedRefreshTokens = 0;
         if (!string.IsNullOrWhiteSpace(request.PasswordNueva))
         {
-            if (request.PasswordNueva.Length < 8)
+            if (!SecurityPolicy.TryValidatePassword(request.PasswordNueva, out var resetPasswordError))
             {
-                return BadRequest(new { error = "La nueva contraseña debe tener al menos 8 caracteres" });
+                return BadRequest(new { error = resetPasswordError });
             }
+            var now = DateTime.UtcNow;
             usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.PasswordNueva, workFactor: 12);
+            UserSessionState.RotateAfterPasswordChange(usuario, now);
+            revokedRefreshTokens = await RevokeActiveRefreshTokensAsync(usuario.Id, now, cancellationToken);
+            passwordChanged = true;
+        }
+        else if (shouldRevokeForDeactivation)
+        {
+            var now = DateTime.UtcNow;
+            UserSessionState.RotateSecurityStamp(usuario);
+            revokedRefreshTokens = await RevokeActiveRefreshTokensAsync(usuario.Id, now, cancellationToken);
         }
 
         var normalizedEmails = NormalizeEmails(request.Emails);
@@ -524,6 +540,18 @@ public sealed class UsuariosController : ControllerBase
 
         await _auditService.LogAsync(GetCurrentUserId(), AuditActions.UpdateUsuario, "USUARIOS", usuario.Id, HttpContext,
             JsonSerializer.Serialize(new { before, after }), cancellationToken);
+
+        if (passwordChanged)
+        {
+            await _auditService.LogAsync(
+                GetCurrentUserId(),
+                AuditActions.PasswordReset,
+                "USUARIOS",
+                usuario.Id,
+                HttpContext,
+                JsonSerializer.Serialize(new { password_reset = true, refresh_tokens_revocados = revokedRefreshTokens }),
+                cancellationToken);
+        }
 
         if (JsonSerializer.Serialize(before.permisos) != JsonSerializer.Serialize(after.permisos))
         {
@@ -562,9 +590,12 @@ public sealed class UsuariosController : ControllerBase
             usuario.DeletedById
         };
 
+        var deletedAt = DateTime.UtcNow;
         usuario.Activo = false;
-        usuario.DeletedAt = DateTime.UtcNow;
+        usuario.DeletedAt = deletedAt;
         usuario.DeletedById = actorId;
+        UserSessionState.RotateSecurityStamp(usuario);
+        var revokedRefreshTokens = await RevokeActiveRefreshTokensAsync(usuario.Id, deletedAt, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var after = new
@@ -575,7 +606,7 @@ public sealed class UsuariosController : ControllerBase
         };
 
         await _auditService.LogAsync(actorId, AuditActions.DeleteUsuario, "USUARIOS", usuario.Id, HttpContext,
-            JsonSerializer.Serialize(new { before, after }), cancellationToken);
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }), cancellationToken);
 
         return Ok(new { message = "Usuario eliminado" });
     }
@@ -599,6 +630,7 @@ public sealed class UsuariosController : ControllerBase
         usuario.DeletedAt = null;
         usuario.DeletedById = null;
         usuario.Activo = true;
+        UserSessionState.RotateSecurityStamp(usuario);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -684,6 +716,20 @@ public sealed class UsuariosController : ControllerBase
 
         nextPrimary.EsPrincipal = true;
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<int> RevokeActiveRefreshTokensAsync(Guid usuarioId, DateTime revokedAt, CancellationToken cancellationToken)
+    {
+        var activeRefreshTokens = await _dbContext.RefreshTokens
+            .Where(rt => rt.UsuarioId == usuarioId && rt.RevocadoEn == null && rt.ExpiraEn > revokedAt)
+            .ToListAsync(cancellationToken);
+
+        foreach (var refreshToken in activeRefreshTokens)
+        {
+            refreshToken.RevocadoEn = revokedAt;
+        }
+
+        return activeRefreshTokens.Count;
     }
 
     private async Task<List<PermisoUsuarioResponse>> LoadPermisosAsync(Guid usuarioId, CancellationToken cancellationToken)

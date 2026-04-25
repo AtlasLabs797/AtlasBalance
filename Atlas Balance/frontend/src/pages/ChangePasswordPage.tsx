@@ -56,7 +56,7 @@ export default function ChangePasswordPage() {
 
         <div className="auth-form-group">
           <label htmlFor="passwordNueva" className="auth-label">Nueva contraseña</label>
-          <input id="passwordNueva" type="password" autoComplete="new-password" className="auth-input" {...register('passwordNueva', { required: 'Requerido', minLength: { value: 8, message: 'Mínimo 8 caracteres' } })} />
+          <input id="passwordNueva" type="password" autoComplete="new-password" className="auth-input" {...register('passwordNueva', { required: 'Requerido', minLength: { value: 12, message: 'Mínimo 12 caracteres' } })} />
           {errors.passwordNueva && <p className="auth-error">{errors.passwordNueva.message}</p>}
         </div>
 

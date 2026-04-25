@@ -1,4 +1,7 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using GestionCaja.API.Constants;
 using GestionCaja.API.Data;
 using GestionCaja.API.Models;
 using Microsoft.EntityFrameworkCore;
@@ -57,6 +60,12 @@ public sealed class UserStateMiddleware
             return;
         }
 
+        if (!HasValidSecurityStamp(context.User, usuario))
+        {
+            await RejectAsync(context, "La sesion ya no es valida");
+            return;
+        }
+
         context.Items[HttpContextItemKeys.CurrentUsuario] = usuario;
         context.User = BuildPrincipal(usuario, context.User.Identity?.AuthenticationType);
 
@@ -86,10 +95,25 @@ public sealed class UserStateMiddleware
             new Claim(ClaimTypes.NameIdentifier, usuario.Id.ToString()),
             new Claim(ClaimTypes.Email, usuario.Email),
             new Claim(ClaimTypes.Name, usuario.NombreCompleto),
-            new Claim(ClaimTypes.Role, usuario.Rol.ToString())
+            new Claim(ClaimTypes.Role, usuario.Rol.ToString()),
+            new Claim(AuthClaimNames.SecurityStamp, usuario.SecurityStamp)
         }, authenticationType ?? "JwtCookie");
 
         return new ClaimsPrincipal(identity);
+    }
+
+    private static bool HasValidSecurityStamp(ClaimsPrincipal principal, Usuario usuario)
+    {
+        var tokenStamp = principal.FindFirstValue(AuthClaimNames.SecurityStamp);
+        if (string.IsNullOrWhiteSpace(tokenStamp) || string.IsNullOrWhiteSpace(usuario.SecurityStamp))
+        {
+            return false;
+        }
+
+        var tokenBytes = Encoding.UTF8.GetBytes(tokenStamp);
+        var userBytes = Encoding.UTF8.GetBytes(usuario.SecurityStamp);
+        return tokenBytes.Length == userBytes.Length &&
+               CryptographicOperations.FixedTimeEquals(tokenBytes, userBytes);
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, out Guid userId)

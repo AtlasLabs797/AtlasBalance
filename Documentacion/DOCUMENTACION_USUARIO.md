@@ -38,11 +38,14 @@ https://github.com/AtlasLabs797/AtlasBalance/releases
 - No guardes contrasenas en documentos.
 - No pegues tokens ni credenciales en tickets, logs o notas.
 - Las credenciales iniciales de instalacion deben tratarse como temporales y cambiarse en el primer acceso.
+- El instalador intenta borrar `INSTALL_CREDENTIALS_ONCE.txt` automaticamente a las 24 horas. Si sigue ahi despues, borrarlo no es opcional.
 - Los archivos `appsettings.Development.json`, `appsettings.Production.json` y `.env` son locales del servidor o del entorno de desarrollo. No van a Git.
 - Para desarrollo local, copia las plantillas `appsettings.*.json.template`, rellena secretos propios y define `ATLAS_BALANCE_POSTGRES_PASSWORD` en un `.env` local.
-- Si la aplicacion arranca por primera vez con una base vacia, `SeedAdmin:Password` debe estar configurado; ya no existe una password admin por defecto. Bien. Eso era una mala idea.
+- Si la aplicacion arranca por primera vez con una base vacia, `SeedAdmin:Password` debe estar configurado y tener al menos 12 caracteres; ya no existe una password admin por defecto. Bien. Eso era una mala idea.
 - Las claves SMTP y de Exchange Rate API guardadas desde Configuracion se protegen automaticamente; las existentes en claro se migran al siguiente arranque.
 - No borres, muevas ni copies a otra maquina `%ProgramData%/AtlasBalance/keys` en produccion sin plan de rotacion: ahi vive el keyring protegido que permite leer secretos cifrados.
 - Las descargas de exportaciones solo sirven `.xlsx` generados dentro de la ruta `export_path`.
+- `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
+- La URL de actualizaciones debe apuntar por HTTPS al repositorio oficial de Atlas Balance en GitHub.
 - Los scripts manuales de backup/restauracion piden la password en consola segura y no deben ejecutarse con passwords pegadas en comandos o documentos.
 - En produccion, `AllowedHosts` debe contener el hostname real. `*` ya no arranca; comodo, pero inseguro.

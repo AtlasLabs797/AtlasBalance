@@ -588,9 +588,7 @@ public sealed class ExtractosController : ControllerBase
         if (actor.IsAdmin) return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
         var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
         if (!perms.Any()) return [];
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null &&
-                           (p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas ||
-                            p.PuedeImportar || p.PuedeVerDashboard)))
+        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsDataAccess(p)))
         {
             return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
         }
@@ -616,9 +614,7 @@ public sealed class ExtractosController : ControllerBase
             return false;
         }
 
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null &&
-                           (p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas ||
-                            p.PuedeImportar || p.PuedeVerDashboard)))
+        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsDataAccess(p)))
         {
             return true;
         }
@@ -637,6 +633,9 @@ public sealed class ExtractosController : ControllerBase
         return permittedCuentaIds.Count > 0 &&
                await _db.Cuentas.AnyAsync(c => c.TitularId == titularId && permittedCuentaIds.Contains(c.Id), ct);
     }
+
+    private static bool GrantsDataAccess(PermisoUsuario permiso) =>
+        permiso.PuedeAgregarLineas || permiso.PuedeEditarLineas || permiso.PuedeEliminarLineas || permiso.PuedeImportar;
 
     private async Task<Perm> GetPermission(Actor actor, Cuenta cuenta, CancellationToken ct)
     {

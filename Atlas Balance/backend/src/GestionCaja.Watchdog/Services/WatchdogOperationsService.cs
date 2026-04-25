@@ -39,8 +39,22 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
-        var fullBackupPath = Path.GetFullPath(backupPath);
-        if (!File.Exists(fullBackupPath) || !IsAllowedBackupPath(fullBackupPath))
+        if (!IsAllowedBackupPath(backupPath))
+        {
+            return false;
+        }
+
+        string fullBackupPath;
+        try
+        {
+            fullBackupPath = Path.GetFullPath(backupPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        if (!File.Exists(fullBackupPath))
         {
             return false;
         }
@@ -335,6 +349,11 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
+        if (!IsExplicitlyRooted(path) || !IsExplicitlyRooted(root))
+        {
+            return false;
+        }
+
         try
         {
             var fullPath = EnsureTrailingSeparator(Path.GetFullPath(path));
@@ -350,6 +369,11 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     private static bool PathsEqual(string left, string right)
     {
         if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        if (!IsExplicitlyRooted(left) || !IsExplicitlyRooted(right))
         {
             return false;
         }
@@ -394,15 +418,41 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
     private bool IsAllowedBackupPath(string backupPath)
     {
+        if (!IsExplicitlyRooted(backupPath))
+        {
+            return false;
+        }
+
         if (!string.Equals(Path.GetExtension(backupPath), ".dump", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         var backupRoot = _configuration["WatchdogSettings:BackupPath"] ?? @"C:\AtlasBalance\backups";
-        var fullRoot = EnsureTrailingSeparator(Path.GetFullPath(backupRoot));
-        var fullBackupPath = Path.GetFullPath(backupPath);
-        return fullBackupPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+        if (!IsExplicitlyRooted(backupRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullRoot = EnsureTrailingSeparator(Path.GetFullPath(backupRoot));
+            var fullBackupPath = Path.GetFullPath(backupPath);
+            return fullBackupPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsExplicitlyRooted(string path)
+    {
+        return Path.IsPathRooted(path) ||
+               (path.Length >= 3 &&
+                char.IsLetter(path[0]) &&
+                path[1] == ':' &&
+                (path[2] == '\\' || path[2] == '/'));
     }
 
     private static async Task<(bool Success, string? ErrorMessage)> RunProcessAsync(

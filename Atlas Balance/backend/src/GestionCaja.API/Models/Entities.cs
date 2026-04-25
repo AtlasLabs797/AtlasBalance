@@ -17,6 +17,8 @@ public class Usuario : ISoftDelete
     public bool PrimerLogin { get; set; } = true;
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
     public DateTime? FechaUltimaLogin { get; set; }
+    public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
+    public DateTime? PasswordChangedAt { get; set; }
     public int FailedLoginAttempts { get; set; }
     public DateTime? LockedUntil { get; set; }
     public DateTime? DeletedAt { get; set; }

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-01.02",
+    [string]$Version = "V-01.03",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall

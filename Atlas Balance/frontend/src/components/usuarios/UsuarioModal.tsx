@@ -300,8 +300,13 @@ export default function UsuarioModal({
       return;
     }
 
-    if (!editingId && form.password.length < 8) {
-      setError('Password mínimo 8 caracteres para crear usuario');
+    if (!editingId && form.password.length < 12) {
+      setError('Password mínimo 12 caracteres para crear usuario');
+      return;
+    }
+
+    if (editingId && form.password.length > 0 && form.password.length < 12) {
+      setError('Password mínimo 12 caracteres para cambiarlo');
       return;
     }
 
@@ -427,7 +432,7 @@ export default function UsuarioModal({
                   <span>{editingId ? 'Nueva contraseña (opcional)' : 'Contraseña inicial'}</span>
                   <input
                     type="password"
-                    placeholder={editingId ? 'Solo si la quieres cambiar' : 'Mínimo 8 caracteres'}
+                    placeholder={editingId ? 'Solo si la quieres cambiar' : 'Mínimo 12 caracteres'}
                     value={form.password}
                     onChange={(event) =>
                       setForm((prev) => ({ ...prev, password: event.target.value }))

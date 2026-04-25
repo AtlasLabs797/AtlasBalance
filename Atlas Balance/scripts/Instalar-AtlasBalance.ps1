@@ -22,7 +22,7 @@
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-01.02"
+$AppVersion = "V-01.03"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
@@ -532,6 +532,34 @@ function New-AtlasShortcut {
     $shortcut.Save()
 }
 
+function Register-CredentialsCleanupTask {
+    param([string]$CredentialsPath)
+
+    if ([string]::IsNullOrWhiteSpace($CredentialsPath) -or -not [IO.Path]::IsPathRooted($CredentialsPath)) {
+        return
+    }
+
+    $taskName = "AtlasBalance.DeleteInstallCredentialsOnce"
+    $escapedPath = $CredentialsPath.Replace("'", "''")
+    $escapedTaskName = $taskName.Replace("'", "''")
+    $command = "Remove-Item -LiteralPath '$escapedPath' -Force -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName '$escapedTaskName' -Confirm:`$false -ErrorAction SilentlyContinue"
+
+    try {
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -Command `"$command`""
+        $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddHours(24)
+        Register-ScheduledTask `
+            -TaskName $taskName `
+            -Action $action `
+            -Trigger $trigger `
+            -Description "Borra el archivo temporal de credenciales iniciales de Atlas Balance." `
+            -RunLevel Highest `
+            -User "SYSTEM" `
+            -Force | Out-Null
+    } catch {
+        Write-Host "No se pudo programar el borrado automatico de credenciales: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 function Write-RuntimeAndCredentials {
     param([string]$AppUrl)
 
@@ -562,6 +590,7 @@ function Write-RuntimeAndCredentials {
         "PostgreSQL gestionado por Atlas: $ManagedPostgres",
         "",
         "Guarda esto en un gestor de passwords y borra este archivo.",
+        "Si nadie lo borra antes, el instalador intentara eliminarlo automaticamente en 24 horas.",
         "Si dejas este archivo tirado en el servidor, la instalacion no esta segura."
     )
     if ($ManagedPostgres) {
@@ -575,6 +604,7 @@ function Write-RuntimeAndCredentials {
     }
     Set-Content -LiteralPath $credentialsPath -Value $lines -Encoding UTF8
     & icacls.exe $credentialsPath /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
+    Register-CredentialsCleanupTask -CredentialsPath $credentialsPath
 }
 
 if (-not (Test-IsAdmin)) {

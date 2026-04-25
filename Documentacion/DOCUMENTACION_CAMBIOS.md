@@ -8,6 +8,213 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-04-25 - Publicacion GitHub V-01.03
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Publicacion del contenido versionable de `V-01.03` en GitHub, excluyendo `Otros/`, `Skills/` y paquetes generados de `Atlas Balance/Atlas Balance Release`.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- Validada la rama local `V-01.03` contra la version actual.
+- Confirmado remoto oficial `https://github.com/AtlasLabs797/AtlasBalance.git`.
+- Staged del contenido versionable del proyecto sin incluir directorios excluidos.
+- Commit principal creado: `1155bac` (`Publica V-01.03`).
+- Push realizado a `origin/V-01.03`.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre `CLAUDE.md`, `Documentacion/Versiones/version_actual.md` y `Documentacion/Versiones/v-01.03.md`.
+- `git status --short --branch`
+- `git remote -v`
+- `gh --version`
+- `gh auth status`
+- `git ls-remote --heads origin V-01.03`
+- `git diff --check`
+- `dotnet test ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-restore`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `npm.cmd audit --audit-level=low`
+- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`
+- `git add -A -- .`
+- `git config user.name "Codex"`
+- `git config user.email "codex@atlasbalance.local"`
+- `git commit -m "Publica V-01.03"`
+- `git push -u origin V-01.03`
+
+**Resultado de verificacion:**
+- `git diff --check`: OK.
+- Tests backend Release: 94/94 OK.
+- Frontend lint: OK.
+- Frontend build: OK.
+- `npm audit`: 0 vulnerabilidades.
+- NuGet vulnerable: sin paquetes vulnerables.
+- `Otros/`, `Skills/` y paquetes de release quedaron fuera del commit.
+- Rama remota creada correctamente: `origin/V-01.03`.
+- `gh` esta instalado, pero no autenticado; no se creo PR desde esta sesion.
+
+**Pendientes:**
+- Crear PR si se quiere revisar/mergear desde GitHub.
+- Publicar el ZIP `AtlasBalance-V-01.03-win-x64.zip` como asset de GitHub Release, no como archivo versionado.
+
+## 2026-04-25 - Generacion release Windows x64 V-01.03
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Generacion del paquete instalable Windows x64 de la version actual, equivalente al release previo pero con runtime, frontend, API, Watchdog, scripts y manifiesto alineados a `V-01.03`.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.03-win-x64`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.03-win-x64.zip`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- Ejecutado `scripts/Build-Release.ps1 -Version V-01.03`.
+- Recompilado frontend React/Vite y sincronizado en `GestionCaja.API/wwwroot`.
+- Publicada API ASP.NET Core y Watchdog como self-contained `win-x64`.
+- Copiados scripts operativos `install/update/uninstall/start`, wrappers historicos, `VERSION`, `README.md`, `.gitignore`, `documentacion.md` y `version.json`.
+- Generados carpeta y ZIP finales `AtlasBalance-V-01.03-win-x64`.
+
+**Comandos ejecutados:**
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.03`
+- `Get-ChildItem` sobre `Atlas Balance/Atlas Balance Release`.
+- `Get-Content` sobre `version.json` y `VERSION` empaquetados.
+- Barrido de `api` empaquetada para detectar `*Development*`, `*.template` o `.env`.
+
+**Resultado de verificacion:**
+- `npm.cmd run build`: OK dentro del build de release.
+- `dotnet publish` API `win-x64`: OK.
+- `dotnet publish` Watchdog `win-x64`: OK.
+- `version.json` empaquetado apunta a `V-01.03`.
+- `VERSION` empaquetado contiene `V-01.03`.
+- No se detectaron `appsettings.Development`, plantillas ni `.env` dentro de `api`.
+
+**Pendientes:**
+- Ninguno. Si se publica en GitHub, este ZIP debe ir como asset de GitHub Release, no como archivo versionado.
+
+## 2026-04-25 - Auditoria profunda de seguridad y hardening
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Analisis de seguridad sobre backend, frontend, configuracion, scripts, dependencias y Watchdog; remediacion directa de hallazgos de sesion, SSRF, path traversal, rate limiting y dependencias.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Constants/AuthClaimNames.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Constants/SecurityPolicy.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Constants/AuditActions.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260425081244_UserSessionHardening.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Middleware/UserStateMiddleware.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/UserSessionState.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/ConfigurationDefaults.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/BackupService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ExportacionService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExportacionesController.cs`
+- `Atlas Balance/backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
+- `Atlas Balance/frontend/src/pages/ChangePasswordPage.tsx`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- Tests backend asociados y documentacion V-01.03.
+
+**Cambios implementados:**
+- `postcss` actualizado de `8.5.9` a `8.5.10` para cerrar vulnerabilidad moderada reportada por `npm audit`.
+- `SecurityStamp`/`PasswordChangedAt` en usuarios; los access tokens se invalidan si el stamp ya no coincide.
+- Reset/cambio/delete de usuario y reuse de refresh token revocan refresh tokens activos.
+- Login limita intentos por cliente/email y evita revelar bloqueo de cuenta.
+- Integracion OpenClaw limita bearer invalido antes de consultar tokens activos.
+- `app_update_check_url` solo acepta HTTPS del repositorio oficial de Atlas Balance en GitHub.
+- Rutas de backup/export/Watchdog se validan como absolutas antes de normalizar.
+- Password minimo sube a 12 caracteres con bloqueo de passwords comunes; frontend actualizado.
+- `INSTALL_CREDENTIALS_ONCE.txt` queda con borrado automatico a 24 horas.
+- Informe `Documentacion/SEGURIDAD_AUDITORIA_V-01.03.md` actualizado.
+
+**Comandos ejecutados:**
+- `npm.cmd update postcss`
+- `npm.cmd audit --audit-level=moderate`
+- `dotnet list '.\Atlas Balance\backend\GestionCaja.sln' package --vulnerable --include-transitive`
+- `dotnet ef migrations add UserSessionHardening`
+- `dotnet test "GestionCaja.sln" --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~UserStateMiddlewareTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~UsuariosControllerTests|FullyQualifiedName~SeedDataTests|FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~ActualizacionServiceTests"`
+- `dotnet test "GestionCaja.sln"`
+- `dotnet build "GestionCaja.sln" -c Release --no-restore`
+- `dotnet test "GestionCaja.sln" -c Release --no-build`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Parser PowerShell sobre `Instalar-AtlasBalance.ps1`.
+
+**Resultado de verificacion:**
+- Backend Release build: OK, 0 warnings, 0 errores.
+- Suite backend completa: 94/94 OK.
+- Frontend lint/build: OK.
+- `npm audit`: 0 vulnerabilidades.
+- NuGet vulnerable: sin paquetes vulnerables.
+- Parser PowerShell instalador: OK.
+
+**Pendientes:**
+- Ninguno de los hallazgos corregidos queda abierto. El estado Git local sigue sucio por trabajo previo y no se ha limpiado porque no corresponde a esta tarea.
+
+## 2026-04-20 - Apertura version V-01.03
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Apertura de la nueva linea de trabajo posterior a la publicacion de `V-01.02`, con rama propia y fuentes de version alineadas.
+
+**Archivos tocados:**
+- `CLAUDE.md`
+- `Atlas Balance/AGENTS.md`
+- `Atlas Balance/CLAUDE.md`
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/README_RELEASE.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-01.02.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- Creada rama local `V-01.03` desde `V-01.02`.
+- Marcada `V-01.03` como version actual del proyecto.
+- Cerrada `V-01.02` como version publicada/base anterior.
+- Actualizadas fuentes runtime backend/frontend a `1.3.0` y `V-01.03`.
+- Actualizados scripts y documentacion viva para generar paquetes `AtlasBalance-V-01.03-win-x64`.
+
+**Comandos ejecutados:**
+- `git status --short --branch`
+- `Get-Content` sobre `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.02.md` y fuentes runtime.
+- `git branch --list V-01.03`
+- `git switch -c V-01.03`
+- `Select-String` para localizar referencias vivas a `V-01.02` y `1.2.0`.
+- `git diff --check`
+- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`
+- `npm.cmd run build`
+
+**Resultado de verificacion:**
+- `git diff --check`: OK; solo avisos esperados de normalizacion LF/CRLF.
+- Backend build Release: OK, 0 warnings, 0 errores.
+- Frontend build: OK con `atlas-balance-frontend@1.3.0`.
+
+**Pendientes:**
+- Ninguno.
+
 ## 2026-04-20 - Publicacion GitHub V-01.02
 
 **Version:** V-01.02
@@ -6763,3 +6970,144 @@ Regla de trabajo desde ahora:
 - Volver a correr `dotnet test` y `dotnet build -c Release` tras los cambios en middleware, backup/export y controladores de integracion antes del proximo paquete de release.
 - Regenerar cualquier paquete existente en `Atlas Balance/Atlas Balance Release/` si se publico con los csproj antiguos, porque podia contener `appsettings.Development.json` dentro del zip.
 - Rotar los secretos de desarrollo (`JwtSettings:SecretKey`, `WatchdogSettings:SharedSecret`, `SeedAdmin:Password`, `ConnectionStrings:DefaultConnection`) si alguna vez salieron de esta maquina, ya que hasta este cambio viajaban empaquetados al publicar.
+
+## 2026-04-23 - Fix de autorizacion en extractos (dashboard-only global)
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Correccion de una brecha de autorizacion en `ExtractosController` que permitia alcance global de extractos a usuarios con permiso global solo de dashboard.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- `GetAllowedAccountIds` ya no trata `PuedeVerDashboard` global como acceso global de datos.
+- `CanViewTitular` aplica la misma regla y solo concede alcance global por permisos de datos (`agregar`, `editar`, `eliminar`, `importar`).
+- Se agrego test de regresion `Listar_Should_Return_Empty_For_DashboardOnly_GlobalPermission` para bloquear la exposicion cross-account en `/api/extractos`.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.03.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y archivos de codigo.
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~GestionCaja.API.Tests.ExtractosControllerTests|FullyQualifiedName~GestionCaja.API.Tests.UserAccessServiceTests"`
+
+**Resultado de verificacion:**
+- Suite focalizada de autorizacion: 8/8 tests OK, 0 fallos.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-04-24 - Revalidacion de la vulnerabilidad de extractos (dashboard-only global)
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Verificacion puntual de la vulnerabilidad reportada en `GET /api/extractos` para confirmar si seguia abierta en el arbol actual. No hizo falta tocar codigo backend: la correccion ya estaba presente y cubierta por tests.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Cambios implementados:**
+- Confirmado en codigo que `ExtractosController.GetAllowedAccountIds` y `CanViewTitular` ya usan `GrantsDataAccess(...)` y no elevan `PuedeVerDashboard` a acceso global de datos.
+- Confirmado que `UserAccessService` mantiene el mismo criterio y no hay desalineacion activa entre el servicio compartido y `ExtractosController`.
+- Reejecutada la suite focalizada de autorizacion para cubrir el caso dashboard-only global.
+- Detectado bug colateral de UX/permisos en frontend: `usePermisosStore.canViewCuenta` sigue tratando cualquier permiso coincidente, incluido dashboard-only, como acceso de cuenta y puede mostrar enlaces a detalle de cuenta que el backend ya no permite abrir.
+
+**Comandos ejecutados:**
+- `Get-Content -Raw CLAUDE.md`
+- `Get-Content -Raw Documentacion/Versiones/version_actual.md`
+- `Get-Content -Raw Documentacion/Versiones/v-01.03.md`
+- `Get-Content -Raw Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Get-Content -Raw "Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs"`
+- `Get-Content -Raw "Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs"`
+- `Get-Content -Raw "Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs"`
+- `Get-Content -Raw "Atlas Balance/backend/tests/GestionCaja.API.Tests/UserAccessServiceTests.cs"`
+- `Select-String -Path "Atlas Balance/backend/src/GestionCaja.API/**/*.cs" -Pattern "PuedeVerDashboard|HasGlobalAccess|GrantsDataAccess|GetAllowedAccountIds|CanViewTitular"`
+- `Select-String -Path "Atlas Balance/frontend/src/**/*.ts*" -Pattern "canViewCuenta|canViewDashboard|dashboard/cuenta|/extractos\\?cuentaId"`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~GestionCaja.API.Tests.ExtractosControllerTests|FullyQualifiedName~GestionCaja.API.Tests.UserAccessServiceTests"`
+
+**Resultado de verificacion:**
+- Vulnerabilidad reportada: cerrada en el codigo actual.
+- Suite focalizada de autorizacion: 8/8 tests OK, 0 fallos.
+- No se detectaron nuevas rutas backend que sigan concediendo acceso global de datos por `PuedeVerDashboard`.
+
+**Pendientes:**
+- Alinear la UX/permisos del frontend para que perfiles dashboard-only no vean enlaces a detalle de cuenta o extractos que el backend va a bloquear.
+
+## 2026-04-24 - Frontend deja de ofrecer detalle de cuenta a perfiles dashboard-only globales
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Correccion de la desalineacion frontend/backend detectada al revalidar la fuga de autorizacion de extractos. El frontend ya no presenta enlaces o botones hacia dashboards de cuenta cuando el usuario solo tiene permiso global de dashboard y no alcance real sobre datos de cuenta.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/stores/permisosStore.ts`
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- `permisosStore` deja de tratar un permiso global `dashboard-only` como acceso valido a cuenta. Los permisos globales solo abren cuenta si conceden acceso global de datos (`agregar`, `editar`, `eliminar`, `importar`), alineado con backend.
+- `getColumnasVisibles` y `getColumnasEditables` dejan de mezclar filas globales `dashboard-only` al calcular reglas de columnas para cuentas.
+- `CuentasPage` ya no pinta enlaces ni botones operativos a `/dashboard/cuenta/:id` cuando el usuario no tiene alcance de cuenta; en su lugar muestra `Sin acceso`.
+- `CuentaDetailPage` redirige a `/dashboard` si alguien intenta entrar por URL directa y el backend responde `403`.
+
+**Decisiones visuales:**
+- Sin rediseño. Solo se sustituyeron affordances falsas por estados deshabilitados claros donde seguia teniendo sentido mostrar la fila.
+
+**Comandos ejecutados:**
+- `git diff -- "Atlas Balance/frontend/src/stores/permisosStore.ts" "Atlas Balance/frontend/src/pages/CuentasPage.tsx" "Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx"`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`: OK (`robocopy` devolvio codigo `1`, que en este caso significa copia correcta con archivos actualizados).
+
+**Pendientes:**
+- Ninguno para este bug.
+
+## 2026-04-25 - Auditoria de seguridad manual inicial
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Analisis manual profundo de seguridad sobre backend, frontend, configuracion, Watchdog, scripts de instalacion y dependencias. Este bloque queda superado por el hardening aplicado el mismo dia.
+
+**Archivos tocados:**
+- `Documentacion/SEGURIDAD_AUDITORIA_V-01.03.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- Creado informe de auditoria V-01.03 con hallazgos, controles correctos y orden recomendado de remediacion.
+- Registrados los riesgos detectados: reset admin sin revocar sesiones, login rate limiting incompleto, throttle ausente para bearer invalido, URL de updates sin allowlist, credenciales one-shot persistidas, politica de password floja y refresh token reuse sin escalado. Quedaron corregidos en el bloque posterior de hardening.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre instrucciones, version actual, log de incidencias, controladores, servicios, middleware, configuracion y scripts.
+- `git check-ignore -v .env backend/src/GestionCaja.API/appsettings.Development.json backend/src/GestionCaja.Watchdog/appsettings.Development.json`
+- `git ls-files .env backend/src/GestionCaja.API/appsettings.Development.json backend/src/GestionCaja.Watchdog/appsettings.Development.json frontend/.env`
+- `npm.cmd audit --audit-level=low`
+- `dotnet list "GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet list "GestionCaja.sln" package --deprecated`
+- `dotnet test "GestionCaja.sln" --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~CsrfServiceTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~ExportacionServiceTests|FullyQualifiedName~IntegrationTokenServiceTests"`
+
+**Resultado de verificacion:**
+- `npm audit`: 0 vulnerabilidades.
+- NuGet vulnerable: sin paquetes vulnerables.
+- NuGet deprecated: `FluentValidation.AspNetCore` y `xunit` marcados legacy; sin vulnerabilidad reportada.
+- Tests focalizados de seguridad/permisos: 22/22 OK.
+- `.env` y appsettings Development: ignorados por Git y no trackeados.
+
+**Pendientes:**
+- Cerrado posteriormente en el bloque `2026-04-25 - Auditoria profunda de seguridad y hardening`.

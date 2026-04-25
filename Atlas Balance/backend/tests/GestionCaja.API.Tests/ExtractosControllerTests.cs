@@ -194,6 +194,77 @@ public sealed class ExtractosControllerTests
     }
 
     [Fact]
+    public async Task Listar_Should_Return_Empty_For_DashboardOnly_GlobalPermission()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularAId = Guid.NewGuid();
+        var titularBId = Guid.NewGuid();
+        var cuentaAId = Guid.NewGuid();
+        var cuentaBId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.dashboard-only@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Dashboard",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.AddRange(
+            new Titular { Id = titularAId, Nombre = "Titular A", Tipo = TipoTitular.EMPRESA },
+            new Titular { Id = titularBId, Nombre = "Titular B", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaAId, TitularId = titularAId, Nombre = "Cuenta A", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaBId, TitularId = titularBId, Nombre = "Cuenta B", Divisa = "USD", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = null,
+            TitularId = null,
+            PuedeAgregarLineas = false,
+            PuedeEditarLineas = false,
+            PuedeEliminarLineas = false,
+            PuedeImportar = false,
+            PuedeVerDashboard = true
+        });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaAId,
+                Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                Concepto = "Cuenta A",
+                Monto = 10m,
+                Saldo = 10m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaBId,
+                Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                Concepto = "Cuenta B",
+                Monto = 20m,
+                Saldo = 20m,
+                FilaNumero = 1
+            });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Listar(ct: CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var page = ok.Value.Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
+        page.Total.Should().Be(0);
+        page.Data.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetCuentasTitular_Should_Forbid_Unauthorized_Titular()
     {
         await using var db = BuildDbContext();

@@ -75,9 +75,39 @@ public sealed class ConfiguracionController : ControllerBase
     [HttpPut]
     public async Task<IActionResult> Update([FromBody] UpdateConfiguracionRequest request, CancellationToken cancellationToken)
     {
+        if (request is null)
+        {
+            return BadRequest(new { error = "Request invalido." });
+        }
+
+        if (request.Smtp is null || request.General is null || request.Dashboard is null)
+        {
+            return BadRequest(new { error = "Configuracion incompleta." });
+        }
+
         if (request.Smtp.Port <= 0 || request.Smtp.Port > 65535)
         {
             return BadRequest(new { error = "Puerto SMTP inválido." });
+        }
+
+        if (!IsValidAppBaseUrl(request.General.AppBaseUrl))
+        {
+            return BadRequest(new { error = "La URL base debe ser absoluta y usar http o https." });
+        }
+
+        if (!ConfigurationDefaults.TryNormalizeUpdateCheckUrl(request.General.AppUpdateCheckUrl, out var updateCheckUrl))
+        {
+            return BadRequest(new { error = "La URL de actualizaciones debe apuntar al repositorio oficial de Atlas Balance en GitHub por HTTPS." });
+        }
+
+        if (!IsSafeAbsoluteDirectory(request.General.BackupPath))
+        {
+            return BadRequest(new { error = "La ruta de backups debe ser absoluta y no contener traversal." });
+        }
+
+        if (!IsSafeAbsoluteDirectory(request.General.ExportPath))
+        {
+            return BadRequest(new { error = "La ruta de exportaciones debe ser absoluta y no contener traversal." });
         }
 
         var userId = GetCurrentUserId();
@@ -95,7 +125,7 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "smtp_from", request.Smtp.From.Trim(), userId, now);
 
         Upsert(config, "app_base_url", request.General.AppBaseUrl.Trim(), userId, now);
-        Upsert(config, "app_update_check_url", request.General.AppUpdateCheckUrl.Trim(), userId, now);
+        Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
         Upsert(config, "backup_path", request.General.BackupPath.Trim(), userId, now);
         Upsert(config, "export_path", request.General.ExportPath.Trim(), userId, now);
         var exchangeApiKey = request.Exchange?.ApiKey;
@@ -203,6 +233,54 @@ public sealed class ConfiguracionController : ControllerBase
     private static int ParseInt(string value, int fallback)
     {
         return int.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
+    private static bool IsValidAppBaseUrl(string? value)
+    {
+        if (!Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+               uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSafeAbsoluteDirectory(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Contains("..", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!Path.IsPathRooted(trimmed) && !LooksLikeWindowsRootedPath(trimmed))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(trimmed);
+            return !string.IsNullOrWhiteSpace(fullPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static bool LooksLikeWindowsRootedPath(string value)
+    {
+        return value.Length >= 3 &&
+               char.IsLetter(value[0]) &&
+               value[1] == ':' &&
+               (value[2] == '\\' || value[2] == '/');
     }
 
     private static Dictionary<string, string> RedactSensitiveConfig(IReadOnlyDictionary<string, string> source)
