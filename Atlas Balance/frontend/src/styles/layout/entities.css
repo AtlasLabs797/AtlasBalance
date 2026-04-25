@@ -1,0 +1,677 @@
+.cuenta-detail-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.account-notes-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.account-notes-textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.account-notes-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cuenta-plazo-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.cuenta-plazo-summary strong {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-2);
+}
+
+.kpi-card {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-lg);
+  background: var(--color-bg-primary);
+  padding: var(--space-3);
+}
+
+.phase2-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.phase2-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.phase2-filters {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.phase2-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+
+.phase2-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.phase2-cards > .import-muted,
+.phase2-cards > .empty-state,
+.phase2-cards > .users-pagination {
+  grid-column: 1 / -1;
+}
+
+.phase2-form-modal {
+  width: min(720px, 94vw);
+}
+
+.phase2-form-modal--wide {
+  width: min(880px, 94vw);
+}
+
+.phase2-modal-form {
+  gap: var(--space-4);
+}
+
+.phase2-modal-form .auth-error {
+  margin: 0;
+}
+
+.phase2-modal-wide-field {
+  grid-column: 1 / -1;
+}
+
+.phase2-modal-actions {
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.titular-card {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-lg);
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.titular-card-title {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.titular-card-title h3 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill {
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--color-border-primary);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+}
+
+.phase2-row-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.titular-open-button {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border: 1px solid transparent;
+  font-weight: var(--font-weight-semibold);
+}
+
+.cuenta-open-button {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border: 1px solid transparent;
+  font-weight: var(--font-weight-semibold);
+}
+
+.titular-open-button:hover {
+  background: var(--color-accent-hover);
+}
+
+.cuenta-open-button:hover {
+  background: var(--color-accent-hover);
+}
+
+.titular-open-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.cuenta-open-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.cuenta-card {
+  padding: var(--space-4);
+  gap: var(--space-3);
+}
+
+.cuenta-card .titular-card-title h3 {
+  font-size: var(--font-size-md);
+  line-height: 1.15;
+}
+
+.cuenta-card .titular-card-title {
+  gap: var(--space-2);
+}
+
+.cuenta-card .pill {
+  padding: 1px 8px;
+  font-size: var(--font-size-xs);
+}
+
+.cuenta-card-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(6.75rem, 0.7fr) minmax(8.75rem, 0.95fr);
+  gap: var(--space-3);
+}
+
+.titular-card-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(6.75rem, 0.7fr) minmax(9rem, 0.9fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.cuenta-card-meta-item,
+.titular-card-meta-item {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cuenta-card-meta-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.05;
+}
+
+.cuenta-card-meta-value {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cuenta-card-balance,
+.titular-card-balance {
+  justify-items: end;
+  text-align: right;
+}
+
+.cuenta-card-balance {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.cuenta-card-notes {
+  grid-column: 1 / -1;
+}
+
+.cuenta-card-notes .cuenta-card-meta-value {
+  white-space: normal;
+}
+
+.cuenta-card-balance .signed-amount,
+.titular-card-balance .signed-amount {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.cuenta-card .phase2-row-actions {
+  gap: var(--space-2);
+}
+
+.cuenta-card .phase2-row-actions button {
+  min-height: 2.5rem;
+  padding: 0.25rem 0.7rem;
+}
+
+.titulares-dashboard-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.titulares-dashboard-header {
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.titulares-chart-wrap {
+  width: 100%;
+  min-height: 340px;
+}
+
+.titulares-balance-list {
+  display: grid;
+  gap: var(--space-1);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface-soft);
+  padding: var(--space-2);
+}
+
+.titulares-balance-heading,
+.titulares-balance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(11rem, 0.8fr) 5.5rem;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.titulares-balance-heading {
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.titulares-balance-heading span:nth-child(2) {
+  text-align: right;
+}
+
+.titulares-balance-heading span:last-child {
+  text-align: right;
+}
+
+.titulares-balance-row {
+  min-height: 4.5rem;
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-card) - 6px);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--duration-instant) var(--ease-premium);
+}
+
+.titulares-balance-row:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.titulares-balance-row:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+.titulares-balance-owner {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.titulares-balance-avatar {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  background: var(--accent-primary-soft);
+  color: var(--text-link);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-heavy);
+}
+
+.titulares-balance-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titulares-balance-row > .signed-amount {
+  justify-self: end;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.titulares-balance-open {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  gap: var(--space-1);
+  border-radius: var(--radius-control);
+  background: var(--accent-primary-soft);
+  color: var(--text-link);
+  font-weight: var(--font-weight-semibold);
+  padding: 0 var(--space-3);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.titulares-balance-row:hover .titulares-balance-avatar,
+.titulares-balance-row:hover .titulares-balance-open {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.cuentas-balance-list {
+  display: grid;
+  gap: var(--space-1);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface-soft);
+  padding: var(--space-2);
+}
+
+.cuentas-balance-heading,
+.cuentas-balance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(7rem, 0.7fr) 4.75rem minmax(11rem, 0.75fr) 5.5rem;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cuentas-balance-heading {
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cuentas-balance-heading span:nth-child(4),
+.cuentas-balance-heading span:last-child {
+  text-align: right;
+}
+
+.cuentas-balance-row {
+  min-height: 4.75rem;
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-card) - 6px);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--duration-instant) var(--ease-premium);
+}
+
+.cuentas-balance-row:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.cuentas-balance-row:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+.cuentas-balance-account {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cuentas-balance-avatar {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  background: var(--accent-primary-soft);
+  color: var(--text-link);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-heavy);
+}
+
+.cuentas-balance-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.cuentas-balance-name,
+.cuentas-balance-bank,
+.cuentas-balance-currency,
+.cuentas-balance-owner {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cuentas-balance-name {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-bold);
+}
+
+.cuentas-balance-bank,
+.cuentas-balance-owner {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.cuentas-balance-currency {
+  justify-self: start;
+  color: var(--text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-heavy);
+}
+
+.cuentas-balance-row > .signed-amount {
+  justify-self: end;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.cuentas-balance-open {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  border-radius: var(--radius-control);
+  background: var(--accent-primary-soft);
+  color: var(--text-link);
+  font-weight: var(--font-weight-semibold);
+  padding: 0 var(--space-3);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.cuentas-balance-row:hover .cuentas-balance-avatar,
+.cuentas-balance-row:hover .cuentas-balance-open {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.titulares-evolucion-card {
+  padding: var(--space-3);
+}
+
+.titulares-divisa-banners {
+  display: grid;
+}
+
+.extra-col-row {
+  display: grid;
+  grid-template-columns: 1fr 130px auto;
+  gap: var(--space-2);
+}
+
+@media (max-width: 1024px) {
+  .phase2-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .titulares-dashboard-header {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 900px) {
+  .phase2-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .titulares-balance-heading {
+    display: none;
+  }
+
+  .titulares-balance-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "owner owner"
+      "amount open";
+    gap: var(--space-2);
+  }
+
+  .titulares-balance-owner {
+    grid-area: owner;
+  }
+
+  .titulares-balance-row > .signed-amount {
+    grid-area: amount;
+    justify-self: start;
+  }
+
+  .titulares-balance-open {
+    grid-area: open;
+  }
+
+  .cuentas-balance-heading {
+    display: none;
+  }
+
+  .cuentas-balance-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "account account"
+      "bank bank"
+      "currency currency"
+      "amount open";
+    gap: var(--space-2);
+  }
+
+  .cuentas-balance-account {
+    grid-area: account;
+  }
+
+  .cuentas-balance-bank {
+    grid-area: bank;
+    padding-left: calc(2.5rem + var(--space-3));
+  }
+
+  .cuentas-balance-currency {
+    grid-area: currency;
+    padding-left: calc(2.5rem + var(--space-3));
+  }
+
+  .cuentas-balance-row > .signed-amount {
+    grid-area: amount;
+    justify-self: start;
+  }
+
+  .cuentas-balance-open {
+    grid-area: open;
+  }
+
+  .extra-col-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cuenta-card-meta,
+  .titular-card-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .cuenta-card-balance,
+  .titular-card-balance {
+    grid-column: auto;
+    grid-row: auto;
+    justify-items: start;
+    text-align: left;
+  }
+}

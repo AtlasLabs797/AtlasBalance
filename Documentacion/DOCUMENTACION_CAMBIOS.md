@@ -8,6 +8,531 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-04-25 - Publicacion release V-01.04
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Regenerar el paquete Windows x64 final y publicarlo en GitHub junto con la rama de version.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.04.md`
+
+**Cambios implementados:**
+- Regenerado el paquete `AtlasBalance-V-01.04-win-x64.zip` desde `scripts/Build-Release.ps1`.
+- Sincronizado `wwwroot` desde el build frontend incluido en el paquete.
+- Verificado que el paquete no incluye artefactos de desarrollo, `.env`, `node_modules`, `obj`, `bin/Debug` ni `.bak-iframe-fix`.
+- Preparada publicacion como asset de GitHub Release, sin versionar el ZIP en Git.
+
+**Comandos ejecutados:**
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.04`
+- `Get-FileHash -Algorithm SHA256`
+- `npm.cmd run lint`
+- `npm.cmd audit --audit-level=moderate`
+- `dotnet test "Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release`
+- `dotnet list "Atlas Balance\backend\src\GestionCaja.API\GestionCaja.API.csproj" package --vulnerable --include-transitive`
+
+**Resultado de verificacion:**
+- Frontend build OK dentro del script de release.
+- Frontend lint OK.
+- `npm audit`: 0 vulnerabilidades.
+- Backend tests Release: 108/108 OK.
+- NuGet vulnerable: sin hallazgos.
+- Paquete generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`.
+- Tamano ZIP: `102360418` bytes.
+- SHA256 final: `B5ABC5525CBD49F2BD0A5ADC5B930A2113AF323F99C1337087B8E0D7875E6A10`.
+
+**Pendientes:**
+- Validacion manual en Windows Server 2019 real tras descargar el asset publicado.
+
+---
+## 2026-04-25 - Correccion de hallazgos de auditoria de uso, bugs y seguridad
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Arreglar los hallazgos abiertos por la auditoria: stack frontend violado por Tailwind/shadcn, contrato duplicado de resumen de cuenta, accesibilidad de controles propios y decoracion visual innecesaria.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/frontend/vite.config.ts`
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/frontend/src/styles/layout/admin.css`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
+- `Atlas Balance/frontend/src/components/common/DatePickerField.tsx`
+- `Atlas Balance/frontend/src/components/common/ConfirmDialog.tsx`
+- `Atlas Balance/frontend/src/components/common/AppSelect.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/CuentasDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/CuentasControllerTests.cs`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/AUDITORIA_USO_BUGS_SEGURIDAD_V-01.04_2026-04-25.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Eliminadas dependencias y configuracion Tailwind/shadcn (`@tailwindcss/vite`, `tailwindcss`, `shadcn`, `tw-animate-css`, `tailwind-merge`, `class-variance-authority`, `radix-ui`, `components.json`, boton shadcn y utilidades asociadas).
+- `CuentasController.Resumen` expone ahora un contrato rico con titular, cuenta, divisa, tipo, notas, ultima actualizacion y metadatos de plazo fijo.
+- Agregado test de regresion para resumen de cuenta `PLAZO_FIJO`.
+- `DatePickerField` incorpora etiquetas de fecha completa y navegacion con flechas/Home/End.
+- `ConfirmDialog` atrapa Tab dentro del modal.
+- `AppSelect` abre/cierra con Enter y Espacio.
+- Retirados fondos decorativos con radial/linear gradients de superficies principales.
+
+**Comandos ejecutados:**
+- `npm.cmd uninstall @tailwindcss/vite tailwindcss shadcn tw-animate-css tailwind-merge class-variance-authority clsx radix-ui`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `npm.cmd audit --audit-level=moderate`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --filter CuentasControllerTests`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release`
+- `dotnet list ".\\Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" package --vulnerable --include-transitive`
+- Busquedas `Select-String` para restos de Tailwind/shadcn y degradados decorativos.
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Sin restos directos de Tailwind/shadcn en codigo/configuracion versionable.
+- `npm audit`: 0 vulnerabilidades.
+- Frontend lint OK.
+- Frontend build OK.
+- Backend tests: 108/108 OK.
+- NuGet vulnerable: sin hallazgos.
+- `wwwroot` sincronizado; `robocopy` devolvio codigo `1`, copia correcta con archivos actualizados y limpieza de bundles antiguos.
+
+**Pendientes:**
+- Ejecutar Playwright E2E con `E2E_ADMIN_PASSWORD` en una base disposable.
+- El estado Git local sigue sucio y no sirve como base fina de revision sin limpieza previa.
+
+---
+## 2026-04-25 - Pasada extra de auditoria y endurecimiento defensivo
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Repaso completo de bugs documentados, revision de seguridad (auth, permisos, CSRF, security stamp, integracion OpenClaw, secretos, rate limit, cabeceras, dependencias) y aplicacion de guardias de entrada en endpoints nuevos de V-01.04.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/AlertasController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ImportacionController.cs`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Endpoints `POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento`: validacion de body nulo y normalizacion de listas de destinatarios para que un cuerpo malformado devuelva `400` en lugar de `500`.
+- Verificadas auditorias V-01.02/V-01.03/V-01.04: incidencias previas siguen cerradas, `npm audit` y NuGet sin vulnerabilidades.
+- Bugs abiertos pre-existentes (Tailwind/shadcn introducido, `CuentaResumenResponse` duplicado, accesibilidad de controles propios, estado Git local) confirmados: requieren decision de producto, no se tocan en esta pasada.
+
+**Comandos ejecutados:**
+- `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release`
+- `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build`
+- `dotnet list "Atlas Balance/backend/GestionCaja.sln" package --vulnerable --include-transitive`
+- `npm.cmd audit --audit-level=moderate`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+
+**Resultado de verificacion:**
+- Backend Release build OK, 0 warnings.
+- Backend tests: 107/107 OK.
+- NuGet vulnerable: sin paquetes vulnerables.
+- `npm audit`: 0 vulnerabilidades.
+- Frontend lint OK.
+- Frontend build OK.
+
+**Pendientes:**
+- Decision sobre eliminar Tailwind/shadcn vs adoptarlo oficialmente en el stack canonico.
+- Eliminar o alinear `CuentasController.Resumen` con el resumen rico que devuelve `ExtractosController`.
+- Cerrar contrato de accesibilidad de teclado en `DatePickerField`, `ConfirmDialog`, `AppSelect`.
+- Estado Git local sigue listado como abierto.
+
+---
+## 2026-04-25 - Auditoria general de bugs y seguridad
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Revision completa razonable de bugs documentados, problemas de seguridad conocidos, dependencias, configuracion y verificaciones automaticas.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/SEGURIDAD_AUDITORIA_V-01.04.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-01.04.md`
+
+**Cambios implementados:**
+- Revisadas incidencias previas de auth, permisos, rutas, secretos, exportaciones, OpenClaw, cabeceras y CI/CD.
+- Confirmado que `npm audit` y NuGet no reportan vulnerabilidades.
+- Verificado con advisories recientes que el lockfile ya resolvia versiones seguras, pero el manifiesto mantenia rangos minimos antiguos.
+- Actualizado `axios` a `^1.15.2` y `react-router-dom` a `^6.30.3`.
+- Recompilado frontend y sincronizado `wwwroot`.
+- Creado informe `SEGURIDAD_AUDITORIA_V-01.04.md`.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre instrucciones, version actual, log, bugs, auditorias y skill local `cyber-neo`.
+- `Get-Command semgrep,trivy,gitleaks,npm.cmd,dotnet`
+- `npm.cmd audit --audit-level=moderate`
+- `npm.cmd ls axios react-router react-router-dom --depth=0`
+- `npm.cmd view axios version`
+- `npm.cmd install axios@^1.15.2 react-router-dom@^6.30.3`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy .\dist ..\backend\src\GestionCaja.API\wwwroot /MIR`
+- `dotnet build ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-restore`
+- `dotnet test ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-build`
+- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --deprecated`
+- `git diff --check -- ...`
+
+**Resultado de verificacion:**
+- Frontend lint OK.
+- Frontend build OK.
+- Backend Release build OK.
+- Backend tests: 107/107 OK.
+- `npm audit`: 0 vulnerabilidades.
+- NuGet vulnerable: sin paquetes vulnerables.
+- `wwwroot`: sincronizado y sin sourcemaps, plantillas Development ni `.env`.
+
+**Pendientes:**
+- Instalar `semgrep`, `trivy` y `gitleaks` si se quiere una auditoria automatizada SAST/secrets externa ademas de la revision manual.
+- El bug abierto de estado Git local sigue sin tocarse.
+
+## 2026-04-25 - Importacion simple de plazo fijo y resumen en dashboard
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Ajustado el flujo de plazos fijos para que la importacion no use formatos bancarios y el dashboard muestre sus datos clave.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/ImportacionDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ImportacionController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/DashboardDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/DashboardService.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs`
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/importacion.css`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- Documentacion de `V-01.04`.
+
+**Cambios implementados:**
+- El contexto de importacion expone `tipo_cuenta`.
+- Las cuentas `PLAZO_FIJO` ya no aceptan importacion con mapeo/formato bancario.
+- Nuevo endpoint `POST /api/importacion/plazo-fijo/movimiento` para registrar solo entrada o salida de dinero.
+- El movimiento calcula saldo actual como ultimo saldo + monto firmado y audita la operacion.
+- La pantalla de importacion muestra un formulario simple para plazo fijo: movimiento, fecha, monto y concepto.
+- El dashboard principal muestra resumen de plazos fijos: monto total, intereses previstos aproximados y dias hasta el proximo vencimiento.
+
+**Decisiones visuales:**
+- El plazo fijo usa un formulario compacto dentro de la pantalla de importacion existente, sin wizard ni tabla: pedir formato aqui seria hacer trabajar al usuario para nada.
+- El dashboard agrega una banda de metricas sobria, consistente con las cards existentes y responsive a una columna en movil.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter "ImportacionServiceTests|DashboardServiceTests"`
+- `dotnet build "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj" -c Release`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy /MIR`: OK.
+- Tests focalizados importacion/dashboard: 28/28 OK.
+- Backend Release build: OK, 0 warnings, 0 errores.
+- Primer intento de tests quedo bloqueado por una `GestionCaja.API.exe` local en Debug; se detuvo ese proceso y se repitio correctamente.
+
+**Pendientes:**
+- Validacion manual con datos reales: crear plazo fijo, registrar entrada/salida desde importacion y revisar dashboard tras refrescar.
+
+## 2026-04-25 - Actualizaciones post-instalacion
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Endurecido el flujo de actualizacion para instalaciones ya existentes.
+
+**Archivos tocados:**
+- `Atlas Balance/update.cmd`
+- `Atlas Balance/Actualizar Atlas Balance.cmd`
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/README_RELEASE.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.04.md`
+
+**Cambios implementados:**
+- `update.ps1` valida paquete antes de autoelevar y soporta `-PackagePath`.
+- El actualizador actualiza scripts/wrappers instalados, `VERSION` y `atlas-balance.runtime.json`.
+- El flujo conserva configuracion, backup previo, rollback de binarios y ahora valida `/api/health` con `curl.exe -k`.
+- Documentado uso desde paquete nuevo y desde instalacion existente con `-PackagePath`.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre version actual, version `V-01.04`, log y scripts de actualizacion.
+- `Select-String` sobre servicios de actualizacion API/Watchdog.
+- Parser PowerShell sobre `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- Ejecucion de update desde carpeta fuente para validar fallo claro.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.04`.
+- Parser PowerShell sobre scripts empaquetados.
+- `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
+- `Get-FileHash -Algorithm SHA256` sobre el ZIP regenerado.
+
+**Resultado de verificacion:**
+- Parser PowerShell OK.
+- Update desde carpeta fuente falla con mensaje de paquete invalido.
+- Actualizador empaquetado desde paquete valido y `InstallPath` inexistente falla con mensaje claro de instalacion inexistente.
+- Paquete regenerado: `AtlasBalance-V-01.04-win-x64.zip`.
+- SHA256: `42994915A8AFD014EF807D99E6335944302662FAA21927206ACAF1B8FDE46304`.
+- Scripts empaquetados parsean correctamente.
+- Paquete sin `*Development*`, `*.template`, `.env`, `node_modules` ni `.bak-iframe-fix`.
+- Backend tests filtrados sin Testcontainers: 95/95 OK.
+
+**Pendientes:**
+- Probar actualizacion real desde una instalacion `V-01.03`/`V-01.04` en Windows Server 2019.
+
+## 2026-04-25 - Cierre incidencias instalacion Windows Server 2019
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Corregidas las incidencias operativas del documento `INCIDENCIAS_INSTALACION_WINDOWS_SERVER_2019_V-01.04.txt`.
+
+**Archivos tocados:**
+- `Atlas Balance/install.cmd`
+- `Atlas Balance/Instalar Atlas Balance.cmd`
+- `Atlas Balance/README_RELEASE.md`
+- `Atlas Balance/scripts/install.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Reset-AdminPassword.ps1`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.04.md`
+
+**Cambios implementados:**
+- Validacion temprana de paquete release para evitar instalar desde carpeta fuente o ZIP `main`.
+- Fallback operativo cuando `winget` falla en Windows Server 2019 y documentacion de PostgreSQL 17 como valido.
+- Deteccion de usuarios existentes para no generar credenciales admin falsas en reinstalaciones.
+- Script oficial `Reset-AdminPassword.ps1` con bcrypt 12, limpieza de bloqueo, `primer_login`, rotacion de `security_stamp` y revocacion de refresh tokens.
+- Health check post-instalacion con `curl.exe -k`.
+- Inclusion de scripts de reset/certificado cliente en el paquete release.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre instrucciones, version actual, version `V-01.04`, incidencias, log y catalogo de skills.
+- `Select-String`/`Get-ChildItem` para localizar scripts, cabeceras, instalador y documentacion.
+- Parser PowerShell con `[System.Management.Automation.Language.Parser]::ParseFile(...)`.
+- Ejecucion de `Instalar-AtlasBalance.ps1` e `install.ps1` desde carpeta fuente para validar fallo claro.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.04`.
+- `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
+- `Get-FileHash -Algorithm SHA256` sobre `AtlasBalance-V-01.04-win-x64.zip`.
+
+**Resultado de verificacion:**
+- Parser PowerShell OK en scripts modificados.
+- Ejecutar el instalador desde carpeta fuente falla con mensaje de paquete invalido.
+- Ejecutar `scripts\install.ps1` desde carpeta fuente falla con el mismo mensaje antes de autoelevar.
+- Paquete generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`.
+- SHA256: `42994915A8AFD014EF807D99E6335944302662FAA21927206ACAF1B8FDE46304`.
+- Scripts nuevos incluidos en paquete y parser OK en scripts empaquetados.
+- Paquete sin `*Development*`, `*.template`, `.env`, `node_modules` ni `.bak-iframe-fix`.
+- Backend tests filtrados sin Testcontainers: 95/95 OK.
+
+**Pendientes:**
+- Probar el ZIP en Windows Server 2019 real con PostgreSQL 17 antes de publicarlo.
+
+## 2026-04-25 - Documento incidencias instalacion Windows Server 2019
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Generado un documento TXT de traspaso con errores, bugs, incidencias y soluciones detectadas durante la instalacion real en Windows Server 2019.
+
+**Archivos tocados:**
+- `Documentacion/INCIDENCIAS_INSTALACION_WINDOWS_SERVER_2019_V-01.04.txt`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Registradas incidencias de instalacion desde carpeta fuente, paquete V-01.03 vs V-01.04, PostgreSQL 17, `winget`, wrapper `install.cmd`, certificado PFX, health check PowerShell, certificado cliente, credenciales iniciales, reset admin, bloqueo login, SQL con tablas en mayusculas, modal de importacion anti-frame y parche temporal del bundle.
+- Incluido checklist para cerrar `V-01.04` sin documentar passwords ni secretos reales.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre version actual, `v-01.04.md` y bitacora.
+- Creacion del TXT con `apply_patch`.
+
+**Resultado de verificacion:**
+- Documento creado en `Documentacion`.
+- No se incluyeron passwords reales.
+
+**Pendientes:**
+- Convertir las soluciones pendientes en cambios de codigo/scripts antes de publicar `V-01.04`.
+
+## 2026-04-25 - Fix modal importacion bloqueado por anti-frame
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Corregido el bloqueo del modal `Importar movimientos` en produccion.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Program.cs`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- `X-Frame-Options` pasa de `DENY` a `SAMEORIGIN`.
+- `Content-Security-Policy frame-ancestors` pasa de `'none'` a `'self'`.
+- La app sigue bloqueando embebidos externos, pero permite su propia ruta `/importacion` dentro del modal.
+
+**Comandos ejecutados:**
+- `Select-String` sobre frontend, bundle generado y `Program.cs`.
+- `Get-Content` sobre `CuentaDetailPage.tsx`, `ImportacionPage.tsx` y cabeceras de produccion.
+
+**Resultado de verificacion:**
+- Causa identificada: iframe same-origin bloqueado por cabeceras HTTP de la API.
+- Correccion aplicada en fuente `V-01.04`.
+
+**Pendientes:**
+- Publicar/regenerar paquete para llevar la correccion al servidor. En `V-01.03` instalado puede mitigarse navegando a `/importacion` en pagina completa.
+
+## 2026-04-25 - Fix reinstalacion certificado HTTPS
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Diagnosticado y corregido un fallo de reinstalacion en Windows Server donde la API no arrancaba al cargar el certificado HTTPS.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- `New-AtlasCertificate` ya no reutiliza `atlas-balance.pfx` existente durante instalacion; elimina PFX/CER previos y genera un par nuevo con la password que se escribe en `appsettings.Production.json`.
+- Registrada la incidencia y la mitigacion operativa para instalaciones afectadas.
+
+**Comandos ejecutados:**
+- `Get-Service AtlasBalance.API,AtlasBalance.Watchdog` en servidor afectado, reportado por usuario.
+- `Get-EventLog -LogName Application -Newest 50`, reportado por usuario.
+- `netstat -ano | findstr :443`, reportado por usuario.
+- `Select-String` y `Get-Content` sobre `Instalar-AtlasBalance.ps1` para revisar generacion de certificado y configuracion.
+
+**Resultado de verificacion:**
+- Causa identificada en el flujo de instalacion: PFX existente + password nueva.
+- Correccion aplicada en script para `V-01.04`.
+
+**Pendientes:**
+- Regenerar paquete `V-01.04` antes de publicar una release nueva.
+
+## 2026-04-25 - Apertura version V-01.04
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Apertura de la nueva linea de trabajo posterior a la publicacion de `V-01.03`, con rama propia y fuentes de version alineadas.
+
+**Archivos tocados:**
+- `CLAUDE.md`
+- `Atlas Balance/AGENTS.md`
+- `Atlas Balance/CLAUDE.md`
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/README_RELEASE.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-01.03.md`
+- `Documentacion/Versiones/v-01.04.md`
+
+**Cambios implementados:**
+- Creada rama local `V-01.04` desde `V-01.03`.
+- Marcada `V-01.04` como version actual del proyecto.
+- Cerrada `V-01.03` como version publicada/base anterior.
+- Actualizadas fuentes runtime backend/frontend a `1.4.0` y `V-01.04`.
+- Actualizados scripts y documentacion viva para generar paquetes `AtlasBalance-V-01.04-win-x64`.
+
+**Comandos ejecutados:**
+- `git status --short --branch`
+- `Get-Content` sobre `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, archivos `v-*` y fuentes runtime.
+- `git branch --list V-01.04`
+- `git ls-remote --heads origin V-01.04`
+- `git switch -c V-01.04`
+- `git switch V-01.04`
+- `Select-String` para localizar referencias vivas a `V-01.03` y `1.3.0`.
+- `git diff --check`
+- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`
+- `npm.cmd run build`
+
+**Resultado de verificacion:**
+- Rama activa confirmada: `V-01.04`.
+- `git diff --check`: OK; solo avisos esperados de normalizacion LF/CRLF.
+- Backend build Release: OK, 0 warnings, 0 errores.
+- Frontend build: OK con `atlas-balance-frontend@1.4.0`.
+- Busqueda de referencias activas: sin restos de `V-01.03` en codigo/configuracion viva.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-04-25 - Publicacion asset GitHub Release V-01.03
+
+**Version:** V-01.03
+
+**Trabajo realizado:** Publicacion del ZIP instalable `AtlasBalance-V-01.03-win-x64.zip` como asset de GitHub Release, sin meter el paquete generado en Git.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-01.03.md`
+
+**Cambios implementados:**
+- Creado el release publico `V-01.03-win-x64` en `AtlasLabs797/AtlasBalance`.
+- Subido el asset `AtlasBalance-V-01.03-win-x64.zip`.
+- Asociado el tag `V-01.03-win-x64` al commit `8df640d86912eb39b900a59ea0fd8ba769cacc96` (`origin/V-01.03`).
+- Marcado `V-01.03-win-x64` como ultimo release publicado.
+
+**Comandos ejecutados:**
+- `gh auth status`
+- `gh release list --repo AtlasLabs797/AtlasBalance --limit 20`
+- `Get-FileHash -Algorithm SHA256` sobre el ZIP de release.
+- `gh release create V-01.03-win-x64 ... --draft`
+- `gh release edit V-01.03-win-x64 --draft=false --latest`
+- `gh release view V-01.03-win-x64 --json tagName,name,isDraft,isImmutable,isPrerelease,url,assets,publishedAt,targetCommitish`
+- `git ls-remote --tags origin V-01.03-win-x64`
+
+**Resultado de verificacion:**
+- Release publicado: `https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-01.03-win-x64`.
+- Asset publicado: `AtlasBalance-V-01.03-win-x64.zip`.
+- Tamano del asset: `102249107` bytes.
+- SHA256 verificado por GitHub y local: `71E51F49CF740D358E056F256B70B3352EE23E61BD6FFFF0F048627AA07FDFA2`.
+- Release no queda en draft y no es prerelease.
+
+**Pendientes:**
+- Ninguno para la publicacion del asset de release.
+
 ## 2026-04-25 - Publicacion GitHub V-01.03
 
 **Version:** V-01.03
@@ -53,11 +578,11 @@ Regla de trabajo desde ahora:
 - NuGet vulnerable: sin paquetes vulnerables.
 - `Otros/`, `Skills/` y paquetes de release quedaron fuera del commit.
 - Rama remota creada correctamente: `origin/V-01.03`.
-- `gh` esta instalado, pero no autenticado; no se creo PR desde esta sesion.
+- `gh` no estaba autenticado durante esta publicacion de codigo; no se creo PR desde esa sesion.
+- Asset de release publicado posteriormente en `V-01.03-win-x64`.
 
 **Pendientes:**
 - Crear PR si se quiere revisar/mergear desde GitHub.
-- Publicar el ZIP `AtlasBalance-V-01.03-win-x64.zip` como asset de GitHub Release, no como archivo versionado.
 
 ## 2026-04-25 - Generacion release Windows x64 V-01.03
 
@@ -7077,6 +7602,69 @@ Regla de trabajo desde ahora:
 **Pendientes:**
 - Ninguno para este bug.
 
+## 2026-04-25 - Permiso global para ver todas las cuentas
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Se agrego un permiso explicito de lectura de cuentas para que un admin pueda dar acceso a todas las cuentas desde Usuarios sin activar permisos de escritura/importacion.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/AuthDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/UsuariosDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260425130139_AddPuedeVerCuentasPermiso.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260425130139_AddPuedeVerCuentasPermiso.Designer.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/AppDbContextModelSnapshot.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UserAccessServiceTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
+- `Atlas Balance/frontend/src/stores/permisosStore.ts`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/styles/layout.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/SPEC.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.04.md`
+
+**Cambios implementados:**
+- Nueva columna `puede_ver_cuentas` en `PERMISOS_USUARIO`, con migracion EF y backfill para permisos existentes que ya daban acceso por scope o por acciones de datos.
+- `UserAccessService` y `ExtractosController` usan `puede_ver_cuentas` para conceder alcance de lectura global sin depender de `agregar`, `editar`, `eliminar` o `importar`.
+- `puede_ver_dashboard` sigue sin conceder acceso global a datos.
+- `AuthService` y `UsuariosController` devuelven/guardan el nuevo permiso.
+- El modal de usuarios agrega el boton `Acceso a todas las cuentas` y el checkbox `Ver cuentas`.
+- El store frontend reconoce `puede_ver_cuentas` como acceso valido a cuenta.
+
+**Decisiones visuales:**
+- No hubo rediseño. Se agrego un boton de accion rapida en la cabecera de permisos y un checkbox dentro de la grilla existente para no romper el flujo actual.
+
+**Comandos ejecutados:**
+- `dotnet ef migrations add AddPuedeVerCuentasPermiso --project "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj" --startup-project "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj"`
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter "UserAccessServiceTests|UsuariosControllerTests|ExtractosControllerTests"`
+- `npm.cmd run build`
+- `robocopy "C:\\Proyectos\\Atlas Balance Dev\\Atlas Balance\\frontend\\dist" "C:\\Proyectos\\Atlas Balance Dev\\Atlas Balance\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+- `npm.cmd run lint`
+- `dotnet build "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj" -c Release`
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+
+**Resultado de verificacion:**
+- Migracion EF generada correctamente.
+- Tests focalizados usuarios/permisos/extractos: 12/12 OK.
+- `npm.cmd run build`: OK.
+- `robocopy /MIR`: OK (`robocopy` devolvio codigo `1`, copia correcta con archivos actualizados).
+- `npm.cmd run lint`: OK.
+- Backend Release build: OK, 0 warnings.
+- Backend tests sin `ExtractosConcurrencyTests`: 97/97 OK.
+
+**Pendientes:**
+- Ninguno para este cambio.
+
 ## 2026-04-25 - Auditoria de seguridad manual inicial
 
 **Version:** V-01.03
@@ -7111,3 +7699,442 @@ Regla de trabajo desde ahora:
 
 **Pendientes:**
 - Cerrado posteriormente en el bloque `2026-04-25 - Auditoria profunda de seguridad y hardening`.
+
+## 2026-04-25 - Importacion permite filas informativas con advertencias
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Correccion del flujo de importacion para que las filas bancarias con solo concepto no bloqueen la importacion. Ahora se avisa al usuario, pero se permite importarlas.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/ImportacionDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout.css`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Cambios implementados:**
+- Se anadio `Advertencias` a cada fila de validacion.
+- Las filas con concepto y fecha/monto/saldo vacios pasan a validas con avisos.
+- La importacion persiste esas filas con fecha y saldo heredados de la ultima fila valida anterior y monto `0`.
+- La tabla de validacion muestra estado `!` y fondo de aviso para filas importables con datos completados.
+- Se mantuvieron como errores las filas con importes ambiguos, valores no numericos o datos parcialmente rotos.
+
+**Decisiones visuales:**
+- Se uso el color de warning existente para distinguir avisos de errores sin redisenar la pantalla.
+
+**Comandos ejecutados:**
+- `dotnet test "Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" --filter ImportacionServiceTests`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Primer intento de `dotnet test` bloqueado por `GestionCaja.API` en ejecucion; se detuvo el proceso local y se repitio.
+- `dotnet test ... --filter ImportacionServiceTests`: 21/21 OK.
+- `npm.cmd run build`: OK.
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`: OK.
+
+**Pendientes:**
+- Ninguno para este bug.
+
+## 2026-04-25 - Planning detallado de plazo fijo, autonomos, alertas y dashboard
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Creacion de un documento de instrucciones detalladas para implementar las nuevas funciones de plazo fijo, tipo de titular autonomo, filtros por tipo, alertas por tipo de titular y cambios del dashboard.
+
+**Archivos tocados:**
+- `Documentacion/Versiones/v-01.04-nuevas-funciones-plazo-fijo-autonomos-alertas.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Documentado el modelo recomendado para `AUTONOMO`, `TipoCuenta`, `PLAZO_FIJO` y estado de vencimiento.
+- Definidas reglas de negocio: notificacion a 14 dias, marcado de vencido, renovacion manual y sin liquidacion automatica.
+- Definidos cambios backend, frontend, alertas, dashboard, permisos, auditoria, tests y criterios de aceptacion.
+
+**Comandos ejecutados:**
+- `Get-Content -LiteralPath 'CLAUDE.md'`
+- `Get-Content -LiteralPath 'Documentacion\\Versiones\\version_actual.md'`
+- `Get-Content -LiteralPath 'Documentacion\\LOG_ERRORES_INCIDENCIAS.md'`
+- `Get-Content -LiteralPath 'Documentacion\\SKILLS_LOCALES.md'`
+- `Get-Content -LiteralPath 'Documentacion\\Versiones\\v-01.04.md'`
+- `Get-Content -LiteralPath 'Skills\\Construcion\\the-architect-main\\CLAUDE.md'`
+- Inspeccion con `Get-ChildItem` y `Select-String` sobre backend, frontend y documentacion.
+
+**Resultado de verificacion:**
+- No aplica ejecucion de tests: cambio documental sin codigo runtime.
+
+**Pendientes:**
+- Implementar las funciones descritas y actualizar documentacion tecnica/usuario cuando se toque codigo.
+
+## 2026-04-25 - Implementacion plazo fijo, autonomos, alertas por tipo y dashboard inmovilizado
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Implementacion completa de las funciones descritas en `v-01.04-nuevas-funciones-plazo-fijo-autonomos-alertas.md`.
+
+**Archivos tocados:**
+- Backend: modelos, DbContext, migracion `AddPlazoFijoAutonomosAlertas`, DTOs, `CuentasController`, `TitularesController`, `AlertasController`, `DashboardService`, `AlertaService`, `EmailService`, `PlazoFijoService`, `PlazoFijoVencimientoJob`, tests.
+- Frontend: tipos, titulares, cuentas, alertas, dashboard, `SaldoPorDivisaCard`, estilos y bundle `wwwroot`.
+- Documentacion: cambios, tecnica, usuario, log de incidencias, registro de bugs, version V-01.04 y SPEC.
+
+**Cambios implementados:**
+- Nuevo tipo de titular `AUTONOMO`.
+- Nuevo `TipoCuenta`: `NORMAL`, `EFECTIVO`, `PLAZO_FIJO`; `es_efectivo` queda como compatibilidad.
+- Nueva entidad `PLAZOS_FIJOS` con vencimiento, estado, renovacion manual, cuenta de referencia y auditoria.
+- Job diario Hangfire para marcar `PROXIMO_VENCER` a 14 dias y `VENCIDO` en fecha de vencimiento, con notificacion admin y email si SMTP esta configurado.
+- Filtros backend/frontend por tipo de titular y tipo de cuenta.
+- Alertas de saldo bajo por cuenta, por tipo de titular o global, con prioridad cuenta > tipo titular > global.
+- Dashboard con saldo disponible, inmovilizado y total por divisa; saldos por titular agrupados por tipo.
+
+**Decisiones visuales:**
+- Se mantuvo la estructura de tarjetas y tablas existente.
+- En dashboard se usa una agrupacion en dos columnas desktop y una columna responsive, sin meter una landing ni decoracion inutil.
+- Los plazos fijos se distinguen con badges de tipo/estado y vencimiento visible.
+
+**Comandos ejecutados:**
+- `dotnet build Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj -c Release`
+- `dotnet ef migrations add AddPlazoFijoAutonomosAlertas`
+- `dotnet build Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release`
+- `dotnet test Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release --no-build --filter "CuentasControllerTests|DashboardServiceTests|AlertaServiceTests|PlazoFijoServiceTests"`
+- `dotnet test Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Backend build Release OK.
+- Tests focalizados: 12/12 OK.
+- Tests backend sin Testcontainers: 103/103 OK.
+- Frontend lint OK.
+- Frontend build OK.
+- `wwwroot` sincronizado.
+
+**Pendientes:**
+- Validacion manual en navegador con una base migrada: crear autonomo, crear plazo fijo, renovar, revisar dashboard y alertas.
+
+## 2026-04-25 - Coherencia UI/UX del frontend
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Mejora sistemica del UI/UX para unificar diseno en login, shell, navegacion, botones, campos, tabs, tarjetas, tablas, modales y estados interactivos.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/variables.css`
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/frontend/src/styles/layout.css`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/frontend/src/components/ui/button.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/mejoradiseno.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Agregados tokens de control, superficie, foco, sombra y hover para evitar estilos sueltos por pantalla.
+- Mapeados tokens shadcn/Tailwind a variables propias de Atlas Balance.
+- Ajustado `Button` compartido para usar alturas, radios, pesos, sombras y variantes del sistema de la app.
+- Unificada la apariencia de campos, selects, tabs de configuracion, tarjetas, tablas, modales, navegacion lateral y bottom nav.
+- Mejorado login con la misma logica de superficie, foco y boton primario del producto.
+- Eliminado tratamiento lateral fuerte en filas marcadas del dashboard y sustituido por tratamiento completo de fila.
+
+**Decisiones visuales:**
+- Direccion sobria de tesoreria interna: clara, densa cuando toca y sin decoracion de landing.
+- Un solo acento principal; success/warning/danger se reservan para significado funcional.
+- Hover/focus/active visibles en todos los controles principales.
+- Cards con elevacion moderada y bordes tintados; no se anaden cards anidadas ni efectos gratuitos.
+- Tabs como control segmentado en configuracion, porque una fila de botones sueltos era incoherente.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre `CLAUDE.md`, `version_actual.md`, `v-01.04.md`, `SKILLS_LOCALES.md` y `LOG_ERRORES_INCIDENCIAS.md`.
+- `Get-Content` sobre skills locales de diseno: `redesign-existing-projects`, `design-taste-frontend`, `ckm-design-system`, `ckm-ui-styling`, `impeccable` y `polish`.
+- `git status --short`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `npx.cmd playwright screenshot --viewport-size=1440,900 http://127.0.0.1:5174/login output/playwright/ui-login-desktop.png`
+- `npx.cmd playwright screenshot --viewport-size=390,844 http://127.0.0.1:5174/login output/playwright/ui-login-mobile.png`
+- `git diff --check -- ...`
+
+**Resultado de verificacion:**
+- Frontend lint OK.
+- Frontend build OK.
+- `wwwroot` sincronizado; `robocopy` devolvio codigo `1`, copia correcta con archivos actualizados.
+- Screenshots de login desktop/mobile generados en `output/playwright`.
+
+**Pendientes:**
+- Validar pantallas internas con una sesion real y datos cargados: dashboard, cuentas, extractos, importacion y configuracion.
+- Separar `layout.css` por dominios cuando haya una ventana tecnica; ahora mismo esta demasiado grande.
+
+## 2026-04-25 - Separacion de layout CSS por dominios
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Refactor estructural del CSS de layout para partir el archivo monolitico en hojas por dominio sin cambiar la cascada visual.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/styles/layout/users.css`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/frontend/src/styles/layout/importacion.css`
+- `Atlas Balance/frontend/src/styles/layout/admin.css`
+- `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- `layout.css` queda como indice de imports.
+- `shell.css` contiene shell, sidebar, topbar, bottom nav, toasts, skeletons y estados comunes iniciales.
+- `users.css` contiene usuarios, modales y permisos.
+- `extractos.css` contiene filtros, formulario de fila y tabla virtualizada.
+- `entities.css` contiene detalle de cuenta, titulares, cuentas y tarjetas operativas.
+- `dashboard.css` contiene KPIs, saldos, charts y tablas de dashboard.
+- `importacion.css` contiene wizard, preview, validacion y modal de importacion.
+- `admin.css` contiene alertas, configuracion, auditoria, backups, exportaciones y loading overlay.
+- `system-coherence.css` queda al final como capa comun de coherencia visual.
+
+**Decisiones tecnicas:**
+- Mantener imports en el mismo orden de cascada para evitar regresiones visuales.
+- No renombrar selectores ni tocar JSX: el objetivo era estructura, no redisenar otra vez.
+- Dejar la capa comun al final porque actua como override deliberado.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre version/documentacion/log/skills.
+- `Select-String` sobre `layout.css` para localizar cortes por dominio.
+- Script PowerShell mecanico para dividir `layout.css` en parciales.
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `git diff --check -- 'Atlas Balance/frontend/src/styles/layout.css' 'Atlas Balance/frontend/src/styles/layout'`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Frontend lint OK.
+- Frontend build OK.
+- `git diff --check` OK; Git aviso que normalizara CRLF a LF en `layout.css`.
+- `wwwroot` sincronizado; `robocopy` devolvio codigo `1`, copia correcta con archivos actualizados.
+
+**Pendientes:**
+- Ninguno de estructura CSS para esta pasada.
+
+## 2026-04-25 - Ajuste visual de calendario en plazo fijo
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Correccion visual de los campos de fecha usados al crear o renovar cuentas de plazo fijo.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- `html` declara `color-scheme` segun tema claro/oscuro.
+- `input[type='date']` mantiene padding, alto y foco coherentes con el resto de campos.
+- El indicador nativo del calendario se estiliza con fondo, radio, hover, active y ajuste para dark mode.
+- Las partes internas WebKit del date input heredan color y espaciado del sistema.
+
+**Decisiones visuales:**
+- Se conserva `input type="date"` por ser simple, accesible y sin dependencia nueva.
+- No se mete date picker custom: seria demasiado para un bug visual puntual.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre version actual, `v-01.04.md` y log de incidencias.
+- `Select-String` para localizar `type="date"` y estilos relacionados.
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Frontend lint OK.
+- Frontend build OK.
+- `wwwroot` sincronizado; `robocopy` devolvio codigo `1`, copia correcta con archivos actualizados.
+
+**Pendientes:**
+- Validacion manual del popup nativo en el navegador objetivo de produccion; el popup depende del navegador/OS.
+
+## 2026-04-25 - Vencimiento visible en detalle de plazo fijo
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Mostrar en el dashboard de cuenta cuando vence un plazo fijo.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- El resumen de cuenta devuelve `tipo_cuenta` y `plazo_fijo` para cuentas `PLAZO_FIJO`.
+- El detalle de cuenta muestra una banda bajo el titulo con `Plazo fijo`, fecha de vencimiento, dias restantes/vencido y estado.
+- Se agregaron estilos especificos para que el dato sea visible sin competir con los KPIs.
+
+**Decisiones visuales:**
+- El vencimiento queda junto al nombre de la cuenta, no escondido en notas ni en la tabla de movimientos.
+- Se usa una banda compacta porque es informacion de identidad/estado de la cuenta, no un cuarto KPI financiero.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre instrucciones, version actual, `v-01.04.md`, log de incidencias y documentacion afectada.
+- `Select-String` para localizar campos de plazo fijo, resumen de cuenta y estilos relacionados.
+- `dotnet build "Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" -c Release`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Backend Release build OK.
+- Frontend lint OK.
+- Frontend build OK.
+- `wwwroot` sincronizado; `robocopy` devolvio codigo `1`, copia correcta con archivos actualizados.
+
+**Pendientes:**
+- Validacion visual manual en navegador con una cuenta real de plazo fijo.
+
+## 2026-04-25 - Auditoria de uso, bugs y seguridad
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Auditar estado de uso, bugs, seguridad, dependencias, build, tests, permisos, rutas sensibles, frontend y documentacion.
+
+**Archivos tocados:**
+- `Documentacion/AUDITORIA_USO_BUGS_SEGURIDAD_V-01.04_2026-04-25.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Creado informe de auditoria con hallazgos P1-P3.
+- Registrados como abiertos: Tailwind/shadcn contra stack canonico, contrato duplicado de resumen de cuenta sin plazo fijo y gaps de accesibilidad en controles propios.
+- No se cambio codigo de aplicacion; esto fue diagnostico, no reparacion.
+
+**Comandos ejecutados:**
+- `npm.cmd audit --audit-level=moderate`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `npm.cmd ls axios react-router-dom postcss vite`
+- `dotnet list ... package --vulnerable --include-transitive`
+- `dotnet test ...GestionCaja.API.Tests.csproj -c Release`
+- Parser PowerShell para `Atlas Balance/scripts/*.ps1`
+- `git diff --check`
+- `git check-ignore`
+- `Select-String`/`Get-Content` sobre auth, CSRF, permisos, integracion, exportaciones, backups, updates, CI, Docker y frontend.
+
+**Resultado de verificacion:**
+- Frontend audit: 0 vulnerabilidades.
+- Frontend lint/build OK.
+- Backend tests: 107/107 OK.
+- NuGet vulnerable: sin hallazgos.
+- Scripts PowerShell: parse OK.
+- `git diff --check`: sin errores; solo avisos LF/CRLF.
+- Playwright E2E no ejecutado porque `E2E_ADMIN_PASSWORD` no esta definido y el test se niega correctamente a adivinar credenciales.
+
+**Pendientes:**
+- Decidir si se elimina Tailwind/shadcn o se acepta oficialmente el cambio de stack.
+- Unificar contrato de resumen de cuenta.
+- Hacer pase de accesibilidad en controles propios y ejecutar E2E con credenciales de entorno disposable.
+
+## 2026-04-25 - Selector de fecha propio
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Sustituir el calendario nativo del navegador por un selector propio alineado con el sistema visual de Atlas Balance.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/common/DatePickerField.tsx`
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/AddRowForm.tsx`
+- `Atlas Balance/frontend/src/pages/AuditoriaPage.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Creado `DatePickerField` con popover propio, navegacion mensual, grid de dias, fecha seleccionada, dia actual y acciones `Hoy`/`Limpiar`.
+- Reemplazados todos los `input type="date"` del frontend para evitar mezclar el sistema visual de Atlas con el picker nativo del navegador.
+- El calendario abre hacia arriba cuando no hay espacio suficiente debajo del campo.
+- Se usan iconos `lucide-react`, ya presentes en el proyecto.
+
+**Decisiones visuales tomadas:**
+- Seguir `Documentacion/Diseno/DESIGN.md`: superficie clara, borde suave, sombra contenida, azul solo para foco/seleccion.
+- No meter una libreria de calendario: para este alcance seria peso y API extra sin necesidad.
+- Mantener el componente sobrio; esto es tesoreria, no una feria.
+
+**Comandos ejecutados:**
+- `Get-Content` sobre instrucciones, version actual, log de incidencias, catalogo de skills y documentos de diseno.
+- `Select-String` para localizar `input type="date"` y usos de fecha.
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- Verificacion en navegador in-app sobre `http://localhost:5173/cuentas`.
+
+**Resultado de verificacion:**
+- Frontend lint OK.
+- Frontend build OK.
+- `wwwroot` sincronizado; `robocopy` devolvio codigo `1`, copia correcta con archivos actualizados.
+- En navegador: modal de editar plazo fijo abre el calendario Atlas, se ve el mes de marzo de 2026, el dia 28 seleccionado, acciones `Hoy`/`Limpiar`, y no hay errores de consola.
+
+**Pendientes:**
+- Validacion visual adicional en modo oscuro.
+
+## 2026-04-25 - Vaciado de datos de tesoreria local
+
+**Version:** V-01.04
+
+**Trabajo realizado:** Vaciar datos operativos de titulares, cuentas y extractos en la base PostgreSQL local de desarrollo.
+
+**Archivos tocados:**
+- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- Creado backup SQL previo en `output/db-backups/atlas_balance_before_clear_20260425-210525.sql`.
+- Ejecutado `TRUNCATE TABLE "EXTRACTOS", "CUENTAS", "TITULARES" RESTART IDENTITY CASCADE;`.
+- El `CASCADE` limpio dependencias de esas tablas: `PLAZOS_FIJOS`, `EXTRACTOS_COLUMNAS_EXTRA`, `PERMISOS_USUARIO`, `PREFERENCIAS_USUARIO_CUENTA`, `ALERTAS_SALDO`, `ALERTA_DESTINATARIOS`, `EXPORTACIONES` e `INTEGRATION_PERMISSIONS`.
+- Se conservaron usuarios, configuracion y estado de migraciones.
+
+**Comandos ejecutados:**
+- `docker ps`
+- `docker exec atlas_balance_db pg_dump -U app_user -d atlas_balance -f /tmp/<backup>.sql`
+- `docker cp atlas_balance_db:/tmp/<backup>.sql output/db-backups/<backup>.sql`
+- Consultas SQL de conteo antes y despues del vaciado.
+- `TRUNCATE TABLE "EXTRACTOS", "CUENTAS", "TITULARES" RESTART IDENTITY CASCADE;`
+
+**Resultado de verificacion:**
+- `TITULARES`, `CUENTAS` y `EXTRACTOS`: 0 registros.
+- Tablas dependientes revisadas: 0 registros.
+- `USUARIOS`: 1 registro conservado.
+- `CONFIGURACION`: 18 registros conservados.
+
+**Pendientes:**
+- Ninguno.

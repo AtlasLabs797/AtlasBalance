@@ -31,6 +31,7 @@ public sealed class DashboardService : IDashboardService
         var chartColors = await ResolveChartColorsAsync(cancellationToken);
         var cuentas = await GetScopedCuentasAsync(scope, null, cancellationToken);
         var metrics = await BuildMetricsAsync(cuentas, targetCurrency, cancellationToken);
+        var plazosFijos = await BuildPlazosFijosResumenAsync(cuentas, metrics, targetCurrency, cancellationToken);
 
         var titulares = cuentas
             .GroupBy(x => new { x.TitularId, x.TitularNombre })
@@ -43,16 +44,24 @@ public sealed class DashboardService : IDashboardService
                         x => x.Sum(c => metrics.SaldoByCuentaId.TryGetValue(c.CuentaId, out var saldo) ? saldo : 0m));
 
                 var totalConvertido = group.Sum(c => metrics.SaldoConvertidoByCuentaId.TryGetValue(c.CuentaId, out var saldo) ? saldo : 0m);
+                var inmovilizadoConvertido = group
+                    .Where(c => c.TipoCuenta == TipoCuenta.PLAZO_FIJO)
+                    .Sum(c => metrics.SaldoConvertidoByCuentaId.TryGetValue(c.CuentaId, out var saldo) ? saldo : 0m);
+                var disponibleConvertido = totalConvertido - inmovilizadoConvertido;
 
                 return new DashboardSaldoTitularResponse
                 {
                     TitularId = group.Key.TitularId,
                     TitularNombre = group.Key.TitularNombre,
+                    TipoTitular = group.First().TipoTitular.ToString(),
                     SaldosPorDivisa = saldosPorDivisa,
-                    TotalConvertido = Decimal.Round(totalConvertido, 2)
+                    TotalConvertido = Decimal.Round(totalConvertido, 2),
+                    SaldoInmovilizadoConvertido = Decimal.Round(inmovilizadoConvertido, 2),
+                    SaldoDisponibleConvertido = Decimal.Round(disponibleConvertido, 2)
                 };
             })
-            .OrderByDescending(x => x.TotalConvertido)
+            .OrderBy(x => GetTipoTitularOrder(x.TipoTitular))
+            .ThenByDescending(x => x.TotalConvertido)
             .ToList();
 
         return new DashboardPrincipalResponse
@@ -63,6 +72,7 @@ public sealed class DashboardService : IDashboardService
             IngresosMes = Decimal.Round(metrics.IngresosMes, 2),
             EgresosMes = Decimal.Round(metrics.EgresosMes, 2),
             TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
+            PlazosFijos = plazosFijos,
             SaldosPorTitular = titulares,
             ChartColors = chartColors
         };
@@ -103,6 +113,7 @@ public sealed class DashboardService : IDashboardService
                     BancoNombre = c.BancoNombre,
                     Divisa = c.Divisa,
                     EsEfectivo = c.EsEfectivo,
+                    TipoCuenta = c.TipoCuenta.ToString(),
                     SaldoActual = Decimal.Round(saldo, 2),
                     SaldoConvertido = Decimal.Round(saldoConvertido, 2)
                 };
@@ -142,11 +153,17 @@ public sealed class DashboardService : IDashboardService
         foreach (var entry in metrics.SaldosPorDivisa.OrderBy(x => x.Key))
         {
             var converted = await _tiposCambioService.ConvertAsync(entry.Value, entry.Key, targetCurrency, cancellationToken);
+            var disponible = metrics.SaldosDisponiblesPorDivisa.GetValueOrDefault(entry.Key, 0m);
+            var inmovilizado = metrics.SaldosInmovilizadosPorDivisa.GetValueOrDefault(entry.Key, 0m);
             items.Add(new DashboardSaldoDivisaResponse
             {
                 Divisa = entry.Key,
                 Saldo = Decimal.Round(entry.Value, 2),
-                SaldoConvertido = Decimal.Round(converted, 2)
+                SaldoConvertido = Decimal.Round(converted, 2),
+                SaldoDisponible = Decimal.Round(disponible, 2),
+                SaldoInmovilizado = Decimal.Round(inmovilizado, 2),
+                SaldoTotal = Decimal.Round(entry.Value, 2),
+                SaldoTotalConvertido = Decimal.Round(converted, 2)
             });
         }
 
@@ -306,6 +323,8 @@ public sealed class DashboardService : IDashboardService
         var saldoByCuenta = latestRows.ToDictionary(x => x.CuentaId, x => x.Saldo);
         var saldoConvertidoByCuenta = new Dictionary<Guid, decimal>();
         var saldosPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var saldosDisponiblesPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var saldosInmovilizadosPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var cuenta in cuentas)
         {
@@ -320,6 +339,14 @@ public sealed class DashboardService : IDashboardService
             }
 
             saldosPorDivisa[cuenta.Divisa] += saldo;
+            if (cuenta.TipoCuenta == TipoCuenta.PLAZO_FIJO)
+            {
+                saldosInmovilizadosPorDivisa[cuenta.Divisa] = saldosInmovilizadosPorDivisa.GetValueOrDefault(cuenta.Divisa, 0m) + saldo;
+            }
+            else
+            {
+                saldosDisponiblesPorDivisa[cuenta.Divisa] = saldosDisponiblesPorDivisa.GetValueOrDefault(cuenta.Divisa, 0m) + saldo;
+            }
 
             var converted = await _tiposCambioService.ConvertAsync(saldo, cuenta.Divisa, targetCurrency, cancellationToken);
             saldoConvertidoByCuenta[cuenta.CuentaId] = converted;
@@ -360,11 +387,70 @@ public sealed class DashboardService : IDashboardService
         return new DashboardMetrics
         {
             SaldosPorDivisa = saldosPorDivisa,
+            SaldosDisponiblesPorDivisa = saldosDisponiblesPorDivisa,
+            SaldosInmovilizadosPorDivisa = saldosInmovilizadosPorDivisa,
             SaldoByCuentaId = saldoByCuenta,
             SaldoConvertidoByCuentaId = saldoConvertidoByCuenta,
             IngresosMes = ingresosMes,
             EgresosMes = egresosMes,
             TotalConvertido = totalConvertido
+        };
+    }
+
+    private async Task<DashboardPlazosFijosResumenResponse> BuildPlazosFijosResumenAsync(
+        IReadOnlyList<CuentaScopeItem> cuentas,
+        DashboardMetrics metrics,
+        string targetCurrency,
+        CancellationToken cancellationToken)
+    {
+        var plazoCuentaIds = cuentas
+            .Where(c => c.TipoCuenta == TipoCuenta.PLAZO_FIJO)
+            .Select(c => c.CuentaId)
+            .ToHashSet();
+
+        if (plazoCuentaIds.Count == 0)
+        {
+            return new DashboardPlazosFijosResumenResponse();
+        }
+
+        var cuentaDivisas = cuentas.ToDictionary(c => c.CuentaId, c => c.Divisa);
+        var plazos = await _dbContext.PlazosFijos
+            .AsNoTracking()
+            .Where(p => plazoCuentaIds.Contains(p.CuentaId) && p.Estado != EstadoPlazoFijo.CANCELADO && p.Estado != EstadoPlazoFijo.RENOVADO)
+            .Select(p => new
+            {
+                p.CuentaId,
+                p.FechaVencimiento,
+                p.InteresPrevisto
+            })
+            .ToListAsync(cancellationToken);
+
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        decimal interesesConvertidos = 0m;
+        foreach (var plazo in plazos)
+        {
+            if (!plazo.InteresPrevisto.HasValue || !cuentaDivisas.TryGetValue(plazo.CuentaId, out var divisa))
+            {
+                continue;
+            }
+
+            interesesConvertidos += await _tiposCambioService.ConvertAsync(plazo.InteresPrevisto.Value, divisa, targetCurrency, cancellationToken);
+        }
+
+        var proximo = plazos
+            .Where(p => p.FechaVencimiento >= hoy)
+            .OrderBy(p => p.FechaVencimiento)
+            .FirstOrDefault();
+
+        var montoTotal = plazoCuentaIds.Sum(id => metrics.SaldoConvertidoByCuentaId.GetValueOrDefault(id, 0m));
+
+        return new DashboardPlazosFijosResumenResponse
+        {
+            MontoTotalConvertido = Decimal.Round(montoTotal, 2),
+            InteresesPrevistosConvertidos = Decimal.Round(interesesConvertidos, 2),
+            ProximoVencimiento = proximo?.FechaVencimiento,
+            DiasHastaProximoVencimiento = proximo is null ? null : proximo.FechaVencimiento.DayNumber - hoy.DayNumber,
+            TotalCuentas = plazoCuentaIds.Count
         };
     }
 
@@ -380,7 +466,11 @@ public sealed class DashboardService : IDashboardService
                         TitularId = titular.Id,
                         TitularNombre = titular.Nombre,
                         Divisa = cuenta.Divisa,
-                        EsEfectivo = cuenta.EsEfectivo
+                        EsEfectivo = cuenta.EsEfectivo,
+                        TipoCuenta = cuenta.TipoCuenta == TipoCuenta.NORMAL && cuenta.EsEfectivo
+                            ? TipoCuenta.EFECTIVO
+                            : cuenta.TipoCuenta,
+                        TipoTitular = titular.Tipo
                     };
 
         if (titularId.HasValue)
@@ -607,9 +697,20 @@ public sealed class DashboardService : IDashboardService
         return divisa.Trim().ToUpperInvariant();
     }
 
+    private static int GetTipoTitularOrder(string tipoTitular) =>
+        tipoTitular switch
+        {
+            nameof(TipoTitular.EMPRESA) => 0,
+            nameof(TipoTitular.AUTONOMO) => 1,
+            nameof(TipoTitular.PARTICULAR) => 2,
+            _ => 3
+        };
+
     private sealed class DashboardMetrics
     {
         public Dictionary<string, decimal> SaldosPorDivisa { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, decimal> SaldosDisponiblesPorDivisa { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, decimal> SaldosInmovilizadosPorDivisa { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<Guid, decimal> SaldoByCuentaId { get; set; } = [];
         public Dictionary<Guid, decimal> SaldoConvertidoByCuentaId { get; set; } = [];
         public decimal IngresosMes { get; set; }
@@ -643,6 +744,8 @@ public sealed class DashboardService : IDashboardService
         public string TitularNombre { get; set; } = string.Empty;
         public string Divisa { get; set; } = "EUR";
         public bool EsEfectivo { get; set; }
+        public TipoCuenta TipoCuenta { get; set; } = TipoCuenta.NORMAL;
+        public TipoTitular TipoTitular { get; set; } = TipoTitular.EMPRESA;
     }
 
     private sealed class EvolucionExtractRow

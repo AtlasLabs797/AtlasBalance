@@ -79,6 +79,8 @@ public sealed class CuentaResumenKpiResponse
     public Guid TitularId { get; set; }
     public string TitularNombre { get; set; } = string.Empty;
     public bool EsEfectivo { get; set; }
+    public string TipoCuenta { get; set; } = "NORMAL";
+    public PlazoFijoResponse? PlazoFijo { get; set; }
     public string? Notas { get; set; }
     public decimal SaldoActual { get; set; }
     public decimal IngresosMes { get; set; }

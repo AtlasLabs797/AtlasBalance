@@ -62,6 +62,7 @@ public sealed class UserAccessService : IUserAccessService
             {
                 p.TitularId,
                 p.CuentaId,
+                p.PuedeVerCuentas,
                 p.PuedeAgregarLineas,
                 p.PuedeEditarLineas,
                 p.PuedeEliminarLineas,
@@ -84,7 +85,7 @@ public sealed class UserAccessService : IUserAccessService
 
         var hasGlobalAccess = permisos.Any(p =>
             p.TitularId is null && p.CuentaId is null &&
-            GrantsDataAccess(p.PuedeAgregarLineas, p.PuedeEditarLineas, p.PuedeEliminarLineas, p.PuedeImportar));
+            GrantsAccountAccess(p.PuedeVerCuentas, p.PuedeAgregarLineas, p.PuedeEditarLineas, p.PuedeEliminarLineas, p.PuedeImportar));
 
         return new UserAccessScope
         {
@@ -188,6 +189,6 @@ public sealed class UserAccessService : IUserAccessService
         return Guid.TryParse(raw, out userId);
     }
 
-    private static bool GrantsDataAccess(bool canAdd, bool canEdit, bool canDelete, bool canImport) =>
-        canAdd || canEdit || canDelete || canImport;
+    private static bool GrantsAccountAccess(bool canViewAccounts, bool canAdd, bool canEdit, bool canDelete, bool canImport) =>
+        canViewAccounts || canAdd || canEdit || canDelete || canImport;
 }

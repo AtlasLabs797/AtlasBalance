@@ -120,4 +120,38 @@ public class UserAccessServiceTests
         scope.HasPermissions.Should().BeTrue();
         scope.HasGlobalAccess.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task GetScopeAsync_Should_Grant_Global_Access_For_ViewAccounts_GlobalPermission()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = null,
+            TitularId = null,
+            PuedeVerCuentas = true,
+            PuedeAgregarLineas = false,
+            PuedeEditarLineas = false,
+            PuedeEliminarLineas = false,
+            PuedeImportar = false,
+            PuedeVerDashboard = false
+        });
+        await db.SaveChangesAsync();
+
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+            new Claim(ClaimTypes.Role, nameof(RolUsuario.GERENTE))
+        ], "TestAuth");
+
+        var principal = new ClaimsPrincipal(identity);
+        var service = new UserAccessService(db);
+        var scope = await service.GetScopeAsync(principal, CancellationToken.None);
+
+        scope.HasPermissions.Should().BeTrue();
+        scope.HasGlobalAccess.Should().BeTrue();
+    }
 }

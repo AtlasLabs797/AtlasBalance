@@ -207,13 +207,28 @@
   --radius-shell: 30px;
   --radius-pill: 999px;
 
-  --shadow-sm: 0 2px 10px rgba(16, 24, 40, 0.04);
-  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.06);
-  --shadow-lg: 0 12px 28px rgba(16, 24, 40, 0.08);
-  --shadow-overlay: 0 24px 60px rgba(16, 24, 40, 0.14);
-  --shadow-card: 0 8px 24px rgba(16, 24, 40, 0.06);
-  --shadow-card-hover: 0 12px 28px rgba(16, 24, 40, 0.08);
-  --shadow-shell: 0 24px 60px rgba(16, 24, 40, 0.10);
+  --control-height: 2.75rem;
+  --control-height-compact: 2.45rem;
+  --control-padding-x: var(--space-3);
+  --control-border: var(--border-strong);
+  --control-bg: var(--bg-input);
+  --control-bg-hover: var(--bg-hover);
+  --control-ring: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
+
+  --surface-border: var(--border-soft);
+  --surface-border-hover: color-mix(in srgb, var(--accent-primary) 24%, var(--border-soft));
+  --surface-bg-raised: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+  --surface-bg-sunken: color-mix(in srgb, var(--bg-surface-soft) 84%, var(--bg-app));
+  --surface-highlight: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-surface));
+
+  --shadow-sm: 0 2px 10px color-mix(in srgb, var(--text-primary) 5%, transparent);
+  --shadow-md: 0 10px 28px color-mix(in srgb, var(--text-primary) 7%, transparent);
+  --shadow-lg: 0 16px 38px color-mix(in srgb, var(--text-primary) 9%, transparent);
+  --shadow-overlay: 0 24px 60px color-mix(in srgb, var(--text-primary) 16%, transparent);
+  --shadow-card: 0 8px 24px color-mix(in srgb, var(--text-primary) 6%, transparent);
+  --shadow-card-hover: 0 16px 34px color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --shadow-shell: 0 24px 60px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  --shadow-focus: var(--control-ring);
 
   --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
   --duration-instant: 120ms;
@@ -280,11 +295,15 @@
   --color-sidebar-active-bg: rgba(130, 164, 255, 0.16);
   --color-sidebar-active-text: #d5ddff;
 
+  --surface-bg-raised: color-mix(in srgb, var(--bg-surface) 90%, transparent);
+  --surface-bg-sunken: color-mix(in srgb, var(--bg-surface-soft) 76%, var(--bg-app));
+  --surface-highlight: color-mix(in srgb, var(--accent-primary) 12%, var(--bg-surface));
+
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.22);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
-  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.34);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 16px 38px rgba(0, 0, 0, 0.34);
   --shadow-overlay: 0 24px 60px rgba(0, 0, 0, 0.48);
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.26);
-  --shadow-card-hover: 0 14px 32px rgba(0, 0, 0, 0.34);
+  --shadow-card-hover: 0 16px 36px rgba(0, 0, 0, 0.36);
   --shadow-shell: 0 24px 60px rgba(0, 0, 0, 0.44);
 }

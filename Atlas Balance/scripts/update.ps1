@@ -1,4 +1,5 @@
 param(
+    [string]$PackagePath = "",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RemainingArgs
 )
@@ -14,24 +15,37 @@ function Test-IsAdmin {
 function Quote-Argument {
     param([string]$Value)
 
-    if ($Value -notmatch '[\s"]') {
+    if ($Value -notmatch "[\s']") {
         return $Value
     }
 
-    return '"' + ($Value -replace '"', '\"') + '"'
+    return "'" + ($Value -replace "'", "''") + "'"
 }
 
 $scriptPath = $MyInvocation.MyCommand.Path
-$updater = Join-Path $PSScriptRoot "Actualizar-AtlasBalance.ps1"
+$packageRoot = if ([string]::IsNullOrWhiteSpace($PackagePath)) {
+    Split-Path -Parent $PSScriptRoot
+} else {
+    [IO.Path]::GetFullPath($PackagePath)
+}
+$scriptsRoot = Join-Path $packageRoot "scripts"
+$updater = Join-Path $scriptsRoot "Actualizar-AtlasBalance.ps1"
 if (-not (Test-Path $updater)) {
     throw "No se encontro $updater."
+}
+
+$apiExe = Join-Path $packageRoot "api\GestionCaja.API.exe"
+$watchdogExe = Join-Path $packageRoot "watchdog\GestionCaja.Watchdog.exe"
+if (-not (Test-Path $apiExe) -or -not (Test-Path $watchdogExe)) {
+    throw "Esta carpeta no es el paquete de actualizacion. Usa -PackagePath con la carpeta descomprimida de AtlasBalance-V-XX-win-x64 o ejecuta update.cmd desde dentro del paquete."
 }
 
 if (-not (Test-IsAdmin)) {
     $argumentList = @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
-        "-File", (Quote-Argument $scriptPath)
+        "-File", (Quote-Argument $scriptPath),
+        "-PackagePath", (Quote-Argument $packageRoot)
     ) + ($RemainingArgs | ForEach-Object { Quote-Argument $_ })
 
     Start-Process -FilePath "powershell.exe" -ArgumentList ($argumentList -join " ") -Verb RunAs | Out-Null

@@ -85,6 +85,11 @@ export function AppSelect({ value, options, onChange, label, ariaLabel, classNam
             }
           }
 
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen((current) => !current);
+          }
+
           if (event.key === 'Home' || event.key === 'End') {
             event.preventDefault();
             const enabled = options.filter((option) => !option.disabled);

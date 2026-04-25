@@ -3,9 +3,7 @@
   display: grid;
   grid-template-rows: clamp(9rem, 29vh, 17rem) 1fr auto;
   color: var(--text-primary);
-  background:
-    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--accent-primary) 9%, transparent), transparent 28rem),
-    linear-gradient(180deg, var(--bg-canvas), var(--bg-app));
+  background: var(--bg-app);
   overflow-y: auto;
 }
 
@@ -21,9 +19,9 @@
   margin: 0 auto;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--space-3);
-  text-align: center;
+  text-align: left;
 }
 
 .auth-logo-image {
@@ -58,10 +56,11 @@
   display: grid;
   gap: var(--space-4);
   padding: var(--space-6);
-  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
-  border: 1px solid var(--border-soft);
+  background: var(--surface-bg-raised);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-shell);
+  backdrop-filter: blur(12px);
 }
 
 .auth-card-title {
@@ -90,9 +89,9 @@
 .auth-input {
   width: 100%;
   min-height: 3rem;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-control);
-  background: var(--bg-input);
+  background: var(--control-bg);
   color: var(--text-primary);
   padding: 0.75rem 0.9rem;
   transition:
@@ -104,7 +103,7 @@
 .auth-input:focus {
   outline: none;
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
+  box-shadow: var(--shadow-focus);
 }
 
 .auth-input::placeholder {
@@ -132,6 +131,10 @@
   padding: 0 var(--space-3);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
+}
+
+.auth-password-toggle:hover {
+  background: var(--accent-primary-soft);
 }
 
 .auth-password-toggle:active:not(:disabled) {
@@ -166,7 +169,7 @@
   width: 100%;
   min-height: 3rem;
   margin-top: var(--space-1);
-  border: 1px solid transparent;
+  border: 1px solid color-mix(in srgb, var(--accent-primary-hover) 36%, var(--accent-primary));
   border-radius: var(--radius-control);
   background: var(--accent-primary);
   color: var(--text-inverse);
@@ -182,6 +185,7 @@
 .auth-button:hover:not(:disabled) {
   background: var(--accent-primary-hover);
   box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
 }
 
 .auth-footer {
@@ -231,5 +235,10 @@
 
   .auth-footer-content {
     justify-content: center;
+  }
+
+  .auth-logo-container {
+    justify-content: center;
+    text-align: center;
   }
 }

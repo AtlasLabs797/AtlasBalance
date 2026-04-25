@@ -16,6 +16,9 @@ public static class AuditActions
     public const string CambioPermisos = "CAMBIO_PERMISOS";
     public const string ConfigAlerta = "CONFIG_ALERTA";
     public const string AlertaSaldoDisparada = "ALERTA_SALDO_DISPARADA";
+    public const string PlazoFijoProximoVencer = "PLAZO_FIJO_PROXIMO_VENCER";
+    public const string PlazoFijoVencido = "PLAZO_FIJO_VENCIDO";
+    public const string PlazoFijoRenovado = "PLAZO_FIJO_RENOVADO";
     public const string BackupGenerado = "BACKUP_GENERADO";
     public const string BackupRetencionAutomatica = "BACKUP_RETENCION_AUTOMATICA";
     public const string ExportacionGenerada = "EXPORTACION_GENERADA";

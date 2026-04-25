@@ -1,0 +1,205 @@
+.import-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.import-header p {
+  color: var(--color-text-secondary);
+}
+
+.import-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.import-steps li {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-md);
+  padding: var(--space-2);
+  text-align: center;
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+}
+
+.import-steps li.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+}
+
+.import-card {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-lg);
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.import-card textarea {
+  width: 100%;
+  font-family: var(--font-family-mono);
+}
+
+.import-subheader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.import-map-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  max-width: 420px;
+}
+
+.import-extra-row {
+  display: grid;
+  grid-template-columns: 1fr 120px auto;
+  gap: var(--space-2);
+}
+
+.import-plazo-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr);
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.import-plazo-grid label,
+.import-card > label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.import-plazo-grid input,
+.import-card > label input {
+  width: 100%;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+}
+
+.import-preview-grid {
+  overflow: auto;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-md);
+}
+
+.import-preview-grid table,
+.import-validation-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.import-preview-grid td,
+.import-validation-table th,
+.import-validation-table td {
+  border: 1px solid var(--color-border-primary);
+  padding: var(--space-2);
+  vertical-align: top;
+}
+
+.import-validation-table-wrap {
+  overflow: auto;
+  max-height: 420px;
+}
+
+.import-validation-table tr.invalid {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+
+.import-validation-table tr.warning {
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.import-summary {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.import-muted {
+  color: var(--color-text-secondary);
+}
+
+.import-result-box {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-md);
+  padding: var(--space-3);
+  background: var(--color-bg-secondary);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.import-result-box p {
+  margin: 0;
+}
+
+.import-success {
+  color: var(--color-success);
+  font-weight: var(--font-weight-medium);
+}
+
+.import-modal-backdrop {
+  z-index: calc(var(--z-modal-backdrop) + 2);
+}
+
+.import-modal {
+  width: min(1280px, 96vw);
+  height: min(92vh, 940px);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-overlay);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.import-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.import-modal-header h2 {
+  margin: 0;
+}
+
+.import-modal-header p {
+  margin: var(--space-1) 0 0;
+}
+
+.import-modal-body {
+  min-height: 0;
+}
+
+.import-modal-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--color-bg-primary);
+}
+
+@media (max-width: 760px) {
+  .import-plazo-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -37,6 +37,7 @@ public sealed class PermisoUsuarioResponse
     public Guid UsuarioId { get; set; }
     public Guid? CuentaId { get; set; }
     public Guid? TitularId { get; set; }
+    public bool PuedeVerCuentas { get; set; }
     public bool PuedeAgregarLineas { get; set; }
     public bool PuedeEditarLineas { get; set; }
     public bool PuedeEliminarLineas { get; set; }

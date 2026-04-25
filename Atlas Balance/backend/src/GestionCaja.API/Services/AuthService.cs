@@ -391,6 +391,7 @@ public sealed class AuthService : IAuthService
                 UsuarioId = p.UsuarioId,
                 CuentaId = p.CuentaId,
                 TitularId = p.TitularId,
+                PuedeVerCuentas = p.PuedeVerCuentas,
                 PuedeAgregarLineas = p.PuedeAgregarLineas,
                 PuedeEditarLineas = p.PuedeEditarLineas,
                 PuedeEliminarLineas = p.PuedeEliminarLineas,

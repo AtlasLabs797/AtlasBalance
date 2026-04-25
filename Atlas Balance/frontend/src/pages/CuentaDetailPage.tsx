@@ -14,7 +14,7 @@ import { usePermisosStore } from '@/stores/permisosStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import type { CuentaResumenKpi, Extracto, PaginatedResponse, PeriodoDashboard } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDateTime, getAmountTone } from '@/utils/formatters';
+import { formatCurrency, formatDate, formatDateTime, getAmountTone } from '@/utils/formatters';
 
 interface DeleteCandidate {
   id: string;
@@ -31,6 +31,14 @@ interface UpdateExtractoPayload {
   columnas_extra?: Record<string, string>;
 }
 
+const PLAZO_ESTADO_LABELS: Record<string, string> = {
+  ACTIVO: 'Activo',
+  PROXIMO_VENCER: 'Próximo a vencer',
+  VENCIDO: 'Vencido',
+  RENOVADO: 'Renovado',
+  CANCELADO: 'Cancelado',
+};
+
 function parseDecimalInput(value: string, fieldLabel: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -38,6 +46,28 @@ function parseDecimalInput(value: string, fieldLabel: string): number {
   }
 
   return parsed;
+}
+
+function getDateOnlyDiffDays(value: string): number {
+  const [year, month, day] = value.split('-').map(Number);
+  const target = new Date(year, month - 1, day);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+function formatPlazoTiming(fechaVencimiento: string): string {
+  const diffDays = getDateOnlyDiffDays(fechaVencimiento);
+
+  if (diffDays < 0) return `Vencido hace ${Math.abs(diffDays)} días`;
+  if (diffDays === 0) return 'Vence hoy';
+  if (diffDays === 1) return 'Vence mañana';
+  return `Faltan ${diffDays} días`;
+}
+
+function formatPlazoEstado(estado: string): string {
+  return PLAZO_ESTADO_LABELS[estado] ?? estado.toLowerCase().replace(/_/g, ' ');
 }
 
 export default function CuentaDetailPage() {
@@ -71,6 +101,7 @@ export default function CuentaDetailPage() {
   const canDeleteRows = Boolean(cuentaId) && summary ? canDeleteInCuenta(cuentaId, summary.titular_id) : false;
   const canOpenAccount = Boolean(cuentaId) && summary ? canViewCuenta(cuentaId, summary.titular_id) : false;
   const canEditAccountNotes = Boolean(cuentaId) && summary ? canEditCuenta(cuentaId, summary.titular_id) : false;
+  const plazoFijo = summary?.tipo_cuenta === 'PLAZO_FIJO' ? summary.plazo_fijo : null;
 
   const canEditCell = useCallback(
     (column: string) => {
@@ -320,6 +351,14 @@ export default function CuentaDetailPage() {
         <div>
           <h1>{summary.cuenta_nombre}</h1>
           <p className="dashboard-subtitle">Dashboard por cuenta</p>
+          {plazoFijo ? (
+            <div className="cuenta-plazo-summary" aria-label={`Vencimiento del plazo fijo ${formatDate(plazoFijo.fecha_vencimiento)}`}>
+              <span className="pill">Plazo fijo</span>
+              <strong>Vence el {formatDate(plazoFijo.fecha_vencimiento)}</strong>
+              <span>{formatPlazoTiming(plazoFijo.fecha_vencimiento)}</span>
+              <span>Estado: {formatPlazoEstado(plazoFijo.estado)}</span>
+            </div>
+          ) : null}
         </div>
         <div className="dashboard-toolbar-actions">
           <PeriodoSelector value={periodo} onChange={setPeriodo} />

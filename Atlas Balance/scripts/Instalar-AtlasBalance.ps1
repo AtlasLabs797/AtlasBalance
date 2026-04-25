@@ -22,11 +22,12 @@
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-01.03"
+$AppVersion = "V-01.04"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
 $GeneratedPostgresAdminPassword = ""
+$ExistingUsersDetected = $false
 
 function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -119,6 +120,16 @@ function Test-TcpPortAvailable {
     }
 }
 
+function Write-PostgresManualInstallHint {
+    Write-Host ""
+    Write-Host "PostgreSQL no quedo preparado automaticamente." -ForegroundColor Yellow
+    Write-Host "En Windows Server 2019 instala PostgreSQL 16+ manualmente. PostgreSQL 17 es valido." -ForegroundColor Yellow
+    Write-Host "Despues relanza el instalador indicando, por ejemplo:" -ForegroundColor Yellow
+    Write-Host '.\install.cmd -InstallPath C:\AtlasBalance -ServerName NOMBRE_SERVIDOR -ApiPort 443 -PostgresAdminPassword <password> -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"' -ForegroundColor Cyan
+    Write-Host "No pegues passwords reales en chats, tickets ni documentacion." -ForegroundColor Yellow
+    Write-Host ""
+}
+
 function Resolve-PostgresPort {
     param([int]$PreferredPort)
 
@@ -167,7 +178,12 @@ function Try-InstallPostgres {
     ) -join " "
 
     Write-Host "Instalando PostgreSQL gestionado con winget: $PackageId" -ForegroundColor Yellow
-    & winget.exe install --id $PackageId -e --accept-source-agreements --accept-package-agreements --silent --override $override
+    try {
+        & winget.exe install --id $PackageId -e --accept-source-agreements --accept-package-agreements --silent --override $override
+    } catch {
+        Write-Host "winget fallo al instalar PostgreSQL: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
     if ($LASTEXITCODE -eq 0) {
         $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
         if ($service -and $service.Status -ne "Running") {
@@ -180,6 +196,7 @@ function Try-InstallPostgres {
         return $true
     }
 
+    Write-Host "winget termino con codigo $LASTEXITCODE al instalar PostgreSQL." -ForegroundColor Yellow
     return $false
 }
 
@@ -256,6 +273,19 @@ function Ensure-Database {
     Invoke-Psql -PsqlExe $psql -Database $DbName -Sql "GRANT ALL PRIVILEGES ON DATABASE `"$DbName`" TO `"$DbUser`";" | Out-Null
 }
 
+function Test-ExistingApplicationUsers {
+    param([string]$PostgresBin)
+
+    $psql = Join-Path $PostgresBin "psql.exe"
+    $sql = "SELECT CASE WHEN to_regclass('`"USUARIOS`"') IS NULL THEN 0 ELSE (SELECT COUNT(*) FROM `"USUARIOS`" WHERE deleted_at IS NULL) END;"
+    $count = Invoke-Psql -PsqlExe $psql -Database $DbName -Scalar -Sql $sql
+    $parsed = 0
+    if ([int]::TryParse($count, [ref]$parsed)) {
+        return ($parsed -gt 0)
+    }
+    return $false
+}
+
 function Sync-DirectoryPreserveConfig {
     param(
         [string]$Source,
@@ -321,7 +351,10 @@ function New-AtlasCertificate {
     $pfxPath = Join-Path $CertDirectory "atlas-balance.pfx"
     $cerPath = Join-Path $CertDirectory "atlas-balance.cer"
     if (Test-Path $pfxPath) {
-        return @{ Path = $pfxPath; Password = $Password; PublicCer = $cerPath }
+        Remove-Item -LiteralPath $pfxPath -Force
+    }
+    if (Test-Path $cerPath) {
+        Remove-Item -LiteralPath $cerPath -Force
     }
 
     $dnsNames = @($DnsName, "localhost", $env:COMPUTERNAME) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
@@ -365,6 +398,8 @@ function Write-AppSettings {
     $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword"
     $url = "https://0.0.0.0:$ApiPort"
 
+    $seedAdminPassword = if ($ExistingUsersDetected) { "" } else { $AdminPassword }
+
     $apiConfig = [ordered]@{
         ConnectionStrings = [ordered]@{
             DefaultConnection = $connection
@@ -376,7 +411,7 @@ function Write-AppSettings {
         }
         SeedAdmin = [ordered]@{
             Email = $AdminEmail
-            Password = $AdminPassword
+            Password = $seedAdminPassword
         }
         WatchdogSettings = [ordered]@{
             BaseUrl = "http://localhost:$WatchdogPort"
@@ -579,20 +614,38 @@ function Write-RuntimeAndCredentials {
     Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $AppVersion -Encoding UTF8
 
     $credentialsPath = Join-Path $InstallPath "INSTALL_CREDENTIALS_ONCE.txt"
-    $lines = @(
-        "Atlas Balance $AppVersion",
-        "URL: $AppUrl",
-        "Admin inicial: $AdminEmail",
-        "Password admin inicial: $AdminPassword",
-        "Base de datos: $DbName",
-        "Usuario DB app: $DbUser",
-        "Password DB app: $DbPassword",
-        "PostgreSQL gestionado por Atlas: $ManagedPostgres",
-        "",
-        "Guarda esto en un gestor de passwords y borra este archivo.",
-        "Si nadie lo borra antes, el instalador intentara eliminarlo automaticamente en 24 horas.",
-        "Si dejas este archivo tirado en el servidor, la instalacion no esta segura."
-    )
+    if ($ExistingUsersDetected) {
+        $lines = @(
+            "Atlas Balance $AppVersion",
+            "URL: $AppUrl",
+            "Base existente detectada.",
+            "Las credenciales iniciales no se regeneran.",
+            "Usa el admin ya creado o ejecuta scripts\Reset-AdminPassword.ps1 desde la instalacion.",
+            "Base de datos: $DbName",
+            "Usuario DB app: $DbUser",
+            "Password DB app: $DbPassword",
+            "PostgreSQL gestionado por Atlas: $ManagedPostgres",
+            "",
+            "Guarda esto en un gestor de passwords y borra este archivo.",
+            "Si nadie lo borra antes, el instalador intentara eliminarlo automaticamente en 24 horas.",
+            "Si dejas este archivo tirado en el servidor, la instalacion no esta segura."
+        )
+    } else {
+        $lines = @(
+            "Atlas Balance $AppVersion",
+            "URL: $AppUrl",
+            "Admin inicial: $AdminEmail",
+            "Password admin inicial: $AdminPassword",
+            "Base de datos: $DbName",
+            "Usuario DB app: $DbUser",
+            "Password DB app: $DbPassword",
+            "PostgreSQL gestionado por Atlas: $ManagedPostgres",
+            "",
+            "Guarda esto en un gestor de passwords y borra este archivo.",
+            "Si nadie lo borra antes, el instalador intentara eliminarlo automaticamente en 24 horas.",
+            "Si dejas este archivo tirado en el servidor, la instalacion no esta segura."
+        )
+    }
     if ($ManagedPostgres) {
         $lines = @(
             $lines[0..6],
@@ -607,17 +660,17 @@ function Write-RuntimeAndCredentials {
     Register-CredentialsCleanupTask -CredentialsPath $credentialsPath
 }
 
-if (-not (Test-IsAdmin)) {
-    throw "Ejecuta este instalador como Administrador."
-}
-
 $packageRoot = Split-Path -Parent $PSScriptRoot
 $apiSource = Join-Path $packageRoot "api"
 $watchdogSource = Join-Path $packageRoot "watchdog"
 
 if (-not (Test-Path (Join-Path $apiSource "GestionCaja.API.exe")) -or
     -not (Test-Path (Join-Path $watchdogSource "GestionCaja.Watchdog.exe"))) {
-    throw "No se encontraron los binarios publicados. Ejecuta primero scripts\Build-Release.ps1 y usa el paquete generado."
+    throw "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-$AppVersion-win-x64.zip. Ejecuta el instalador desde la carpeta descomprimida que contiene api\GestionCaja.API.exe, watchdog\GestionCaja.Watchdog.exe, scripts e install.cmd."
+}
+
+if (-not (Test-IsAdmin)) {
+    throw "Ejecuta este instalador como Administrador."
 }
 
 if ([string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = New-RandomSecret 40 }
@@ -638,13 +691,16 @@ if (-not $SkipDatabaseSetup) {
         $DbHost = "localhost"
         $DbPort = Resolve-PostgresPort -PreferredPort $DbPort
         $generatedSuperPassword = New-RandomSecret 40
-        [void](Try-InstallPostgres `
+        $postgresInstalled = Try-InstallPostgres `
             -PackageId $PostgresPackageId `
             -Port $DbPort `
             -SuperPassword $generatedSuperPassword `
             -PrefixPath $PostgresInstallPath `
             -DataPath $PostgresDataPath `
-            -ServiceName $PostgresServiceName)
+            -ServiceName $PostgresServiceName
+        if (-not $postgresInstalled) {
+            Write-PostgresManualInstallHint
+        }
         $PostgresBinPath = Find-PostgresBin -PreferredPath (Join-Path $PostgresInstallPath "bin")
     }
 
@@ -652,13 +708,20 @@ if (-not $SkipDatabaseSetup) {
         $PostgresBinPath = Find-PostgresBin -PreferredPath $PostgresBinPath
     }
     if ([string]::IsNullOrWhiteSpace($PostgresBinPath) -and $InstallDependencies) {
-        throw "No se pudo preparar PostgreSQL automaticamente. Instala PostgreSQL 16+ o pasa -PostgresAdminPassword para usar una instancia existente."
+        Write-PostgresManualInstallHint
+        throw "No se pudo preparar PostgreSQL automaticamente. Instala PostgreSQL 16+ manualmente o pasa -PostgresAdminPassword y -PostgresBinPath para usar una instancia existente."
     }
     if ([string]::IsNullOrWhiteSpace($PostgresBinPath)) {
-        throw "No se encontro PostgreSQL 16+. Ejecuta install.cmd para instalacion automatica o indica -PostgresBinPath."
+        Write-PostgresManualInstallHint
+        throw "No se encontro PostgreSQL 16+. Indica -PostgresBinPath o instala PostgreSQL manualmente."
     }
 
     Ensure-Database -PostgresBin $PostgresBinPath
+    $ExistingUsersDetected = Test-ExistingApplicationUsers -PostgresBin $PostgresBinPath
+    if ($ExistingUsersDetected) {
+        Write-Host "Base existente detectada. Las credenciales iniciales no se regeneran." -ForegroundColor Yellow
+        Write-Host "Usa el admin ya creado o ejecuta scripts\Reset-AdminPassword.ps1 despues de instalar." -ForegroundColor Yellow
+    }
 }
 
 $apiPath = Join-Path $InstallPath "api"
@@ -713,10 +776,21 @@ foreach ($shortcutRoot in $shortcutTargets) {
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 Start-Sleep -Seconds 5
 try {
-    $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20
-    Write-Host "Health check HTTP $($health.StatusCode)" -ForegroundColor Green
+    $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
+    if ($curl) {
+        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl/api/health" 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $statusCode -eq "200") {
+            Write-Host "Health check curl.exe HTTP $statusCode" -ForegroundColor Green
+        } else {
+            Write-Host "curl.exe no confirmo health OK (codigo $statusCode). Prueba manual: curl.exe -k -v $appUrl/api/health" -ForegroundColor Yellow
+        }
+    } else {
+        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20
+        Write-Host "Health check HTTP $($health.StatusCode)" -ForegroundColor Green
+    }
 } catch {
-    Write-Host "La instalacion termino, pero el health check aun no responde: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "La instalacion termino, pero el health check automatico no confirmo la API: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "En Windows Server 2019 usa como prueba primaria: curl.exe -k -v $appUrl/api/health" -ForegroundColor Yellow
 }
 
 Write-Host ""

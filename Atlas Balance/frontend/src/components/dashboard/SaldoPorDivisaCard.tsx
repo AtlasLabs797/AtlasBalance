@@ -22,13 +22,27 @@ export function SaldoPorDivisaCard({ items, divisaPrincipal }: SaldoPorDivisaCar
             <article key={item.divisa} className="dashboard-divisa-item">
               <h3>{item.divisa}</h3>
               <p>
-                <SignedAmount value={item.saldo}>{formatCurrency(item.saldo, item.divisa)}</SignedAmount>
+                <SignedAmount value={item.saldo_total ?? item.saldo}>
+                  {formatCurrency(item.saldo_total ?? item.saldo, item.divisa)}
+                </SignedAmount>
               </p>
+              <span className="dashboard-divisa-converted">
+                Disponible:{' '}
+                <SignedAmount value={item.saldo_disponible ?? item.saldo}>
+                  {formatCurrency(item.saldo_disponible ?? item.saldo, item.divisa)}
+                </SignedAmount>
+              </span>
+              <span className="dashboard-divisa-converted">
+                Inmovilizado:{' '}
+                <SignedAmount value={item.saldo_inmovilizado ?? 0}>
+                  {formatCurrency(item.saldo_inmovilizado ?? 0, item.divisa)}
+                </SignedAmount>
+              </span>
               {item.divisa !== divisaPrincipal ? (
                 <span className="dashboard-divisa-converted">
                   Equivale a{' '}
-                  <SignedAmount value={item.saldo_convertido}>
-                    {formatCurrency(item.saldo_convertido, divisaPrincipal)}
+                  <SignedAmount value={item.saldo_total_convertido ?? item.saldo_convertido}>
+                    {formatCurrency(item.saldo_total_convertido ?? item.saldo_convertido, divisaPrincipal)}
                   </SignedAmount>
                 </span>
               ) : null}

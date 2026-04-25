@@ -35,12 +35,31 @@ public sealed class ImportacionConfirmarRequest
     public IReadOnlyList<int>? FilasAImportar { get; set; }
 }
 
+public sealed class ImportacionPlazoFijoMovimientoRequest
+{
+    public Guid CuentaId { get; set; }
+    public string TipoMovimiento { get; set; } = "INGRESO";
+    public DateOnly Fecha { get; set; }
+    public decimal Monto { get; set; }
+    public string? Concepto { get; set; }
+}
+
+public sealed class ImportacionPlazoFijoMovimientoResponse
+{
+    public Guid ExtractoId { get; set; }
+    public int FilaNumero { get; set; }
+    public decimal Monto { get; set; }
+    public decimal SaldoAnterior { get; set; }
+    public decimal SaldoActual { get; set; }
+}
+
 public sealed class FilaValidacionResponse
 {
     public int Indice { get; set; }
     public bool Valida { get; set; }
     public Dictionary<string, string?> Datos { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<string> Errores { get; set; } = [];
+    public IReadOnlyList<string> Advertencias { get; set; } = [];
 }
 
 public sealed class ErrorFilaResponse
@@ -73,6 +92,7 @@ public sealed class CuentaImportacionContextoResponse
     public string TitularNombre { get; set; } = string.Empty;
     public string Divisa { get; set; } = string.Empty;
     public bool EsEfectivo { get; set; }
+    public string TipoCuenta { get; set; } = string.Empty;
     public Guid? FormatoId { get; set; }
     public MapeoColumnasRequest? FormatoPredefinido { get; set; }
 }

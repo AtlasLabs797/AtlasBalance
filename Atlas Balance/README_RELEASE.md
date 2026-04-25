@@ -1,6 +1,8 @@
-# Atlas Balance V-01.03 - release Windows x64
+# Atlas Balance V-01.04 - release Windows x64
 
 Este paquete es autonomo para servidor Windows: el frontend ya esta compilado, el backend y Watchdog van publicados self-contained y la base de datos se prepara desde el instalador.
+
+El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.04-win-x64.zip`; dentro deben existir `api\GestionCaja.API.exe` y `watchdog\GestionCaja.Watchdog.exe`.
 
 ## Scripts de un clic
 
@@ -31,7 +33,11 @@ Por defecto la instalacion queda en `C:\AtlasBalance`. Para usar otra ruta:
 
 ## Base de datos
 
-El instalador intenta preparar PostgreSQL 16 con `winget` cuando no se pasa una instancia existente. Genera passwords fuertes y guarda las credenciales iniciales en:
+El requisito real es PostgreSQL 16+. PostgreSQL 17 es valido.
+
+En Windows Server 2019, instala PostgreSQL manualmente si `winget` falla o no esta disponible. `winget` no es una base fiable para prometer instalacion "one click" en servidores limpios.
+
+El instalador genera passwords fuertes y guarda las credenciales iniciales en:
 
 ```text
 C:\AtlasBalance\INSTALL_CREDENTIALS_ONCE.txt
@@ -42,7 +48,35 @@ Guarda ese contenido en un gestor de passwords y borra el archivo despues del pr
 Si ya tienes PostgreSQL y quieres usarlo:
 
 ```powershell
-.\install.cmd -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\16\bin"
+.\install.cmd -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
 ```
 
 No documentes passwords reales en tickets, docs ni chats.
+
+Si reinstalas sobre una BD existente, las credenciales iniciales no se regeneran. Usa el admin ya creado o:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Reset-AdminPassword.ps1" -InstallPath C:\AtlasBalance -AdminEmail admin@atlasbalance.local -GeneratePassword
+```
+
+Health check recomendado:
+
+```powershell
+curl.exe -k -v https://localhost/api/health
+```
+
+## Actualizar una instalacion existente
+
+Desde la carpeta descomprimida de este paquete:
+
+```powershell
+.\update.cmd -InstallPath C:\AtlasBalance
+```
+
+Si la instalacion ya tiene los scripts nuevos, tambien puedes lanzar desde la carpeta instalada apuntando al paquete:
+
+```powershell
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.04-win-x64 -InstallPath C:\AtlasBalance
+```
+
+El actualizador crea backup previo, conserva configuracion, reemplaza API/Watchdog, actualiza scripts operativos instalados, actualiza `VERSION`/runtime y valida `/api/health` con `curl.exe -k`.

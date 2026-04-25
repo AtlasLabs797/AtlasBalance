@@ -79,6 +79,7 @@ export default function TitularesPage() {
   const [pageSize, setPageSize] = useState(24);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
+  const [tipoFilter, setTipoFilter] = useState('');
   const [incluirEliminados, setIncluirEliminados] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +139,7 @@ export default function TitularesPage() {
           page,
           pageSize,
           search: search || undefined,
+          tipoTitular: tipoFilter || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
           sortBy: 'nombre',
           sortDir: 'asc',
@@ -155,7 +157,7 @@ export default function TitularesPage() {
   useEffect(() => {
     void loadTitulares();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros y paginacion
-  }, [page, pageSize, search, incluirEliminados, isAdmin]);
+  }, [page, pageSize, search, tipoFilter, incluirEliminados, isAdmin]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -431,6 +433,20 @@ export default function TitularesPage() {
             setPageSize(next);
           }}
         />
+        <AppSelect
+          ariaLabel="Tipo de titular"
+          value={tipoFilter}
+          options={[
+            { value: '', label: 'Todos los tipos' },
+            { value: 'EMPRESA', label: 'Empresa' },
+            { value: 'AUTONOMO', label: 'Autonomo' },
+            { value: 'PARTICULAR', label: 'Particular' },
+          ]}
+          onChange={(next) => {
+            setPage(1);
+            setTipoFilter(next);
+          }}
+        />
         {isAdmin && (
           <label>
             <input
@@ -558,8 +574,9 @@ export default function TitularesPage() {
                     label="Tipo"
                     value={form.tipo}
                     options={[
-                      { value: 'EMPRESA', label: 'EMPRESA' },
-                      { value: 'PARTICULAR', label: 'PARTICULAR' },
+                      { value: 'EMPRESA', label: 'Empresa' },
+                      { value: 'AUTONOMO', label: 'Autonomo' },
+                      { value: 'PARTICULAR', label: 'Particular' },
                     ]}
                     onChange={(next) => setForm((f) => ({ ...f, tipo: next as TipoTitular }))}
                   />

@@ -1,8 +1,13 @@
+using System.Text.Json.Serialization;
+using GestionCaja.API.Models;
+
 namespace GestionCaja.API.DTOs;
 
 public sealed class SaveAlertaSaldoRequest
 {
     public Guid? CuentaId { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public TipoTitular? TipoTitular { get; set; }
     public decimal SaldoMinimo { get; set; }
     public bool Activa { get; set; } = true;
     public IReadOnlyList<Guid> DestinatarioUsuarioIds { get; set; } = [];
@@ -20,6 +25,8 @@ public sealed class AlertaSaldoItemResponse
     public Guid Id { get; set; }
     public Guid? CuentaId { get; set; }
     public string? CuentaNombre { get; set; }
+    public string Alcance { get; set; } = "GLOBAL";
+    public string? TipoTitular { get; set; }
     public Guid? TitularId { get; set; }
     public string? TitularNombre { get; set; }
     public string? Divisa { get; set; }
@@ -37,6 +44,7 @@ public sealed class AlertaActivaItemResponse
     public Guid TitularId { get; set; }
     public string CuentaNombre { get; set; } = string.Empty;
     public string TitularNombre { get; set; } = string.Empty;
+    public string TipoTitular { get; set; } = string.Empty;
     public string Divisa { get; set; } = string.Empty;
     public decimal SaldoActual { get; set; }
     public decimal SaldoMinimo { get; set; }

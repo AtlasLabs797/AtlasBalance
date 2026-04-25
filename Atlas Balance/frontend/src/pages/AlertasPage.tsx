@@ -6,6 +6,7 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import type { TipoTitular } from '@/types';
 
 interface AlertaContextoCuenta {
   id: string;
@@ -30,6 +31,8 @@ interface AlertaDestinatario {
 interface AlertaItem {
   id: string;
   cuenta_id: string | null;
+  tipo_titular: TipoTitular | null;
+  alcance: 'GLOBAL' | 'TIPO_TITULAR' | 'CUENTA';
   cuenta_nombre: string | null;
   titular_id: string | null;
   titular_nombre: string | null;
@@ -43,6 +46,7 @@ interface AlertaItem {
 
 interface SaveAlertaPayload {
   cuenta_id: string | null;
+  tipo_titular: TipoTitular | null;
   saldo_minimo: number;
   activa: boolean;
   destinatario_usuario_ids: string[];
@@ -50,6 +54,7 @@ interface SaveAlertaPayload {
 
 const EMPTY_FORM: SaveAlertaPayload = {
   cuenta_id: null,
+  tipo_titular: null,
   saldo_minimo: 0,
   activa: true,
   destinatario_usuario_ids: [],
@@ -80,10 +85,18 @@ export default function AlertasPage() {
   const [usuarios, setUsuarios] = useState<AlertaContextoUsuario[]>([]);
   const [globalForm, setGlobalForm] = useState<SaveAlertaPayload>(EMPTY_FORM);
   const [cuentaForm, setCuentaForm] = useState<SaveAlertaPayload>(EMPTY_FORM);
+  const [tipoForm, setTipoForm] = useState<SaveAlertaPayload>({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
   const [editingCuentaAlertId, setEditingCuentaAlertId] = useState<string | null>(null);
+  const [editingTipoAlertId, setEditingTipoAlertId] = useState<string | null>(null);
 
-  const globalAlert = useMemo(() => alertas.find((item) => item.cuenta_id === null) ?? null, [alertas]);
   const cuentaAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id !== null), [alertas]);
+  const tipoAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id === null && item.tipo_titular !== null), [alertas]);
+  const onlyGlobalAlert = useMemo(() => alertas.find((item) => item.cuenta_id === null && item.tipo_titular === null) ?? null, [alertas]);
+  const tipoTitularOptions: Array<{ value: TipoTitular; label: string }> = [
+    { value: 'EMPRESA', label: 'Empresa' },
+    { value: 'AUTONOMO', label: 'Autonomo' },
+    { value: 'PARTICULAR', label: 'Particular' },
+  ];
   const availableCuentas = useMemo(() => {
     const occupied = new Set(
       cuentaAlerts
@@ -95,10 +108,11 @@ export default function AlertasPage() {
   }, [cuentaAlerts, cuentas, cuentaForm.cuenta_id, editingCuentaAlertId]);
 
   const hydrateForms = (items: AlertaItem[]) => {
-    const global = items.find((item) => item.cuenta_id === null) ?? null;
+    const global = items.find((item) => item.cuenta_id === null && item.tipo_titular === null) ?? null;
     if (global) {
       setGlobalForm({
         cuenta_id: null,
+        tipo_titular: null,
         saldo_minimo: global.saldo_minimo,
         activa: global.activa,
         destinatario_usuario_ids: global.destinatarios.map((d) => d.usuario_id),
@@ -157,8 +171,8 @@ export default function AlertasPage() {
     setFeedback(null);
 
     try {
-      if (globalAlert) {
-        await api.put(`/alertas/${globalAlert.id}`, globalForm);
+      if (onlyGlobalAlert) {
+        await api.put(`/alertas/${onlyGlobalAlert.id}`, globalForm);
       } else {
         await api.post('/alertas', globalForm);
       }
@@ -184,10 +198,11 @@ export default function AlertasPage() {
     setFeedback(null);
 
     try {
+      const payload = { ...cuentaForm, tipo_titular: null };
       if (editingCuentaAlertId) {
-        await api.put(`/alertas/${editingCuentaAlertId}`, cuentaForm);
+        await api.put(`/alertas/${editingCuentaAlertId}`, payload);
       } else {
-        await api.post('/alertas', cuentaForm);
+        await api.post('/alertas', payload);
       }
 
       setFeedback(editingCuentaAlertId ? 'Alerta de cuenta actualizada.' : 'Alerta de cuenta creada.');
@@ -201,10 +216,54 @@ export default function AlertasPage() {
     }
   };
 
+  const saveTipoAlert = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!tipoForm.tipo_titular) {
+      setError('Selecciona un tipo de titular.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const payload = { ...tipoForm, cuenta_id: null };
+      if (editingTipoAlertId) {
+        await api.put(`/alertas/${editingTipoAlertId}`, payload);
+      } else {
+        await api.post('/alertas', payload);
+      }
+
+      setFeedback(editingTipoAlertId ? 'Alerta por tipo actualizada.' : 'Alerta por tipo creada.');
+      setEditingTipoAlertId(null);
+      setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+      await Promise.all([loadConfiguracion(), loadAlertasActivas()]);
+    } catch (saveError: unknown) {
+      setError(getErrorMessage(saveError, 'No se pudo guardar la alerta por tipo.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const editCuentaAlert = (item: AlertaItem) => {
     setEditingCuentaAlertId(item.id);
     setCuentaForm({
       cuenta_id: item.cuenta_id,
+      tipo_titular: null,
+      saldo_minimo: item.saldo_minimo,
+      activa: item.activa,
+      destinatario_usuario_ids: item.destinatarios.map((d) => d.usuario_id),
+    });
+    setFeedback(null);
+    setError(null);
+  };
+
+  const editTipoAlert = (item: AlertaItem) => {
+    setEditingTipoAlertId(item.id);
+    setTipoForm({
+      cuenta_id: null,
+      tipo_titular: item.tipo_titular ?? 'AUTONOMO',
       saldo_minimo: item.saldo_minimo,
       activa: item.activa,
       destinatario_usuario_ids: item.destinatarios.map((d) => d.usuario_id),
@@ -223,6 +282,10 @@ export default function AlertasPage() {
       if (editingCuentaAlertId === alertId) {
         setEditingCuentaAlertId(null);
         setCuentaForm(EMPTY_FORM);
+      }
+      if (editingTipoAlertId === alertId) {
+        setEditingTipoAlertId(null);
+        setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
       }
 
       setFeedback('Alerta eliminada.');
@@ -367,8 +430,70 @@ export default function AlertasPage() {
                 ))}
               </div>
               <button type="submit" disabled={saving || configLoading}>
-                {globalAlert ? 'Actualizar global' : 'Crear global'}
+                {onlyGlobalAlert ? 'Actualizar global' : 'Crear global'}
               </button>
+            </form>
+          </article>
+
+          <article className="alertas-card">
+            <h2>{editingTipoAlertId ? 'Editar alerta por tipo de titular' : 'Nueva alerta por tipo de titular'}</h2>
+
+            <form className="alertas-form" onSubmit={saveTipoAlert}>
+              <AppSelect
+                label="Tipo de titular"
+                value={tipoForm.tipo_titular ?? 'AUTONOMO'}
+                options={tipoTitularOptions}
+                onChange={(next) => setTipoForm({ ...tipoForm, tipo_titular: next as TipoTitular })}
+              />
+              <label>
+                Saldo mínimo
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={tipoForm.saldo_minimo}
+                  onChange={(event) =>
+                    setTipoForm({ ...tipoForm, saldo_minimo: Number(event.target.value || '0') })
+                  }
+                />
+              </label>
+              <label className="config-check">
+                <input
+                  type="checkbox"
+                  checked={tipoForm.activa}
+                  onChange={(event) => setTipoForm({ ...tipoForm, activa: event.target.checked })}
+                />
+                Activa
+              </label>
+              <div className="alertas-destinatarios">
+                <h3>Destinatarios</h3>
+                {usuarios.map((user) => (
+                  <label key={user.id} className="users-check-row-item">
+                    <input
+                      type="checkbox"
+                      checked={tipoForm.destinatario_usuario_ids.includes(user.id)}
+                      onChange={() => toggleDestinatario(user.id, tipoForm, setTipoForm)}
+                    />
+                    {user.nombre_completo} ({user.email})
+                  </label>
+                ))}
+              </div>
+              <div className="users-row-actions">
+                <button type="submit" disabled={saving || configLoading}>
+                  {editingTipoAlertId ? 'Guardar cambios' : 'Crear alerta'}
+                </button>
+                {editingTipoAlertId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingTipoAlertId(null);
+                      setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+                    }}
+                  >
+                    Cancelar edición
+                  </button>
+                ) : null}
+              </div>
             </form>
           </article>
 
@@ -443,6 +568,53 @@ export default function AlertasPage() {
                 ) : null}
               </div>
             </form>
+          </article>
+
+          <article className="alertas-card">
+            <h2>Alertas por Tipo de Titular</h2>
+            {configLoading ? <p className="import-muted">Cargando alertas configuradas...</p> : null}
+
+            {!configLoading && tipoAlerts.length === 0 ? (
+              <p className="import-muted">No hay alertas por tipo configuradas.</p>
+            ) : null}
+
+            {tipoAlerts.length > 0 ? (
+              <div className="config-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Alcance</th>
+                      <th>Mínimo</th>
+                      <th>Activa</th>
+                      <th>Destinatarios</th>
+                      <th>Última alerta</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tipoAlerts.map((item) => (
+                      <tr key={item.id}>
+                        <td>Tipo: {item.tipo_titular}</td>
+                        <td><SignedAmount value={item.saldo_minimo}>{item.saldo_minimo.toFixed(2)}</SignedAmount></td>
+                        <td>{item.activa ? 'Sí' : 'No'}</td>
+                        <td>{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
+                        <td>{item.fecha_ultima_alerta ? new Date(item.fecha_ultima_alerta).toLocaleString() : '—'}</td>
+                        <td>
+                          <div className="users-row-actions">
+                            <button type="button" onClick={() => editTipoAlert(item)}>
+                              Editar
+                            </button>
+                            <button type="button" onClick={() => void deleteAlert(item.id)} disabled={saving}>
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </article>
 
           <article className="alertas-card">

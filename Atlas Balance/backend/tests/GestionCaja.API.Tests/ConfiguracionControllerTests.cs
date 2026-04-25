@@ -169,5 +169,15 @@ public sealed class ConfiguracionControllerTests
 
         public Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken)
             => Task.CompletedTask;
+
+        public Task SendPlazoFijoVencimientoAsync(
+            IReadOnlyList<string> recipients,
+            string titularNombre,
+            string cuentaNombre,
+            Guid cuentaId,
+            DateOnly fechaVencimiento,
+            EstadoPlazoFijo estado,
+            CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 }

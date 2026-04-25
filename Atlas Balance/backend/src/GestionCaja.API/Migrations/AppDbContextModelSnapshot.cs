@@ -21,12 +21,14 @@ namespace GestionCaja.API.Migrations
                 .HasAnnotation("ProductVersion", "8.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "estado_plazo_fijo", new[] { "activo", "proximo_vencer", "vencido", "renovado", "cancelado" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "estado_proceso", new[] { "pending", "success", "failed" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "estado_token_integracion", new[] { "activo", "revocado" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "fuente_tipo_cambio", new[] { "api", "manual" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "rol_usuario", new[] { "admin", "gerente", "empleado_ultra", "empleado_plus", "empleado" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "tipo_cuenta", new[] { "normal", "efectivo", "plazo_fijo" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "tipo_proceso", new[] { "auto", "manual" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "tipo_titular", new[] { "empresa", "particular" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "tipo_titular", new[] { "empresa", "particular", "autonomo" });
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pgcrypto");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
@@ -86,13 +88,22 @@ namespace GestionCaja.API.Migrations
                         .HasColumnType("numeric(18,4)")
                         .HasColumnName("saldo_minimo");
 
+                    b.Property<int?>("TipoTitular")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_titular");
+
                     b.HasKey("Id")
                         .HasName("pk_alertas_saldo");
 
                     b.HasIndex("CuentaId")
                         .IsUnique()
-                        .HasDatabaseName("ix_alertas_saldo_cuenta_id")
+                        .HasDatabaseName("ix_alertas_saldo_cuenta_id_unique")
                         .HasFilter("\"cuenta_id\" IS NOT NULL");
+
+                    b.HasIndex("TipoTitular")
+                        .IsUnique()
+                        .HasDatabaseName("ix_alertas_saldo_tipo_titular_unique")
+                        .HasFilter("\"cuenta_id\" IS NULL AND \"tipo_titular\" IS NOT NULL");
 
                     b.ToTable("ALERTAS_SALDO", (string)null);
                 });
@@ -372,6 +383,10 @@ namespace GestionCaja.API.Migrations
                         .HasColumnType("text")
                         .HasColumnName("numero_cuenta");
 
+                    b.Property<int>("TipoCuenta")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo_cuenta");
+
                     b.Property<Guid>("TitularId")
                         .HasColumnType("uuid")
                         .HasColumnName("titular_id");
@@ -396,6 +411,9 @@ namespace GestionCaja.API.Migrations
 
                     b.HasIndex("FormatoId")
                         .HasDatabaseName("ix_cuentas_formato_id");
+
+                    b.HasIndex("TipoCuenta")
+                        .HasDatabaseName("ix_cuentas_tipo_cuenta");
 
                     b.HasIndex("TitularId")
                         .HasDatabaseName("ix_cuentas_titular_id");
@@ -891,6 +909,10 @@ namespace GestionCaja.API.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("puede_importar");
 
+                    b.Property<bool>("PuedeVerCuentas")
+                        .HasColumnType("boolean")
+                        .HasColumnName("puede_ver_cuentas");
+
                     b.Property<bool>("PuedeVerDashboard")
                         .HasColumnType("boolean")
                         .HasColumnName("puede_ver_dashboard");
@@ -919,6 +941,95 @@ namespace GestionCaja.API.Migrations
                         .HasDatabaseName("ix_permisos_usuario_usuario_id_cuenta_id");
 
                     b.ToTable("PERMISOS_USUARIO", (string)null);
+                });
+
+            modelBuilder.Entity("GestionCaja.API.Models.PlazoFijo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CuentaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cuenta_id");
+
+                    b.Property<Guid?>("CuentaReferenciaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cuenta_referencia_id");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
+                    b.Property<int>("Estado")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion");
+
+                    b.Property<DateOnly>("FechaInicio")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_inicio");
+
+                    b.Property<DateTime?>("FechaModificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_modificacion");
+
+                    b.Property<DateOnly?>("FechaRenovacion")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_renovacion");
+
+                    b.Property<DateOnly?>("FechaUltimaNotificacion")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_ultima_notificacion");
+
+                    b.Property<DateOnly>("FechaVencimiento")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_vencimiento");
+
+                    b.Property<decimal?>("InteresPrevisto")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("interes_previsto");
+
+                    b.Property<string>("Notas")
+                        .HasColumnType("text")
+                        .HasColumnName("notas");
+
+                    b.Property<bool>("Renovable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("renovable");
+
+                    b.HasKey("Id")
+                        .HasName("pk_plazos_fijos");
+
+                    b.HasIndex("CuentaId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_plazos_fijos_cuenta_id");
+
+                    b.HasIndex("CuentaReferenciaId")
+                        .HasDatabaseName("ix_plazos_fijos_cuenta_referencia_id");
+
+                    b.HasIndex("DeletedAt")
+                        .HasDatabaseName("ix_plazos_fijos_deleted_at");
+
+                    b.HasIndex("DeletedById")
+                        .HasDatabaseName("ix_plazos_fijos_deleted_by_id");
+
+                    b.HasIndex("Estado")
+                        .HasDatabaseName("ix_plazos_fijos_estado");
+
+                    b.HasIndex("FechaVencimiento")
+                        .HasDatabaseName("ix_plazos_fijos_fecha_vencimiento");
+
+                    b.ToTable("PLAZOS_FIJOS", (string)null);
                 });
 
             modelBuilder.Entity("GestionCaja.API.Models.PreferenciaUsuarioCuenta", b =>
@@ -1477,6 +1588,32 @@ namespace GestionCaja.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_permisos_usuario_usuarios_usuario_id");
+                });
+
+            modelBuilder.Entity("GestionCaja.API.Models.PlazoFijo", b =>
+                {
+                    b.HasOne("GestionCaja.API.Models.Cuenta", "Cuenta")
+                        .WithOne()
+                        .HasForeignKey("GestionCaja.API.Models.PlazoFijo", "CuentaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_plazos_fijos_cuentas_cuenta_id");
+
+                    b.HasOne("GestionCaja.API.Models.Cuenta", "CuentaReferencia")
+                        .WithMany()
+                        .HasForeignKey("CuentaReferenciaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_plazos_fijos_cuentas_cuenta_referencia_id");
+
+                    b.HasOne("GestionCaja.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_plazos_fijos_usuarios_deleted_by_id");
+
+                    b.Navigation("Cuenta");
+
+                    b.Navigation("CuentaReferencia");
                 });
 
             modelBuilder.Entity("GestionCaja.API.Models.PreferenciaUsuarioCuenta", b =>

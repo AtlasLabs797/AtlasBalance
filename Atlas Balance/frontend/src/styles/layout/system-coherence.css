@@ -1,0 +1,313 @@
+/* System coherence layer: shared product UI rhythm across pages. */
+.app-content {
+  background: transparent;
+}
+
+.dashboard-page,
+.users-page,
+.extractos-page,
+.cuenta-detail-page,
+.titulares-page,
+.import-page,
+.alertas-page,
+.config-page,
+.auditoria-page,
+.backups-page,
+.exportaciones-page,
+.trash-page {
+  width: 100%;
+  max-width: 1500px;
+  margin-inline: auto;
+}
+
+.dashboard-toolbar,
+.users-header,
+.extractos-header,
+.phase2-header,
+.import-header,
+.config-header,
+.auditoria-header,
+.backups-header,
+.exportaciones-header {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.dashboard-subtitle,
+.users-subtitle,
+.config-subtitle,
+.import-header p,
+.alertas-page > header p,
+.auditoria-header p,
+.backups-header p,
+.exportaciones-header p {
+  max-width: 72ch;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.page-placeholder,
+.users-table-card,
+.users-form-card,
+.users-modal,
+.users-confirm-modal,
+.add-row-form,
+.extracto-table-section,
+.audit-modal,
+.account-notes-card,
+.titular-card,
+.dashboard-kpi,
+.dashboard-card,
+.import-card,
+.alertas-card,
+.config-card,
+.config-section-panel,
+.config-status-grid article,
+.config-divisa-card,
+.config-modal-card,
+.loading-overlay {
+  border-color: var(--surface-border);
+  background: var(--surface-bg-raised);
+  box-shadow: var(--shadow-card);
+}
+
+.users-table-card,
+.extracto-table-section,
+.dashboard-card,
+.config-card,
+.import-card,
+.alertas-card {
+  overflow: clip;
+}
+
+.dashboard-kpi,
+.dashboard-card,
+.titular-card,
+.config-section-panel,
+.config-status-grid article,
+.config-divisa-card,
+.dashboard-divisa-item,
+.dashboard-titular-item,
+.titulares-balance-row,
+.cuentas-balance-row {
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--duration-instant) var(--ease-premium);
+}
+
+.dashboard-card:hover,
+.titular-card:hover,
+.config-section-panel:hover,
+.config-status-grid article:hover,
+.config-divisa-card:hover,
+.dashboard-divisa-item:hover,
+.dashboard-titular-item:hover {
+  border-color: var(--surface-border-hover);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.dashboard-kpi:hover,
+.dashboard-titular-item:hover,
+.titular-card:hover,
+.config-divisa-card:hover {
+  transform: translateY(-1px);
+}
+
+.dashboard-card-header,
+.titular-card-title,
+.import-subheader,
+.users-section-header,
+.users-modal-header {
+  gap: var(--space-3);
+}
+
+.config-tabs {
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--space-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-panel);
+  background: var(--surface-bg-sunken);
+}
+
+.config-tab {
+  min-height: var(--control-height-compact);
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+
+.config-tab:hover:not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.config-tab--active {
+  border-color: var(--surface-border-hover);
+  background: var(--bg-surface);
+  color: var(--text-link);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-nav-link:hover {
+  transform: translateX(1px);
+}
+
+.app-nav-link--active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 16%, transparent);
+}
+
+.app-nav-link--active .app-nav-icon {
+  color: var(--color-sidebar-active-text);
+  transform: scale(1.04);
+}
+
+.sidebar-toggle,
+.theme-toggle,
+.logout-button,
+.bottom-nav-link,
+.bottom-nav-sheet-link {
+  border-color: var(--control-border);
+  background: var(--surface-bg-raised);
+}
+
+.sidebar-toggle:hover,
+.theme-toggle:hover,
+.logout-button:hover,
+.bottom-nav-link:hover,
+.bottom-nav-sheet-link:hover {
+  border-color: var(--surface-border-hover);
+  background: var(--bg-hover);
+}
+
+.app-select-trigger,
+input,
+textarea,
+select {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg-surface) 78%, transparent);
+}
+
+label,
+.auth-label,
+.app-select-label,
+.config-field > span,
+.config-manual-form label,
+.auditoria-filtros label,
+.exportaciones-toolbar label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-bg-sunken);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+tbody tr {
+  transition: background-color var(--transition-fast);
+}
+
+tbody tr:hover {
+  background: var(--surface-highlight);
+}
+
+.pill,
+.config-badge,
+.alert-banner-pill,
+.sidebar-alert-badge,
+.sidebar-update-badge {
+  border-radius: calc(var(--radius-control) - 2px);
+}
+
+.dashboard-row-delete,
+.button-danger {
+  border-color: color-mix(in srgb, var(--danger-text) 28%, transparent);
+}
+
+.modal-backdrop,
+.config-modal-backdrop,
+.bottom-nav-sheet-backdrop {
+  backdrop-filter: blur(12px);
+}
+
+.dashboard-table-wrap tbody tr.dashboard-row-flagged > td:first-child,
+.dashboard-table-wrap tbody tr[data-flagged="true"] > td:first-child {
+  box-shadow:
+    inset 0 1px 0 var(--color-row-flagged-border),
+    inset 0 -1px 0 var(--color-row-flagged-border);
+}
+
+@media (max-width: 768px) {
+  .dashboard-page,
+  .users-page,
+  .extractos-page,
+  .cuenta-detail-page,
+  .titulares-page,
+  .import-page,
+  .alertas-page,
+  .config-page,
+  .auditoria-page,
+  .backups-page,
+  .exportaciones-page,
+  .trash-page {
+    max-width: none;
+  }
+
+  .config-tabs {
+    width: 100%;
+  }
+
+  .config-tab {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 1200px) {
+  .auditoria-filtros {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .auditoria-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auditoria-header > button {
+    width: 100%;
+  }
+
+  .auditoria-filtros {
+    grid-template-columns: 1fr;
+  }
+
+  .backups-header,
+  .exportaciones-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 560px) {
+  .bottom-nav-sheet-header,
+  .bottom-nav-sheet-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bottom-nav-sheet-header {
+    display: grid;
+  }
+
+  .bottom-nav-sheet-close {
+    width: 100%;
+  }
+}

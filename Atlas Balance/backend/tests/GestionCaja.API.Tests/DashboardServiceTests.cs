@@ -296,6 +296,63 @@ public class DashboardServiceTests
         result.TotalConvertido.Should().Be(120m);
     }
 
+    [Fact]
+    public async Task GetSaldosDivisaAsync_Should_Separate_Disponible_And_Inmovilizado()
+    {
+        await using var db = BuildDbContext();
+        var adminId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var normalId = Guid.NewGuid();
+        var plazoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = adminId,
+            Email = "admin.inmovilizado@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Inmovilizado",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        SeedDashboardConfig(db, adminId);
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Mixto", Tipo = TipoTitular.AUTONOMO });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = normalId, TitularId = titularId, Nombre = "Operativa", Divisa = "EUR", TipoCuenta = TipoCuenta.NORMAL, Activa = true },
+            new Cuenta { Id = plazoId, TitularId = titularId, Nombre = "Plazo", Divisa = "EUR", TipoCuenta = TipoCuenta.PLAZO_FIJO, Activa = true });
+        db.PlazosFijos.Add(new PlazoFijo
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = plazoId,
+            FechaInicio = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            FechaVencimiento = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddDays(30),
+            InteresPrevisto = 12.5m,
+            Estado = EstadoPlazoFijo.ACTIVO
+        });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = normalId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = 80m, Saldo = 80m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = plazoId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = 200m, Saldo = 200m, FilaNumero = 1 });
+        await db.SaveChangesAsync();
+
+        var sut = BuildService(db);
+
+        var divisas = await sut.GetSaldosDivisaAsync(adminId, "EUR", null, CancellationToken.None);
+        var principal = await sut.GetPrincipalAsync(adminId, "EUR", CancellationToken.None);
+
+        divisas.Divisas.Should().ContainSingle();
+        divisas.Divisas[0].SaldoDisponible.Should().Be(80m);
+        divisas.Divisas[0].SaldoInmovilizado.Should().Be(200m);
+        divisas.Divisas[0].SaldoTotal.Should().Be(280m);
+        principal.SaldosPorTitular.Should().ContainSingle();
+        principal.SaldosPorTitular[0].TipoTitular.Should().Be(nameof(TipoTitular.AUTONOMO));
+        principal.SaldosPorTitular[0].SaldoDisponibleConvertido.Should().Be(80m);
+        principal.SaldosPorTitular[0].SaldoInmovilizadoConvertido.Should().Be(200m);
+        principal.PlazosFijos.MontoTotalConvertido.Should().Be(200m);
+        principal.PlazosFijos.InteresesPrevistosConvertidos.Should().Be(12.5m);
+        principal.PlazosFijos.DiasHastaProximoVencimiento.Should().Be(30);
+        principal.PlazosFijos.TotalCuentas.Should().Be(1);
+    }
+
     private sealed class StaticHttpClientFactory : IHttpClientFactory
     {
         private readonly HttpClient _client = new()

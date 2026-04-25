@@ -1,5 +1,51 @@
 # Informe de mejora UI/UX - Atlas Balance
 
+## Ejecucion aplicada - 2026-04-25 - Coherencia entre pantallas
+
+### Skills y criterio aplicado
+
+| Skill local | Uso aplicado |
+| --- | --- |
+| `Skills/Diseno/taste-skill/.agents/skills/redesign-existing-projects/SKILL.md` | Auditar patrones genericos y corregir sin reescribir la app. |
+| `Skills/Diseno/taste-skill/.agents/skills/design-taste-frontend/SKILL.md` | Mantener direccion sobria de producto financiero, sin gradientes chillones ni componentes de demo. |
+| `Skills/Diseno/ui-ux-pro-max-skill/.agents/skills/ckm-design-system/SKILL.md` | Ordenar tokens de controles, superficies, foco, sombras y estados. |
+| `Skills/Diseno/ui-ux-pro-max-skill/.agents/skills/ckm-ui-styling/SKILL.md` | Alinear accesibilidad, dark mode, formularios y navegacion con CSS variables propias. |
+| `Skills/Diseno/impeccable/source/skills/polish/SKILL.md` | Pasada final de radios, espaciado, hover/focus, tabs, tablas y login. |
+
+### Que se corrigio
+
+- Se agregaron tokens compartidos para controles, superficies, sombras, foco y estados hover.
+- Los tokens shadcn/Tailwind ahora apuntan al sistema visual propio; dos sistemas de color compitiendo era mala arquitectura visual.
+- `Button` compartido usa alturas, radios, pesos y variantes coherentes con los botones clasicos de la app.
+- Login usa la misma logica de superficie, borde, foco y boton primario que el resto de la aplicacion.
+- Tabs de configuracion pasan a comportarse como control segmentado, no como una fila de botones sueltos.
+- Cards, modales, tablas, filtros, estados hover y navegacion reciben una capa comun de coherencia.
+- Las filas marcadas dejan el indicador lateral fuerte y usan tratamiento completo de fila. Mejor, menos "admin template de 2017".
+
+### Verificacion visual
+
+- `output/playwright/ui-login-desktop.png`
+- `output/playwright/ui-login-mobile.png`
+
+### Pendientes reales
+
+- Validar pantallas internas con datos reales y una sesion activa: dashboard, cuentas, extractos, importacion y configuracion.
+- Crear una pagina interna de referencia visual si se siguen sumando componentes nuevos.
+
+### Refactor aplicado despues
+
+El pendiente de separar `layout.css` se cerro el 2026-04-25:
+
+- `layout.css` queda como indice de imports.
+- `styles/layout/shell.css`: shell, sidebar, topbar, bottom nav y estados comunes de layout.
+- `styles/layout/users.css`: usuarios, permisos y modales.
+- `styles/layout/extractos.css`: filtros, formulario y tabla virtualizada.
+- `styles/layout/entities.css`: titulares, cuentas y detalle de cuenta.
+- `styles/layout/dashboard.css`: KPIs, saldos, charts y tablas de dashboard.
+- `styles/layout/importacion.css`: wizard, preview, validacion y modal.
+- `styles/layout/admin.css`: alertas, configuracion, auditoria, backups y exportaciones.
+- `styles/layout/system-coherence.css`: capa comun de coherencia visual al final de la cascada.
+
 ## Ejecucion aplicada - 2026-04-19
 
 ### Skills aplicadas conjuntamente

@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Titular> Titulares => Set<Titular>();
     public DbSet<Cuenta> Cuentas => Set<Cuenta>();
+    public DbSet<PlazoFijo> PlazosFijos => Set<PlazoFijo>();
     public DbSet<FormatoImportacion> FormatosImportacion => Set<FormatoImportacion>();
     public DbSet<Extracto> Extractos => Set<Extracto>();
     public DbSet<ExtractoColumnaExtra> ExtractosColumnasExtra => Set<ExtractoColumnaExtra>();
@@ -38,6 +39,8 @@ public class AppDbContext : DbContext
         modelBuilder.HasPostgresExtension("pgcrypto");
         modelBuilder.HasPostgresEnum<RolUsuario>();
         modelBuilder.HasPostgresEnum<TipoTitular>();
+        modelBuilder.HasPostgresEnum<TipoCuenta>();
+        modelBuilder.HasPostgresEnum<EstadoPlazoFijo>();
         modelBuilder.HasPostgresEnum<EstadoTokenIntegracion>();
         modelBuilder.HasPostgresEnum<FuenteTipoCambio>();
         modelBuilder.HasPostgresEnum<EstadoProceso>();
@@ -91,10 +94,26 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.TitularId);
             entity.HasIndex(e => e.Divisa);
             entity.HasIndex(e => e.EsEfectivo);
+            entity.HasIndex(e => e.TipoCuenta);
             entity.HasIndex(e => e.Activa);
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne(e => e.Titular).WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FormatoImportacion>().WithMany().HasForeignKey(e => e.FormatoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PlazoFijo>(entity =>
+        {
+            entity.ToTable("PLAZOS_FIJOS");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.InteresPrevisto).HasPrecision(18, 2);
+            entity.HasIndex(e => e.CuentaId).IsUnique();
+            entity.HasIndex(e => e.FechaVencimiento);
+            entity.HasIndex(e => e.Estado);
+            entity.HasIndex(e => e.CuentaReferenciaId);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne(e => e.Cuenta).WithOne().HasForeignKey<PlazoFijo>(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.CuentaReferencia).WithMany().HasForeignKey(e => e.CuentaReferenciaId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -171,7 +190,12 @@ public class AppDbContext : DbContext
             entity.Property(e => e.SaldoMinimo).HasPrecision(18, 4);
             entity.HasIndex(e => e.CuentaId)
                 .IsUnique()
+                .HasDatabaseName("ix_alertas_saldo_cuenta_id_unique")
                 .HasFilter("\"cuenta_id\" IS NOT NULL");
+            entity.HasIndex(e => e.TipoTitular)
+                .IsUnique()
+                .HasDatabaseName("ix_alertas_saldo_tipo_titular_unique")
+                .HasFilter("\"cuenta_id\" IS NULL AND \"tipo_titular\" IS NOT NULL");
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
         });
 

@@ -396,10 +396,10 @@ public sealed class ExtractosController : ControllerBase
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!await CanView(actor, cuentaId, ct)) return Forbid();
-        var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
+        var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
         var titular = await _db.Titulares.Where(t => t.Id == cuenta.TitularId).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
-        return Ok(await BuildSummary(cuenta.Id, cuenta.Nombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct));
+        return Ok(await BuildSummary(cuenta.Id, cuenta.Nombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct));
     }
 
     [HttpGet("titulares/{titularId:guid}/cuentas")]
@@ -414,7 +414,7 @@ public sealed class ExtractosController : ControllerBase
         var summary = new List<CuentaResumenKpiResponse>();
         foreach (var c in cuentas)
         {
-            summary.Add(await BuildSummary(c.Id, c.Nombre, c.Divisa, c.EsEfectivo, titular.Id, titular.Nombre, c.Notas, periodo, ct));
+            summary.Add(await BuildSummary(c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct));
         }
         return Ok(new TitularConCuentasResponse { TitularId = titular.Id, TitularNombre = titular.Nombre, Cuentas = summary });
     }
@@ -432,7 +432,7 @@ public sealed class ExtractosController : ControllerBase
         {
             var tc = cuentas.Where(c => c.TitularId == t.Id).ToList();
             var s = new List<CuentaResumenKpiResponse>();
-            foreach (var c in tc) s.Add(await BuildSummary(c.Id, c.Nombre, c.Divisa, c.EsEfectivo, t.Id, t.Nombre, c.Notas, periodo, ct));
+            foreach (var c in tc) s.Add(await BuildSummary(c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct));
             outData.Add(new TitularConCuentasResponse { TitularId = t.Id, TitularNombre = t.Nombre, Cuentas = s });
         }
         return Ok(outData);
@@ -481,7 +481,7 @@ public sealed class ExtractosController : ControllerBase
         return Ok(new { message = "Preferencias guardadas" });
     }
 
-    private async Task<CuentaResumenKpiResponse> BuildSummary(Guid cuentaId, string cuentaNombre, string divisa, bool esEfectivo, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct)
+    private async Task<CuentaResumenKpiResponse> BuildSummary(Guid cuentaId, string cuentaNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct)
     {
         var q = _db.Extractos.Where(e => e.CuentaId == cuentaId);
         var latest = await q
@@ -495,6 +495,30 @@ public sealed class ExtractosController : ControllerBase
         var ingresos = await periodRows.Where(e => e.Monto > 0).SumAsync(e => (decimal?)e.Monto, ct) ?? 0m;
         var egresos = await periodRows.Where(e => e.Monto < 0).SumAsync(e => (decimal?)e.Monto, ct) ?? 0m;
         var last = await q.OrderByDescending(e => e.FechaModificacion ?? e.FechaCreacion).Select(e => (DateTime?)(e.FechaModificacion ?? e.FechaCreacion)).FirstOrDefaultAsync(ct);
+        var plazoFijo = tipoCuenta == TipoCuenta.PLAZO_FIJO
+            ? await (
+                from plazo in _db.PlazosFijos
+                join refCuenta in _db.Cuentas.IgnoreQueryFilters() on plazo.CuentaReferenciaId equals refCuenta.Id into refJoin
+                from cuentaReferencia in refJoin.DefaultIfEmpty()
+                where plazo.CuentaId == cuentaId
+                select new PlazoFijoResponse
+                {
+                    Id = plazo.Id,
+                    CuentaId = plazo.CuentaId,
+                    CuentaReferenciaId = plazo.CuentaReferenciaId,
+                    CuentaReferenciaNombre = cuentaReferencia != null ? cuentaReferencia.Nombre : null,
+                    FechaInicio = plazo.FechaInicio,
+                    FechaVencimiento = plazo.FechaVencimiento,
+                    InteresPrevisto = plazo.InteresPrevisto,
+                    Renovable = plazo.Renovable,
+                    Estado = plazo.Estado.ToString(),
+                    FechaUltimaNotificacion = plazo.FechaUltimaNotificacion,
+                    FechaRenovacion = plazo.FechaRenovacion,
+                    Notas = plazo.Notas
+                })
+                .FirstOrDefaultAsync(ct)
+            : null;
+
         return new CuentaResumenKpiResponse
         {
             CuentaId = cuentaId,
@@ -503,6 +527,8 @@ public sealed class ExtractosController : ControllerBase
             TitularId = titularId,
             TitularNombre = titularNombre,
             EsEfectivo = esEfectivo,
+            TipoCuenta = tipoCuenta.ToString(),
+            PlazoFijo = plazoFijo,
             Notas = notas,
             SaldoActual = latest?.Saldo ?? 0m,
             IngresosMes = ingresos,
@@ -588,7 +614,7 @@ public sealed class ExtractosController : ControllerBase
         if (actor.IsAdmin) return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
         var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
         if (!perms.Any()) return [];
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsDataAccess(p)))
+        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
         {
             return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
         }
@@ -614,7 +640,7 @@ public sealed class ExtractosController : ControllerBase
             return false;
         }
 
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsDataAccess(p)))
+        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
         {
             return true;
         }
@@ -634,8 +660,8 @@ public sealed class ExtractosController : ControllerBase
                await _db.Cuentas.AnyAsync(c => c.TitularId == titularId && permittedCuentaIds.Contains(c.Id), ct);
     }
 
-    private static bool GrantsDataAccess(PermisoUsuario permiso) =>
-        permiso.PuedeAgregarLineas || permiso.PuedeEditarLineas || permiso.PuedeEliminarLineas || permiso.PuedeImportar;
+    private static bool GrantsAccountAccess(PermisoUsuario permiso) =>
+        permiso.PuedeVerCuentas || permiso.PuedeAgregarLineas || permiso.PuedeEditarLineas || permiso.PuedeEliminarLineas || permiso.PuedeImportar;
 
     private async Task<Perm> GetPermission(Actor actor, Cuenta cuenta, CancellationToken ct)
     {

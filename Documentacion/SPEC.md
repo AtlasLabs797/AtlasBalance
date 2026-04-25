@@ -1922,6 +1922,8 @@ cuenta_id             UUID FK → CUENTAS (nullable = permiso global)
 
 titular_id            UUID FK → TITULARES (nullable)
 
+puede_ver_cuentas     BOOLEAN DEFAULT false
+
 puede_agregar_lineas  BOOLEAN DEFAULT false
 
 puede_editar_lineas   BOOLEAN DEFAULT false
@@ -4201,6 +4203,10 @@ VITE_API_URL=https://caja.empresa.local
 | 19 | **tipo_movimiento derivado** en respuestas de integración | No se almacena en BD. Se calcula del signo de `monto` al serializar la respuesta |
 
 | 20 | **Rate limit 100 req/min** para integración | Protege el servidor de uso abusivo. Configurable desde CONFIGURACION |
+
+| 21 | **Plazo fijo como cuenta real + tabla `PLAZOS_FIJOS`** | El saldo cuenta en patrimonio total, pero se separa como inmovilizado. La renovacion es manual y auditada; el sistema no crea movimientos automaticos. |
+
+| 22 | **Alertas por tipo de titular** | Permiten umbrales para Empresa, Autonomo y Particular con prioridad cuenta > tipo > global. |
 
 
 

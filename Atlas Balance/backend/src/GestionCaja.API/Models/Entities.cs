@@ -71,10 +71,32 @@ public class Cuenta : ISoftDelete
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = "EUR";
     public Guid? FormatoId { get; set; }
+    public TipoCuenta TipoCuenta { get; set; } = TipoCuenta.NORMAL;
     public bool EsEfectivo { get; set; }
     public bool Activa { get; set; } = true;
     public string? Notas { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class PlazoFijo : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public Cuenta? Cuenta { get; set; }
+    public Guid? CuentaReferenciaId { get; set; }
+    public Cuenta? CuentaReferencia { get; set; }
+    public DateOnly FechaInicio { get; set; }
+    public DateOnly FechaVencimiento { get; set; }
+    public decimal? InteresPrevisto { get; set; }
+    public bool Renovable { get; set; }
+    public EstadoPlazoFijo Estado { get; set; } = EstadoPlazoFijo.ACTIVO;
+    public DateOnly? FechaUltimaNotificacion { get; set; }
+    public DateOnly? FechaRenovacion { get; set; }
+    public string? Notas { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaModificacion { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
 }
@@ -132,6 +154,7 @@ public class PermisoUsuario
     public Guid UsuarioId { get; set; }
     public Guid? CuentaId { get; set; }
     public Guid? TitularId { get; set; }
+    public bool PuedeVerCuentas { get; set; }
     public bool PuedeAgregarLineas { get; set; }
     public bool PuedeEditarLineas { get; set; }
     public bool PuedeEliminarLineas { get; set; }
@@ -154,6 +177,7 @@ public class AlertaSaldo
 {
     public Guid Id { get; set; }
     public Guid? CuentaId { get; set; }
+    public TipoTitular? TipoTitular { get; set; }
     public decimal SaldoMinimo { get; set; }
     public bool Activa { get; set; } = true;
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
