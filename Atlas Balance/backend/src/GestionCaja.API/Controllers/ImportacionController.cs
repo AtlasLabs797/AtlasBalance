@@ -68,6 +68,30 @@ public sealed class ImportacionController : ControllerBase
         }
     }
 
+    [HttpPost("plazo-fijo/movimiento")]
+    public async Task<IActionResult> RegistrarMovimientoPlazoFijo([FromBody] ImportacionPlazoFijoMovimientoRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { error = "Request invalido" });
+        }
+
+        if (!TryGetActor(out var userId, out var rol))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _importacionService.RegistrarMovimientoPlazoFijoAsync(userId, rol, request, HttpContext, cancellationToken);
+            return Ok(result);
+        }
+        catch (ImportacionException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
     private bool TryGetActor(out Guid userId, out string rol)
     {
         rol = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;

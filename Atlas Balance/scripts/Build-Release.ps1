@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-01.03",
+    [string]$Version = "V-01.04",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall
@@ -90,8 +90,10 @@ foreach ($script in @(
     "uninstall.ps1",
     "start.ps1",
     "Instalar-AtlasBalance.ps1",
+    "Reset-AdminPassword.ps1",
     "Actualizar-AtlasBalance.ps1",
     "Launch-AtlasBalance.ps1",
+    "install-cert-client.ps1",
     "uninstall-services.ps1"
 )) {
     Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\$script") -Destination (Join-Path $packageRoot "scripts\$script") -Force

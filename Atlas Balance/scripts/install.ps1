@@ -14,17 +14,24 @@ function Test-IsAdmin {
 function Quote-Argument {
     param([string]$Value)
 
-    if ($Value -notmatch '[\s"]') {
+    if ($Value -notmatch "[\s']") {
         return $Value
     }
 
-    return '"' + ($Value -replace '"', '\"') + '"'
+    return "'" + ($Value -replace "'", "''") + "'"
 }
 
 $scriptPath = $MyInvocation.MyCommand.Path
 $installer = Join-Path $PSScriptRoot "Instalar-AtlasBalance.ps1"
 if (-not (Test-Path $installer)) {
     throw "No se encontro $installer."
+}
+
+$packageRoot = Split-Path -Parent $PSScriptRoot
+$apiExe = Join-Path $packageRoot "api\GestionCaja.API.exe"
+$watchdogExe = Join-Path $packageRoot "watchdog\GestionCaja.Watchdog.exe"
+if (-not (Test-Path $apiExe) -or -not (Test-Path $watchdogExe)) {
+    throw "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-V-01.04-win-x64.zip. Ejecuta el instalador desde la carpeta descomprimida que contiene api\GestionCaja.API.exe, watchdog\GestionCaja.Watchdog.exe, scripts e install.cmd."
 }
 
 $forwardArgs = @()

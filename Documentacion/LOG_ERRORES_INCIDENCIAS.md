@@ -1,4 +1,95 @@
-﻿# Log de errores e incidencias
+# Log de errores e incidencias
+
+## 2026-04-25 - V-01.04 - Hallazgos de auditoria corregidos antes de release
+
+- Contexto: la auditoria de uso, bugs y seguridad detecto tres problemas que no eran aceptables para cerrar version: Tailwind/shadcn reintroducidos contra el stack canonico, contrato duplicado de resumen de cuenta sin metadatos de plazo fijo y controles propios con soporte de teclado incompleto.
+- Causa: se mezclo una capa UI externa con el sistema de CSS variables propio, el endpoint historico de cuentas quedo por detras del resumen rico usado por el dashboard, y los controles custom no cerraron todo el contrato de accesibilidad al reemplazar controles nativos.
+- Solucion aplicada: se eliminaron dependencias/configuracion/imports Tailwind/shadcn y `components.json`; `CuentasController.Resumen` ahora devuelve titular, tipo de cuenta, notas, ultima actualizacion y `plazo_fijo`; `DatePickerField`, `ConfirmDialog` y `AppSelect` mejoran etiquetas, navegacion de teclado y focus trap.
+- Verificacion: busqueda sin restos directos de Tailwind/shadcn, `npm.cmd run lint` OK, `npm.cmd run build` OK, `wwwroot` sincronizado, `npm.cmd audit --audit-level=moderate` 0 vulnerabilidades, NuGet vulnerable sin hallazgos y `dotnet test ...GestionCaja.API.Tests.csproj -c Release` 108/108 OK.
+
+## 2026-04-25 - V-01.04 - Gradientes decorativos marcados como deuda visual
+
+- Contexto: la auditoria marco fondos con `radial-gradient` y degradados suaves en login, layout y tarjetas como residuos de UI generica.
+- Causa: la capa de coherencia visual habia introducido decoracion de fondo que no aporta informacion y contradice el criterio de superficies sobrias del proyecto.
+- Solucion aplicada: se sustituyeron esos fondos por tokens planos (`var(--bg-app)`, `var(--bg-surface-soft)`, `var(--bg-surface)` y mezclas solidas). Se dejaron intactos los degradados funcionales de flecha de `select` y shimmer de skeleton.
+- Verificacion: busqueda posterior solo encontro degradados funcionales, `npm.cmd run lint` OK y `npm.cmd run build` OK.
+
+## 2026-04-25 - V-01.04 - Endpoints nuevos respondian 500 ante body o listas null
+
+- Contexto: en una pasada extra de auditoria sobre los endpoints añadidos en V-01.04 (`POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento`), se detecto que ninguno comprobaba que el cuerpo deserializado no fuera null y que `SaveAlertaSaldoRequest.DestinatarioUsuarioIds` se accedia directamente con `.Count` aunque deserializar `"destinatario_usuario_ids": null` deja la propiedad en null.
+- Causa: los DTOs nuevos solo definian valor por defecto `= []`, pero el inicializador no se aplica cuando el JSON envia explicitamente `null`. Ningun controlador validaba previamente el cuerpo.
+- Solucion aplicada: `if (request is null) return BadRequest(new { error = "Request invalido" });` al inicio de los endpoints afectados y `request.DestinatarioUsuarioIds ?? []` antes de validar/procesar destinatarios.
+- Verificacion: `dotnet build -c Release` OK, `dotnet test --no-build` 107/107 OK, `dotnet list package --vulnerable --include-transitive` sin hallazgos, `npm audit` 0 vulnerabilidades.
+
+## 2026-04-25 - V-01.04 - Manifiesto frontend mantenia minimos vulnerables pese a lockfile seguro
+
+- Contexto: durante la auditoria de seguridad V-01.04, `npm ls` confirmo que el lockfile resolvia `axios@1.15.0` y `react-router-dom@6.30.3`, pero `package.json` seguia declarando `axios ^1.7.9` y `react-router-dom ^6.28.0`.
+- Causa: actualizaciones previas habian dejado el lockfile en versiones seguras, pero no elevaron los rangos minimos declarados en el manifiesto.
+- Solucion aplicada: se actualizo el manifiesto a `axios ^1.15.2` y `react-router-dom ^6.30.3`; el lockfile queda regenerado con `axios@1.15.2`.
+- Verificacion: `npm.cmd audit --audit-level=moderate` 0 vulnerabilidades, `npm.cmd run lint` OK, `npm.cmd run build` OK, `dotnet test ... --no-build` 107/107 OK, NuGet vulnerable sin hallazgos y `wwwroot` sincronizado.
+
+## 2026-04-25 - V-01.04 - Popup nativo de fecha no podia igualarse al diseno Atlas
+
+- Contexto: aunque el campo cerrado de fecha ya tenia mejor estilo, al abrir el calendario seguia apareciendo el selector nativo del navegador, fuera del sistema visual de Atlas.
+- Causa: el popup interno de `input type="date"` no es estilizables de forma consistente entre navegadores/OS; CSS solo alcanza el campo cerrado y parte del indicador WebKit.
+- Solucion aplicada: se reemplazaron los `input type="date"` del frontend por `DatePickerField`, un selector propio con popover, dias, mes, navegacion, estado seleccionado/hoy, acciones `Hoy`/`Limpiar` y posicionamiento hacia arriba cuando no cabe debajo.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK, `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR` OK y comprobacion visual en navegador de `/cuentas` sin errores de consola.
+
+## 2026-04-25 - V-01.04 - Dashboard de cuenta no mostraba vencimiento de plazo fijo
+
+- Contexto: en el detalle de una cuenta `PLAZO_FIJO`, el usuario veia saldo, periodo, notas y desglose, pero no la fecha en la que vence el plazo fijo.
+- Causa: el endpoint `/api/extractos/cuentas/{id}/resumen` no devolvia `tipo_cuenta` ni el bloque `plazo_fijo`; la UI de detalle no tenia dato que pintar.
+- Solucion aplicada: el resumen de cuenta devuelve `TipoCuenta` y `PlazoFijoResponse` para cuentas de plazo fijo; `CuentaDetailPage` muestra vencimiento, dias restantes/vencido y estado bajo el titulo de la cuenta.
+- Verificacion: backend Release build OK, `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR` OK.
+
+## 2026-04-25 - V-01.04 - Date picker de plazo fijo no seguia el sistema visual
+
+- Contexto: en el formulario de cuentas de tipo `PLAZO_FIJO`, los campos de fecha de inicio/vencimiento usaban `input type="date"` nativo y el selector de calendario no se veia como el resto de campos.
+- Causa: los estilos globales cubrian inputs/selects, pero no ajustaban `color-scheme`, partes internas WebKit ni el indicador `::-webkit-calendar-picker-indicator` de los controles de fecha.
+- Solucion aplicada: se agregaron reglas globales para `input[type='date']`, `::-webkit-datetime-edit`, `::-webkit-calendar-picker-indicator` y modo oscuro, manteniendo el popup nativo del navegador.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR` OK.
+
+## 2026-04-25 - V-01.04 - Tests backend bloqueados por API Debug en ejecucion
+
+- Contexto: al ejecutar `dotnet test` tras modificar importacion/dashboard, MSBuild no pudo copiar `GestionCaja.API.exe` ni `GestionCaja.API.dll` en `bin\Debug\net8.0`.
+- Causa: habia un proceso local `GestionCaja.API` ejecutandose desde `backend/src/GestionCaja.API/bin/Debug/net8.0`, bloqueando los artefactos.
+- Solucion aplicada: se identifico el PID con `Get-Process`, se detuvo el proceso local y se repitieron los tests.
+- Verificacion: `dotnet test ... --filter "ImportacionServiceTests|DashboardServiceTests"` paso 28/28 y `dotnet build ... -c Release` paso sin warnings.
+
+## 2026-04-25 - V-01.04 - Implementacion plazo fijo detecto rotura TypeScript y lint estricto
+
+- Contexto: al compilar frontend tras agregar campos de plazo fijo, `tsc` fallo en `CuentasPage.tsx` por un cierre JSX sobrante. Despues, `npm.cmd run lint` fallo por `react-refresh/only-export-components` en `components/ui/button.tsx` porque el proyecto usa `--max-warnings 0`.
+- Causa: el bloque condicional de plazo fijo dejo un `)}` duplicado; el warning de lint era una regla estricta sobre un componente UI que exporta tambien `buttonVariants`.
+- Solucion aplicada: se elimino el cierre sobrante y se agrego una excepcion local de ESLint en `button.tsx` para mantener el contrato del componente sin mover archivos ahora.
+- Verificacion: `npm.cmd run lint` OK y `npm.cmd run build` OK.
+
+## 2026-04-25 - V-01.04 - Actualizador post-instalacion incompleto
+
+- Contexto: una vez instalada la aplicacion, el flujo de actualizacion manual desde paquete no dejaba la instalacion preparada para futuras actualizaciones y no validaba salud real de la API tras reemplazar binarios.
+- Causa: `update.cmd`/`update.ps1` seguian el patron inicial de wrapper minimo; `Actualizar-AtlasBalance.ps1` actualizaba API/Watchdog, pero no refrescaba scripts instalados ni `atlas-balance.runtime.json`, y no hacia health check con `curl.exe -k`.
+- Solucion aplicada: `update.ps1` valida paquete antes de autoelevar y soporta `-PackagePath`; el actualizador copia scripts/wrappers operativos a la instalacion, actualiza `VERSION`/runtime, conserva configuracion, mantiene backup/rollback y falla si `/api/health` no responde tras arrancar.
+- Mitigacion operativa: para actualizar desde un paquete nuevo, ejecutar `.\update.cmd -InstallPath C:\AtlasBalance` en la carpeta descomprimida; en instalaciones ya actualizadas se puede usar `C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-XX-win-x64 -InstallPath C:\AtlasBalance`.
+
+## 2026-04-25 - V-01.04 - Incidencias de instalacion Windows Server 2019 cerradas en scripts
+
+- Contexto: la instalacion real en Windows Server 2019 detecto confusion entre repo fuente y paquete release, wrappers fragiles, dependencia poco fiable de `winget`, falsos negativos de `Invoke-WebRequest`, credenciales iniciales falsas al reinstalar sobre BD existente y necesidad de reset admin soportado.
+- Causa: el flujo operativo mezclaba documentacion de desarrollo con instalacion de servidor; el instalador asumia demasiadas cosas felices: carpeta correcta, PostgreSQL automatico, BD nueva y health check PowerShell fiable.
+- Solucion aplicada: `install.ps1` e `Instalar-AtlasBalance.ps1` validan paquete release antes de instalar; `install.cmd`/`Instalar Atlas Balance.cmd` devuelven codigo de salida; el instalador detecta usuarios existentes y no genera password admin falsa; se agrega `Reset-AdminPassword.ps1`; `Build-Release.ps1` incluye scripts operativos nuevos; el health check usa `curl.exe -k` como prueba primaria.
+- Mitigacion operativa: si la BD ya existe y no se conoce el admin, ejecutar `scripts\Reset-AdminPassword.ps1` desde la instalacion; si `curl.exe -k` responde pero el navegador no, instalar `atlas-balance.cer` como raiz confiable en el cliente.
+
+## 2026-04-25 - V-01.04 - Reinstalacion falla por password HTTPS desalineada
+
+- Contexto: en Windows Server 2019, tras reinstalar `V-01.03`, `AtlasBalance.API` quedaba detenido y el visor de eventos mostraba `System.Security.Cryptography.CryptographicException: La contraseña de red especificada no es válida` al cargar `atlas-balance.pfx`.
+- Causa: `Instalar-AtlasBalance.ps1` reutilizaba `C:\AtlasBalance\certs\atlas-balance.pfx` si ya existia, pero generaba una password HTTPS nueva y la escribia en `appsettings.Production.json`. Eso dejaba certificado viejo con password nueva.
+- Solucion aplicada: el instalador `V-01.04` elimina `atlas-balance.pfx` y `atlas-balance.cer` existentes antes de generar el certificado nuevo, garantizando que la password configurada y el PFX coincidan.
+- Mitigacion operativa para instalaciones afectadas: detener `AtlasBalance.API`, borrar `C:\AtlasBalance\certs\atlas-balance.pfx` y `C:\AtlasBalance\certs\atlas-balance.cer`, y relanzar `scripts\Instalar-AtlasBalance.ps1` directamente desde el paquete.
+
+## 2026-04-25 - V-01.04 - Modal de importacion rechazado por cabeceras anti-frame
+
+- Contexto: en produccion, desde el dashboard de cuenta, el modal `Importar movimientos` mostraba un panel gris con icono de documento roto/rechazo de conexion.
+- Causa: el frontend cargaba `/importacion` dentro de un `iframe`, pero la API aplicaba `X-Frame-Options: DENY` y `Content-Security-Policy: frame-ancestors 'none'` a todas las rutas, bloqueando incluso iframes same-origin.
+- Solucion aplicada: las cabeceras pasan a `X-Frame-Options: SAMEORIGIN` y `frame-ancestors 'self'`, permitiendo solo embebidos del mismo origen y manteniendo bloqueado el clickjacking externo.
+- Mitigacion operativa para `V-01.03` ya instalado: parchear el bundle servido para que el boton de importacion navegue a `/importacion` en pagina completa o publicar un paquete nuevo con la correccion.
 
 ## 2026-04-25 - V-01.03 - Auditoria profunda de seguridad y hardening aplicado
 
@@ -241,6 +332,13 @@
 - Contexto: `scripts/Build-Release.ps1` ejecuta `dotnet publish` sin exclusiones explicitas. Cualquier paquete generado por el script incluia `appsettings.Development.json` y las plantillas dentro de la carpeta `api` del release.
 - Causa: los csproj de API y Watchdog no marcaban esos archivos con `CopyToPublishDirectory="Never"`.
 - Solucion aplicada: `ItemGroup` con `Content Update="..." CopyToPublishDirectory="Never" ExcludeFromSingleFile="true"` para los tres ficheros en ambos csproj. Cualquier release futuro queda limpio de secretos de desarrollo.
+
+## 2026-04-25 - V-01.04 - Importacion bloqueaba filas informativas con concepto pero sin fecha/monto/saldo
+
+- Contexto: al validar extractos pegados desde banco, algunas filas con solo concepto aparecian como error (`Monto vacio`, `Fecha vacia`, `Saldo vacio`) y no podian importarse.
+- Causa: la validacion trataba cualquier campo obligatorio vacio como error fatal, aunque esas filas fueran descripciones/informacion adicional exportada por el banco.
+- Solucion aplicada: si una fila tiene concepto y deja vacios fecha, importe y saldo, se convierte en fila importable con advertencias: fecha y saldo se heredan de la ultima fila valida anterior y el monto se importa como `0`. Las filas ambiguas o parcialmente rotas siguen siendo errores.
+- Verificacion: `dotnet test Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj --filter ImportacionServiceTests` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR` OK.
 
 ### 2026-04-20 - V-01.02 - Scripts smoke y docs historicas con credenciales
 

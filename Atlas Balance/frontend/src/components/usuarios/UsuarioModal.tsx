@@ -19,6 +19,7 @@ interface PermisoFormRow {
   key: string;
   titular_id: string;
   cuenta_id: string;
+  puede_ver_cuentas: boolean;
   puede_agregar_lineas: boolean;
   puede_editar_lineas: boolean;
   puede_eliminar_lineas: boolean;
@@ -42,6 +43,7 @@ interface UserFormState {
 interface PermisoApiRow {
   titular_id?: string | null;
   cuenta_id?: string | null;
+  puede_ver_cuentas?: boolean;
   puede_agregar_lineas?: boolean;
   puede_editar_lineas?: boolean;
   puede_eliminar_lineas?: boolean;
@@ -76,6 +78,7 @@ const emptyPermiso = (): PermisoFormRow => ({
   key: crypto.randomUUID(),
   titular_id: '',
   cuenta_id: '',
+  puede_ver_cuentas: false,
   puede_agregar_lineas: false,
   puede_editar_lineas: false,
   puede_eliminar_lineas: false,
@@ -119,6 +122,12 @@ const getPermisoScopeLabel = (
 
   return 'Permiso global';
 };
+
+const globalAccessPermiso = (): PermisoFormRow => ({
+  ...emptyPermiso(),
+  puede_ver_cuentas: true,
+  puede_ver_dashboard: true,
+});
 
 export default function UsuarioModal({
   open,
@@ -168,6 +177,7 @@ export default function UsuarioModal({
           key: crypto.randomUUID(),
           titular_id: permiso.titular_id ?? '',
           cuenta_id: permiso.cuenta_id ?? '',
+          puede_ver_cuentas: permiso.puede_ver_cuentas ?? false,
           puede_agregar_lineas: permiso.puede_agregar_lineas ?? false,
           puede_editar_lineas: permiso.puede_editar_lineas ?? false,
           puede_eliminar_lineas: permiso.puede_eliminar_lineas ?? false,
@@ -238,6 +248,7 @@ export default function UsuarioModal({
         const columnasVisibles = parseColumns(permiso.columnas_visibles);
         const columnasEditables = parseColumns(permiso.columnas_editables);
         const hasFlags =
+          permiso.puede_ver_cuentas ||
           permiso.puede_agregar_lineas ||
           permiso.puede_editar_lineas ||
           permiso.puede_eliminar_lineas ||
@@ -252,6 +263,7 @@ export default function UsuarioModal({
         return {
           cuenta_id: permiso.cuenta_id || null,
           titular_id: permiso.titular_id || null,
+          puede_ver_cuentas: permiso.puede_ver_cuentas,
           puede_agregar_lineas: permiso.puede_agregar_lineas,
           puede_editar_lineas: permiso.puede_editar_lineas,
           puede_eliminar_lineas: permiso.puede_eliminar_lineas,
@@ -277,6 +289,45 @@ export default function UsuarioModal({
       ...prev,
       permisos: [...prev.permisos, emptyPermiso()],
     }));
+  };
+
+  const grantAllAccounts = () => {
+    setForm((prev) => {
+      const globalIndex = prev.permisos.findIndex(
+        (permiso) => !permiso.titular_id && !permiso.cuenta_id
+      );
+
+      if (globalIndex >= 0) {
+        return {
+          ...prev,
+          permisos: prev.permisos.map((permiso, index) =>
+            index === globalIndex
+              ? { ...permiso, puede_ver_cuentas: true, puede_ver_dashboard: true }
+              : permiso
+          ),
+        };
+      }
+
+      const hasOnlyBlankRow =
+        prev.permisos.length === 1 &&
+        !prev.permisos[0].titular_id &&
+        !prev.permisos[0].cuenta_id &&
+        !prev.permisos[0].puede_ver_cuentas &&
+        !prev.permisos[0].puede_agregar_lineas &&
+        !prev.permisos[0].puede_editar_lineas &&
+        !prev.permisos[0].puede_eliminar_lineas &&
+        !prev.permisos[0].puede_importar &&
+        !prev.permisos[0].puede_ver_dashboard &&
+        !prev.permisos[0].columnas_visibles &&
+        !prev.permisos[0].columnas_editables;
+
+      return {
+        ...prev,
+        permisos: hasOnlyBlankRow
+          ? [globalAccessPermiso()]
+          : [globalAccessPermiso(), ...prev.permisos],
+      };
+    });
   };
 
   const removePermiso = (key: string) => {
@@ -489,11 +540,16 @@ export default function UsuarioModal({
               <div className="users-section-header">
                 <div>
                   <h3>Permisos</h3>
-                  <p>Globales, por titular o por cuenta específica.</p>
+                  <p>Usa acceso global para leer todas las cuentas sin regalar edición.</p>
                 </div>
-                <button type="button" onClick={addPermiso}>
-                  Añadir permiso
-                </button>
+                <div className="users-section-actions">
+                  <button type="button" onClick={grantAllAccounts}>
+                    Acceso a todas las cuentas
+                  </button>
+                  <button type="button" onClick={addPermiso}>
+                    Añadir permiso
+                  </button>
+                </div>
               </div>
 
               <div className="users-permisos-list">
@@ -580,6 +636,19 @@ export default function UsuarioModal({
                       </div>
 
                       <div className="users-check-grid">
+                        <label>
+                          <input
+                            type="checkbox"
+                            className="users-check-input"
+                            checked={permiso.puede_ver_cuentas}
+                            onChange={(event) =>
+                              updatePermiso(permiso.key, {
+                                puede_ver_cuentas: event.target.checked,
+                              })
+                            }
+                          />
+                          Ver cuentas
+                        </label>
                         <label>
                           <input
                             type="checkbox"

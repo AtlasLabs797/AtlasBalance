@@ -69,7 +69,7 @@ public static class SeedData
             ["backup_retention_weeks"] = ("6", "int", "Semanas de retención de backups"),
             ["backup_path"] = ("C:/AtlasBalance/backups", "string", "Ruta de almacenamiento de backups"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
-            ["app_version"] = ("V-01.03", "string", "Versión instalada"),
+            ["app_version"] = ("V-01.04", "string", "Versión instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "URL del servidor de actualizaciones"),
             ["smtp_host"] = ("", "string", "Host SMTP"),
             ["smtp_port"] = ("587", "int", "Puerto SMTP"),

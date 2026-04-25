@@ -40,7 +40,8 @@ public sealed class AlertaService : IAlertaService
                     c.Nombre,
                     c.Divisa,
                     TitularId = t.Id,
-                    TitularNombre = t.Nombre
+                    TitularNombre = t.Nombre,
+                    TitularTipo = t.Tipo
                 })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -62,8 +63,9 @@ public sealed class AlertaService : IAlertaService
         }
 
         var alertas = await _dbContext.AlertasSaldo
-            .Where(x => x.Activa && (x.CuentaId == null || x.CuentaId == cuentaId))
+            .Where(x => x.Activa && (x.CuentaId == cuentaId || (x.CuentaId == null && (x.TipoTitular == null || x.TipoTitular == cuenta.TitularTipo))))
             .OrderByDescending(x => x.CuentaId == cuentaId)
+            .ThenByDescending(x => x.TipoTitular == cuenta.TitularTipo)
             .ThenByDescending(x => x.FechaCreacion)
             .ToListAsync(cancellationToken);
 
@@ -138,9 +140,10 @@ public sealed class AlertaService : IAlertaService
                 cuenta_nombre = cuenta.Nombre,
                 titular_id = cuenta.TitularId,
                 titular_nombre = cuenta.TitularNombre,
+                tipo_titular = cuenta.TitularTipo.ToString(),
                 saldo_actual = saldoActual.Value,
                 saldo_minimo = alertaAplicable.SaldoMinimo,
-                alerta_global = alertaAplicable.CuentaId is null,
+                alcance = alertaAplicable.CuentaId.HasValue ? "CUENTA" : alertaAplicable.TipoTitular.HasValue ? "TIPO_TITULAR" : "GLOBAL",
                 destinatarios = recipients.Count
             }),
             cancellationToken);
@@ -173,7 +176,8 @@ public sealed class AlertaService : IAlertaService
                     c.Nombre,
                     c.Divisa,
                     TitularId = t.Id,
-                    TitularNombre = t.Nombre
+                    TitularNombre = t.Nombre,
+                    TitularTipo = t.Tipo
                 })
             .ToListAsync(cancellationToken);
 
@@ -198,10 +202,15 @@ public sealed class AlertaService : IAlertaService
         var alertas = await _dbContext.AlertasSaldo
             .Where(x => x.Activa && (x.CuentaId == null || cuentaIds.Contains(x.CuentaId.Value)))
             .OrderByDescending(x => x.CuentaId.HasValue)
+            .ThenByDescending(x => x.TipoTitular.HasValue)
             .ThenByDescending(x => x.FechaCreacion)
             .ToListAsync(cancellationToken);
 
-        var globalAlert = alertas.FirstOrDefault(x => x.CuentaId == null);
+        var globalAlert = alertas.FirstOrDefault(x => x.CuentaId == null && x.TipoTitular == null);
+        var alertByTipoTitular = alertas
+            .Where(x => x.CuentaId == null && x.TipoTitular.HasValue)
+            .GroupBy(x => x.TipoTitular!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
         var alertByCuenta = alertas
             .Where(x => x.CuentaId.HasValue)
             .GroupBy(x => x.CuentaId!.Value)
@@ -220,6 +229,10 @@ public sealed class AlertaService : IAlertaService
             {
                 alertaAplicable = alertaCuenta;
             }
+            else if (alertByTipoTitular.TryGetValue(cuenta.TitularTipo, out var alertaTipo))
+            {
+                alertaAplicable = alertaTipo;
+            }
             else if (globalAlert is not null)
             {
                 alertaAplicable = globalAlert;
@@ -237,6 +250,7 @@ public sealed class AlertaService : IAlertaService
                 TitularId = cuenta.TitularId,
                 CuentaNombre = cuenta.Nombre,
                 TitularNombre = cuenta.TitularNombre,
+                TipoTitular = cuenta.TitularTipo.ToString(),
                 Divisa = cuenta.Divisa,
                 SaldoActual = saldoActual,
                 SaldoMinimo = alertaAplicable.SaldoMinimo

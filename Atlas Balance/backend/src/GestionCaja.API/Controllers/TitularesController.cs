@@ -33,6 +33,7 @@ public sealed class TitularesController : ControllerBase
         [FromQuery] string sortBy = "nombre",
         [FromQuery] string sortDir = "asc",
         [FromQuery] string? search = null,
+        [FromQuery] TipoTitular? tipoTitular = null,
         [FromQuery] bool incluirEliminados = false,
         CancellationToken cancellationToken = default)
     {
@@ -51,6 +52,11 @@ public sealed class TitularesController : ControllerBase
             : _dbContext.Titulares;
 
         query = _userAccessService.ApplyTitularScope(query, scope);
+
+        if (tipoTitular.HasValue)
+        {
+            query = query.Where(t => t.Tipo == tipoTitular.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {

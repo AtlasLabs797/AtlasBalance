@@ -12,6 +12,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SignedAmount } from '@/components/common/SignedAmount';
@@ -30,6 +31,8 @@ import type {
   DashboardSaldosDivisa,
   PaginatedResponse,
   PeriodoDashboard,
+  TipoCuenta,
+  TipoTitular,
   Titular,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -60,9 +63,15 @@ interface CuentaFormState {
   banco_nombre: string;
   divisa: string;
   formato_id: string;
-  es_efectivo: boolean;
+  tipo_cuenta: TipoCuenta;
   activa: boolean;
   notas: string;
+  fecha_inicio: string;
+  fecha_vencimiento: string;
+  interes_previsto: string;
+  renovable: boolean;
+  cuenta_referencia_id: string;
+  plazo_fijo_notas: string;
 }
 
 interface DeleteCandidate {
@@ -89,9 +98,15 @@ const emptyForm: CuentaFormState = {
   banco_nombre: '',
   divisa: 'EUR',
   formato_id: '',
-  es_efectivo: false,
+  tipo_cuenta: 'NORMAL',
   activa: true,
   notas: '',
+  fecha_inicio: '',
+  fecha_vencimiento: '',
+  interes_previsto: '',
+  renovable: false,
+  cuenta_referencia_id: '',
+  plazo_fijo_notas: '',
 };
 
 function getCuentaInitials(nombre: string) {
@@ -123,6 +138,8 @@ export default function CuentasPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
   const [titularFilter, setTitularFilter] = useState('');
+  const [tipoTitularFilter, setTipoTitularFilter] = useState('');
+  const [tipoCuentaFilter, setTipoCuentaFilter] = useState('');
   const [incluirEliminados, setIncluirEliminados] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +155,7 @@ export default function CuentasPage() {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [renewingId, setRenewingId] = useState<string | null>(null);
   const [form, setForm] = useState<CuentaFormState>(emptyForm);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -145,6 +163,10 @@ export default function CuentasPage() {
   const formatosDisponibles = useMemo(
     () => formatos.filter((formato) => !formato.divisa || formato.divisa === form.divisa),
     [formatos, form.divisa],
+  );
+  const cuentaReferenciaOptions = useMemo(
+    () => items.filter((item) => item.id !== editingId && item.tipo_cuenta !== 'PLAZO_FIJO' && item.activa),
+    [editingId, items],
   );
 
   const chartRows = useMemo(
@@ -216,6 +238,8 @@ export default function CuentasPage() {
           pageSize,
           search: search || undefined,
           titularId: titularFilter || undefined,
+          tipoTitular: tipoTitularFilter || undefined,
+          tipoCuenta: tipoCuentaFilter || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
           sortBy: 'fecha_creacion',
           sortDir: 'desc',
@@ -238,7 +262,7 @@ export default function CuentasPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros/paginacion
-  }, [page, pageSize, search, titularFilter, incluirEliminados, isAdmin]);
+  }, [page, pageSize, search, titularFilter, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -318,6 +342,7 @@ export default function CuentasPage() {
 
   const resetForm = () => {
     setEditingId(null);
+    setRenewingId(null);
     setForm(() => ({
       ...emptyForm,
       titular_id: titulares[0]?.id ?? '',
@@ -342,7 +367,7 @@ export default function CuentasPage() {
   };
 
   useEffect(() => {
-    if (!form.es_efectivo) {
+    if (form.tipo_cuenta === 'NORMAL') {
       if (form.formato_id && !formatosDisponibles.some((formato) => formato.id === form.formato_id)) {
         setForm((prev) => ({ ...prev, formato_id: '' }));
       }
@@ -356,7 +381,7 @@ export default function CuentasPage() {
       banco_nombre: '',
       formato_id: '',
     }));
-  }, [form.divisa, form.es_efectivo, form.formato_id, formatosDisponibles]);
+  }, [form.divisa, form.tipo_cuenta, form.formato_id, formatosDisponibles]);
 
   const startEdit = async (id: string) => {
     setSaving(true);
@@ -365,6 +390,7 @@ export default function CuentasPage() {
     try {
       const { data } = await api.get<CuentaRow>(`/cuentas/${id}`, { params: { incluirEliminados: true } });
       setEditingId(id);
+      setRenewingId(null);
       setForm({
         titular_id: data.titular_id,
         nombre: data.nombre,
@@ -372,10 +398,16 @@ export default function CuentasPage() {
         iban: data.iban ?? '',
         banco_nombre: data.banco_nombre ?? '',
         divisa: data.divisa,
-        formato_id: data.es_efectivo ? '' : (data.formato_id ?? ''),
-        es_efectivo: data.es_efectivo,
+        formato_id: data.tipo_cuenta === 'NORMAL' ? (data.formato_id ?? '') : '',
+        tipo_cuenta: data.tipo_cuenta ?? (data.es_efectivo ? 'EFECTIVO' : 'NORMAL'),
         activa: data.activa,
         notas: data.notas ?? '',
+        fecha_inicio: data.plazo_fijo?.fecha_inicio ?? '',
+        fecha_vencimiento: data.plazo_fijo?.fecha_vencimiento ?? '',
+        interes_previsto: data.plazo_fijo?.interes_previsto?.toString() ?? '',
+        renovable: data.plazo_fijo?.renovable ?? false,
+        cuenta_referencia_id: data.plazo_fijo?.cuenta_referencia_id ?? '',
+        plazo_fijo_notas: data.plazo_fijo?.notas ?? '',
       });
       setIsFormModalOpen(true);
     } catch (err) {
@@ -385,10 +417,20 @@ export default function CuentasPage() {
     }
   };
 
+  const startRenew = async (id: string) => {
+    await startEdit(id);
+    setEditingId(null);
+    setRenewingId(id);
+  };
+
   const save = async () => {
     if (!isAdmin) return;
     if (!form.titular_id || !form.nombre.trim()) {
       setFormError('Titular y nombre son obligatorios');
+      return;
+    }
+    if (form.tipo_cuenta === 'PLAZO_FIJO' && (!form.fecha_inicio || !form.fecha_vencimiento)) {
+      setFormError('Fecha de inicio y vencimiento son obligatorias para plazo fijo');
       return;
     }
 
@@ -401,14 +443,31 @@ export default function CuentasPage() {
       iban: form.iban.trim() || null,
       banco_nombre: form.banco_nombre.trim() || null,
       divisa: form.divisa,
-      formato_id: form.es_efectivo ? null : (form.formato_id || null),
-      es_efectivo: form.es_efectivo,
+      formato_id: form.tipo_cuenta === 'NORMAL' ? (form.formato_id || null) : null,
+      tipo_cuenta: form.tipo_cuenta,
+      es_efectivo: form.tipo_cuenta === 'EFECTIVO',
       activa: form.activa,
       notas: form.notas.trim() || null,
+      plazo_fijo: form.tipo_cuenta === 'PLAZO_FIJO' ? {
+        fecha_inicio: form.fecha_inicio,
+        fecha_vencimiento: form.fecha_vencimiento,
+        interes_previsto: form.interes_previsto ? Number(form.interes_previsto) : null,
+        renovable: form.renovable,
+        cuenta_referencia_id: form.cuenta_referencia_id || null,
+        notas: form.plazo_fijo_notas.trim() || null,
+      } : null,
     };
 
     try {
-      if (editingId) {
+      if (renewingId) {
+        await api.post(`/cuentas/${renewingId}/plazo-fijo/renovar`, {
+          nueva_fecha_inicio: form.fecha_inicio,
+          nueva_fecha_vencimiento: form.fecha_vencimiento,
+          interes_previsto: form.interes_previsto ? Number(form.interes_previsto) : null,
+          renovable: form.renovable,
+          notas: form.plazo_fijo_notas.trim() || null,
+        });
+      } else if (editingId) {
         await api.put(`/cuentas/${editingId}`, payload);
       } else {
         await api.post('/cuentas', payload);
@@ -605,6 +664,34 @@ export default function CuentasPage() {
             setTitularFilter(next);
           }}
         />
+        <AppSelect
+          ariaLabel="Tipo de titular"
+          value={tipoTitularFilter}
+          options={[
+            { value: '', label: 'Todos los tipos de titular' },
+            { value: 'EMPRESA', label: 'Empresa' },
+            { value: 'AUTONOMO', label: 'Autonomo' },
+            { value: 'PARTICULAR', label: 'Particular' },
+          ]}
+          onChange={(next) => {
+            setPage(1);
+            setTipoTitularFilter(next as TipoTitular | '');
+          }}
+        />
+        <AppSelect
+          ariaLabel="Tipo de cuenta"
+          value={tipoCuentaFilter}
+          options={[
+            { value: '', label: 'Todos los tipos de cuenta' },
+            { value: 'NORMAL', label: 'Normal' },
+            { value: 'EFECTIVO', label: 'Efectivo' },
+            { value: 'PLAZO_FIJO', label: 'Plazo fijo' },
+          ]}
+          onChange={(next) => {
+            setPage(1);
+            setTipoCuentaFilter(next as TipoCuenta | '');
+          }}
+        />
         <PageSizeSelect
           value={pageSize}
           options={[10, 20, 50]}
@@ -645,7 +732,8 @@ export default function CuentasPage() {
               <article className="titular-card cuenta-card" key={item.id}>
                 <div className="titular-card-title">
                   <h3>{item.nombre}</h3>
-                  <span className="pill">{item.es_efectivo ? 'EFECTIVO' : 'BANCARIA'}</span>
+                  <span className="pill">{item.tipo_cuenta ?? (item.es_efectivo ? 'EFECTIVO' : 'NORMAL')}</span>
+                  {item.plazo_fijo ? <span className="pill">{item.plazo_fijo.estado}</span> : null}
                 </div>
                 <div className="cuenta-card-meta">
                   <div className="cuenta-card-meta-item">
@@ -664,6 +752,12 @@ export default function CuentasPage() {
                     <span className="cuenta-card-meta-label">Estado</span>
                     <strong className="cuenta-card-meta-value">{item.deleted_at ? 'Eliminada' : (item.activa ? 'Activa' : 'Inactiva')}</strong>
                   </div>
+                  {item.plazo_fijo ? (
+                    <div className="cuenta-card-meta-item">
+                      <span className="cuenta-card-meta-label">Vencimiento</span>
+                      <strong className="cuenta-card-meta-value">{formatDate(item.plazo_fijo.fecha_vencimiento)}</strong>
+                    </div>
+                  ) : null}
                   <div className="cuenta-card-meta-item cuenta-card-balance">
                     <span className="cuenta-card-meta-label">Saldo total</span>
                     {saldoValue === null ? (
@@ -695,9 +789,12 @@ export default function CuentasPage() {
                     {canSeeDashboard && !item.deleted_at && !canOpenDashboardCuenta ? (
                       <span className="dashboard-open-link dashboard-open-link--disabled">Sin acceso</span>
                     ) : null}
-                    {isAdmin ? (
-                      <button type="button" onClick={() => startEdit(item.id)} disabled={saving}>Editar</button>
-                    ) : null}
+                  {isAdmin ? (
+                    <button type="button" onClick={() => startEdit(item.id)} disabled={saving}>Editar</button>
+                  ) : null}
+                  {isAdmin && item.tipo_cuenta === 'PLAZO_FIJO' ? (
+                    <button type="button" onClick={() => void startRenew(item.id)} disabled={saving}>Renovar</button>
+                  ) : null}
                     {isAdmin && !item.deleted_at ? (
                       <button
                         type="button"
@@ -734,7 +831,7 @@ export default function CuentasPage() {
           >
             <div className="users-modal-header">
               <div>
-                <h2 id="cuentas-modal-title">{editingId ? 'Editar Cuenta' : 'Nueva Cuenta'}</h2>
+                <h2 id="cuentas-modal-title">{renewingId ? 'Renovar plazo fijo' : editingId ? 'Editar Cuenta' : 'Nueva Cuenta'}</h2>
                 <p>Alta y edición de cuentas bancarias o efectivo asociadas a un titular.</p>
               </div>
               <button type="button" className="users-modal-close" onClick={closeFormModal} disabled={saving}>
@@ -778,17 +875,20 @@ export default function CuentasPage() {
                     }))}
                     onChange={(next) => setForm((f) => ({ ...f, divisa: next }))}
                   />
+
+                  <AppSelect
+                    label="Tipo de cuenta"
+                    value={form.tipo_cuenta}
+                    options={[
+                      { value: 'NORMAL', label: 'Normal' },
+                      { value: 'EFECTIVO', label: 'Efectivo' },
+                      { value: 'PLAZO_FIJO', label: 'Plazo fijo' },
+                    ]}
+                    onChange={(next) => setForm((f) => ({ ...f, tipo_cuenta: next as TipoCuenta }))}
+                  />
                 </div>
 
                 <div className="users-check-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={form.es_efectivo}
-                      onChange={(e) => setForm((f) => ({ ...f, es_efectivo: e.target.checked }))}
-                    />
-                    Es efectivo
-                  </label>
                   <label>
                     <input
                       type="checkbox"
@@ -807,7 +907,7 @@ export default function CuentasPage() {
                 </label>
               </section>
 
-              {!form.es_efectivo ? (
+              {form.tipo_cuenta === 'NORMAL' ? (
                 <section className="users-modal-section">
                   <h3>Datos bancarios</h3>
                   <div className="users-form-grid">
@@ -841,8 +941,62 @@ export default function CuentasPage() {
                   </div>
                 </section>
               ) : (
-                <p className="import-muted">Las cuentas de efectivo no usan datos bancarios ni formato de importacion.</p>
+                <p className="import-muted">Las cuentas de efectivo y plazo fijo no usan datos bancarios ni formato de importacion.</p>
               )}
+
+              {form.tipo_cuenta === 'PLAZO_FIJO' || renewingId ? (
+                <section className="users-modal-section">
+                  <h3>Plazo fijo</h3>
+                  <div className="users-form-grid">
+                    <div className="date-field">
+                      <span>Fecha inicio</span>
+                      <DatePickerField
+                        ariaLabel="Fecha inicio"
+                        value={form.fecha_inicio}
+                        onChange={(next) => setForm((f) => ({ ...f, fecha_inicio: next }))}
+                      />
+                    </div>
+                    <div className="date-field">
+                      <span>Fecha vencimiento</span>
+                      <DatePickerField
+                        ariaLabel="Fecha vencimiento"
+                        value={form.fecha_vencimiento}
+                        onChange={(next) => setForm((f) => ({ ...f, fecha_vencimiento: next }))}
+                      />
+                    </div>
+                    <label>
+                      <span>Interes previsto</span>
+                      <input type="number" step="0.01" min="0" value={form.interes_previsto} onChange={(e) => setForm((f) => ({ ...f, interes_previsto: e.target.value }))} />
+                    </label>
+                    <AppSelect
+                      label="Cuenta referencia"
+                      value={form.cuenta_referencia_id}
+                      options={[
+                        { value: '', label: 'Sin cuenta referencia' },
+                        ...cuentaReferenciaOptions.map((cuenta) => ({
+                          value: cuenta.id,
+                          label: `${cuenta.titular_nombre} - ${cuenta.nombre}`,
+                        })),
+                      ]}
+                      onChange={(next) => setForm((f) => ({ ...f, cuenta_referencia_id: next }))}
+                    />
+                  </div>
+                  <div className="users-check-row">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={form.renovable}
+                        onChange={(e) => setForm((f) => ({ ...f, renovable: e.target.checked }))}
+                      />
+                      Renovable
+                    </label>
+                  </div>
+                  <label className="users-form-full">
+                    <span>Notas de plazo fijo</span>
+                    <textarea value={form.plazo_fijo_notas} onChange={(e) => setForm((f) => ({ ...f, plazo_fijo_notas: e.target.value }))} />
+                  </label>
+                </section>
+              ) : null}
 
               <div className="users-form-actions phase2-modal-actions">
                 <button type="button" onClick={closeFormModal} disabled={saving}>Cancelar</button>

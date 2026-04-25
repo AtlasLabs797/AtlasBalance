@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import { AppSelect } from '@/components/common/AppSelect';
+import { DatePickerField } from '@/components/common/DatePickerField';
 
 interface AddRowFormProps {
   cuentas: Array<{ id: string; nombre: string; titular_nombre: string; divisa: string }>;
@@ -62,7 +63,7 @@ export default function AddRowForm({ cuentas, extraColumns, onCreate }: AddRowFo
           ]}
           onChange={setCuentaId}
         />
-        <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        <DatePickerField ariaLabel="Fecha" value={fecha} onChange={setFecha} />
         <input placeholder="Concepto" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
         <input placeholder="Comentarios" value={comentarios} onChange={(e) => setComentarios(e.target.value)} />
         <input type="number" step="0.0001" placeholder="Monto" value={monto} onChange={(e) => setMonto(e.target.value)} />

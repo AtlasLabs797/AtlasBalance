@@ -18,12 +18,14 @@ public sealed class CuentasController : ControllerBase
     private readonly AppDbContext _dbContext;
     private readonly IUserAccessService _userAccessService;
     private readonly IAuditService _auditService;
+    private readonly IPlazoFijoService _plazoFijoService;
 
-    public CuentasController(AppDbContext dbContext, IUserAccessService userAccessService, IAuditService auditService)
+    public CuentasController(AppDbContext dbContext, IUserAccessService userAccessService, IAuditService auditService, IPlazoFijoService plazoFijoService)
     {
         _dbContext = dbContext;
         _userAccessService = userAccessService;
         _auditService = auditService;
+        _plazoFijoService = plazoFijoService;
     }
 
     [HttpGet("divisas-activas")]
@@ -51,6 +53,8 @@ public sealed class CuentasController : ControllerBase
         [FromQuery] string sortDir = "desc",
         [FromQuery] string? search = null,
         [FromQuery] Guid? titularId = null,
+        [FromQuery] TipoTitular? tipoTitular = null,
+        [FromQuery] TipoCuenta? tipoCuenta = null,
         [FromQuery] bool incluirEliminados = false,
         CancellationToken cancellationToken = default)
     {
@@ -75,6 +79,16 @@ public sealed class CuentasController : ControllerBase
             query = query.Where(c => c.TitularId == titularId.Value);
         }
 
+        if (tipoCuenta.HasValue)
+        {
+            query = query.Where(c => c.TipoCuenta == tipoCuenta.Value);
+        }
+
+        if (tipoTitular.HasValue)
+        {
+            query = query.Where(c => _dbContext.Titulares.Any(t => t.Id == c.TitularId && t.Tipo == tipoTitular.Value));
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLowerInvariant();
@@ -89,31 +103,39 @@ public sealed class CuentasController : ControllerBase
         query = ApplySorting(query, sortBy, desc);
 
         var total = await query.CountAsync(cancellationToken);
-        var data = await query
+        var pageRows = await query
             .Join(
                 _dbContext.Titulares.IgnoreQueryFilters(),
                 c => c.TitularId,
                 t => t.Id,
-                (c, t) => new CuentaListItemResponse
-                {
-                    Id = c.Id,
-                    TitularId = c.TitularId,
-                    TitularNombre = t.Nombre,
-                    Nombre = c.Nombre,
-                    NumeroCuenta = c.NumeroCuenta,
-                    Iban = c.Iban,
-                    BancoNombre = c.BancoNombre,
-                    Divisa = c.Divisa,
-                    FormatoId = c.FormatoId,
-                    EsEfectivo = c.EsEfectivo,
-                    Activa = c.Activa,
-                    Notas = c.Notas,
-                    FechaCreacion = c.FechaCreacion,
-                    DeletedAt = c.DeletedAt
-                })
+                (c, t) => new { Cuenta = c, Titular = t })
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
+
+        var plazoMap = await BuildPlazoFijoMapAsync(pageRows.Select(x => x.Cuenta.Id).ToList(), cancellationToken);
+        var data = pageRows
+            .Select(x => new CuentaListItemResponse
+                {
+                    Id = x.Cuenta.Id,
+                    TitularId = x.Cuenta.TitularId,
+                    TitularNombre = x.Titular.Nombre,
+                    TitularTipo = x.Titular.Tipo.ToString(),
+                    Nombre = x.Cuenta.Nombre,
+                    NumeroCuenta = x.Cuenta.NumeroCuenta,
+                    Iban = x.Cuenta.Iban,
+                    BancoNombre = x.Cuenta.BancoNombre,
+                    Divisa = x.Cuenta.Divisa,
+                    FormatoId = x.Cuenta.FormatoId,
+                    EsEfectivo = x.Cuenta.EsEfectivo,
+                    TipoCuenta = ResolveTipoCuenta(x.Cuenta).ToString(),
+                    PlazoFijo = plazoMap.GetValueOrDefault(x.Cuenta.Id),
+                    Activa = x.Cuenta.Activa,
+                    Notas = x.Cuenta.Notas,
+                    FechaCreacion = x.Cuenta.FechaCreacion,
+                    DeletedAt = x.Cuenta.DeletedAt
+                })
+            .ToList();
 
         return Ok(new PaginatedResponse<CuentaListItemResponse>
         {
@@ -152,14 +174,16 @@ public sealed class CuentasController : ControllerBase
 
         var titular = await _dbContext.Titulares.IgnoreQueryFilters()
             .Where(t => t.Id == cuenta.TitularId)
-            .Select(t => t.Nombre)
+            .Select(t => new { t.Nombre, t.Tipo })
             .FirstOrDefaultAsync(cancellationToken);
+        var plazoMap = await BuildPlazoFijoMapAsync([cuenta.Id], cancellationToken);
 
         return Ok(new CuentaListItemResponse
         {
             Id = cuenta.Id,
             TitularId = cuenta.TitularId,
-            TitularNombre = titular ?? string.Empty,
+            TitularNombre = titular?.Nombre ?? string.Empty,
+            TitularTipo = titular?.Tipo.ToString() ?? string.Empty,
             Nombre = cuenta.Nombre,
             NumeroCuenta = cuenta.NumeroCuenta,
             Iban = cuenta.Iban,
@@ -167,6 +191,8 @@ public sealed class CuentasController : ControllerBase
             Divisa = cuenta.Divisa,
             FormatoId = cuenta.FormatoId,
             EsEfectivo = cuenta.EsEfectivo,
+            TipoCuenta = ResolveTipoCuenta(cuenta).ToString(),
+            PlazoFijo = plazoMap.GetValueOrDefault(cuenta.Id),
             Activa = cuenta.Activa,
             Notas = cuenta.Notas,
             FechaCreacion = cuenta.FechaCreacion,
@@ -184,11 +210,28 @@ public sealed class CuentasController : ControllerBase
             return Forbid();
         }
 
-        var exists = await _dbContext.Cuentas.AnyAsync(c => c.Id == id, cancellationToken);
-        if (!exists)
+        var cuenta = await _dbContext.Cuentas
+            .Where(c => c.Id == id)
+            .Select(c => new
+            {
+                c.Id,
+                c.Nombre,
+                c.Divisa,
+                c.EsEfectivo,
+                c.TipoCuenta,
+                c.TitularId,
+                c.Notas
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (cuenta is null)
         {
             return NotFound(new { error = "Cuenta no encontrada" });
         }
+
+        var titular = await _dbContext.Titulares
+            .Where(t => t.Id == cuenta.TitularId)
+            .Select(t => t.Nombre)
+            .FirstOrDefaultAsync(cancellationToken);
 
         var latest = await _dbContext.Extractos
             .Where(e => e.CuentaId == id)
@@ -208,13 +251,29 @@ public sealed class CuentasController : ControllerBase
                 Egresos = g.Sum(x => x.Monto < 0 ? -x.Monto : 0)
             })
             .FirstOrDefaultAsync(cancellationToken);
+        var last = await _dbContext.Extractos
+            .Where(e => e.CuentaId == id)
+            .OrderByDescending(e => e.FechaModificacion ?? e.FechaCreacion)
+            .Select(e => (DateTime?)(e.FechaModificacion ?? e.FechaCreacion))
+            .FirstOrDefaultAsync(cancellationToken);
+        var tipoCuenta = ResolveTipoCuenta(new Cuenta { TipoCuenta = cuenta.TipoCuenta, EsEfectivo = cuenta.EsEfectivo });
+        var plazoMap = await BuildPlazoFijoMapAsync([cuenta.Id], cancellationToken);
 
         return Ok(new CuentaResumenResponse
         {
-            CuentaId = id,
+            CuentaId = cuenta.Id,
+            CuentaNombre = cuenta.Nombre,
+            Divisa = cuenta.Divisa,
+            TitularId = cuenta.TitularId,
+            TitularNombre = titular ?? string.Empty,
+            EsEfectivo = cuenta.EsEfectivo,
+            TipoCuenta = tipoCuenta.ToString(),
+            PlazoFijo = plazoMap.GetValueOrDefault(cuenta.Id),
+            Notas = cuenta.Notas,
             SaldoActual = latest?.Saldo ?? 0m,
             IngresosMes = resumenMensual?.Ingresos ?? 0,
-            EgresosMes = resumenMensual?.Egresos ?? 0
+            EgresosMes = resumenMensual?.Egresos ?? 0,
+            UltimaActualizacion = last
         });
     }
 
@@ -270,23 +329,40 @@ public sealed class CuentasController : ControllerBase
             Iban = validation.Iban,
             BancoNombre = validation.BancoNombre,
             Divisa = validation.Divisa!,
-            FormatoId = request.EsEfectivo ? null : request.FormatoId,
-            EsEfectivo = request.EsEfectivo,
+            FormatoId = validation.TipoCuenta == TipoCuenta.NORMAL ? request.FormatoId : null,
+            TipoCuenta = validation.TipoCuenta,
+            EsEfectivo = validation.TipoCuenta == TipoCuenta.EFECTIVO,
             Activa = request.Activa,
             Notas = NormalizeOptionalText(request.Notas),
             FechaCreacion = DateTime.UtcNow
         };
 
         _dbContext.Cuentas.Add(cuenta);
+        if (validation.PlazoFijo is not null)
+        {
+            _dbContext.PlazosFijos.Add(new PlazoFijo
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuenta.Id,
+                CuentaReferenciaId = validation.PlazoFijo.CuentaReferenciaId,
+                FechaInicio = validation.PlazoFijo.FechaInicio!.Value,
+                FechaVencimiento = validation.PlazoFijo.FechaVencimiento!.Value,
+                InteresPrevisto = validation.PlazoFijo.InteresPrevisto,
+                Renovable = validation.PlazoFijo.Renovable,
+                Estado = EstadoPlazoFijo.ACTIVO,
+                Notas = NormalizeOptionalText(validation.PlazoFijo.Notas),
+                FechaCreacion = DateTime.UtcNow
+            });
+        }
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(
             GetCurrentUserId(),
-            "cuenta_creada",
+            validation.TipoCuenta == TipoCuenta.PLAZO_FIJO ? "cuenta_plazo_fijo_creada" : "cuenta_creada",
             "CUENTAS",
             cuenta.Id,
             HttpContext,
-            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.Notas }),
+            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, tipo_cuenta = cuenta.TipoCuenta.ToString(), cuenta.Notas, plazo_fijo = validation.PlazoFijo }),
             cancellationToken);
 
         return CreatedAtAction(nameof(Obtener), new { id = cuenta.Id }, new { id = cuenta.Id });
@@ -308,29 +384,88 @@ public sealed class CuentasController : ControllerBase
             return BadRequest(new { error = validation.Error });
         }
 
+        var previousTipoCuenta = ResolveTipoCuenta(cuenta);
+        if (previousTipoCuenta == TipoCuenta.PLAZO_FIJO && validation.TipoCuenta != TipoCuenta.PLAZO_FIJO)
+        {
+            return BadRequest(new { error = "No se puede convertir una cuenta de plazo fijo a otro tipo; crea una cuenta nueva" });
+        }
+
         cuenta.TitularId = request.TitularId;
         cuenta.Nombre = request.Nombre.Trim();
         cuenta.NumeroCuenta = validation.NumeroCuenta;
         cuenta.Iban = validation.Iban;
         cuenta.BancoNombre = validation.BancoNombre;
         cuenta.Divisa = validation.Divisa!;
-        cuenta.FormatoId = request.EsEfectivo ? null : request.FormatoId;
-        cuenta.EsEfectivo = request.EsEfectivo;
+        cuenta.FormatoId = validation.TipoCuenta == TipoCuenta.NORMAL ? request.FormatoId : null;
+        cuenta.TipoCuenta = validation.TipoCuenta;
+        cuenta.EsEfectivo = validation.TipoCuenta == TipoCuenta.EFECTIVO;
         cuenta.Activa = request.Activa;
         cuenta.Notas = NormalizeOptionalText(request.Notas);
+
+        if (validation.TipoCuenta == TipoCuenta.PLAZO_FIJO && validation.PlazoFijo is not null)
+        {
+            var plazo = await _dbContext.PlazosFijos.FirstOrDefaultAsync(p => p.CuentaId == cuenta.Id, cancellationToken);
+            if (plazo is null)
+            {
+                plazo = new PlazoFijo
+                {
+                    Id = Guid.NewGuid(),
+                    CuentaId = cuenta.Id,
+                    FechaCreacion = DateTime.UtcNow
+                };
+                _dbContext.PlazosFijos.Add(plazo);
+            }
+
+            plazo.CuentaReferenciaId = validation.PlazoFijo.CuentaReferenciaId;
+            plazo.FechaInicio = validation.PlazoFijo.FechaInicio!.Value;
+            plazo.FechaVencimiento = validation.PlazoFijo.FechaVencimiento!.Value;
+            plazo.InteresPrevisto = validation.PlazoFijo.InteresPrevisto;
+            plazo.Renovable = validation.PlazoFijo.Renovable;
+            plazo.Notas = NormalizeOptionalText(validation.PlazoFijo.Notas);
+            plazo.FechaModificacion = DateTime.UtcNow;
+            if (plazo.Estado == EstadoPlazoFijo.VENCIDO && plazo.FechaVencimiento > DateOnly.FromDateTime(DateTime.UtcNow.Date))
+            {
+                plazo.Estado = EstadoPlazoFijo.ACTIVO;
+                plazo.FechaUltimaNotificacion = null;
+            }
+        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(
             GetCurrentUserId(),
-            "cuenta_actualizada",
+            validation.TipoCuenta == TipoCuenta.PLAZO_FIJO ? "cuenta_plazo_fijo_actualizada" : "cuenta_actualizada",
             "CUENTAS",
             cuenta.Id,
             HttpContext,
-            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.Activa, cuenta.Notas }),
+            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, tipo_cuenta = cuenta.TipoCuenta.ToString(), cuenta.Activa, cuenta.Notas, plazo_fijo = validation.PlazoFijo }),
             cancellationToken);
 
         return Ok(new { message = "Cuenta actualizada" });
+    }
+
+    [HttpPost("{id:guid}/plazo-fijo/renovar")]
+    [Authorize(Roles = "ADMIN")]
+    public async Task<IActionResult> RenovarPlazoFijo(Guid id, [FromBody] RenovarPlazoFijoRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { error = "Request invalido" });
+        }
+
+        try
+        {
+            var result = await _plazoFijoService.RenovarAsync(id, request, GetCurrentUserId(), HttpContext, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [HttpPatch("{id:guid}/notas")]
@@ -431,46 +566,83 @@ public sealed class CuentasController : ControllerBase
         return Guid.TryParse(raw, out var userId) ? userId : null;
     }
 
-    private async Task<(string? Error, string? Divisa, string? NumeroCuenta, string? Iban, string? BancoNombre)> ValidateCuentaRequestAsync(
+    private async Task<CuentaValidationResult> ValidateCuentaRequestAsync(
         SaveCuentaRequest request,
         Guid? currentId,
         CancellationToken cancellationToken)
     {
+        var tipoCuenta = ResolveRequestedTipoCuenta(request);
+        var plazoFijo = ResolvePlazoFijoRequest(request);
+
         if (string.IsNullOrWhiteSpace(request.Nombre))
         {
-            return ("Nombre es obligatorio", null, null, null, null);
+            return CuentaValidationResult.Fail("Nombre es obligatorio", tipoCuenta);
         }
 
         var titularExists = await _dbContext.Titulares.AnyAsync(t => t.Id == request.TitularId, cancellationToken);
         if (!titularExists)
         {
-            return ("Titular invalido", null, null, null, null);
+            return CuentaValidationResult.Fail("Titular invalido", tipoCuenta);
         }
 
         var divisa = request.Divisa?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(divisa))
         {
-            return ("Divisa es obligatoria", null, null, null, null);
+            return CuentaValidationResult.Fail("Divisa es obligatoria", tipoCuenta);
         }
 
         var divisaExists = await _dbContext.DivisasActivas.AnyAsync(d => d.Activa && d.Codigo == divisa, cancellationToken);
         if (!divisaExists)
         {
-            return ("La divisa indicada no esta activa", null, null, null, null);
+            return CuentaValidationResult.Fail("La divisa indicada no esta activa", tipoCuenta);
         }
 
-        if (!request.EsEfectivo && request.FormatoId.HasValue)
+        if (tipoCuenta == TipoCuenta.NORMAL && request.FormatoId.HasValue)
         {
             var formato = await _dbContext.FormatosImportacion.FirstOrDefaultAsync(f => f.Id == request.FormatoId.Value, cancellationToken);
             if (formato is null)
             {
-                return ("Formato de importacion invalido", null, null, null, null);
+                return CuentaValidationResult.Fail("Formato de importacion invalido", tipoCuenta);
             }
 
             if (!string.IsNullOrWhiteSpace(formato.Divisa) &&
                 !string.Equals(formato.Divisa, divisa, StringComparison.OrdinalIgnoreCase))
             {
-                return ("La divisa de la cuenta debe coincidir con la del formato de importacion", null, null, null, null);
+                return CuentaValidationResult.Fail("La divisa de la cuenta debe coincidir con la del formato de importacion", tipoCuenta);
+            }
+        }
+
+        if (tipoCuenta == TipoCuenta.PLAZO_FIJO)
+        {
+            if (plazoFijo?.FechaInicio is null || plazoFijo.FechaVencimiento is null)
+            {
+                return CuentaValidationResult.Fail("Fecha de inicio y fecha de vencimiento son obligatorias para plazo fijo", tipoCuenta);
+            }
+
+            if (plazoFijo.FechaVencimiento < plazoFijo.FechaInicio)
+            {
+                return CuentaValidationResult.Fail("La fecha de vencimiento no puede ser anterior a la fecha de inicio", tipoCuenta);
+            }
+
+            if (plazoFijo.InteresPrevisto.HasValue && plazoFijo.InteresPrevisto.Value < 0)
+            {
+                return CuentaValidationResult.Fail("El interes previsto no puede ser negativo", tipoCuenta);
+            }
+
+            if (plazoFijo.CuentaReferenciaId.HasValue)
+            {
+                if (plazoFijo.CuentaReferenciaId == currentId)
+                {
+                    return CuentaValidationResult.Fail("La cuenta de referencia no puede ser la misma cuenta", tipoCuenta);
+                }
+
+                var referencia = await _dbContext.Cuentas.FirstOrDefaultAsync(
+                    c => c.Id == plazoFijo.CuentaReferenciaId.Value && c.Activa,
+                    cancellationToken);
+                if (referencia is null)
+                {
+                    return CuentaValidationResult.Fail("Cuenta de referencia invalida o inactiva", tipoCuenta);
+                }
             }
         }
 
@@ -484,15 +656,18 @@ public sealed class CuentasController : ControllerBase
 
         if (duplicateName)
         {
-            return ("Ya existe una cuenta con ese nombre para el titular indicado", null, null, null, null);
+            return CuentaValidationResult.Fail("Ya existe una cuenta con ese nombre para el titular indicado", tipoCuenta);
         }
 
-        return (
-            null,
-            divisa,
-            request.EsEfectivo ? null : request.NumeroCuenta?.Trim(),
-            request.EsEfectivo ? null : request.Iban?.Trim(),
-            request.EsEfectivo ? null : request.BancoNombre?.Trim());
+        return new CuentaValidationResult
+        {
+            TipoCuenta = tipoCuenta,
+            Divisa = divisa,
+            NumeroCuenta = tipoCuenta == TipoCuenta.NORMAL ? request.NumeroCuenta?.Trim() : null,
+            Iban = tipoCuenta == TipoCuenta.NORMAL ? request.Iban?.Trim() : null,
+            BancoNombre = tipoCuenta == TipoCuenta.NORMAL ? request.BancoNombre?.Trim() : null,
+            PlazoFijo = tipoCuenta == TipoCuenta.PLAZO_FIJO ? plazoFijo : null
+        };
     }
 
     private async Task<bool> CanEditCuentaAsync(UserAccessScope scope, Cuenta cuenta, CancellationToken cancellationToken)
@@ -519,5 +694,102 @@ public sealed class CuentasController : ControllerBase
     {
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static TipoCuenta ResolveTipoCuenta(Cuenta cuenta)
+    {
+        if (cuenta.TipoCuenta == TipoCuenta.NORMAL && cuenta.EsEfectivo)
+        {
+            return TipoCuenta.EFECTIVO;
+        }
+
+        return cuenta.TipoCuenta;
+    }
+
+    private static TipoCuenta ResolveRequestedTipoCuenta(SaveCuentaRequest request)
+    {
+        if (request.TipoCuenta.HasValue)
+        {
+            return request.TipoCuenta.Value;
+        }
+
+        return request.EsEfectivo ? TipoCuenta.EFECTIVO : TipoCuenta.NORMAL;
+    }
+
+    private static SavePlazoFijoRequest? ResolvePlazoFijoRequest(SaveCuentaRequest request)
+    {
+        if (request.PlazoFijo is not null)
+        {
+            return request.PlazoFijo;
+        }
+
+        if (request.FechaInicio is null &&
+            request.FechaVencimiento is null &&
+            request.InteresPrevisto is null &&
+            request.Renovable is null &&
+            request.CuentaReferenciaId is null &&
+            string.IsNullOrWhiteSpace(request.PlazoFijoNotas))
+        {
+            return null;
+        }
+
+        return new SavePlazoFijoRequest
+        {
+            FechaInicio = request.FechaInicio,
+            FechaVencimiento = request.FechaVencimiento,
+            InteresPrevisto = request.InteresPrevisto,
+            Renovable = request.Renovable ?? false,
+            CuentaReferenciaId = request.CuentaReferenciaId,
+            Notas = request.PlazoFijoNotas
+        };
+    }
+
+    private async Task<Dictionary<Guid, PlazoFijoResponse>> BuildPlazoFijoMapAsync(IReadOnlyList<Guid> cuentaIds, CancellationToken cancellationToken)
+    {
+        if (cuentaIds.Count == 0)
+        {
+            return [];
+        }
+
+        var rows = await (
+                from plazo in _dbContext.PlazosFijos
+                join refCuenta in _dbContext.Cuentas.IgnoreQueryFilters() on plazo.CuentaReferenciaId equals refCuenta.Id into refJoin
+                from cuentaReferencia in refJoin.DefaultIfEmpty()
+                where cuentaIds.Contains(plazo.CuentaId)
+                select new PlazoFijoResponse
+                {
+                    Id = plazo.Id,
+                    CuentaId = plazo.CuentaId,
+                    CuentaReferenciaId = plazo.CuentaReferenciaId,
+                    CuentaReferenciaNombre = cuentaReferencia != null ? cuentaReferencia.Nombre : null,
+                    FechaInicio = plazo.FechaInicio,
+                    FechaVencimiento = plazo.FechaVencimiento,
+                    InteresPrevisto = plazo.InteresPrevisto,
+                    Renovable = plazo.Renovable,
+                    Estado = plazo.Estado.ToString(),
+                    FechaUltimaNotificacion = plazo.FechaUltimaNotificacion,
+                    FechaRenovacion = plazo.FechaRenovacion,
+                    Notas = plazo.Notas
+                })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(x => x.CuentaId);
+    }
+
+    private sealed class CuentaValidationResult
+    {
+        public string? Error { get; init; }
+        public TipoCuenta TipoCuenta { get; init; }
+        public string? Divisa { get; init; }
+        public string? NumeroCuenta { get; init; }
+        public string? Iban { get; init; }
+        public string? BancoNombre { get; init; }
+        public SavePlazoFijoRequest? PlazoFijo { get; init; }
+
+        public static CuentaValidationResult Fail(string error, TipoCuenta tipoCuenta) => new()
+        {
+            Error = error,
+            TipoCuenta = tipoCuenta
+        };
     }
 }

@@ -15,6 +15,7 @@ public interface IImportacionService
     Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, CancellationToken cancellationToken);
     Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken);
     Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
+    Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
 }
 
 public sealed class ImportacionService : IImportacionService
@@ -93,6 +94,9 @@ public sealed class ImportacionService : IImportacionService
                 TitularNombre = x.titular.Nombre,
                 x.cuenta.Divisa,
                 x.cuenta.EsEfectivo,
+                TipoCuenta = x.cuenta.TipoCuenta == TipoCuenta.NORMAL && x.cuenta.EsEfectivo
+                    ? TipoCuenta.EFECTIVO
+                    : x.cuenta.TipoCuenta,
                 x.cuenta.FormatoId,
                 MapeoJson = x.cuenta.FormatoId == null
                     ? null
@@ -112,6 +116,7 @@ public sealed class ImportacionService : IImportacionService
                 TitularNombre = c.TitularNombre,
                 Divisa = c.Divisa,
                 EsEfectivo = c.EsEfectivo,
+                TipoCuenta = c.TipoCuenta.ToString(),
                 FormatoId = c.FormatoId,
                 FormatoPredefinido = ParseMapeoJson(c.MapeoJson)
             }).ToList()
@@ -120,7 +125,8 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken)
     {
-        await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, requireImportPermission: true, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, requireImportPermission: true, cancellationToken);
+        EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
@@ -146,6 +152,7 @@ public sealed class ImportacionService : IImportacionService
     public async Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
         var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, requireImportPermission: true, cancellationToken);
+        EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
         var validationRows = ValidateRows(rows, normalizedMap);
@@ -298,6 +305,109 @@ public sealed class ImportacionService : IImportacionService
         };
     }
 
+    public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, requireImportPermission: true, cancellationToken);
+        if (ResolveTipoCuenta(cuenta) != TipoCuenta.PLAZO_FIJO)
+        {
+            throw new ImportacionException("Esta operacion solo aplica a cuentas de plazo fijo", StatusCodes.Status400BadRequest);
+        }
+
+        if (request.Monto <= 0)
+        {
+            throw new ImportacionException("El monto debe ser mayor que cero", StatusCodes.Status400BadRequest);
+        }
+
+        if (request.Fecha == default)
+        {
+            throw new ImportacionException("La fecha es obligatoria", StatusCodes.Status400BadRequest);
+        }
+
+        var tipo = NormalizeMovimientoPlazoFijo(request.TipoMovimiento);
+        var signedAmount = tipo == "EGRESO" ? -request.Monto : request.Monto;
+        var now = DateTime.UtcNow;
+
+        var isRelational = _dbContext.Database.IsRelational();
+        IDbContextTransaction? tx = null;
+        if (isRelational)
+        {
+            tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            var lockBytes = cuenta.Id.ToByteArray();
+            var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
+            await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
+        }
+
+        var latest = await _dbContext.Extractos
+            .IgnoreQueryFilters()
+            .Where(e => e.CuentaId == cuenta.Id)
+            .OrderByDescending(e => e.Fecha)
+            .ThenByDescending(e => e.FilaNumero)
+            .Select(e => new { e.Saldo })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var maxFila = await _dbContext.Extractos
+            .IgnoreQueryFilters()
+            .Where(e => e.CuentaId == cuenta.Id)
+            .Select(e => (int?)e.FilaNumero)
+            .MaxAsync(cancellationToken) ?? 0;
+
+        var saldoAnterior = latest?.Saldo ?? 0m;
+        var saldoActual = saldoAnterior + signedAmount;
+        var concepto = NormalizeOptionalText(request.Concepto)
+            ?? (tipo == "EGRESO" ? "Salida plazo fijo" : "Entrada plazo fijo");
+
+        var extracto = new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuenta.Id,
+            Fecha = request.Fecha,
+            Concepto = concepto,
+            Monto = signedAmount,
+            Saldo = saldoActual,
+            FilaNumero = maxFila + 1,
+            UsuarioCreacionId = usuarioId,
+            FechaCreacion = now
+        };
+
+        _dbContext.Extractos.Add(extracto);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsFilaNumeroUniqueViolation(ex))
+        {
+            throw new ImportacionException(
+                "Otra operacion asigno el mismo numero de fila. Vuelve a intentarlo.",
+                StatusCodes.Status409Conflict);
+        }
+
+        var auditDetails = JsonSerializer.Serialize(new
+        {
+            cuenta_id = cuenta.Id,
+            cuenta = cuenta.Nombre,
+            tipo_movimiento = tipo,
+            monto = signedAmount,
+            saldo_anterior = saldoAnterior,
+            saldo_actual = saldoActual
+        });
+        await _auditService.LogAsync(usuarioId, "importacion_plazo_fijo_movimiento", "EXTRACTOS", cuenta.Id, httpContext, auditDetails, cancellationToken);
+
+        if (tx is not null)
+        {
+            await tx.CommitAsync(cancellationToken);
+            await tx.DisposeAsync();
+        }
+
+        return new ImportacionPlazoFijoMovimientoResponse
+        {
+            ExtractoId = extracto.Id,
+            FilaNumero = extracto.FilaNumero,
+            Monto = Decimal.Round(signedAmount, 2),
+            SaldoAnterior = Decimal.Round(saldoAnterior, 2),
+            SaldoActual = Decimal.Round(saldoActual, 2)
+        };
+    }
+
     private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, bool requireImportPermission, CancellationToken cancellationToken)
     {
         var cuenta = await _dbContext.Cuentas
@@ -337,6 +447,36 @@ public sealed class ImportacionService : IImportacionService
         return exception.InnerException is PostgresException postgresException &&
                postgresException.SqlState == PostgresErrorCodes.UniqueViolation &&
                string.Equals(postgresException.ConstraintName, "ix_extractos_cuenta_id_fila_numero", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static void EnsureNotPlazoFijoForFormattedImport(Cuenta cuenta)
+    {
+        if (ResolveTipoCuenta(cuenta) == TipoCuenta.PLAZO_FIJO)
+        {
+            throw new ImportacionException("Las cuentas de plazo fijo solo permiten anadir o sacar dinero sin formato de importacion", StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private static TipoCuenta ResolveTipoCuenta(Cuenta cuenta) =>
+        cuenta.TipoCuenta == TipoCuenta.NORMAL && cuenta.EsEfectivo
+            ? TipoCuenta.EFECTIVO
+            : cuenta.TipoCuenta;
+
+    private static string NormalizeMovimientoPlazoFijo(string? raw)
+    {
+        var normalized = (raw ?? string.Empty).Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "INGRESO" or "ENTRADA" or "ADD" or "ANADIR" => "INGRESO",
+            "EGRESO" or "SALIDA" or "REMOVE" or "SACAR" => "EGRESO",
+            _ => throw new ImportacionException("Tipo de movimiento invalido", StatusCodes.Status400BadRequest)
+        };
     }
 
     private static MapeoColumnasRequest NormalizeMap(MapeoColumnasRequest? map)
@@ -569,23 +709,43 @@ public sealed class ImportacionService : IImportacionService
     private static List<FilaValidacionResponse> ValidateRows(IReadOnlyList<string[]> rows, MapeoColumnasRequest map)
     {
         var validation = new List<FilaValidacionResponse>(rows.Count);
+        string? lastValidDateRaw = null;
+        string? lastValidSaldoRaw = null;
 
         for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
         {
             var lineNumber = rowIndex + 1;
             var row = rows[rowIndex];
             var errors = new List<string>();
+            var warnings = new List<string>();
             var data = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
             data["fecha"] = GetCell(row, map.Fecha);
             data["concepto"] = GetCell(row, map.Concepto);
             data["saldo"] = GetCell(row, map.Saldo);
+            var hasConcept = !string.IsNullOrWhiteSpace(data["concepto"]);
+            var allowIncompleteConceptRow = false;
 
             if (map.TipoMonto is "dos_columnas" or "tres_columnas")
             {
                 data["ingreso"] = GetCell(row, map.Ingreso!.Value);
                 data["egreso"] = GetCell(row, map.Egreso!.Value);
-                if (TryBuildSignedMonto(data["ingreso"], data["egreso"], errors, out var signedMonto))
+                allowIncompleteConceptRow =
+                    hasConcept &&
+                    string.IsNullOrWhiteSpace(data["fecha"]) &&
+                    string.IsNullOrWhiteSpace(data["saldo"]) &&
+                    IsBlankAmountRow(data["ingreso"], data["egreso"]);
+
+                if (allowIncompleteConceptRow)
+                {
+                    data["monto"] = "0";
+                    warnings.Add("Importe vacio; se importara como 0.");
+                    if (map.TipoMonto == "tres_columnas")
+                    {
+                        data["monto_banco"] = GetCell(row, map.Monto!.Value);
+                    }
+                }
+                else if (TryBuildSignedMonto(data["ingreso"], data["egreso"], errors, out var signedMonto))
                 {
                     data["monto"] = signedMonto.ToString(CultureInfo.InvariantCulture);
                     if (map.TipoMonto == "tres_columnas")
@@ -606,7 +766,18 @@ public sealed class ImportacionService : IImportacionService
             else
             {
                 data["monto"] = GetCell(row, map.Monto!.Value);
-                if (!TryParseDecimalSmart(data["monto"], out _))
+                allowIncompleteConceptRow =
+                    hasConcept &&
+                    string.IsNullOrWhiteSpace(data["fecha"]) &&
+                    string.IsNullOrWhiteSpace(data["saldo"]) &&
+                    string.IsNullOrWhiteSpace(data["monto"]);
+
+                if (allowIncompleteConceptRow)
+                {
+                    data["monto"] = "0";
+                    warnings.Add("Monto vacio; se importara como 0.");
+                }
+                else if (!TryParseDecimalSmart(data["monto"], out _))
                 {
                     errors.Add(BuildDecimalError("Monto", data["monto"]));
                 }
@@ -619,12 +790,36 @@ public sealed class ImportacionService : IImportacionService
 
             if (!ParseDate(data["fecha"], out var dateError, out _))
             {
-                errors.Add(dateError!);
+                if (allowIncompleteConceptRow && lastValidDateRaw is not null)
+                {
+                    data["fecha"] = lastValidDateRaw;
+                    warnings.Add($"Fecha vacia; se usara la fecha anterior ({lastValidDateRaw}).");
+                }
+                else
+                {
+                    errors.Add(dateError!);
+                }
+            }
+            else
+            {
+                lastValidDateRaw = data["fecha"];
             }
 
             if (!TryParseDecimalSmart(data["saldo"], out _))
             {
-                errors.Add(BuildDecimalError("Saldo", data["saldo"]));
+                if (allowIncompleteConceptRow && lastValidSaldoRaw is not null)
+                {
+                    data["saldo"] = lastValidSaldoRaw;
+                    warnings.Add($"Saldo vacio; se usara el saldo anterior ({lastValidSaldoRaw}).");
+                }
+                else
+                {
+                    errors.Add(BuildDecimalError("Saldo", data["saldo"]));
+                }
+            }
+            else
+            {
+                lastValidSaldoRaw = data["saldo"];
             }
 
             validation.Add(new FilaValidacionResponse
@@ -632,12 +827,16 @@ public sealed class ImportacionService : IImportacionService
                 Indice = lineNumber,
                 Valida = errors.Count == 0,
                 Datos = data,
-                Errores = errors
+                Errores = errors,
+                Advertencias = warnings
             });
         }
 
         return validation;
     }
+
+    private static bool IsBlankAmountRow(params string?[] values) =>
+        values.All(string.IsNullOrWhiteSpace);
 
     private static bool TryBuildSignedMonto(string? rawIngreso, string? rawEgreso, List<string> errors, out decimal monto)
     {

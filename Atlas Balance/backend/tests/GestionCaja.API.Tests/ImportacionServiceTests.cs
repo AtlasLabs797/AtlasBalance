@@ -65,6 +65,34 @@ public class ImportacionServiceTests
     }
 
     [Fact]
+    public async Task GetContextoAsync_Should_Return_TipoCuenta_For_PlazoFijo()
+    {
+        await using var db = BuildDbContext();
+
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Plazo", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta
+        {
+            Id = Guid.NewGuid(),
+            TitularId = titular.Id,
+            Nombre = "Deposito",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.PLAZO_FIJO,
+            Activa = true
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        await db.SaveChangesAsync();
+
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), CancellationToken.None);
+
+        result.Cuentas.Should().ContainSingle();
+        result.Cuentas[0].TipoCuenta.Should().Be(nameof(TipoCuenta.PLAZO_FIJO));
+    }
+
+    [Fact]
     public async Task GetContextoAsync_Should_Parse_SnakeCase_Mapeo_From_Active_Formato()
     {
         await using var db = BuildDbContext();
@@ -165,6 +193,99 @@ public class ImportacionServiceTests
         result.FilasError.Should().Be(0);
         result.Filas.Should().OnlyContain(row => row.Valida);
         result.Filas.Should().OnlyContain(row => row.Datos.ContainsKey("extra:referencia"));
+    }
+
+    [Fact]
+    public async Task ValidarAsync_Should_Reject_Formatted_Import_For_PlazoFijo()
+    {
+        await using var db = BuildDbContext();
+
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Plazo", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Deposito", Divisa = "EUR", TipoCuenta = TipoCuenta.PLAZO_FIJO, Activa = true };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuenta.Id,
+            PuedeImportar = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = new ImportacionService(db, new AuditService(db));
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuenta.Id,
+            RawData = "01/04/2026\tMovimiento\t100\t100",
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+
+        var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ImportacionException>();
+        ex.Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        ex.Which.Message.Should().Contain("plazo fijo");
+    }
+
+    [Fact]
+    public async Task RegistrarMovimientoPlazoFijoAsync_Should_Create_Signed_Extracto_And_Update_Balance()
+    {
+        await using var db = BuildDbContext();
+
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Plazo", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Deposito", Divisa = "EUR", TipoCuenta = TipoCuenta.PLAZO_FIJO, Activa = true };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuenta.Id,
+            Fecha = new DateOnly(2026, 4, 1),
+            Concepto = "Apertura",
+            Monto = 1000m,
+            Saldo = 1000m,
+            FilaNumero = 1
+        });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuenta.Id,
+            PuedeImportar = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var result = await service.RegistrarMovimientoPlazoFijoAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            new ImportacionPlazoFijoMovimientoRequest
+            {
+                CuentaId = cuenta.Id,
+                TipoMovimiento = "EGRESO",
+                Fecha = new DateOnly(2026, 4, 2),
+                Monto = 150m,
+                Concepto = "Retirada parcial"
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        result.Monto.Should().Be(-150m);
+        result.SaldoAnterior.Should().Be(1000m);
+        result.SaldoActual.Should().Be(850m);
+
+        var imported = await db.Extractos.OrderBy(e => e.FilaNumero).LastAsync();
+        imported.Monto.Should().Be(-150m);
+        imported.Saldo.Should().Be(850m);
+        imported.FilaNumero.Should().Be(2);
+        imported.Concepto.Should().Be("Retirada parcial");
     }
 
     [Fact]
@@ -656,6 +777,117 @@ public class ImportacionServiceTests
         result.Filas[0].Errores.Should().Contain("Saldo vacío");
         result.Filas[1].Errores.Should().Contain("Fecha vacía");
         result.Filas[1].Errores.Should().Contain("Saldo no numerico");
+    }
+
+    [Fact]
+    public async Task ValidarAsync_Should_Allow_Concept_Rows_With_Missing_Amount_Date_And_Balance_As_Warnings()
+    {
+        await using var db = BuildDbContext();
+
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Import", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Import", Divisa = "EUR", Activa = true };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuenta.Id,
+            TitularId = titular.Id,
+            PuedeImportar = true
+        });
+        await db.SaveChangesAsync();
+
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuenta.Id,
+            RawData = string.Join('\n', [
+                "22/04/2026\tMovimiento completo\t100\t500",
+                "\tEGARARECYCLING\t\t"
+            ]),
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3
+            }
+        };
+
+        var service = new ImportacionService(db, new AuditService(db));
+        var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        result.FilasOk.Should().Be(2);
+        result.FilasError.Should().Be(0);
+        result.Filas[1].Valida.Should().BeTrue();
+        result.Filas[1].Datos["fecha"].Should().Be("22/04/2026");
+        result.Filas[1].Datos["monto"].Should().Be("0");
+        result.Filas[1].Datos["saldo"].Should().Be("500");
+        result.Filas[1].Advertencias.Should().BeEquivalentTo([
+            "Monto vacio; se importara como 0.",
+            "Fecha vacia; se usara la fecha anterior (22/04/2026).",
+            "Saldo vacio; se usara el saldo anterior (500)."
+        ]);
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_Should_Import_Concept_Rows_With_Warning_Fallbacks()
+    {
+        await using var db = BuildDbContext();
+
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Import", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Import", Divisa = "EUR", Activa = true };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuenta.Id,
+            TitularId = titular.Id,
+            PuedeImportar = true
+        });
+        await db.SaveChangesAsync();
+
+        var request = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuenta.Id,
+            RawData = string.Join('\n', [
+                "22/04/2026\tMovimiento completo\t100\t500",
+                "\tEGARARECYCLING\t\t"
+            ]),
+            Separador = "tab",
+            FilasAImportar = [1, 2],
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3
+            }
+        };
+
+        var service = new ImportacionService(db, new AuditService(db));
+        var result = await service.ConfirmarAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            request,
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        result.FilasImportadas.Should().Be(2);
+        result.FilasConError.Should().Be(0);
+
+        var imported = await db.Extractos.OrderBy(e => e.FilaNumero).ToListAsync();
+        imported[1].Fecha.Should().Be(new DateOnly(2026, 4, 22));
+        imported[1].Concepto.Should().Be("EGARARECYCLING");
+        imported[1].Monto.Should().Be(0m);
+        imported[1].Saldo.Should().Be(500m);
     }
 
     [Fact]

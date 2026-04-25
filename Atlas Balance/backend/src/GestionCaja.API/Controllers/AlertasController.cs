@@ -43,7 +43,7 @@ public sealed class AlertasController : ControllerBase
                 from cuenta in cuentaJoin.DefaultIfEmpty()
                 join t in _dbContext.Titulares on cuenta.TitularId equals t.Id into titularJoin
                 from titular in titularJoin.DefaultIfEmpty()
-                orderby a.CuentaId == null descending, titular.Nombre, cuenta.Nombre
+                orderby a.CuentaId == null descending, a.TipoTitular, titular.Nombre, cuenta.Nombre
                 select new
                 {
                     Alerta = a,
@@ -85,6 +85,8 @@ public sealed class AlertasController : ControllerBase
             Id = x.Alerta.Id,
             CuentaId = x.Alerta.CuentaId,
             CuentaNombre = x.Cuenta?.Nombre,
+            Alcance = ResolveAlertaAlcance(x.Alerta),
+            TipoTitular = x.Alerta.TipoTitular?.ToString(),
             TitularId = x.Cuenta?.TitularId,
             TitularNombre = x.Titular?.Nombre,
             Divisa = x.Cuenta?.Divisa,
@@ -152,46 +154,42 @@ public sealed class AlertasController : ControllerBase
     [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> Crear([FromBody] SaveAlertaSaldoRequest request, CancellationToken cancellationToken)
     {
+        if (request is null)
+        {
+            return BadRequest(new { error = "Request invalido" });
+        }
+
         if (request.SaldoMinimo < 0)
         {
-            return BadRequest(new { error = "Saldo mínimo inválido" });
+            return BadRequest(new { error = "Saldo minimo invalido" });
         }
 
-        if (request.CuentaId.HasValue)
+        var validationError = await ValidateAlertaRequestAsync(request, null, cancellationToken);
+        if (validationError is not null)
         {
-            var cuentaExists = await _dbContext.Cuentas.AnyAsync(
-                x => x.Id == request.CuentaId.Value && x.Activa,
-                cancellationToken);
-            if (!cuentaExists)
-            {
-                return BadRequest(new { error = "Cuenta inválida o inactiva" });
-            }
+            return validationError.Status == StatusCodes.Status409Conflict
+                ? Conflict(new { error = validationError.Error })
+                : BadRequest(new { error = validationError.Error });
         }
 
-        var duplicate = await _dbContext.AlertasSaldo.AnyAsync(
-            x => x.CuentaId == request.CuentaId,
-            cancellationToken);
-        if (duplicate)
-        {
-            return Conflict(new { error = "Ya existe una alerta para esa cuenta (o global)" });
-        }
-
-        var invalidUsers = await ValidateDestinatariosAsync(request.DestinatarioUsuarioIds, cancellationToken);
+        var destinatarios = request.DestinatarioUsuarioIds ?? [];
+        var invalidUsers = await ValidateDestinatariosAsync(destinatarios, cancellationToken);
         if (invalidUsers.Count > 0)
         {
-            return BadRequest(new { error = "Hay destinatarios inválidos" });
+            return BadRequest(new { error = "Hay destinatarios invalidos" });
         }
 
         var alerta = new AlertaSaldo
         {
             Id = Guid.NewGuid(),
             CuentaId = request.CuentaId,
+            TipoTitular = request.CuentaId.HasValue ? null : request.TipoTitular,
             SaldoMinimo = request.SaldoMinimo,
             Activa = request.Activa,
             FechaCreacion = DateTime.UtcNow
         };
         _dbContext.AlertasSaldo.Add(alerta);
-        await UpsertDestinatariosAsync(alerta.Id, request.DestinatarioUsuarioIds, cancellationToken);
+        await UpsertDestinatariosAsync(alerta.Id, destinatarios, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await LogAlertaAuditAsync(AuditActions.ConfigAlerta, alerta.Id, before: null, after: request, cancellationToken);
@@ -202,6 +200,11 @@ public sealed class AlertasController : ControllerBase
     [Authorize(Roles = "ADMIN")]
     public async Task<IActionResult> Actualizar(Guid id, [FromBody] SaveAlertaSaldoRequest request, CancellationToken cancellationToken)
     {
+        if (request is null)
+        {
+            return BadRequest(new { error = "Request invalido" });
+        }
+
         var alerta = await _dbContext.AlertasSaldo.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (alerta is null)
         {
@@ -210,46 +213,38 @@ public sealed class AlertasController : ControllerBase
 
         if (request.SaldoMinimo < 0)
         {
-            return BadRequest(new { error = "Saldo mínimo inválido" });
+            return BadRequest(new { error = "Saldo minimo invalido" });
         }
 
-        if (request.CuentaId.HasValue)
+        var validationError = await ValidateAlertaRequestAsync(request, id, cancellationToken);
+        if (validationError is not null)
         {
-            var cuentaExists = await _dbContext.Cuentas.AnyAsync(
-                x => x.Id == request.CuentaId.Value && x.Activa,
-                cancellationToken);
-            if (!cuentaExists)
-            {
-                return BadRequest(new { error = "Cuenta inválida o inactiva" });
-            }
+            return validationError.Status == StatusCodes.Status409Conflict
+                ? Conflict(new { error = validationError.Error })
+                : BadRequest(new { error = validationError.Error });
         }
 
-        var duplicate = await _dbContext.AlertasSaldo.AnyAsync(
-            x => x.Id != id && x.CuentaId == request.CuentaId,
-            cancellationToken);
-        if (duplicate)
-        {
-            return Conflict(new { error = "Ya existe una alerta para esa cuenta (o global)" });
-        }
-
-        var invalidUsers = await ValidateDestinatariosAsync(request.DestinatarioUsuarioIds, cancellationToken);
+        var destinatarios = request.DestinatarioUsuarioIds ?? [];
+        var invalidUsers = await ValidateDestinatariosAsync(destinatarios, cancellationToken);
         if (invalidUsers.Count > 0)
         {
-            return BadRequest(new { error = "Hay destinatarios inválidos" });
+            return BadRequest(new { error = "Hay destinatarios invalidos" });
         }
 
         var before = new
         {
             alerta.CuentaId,
+            alerta.TipoTitular,
             alerta.SaldoMinimo,
             alerta.Activa,
             destinatarios = await _dbContext.AlertaDestinatarios.Where(x => x.AlertaId == id).Select(x => x.UsuarioId).ToListAsync(cancellationToken)
         };
 
         alerta.CuentaId = request.CuentaId;
+        alerta.TipoTitular = request.CuentaId.HasValue ? null : request.TipoTitular;
         alerta.SaldoMinimo = request.SaldoMinimo;
         alerta.Activa = request.Activa;
-        await UpsertDestinatariosAsync(alerta.Id, request.DestinatarioUsuarioIds, cancellationToken);
+        await UpsertDestinatariosAsync(alerta.Id, destinatarios, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await LogAlertaAuditAsync(AuditActions.ConfigAlerta, alerta.Id, before, request, cancellationToken);
@@ -269,6 +264,7 @@ public sealed class AlertasController : ControllerBase
         var before = new
         {
             alerta.CuentaId,
+            alerta.TipoTitular,
             alerta.SaldoMinimo,
             alerta.Activa,
             destinatarios = await _dbContext.AlertaDestinatarios.Where(x => x.AlertaId == id).Select(x => x.UsuarioId).ToListAsync(cancellationToken)
@@ -297,6 +293,49 @@ public sealed class AlertasController : ControllerBase
             .ToListAsync(cancellationToken);
 
         return unique.Except(existing).ToList();
+    }
+
+    private async Task<AlertaValidationError?> ValidateAlertaRequestAsync(SaveAlertaSaldoRequest request, Guid? currentId, CancellationToken cancellationToken)
+    {
+        if (request.CuentaId.HasValue && request.TipoTitular.HasValue)
+        {
+            return new AlertaValidationError("La alerta debe ser por cuenta, por tipo de titular o global; no mezcles alcances", StatusCodes.Status400BadRequest);
+        }
+
+        if (request.CuentaId.HasValue)
+        {
+            var cuentaExists = await _dbContext.Cuentas.AnyAsync(
+                x => x.Id == request.CuentaId.Value && x.Activa,
+                cancellationToken);
+            if (!cuentaExists)
+            {
+                return new AlertaValidationError("Cuenta invalida o inactiva", StatusCodes.Status400BadRequest);
+            }
+
+            var duplicateCuenta = await _dbContext.AlertasSaldo.AnyAsync(
+                x => x.Id != currentId && x.CuentaId == request.CuentaId,
+                cancellationToken);
+            return duplicateCuenta
+                ? new AlertaValidationError("Ya existe una alerta para esa cuenta", StatusCodes.Status409Conflict)
+                : null;
+        }
+
+        if (request.TipoTitular.HasValue)
+        {
+            var duplicateTipo = await _dbContext.AlertasSaldo.AnyAsync(
+                x => x.Id != currentId && x.CuentaId == null && x.TipoTitular == request.TipoTitular,
+                cancellationToken);
+            return duplicateTipo
+                ? new AlertaValidationError("Ya existe una alerta para ese tipo de titular", StatusCodes.Status409Conflict)
+                : null;
+        }
+
+        var duplicateGlobal = await _dbContext.AlertasSaldo.AnyAsync(
+            x => x.Id != currentId && x.CuentaId == null && x.TipoTitular == null,
+            cancellationToken);
+        return duplicateGlobal
+            ? new AlertaValidationError("Ya existe una alerta global", StatusCodes.Status409Conflict)
+            : null;
     }
 
     private async Task UpsertDestinatariosAsync(Guid alertaId, IReadOnlyList<Guid> destinatarioUsuarioIds, CancellationToken cancellationToken)
@@ -335,4 +374,16 @@ public sealed class AlertasController : ControllerBase
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
         return Guid.TryParse(raw, out var userId) ? userId : null;
     }
+
+    private static string ResolveAlertaAlcance(AlertaSaldo alerta)
+    {
+        if (alerta.CuentaId.HasValue)
+        {
+            return "CUENTA";
+        }
+
+        return alerta.TipoTitular.HasValue ? "TIPO_TITULAR" : "GLOBAL";
+    }
+
+    private sealed record AlertaValidationError(string Error, int Status);
 }

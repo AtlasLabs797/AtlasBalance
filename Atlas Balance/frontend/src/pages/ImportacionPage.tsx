@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
+import { DatePickerField } from '@/components/common/DatePickerField';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -11,15 +12,26 @@ import type {
   ImportContextoResponse,
   ImportCuentaContexto,
   ImportMapColumns,
+  ImportPlazoFijoMovimientoResult,
   ImportValidationResult,
 } from '@/types';
+import { formatCurrency } from '@/utils/formatters';
 
 const EFFECTIVO_MARKER = '\u2022 Efectivo';
 const EMPTY_MARKER = '\u2014';
 const VALID_MARKER = '\u2713';
 const INVALID_MARKER = '\u2717';
+const WARNING_MARKER = '!';
+const PLAZO_FIJO_MARKER = '\u2022 Plazo fijo';
 
 type ImportStep = 1 | 2;
+type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
+
+function getTodayInputValue(): string {
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+}
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof AxiosError) {
@@ -102,6 +114,10 @@ export default function ImportacionPage() {
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [closeAttempted, setCloseAttempted] = useState(false);
+  const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
+  const [plazoMonto, setPlazoMonto] = useState('');
+  const [plazoFecha, setPlazoFecha] = useState(getTodayInputValue);
+  const [plazoConcepto, setPlazoConcepto] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -146,6 +162,7 @@ export default function ImportacionPage() {
     () => contexto.find((cuenta) => cuenta.id === cuentaId) ?? null,
     [contexto, cuentaId]
   );
+  const isPlazoFijo = selectedCuenta?.tipo_cuenta === 'PLAZO_FIJO';
 
   const selectedMapeo = useMemo<ImportMapColumns | null>(() => {
     if (!selectedCuenta?.formato_predefinido) {
@@ -190,7 +207,8 @@ export default function ImportacionPage() {
     return lines.map((line) => splitLine(line, separator));
   }, [rawData, separator]);
 
-  const canValidate = Boolean(cuentaId && rawData.trim().length > 0 && selectedMapeo && hasRequiredMapeo);
+  const canValidate = Boolean(!isPlazoFijo && cuentaId && rawData.trim().length > 0 && selectedMapeo && hasRequiredMapeo);
+  const canSubmitPlazoFijo = Boolean(isPlazoFijo && cuentaId && plazoFecha && Number(plazoMonto) > 0);
   const selectedValidRowsCount = selectedRows.length;
   const canManageFormatos = usuario?.rol === 'ADMIN';
   const importAlreadyConfirmed = confirmResult !== null;
@@ -322,6 +340,53 @@ export default function ImportacionPage() {
     setStep(1);
   };
 
+  const submitPlazoFijoMovimiento = async () => {
+    if (!selectedCuenta || !isPlazoFijo) {
+      return;
+    }
+
+    const monto = Number(plazoMonto);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setError('Introduce un monto mayor que cero.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setSuccess(null);
+    setConfirmResult(null);
+
+    try {
+      const { data } = await api.post<ImportPlazoFijoMovimientoResult>('/importacion/plazo-fijo/movimiento', {
+        cuenta_id: cuentaId,
+        tipo_movimiento: plazoTipoMovimiento,
+        fecha: plazoFecha,
+        monto,
+        concepto: plazoConcepto,
+      });
+
+      setSuccess(
+        `Movimiento registrado. Saldo actual: ${formatCurrency(data.saldo_actual, selectedCuenta.divisa)}.`
+      );
+      setPlazoMonto('');
+      setPlazoConcepto('');
+
+      const payload = {
+        type: IMPORTACION_COMPLETADA_EVENT,
+        cuentaId,
+      };
+      if (isEmbedded && window.parent && window.parent !== window) {
+        window.parent.postMessage(payload, window.location.origin);
+      } else if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(payload, window.location.origin);
+      }
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'No se pudo registrar el movimiento del plazo fijo'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (loadingContext) {
     return (
       <section className="import-page">
@@ -350,7 +415,7 @@ export default function ImportacionPage() {
     <section className="import-page">
       <header className="import-header">
         <h1>Importacion de Extractos</h1>
-        <p>Flujo de 2 pasos: pegar datos, validar y confirmar. El mapeo sale automaticamente del formato asignado a la cuenta.</p>
+        <p>Las cuentas normales usan formato bancario. Las de plazo fijo solo permiten anadir o sacar dinero.</p>
         {canManageFormatos && (
           <div className="import-actions">
             <Link to="/formatos-importacion">Gestionar formatos de importacion</Link>
@@ -382,11 +447,72 @@ export default function ImportacionPage() {
               value={cuentaId}
               options={contexto.map((cuenta) => ({
                 value: cuenta.id,
-                label: `${cuenta.titular_nombre} / ${cuenta.nombre} (${cuenta.divisa}) ${cuenta.es_efectivo ? EFFECTIVO_MARKER : ''}`,
+                label: `${cuenta.titular_nombre} / ${cuenta.nombre} (${cuenta.divisa}) ${cuenta.tipo_cuenta === 'PLAZO_FIJO' ? PLAZO_FIJO_MARKER : cuenta.es_efectivo ? EFFECTIVO_MARKER : ''}`,
               }))}
               onChange={setCuenta}
             />
 
+            {isPlazoFijo ? (
+              <>
+                <p className="import-muted">
+                  Esta cuenta es de plazo fijo: registra solo entradas o salidas de dinero, sin CSV, Excel ni formato de banco.
+                </p>
+
+                <div className="import-plazo-grid">
+                  <AppSelect
+                    label="Movimiento"
+                    value={plazoTipoMovimiento}
+                    options={[
+                      { value: 'INGRESO', label: 'Anadir dinero' },
+                      { value: 'EGRESO', label: 'Sacar dinero' },
+                    ]}
+                    onChange={(next) => setPlazoTipoMovimiento(next as PlazoFijoMovimiento)}
+                  />
+
+                  <div className="date-field">
+                    <span>Fecha</span>
+                    <DatePickerField
+                      ariaLabel="Fecha del movimiento"
+                      value={plazoFecha}
+                      onChange={setPlazoFecha}
+                    />
+                  </div>
+
+                  <label>
+                    Monto
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={plazoMonto}
+                      onChange={(event) => setPlazoMonto(event.target.value)}
+                      placeholder="0,00"
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Concepto
+                  <input
+                    type="text"
+                    value={plazoConcepto}
+                    onChange={(event) => setPlazoConcepto(event.target.value)}
+                    placeholder={plazoTipoMovimiento === 'INGRESO' ? 'Entrada plazo fijo' : 'Salida plazo fijo'}
+                  />
+                </label>
+
+                <div className="import-actions">
+                  <button
+                    type="button"
+                    disabled={!canSubmitPlazoFijo || submitting}
+                    onClick={() => void submitPlazoFijoMovimiento()}
+                  >
+                    {submitting ? 'Guardando...' : 'Registrar movimiento'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
             <p className={selectedMapeo ? 'import-muted' : 'auth-error'}>
               {selectedMapeo
                 ? `Formato automatico aplicado: ${selectedMapeo.tipo_monto === 'tres_columnas' ? 'ingreso/egreso + monto de control' : selectedMapeo.tipo_monto === 'dos_columnas' ? 'ingreso/egreso separados' : 'monto firmado'} (${selectedMapeo.columnas_extra.length} columnas extra).`
@@ -457,6 +583,8 @@ export default function ImportacionPage() {
                 {submitting ? 'Validando...' : 'Validar datos'}
               </button>
             </div>
+              </>
+            )}
           </>
         )}
 
@@ -464,7 +592,9 @@ export default function ImportacionPage() {
           <>
             <h3>Validar y confirmar</h3>
             <p>
-              {validacion.filas_ok} filas validas, {validacion.filas_error} con errores. Separador: {validacion.separador_detectado}.
+              {validacion.filas_ok} filas validas, {validacion.filas_error} con errores,{' '}
+              {validacion.filas.filter((row) => row.advertencias.length > 0).length} con avisos. Separador:{' '}
+              {validacion.separador_detectado}.
             </p>
             <ul className="import-summary">
               <li>Cuenta: {selectedCuenta ? `${selectedCuenta.titular_nombre} / ${selectedCuenta.nombre}` : EMPTY_MARKER}</li>
@@ -485,12 +615,15 @@ export default function ImportacionPage() {
                     {selectedMapeo?.tipo_monto === 'tres_columnas' && <th>Monto banco</th>}
                     <th>Monto</th>
                     <th>Saldo</th>
-                    <th>Errores</th>
+                    <th>Errores / avisos</th>
                   </tr>
                 </thead>
                 <tbody>
                   {validacion.filas.map((row) => (
-                    <tr key={`valid-${row.indice}`} className={row.valida ? '' : 'invalid'}>
+                    <tr
+                      key={`valid-${row.indice}`}
+                      className={!row.valida ? 'invalid' : row.advertencias.length > 0 ? 'warning' : ''}
+                    >
                       <td>
                         {row.valida ? (
                           <input
@@ -510,7 +643,7 @@ export default function ImportacionPage() {
                         ) : EMPTY_MARKER}
                       </td>
                       <td>{row.indice}</td>
-                      <td>{row.valida ? VALID_MARKER : INVALID_MARKER}</td>
+                      <td>{row.valida ? (row.advertencias.length > 0 ? WARNING_MARKER : VALID_MARKER) : INVALID_MARKER}</td>
                       <td>{row.datos.fecha ?? ''}</td>
                       <td>{row.datos.concepto ?? ''}</td>
                       {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <td>{row.datos.ingreso ?? ''}</td>}
@@ -530,7 +663,7 @@ export default function ImportacionPage() {
                           ''
                         )}
                       </td>
-                      <td>{row.errores.join(' | ')}</td>
+                      <td>{[...row.errores, ...row.advertencias].join(' | ')}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -59,6 +59,7 @@ public class UsuariosControllerTests
             {
                 new SavePermisoUsuarioRequest
                 {
+                    PuedeVerCuentas = true,
                     PuedeAgregarLineas = true,
                     PuedeEditarLineas = true,
                     PuedeEliminarLineas = false,
@@ -84,6 +85,7 @@ public class UsuariosControllerTests
 
         var permisos = await db.PermisosUsuario.Where(x => x.UsuarioId == created.Id).ToListAsync();
         permisos.Should().HaveCount(1);
+        permisos[0].PuedeVerCuentas.Should().BeTrue();
         permisos[0].PuedeEditarLineas.Should().BeTrue();
 
         var auditRows = await db.Auditorias.Where(x => x.EntidadId == created.Id && x.TipoAccion == AuditActions.CreateUsuario).ToListAsync();

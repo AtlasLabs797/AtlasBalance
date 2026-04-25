@@ -215,6 +215,13 @@ function Read-JsonFile {
     return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
 }
 
+function Write-JsonFile {
+    param([object]$Value, [string]$Path)
+
+    $json = $Value | ConvertTo-Json -Depth 20
+    Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
+}
+
 function Read-PackageVersion {
     param([string]$PackageRoot)
 
@@ -225,8 +232,13 @@ function Read-PackageVersion {
     return "desconocida"
 }
 
-if (-not (Test-IsAdmin)) {
-    throw "Ejecuta este actualizador como Administrador."
+function Copy-IfExists {
+    param([string]$Source, [string]$Destination)
+
+    if (Test-Path $Source) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force | Out-Null
+        Copy-Item -LiteralPath $Source -Destination $Destination -Force
+    }
 }
 
 $packageRoot = Split-Path -Parent $PSScriptRoot
@@ -237,14 +249,19 @@ $watchdogTarget = Join-Path $InstallPath "watchdog"
 
 if (-not (Test-Path (Join-Path $apiSource "GestionCaja.API.exe")) -or
     -not (Test-Path (Join-Path $watchdogSource "GestionCaja.Watchdog.exe"))) {
-    throw "No se encontraron binarios en el paquete de actualizacion."
+    throw "Esta carpeta no es el paquete de actualizacion. Ejecuta update.cmd desde la carpeta descomprimida que contiene api\GestionCaja.API.exe, watchdog\GestionCaja.Watchdog.exe y scripts."
 }
 if (-not (Test-Path (Join-Path $apiTarget "appsettings.Production.json"))) {
     throw "No se encontro una instalacion existente en $InstallPath."
 }
 
+if (-not (Test-IsAdmin)) {
+    throw "Ejecuta este actualizador como Administrador."
+}
+
 $newVersion = Read-PackageVersion -PackageRoot $packageRoot
 $runtime = Read-RuntimeConfig -BasePath $InstallPath
+$previousVersion = if ($runtime -and $runtime.Version) { [string]$runtime.Version } elseif (Test-Path (Join-Path $InstallPath "VERSION")) { (Get-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Raw).Trim() } else { "desconocida" }
 Start-ManagedPostgresIfNeeded -Runtime $runtime
 $apiConfig = Read-JsonFile -Path (Join-Path $apiTarget "appsettings.Production.json")
 $watchdogConfigPath = Join-Path $watchdogTarget "appsettings.Production.json"
@@ -269,17 +286,86 @@ Sync-DirectoryPreserveConfig -Source $apiSource -Target $apiTarget
 Sync-DirectoryPreserveConfig -Source $watchdogSource -Target $watchdogTarget
 
 Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $newVersion -Encoding UTF8
-if (Test-Path (Join-Path $packageRoot "Atlas Balance.cmd")) {
-    Copy-Item -LiteralPath (Join-Path $packageRoot "Atlas Balance.cmd") -Destination (Join-Path $InstallPath "Atlas Balance.cmd") -Force
+
+$installScriptsPath = Join-Path $InstallPath "scripts"
+New-Item -ItemType Directory -Path $installScriptsPath -Force | Out-Null
+foreach ($script in @(
+    "Actualizar-AtlasBalance.ps1",
+    "Instalar-AtlasBalance.ps1",
+    "Launch-AtlasBalance.ps1",
+    "Reset-AdminPassword.ps1",
+    "install-cert-client.ps1",
+    "install.ps1",
+    "start.ps1",
+    "uninstall-services.ps1",
+    "uninstall.ps1",
+    "update.ps1"
+)) {
+    Copy-IfExists -Source (Join-Path $packageRoot "scripts\$script") -Destination (Join-Path $installScriptsPath $script)
 }
-if (Test-Path (Join-Path $packageRoot "scripts\Launch-AtlasBalance.ps1")) {
-    Copy-Item -LiteralPath (Join-Path $packageRoot "scripts\Launch-AtlasBalance.ps1") -Destination (Join-Path $InstallPath "scripts\Launch-AtlasBalance.ps1") -Force
+
+foreach ($cmd in @(
+    "Atlas Balance.cmd",
+    "Actualizar Atlas Balance.cmd",
+    "Instalar Atlas Balance.cmd",
+    "install.cmd",
+    "start.cmd",
+    "uninstall.cmd",
+    "update.cmd"
+)) {
+    Copy-IfExists -Source (Join-Path $packageRoot $cmd) -Destination (Join-Path $InstallPath $cmd)
+}
+
+$runtimePath = Join-Path $InstallPath "atlas-balance.runtime.json"
+if ($runtime) {
+    $runtime.Version = $newVersion
+    if (-not ($runtime.PSObject.Properties.Name -contains "PreviousVersion")) {
+        $runtime | Add-Member -NotePropertyName "PreviousVersion" -NotePropertyValue $previousVersion
+    } else {
+        $runtime.PreviousVersion = $previousVersion
+    }
+    if (-not ($runtime.PSObject.Properties.Name -contains "UpdatedAt")) {
+        $runtime | Add-Member -NotePropertyName "UpdatedAt" -NotePropertyValue (Get-Date).ToString("o")
+    } else {
+        $runtime.UpdatedAt = (Get-Date).ToString("o")
+    }
+    Write-JsonFile -Value $runtime -Path $runtimePath
 }
 
 Start-ServiceIfExists -Name $WatchdogServiceName
 Start-ServiceIfExists -Name $ApiServiceName
 
+$appUrl = if ($runtime -and $runtime.AppUrl) { [string]$runtime.AppUrl } else { "" }
+if ([string]::IsNullOrWhiteSpace($appUrl)) {
+    $appUrl = "https://localhost"
+}
+
+Start-Sleep -Seconds 5
+$healthOk = $false
+$curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
+if ($curl) {
+    $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl/api/health" 2>$null)
+    $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
+    if (-not $healthOk -and -not $appUrl.Equals("https://localhost", [StringComparison]::OrdinalIgnoreCase)) {
+        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://localhost/api/health" 2>$null)
+        $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
+    }
+} else {
+    try {
+        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20
+        $healthOk = ($health.StatusCode -eq 200)
+    } catch {
+        $healthOk = $false
+    }
+}
+
+if (-not $healthOk) {
+    throw "La actualizacion copio los binarios, pero la API no respondio al health check. Revisa servicios y logs. Rollback de binarios disponible en $rollbackRoot."
+}
+
 Write-Host ""
 Write-Host "Atlas Balance actualizado a $newVersion." -ForegroundColor Green
 Write-Host "Copia rollback de binarios: $rollbackRoot" -ForegroundColor Cyan
 Write-Host "La base de datos no se reemplazo; las migraciones se aplican al arrancar la API." -ForegroundColor Cyan
+Write-Host "Health check OK: $appUrl/api/health" -ForegroundColor Green

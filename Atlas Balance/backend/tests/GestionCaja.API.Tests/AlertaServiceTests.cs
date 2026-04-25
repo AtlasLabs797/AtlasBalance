@@ -214,6 +214,45 @@ public class AlertaServiceTests
         result[0].SaldoActual.Should().Be(90m);
     }
 
+    [Fact]
+    public async Task GetAlertasActivasAsync_Should_Apply_Account_Then_TipoTitular_Then_Global_Priority()
+    {
+        await using var db = BuildDbContext();
+        var titularAutonomoId = Guid.NewGuid();
+        var titularEmpresaId = Guid.NewGuid();
+        var cuentaAutonomoId = Guid.NewGuid();
+        var cuentaEmpresaId = Guid.NewGuid();
+        var alertaGlobalId = Guid.NewGuid();
+        var alertaTipoId = Guid.NewGuid();
+        var alertaCuentaId = Guid.NewGuid();
+
+        db.Titulares.AddRange(
+            new Titular { Id = titularAutonomoId, Nombre = "Autonomo", Tipo = TipoTitular.AUTONOMO },
+            new Titular { Id = titularEmpresaId, Nombre = "Empresa", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaAutonomoId, TitularId = titularAutonomoId, Nombre = "Cuenta Autonomo", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaEmpresaId, TitularId = titularEmpresaId, Nombre = "Cuenta Empresa", Divisa = "EUR", Activa = true });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaAutonomoId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = -1m, Saldo = 75m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaEmpresaId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = -1m, Saldo = 40m, FilaNumero = 1 });
+        db.AlertasSaldo.AddRange(
+            new AlertaSaldo { Id = alertaGlobalId, SaldoMinimo = 50m, Activa = true, FechaCreacion = DateTime.UtcNow.AddMinutes(-3) },
+            new AlertaSaldo { Id = alertaTipoId, TipoTitular = TipoTitular.AUTONOMO, SaldoMinimo = 100m, Activa = true, FechaCreacion = DateTime.UtcNow.AddMinutes(-2) },
+            new AlertaSaldo { Id = alertaCuentaId, CuentaId = cuentaEmpresaId, SaldoMinimo = 30m, Activa = true, FechaCreacion = DateTime.UtcNow.AddMinutes(-1) });
+        await db.SaveChangesAsync();
+
+        var sut = new AlertaService(db, new RecordingEmailService(), new RecordingAuditService(), NullLogger<AlertaService>.Instance);
+
+        var result = await sut.GetAlertasActivasAsync(
+            new UserAccessScope { UserId = Guid.NewGuid(), IsAdmin = true, HasPermissions = true, HasGlobalAccess = true },
+            CancellationToken.None);
+
+        result.Should().ContainSingle();
+        result.Single().CuentaId.Should().Be(cuentaAutonomoId);
+        result.Single().AlertaId.Should().Be(alertaTipoId);
+        result.Single().TipoTitular.Should().Be(nameof(TipoTitular.AUTONOMO));
+    }
+
     private sealed class RecordingEmailService : IEmailService
     {
         public List<EmailMessage> Messages { get; } = [];
@@ -243,6 +282,18 @@ public class AlertaServiceTests
         }
 
         public Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task SendPlazoFijoVencimientoAsync(
+            IReadOnlyList<string> recipients,
+            string titularNombre,
+            string cuentaNombre,
+            Guid cuentaId,
+            DateOnly fechaVencimiento,
+            EstadoPlazoFijo estado,
+            CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
         }

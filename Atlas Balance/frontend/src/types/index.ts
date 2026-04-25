@@ -1,7 +1,9 @@
 ﻿// Mirror of DB schema + API response types
 
 export type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
-export type TipoTitular = 'EMPRESA' | 'PARTICULAR';
+export type TipoTitular = 'EMPRESA' | 'AUTONOMO' | 'PARTICULAR';
+export type TipoCuenta = 'NORMAL' | 'EFECTIVO' | 'PLAZO_FIJO';
+export type EstadoPlazoFijo = 'ACTIVO' | 'PROXIMO_VENCER' | 'VENCIDO' | 'RENOVADO' | 'CANCELADO';
 export type EstadoToken = 'activo' | 'revocado';
 export type FuenteTipoCambio = 'API' | 'MANUAL';
 export type EstadoBackup = 'PENDING' | 'SUCCESS' | 'FAILED';
@@ -40,6 +42,9 @@ export interface Cuenta {
   divisa: string;
   formato_id: string | null;
   es_efectivo: boolean;
+  tipo_cuenta: TipoCuenta;
+  titular_tipo?: TipoTitular;
+  plazo_fijo?: PlazoFijo | null;
   activa: boolean;
   notas: string | null;
   fecha_creacion: string;
@@ -47,6 +52,21 @@ export interface Cuenta {
   saldo_actual?: number;
   ingresos_mes?: number;
   egresos_mes?: number;
+}
+
+export interface PlazoFijo {
+  id: string;
+  cuenta_id: string;
+  cuenta_referencia_id: string | null;
+  cuenta_referencia_nombre: string | null;
+  fecha_inicio: string;
+  fecha_vencimiento: string;
+  interes_previsto: number | null;
+  renovable: boolean;
+  estado: EstadoPlazoFijo;
+  fecha_ultima_notificacion: string | null;
+  fecha_renovacion: string | null;
+  notas: string | null;
 }
 
 export interface Extracto {
@@ -82,6 +102,8 @@ export interface CuentaResumenKpi {
   titular_id: string;
   titular_nombre: string;
   es_efectivo: boolean;
+  tipo_cuenta: TipoCuenta;
+  plazo_fijo: PlazoFijo | null;
   notas: string | null;
   saldo_actual: number;
   ingresos_mes: number;
@@ -133,6 +155,7 @@ export interface PermisoUsuario {
   usuario_id: string;
   cuenta_id: string | null;
   titular_id: string | null;
+  puede_ver_cuentas: boolean;
   puede_agregar_lineas: boolean;
   puede_editar_lineas: boolean;
   puede_eliminar_lineas: boolean;
@@ -145,6 +168,8 @@ export interface PermisoUsuario {
 export interface AlertaSaldo {
   id: string;
   cuenta_id: string | null;
+  tipo_titular: TipoTitular | null;
+  alcance: 'GLOBAL' | 'TIPO_TITULAR' | 'CUENTA';
   saldo_minimo: number;
   activa: boolean;
   fecha_creacion: string;
@@ -417,8 +442,17 @@ export interface DashboardPrincipal {
   total_convertido: number;
   ingresos_mes: number;
   egresos_mes: number;
+  plazos_fijos: DashboardPlazosFijosResumen;
   saldos_por_titular: DashboardSaldoTitular[];
   chart_colors: DashboardChartColors;
+}
+
+export interface DashboardPlazosFijosResumen {
+  monto_total_convertido: number;
+  intereses_previstos_convertidos: number;
+  dias_hasta_proximo_vencimiento: number | null;
+  proximo_vencimiento: string | null;
+  total_cuentas: number;
 }
 
 export interface DashboardTitular {
@@ -459,8 +493,11 @@ export interface DashboardChartColors {
 export interface DashboardSaldoTitular {
   titular_id: string;
   titular_nombre: string;
+  tipo_titular: TipoTitular;
   saldos_por_divisa: Record<string, number>;
   total_convertido: number;
+  saldo_inmovilizado_convertido: number;
+  saldo_disponible_convertido: number;
 }
 
 export interface DashboardSaldoCuenta {
@@ -469,6 +506,7 @@ export interface DashboardSaldoCuenta {
   banco_nombre?: string | null;
   divisa: string;
   es_efectivo: boolean;
+  tipo_cuenta: TipoCuenta;
   saldo_actual: number;
   saldo_convertido: number;
 }
@@ -477,6 +515,10 @@ export interface DashboardSaldoDivisa {
   divisa: string;
   saldo: number;
   saldo_convertido: number;
+  saldo_disponible: number;
+  saldo_inmovilizado: number;
+  saldo_total: number;
+  saldo_total_convertido: number;
 }
 
 export interface DashboardSaldosDivisa {
@@ -501,6 +543,7 @@ export interface ImportRowResult {
   valida: boolean;
   datos: Record<string, string | null>;
   errores: string[];
+  advertencias: string[];
 }
 
 export interface ImportMapExtraColumn {
@@ -525,6 +568,7 @@ export interface ImportCuentaContexto {
   titular_nombre: string;
   divisa: string;
   es_efectivo: boolean;
+  tipo_cuenta: TipoCuenta;
   formato_id: string | null;
   formato_predefinido: ImportMapColumns | null;
 }
@@ -541,4 +585,12 @@ export interface ImportConfirmResult {
     fila_indice: number;
     mensajes: string[];
   }[];
+}
+
+export interface ImportPlazoFijoMovimientoResult {
+  extracto_id: string;
+  fila_numero: number;
+  monto: number;
+  saldo_anterior: number;
+  saldo_actual: number;
 }

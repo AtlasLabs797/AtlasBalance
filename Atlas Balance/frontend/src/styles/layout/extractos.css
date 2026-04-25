@@ -1,0 +1,293 @@
+.extractos-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.extractos-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.extractos-filters {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.add-row-form {
+  display: grid;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-lg);
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-3);
+}
+
+.add-row-grid,
+.add-row-extra {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-2);
+}
+
+.extracto-table-section {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.extracto-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-surface);
+}
+
+.extracto-table-toolbar > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.extracto-table-toolbar strong {
+  color: var(--text-primary);
+}
+
+.extracto-table-toolbar span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.extracto-table-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.extracto-density-control {
+  width: 10rem;
+}
+
+.extracto-density-control .app-select-trigger {
+  min-height: 2.5rem;
+}
+
+.column-visibility-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-surface-soft);
+}
+
+.extracto-table-head {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  border-bottom: 1px solid var(--border-soft);
+  min-width: max-content;
+}
+
+.extracto-table-body {
+  height: 520px;
+  overflow: auto;
+  position: relative;
+}
+
+.extracto-row {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  min-height: 42px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-surface);
+  min-width: max-content;
+}
+
+.extracto-row.flagged {
+  background: var(--color-row-flagged);
+  box-shadow: inset 0 0 0 1px var(--color-row-flagged-border);
+}
+
+.extracto-row.flagged .cell {
+  background-color: var(--color-row-flagged);
+}
+
+.cell {
+  padding: var(--space-1) var(--space-2);
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  position: relative;
+}
+
+.cell.head {
+  flex-direction: column;
+  align-items: stretch;
+  background: var(--bg-surface-soft);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.cell.head button {
+  padding: var(--space-1);
+  background: transparent;
+  color: var(--color-text-secondary);
+  text-align: left;
+  min-height: 2.5rem;
+  border: 0;
+}
+
+.cell.head input {
+  width: 100%;
+}
+
+.cell-edit-button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: 0;
+  border: 0;
+  min-height: 2.5rem;
+}
+
+.cell-edit-shell {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.cell-save-state {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+}
+
+.cell-save-state--ok {
+  color: var(--success-text);
+}
+
+.cell-save-state--error {
+  color: var(--danger-text);
+}
+
+.cell-audit-button {
+  opacity: 0;
+  pointer-events: none;
+  min-height: 2.5rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-surface);
+  color: var(--text-link);
+  font-size: var(--font-size-xs);
+}
+
+.cell:hover .cell-audit-button,
+.cell:focus-within .cell-audit-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cell--amount,
+.cell--monto,
+.cell--saldo {
+  justify-content: flex-end;
+  text-align: right;
+  font-family: var(--font-family-mono);
+}
+
+.cell--comentarios .cell-edit-button {
+  white-space: normal;
+}
+
+.cell--fila_numero {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: inherit;
+  box-shadow: 1px 0 0 var(--border-soft);
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cell-edit-button.signed-amount--positive {
+  color: var(--color-amount-positive);
+}
+
+.cell-edit-button.signed-amount--negative {
+  color: var(--color-amount-negative);
+}
+
+.flag-cell {
+  display: grid;
+  grid-template-columns: 20px auto minmax(72px, 1fr);
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.flag-label {
+  color: var(--warning-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.extracto-table-section--compact .extracto-row {
+  min-height: 34px;
+}
+
+.extracto-table-section--compact .cell {
+  padding-block: 0.15rem;
+}
+
+.extracto-empty {
+  padding: var(--space-4);
+  color: var(--color-text-secondary);
+}
+
+.extracto-empty .page-placeholder {
+  box-shadow: none;
+  margin: 0;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-bg-sidebar) 55%, transparent);
+  z-index: var(--z-modal-backdrop);
+  display: grid;
+  place-items: center;
+}
+
+.audit-modal {
+  width: min(960px, 95vw);
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--color-bg-primary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-overlay);
+  padding: var(--space-3);
+}
+
+.audit-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}

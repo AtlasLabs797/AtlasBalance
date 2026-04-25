@@ -219,6 +219,7 @@ public sealed class UsuariosController : ControllerBase
         {
             CuentaId = cuentaId,
             TitularId = request.TitularId,
+            PuedeVerCuentas = request.PuedeVerCuentas,
             PuedeAgregarLineas = request.PuedeAgregarLineas,
             PuedeEditarLineas = request.PuedeEditarLineas,
             PuedeEliminarLineas = request.PuedeEliminarLineas,
@@ -768,6 +769,7 @@ public sealed class UsuariosController : ControllerBase
             {
                 permiso.CuentaId,
                 permiso.TitularId,
+                permiso.PuedeVerCuentas,
                 permiso.PuedeAgregarLineas,
                 permiso.PuedeEditarLineas,
                 permiso.PuedeEliminarLineas,
@@ -838,6 +840,7 @@ public sealed class UsuariosController : ControllerBase
             UsuarioId = usuarioId,
             CuentaId = item.CuentaId,
             TitularId = item.TitularId,
+            PuedeVerCuentas = item.PuedeVerCuentas,
             PuedeAgregarLineas = item.PuedeAgregarLineas,
             PuedeEditarLineas = item.PuedeEditarLineas,
             PuedeEliminarLineas = item.PuedeEliminarLineas,
@@ -887,6 +890,7 @@ public sealed class UsuariosController : ControllerBase
             UsuarioId = permiso.UsuarioId,
             CuentaId = permiso.CuentaId,
             TitularId = permiso.TitularId,
+            PuedeVerCuentas = permiso.PuedeVerCuentas,
             PuedeAgregarLineas = permiso.PuedeAgregarLineas,
             PuedeEditarLineas = permiso.PuedeEditarLineas,
             PuedeEliminarLineas = permiso.PuedeEliminarLineas,

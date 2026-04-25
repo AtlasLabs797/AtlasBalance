@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
+import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SignedAmount } from '@/components/common/SignedAmount';
@@ -238,15 +239,29 @@ export default function AuditoriaPage() {
               }}
             />
 
-            <label>
-              Fecha desde
-              <input type="date" value={fechaDesde} onChange={(event) => { setFechaDesde(event.target.value); setPage(1); }} />
-            </label>
+            <div className="date-field">
+              <span>Fecha desde</span>
+              <DatePickerField
+                ariaLabel="Fecha desde"
+                value={fechaDesde}
+                onChange={(next) => {
+                  setFechaDesde(next);
+                  setPage(1);
+                }}
+              />
+            </div>
 
-            <label>
-              Fecha hasta
-              <input type="date" value={fechaHasta} onChange={(event) => { setFechaHasta(event.target.value); setPage(1); }} />
-            </label>
+            <div className="date-field">
+              <span>Fecha hasta</span>
+              <DatePickerField
+                ariaLabel="Fecha hasta"
+                value={fechaHasta}
+                onChange={(next) => {
+                  setFechaHasta(next);
+                  setPage(1);
+                }}
+              />
+            </div>
 
             <button type="button" onClick={resetFiltros}>
               Limpiar filtros

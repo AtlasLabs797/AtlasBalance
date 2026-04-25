@@ -1,12 +1,14 @@
 # Atlas Balance - instalacion y actualizaciones
 
-Version actual del paquete: `V-01.03`.
+Version actual del paquete: `V-01.04`.
+
+No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido es `AtlasBalance-V-01.04-win-x64.zip` y, al descomprimirlo, debe contener `api\GestionCaja.API.exe`, `watchdog\GestionCaja.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
 
 ## Que queda preparado
 
-La version `V-01.03` deja el proyecto listo para generar un paquete instalable de Windows:
+La version `V-01.04` deja el proyecto listo para generar un paquete instalable de Windows:
 
-- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.03-win-x64.zip`.
+- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`.
 - `install.cmd`: instalador de un clic.
 - `update.cmd`: actualizador de un clic.
 - `uninstall.cmd`: desinstalador de un clic.
@@ -24,7 +26,8 @@ El paquete publicado es self-contained:
 
 - No requiere instalar .NET Runtime en el servidor.
 - No requiere instalar Node.js en el servidor.
-- Si requiere PostgreSQL 16+, y `install.cmd` puede prepararlo como dependencia gestionada mediante `winget`.
+- Si requiere PostgreSQL 16+. PostgreSQL 17 es valido.
+- En Windows Server 2019, la ruta recomendada es instalar PostgreSQL manualmente y pasar `-PostgresBinPath`; `winget` es un intento automatico, no una garantia.
 
 Punto importante: PostgreSQL no es un detalle. Ahi viven los datos. Tratarlo como una carpeta mas seria una estupidez cara.
 
@@ -41,17 +44,17 @@ En la maquina de desarrollo, desde la carpeta `Atlas Balance`:
 Salida esperada:
 
 ```text
-Atlas Balance Release\AtlasBalance-V-01.03-win-x64\
-Atlas Balance Release\AtlasBalance-V-01.03-win-x64.zip
+Atlas Balance Release\AtlasBalance-V-01.04-win-x64\
+Atlas Balance Release\AtlasBalance-V-01.04-win-x64.zip
 ```
 
 ### 2. Copiar al servidor
 
-1. Copia `AtlasBalance-V-01.03-win-x64.zip` al servidor.
+1. Copia `AtlasBalance-V-01.04-win-x64.zip` al servidor.
 2. Descomprime el ZIP, por ejemplo en:
 
 ```text
-C:\Temp\AtlasBalance-V-01.03-win-x64
+C:\Temp\AtlasBalance-V-01.04-win-x64
 ```
 
 ### 3. Ejecutar instalador
@@ -64,13 +67,21 @@ Abre PowerShell o CMD como Administrador en la carpeta descomprimida y ejecuta:
 
 `install.cmd` se autoeleva si hace falta y pasa `-InstallDependencies` por defecto. En un servidor limpio intenta instalar PostgreSQL 16 con `winget`, genera password de superusuario, crea la base y deja la app lista.
 
+Si `winget` falla en Windows Server 2019, instala PostgreSQL manualmente desde el instalador oficial y relanza el comando indicando la carpeta `bin`.
+
 Si quieres usar una instancia PostgreSQL existente:
 
 ```powershell
-.\install.cmd -InstallPath C:\AtlasBalance -ServerName NOMBRE_DEL_SERVIDOR -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\16\bin"
+.\install.cmd -InstallPath C:\AtlasBalance -ServerName NOMBRE_DEL_SERVIDOR -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
 ```
 
 Limitacion honesta: si ya tienes PostgreSQL instalado y no das password de administrador, ningun script puede adivinarla. Eso no es automatizacion; eso seria magia barata.
+
+Alternativa soportada si quieres saltarte el wrapper:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Instalar-AtlasBalance.ps1" -InstallPath C:\AtlasBalance -ServerName NOMBRE_DEL_SERVIDOR -ApiPort 443 -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
+```
 
 El instalador hace esto:
 
@@ -105,6 +116,18 @@ El instalador guarda las credenciales iniciales en:
 C:\AtlasBalance\INSTALL_CREDENTIALS_ONCE.txt
 ```
 
+El archivo queda protegido para Administradores/SYSTEM. Si el explorador dice que no tienes permisos, abre PowerShell como Administrador:
+
+```powershell
+Get-Content "C:\AtlasBalance\INSTALL_CREDENTIALS_ONCE.txt"
+```
+
+Si reinstalas sobre una base existente, ese archivo no inventa una password nueva de admin. Mostrara que la base ya existia: usa el admin real o ejecuta el reset soportado:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\AtlasBalance\scripts\Reset-AdminPassword.ps1" -InstallPath C:\AtlasBalance -AdminEmail admin@atlasbalance.local -GeneratePassword
+```
+
 Haz esto sin improvisar:
 
 1. Entra con el admin inicial.
@@ -123,6 +146,14 @@ C:\AtlasBalance\certs\atlas-balance.cer
 ```
 
 Para evitar aviso del navegador en otros PCs, instala ese `.cer` en `Entidades de certificacion raiz de confianza` de cada cliente, o usa un certificado real emitido por la autoridad interna de la empresa.
+
+Comando para cliente o servidor, en consola elevada:
+
+```powershell
+certutil -addstore -f Root "C:\AtlasBalance\certs\atlas-balance.cer"
+```
+
+Si `curl.exe -k` responde pero el navegador falla, no diagnostiques "API caida" a lo bruto: probablemente el certificado no esta confiado en el cliente.
 
 ## Abrir la app despues de instalada
 
@@ -144,7 +175,7 @@ Regla de oro: los datos viven en PostgreSQL, no en la carpeta `api`. Una actuali
 En desarrollo, cuando haya una version nueva:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version V-01.03
+.\scripts\Build-Release.ps1 -Version V-01.04
 ```
 
 ### 2. Copiar al servidor
@@ -153,7 +184,7 @@ En desarrollo, cuando haya una version nueva:
 2. Descomprime en una carpeta temporal, por ejemplo:
 
 ```text
-C:\Temp\AtlasBalance-V-01.03-win-x64
+C:\Temp\AtlasBalance-V-01.04-win-x64
 ```
 
 ### 3. Ejecutar actualizador
@@ -164,6 +195,12 @@ Desde la carpeta descomprimida, como Administrador:
 .\update.cmd -InstallPath C:\AtlasBalance
 ```
 
+Si ya estas trabajando desde una instalacion que tiene los scripts nuevos y quieres apuntar a un paquete descargado/descomprimido:
+
+```powershell
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.04-win-x64 -InstallPath C:\AtlasBalance
+```
+
 El actualizador hace esto:
 
 1. Crea backup PostgreSQL previo en `C:\AtlasBalance\backups`.
@@ -171,8 +208,13 @@ El actualizador hace esto:
 3. Detiene `AtlasBalance.API` y `AtlasBalance.Watchdog`.
 4. Reemplaza binarios de `api` y `watchdog`.
 5. Conserva `appsettings.Production.json`, logs, backups y exports.
-6. Arranca servicios.
-7. La API aplica migraciones EF Core automaticamente al arrancar.
+6. Actualiza scripts operativos instalados (`start`, `update`, `uninstall`, reset admin y certificado cliente).
+7. Actualiza `VERSION` y `atlas-balance.runtime.json`.
+8. Arranca servicios.
+9. La API aplica migraciones EF Core automaticamente al arrancar.
+10. Verifica `/api/health` con `curl.exe -k`.
+
+Si el health check falla, no sigas tocando a ciegas. Revisa servicios y logs. La copia rollback de binarios queda indicada en consola.
 
 ## Desinstalar completamente
 
@@ -190,9 +232,11 @@ Si usaste una base externa, el script no intenta borrarla sin credenciales expli
 
 Comprueba:
 
-```text
-https://NOMBRE_DEL_SERVIDOR/api/health
+```powershell
+curl.exe -k -v https://NOMBRE_DEL_SERVIDOR/api/health
 ```
+
+En Windows Server 2019, `Invoke-WebRequest` puede dar falsos negativos con TLS/certificados autofirmados. La prueba primaria es `curl.exe -k`.
 
 Luego entra a la app y revisa:
 
@@ -217,7 +261,7 @@ Datos de PostgreSQL
 
 Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exactamente como se pierden configuraciones y luego todo el mundo mira al techo.
 
-## Notas de seguridad V-01.03
+## Notas de seguridad V-01.04
 
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
@@ -252,7 +296,7 @@ Start-Service AtlasBalance.API
 
 La version visible del backend se toma de `AssemblyInformationalVersion`.
 
-Para `V-01.03` queda fijado en:
+Para `V-01.04` queda fijado en:
 
 ```text
 Atlas Balance/Directory.Build.props

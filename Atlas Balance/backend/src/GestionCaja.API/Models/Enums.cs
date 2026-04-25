@@ -11,8 +11,25 @@ public enum RolUsuario
 
 public enum TipoTitular
 {
-    EMPRESA,
-    PARTICULAR
+    EMPRESA = 0,
+    PARTICULAR = 1,
+    AUTONOMO = 2
+}
+
+public enum TipoCuenta
+{
+    NORMAL = 0,
+    EFECTIVO = 1,
+    PLAZO_FIJO = 2
+}
+
+public enum EstadoPlazoFijo
+{
+    ACTIVO = 0,
+    PROXIMO_VENCER = 1,
+    VENCIDO = 2,
+    RENOVADO = 3,
+    CANCELADO = 4
 }
 
 public enum EstadoTokenIntegracion

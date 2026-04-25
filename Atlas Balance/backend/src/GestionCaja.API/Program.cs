@@ -154,6 +154,7 @@ builder.Services.AddScoped<IImportacionService, ImportacionService>();
 builder.Services.AddScoped<IUserAccessService, UserAccessService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
+builder.Services.AddScoped<IPlazoFijoService, PlazoFijoService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<IExportacionService, ExportacionService>();
 builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
@@ -166,6 +167,7 @@ builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
 builder.Services.AddScoped<LimpiezaAuditoriaJob>();
 builder.Services.AddScoped<BackupWeeklyJob>();
 builder.Services.AddScoped<ExportMensualJob>();
+builder.Services.AddScoped<PlazoFijoVencimientoJob>();
 
 var app = builder.Build();
 
@@ -204,6 +206,11 @@ using (var scope = app.Services.CreateScope())
         "export-mensual",
         job => job.ExecuteAsync(),
         "0 1 1 * *");
+
+    recurringJobManager.AddOrUpdate<PlazoFijoVencimientoJob>(
+        "plazo-fijo-vencimientos",
+        job => job.ExecuteAsync(),
+        Cron.Daily());
 }
 
 app.UseSerilogRequestLogging();
@@ -219,7 +226,7 @@ app.Use(async (context, next) =>
     {
         var headers = context.Response.Headers;
         headers["X-Content-Type-Options"] = "nosniff";
-        headers["X-Frame-Options"] = "DENY";
+        headers["X-Frame-Options"] = "SAMEORIGIN";
         headers["Referrer-Policy"] = "no-referrer";
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
         headers["Cross-Origin-Opener-Policy"] = "same-origin";
@@ -234,7 +241,7 @@ app.Use(async (context, next) =>
             $"connect-src {connectSrc}; " +
             "font-src 'self' data:; " +
             "form-action 'self'; " +
-            "frame-ancestors 'none'; " +
+            "frame-ancestors 'self'; " +
             "img-src 'self' data: blob:; " +
             "object-src 'none'; " +
             "script-src 'self'; " +

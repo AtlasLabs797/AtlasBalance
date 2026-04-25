@@ -18,7 +18,8 @@ interface PermisosState {
 
 const isAdmin = () => useAuthStore.getState().usuario?.rol === 'ADMIN';
 
-const grantsGlobalDataAccess = (permiso: PermisoUsuario) =>
+const grantsAccountAccess = (permiso: PermisoUsuario) =>
+  permiso.puede_ver_cuentas ||
   permiso.puede_agregar_lineas ||
   permiso.puede_editar_lineas ||
   permiso.puede_eliminar_lineas ||
@@ -41,7 +42,7 @@ const getCuentaPermisos = (
   titularId?: string | null
 ) =>
   getMatchingPermisos(permisos, cuentaId, titularId).filter(
-    (p) => p.cuenta_id !== null || p.titular_id !== null || grantsGlobalDataAccess(p)
+    (p) => p.cuenta_id !== null || p.titular_id !== null || grantsAccountAccess(p)
   );
 
 const mergeColumnRules = (

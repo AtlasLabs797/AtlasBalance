@@ -1,4 +1,5 @@
 ﻿using GestionCaja.API.Data;
+using GestionCaja.API.Models;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,14 @@ public interface IEmailService
         decimal saldoActual,
         decimal saldoMinimo,
         string? conceptoUltimoMovimiento,
+        CancellationToken cancellationToken);
+    Task SendPlazoFijoVencimientoAsync(
+        IReadOnlyList<string> recipients,
+        string titularNombre,
+        string cuentaNombre,
+        Guid cuentaId,
+        DateOnly fechaVencimiento,
+        EstadoPlazoFijo estado,
         CancellationToken cancellationToken);
     Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken);
 }
@@ -89,6 +98,64 @@ public sealed class EmailService : IEmailService
                 $"<p><strong>Saldo actual:</strong> {saldoActual:N2} {EscapeHtml(divisa)}</p>" +
                 $"<p><strong>Saldo mínimo:</strong> {saldoMinimo:N2} {EscapeHtml(divisa)}</p>" +
                 $"<p><strong>Último concepto:</strong> {EscapeHtml(conceptoUltimoMovimiento ?? "Sin concepto")}</p>" +
+                $"<p><a href=\"{cuentaUrl}\">Abrir cuenta</a></p>"
+        }.ToMessageBody();
+
+        await SendMessageAsync(message, smtpHost, smtpPort, smtpUser, smtpPassword, cancellationToken);
+    }
+
+    public async Task SendPlazoFijoVencimientoAsync(
+        IReadOnlyList<string> recipients,
+        string titularNombre,
+        string cuentaNombre,
+        Guid cuentaId,
+        DateOnly fechaVencimiento,
+        EstadoPlazoFijo estado,
+        CancellationToken cancellationToken)
+    {
+        if (recipients.Count == 0)
+        {
+            return;
+        }
+
+        var smtpHost = await GetConfigValueAsync("smtp_host", cancellationToken);
+        if (string.IsNullOrWhiteSpace(smtpHost))
+        {
+            _logger.LogWarning("No se envia alerta de plazo fijo: smtp_host no configurado");
+            return;
+        }
+
+        var smtpPortRaw = await GetConfigValueAsync("smtp_port", cancellationToken) ?? "587";
+        var smtpUser = await GetConfigValueAsync("smtp_user", cancellationToken);
+        var smtpPassword = _secretProtector.UnprotectFromStorage(await GetConfigValueAsync("smtp_password", cancellationToken));
+        var smtpFrom = await GetConfigValueAsync("smtp_from", cancellationToken);
+        var appBaseUrl = (await GetConfigValueAsync("app_base_url", cancellationToken))?.TrimEnd('/')
+            ?? "https://localhost:5000";
+
+        if (string.IsNullOrWhiteSpace(smtpFrom))
+        {
+            smtpFrom = "noreply@atlasbalance.local";
+        }
+
+        var smtpPort = int.TryParse(smtpPortRaw, out var parsedPort) ? parsedPort : 587;
+        var cuentaUrl = EscapeHtml($"{appBaseUrl}/cuentas/{cuentaId}");
+        var estadoTexto = estado == EstadoPlazoFijo.VENCIDO ? "vencido" : "proximo a vencer";
+
+        var message = new MimeMessage();
+        message.From.Add(MailboxAddress.Parse(smtpFrom));
+        foreach (var recipient in recipients)
+        {
+            message.To.Add(MailboxAddress.Parse(recipient));
+        }
+
+        message.Subject = $"[Atlas Balance] Plazo fijo {estadoTexto}: {cuentaNombre}";
+        message.Body = new BodyBuilder
+        {
+            HtmlBody =
+                $"<h2>Plazo fijo {EscapeHtml(estadoTexto)}</h2>" +
+                $"<p><strong>Titular:</strong> {EscapeHtml(titularNombre)}</p>" +
+                $"<p><strong>Cuenta:</strong> {EscapeHtml(cuentaNombre)}</p>" +
+                $"<p><strong>Vencimiento:</strong> {fechaVencimiento:yyyy-MM-dd}</p>" +
                 $"<p><a href=\"{cuentaUrl}\">Abrir cuenta</a></p>"
         }.ToMessageBody();
 
