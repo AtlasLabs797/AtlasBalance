@@ -16,6 +16,7 @@ export interface Usuario {
   rol: RolUsuario;
   activo: boolean;
   primer_login: boolean;
+  mfa_enabled: boolean;
   fecha_creacion: string;
   fecha_ultima_login: string | null;
 }
@@ -432,8 +433,13 @@ export interface ApiResponse<T> {
 
 export interface LoginResponse {
   csrf_token: string;
-  usuario: Usuario;
-  permisos: PermisoUsuario[];
+  usuario?: Usuario;
+  permisos?: PermisoUsuario[];
+  mfa_required?: boolean;
+  mfa_setup_required?: boolean;
+  mfa_challenge_id?: string;
+  mfa_secret?: string | null;
+  mfa_otp_auth_uri?: string | null;
 }
 
 export interface DashboardPrincipal {

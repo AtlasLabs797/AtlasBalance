@@ -339,7 +339,7 @@ public class ImportacionServiceTests
         result.FilasImportadas.Should().Be(2);
 
         var extractos = await db.Extractos
-            .OrderBy(e => e.FilaNumero)
+            .OrderByDescending(e => e.FilaNumero)
             .ToListAsync();
 
         extractos.Select(e => e.Monto).Should().Equal(1000.50m, -250.25m);
@@ -397,10 +397,10 @@ public class ImportacionServiceTests
         result.FilasImportadas.Should().Be(3);
 
         var extractos = await db.Extractos
-            .OrderBy(e => e.FilaNumero)
+            .OrderByDescending(e => e.FilaNumero)
             .ToListAsync();
 
-        extractos.Select(e => e.Monto).Should().Equal(-74.00m, -74.00m, 3150.00m);
+        extractos.Select(e => e.Monto).Should().Equal(3150.00m, -74.00m, -74.00m);
     }
 
     [Fact]
@@ -503,7 +503,7 @@ public class ImportacionServiceTests
         result.FilasImportadas.Should().Be(2);
 
         var extractos = await db.Extractos
-            .OrderBy(e => e.FilaNumero)
+            .OrderByDescending(e => e.FilaNumero)
             .ToListAsync();
 
         extractos.Select(e => e.Monto).Should().Equal(1000.50m, -250.25m);
@@ -655,7 +655,7 @@ public class ImportacionServiceTests
         result.FilasImportadas.Should().Be(2);
 
         var extractos = await db.Extractos
-            .OrderBy(e => e.FilaNumero)
+            .OrderByDescending(e => e.FilaNumero)
             .ToListAsync();
 
         extractos.Should().HaveCount(2);
@@ -834,6 +834,38 @@ public class ImportacionServiceTests
     }
 
     [Fact]
+    public async Task ValidarAsync_Should_Allow_Concept_Rows_With_Missing_Amount_And_Date_When_Balance_Is_Present()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = string.Join('\n', [
+                "07/04/2026\tREMESA RECIBOS\t3180,00\t54018,20",
+                "\tOlivares Palomares, Sergio\t\t815,00"
+            ]),
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+
+        var service = new ImportacionService(db, new AuditService(db));
+        var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        result.FilasOk.Should().Be(2);
+        result.FilasError.Should().Be(0);
+        result.Filas[1].Valida.Should().BeTrue();
+        result.Filas[1].Datos["fecha"].Should().Be("07/04/2026");
+        result.Filas[1].Datos["monto"].Should().Be("0");
+        result.Filas[1].Datos["saldo"].Should().Be("815,00");
+        result.Filas[1].Advertencias.Should().BeEquivalentTo([
+            "Monto vacio; se importara como 0.",
+            "Fecha vacia; se usara la fecha anterior (07/04/2026)."
+        ]);
+    }
+
+    [Fact]
     public async Task ConfirmarAsync_Should_Import_Concept_Rows_With_Warning_Fallbacks()
     {
         await using var db = BuildDbContext();
@@ -883,11 +915,47 @@ public class ImportacionServiceTests
         result.FilasImportadas.Should().Be(2);
         result.FilasConError.Should().Be(0);
 
-        var imported = await db.Extractos.OrderBy(e => e.FilaNumero).ToListAsync();
+        var imported = await db.Extractos.OrderByDescending(e => e.FilaNumero).ToListAsync();
         imported[1].Fecha.Should().Be(new DateOnly(2026, 4, 22));
         imported[1].Concepto.Should().Be("EGARARECYCLING");
         imported[1].Monto.Should().Be(0m);
         imported[1].Saldo.Should().Be(500m);
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_Should_Import_Concept_Rows_With_Provided_Balance_And_Missing_Amount_Date()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+
+        var request = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = string.Join('\n', [
+                "07/04/2026\tREMESA RECIBOS\t3180,00\t54018,20",
+                "\tOlivares Palomares, Sergio\t\t815,00"
+            ]),
+            Separador = "tab",
+            FilasAImportar = [1, 2],
+            Mapeo = DefaultMapeo()
+        };
+
+        var service = new ImportacionService(db, new AuditService(db));
+        var result = await service.ConfirmarAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            request,
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        result.FilasImportadas.Should().Be(2);
+        result.FilasConError.Should().Be(0);
+
+        var imported = await db.Extractos.OrderByDescending(e => e.FilaNumero).ToListAsync();
+        imported[1].Fecha.Should().Be(new DateOnly(2026, 4, 7));
+        imported[1].Concepto.Should().Be("Olivares Palomares, Sergio");
+        imported[1].Monto.Should().Be(0m);
+        imported[1].Saldo.Should().Be(815m);
     }
 
     [Fact]
@@ -974,7 +1042,7 @@ public class ImportacionServiceTests
     }
 
     [Fact]
-    public async Task ConfirmarAsync_Should_Assign_FilaNumero_From_Oldest_To_Newest_When_Input_Is_ReverseChronological()
+    public async Task ConfirmarAsync_Should_Preserve_Pasted_Order_When_Viewing_FilaNumero_Descending()
     {
         await using var db = BuildDbContext();
 
@@ -998,8 +1066,8 @@ public class ImportacionServiceTests
         {
             CuentaId = cuenta.Id,
             RawData = string.Join('\n', [
-                "2026-04-03\tMovimiento reciente\t10\t110",
-                "2026-04-01\tMovimiento antiguo\t5\t100"
+                "2026-04-01\tLinea superior\t5\t100",
+                "2026-04-03\tLinea inferior\t10\t110"
             ]),
             Separador = "tab",
             Mapeo = new MapeoColumnasRequest
@@ -1022,14 +1090,14 @@ public class ImportacionServiceTests
         result.FilasImportadas.Should().Be(2);
 
         var orderedByFila = await db.Extractos
-            .OrderBy(e => e.FilaNumero)
+            .OrderByDescending(e => e.FilaNumero)
             .ToListAsync();
 
         orderedByFila.Should().HaveCount(2);
-        orderedByFila[0].Concepto.Should().Be("Movimiento antiguo");
-        orderedByFila[0].FilaNumero.Should().Be(1);
-        orderedByFila[1].Concepto.Should().Be("Movimiento reciente");
-        orderedByFila[1].FilaNumero.Should().Be(2);
+        orderedByFila[0].Concepto.Should().Be("Linea superior");
+        orderedByFila[0].FilaNumero.Should().Be(2);
+        orderedByFila[1].Concepto.Should().Be("Linea inferior");
+        orderedByFila[1].FilaNumero.Should().Be(1);
     }
 
     [Fact]
@@ -1134,6 +1202,74 @@ public class ImportacionServiceTests
 
         var ex = await act.Should().ThrowAsync<ImportacionException>();
         ex.Which.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+    }
+
+    [Fact]
+    public async Task ValidarAsync_Should_Reject_Too_Many_Extra_Columns()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tMovimiento\t1\t1",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3,
+                ColumnasExtra = Enumerable.Range(0, 65)
+                    .Select(i => new MapeoColumnaExtraRequest { Nombre = $"Extra{i}", Indice = i + 4 })
+                    .ToList()
+            }
+        };
+
+        var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ImportacionException>();
+        ex.Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        ex.Which.Message.Should().Contain("64");
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_Should_Not_Persist_Blank_Extra_Column_Values()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var request = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tMovimiento\t1\t1\tREF-1\t",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3,
+                ColumnasExtra =
+                [
+                    new MapeoColumnaExtraRequest { Nombre = "Referencia", Indice = 4 },
+                    new MapeoColumnaExtraRequest { Nombre = "Vacia", Indice = 5 }
+                ]
+            }
+        };
+
+        var result = await service.ConfirmarAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            request,
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        result.FilasImportadas.Should().Be(1);
+        var extra = await db.ExtractosColumnasExtra.SingleAsync();
+        extra.NombreColumna.Should().Be("Referencia");
+        extra.Valor.Should().Be("REF-1");
     }
 
     private static async Task<(Guid UserId, Guid CuentaId)> SeedImportableCuentaAsync(AppDbContext db)

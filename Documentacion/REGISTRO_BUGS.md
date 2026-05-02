@@ -11,63 +11,163 @@
 
 ## Cerrados
 
-### 2026-04-25 - V-01.04 - Hallazgos de auditoria de uso, bugs y seguridad corregidos
+### 2026-05-02 - V-01.05 - CI GitHub no podia instalar dependencias frontend
 
-- Contexto: la auditoria V-01.04 dejo abiertos tres puntos malos para release: Tailwind/shadcn contra el stack canonico, `CuentasController.Resumen` con contrato mas pobre que el resumen de extractos, y accesibilidad incompleta en controles propios.
+- Contexto: GitHub Actions fallaba en `npm ci` con `404 Not Found` para tarballs `1.5.0` inexistentes.
+- Causa: el lockfile apuntaba a `once`, `graphemer`, `loose-envify` y `natural-compare` en `1.5.0`, versiones inexistentes en npm.
+- Solucion: se fijan overrides a `1.4.0` y se actualiza `package-lock.json` para resolver los cuatro paquetes a tarballs publicados.
+- Verificacion: `npm.cmd ci` OK, `npm.cmd audit --audit-level=moderate` 0 vulnerabilidades, `npm.cmd run lint` OK y `npm.cmd run build` OK.
+
+### 2026-05-02 - V-01.05 - Hallazgos residuales del escaneo repo-wide
+
+- Contexto: tras el cierre post-hardening quedaban ocho hallazgos en instalador/reset, permisos de extractos, dashboard, OpenClaw, importacion, RLS y CI.
+- Solucion:
+  - Credenciales one-shot de instalacion y reset se escriben solo despues de restringir `C:\AtlasBalance\config`; los scripts fallan cerrado si ACL falla.
+  - `Reset-AdminPassword.ps1` requiere Administrador.
+  - `ToggleFlag` comprueba `flagged` y `flagged_nota` segun el campo que realmente cambia.
+  - Dashboard global para gerente requiere tambien permiso global de datos; `PuedeVerDashboard` global solo ya no abre cuentas.
+  - Auditoria OpenClaw respeta soft-delete de extractos.
+  - `returnTo` de importacion solo acepta rutas internas.
+  - RLS de `EXPORTACIONES` usa permiso de escritura para escribir.
+  - PostgreSQL queda digest-pinned en CI y compose.
+- Verificacion: tests focalizados 20/20 OK, frontend lint/build OK, parser PowerShell OK y `wwwroot` sincronizado.
+
+### 2026-05-02 - V-01.05 - Revision repo-wide de bugs y seguridad post-hardening
+
+- Contexto: pasada nueva tras cerrar el escaneo previo. Subagente revisor encontro filtraciones residuales hacia integracion OpenClaw, password admin reseteada que iba a stdout, y falta de defensa en profundidad ante ZIP slip en update online.
+- Hallazgos cerrados:
+  - `IntegrationOpenClawController` enviaba el email del usuario creador de cada extracto al cliente OpenClaw. Ahora devuelve `nombre_completo` (mantiene el `usuario-eliminado` para usuarios borrados).
+  - El endpoint `/api/integration/openclaw/auditoria` exponia `ip_address` de operadores internos al socio externo. Se elimino del payload.
+  - `scripts/Reset-AdminPassword.ps1` imprimia la password temporal en pantalla; ahora la vuelca a `C:\AtlasBalance\config\RESET_ADMIN_CREDENTIALS_ONCE.txt` con ACL restringida a Administrators.
+  - `ActualizacionService` extraia el ZIP descargado con `ZipFile.ExtractToDirectory`. Aunque ya hay digest SHA-256 + firma RSA del paquete, ahora se valida cada entrada contra el `packageRoot` antes de escribir, abortando si una entrada apuntaria fuera.
+- Verificacion: `dotnet test ...GestionCaja.API.Tests.csproj -c Release --no-build` 129/129 OK; parser PowerShell de `Reset-AdminPassword.ps1` OK; frontend lint/build OK; npm audit 0 vulnerabilidades; NuGet sin vulnerabilidades.
+
+### 2026-05-02 - V-01.05 - Harness RLS local sin permiso sobre __EFMigrationsHistory
+
+- Contexto: la suite completa quedaba 127/128 porque `RowLevelSecurityTests.CoreFinancialTables_Should_Enforce_Rls_By_User_And_IntegrationScope` fallaba con `permission denied for table __EFMigrationsHistory` cuando otros tests creaban antes el esquema con el rol bootstrap del fixture.
+- Causa: tras crear el rol `rls_owner_*`, el test cambiaba ownership solo de la BD y del esquema `public`, pero las tablas `__EFMigrationsHistory`, las del dominio y el esquema `atlas_security` seguian perteneciendo al rol bootstrap. La nueva conexion del owner no podia leer/migrar.
+- Solucion: en `CreateRoleConnectionStringsAsync` el bootstrap ahora reasigna ownership de todas las tablas, secuencias, vistas, materializadas y funciones de los esquemas `public` y `atlas_security` al nuevo owner. Asi `MigrateAsync` y `ConfigureRlsRuntimeAsync` ven todo el catalogo bajo el mismo owner.
+- Verificacion: `dotnet test ...GestionCaja.API.Tests.csproj -c Release --no-build` 129/129 OK.
+
+### 2026-05-02 - V-01.05 - Vulnerabilidades detectadas en escaneo repo-wide
+
+- Contexto: escaneo completo con subagentes sobre backend, frontend, scripts, CI, dependencias y update path.
+- Hallazgos: lockout password/MFA debil, redaccion insuficiente de auditoria de integraciones, amplificacion de columnas extra en importacion, permisos dashboard-only usados como acceso a datos, restore de extractos con permiso insuficiente, fuga de referencia de plazo fijo y actualizacion online sin firma independiente.
+- Solucion: controles corregidos en servicios/controladores/middleware/scripts y tests de regresion en auth, integraciones, importacion, permisos, extractos, cuentas y actualizaciones.
+- Verificacion: suite focalizada 72/72 OK; NuGet y npm audit sin vulnerabilidades; parser PowerShell OK. Suite completa 127/128 por bug abierto de harness RLS.
+
+### 2026-05-02 - V-01.05 - Graficas de evolucion con eje Y fijo
+
+- Contexto: todas las graficas `Evolucion` compartian un `YAxis` fijo de `72px`, suficiente para importes grandes pero excesivo para importes pequenos.
+- Solucion: calcular dinamicamente el ancho del eje Y en `EvolucionChart`, con limite inferior `44px` y superior `72px`.
+- Verificacion: frontend lint/build OK, `wwwroot` sincronizado y Playwright headless confirma `gridStartX=45px` en las cuatro rutas con evolucion.
+
+### 2026-05-02 - V-01.05 - Cuentas de efectivo sin selector de formato
+
+- Contexto: una cuenta de tipo `EFECTIVO` no dejaba seleccionar `Formato de importacion` como las demas cuentas importables.
+- Solucion: permitir formato para `NORMAL` y `EFECTIVO`, limpiar solo datos bancarios en efectivo y mantener `PLAZO_FIJO` como unico tipo sin formato.
+- Verificacion: `CuentasControllerTests` 5/5 OK, frontend lint/build OK y `wwwroot` sincronizado.
+
+### 2026-05-02 - V-01.05 - Graficas de barras desalineadas en cuentas y titulares
+
+- Contexto: las graficas de barras de los dashboards embebidos en `Cuentas` y `Titulares` arrancaban visualmente demasiado a la derecha.
+- Solucion: reducir el ancho reservado por `YAxis` de `120` a `72`, usar ticks compactos, margenes explicitos y ejes simplificados en ambos `BarChart`.
+- Verificacion: frontend lint/build OK, `wwwroot` sincronizado y Playwright headless confirma `gridStartX=72px` en `/titulares` y `/cuentas`.
+
+### 2026-05-01 - V-01.05 - Grafica Evolucion desalineada en dashboard principal
+
+- Contexto: la grafica `Evolucion` del dashboard principal quedaba visualmente corrida a la derecha dentro de la tarjeta.
+- Solucion: reducir el ancho reservado por `YAxis`, declarar margenes explicitos en `LineChart` y separar ticks con `tickMargin`.
+- Verificacion: frontend lint/build OK, `wwwroot` sincronizado y Playwright headless confirma `plotInsetFromLegend=72px`.
+
+### 2026-05-01 - V-01.05 - Logo del login fuera de columna
+
+- Contexto: el logo superior del login quedaba alineado al margen izquierdo de la pagina, no con el formulario centrado.
+- Solucion: `.auth-logo-container` pasa a usar el ancho de la columna de login y centra el bloque de marca completo.
+- Verificacion: frontend lint/build OK, `wwwroot` sincronizado y Edge headless confirma `brandDeltaCard=0px`.
+
+### 2026-05-01 - V-01.05 - KPI del dashboard se solapaba tras reorden UI
+
+- Contexto: al aplicar la nueva guia UI/UX, el `Saldo total` quedo en una columna demasiado estrecha y podia invadir visualmente `Saldos por divisa`.
+- Solucion: ajuste de `dashboard-command-grid` y escala del KPI destacado dentro del grid principal.
+- Verificacion: Playwright desktop/mobile sin overflow horizontal y sin solapamiento; frontend lint/build OK.
+
+### 2026-05-01 - V-01.05 - PostgreSQL Row Level Security no configurado
+
+- Contexto: revision solicitada para comprobar si la base de datos tenia Row Level Security configurado.
+- Hallazgo: no habia migraciones ni scripts con `ENABLE ROW LEVEL SECURITY`, `FORCE ROW LEVEL SECURITY` o `CREATE POLICY`; la base local tenia todas las tablas `public` sin RLS y el rol `app_user` era superusuario con capacidad de saltarse RLS.
+- Solucion: migraciones `EnableRowLevelSecurity` y `SignRowLevelSecurityContext` con funciones auxiliares, RLS forzado, politicas por usuario/integracion/admin/sistema y firma HMAC del contexto; interceptor EF Core para fijar contexto `atlas.*`; Docker e instalador separados en rol owner/migracion y rol runtime sin `BYPASSRLS`.
+- Verificacion: `RowLevelSecurityTests` OK; tests focalizados RLS/permisos/integraciones 15/15 OK; `dotnet ef database update` aplicado en `atlas_balance_db`; catalogo local con 11 tablas objetivo bajo RLS/FORCE RLS, 20 politicas, dos migraciones RLS aplicadas, `app_user` sin `rolsuper` ni `rolbypassrls`, secreto RLS sembrado, contexto falsificado rechazado y contexto firmado aceptado.
+
+### 2026-04-26 - V-01.05 - Importacion cambiaba el orden de lineas del extracto
+
+- Contexto: `ConfirmarAsync` reordenaba filas por fecha antes de crear extractos, aunque el usuario necesita que la secuencia pegada desde el banco se conserve.
+- Solucion: eliminado el ordenamiento por fecha; la numeracion se asigna desde abajo hacia arriba para que la linea superior quede con el `fila_numero` mas alto del lote.
+- Verificacion: `ImportacionServiceTests` 26/26 OK y backend Release build OK.
+
+### 2026-04-26 - V-01.05 - Actualizacion desde paquete podia dejar la API parada
+
+- Contexto: `update.cmd -InstallPath C:\AtlasBalance` en un paquete `V-01.04` podia no reenviar bien `-InstallPath`; al ejecutar el actualizador directo, la API podia caer en arranque por `23505 pk_formatos_importacion`.
+- Solucion: `scripts/update.ps1` ahora declara `InstallPath`/`SkipBackup` explicitamente y los reenvia al actualizador sin `ValueFromRemainingArguments`; `SeedData` evita insertar formatos por ID fijo si ese ID ya existe aunque banco/divisa no coincidan.
+- Verificacion: parser PowerShell OK, `SeedDataTests` 5/5 OK y paquete `V-01.05` regenerado.
+
+### 2026-04-25 - V-01.05 - Hallazgos de auditoria de uso, bugs y seguridad corregidos
+
+- Contexto: la auditoria V-01.05 dejo abiertos tres puntos malos para release: Tailwind/shadcn contra el stack canonico, `CuentasController.Resumen` con contrato mas pobre que el resumen de extractos, y accesibilidad incompleta en controles propios.
 - Solucion: eliminados Tailwind/shadcn y sus imports/configuracion; `CuentaResumenResponse` ahora expone titular, tipo de cuenta, notas, ultima actualizacion y `plazo_fijo`; `DatePickerField` tiene etiquetas completas y navegacion por flechas/Home/End; `ConfirmDialog` atrapa Tab dentro del modal; `AppSelect` abre/cierra con Enter/Espacio.
 - Verificacion: busqueda sin restos directos de Tailwind/shadcn, `npm.cmd run lint` OK, `npm.cmd run build` OK, `wwwroot` sincronizado, `npm.cmd audit --audit-level=moderate` 0 vulnerabilidades, NuGet sin vulnerabilidades y backend tests 108/108 OK.
 
-### 2026-04-25 - V-01.04 - Gradientes decorativos de UI reducidos
+### 2026-04-25 - V-01.05 - Gradientes decorativos de UI reducidos
 
 - Contexto: la auditoria marco fondos `radial-gradient` y degradados suaves como huella de UI generica y contraria al criterio visual del proyecto.
 - Solucion: reemplazados fondos decorativos de `body`, login, panels, KPIs, listas y empty states por superficies planas basadas en tokens. Se mantienen solo degradados funcionales de `select` y skeleton.
 - Verificacion: busqueda de degradados deja solo usos funcionales, `npm.cmd run lint` OK y `npm.cmd run build` OK.
 
-### 2026-04-25 - V-01.04 - Endpoints nuevos NPE-able si el cuerpo o las listas llegaban null
+### 2026-04-25 - V-01.05 - Endpoints nuevos NPE-able si el cuerpo o las listas llegaban null
 
 - Contexto: `POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento` accedian a `request.SaldoMinimo`, `request.DestinatarioUsuarioIds.Count` o `request.CuentaId` sin antes validar que el body no fuera null. Un cliente autorizado mandando `null` o JSON sin la propiedad colapsaba la peticion en 500.
 - Riesgo: ruido en logs, falta de respuesta clara al consumidor y degradacion gratuita ante input malformado. Solo afecta a admins (todas son rutas con `[Authorize(Roles = "ADMIN")]` o `[Authorize]`), pero el contrato seguro debe ser 400 con mensaje, no 500.
 - Solucion: validacion temprana del body (`if (request is null) return BadRequest(...)`) y normalizacion de `DestinatarioUsuarioIds` con `?? []` antes de consumirla.
 - Verificacion: backend Release build OK, `dotnet test` 107/107 OK, NuGet sin vulnerabilidades.
 
-### 2026-04-25 - V-01.04 - Manifiesto frontend mantenia minimos vulnerables de dependencias
+### 2026-04-25 - V-01.05 - Manifiesto frontend mantenia minimos vulnerables de dependencias
 
 - Contexto: el `package-lock.json` resolvia versiones seguras, pero `package.json` seguia declarando minimos antiguos: `axios ^1.7.9` y `react-router-dom ^6.28.0`.
 - Riesgo: instalaciones regeneradas sin lockfile fiable podian resolver rangos afectados por advisories recientes de Axios y React Router. Confiar solo en el lockfile aqui era una trampa tonta.
 - Solucion: actualizado el manifiesto a `axios ^1.15.2` y `react-router-dom ^6.30.3`, dejando el lockfile en versiones verificadas.
 - Verificacion: `npm.cmd audit --audit-level=moderate` OK, frontend lint/build OK, backend tests 107/107 OK y NuGet sin vulnerabilidades.
 
-### 2026-04-25 - V-01.04 - Selector de fecha nativo no seguia el diseno Atlas al abrirse
+### 2026-04-25 - V-01.05 - Selector de fecha nativo no seguia el diseno Atlas al abrirse
 
 - Contexto: el campo cerrado de fecha se veia integrado, pero el calendario desplegado seguia siendo el popup nativo del navegador.
 - Solucion: creado `DatePickerField` propio y reemplazados los `input type="date"` del frontend.
 - Verificacion: frontend lint/build OK, `wwwroot` sincronizado y prueba visual en navegador de `/cuentas` sin errores de consola.
 
-### 2026-04-25 - V-01.04 - Detalle de plazo fijo ocultaba vencimiento
+### 2026-04-25 - V-01.05 - Detalle de plazo fijo ocultaba vencimiento
 
 - Contexto: el dashboard de una cuenta de plazo fijo no mostraba cuando se acababa el plazo, aunque el dato existia en la ficha de cuenta.
 - Solucion: el resumen de cuenta expone `tipo_cuenta` y `plazo_fijo`; `CuentaDetailPage` muestra vencimiento, dias restantes/vencido y estado bajo el titulo.
 - Verificacion: backend Release build OK, frontend lint/build OK y `wwwroot` sincronizado.
 
-### 2026-04-25 - V-01.04 - Actualizaciones post-instalacion no dejaban flujo operativo completo
+### 2026-04-25 - V-01.05 - Actualizaciones post-instalacion no dejaban flujo operativo completo
 
 - Contexto: tras tener Atlas Balance instalado, el update manual no refrescaba scripts instalados, no actualizaba runtime y no comprobaba salud HTTP real al final.
 - Solucion: `update.ps1` soporta `-PackagePath`, validacion temprana de paquete, copia de scripts/wrappers operativos a `C:\AtlasBalance`, actualizacion de `VERSION`/`atlas-balance.runtime.json` y health check con `curl.exe -k`.
 - Verificacion: parser PowerShell OK y documentacion actualizada con ambos modos de ejecucion.
 
-### 2026-04-25 - V-01.04 - Instalacion Windows Server 2019 con flujo operativo fragil
+### 2026-04-25 - V-01.05 - Instalacion Windows Server 2019 con flujo operativo fragil
 
-- Contexto: el operador intento instalar desde carpeta fuente, habia paquete V-01.03 mientras se validaba V-01.04, `winget` no era fiable, `install.cmd` podia desordenar parametros, `Invoke-WebRequest` daba falso negativo y una reinstalacion sobre BD existente generaba credenciales iniciales falsas.
+- Contexto: el operador intento instalar desde carpeta fuente, habia paquete V-01.03 mientras se validaba V-01.05, `winget` no era fiable, `install.cmd` podia desordenar parametros, `Invoke-WebRequest` daba falso negativo y una reinstalacion sobre BD existente generaba credenciales iniciales falsas.
 - Solucion: validacion temprana de paquete release, mensajes duros para carpeta equivocada, fallback documentado a PostgreSQL manual 16+/17, wrappers con codigo de salida, health check con `curl.exe -k`, deteccion de usuarios existentes y script `Reset-AdminPassword.ps1` para reset controlado.
 - Verificacion: parser PowerShell OK y ejecucion de instalador/wrapper desde carpeta fuente falla con mensaje claro de paquete invalido.
 
-### 2026-04-25 - V-01.04 - Reinstalacion reutilizaba PFX con password nueva
+### 2026-04-25 - V-01.05 - Reinstalacion reutilizaba PFX con password nueva
 
 - Contexto: reinstalar sobre `C:\AtlasBalance` existente podia dejar `AtlasBalance.API` parado con `CryptographicException: La contraseña de red especificada no es válida`.
 - Solucion: `Instalar-AtlasBalance.ps1` elimina `atlas-balance.pfx` y `atlas-balance.cer` existentes antes de generar un certificado HTTPS nuevo, evitando que el PFX viejo quede asociado a una password nueva en `appsettings.Production.json`.
 - Verificacion: diagnostico reproducido por traza de Windows Event Log; correccion revisada en el flujo `New-AtlasCertificate`.
 
-### 2026-04-25 - V-01.04 - Importacion embebida bloqueada por anti-frame
+### 2026-04-25 - V-01.05 - Importacion embebida bloqueada por anti-frame
 
 - Contexto: el modal de `Importar movimientos` del dashboard de cuenta cargaba `/importacion` en un `iframe`, pero el navegador mostraba rechazo de conexion/documento roto.
 - Solucion: cabeceras de seguridad ajustadas de `DENY`/`frame-ancestors 'none'` a `SAMEORIGIN`/`frame-ancestors 'self'`, permitiendo solo el frame interno de la propia app.
@@ -169,6 +269,13 @@
 - Si se detecta un bug, anadirlo en `Abiertos` con descripcion, contexto, version y pasos de reproduccion.
 - Cuando se resuelva, moverlo a `Cerrados` y documentar la solucion tambien en `Documentacion/LOG_ERRORES_INCIDENCIAS.md`.
 
+### 2026-05-01 - V-01.05 - Cerrado - Test de dashboard dependia del dia del mes
+
+- Contexto: la verificacion amplia del hardening de seguridad fallo en `DashboardServiceTests.GetPrincipalAsync_Should_Aggregate_CurrentBalances_And_PeriodFlows_In_TargetCurrency`.
+- Causa: el test generaba un movimiento en `monthStart.AddDays(2)` y lo esperaba como contabilizado aunque al ejecutarse el dia 1 o 2 del mes era una fecha futura.
+- Solucion: sustituido por `today` para los movimientos que deben entrar en el mes actual.
+- Verificacion: backend sin Testcontainers 115/115 OK.
+
 ### 2026-04-20 - V-01.02 - Query params sensibles guardados en auditoria de integracion
 
 - Contexto: `IntegrationAuthMiddleware` metia todo `Request.Query` en la tabla de auditoria sin redactar claves sensibles.
@@ -204,12 +311,17 @@
 - Contexto: un permiso global con `PuedeVerDashboard=true` podia terminar devolviendo extractos de todas las cuentas desde `GET /api/extractos`.
 - Solucion: `ExtractosController` alinea su criterio de acceso global con `UserAccessService` y excluye `PuedeVerDashboard` de acceso global de datos; se anadio test de regresion para dashboard-only global.
 
-### 2026-04-25 - V-01.04 - Importacion bloqueaba filas informativas de banco
+### 2026-04-25 - V-01.05 - Importacion bloqueaba filas informativas de banco
 
 - Contexto: filas con solo concepto y sin fecha/monto/saldo se marcaban como error fatal en la validacion de importacion.
 - Solucion: esas filas pasan a advertencias importables; se heredan fecha y saldo de la ultima fila valida anterior y se importa monto `0`. Las filas parcialmente rotas o ambiguas siguen bloqueadas.
 
-### 2026-04-25 - V-01.04 - JSX sobrante y lint estricto durante implementacion de plazo fijo
+### 2026-04-26 - V-01.05 - Importacion bloqueaba filas informativas con saldo
+
+- Contexto: filas con concepto y saldo, pero sin fecha ni importe, aparecian como errores y no podian seleccionarse para importar.
+- Solucion: esas filas pasan a advertencias importables; se hereda la fecha anterior, se importa monto `0` y se conserva el saldo informado si es numerico.
+
+### 2026-04-25 - V-01.05 - JSX sobrante y lint estricto durante implementacion de plazo fijo
 
 - Contexto: `npm.cmd run build` fallo en `CuentasPage.tsx` por un cierre JSX duplicado; despues `npm.cmd run lint` fallo por warning de Fast Refresh en `components/ui/button.tsx`.
 - Solucion: corregido el JSX y documentada una excepcion local de ESLint para el componente UI que exporta `Button` y `buttonVariants`.

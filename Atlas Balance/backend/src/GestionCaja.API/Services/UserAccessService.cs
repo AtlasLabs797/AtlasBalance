@@ -71,19 +71,23 @@ public sealed class UserAccessService : IUserAccessService
             })
             .ToListAsync(cancellationToken);
 
-        var titularIds = permisos
+        var dataPermissions = permisos
+            .Where(p => GrantsAccountAccess(p.PuedeVerCuentas, p.PuedeAgregarLineas, p.PuedeEditarLineas, p.PuedeEliminarLineas, p.PuedeImportar))
+            .ToList();
+
+        var titularIds = dataPermissions
             .Where(p => p.TitularId.HasValue)
             .Select(p => p.TitularId!.Value)
             .Distinct()
             .ToList();
 
-        var cuentaIds = permisos
+        var cuentaIds = dataPermissions
             .Where(p => p.CuentaId.HasValue)
             .Select(p => p.CuentaId!.Value)
             .Distinct()
             .ToList();
 
-        var hasGlobalAccess = permisos.Any(p =>
+        var hasGlobalAccess = dataPermissions.Any(p =>
             p.TitularId is null && p.CuentaId is null &&
             GrantsAccountAccess(p.PuedeVerCuentas, p.PuedeAgregarLineas, p.PuedeEditarLineas, p.PuedeEliminarLineas, p.PuedeImportar));
 

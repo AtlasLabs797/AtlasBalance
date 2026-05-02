@@ -156,6 +156,90 @@ public sealed class IntegrationOpenClawControllerTests
         payload.Should().Contain("EGRESO");
     }
 
+    [Fact]
+    public async Task Auditoria_Should_Not_Return_Values_For_SoftDeleted_Extractos()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Empresa", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta", Divisa = "EUR" };
+        var activeExtractoId = Guid.NewGuid();
+        var deletedExtractoId = Guid.NewGuid();
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = activeExtractoId,
+                CuentaId = cuenta.Id,
+                Fecha = new DateOnly(2026, 5, 1),
+                Concepto = "Visible",
+                Monto = 10m,
+                Saldo = 10m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = deletedExtractoId,
+                CuentaId = cuenta.Id,
+                Fecha = new DateOnly(2026, 5, 2),
+                Concepto = "Eliminado",
+                Monto = 20m,
+                Saldo = 30m,
+                FilaNumero = 2,
+                DeletedAt = DateTime.UtcNow
+            });
+        db.Auditorias.AddRange(
+            new Auditoria
+            {
+                Id = Guid.NewGuid(),
+                TipoAccion = "extracto_update",
+                EntidadTipo = "EXTRACTOS",
+                EntidadId = activeExtractoId,
+                ValorAnterior = "VisibleAnterior",
+                ValorNuevo = "VisibleNuevo",
+                Timestamp = DateTime.UtcNow
+            },
+            new Auditoria
+            {
+                Id = Guid.NewGuid(),
+                TipoAccion = "extracto_update",
+                EntidadTipo = "EXTRACTOS",
+                EntidadId = deletedExtractoId,
+                ValorAnterior = "DeletedAnterior",
+                ValorNuevo = "DeletedNuevo",
+                Timestamp = DateTime.UtcNow
+            });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.Auditoria("full", cuenta.Id, null, null, null, "all", 100, 1, CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = JsonSerializer.Serialize(okResult.Value);
+        payload.Should().Contain("VisibleNuevo");
+        payload.Should().NotContain("DeletedNuevo");
+        payload.Should().NotContain("DeletedAnterior");
+    }
+
     private sealed class TiposCambioServiceStub : ITiposCambioService
     {
         public Task<decimal> ConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken)

@@ -3,6 +3,7 @@ using GestionCaja.API.Data;
 using GestionCaja.API.Middleware;
 using GestionCaja.API.Models;
 using GestionCaja.API.Services;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -103,6 +104,53 @@ public sealed class IntegrationAuthMiddlewareTests
         var logs = await db.AuditoriaIntegraciones.Where(row => row.TokenId == token.Id).ToListAsync();
         logs.Should().HaveCount(1);
         logs[0].CodigoRespuesta.Should().Be(StatusCodes.Status500InternalServerError);
+    }
+
+    [Fact]
+    public async Task IntegrationAudit_Should_Redact_Secret_Like_Query_Keys_And_Token_Values()
+    {
+        await using var db = BuildDbContext();
+        var clock = new FakeClock(new DateTime(2026, 4, 18, 12, 15, 0, DateTimeKind.Utc));
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var tokenService = new IntegrationTokenService(db);
+        var plainToken = "sk_test_redaction";
+
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "redaction",
+            TokenHash = tokenService.ComputeSha256(plainToken),
+            Estado = EstadoTokenIntegracion.Activo,
+            PermisoLectura = true,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+        db.IntegrationTokens.Add(token);
+        await db.SaveChangesAsync();
+
+        var middleware = new IntegrationAuthMiddleware(
+            context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            },
+            cache,
+            clock);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/integration/openclaw/saldos";
+        context.Request.Method = HttpMethods.Get;
+        context.Request.QueryString = new QueryString("?client_secret=leaked&x-api-key=key-123&visible=ok&safe=sk_gestion_caja_should_not_land");
+        context.Request.Headers.Authorization = $"Bearer {plainToken}";
+
+        await middleware.InvokeAsync(context, db, tokenService);
+
+        var audit = await db.AuditoriaIntegraciones.SingleAsync(row => row.TokenId == token.Id);
+        var parametros = JsonSerializer.Deserialize<Dictionary<string, string>>(audit.Parametros!);
+        parametros.Should().NotBeNull();
+        parametros!["client_secret"].Should().Be("[REDACTED]");
+        parametros["x-api-key"].Should().Be("[REDACTED]");
+        parametros["safe"].Should().Be("[REDACTED]");
+        parametros["visible"].Should().Be("ok");
     }
 
     [Fact]

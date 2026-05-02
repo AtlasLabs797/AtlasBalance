@@ -171,6 +171,7 @@ public sealed class UsuariosController : ControllerBase
 
         var before = await LoadPermisosAuditSnapshotAsync(id, cancellationToken);
         await UpsertPermisosAsync(id, permisos, cancellationToken);
+        var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
         var after = await LoadPermisosAuditSnapshotAsync(id, cancellationToken);
 
@@ -180,7 +181,7 @@ public sealed class UsuariosController : ControllerBase
             "USUARIOS",
             id,
             HttpContext,
-            JsonSerializer.Serialize(new { before, after }),
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }),
             cancellationToken);
 
         return Ok(new { message = "Permisos actualizados" });
@@ -251,6 +252,7 @@ public sealed class UsuariosController : ControllerBase
 
         await AddPermisoAsync(id, normalizedRequest);
         AddPreferencia(id, normalizedRequest.CuentaId, normalizedRequest.ColumnasVisibles, normalizedRequest.ColumnasEditables);
+        var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var after = await LoadPermisosAuditSnapshotAsync(id, cancellationToken);
@@ -260,7 +262,7 @@ public sealed class UsuariosController : ControllerBase
             "USUARIOS",
             id,
             HttpContext,
-            JsonSerializer.Serialize(new { before, after, cuenta_id = cuentaId }),
+            JsonSerializer.Serialize(new { before, after, cuenta_id = cuentaId, refresh_tokens_revocados = revokedRefreshTokens }),
             cancellationToken);
 
         return Ok(new { message = "Permiso de cuenta actualizado" });
@@ -320,6 +322,7 @@ public sealed class UsuariosController : ControllerBase
         };
 
         _dbContext.UsuarioEmails.Add(email);
+        var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var after = await LoadEmailsAsync(id, cancellationToken);
@@ -329,7 +332,7 @@ public sealed class UsuariosController : ControllerBase
             "USUARIOS",
             id,
             HttpContext,
-            JsonSerializer.Serialize(new { before, after }),
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }),
             cancellationToken);
 
         return CreatedAtAction(nameof(ObtenerEmails), new { id }, new UsuarioEmailResponse
@@ -343,7 +346,8 @@ public sealed class UsuariosController : ControllerBase
     [HttpDelete("{id:guid}/emails/{emailId:guid}")]
     public async Task<IActionResult> EliminarEmail(Guid id, Guid emailId, CancellationToken cancellationToken)
     {
-        if (!await UsuarioExisteAsync(id, includeDeleted: true, cancellationToken))
+        var usuario = await _dbContext.Usuarios.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null)
         {
             return NotFound(new { error = "Usuario no encontrado" });
         }
@@ -357,6 +361,7 @@ public sealed class UsuariosController : ControllerBase
         var before = await LoadEmailsAsync(id, cancellationToken);
         var wasPrimary = email.EsPrincipal;
         _dbContext.UsuarioEmails.Remove(email);
+        var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         if (wasPrimary)
@@ -371,7 +376,7 @@ public sealed class UsuariosController : ControllerBase
             "USUARIOS",
             id,
             HttpContext,
-            JsonSerializer.Serialize(new { before, after }),
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }),
             cancellationToken);
 
         return Ok(new { message = "Email eliminado" });
@@ -522,6 +527,10 @@ public sealed class UsuariosController : ControllerBase
             UserSessionState.RotateSecurityStamp(usuario);
             revokedRefreshTokens = await RevokeActiveRefreshTokensAsync(usuario.Id, now, cancellationToken);
         }
+        else
+        {
+            revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
+        }
 
         var normalizedEmails = NormalizeEmails(request.Emails);
         await UpsertEmailsAsync(usuario.Id, normalizedEmails, cancellationToken);
@@ -540,7 +549,7 @@ public sealed class UsuariosController : ControllerBase
         };
 
         await _auditService.LogAsync(GetCurrentUserId(), AuditActions.UpdateUsuario, "USUARIOS", usuario.Id, HttpContext,
-            JsonSerializer.Serialize(new { before, after }), cancellationToken);
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }), cancellationToken);
 
         if (passwordChanged)
         {
@@ -562,7 +571,12 @@ public sealed class UsuariosController : ControllerBase
                 "USUARIOS",
                 usuario.Id,
                 HttpContext,
-                JsonSerializer.Serialize(new { before = before.permisos, after = after.permisos }),
+                JsonSerializer.Serialize(new
+                {
+                    before = before.permisos,
+                    after = after.permisos,
+                    refresh_tokens_revocados = revokedRefreshTokens
+                }),
                 cancellationToken);
         }
 
@@ -631,7 +645,7 @@ public sealed class UsuariosController : ControllerBase
         usuario.DeletedAt = null;
         usuario.DeletedById = null;
         usuario.Activo = true;
-        UserSessionState.RotateSecurityStamp(usuario);
+        var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -643,7 +657,7 @@ public sealed class UsuariosController : ControllerBase
         };
 
         await _auditService.LogAsync(GetCurrentUserId(), AuditActions.RestoreUsuario, "USUARIOS", usuario.Id, HttpContext,
-            JsonSerializer.Serialize(new { before, after }), cancellationToken);
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }), cancellationToken);
 
         return Ok(new { message = "Usuario restaurado" });
     }
@@ -731,6 +745,12 @@ public sealed class UsuariosController : ControllerBase
         }
 
         return activeRefreshTokens.Count;
+    }
+
+    private async Task<int> RotateAndRevokeSessionsAsync(Usuario usuario, DateTime revokedAt, CancellationToken cancellationToken)
+    {
+        UserSessionState.RotateSecurityStamp(usuario);
+        return await RevokeActiveRefreshTokensAsync(usuario.Id, revokedAt, cancellationToken);
     }
 
     private async Task<List<PermisoUsuarioResponse>> LoadPermisosAsync(Guid usuarioId, CancellationToken cancellationToken)

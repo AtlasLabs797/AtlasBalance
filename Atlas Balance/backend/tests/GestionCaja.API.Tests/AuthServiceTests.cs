@@ -17,7 +17,18 @@ public class AuthServiceTests
         {
             ["JwtSettings:Secret"] = "test-secret-key-minimum-32-characters-long",
             ["JwtSettings:AccessTokenExpMinutes"] = "60",
-            ["JwtSettings:RefreshTokenExpDays"] = "7"
+            ["JwtSettings:RefreshTokenExpDays"] = "7",
+            ["Security:RequireMfaForWebUsers"] = "false"
+        })
+        .Build();
+
+    private static IConfiguration BuildMfaConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["JwtSettings:Secret"] = "test-secret-key-minimum-32-characters-long",
+            ["JwtSettings:AccessTokenExpMinutes"] = "60",
+            ["JwtSettings:RefreshTokenExpDays"] = "7",
+            ["Security:RequireMfaForWebUsers"] = "true"
         })
         .Build();
 
@@ -30,7 +41,7 @@ public class AuthServiceTests
     }
 
     [Fact]
-    public async Task Login_Should_Throttle_Client_Before_Global_Account_Lock()
+    public async Task Login_Should_Lock_Account_On_Fifth_Bad_Password()
     {
         await using var db = BuildDbContext();
         var user = new Usuario
@@ -57,13 +68,13 @@ public class AuthServiceTests
         }
 
         Func<Task> fifthAttempt = () => sut.LoginAsync(user.Email, "BadPass!", "127.0.0.1", CancellationToken.None);
-        var throttled = await fifthAttempt.Should().ThrowAsync<AuthException>();
-        throttled.Which.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
-        throttled.Which.Message.Should().Be("Demasiados intentos. Espera unos minutos.");
+        var locked = await fifthAttempt.Should().ThrowAsync<AuthException>();
+        locked.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        locked.Which.Message.Should().Be("Credenciales inválidas");
 
         var persisted = await db.Usuarios.FirstAsync(x => x.Id == user.Id);
-        persisted.FailedLoginAttempts.Should().Be(4);
-        persisted.LockedUntil.Should().BeNull();
+        persisted.FailedLoginAttempts.Should().Be(5);
+        persisted.LockedUntil.Should().BeAfter(DateTime.UtcNow);
     }
 
     [Fact]
@@ -128,6 +139,177 @@ public class AuthServiceTests
 
         var tokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(result.RefreshToken!))).ToLowerInvariant();
         (await db.RefreshTokens.AnyAsync(x => x.TokenHash == tokenHash)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Login_Should_Require_Mfa_Setup_When_Mfa_Is_Enabled()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-setup@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Setup",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+
+        var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+
+        result.AccessToken.Should().BeNull();
+        result.RefreshToken.Should().BeNull();
+        result.MfaRequired.Should().BeTrue();
+        result.MfaSetupRequired.Should().BeTrue();
+        result.MfaChallengeId.Should().NotBeNullOrWhiteSpace();
+        result.MfaSecret.Should().NotBeNullOrWhiteSpace();
+        result.MfaOtpAuthUri.Should().Contain("otpauth://totp/");
+        (await db.Auditorias.AnyAsync(x => x.TipoAccion == GestionCaja.API.Constants.AuditActions.LoginMfaRequired)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task VerifyMfa_Should_Enable_Mfa_And_Issue_Tokens()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-verify@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Verify",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
+
+        var result = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, "127.0.0.1", CancellationToken.None);
+
+        result.AccessToken.Should().NotBeNullOrWhiteSpace();
+        result.RefreshToken.Should().NotBeNullOrWhiteSpace();
+        result.Usuario.MfaEnabled.Should().BeTrue();
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        persisted.MfaEnabled.Should().BeTrue();
+        persisted.MfaSecret.Should().NotBeNullOrWhiteSpace();
+        persisted.MfaEnabledAt.Should().NotBeNull();
+        persisted.MfaLastAcceptedStep.Should().NotBeNull();
+        (await db.Auditorias.AnyAsync(x => x.TipoAccion == GestionCaja.API.Constants.AuditActions.MfaVerified)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task VerifyMfa_Should_Lock_User_Across_New_Challenges_After_Repeated_Failures()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-lock@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Lock",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            MfaEnabled = true,
+            MfaSecret = TotpService.GenerateSecret(),
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+
+        for (var i = 1; i <= 5; i++)
+        {
+            var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+            Func<Task> invalidMfa = () => sut.VerifyMfaAsync(login.MfaChallengeId!, "not-code", "127.0.0.1", CancellationToken.None);
+            var exception = await invalidMfa.Should().ThrowAsync<AuthException>();
+            exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        }
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        persisted.LockedUntil.Should().BeAfter(DateTime.UtcNow);
+        persisted.FailedLoginAttempts.Should().Be(5);
+
+        Func<Task> lockedLogin = () => sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var locked = await lockedLogin.Should().ThrowAsync<AuthException>();
+        locked.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Login_Should_Not_Require_Mfa_Again_When_Trusted_Mfa_Cookie_Is_Valid()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-trusted@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Trusted",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
+        var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, "127.0.0.1", CancellationToken.None);
+
+        var trustedLogin = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, verified.TrustedMfaToken);
+
+        verified.TrustedMfaToken.Should().NotBeNullOrWhiteSpace();
+        verified.TrustedMfaTokenExpiresAt.Should().BeAfter(DateTime.UtcNow.AddDays(89));
+        trustedLogin.MfaRequired.Should().BeFalse();
+        trustedLogin.AccessToken.Should().NotBeNullOrWhiteSpace();
+        trustedLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Login_Should_Require_Mfa_When_Trusted_Mfa_Cookie_Is_Expired()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-expired@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Expired",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            MfaEnabled = true,
+            MfaSecret = TotpService.GenerateSecret(),
+            SecurityStamp = Guid.NewGuid().ToString("N"),
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var expiredTrustedToken = BuildTrustedMfaTokenForTest(user, DateTime.UtcNow.AddSeconds(-1));
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+
+        var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, expiredTrustedToken);
+
+        result.MfaRequired.Should().BeTrue();
+        result.MfaSetupRequired.Should().BeFalse();
+        result.AccessToken.Should().BeNull();
+        result.RefreshToken.Should().BeNull();
     }
 
     [Fact]
@@ -284,5 +466,28 @@ public class AuthServiceTests
 
         revokedUserId.Should().Be(user.Id);
         (await db.RefreshTokens.SingleAsync()).RevocadoEn.Should().NotBeNull();
+    }
+
+    private static string BuildTrustedMfaTokenForTest(Usuario usuario, DateTime expiresAtUtc)
+    {
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Version = "v1",
+            UserId = usuario.Id,
+            SecurityStamp = usuario.SecurityStamp,
+            ExpiresAtUnix = new DateTimeOffset(expiresAtUtc).ToUnixTimeSeconds()
+        });
+        var payloadBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(payload));
+        using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes("test-secret-key-minimum-32-characters-long"));
+        var signature = Base64UrlEncode(hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadBase64)));
+        return $"{payloadBase64}.{signature}";
+    }
+
+    private static string Base64UrlEncode(byte[] bytes)
+    {
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 }

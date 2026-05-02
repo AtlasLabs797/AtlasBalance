@@ -22,6 +22,8 @@ public sealed class ImportacionService : IImportacionService
 {
     private const int MaxRawDataLength = 5 * 1024 * 1024;
     private const int MaxRows = 50_000;
+    private const int MaxExtraColumns = 64;
+    private const int MaxExtraColumnNameLength = 80;
 
     private static readonly string[] DateFormats =
     [
@@ -130,6 +132,7 @@ public sealed class ImportacionService : IImportacionService
 
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
+        EnsureExtraColumnIndexesExist(rows, normalizedMap);
         var validationRows = ValidateRows(rows, normalizedMap);
 
         return new ImportacionValidarResponse
@@ -155,6 +158,7 @@ public sealed class ImportacionService : IImportacionService
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
+        EnsureExtraColumnIndexesExist(rows, normalizedMap);
         var validationRows = ValidateRows(rows, normalizedMap);
         var allowedRowSet = request.FilasAImportar?.ToHashSet() ?? validationRows.Where(r => r.Valida).Select(r => r.Indice).ToHashSet();
 
@@ -198,30 +202,21 @@ public sealed class ImportacionService : IImportacionService
             .Select(e => (int?)e.FilaNumero)
             .MaxAsync(cancellationToken) ?? 0;
 
-        var selectedValidRowsOrdered = selectedValidRows
-            .Select(row =>
-            {
-                var fecha = ParseDate(row.Datos["fecha"], out _, out var parsedDate)
-                    ? parsedDate
-                    : throw new InvalidOperationException("Fila validada sin fecha parseable.");
-
-                return new
-                {
-                    Row = row,
-                    Fecha = fecha
-                };
-            })
-            .OrderBy(item => item.Fecha)
-            .ThenBy(item => item.Row.Indice)
+        // Number from bottom to top so the upper line in the pasted statement remains the latest/highest row.
+        var selectedValidRowsForFilaNumbering = selectedValidRows
+            .OrderByDescending(row => row.Indice)
             .ToList();
 
-        var extractos = new List<Extracto>(selectedValidRowsOrdered.Count);
-        var extras = new List<ExtractoColumnaExtra>(selectedValidRowsOrdered.Count * Math.Max(1, normalizedMap.ColumnasExtra.Count));
+        var extractos = new List<Extracto>(selectedValidRowsForFilaNumbering.Count);
+        var extras = new List<ExtractoColumnaExtra>(selectedValidRowsForFilaNumbering.Count * Math.Max(1, normalizedMap.ColumnasExtra.Count));
 
-        foreach (var item in selectedValidRowsOrdered)
+        foreach (var row in selectedValidRowsForFilaNumbering)
         {
-            var row = item.Row;
             maxFila += 1;
+
+            var fecha = ParseDate(row.Datos["fecha"], out _, out var parsedDate)
+                ? parsedDate
+                : throw new InvalidOperationException("Fila validada sin fecha parseable.");
 
             var monto = TryParseDecimalSmart(row.Datos["monto"], out var parsedMonto)
                 ? parsedMonto
@@ -235,7 +230,7 @@ public sealed class ImportacionService : IImportacionService
             {
                 Id = Guid.NewGuid(),
                 CuentaId = cuenta.Id,
-                Fecha = item.Fecha,
+                Fecha = fecha,
                 Concepto = string.IsNullOrWhiteSpace(row.Datos["concepto"]) ? null : row.Datos["concepto"]!.Trim(),
                 Monto = monto,
                 Saldo = saldo,
@@ -247,13 +242,18 @@ public sealed class ImportacionService : IImportacionService
 
             foreach (var pair in row.Datos.Where(d => d.Key.StartsWith("extra:", StringComparison.OrdinalIgnoreCase)))
             {
+                if (string.IsNullOrWhiteSpace(pair.Value))
+                {
+                    continue;
+                }
+
                 var columnName = pair.Key["extra:".Length..];
                 extras.Add(new ExtractoColumnaExtra
                 {
                     Id = Guid.NewGuid(),
                     ExtractoId = extracto.Id,
                     NombreColumna = columnName,
-                    Valor = string.IsNullOrWhiteSpace(pair.Value) ? null : pair.Value!.Trim()
+                    Valor = pair.Value!.Trim()
                 });
             }
         }
@@ -279,7 +279,7 @@ public sealed class ImportacionService : IImportacionService
             filas_procesadas = validationRows.Count,
             filas_importadas = extractos.Count,
             filas_con_error = validationRows.Count(r => !r.Valida),
-            primeras_filas = selectedValidRowsOrdered.Take(5).Select(item => item.Row.Indice).ToArray()
+            primeras_filas = selectedValidRows.OrderBy(row => row.Indice).Take(5).Select(row => row.Indice).ToArray()
         });
         await _auditService.LogAsync(usuarioId, "importacion_confirmada", "EXTRACTOS", cuenta.Id, httpContext, auditDetails, cancellationToken);
 
@@ -534,6 +534,11 @@ public sealed class ImportacionService : IImportacionService
         };
 
         var usedIndices = new Dictionary<int, string>();
+        if (normalized.ColumnasExtra.Count > MaxExtraColumns)
+        {
+            throw new ImportacionException($"El mapeo no puede incluir mas de {MaxExtraColumns} columnas extra", StatusCodes.Status400BadRequest);
+        }
+
         foreach (var (fieldName, index) in baseFields)
         {
             ValidateColumnIndex(index, fieldName);
@@ -551,6 +556,11 @@ public sealed class ImportacionService : IImportacionService
                 throw new ImportacionException("El nombre de columna extra es obligatorio", StatusCodes.Status400BadRequest);
             }
 
+            if (extra.Nombre.Length > MaxExtraColumnNameLength)
+            {
+                throw new ImportacionException($"El nombre de columna extra no puede superar {MaxExtraColumnNameLength} caracteres", StatusCodes.Status400BadRequest);
+            }
+
             ValidateColumnIndex(extra.Indice, $"extra:{extra.Nombre}");
             if (!usedIndices.TryAdd(extra.Indice, $"extra:{extra.Nombre}"))
             {
@@ -564,6 +574,23 @@ public sealed class ImportacionService : IImportacionService
         }
 
         return normalized;
+    }
+
+    private static void EnsureExtraColumnIndexesExist(IReadOnlyList<string[]> rows, MapeoColumnasRequest map)
+    {
+        if (map.ColumnasExtra.Count == 0)
+        {
+            return;
+        }
+
+        var maxColumnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Length);
+        foreach (var extra in map.ColumnasExtra)
+        {
+            if (extra.Indice >= maxColumnCount)
+            {
+                throw new ImportacionException($"La columna extra '{extra.Nombre}' no existe en los datos importados", StatusCodes.Status400BadRequest);
+            }
+        }
     }
 
     private static string NormalizeTipoMonto(string? raw)
@@ -733,7 +760,6 @@ public sealed class ImportacionService : IImportacionService
                 allowIncompleteConceptRow =
                     hasConcept &&
                     string.IsNullOrWhiteSpace(data["fecha"]) &&
-                    string.IsNullOrWhiteSpace(data["saldo"]) &&
                     IsBlankAmountRow(data["ingreso"], data["egreso"]);
 
                 if (allowIncompleteConceptRow)
@@ -769,7 +795,6 @@ public sealed class ImportacionService : IImportacionService
                 allowIncompleteConceptRow =
                     hasConcept &&
                     string.IsNullOrWhiteSpace(data["fecha"]) &&
-                    string.IsNullOrWhiteSpace(data["saldo"]) &&
                     string.IsNullOrWhiteSpace(data["monto"]);
 
                 if (allowIncompleteConceptRow)

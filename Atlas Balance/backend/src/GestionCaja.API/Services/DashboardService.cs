@@ -569,7 +569,16 @@ public sealed class DashboardService : IDashboardService
         var permisos = await _dbContext.PermisosUsuario
             .AsNoTracking()
             .Where(x => x.UsuarioId == userId && x.PuedeVerDashboard)
-            .Select(x => new { x.CuentaId, x.TitularId })
+            .Select(x => new
+            {
+                x.CuentaId,
+                x.TitularId,
+                x.PuedeVerCuentas,
+                x.PuedeAgregarLineas,
+                x.PuedeEditarLineas,
+                x.PuedeEliminarLineas,
+                x.PuedeImportar
+            })
             .ToListAsync(cancellationToken);
 
         if (permisos.Count == 0)
@@ -577,14 +586,18 @@ public sealed class DashboardService : IDashboardService
             throw new DashboardAccessException("No tienes permisos para ver dashboards", StatusCodes.Status403Forbidden);
         }
 
-        var globalAccess = permisos.Any(x => x.CuentaId == null && x.TitularId == null);
+        var globalAccess = permisos.Any(x =>
+            x.CuentaId == null &&
+            x.TitularId == null &&
+            GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar));
         if (globalAccess)
         {
             return DashboardScope.GlobalForManager();
         }
 
-        var titularIds = permisos.Where(x => x.TitularId.HasValue).Select(x => x.TitularId!.Value).ToHashSet();
-        var cuentaIds = permisos.Where(x => x.CuentaId.HasValue).Select(x => x.CuentaId!.Value).ToHashSet();
+        var scopedPermisos = permisos.Where(x => x.CuentaId.HasValue || x.TitularId.HasValue).ToList();
+        var titularIds = scopedPermisos.Where(x => x.TitularId.HasValue).Select(x => x.TitularId!.Value).ToHashSet();
+        var cuentaIds = scopedPermisos.Where(x => x.CuentaId.HasValue).Select(x => x.CuentaId!.Value).ToHashSet();
 
         if (titularIds.Count == 0 && cuentaIds.Count == 0)
         {
@@ -593,6 +606,14 @@ public sealed class DashboardService : IDashboardService
 
         return new DashboardScope(false, titularIds, cuentaIds);
     }
+
+    private static bool GrantsAccountDataAccess(
+        bool puedeVerCuentas,
+        bool puedeAgregarLineas,
+        bool puedeEditarLineas,
+        bool puedeEliminarLineas,
+        bool puedeImportar) =>
+        puedeVerCuentas || puedeAgregarLineas || puedeEditarLineas || puedeEliminarLineas || puedeImportar;
 
     private async Task<bool> CanAccessTitularAsync(DashboardScope scope, Guid titularId, CancellationToken cancellationToken)
     {

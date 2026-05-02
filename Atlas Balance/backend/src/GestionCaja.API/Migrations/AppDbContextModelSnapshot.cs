@@ -1277,6 +1277,23 @@ namespace GestionCaja.API.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("locked_until");
 
+                    b.Property<bool>("MfaEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("mfa_enabled");
+
+                    b.Property<DateTime?>("MfaEnabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("mfa_enabled_at");
+
+                    b.Property<long?>("MfaLastAcceptedStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("mfa_last_accepted_step");
+
+                    b.Property<string>("MfaSecret")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("mfa_secret");
+
                     b.Property<string>("NombreCompleto")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1314,6 +1331,9 @@ namespace GestionCaja.API.Migrations
                     b.HasIndex("Email")
                         .IsUnique()
                         .HasDatabaseName("ix_usuarios_email");
+
+                    b.HasIndex("MfaEnabled")
+                        .HasDatabaseName("ix_usuarios_mfa_enabled");
 
                     b.HasIndex("Rol")
                         .HasDatabaseName("ix_usuarios_rol");

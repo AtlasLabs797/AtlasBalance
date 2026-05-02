@@ -31,6 +31,19 @@
   background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
 }
 
+.dashboard-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(30rem, 0.95fr) minmax(24rem, 1.05fr);
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.dashboard-overview-primary {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
 .dashboard-select-control {
   display: grid;
   gap: var(--space-1);
@@ -49,6 +62,15 @@
   display: grid;
   grid-template-columns: 2fr 1fr 1fr;
   gap: var(--space-3);
+}
+
+.dashboard-kpi-grid--overview {
+  grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(0, 0.85fr));
+  align-content: stretch;
+}
+
+.dashboard-kpi-grid--overview .dashboard-kpi {
+  padding: var(--space-4);
 }
 
 .dashboard-kpi {
@@ -80,6 +102,7 @@
   font-size: 1.55rem;
   font-weight: var(--font-weight-bold);
   line-height: 1.15;
+  white-space: nowrap;
 }
 
 .dashboard-kpi--featured {
@@ -90,6 +113,10 @@
 .dashboard-kpi--featured p {
   font-size: var(--font-size-kpi);
   font-weight: var(--font-weight-heavy);
+}
+
+.dashboard-kpi-grid--overview .dashboard-kpi--featured p {
+  font-size: clamp(1.35rem, 1.5vw, 1.65rem);
 }
 
 .dashboard-kpi-helper {
@@ -119,6 +146,13 @@
   background: var(--bg-surface);
   box-shadow: var(--shadow-card);
   padding: var(--space-5);
+  min-width: 0;
+}
+
+.dashboard-evolution-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: var(--space-5) var(--space-6) var(--space-6);
 }
 
 .dashboard-card-header {
@@ -128,6 +162,17 @@
   margin-bottom: var(--space-3);
 }
 
+.dashboard-card-header--chart {
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.dashboard-card-header--chart p {
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+}
+
 .dashboard-card-meta {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
@@ -135,6 +180,10 @@
 
 .dashboard-plazo-card {
   padding: var(--space-4) var(--space-5);
+}
+
+.dashboard-overview-primary .dashboard-plazo-card {
+  align-self: stretch;
 }
 
 .dashboard-plazo-metrics {
@@ -167,8 +216,12 @@
 
 .dashboard-divisa-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   gap: var(--space-2);
+}
+
+.dashboard-divisa-card .dashboard-divisa-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .dashboard-divisa-item {
@@ -176,28 +229,82 @@
   border-radius: var(--radius-control);
   background: var(--bg-surface-soft);
   padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dashboard-divisa-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .dashboard-divisa-item h3 {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
-  margin-bottom: var(--space-1);
 }
 
-.dashboard-divisa-item p {
+.dashboard-divisa-item-header span {
+  border-radius: var(--radius-pill);
+  background: var(--accent-primary-soft);
+  color: var(--color-sidebar-active-text);
+  padding: 0.1rem var(--space-2);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
 }
 
+.dashboard-divisa-total {
+  font-family: var(--font-family-mono);
+  font-size: 1.28rem;
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.12;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-divisa-breakdown {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.dashboard-divisa-breakdown div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dashboard-divisa-breakdown dt,
 .dashboard-divisa-converted {
-  display: block;
-  margin-top: var(--space-1);
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
 
+.dashboard-divisa-breakdown dd {
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-divisa-converted {
+  display: block;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-soft);
+}
+
 .dashboard-titular-groups {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
 }
 
@@ -229,9 +336,20 @@
   color: var(--color-text-secondary);
 }
 
+.dashboard-titular-empty {
+  display: grid;
+  min-height: 5.75rem;
+  place-items: center;
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  background: var(--bg-surface-soft);
+  font-size: var(--font-size-sm);
+}
+
 .dashboard-chart-wrapper {
   width: 100%;
-  min-height: 320px;
+  min-height: 420px;
 }
 
 .dashboard-chart-legend {
@@ -298,6 +416,33 @@
   overflow: auto;
 }
 
+.dashboard-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface-soft);
+}
+
+.dashboard-bulk-selection {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--font-weight-semibold);
+}
+
+.dashboard-bulk-actions-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .dashboard-table-wrap tbody tr.dashboard-row-flagged,
 .dashboard-table-wrap tbody tr[data-flagged="true"] {
   background: var(--color-row-flagged);
@@ -360,17 +505,15 @@
 }
 
 @media (max-width: 1200px) {
+  .dashboard-overview-grid,
   .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-titular-groups {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 900px) {
-  .dashboard-kpi-grid {
+  .dashboard-kpi-grid,
+  .dashboard-kpi-grid--overview {
     grid-template-columns: 1fr;
   }
 
@@ -380,5 +523,25 @@
 
   .dashboard-toolbar {
     flex-direction: column;
+  }
+
+  .dashboard-evolution-card {
+    padding: var(--space-4);
+  }
+
+  .dashboard-card-header--chart {
+    flex-direction: column;
+  }
+
+  .dashboard-divisa-card .dashboard-divisa-list {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-titular-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-chart-wrapper {
+    min-height: 340px;
   }
 }

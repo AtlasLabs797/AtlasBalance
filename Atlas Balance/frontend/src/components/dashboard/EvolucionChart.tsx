@@ -17,14 +17,21 @@ interface EvolucionChartProps {
   points: DashboardPuntoEvolucion[];
   divisa: string;
   colors: DashboardChartColors;
+  height?: number;
 }
 
-export function EvolucionChart({ points, divisa, colors }: EvolucionChartProps) {
+const EVOLUTION_AXIS_MIN_WIDTH = 44;
+const EVOLUTION_AXIS_MAX_WIDTH = 72;
+const EVOLUTION_AXIS_CHAR_WIDTH = 6.2;
+const EVOLUTION_AXIS_PADDING = 14;
+
+export function EvolucionChart({ points, divisa, colors, height = 320 }: EvolucionChartProps) {
   if (points.length === 0) {
     return <p className="dashboard-empty">No hay datos de evolucion para este periodo.</p>;
   }
 
   const lastPoint = points[points.length - 1];
+  const axisWidth = getEvolutionAxisWidth(points, divisa);
 
   return (
     <div
@@ -37,21 +44,23 @@ export function EvolucionChart({ points, divisa, colors }: EvolucionChartProps) 
         <span style={{ '--series-color': colors.ingresos } as CSSProperties}>Ingresos</span>
         <span style={{ '--series-color': colors.egresos } as CSSProperties}>Egresos</span>
       </div>
-      <ResponsiveContainer width="100%" height={320}>
-        <LineChart data={points}>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="fecha"
             tickFormatter={(value) => formatDate(value)}
             axisLine={false}
             tickLine={false}
+            tickMargin={10}
             minTickGap={28}
           />
           <YAxis
             tickFormatter={(value) => formatCompactCurrency(value, divisa)}
-            width={116}
+            width={axisWidth}
             axisLine={false}
             tickLine={false}
+            tickMargin={10}
           />
           <Tooltip content={<DashboardTooltip divisa={divisa} />} cursor={{ stroke: 'var(--chart-grid)' }} />
           <Line
@@ -82,6 +91,21 @@ export function EvolucionChart({ points, divisa, colors }: EvolucionChartProps) 
       </ResponsiveContainer>
     </div>
   );
+}
+
+function getEvolutionAxisWidth(points: DashboardPuntoEvolucion[], divisa: string): number {
+  const maxLabelLength = points.reduce((maxLength, point) => {
+    const labels = [
+      formatCompactCurrency(point.ingresos, divisa),
+      formatCompactCurrency(point.egresos, divisa),
+      formatCompactCurrency(point.saldo, divisa),
+    ];
+
+    return Math.max(maxLength, ...labels.map((label) => label.length));
+  }, 0);
+
+  const estimatedWidth = Math.ceil(maxLabelLength * EVOLUTION_AXIS_CHAR_WIDTH + EVOLUTION_AXIS_PADDING);
+  return Math.min(EVOLUTION_AXIS_MAX_WIDTH, Math.max(EVOLUTION_AXIS_MIN_WIDTH, estimatedWidth));
 }
 
 function DashboardTooltip({ active, payload, label, divisa }: TooltipProps<ValueType, NameType> & { divisa: string }) {

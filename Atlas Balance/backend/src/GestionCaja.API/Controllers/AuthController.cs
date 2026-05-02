@@ -35,7 +35,13 @@ public sealed class AuthController : ControllerBase
 
         try
         {
-            var result = await _authService.LoginAsync(request.Email, request.Password, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+            var trustedMfaToken = Request.Cookies["mfa_trusted"];
+            var result = await _authService.LoginAsync(
+                request.Email,
+                request.Password,
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                cancellationToken,
+                trustedMfaToken);
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
         catch (AuthException ex)
@@ -60,6 +66,31 @@ public sealed class AuthController : ControllerBase
         }
     }
 
+    [HttpPost("mfa/verify")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyMfa([FromBody] VerifyMfaRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { error = "Request inválido" });
+        }
+
+        try
+        {
+            var result = await _authService.VerifyMfaAsync(
+                request.ChallengeId,
+                request.Code,
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                cancellationToken);
+            return Ok(AttachCookiesAndBuildAuthResponse(result));
+        }
+        catch (AuthException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
+
     [HttpPost("logout")]
     [AllowAnonymous]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
@@ -70,6 +101,7 @@ public sealed class AuthController : ControllerBase
         DeleteCookie("access_token");
         DeleteCookie("refresh_token");
         DeleteCookie("csrf_token");
+        DeleteCookie("mfa_trusted");
 
         var actorUserId = TryGetUserId(out var authenticatedUserId)
             ? authenticatedUserId
@@ -146,6 +178,18 @@ public sealed class AuthController : ControllerBase
 
     private object AttachCookiesAndBuildAuthResponse(AuthResult result)
     {
+        if (result.MfaRequired)
+        {
+            return new AuthResponse
+            {
+                MfaRequired = true,
+                MfaSetupRequired = result.MfaSetupRequired,
+                MfaChallengeId = result.MfaChallengeId,
+                MfaSecret = result.MfaSecret,
+                MfaOtpAuthUri = result.MfaOtpAuthUri
+            };
+        }
+
         if (!string.IsNullOrWhiteSpace(result.AccessToken))
         {
             Response.Cookies.Append("access_token", result.AccessToken, BuildCookieOptions(TimeSpan.FromHours(1), httpOnly: true, secure: ShouldUseSecureCookie()));
@@ -154,6 +198,15 @@ public sealed class AuthController : ControllerBase
         if (!string.IsNullOrWhiteSpace(result.RefreshToken))
         {
             Response.Cookies.Append("refresh_token", result.RefreshToken, BuildCookieOptions(TimeSpan.FromDays(7), httpOnly: true, secure: ShouldUseSecureCookie()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.TrustedMfaToken) && result.TrustedMfaTokenExpiresAt.HasValue)
+        {
+            var maxAge = result.TrustedMfaTokenExpiresAt.Value - DateTime.UtcNow;
+            if (maxAge > TimeSpan.Zero)
+            {
+                Response.Cookies.Append("mfa_trusted", result.TrustedMfaToken, BuildCookieOptions(maxAge, httpOnly: true, secure: ShouldUseSecureCookie()));
+            }
         }
 
         var csrfToken = _csrfService.GenerateToken();
@@ -185,7 +238,7 @@ public sealed class AuthController : ControllerBase
     {
         Response.Cookies.Delete(name, new CookieOptions
         {
-            HttpOnly = name is "access_token" or "refresh_token",
+            HttpOnly = name is "access_token" or "refresh_token" or "mfa_trusted",
             Secure = ShouldUseSecureCookie(),
             SameSite = SameSiteMode.Strict,
             IsEssential = true

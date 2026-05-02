@@ -53,8 +53,10 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.Email).IsUnique();
             entity.HasIndex(e => e.Rol);
             entity.HasIndex(e => e.Activo);
+            entity.HasIndex(e => e.MfaEnabled);
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.SecurityStamp).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.MfaSecret).HasMaxLength(2048);
         });
 
         modelBuilder.Entity<UsuarioEmail>(entity =>

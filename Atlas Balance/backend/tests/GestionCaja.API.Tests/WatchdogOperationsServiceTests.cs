@@ -126,7 +126,8 @@ public sealed class WatchdogOperationsServiceTests
                 ["WatchdogSettings:ApiServiceName"] = $"FakeService-{Guid.NewGuid():N}",
                 ["WatchdogSettings:UpdateSourceRoot"] = updateSourceRoot,
                 ["WatchdogSettings:UpdateTargetPath"] = updateTargetPath,
-                ["WatchdogSettings:BackupPath"] = backupPathRoot
+                ["WatchdogSettings:BackupPath"] = backupPathRoot,
+                ["WatchdogSettings:RequireDatabaseBackupBeforeUpdate"] = "false"
             })
             .Build();
 

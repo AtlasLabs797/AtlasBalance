@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿using System.IO.Compression;
+using System.Net;
+using System.Security.Cryptography;
 using FluentAssertions;
 using GestionCaja.API;
 using GestionCaja.API.Data;
@@ -193,13 +195,217 @@ public sealed class ActualizacionServiceTests
         Directory.Delete(root, recursive: true);
     }
 
+    [Fact]
+    public async Task IniciarActualizacionAsync_Should_Download_GitHub_Release_Asset_When_SourcePath_Is_Not_Provided()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00");
+        var digest = Sha256Digest(zipBytes);
+        using var signingKey = RSA.Create(2048);
+        var signature = SignZipBytes(zipBytes, signingKey);
+        var watchdog = new RecordingWatchdogClientService();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri == new Uri("https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "tag_name": "V-99.00-win-x64",
+                      "name": "Release V-99.00",
+                      "assets": [
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip",
+                          "digest": "__DIGEST__"
+                        },
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip.sig",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip.sig"
+                        }
+                      ]
+                    }
+                    """.Replace("__DIGEST__", digest, StringComparison.Ordinal))
+                };
+            }
+
+            if (request.RequestUri == new Uri("https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip.sig"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(signature)
+                };
+            }
+
+            request.RequestUri.Should().Be(new Uri("https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip"));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(zipBytes)
+            };
+        });
+        var service = BuildService(
+            db,
+            handler,
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem());
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeTrue();
+        watchdog.Calls.Should().Be(1);
+        watchdog.SourcePath.Should().NotBeNull();
+        watchdog.SourcePath!.Replace('\\', '/').Should().EndWith("/api");
+        watchdog.SourcePath.Should().StartWith(updateRoot);
+        File.Exists(Path.Combine(watchdog.SourcePath, "GestionCaja.API.exe")).Should().BeTrue();
+        watchdog.TargetPath.Should().Be(configuredTarget);
+
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task IniciarActualizacionAsync_Should_Reject_Downloaded_Asset_When_Signature_Is_Missing()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00");
+        var digest = Sha256Digest(zipBytes);
+        using var signingKey = RSA.Create(2048);
+        var watchdog = new RecordingWatchdogClientService();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri == new Uri("https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "tag_name": "V-99.00-win-x64",
+                      "assets": [
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip",
+                          "digest": "__DIGEST__"
+                        }
+                      ]
+                    }
+                    """.Replace("__DIGEST__", digest, StringComparison.Ordinal))
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(zipBytes)
+            };
+        });
+        var service = BuildService(
+            db,
+            handler,
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem());
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeFalse();
+        watchdog.Calls.Should().Be(0);
+
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task IniciarActualizacionAsync_Should_Reject_Downloaded_Asset_When_Digest_Does_Not_Match()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00");
+        var watchdog = new RecordingWatchdogClientService();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri == new Uri("https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "tag_name": "V-99.00-win-x64",
+                      "assets": [
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip",
+                          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                      ]
+                    }
+                    """)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(zipBytes)
+            };
+        });
+        var service = BuildService(
+            db,
+            handler,
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget);
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeFalse();
+        watchdog.Calls.Should().Be(0);
+
+        Directory.Delete(root, recursive: true);
+    }
+
     private static ActualizacionService BuildService(
         AppDbContext db,
         HttpMessageHandler handler,
         string? githubUpdateToken = null,
         IWatchdogClientService? watchdog = null,
         string? updateSourceRoot = null,
-        string? updateTargetPath = "C:/AtlasBalance/app")
+        string? updateTargetPath = "C:/AtlasBalance/app",
+        string? releaseSigningPublicKeyPem = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -207,7 +413,8 @@ public sealed class ActualizacionServiceTests
                 ["WatchdogSettings:SharedSecret"] = "test-secret",
                 ["WatchdogSettings:UpdateSourceRoot"] = updateSourceRoot ?? "C:/AtlasBalance/updates",
                 ["WatchdogSettings:UpdateTargetPath"] = updateTargetPath,
-                ["GitHubSettings:UpdateToken"] = githubUpdateToken
+                ["GitHubSettings:UpdateToken"] = githubUpdateToken,
+                ["UpdateSecurity:ReleaseSigningPublicKeyPem"] = releaseSigningPublicKeyPem
             })
             .Build();
 
@@ -280,5 +487,35 @@ public sealed class ActualizacionServiceTests
 
         public Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken)
             => Task.FromResult(new WatchdogStateResponse());
+    }
+
+    private static byte[] CreateReleaseZipBytes(string version)
+    {
+        using var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            AddZipEntry(archive, "VERSION", version);
+            AddZipEntry(archive, "api/GestionCaja.API.exe", "api");
+            AddZipEntry(archive, "watchdog/GestionCaja.Watchdog.exe", "watchdog");
+        }
+
+        return stream.ToArray();
+    }
+
+    private static void AddZipEntry(ZipArchive archive, string path, string content)
+    {
+        var entry = archive.CreateEntry(path);
+        using var writer = new StreamWriter(entry.Open());
+        writer.Write(content);
+    }
+
+    private static string Sha256Digest(byte[] bytes)
+    {
+        return $"sha256:{Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}";
+    }
+
+    private static byte[] SignZipBytes(byte[] bytes, RSA rsa)
+    {
+        return rsa.SignData(bytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
     }
 }

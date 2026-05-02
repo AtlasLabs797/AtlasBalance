@@ -122,6 +122,42 @@ public class UserAccessServiceTests
     }
 
     [Fact]
+    public async Task GetScopeAsync_Should_Not_Grant_Scoped_Data_Access_For_DashboardOnly_Permission()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            TitularId = titularId,
+            PuedeAgregarLineas = false,
+            PuedeEditarLineas = false,
+            PuedeEliminarLineas = false,
+            PuedeImportar = false,
+            PuedeVerDashboard = true
+        });
+        await db.SaveChangesAsync();
+
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+            new Claim(ClaimTypes.Role, nameof(RolUsuario.GERENTE))
+        ], "TestAuth");
+
+        var principal = new ClaimsPrincipal(identity);
+        var service = new UserAccessService(db);
+        var scope = await service.GetScopeAsync(principal, CancellationToken.None);
+
+        scope.HasPermissions.Should().BeTrue();
+        scope.CuentaIds.Should().BeEmpty();
+        scope.TitularIds.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetScopeAsync_Should_Grant_Global_Access_For_ViewAccounts_GlobalPermission()
     {
         await using var db = BuildDbContext();

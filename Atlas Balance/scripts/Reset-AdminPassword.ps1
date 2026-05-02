@@ -23,6 +23,12 @@ function Convert-SecureStringToPlain {
     }
 }
 
+function Test-IsAdmin {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 function New-RandomSecret {
     param([int]$Length = 24)
 
@@ -40,6 +46,32 @@ function New-RandomSecret {
         $chars[$i] = $alphabet[$bytes[$i] % $alphabet.Length]
     }
     return -join $chars
+}
+
+function Protect-SecretDirectory {
+    param([string]$Path)
+
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "No se pudo restringir ACL en $Path. No se escribiran credenciales en claro."
+    }
+}
+
+function Write-SecretFile {
+    param(
+        [string]$Path,
+        [string]$Body
+    )
+
+    $directory = Split-Path -Parent $Path
+    Protect-SecretDirectory -Path $directory
+    Set-Content -LiteralPath $Path -Value $Body -Encoding UTF8
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        throw "No se pudo restringir ACL en $Path. El archivo de credenciales se elimino."
+    }
 }
 
 function Find-PostgresBin {
@@ -118,6 +150,10 @@ function Get-PasswordHash {
     }
 
     throw "No se encontro BCrypt.Net en $apiPath. Ejecuta este script desde una instalacion completa de Atlas Balance."
+}
+
+if (-not (Test-IsAdmin)) {
+    throw "Ejecuta este script como Administrador."
 }
 
 $apiConfigPath = Join-Path $InstallPath "api\appsettings.Production.json"
@@ -239,8 +275,19 @@ if ($parts.Count -lt 2 -or [int]$parts[0] -lt 1) {
 Write-Host "Password admin reseteada para $AdminEmail." -ForegroundColor Green
 Write-Host "Login bloqueado limpiado, primer_login activado y refresh tokens revocados: $($parts[1])." -ForegroundColor Green
 if ($passwordWasGenerated) {
-    Write-Host "Password temporal generada: $plainPassword" -ForegroundColor Yellow
-    Write-Host "Guardala en un gestor de passwords y cambiala en el primer login." -ForegroundColor Yellow
+    $credentialsDir = Join-Path $InstallPath "config"
+    $credentialsFile = Join-Path $credentialsDir "RESET_ADMIN_CREDENTIALS_ONCE.txt"
+    $credentialsBody = @(
+        "Atlas Balance - reset de password admin"
+        "Fecha: $(Get-Date -Format o)"
+        "Email: $AdminEmail"
+        "Password temporal: $plainPassword"
+        ""
+        "Borra este archivo despues de iniciar sesion y cambiar la password."
+    ) -join [Environment]::NewLine
+    Write-SecretFile -Path $credentialsFile -Body $credentialsBody
+    Write-Host "Password temporal escrita en: $credentialsFile" -ForegroundColor Yellow
+    Write-Host "Acceso restringido a Administrators. Borra el archivo tras iniciar sesion." -ForegroundColor Yellow
 } else {
     Write-Host "Usa la password temporal introducida y cambiala en el primer login." -ForegroundColor Yellow
 }

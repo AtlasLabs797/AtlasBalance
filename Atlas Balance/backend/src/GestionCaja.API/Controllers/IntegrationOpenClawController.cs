@@ -290,8 +290,8 @@ public sealed class IntegrationOpenClawController : ControllerBase
         var usersById = await _dbContext.Usuarios
             .IgnoreQueryFilters()
             .Where(x => userIds.Contains(x.Id))
-            .Select(x => new { x.Id, x.Email, IsDeleted = x.DeletedAt != null })
-            .ToDictionaryAsync(x => x.Id, x => x.IsDeleted ? "usuario-eliminado" : x.Email, cancellationToken);
+            .Select(x => new { x.Id, x.NombreCompleto, IsDeleted = x.DeletedAt != null })
+            .ToDictionaryAsync(x => x.Id, x => x.IsDeleted ? "usuario-eliminado" : x.NombreCompleto, cancellationToken);
         var cuentasById = cuentas.ToDictionary(x => x.CuentaId);
 
         var extractos = rows.Select(x =>
@@ -692,7 +692,6 @@ public sealed class IntegrationOpenClawController : ControllerBase
 
         var cuentaIds = cuentas.Select(x => x.CuentaId).ToHashSet();
         var extractosScope = _dbContext.Extractos
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(x => cuentaIds.Contains(x.CuentaId))
             .Select(x => new { x.Id, x.CuentaId });
@@ -759,8 +758,7 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 celda_referencia = x.CeldaReferencia,
                 columna_nombre = x.ColumnaNombre,
                 valor_anterior = x.ValorAnterior,
-                valor_nuevo = x.ValorNuevo,
-                ip_address = x.IpAddress != null ? x.IpAddress.ToString() : null
+                valor_nuevo = x.ValorNuevo
             };
         }).ToList();
 

@@ -5,6 +5,9 @@ public static class AuditActions
     public const string Login = "LOGIN";
     public const string Logout = "LOGOUT";
     public const string LoginFailed = "LOGIN_FAILED";
+    public const string LoginMfaRequired = "LOGIN_MFA_REQUIRED";
+    public const string MfaVerified = "MFA_VERIFIED";
+    public const string MfaEnabled = "MFA_ENABLED";
     public const string AccountLocked = "ACCOUNT_LOCKED";
     public const string PasswordChanged = "PASSWORD_CHANGED";
     public const string PasswordReset = "PASSWORD_RESET";

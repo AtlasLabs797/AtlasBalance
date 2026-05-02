@@ -32,7 +32,7 @@ import type {
   Titular,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
 
 interface TitularCard extends Titular {
   cuentas_count: number;
@@ -310,7 +310,7 @@ export default function TitularesPage() {
   };
 
   return (
-    <section className="phase2-page">
+    <section className="phase2-page titulares-page">
       <header className="phase2-header">
         <h1>Titulares</h1>
         {isAdmin && <button type="button" onClick={openCreateModal}>Nuevo Titular</button>}
@@ -339,12 +339,15 @@ export default function TitularesPage() {
                   <EmptyState title="No hay titulares con saldos." />
                 ) : (
                   <ResponsiveContainer width="100%" height={340}>
-                    <BarChart data={chartRows} margin={{ top: 12, right: 20, left: 8, bottom: 12 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
+                    <BarChart data={chartRows} margin={{ top: 12, right: 8, left: 0, bottom: 12 }}>
+                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="titular_nombre" interval={0} angle={-18} textAnchor="end" height={72} />
                       <YAxis
-                        width={120}
-                        tickFormatter={(value) => formatCurrency(Number(value), principal.divisa_principal)}
+                        width={72}
+                        axisLine={false}
+                        tickLine={false}
+                        tickMargin={10}
+                        tickFormatter={(value) => formatCompactCurrency(Number(value), principal.divisa_principal)}
                       />
                       <Tooltip
                         formatter={(value: number) => formatCurrency(value, principal.divisa_principal)}

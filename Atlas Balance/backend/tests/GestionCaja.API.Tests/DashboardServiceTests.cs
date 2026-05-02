@@ -60,8 +60,9 @@ public class DashboardServiceTests
     {
         await using var db = BuildDbContext();
         var adminId = Guid.NewGuid();
-        var monthStart = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
-        var periodStart = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddMonths(-1);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var periodStart = today.AddMonths(-1);
 
         db.Usuarios.Add(new Usuario
         {
@@ -121,7 +122,7 @@ public class DashboardServiceTests
             {
                 Id = Guid.NewGuid(),
                 CuentaId = cuentaEurId,
-                Fecha = monthStart.AddDays(1),
+                Fecha = today,
                 Monto = -40m,
                 Saldo = 60m,
                 FilaNumero = 2
@@ -130,7 +131,7 @@ public class DashboardServiceTests
             {
                 Id = Guid.NewGuid(),
                 CuentaId = cuentaUsdId,
-                Fecha = monthStart.AddDays(2),
+                Fecha = today,
                 Monto = 120m,
                 Saldo = 120m,
                 FilaNumero = 1
@@ -233,6 +234,129 @@ public class DashboardServiceTests
         var exception = await act.Should().ThrowAsync<DashboardAccessException>();
         exception.Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         exception.Which.Message.Should().Contain("No tienes permisos");
+    }
+
+    [Fact]
+    public async Task GetPrincipalAsync_Should_Not_Grant_All_Accounts_For_DashboardOnly_GlobalPermission()
+    {
+        await using var db = BuildDbContext();
+        var adminId = Guid.NewGuid();
+        var managerId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.AddRange(
+            new Usuario
+            {
+                Id = adminId,
+                Email = "admin.dashboard-global@test.local",
+                PasswordHash = "hash",
+                NombreCompleto = "Admin Dashboard Global",
+                Rol = RolUsuario.ADMIN,
+                Activo = true,
+                PrimerLogin = false
+            },
+            new Usuario
+            {
+                Id = managerId,
+                Email = "manager.dashboard-only-global@test.local",
+                PasswordHash = "hash",
+                NombreCompleto = "Manager Dashboard Only Global",
+                Rol = RolUsuario.GERENTE,
+                Activo = true,
+                PrimerLogin = false
+            });
+
+        SeedDashboardConfig(db, adminId);
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Global", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Global", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = managerId,
+            CuentaId = null,
+            TitularId = null,
+            PuedeVerDashboard = true
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Monto = 50m,
+            Saldo = 50m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var sut = BuildService(db);
+
+        var act = async () => await sut.GetPrincipalAsync(managerId, "EUR", CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<DashboardAccessException>();
+        exception.Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task GetPrincipalAsync_Should_Allow_GlobalDashboard_When_GlobalDataPermission_Exists()
+    {
+        await using var db = BuildDbContext();
+        var adminId = Guid.NewGuid();
+        var managerId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.AddRange(
+            new Usuario
+            {
+                Id = adminId,
+                Email = "admin.dashboard-data@test.local",
+                PasswordHash = "hash",
+                NombreCompleto = "Admin Dashboard Data",
+                Rol = RolUsuario.ADMIN,
+                Activo = true,
+                PrimerLogin = false
+            },
+            new Usuario
+            {
+                Id = managerId,
+                Email = "manager.dashboard-data@test.local",
+                PasswordHash = "hash",
+                NombreCompleto = "Manager Dashboard Data",
+                Rol = RolUsuario.GERENTE,
+                Activo = true,
+                PrimerLogin = false
+            });
+
+        SeedDashboardConfig(db, adminId);
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Data", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Data", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = managerId,
+            CuentaId = null,
+            TitularId = null,
+            PuedeVerCuentas = true,
+            PuedeVerDashboard = true
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Monto = 50m,
+            Saldo = 50m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var sut = BuildService(db);
+
+        var result = await sut.GetPrincipalAsync(managerId, "EUR", CancellationToken.None);
+
+        result.TotalConvertido.Should().Be(50m);
+        result.SaldosPorTitular.Should().ContainSingle(x => x.TitularId == titularId);
     }
 
     [Fact]

@@ -23,6 +23,7 @@ const VALID_MARKER = '\u2713';
 const INVALID_MARKER = '\u2717';
 const WARNING_MARKER = '!';
 const PLAZO_FIJO_MARKER = '\u2022 Plazo fijo';
+const DEFAULT_RETURN_TO = '/dashboard';
 
 type ImportStep = 1 | 2;
 type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
@@ -39,6 +40,15 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
   }
 
   return fallback;
+}
+
+function normalizeReturnTo(value: string | null): string {
+  const candidate = value?.trim();
+  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\')) {
+    return DEFAULT_RETURN_TO;
+  }
+
+  return candidate;
 }
 
 function detectSeparator(lines: string[]): 'tab' | 'comma' | 'semicolon' {
@@ -98,7 +108,7 @@ export default function ImportacionPage() {
   const preselectedCuentaId = searchParams.get('cuentaId');
   const autoCloseOnSuccess = searchParams.get('autoClose') === '1';
   const isEmbedded = searchParams.get('embedded') === '1';
-  const returnTo = searchParams.get('returnTo') || '/dashboard';
+  const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
   const usuario = useAuthStore((state) => state.usuario);
   const [step, setStep] = useState<ImportStep>(1);
   const [contexto, setContexto] = useState<ImportCuentaContexto[]>([]);
@@ -415,7 +425,7 @@ export default function ImportacionPage() {
     <section className="import-page">
       <header className="import-header">
         <h1>Importacion de Extractos</h1>
-        <p>Las cuentas normales usan formato bancario. Las de plazo fijo solo permiten anadir o sacar dinero.</p>
+        <p>Las cuentas normales y de efectivo usan formato de importacion. Las de plazo fijo solo permiten anadir o sacar dinero.</p>
         {canManageFormatos && (
           <div className="import-actions">
             <Link to="/formatos-importacion">Gestionar formatos de importacion</Link>

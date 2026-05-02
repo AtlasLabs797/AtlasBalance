@@ -18,6 +18,7 @@ public static class IntegrationHttpContextItemKeys
 public sealed class IntegrationAuthMiddleware
 {
     private const string RedactedMarker = "[REDACTED]";
+    private const string IntegrationTokenPrefix = "sk_gestion_caja_";
     private const int DefaultInvalidAuthLimitPerMinute = 30;
 
     private static readonly HashSet<string> SensitiveQueryKeys = new(StringComparer.OrdinalIgnoreCase)
@@ -34,6 +35,20 @@ public sealed class IntegrationAuthMiddleware
         "authorization",
         "auth"
     };
+
+    private static readonly string[] SensitiveQueryKeyFragments =
+    [
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "pwd",
+        "apikey",
+        "authorization",
+        "auth",
+        "bearer",
+        "credential"
+    ];
 
     private readonly RequestDelegate _next;
     private readonly IMemoryCache _cache;
@@ -79,6 +94,7 @@ public sealed class IntegrationAuthMiddleware
         }
 
         ClearInvalidAuthFailures(context);
+        context.Items[IntegrationHttpContextItemKeys.CurrentIntegrationToken] = integrationToken;
 
         var limit = await ResolveRateLimitAsync(dbContext, CancellationToken.None);
         if (!TryConsumeRateLimit(integrationToken.Id, limit))
@@ -98,7 +114,6 @@ public sealed class IntegrationAuthMiddleware
 
         var stopwatch = Stopwatch.StartNew();
         Exception? caught = null;
-        context.Items[IntegrationHttpContextItemKeys.CurrentIntegrationToken] = integrationToken;
 
         try
         {
@@ -121,7 +136,7 @@ public sealed class IntegrationAuthMiddleware
             var parametros = context.Request.Query.Any()
                 ? JsonSerializer.Serialize(context.Request.Query.ToDictionary(
                     x => x.Key,
-                    x => SensitiveQueryKeys.Contains(x.Key) ? RedactedMarker : x.Value.ToString()))
+                    x => RedactQueryValue(x.Key, x.Value.ToString())))
                 : null;
 
             await SaveIntegrationAuditAsync(
@@ -171,6 +186,39 @@ public sealed class IntegrationAuthMiddleware
         return authHeader.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             ? authHeader[prefix.Length..].Trim()
             : null;
+    }
+
+    private static string RedactQueryValue(string key, string value)
+    {
+        return IsSensitiveQueryKey(key) || LooksSensitiveQueryValue(value)
+            ? RedactedMarker
+            : value;
+    }
+
+    private static bool IsSensitiveQueryKey(string key)
+    {
+        if (SensitiveQueryKeys.Contains(key))
+        {
+            return true;
+        }
+
+        var normalized = NormalizeQueryKey(key);
+        return SensitiveQueryKeyFragments.Any(normalized.Contains);
+    }
+
+    private static string NormalizeQueryKey(string key)
+    {
+        return new string(key
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
+    }
+
+    private static bool LooksSensitiveQueryValue(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.StartsWith(IntegrationTokenPrefix, StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<int> ResolveRateLimitAsync(AppDbContext dbContext, CancellationToken cancellationToken)

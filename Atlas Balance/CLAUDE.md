@@ -15,6 +15,7 @@
 
 ## Que es este proyecto
 
+Este proyecto pertenece a la empresa Atlas Labs y la aplicacion se llama Atlas Balance.
 Aplicacion web on-premise para gestion de tesoreria multi-banco, multi-titular, multi-divisa. Corre en Windows Server, accesible por 4-8 usuarios en red local via navegador.
 
 **Stack:**
@@ -139,51 +140,51 @@ Guardar toda la documentacion en `Documentacion`.
 
 ```
 Atlas Balance/
-├── CLAUDE.md
-├── AGENTS.md
-├── .github/
-├── .gitignore
-├── .gitattributes
-├── Atlas Balance/
-│   ├── AGENTS.md
-│   ├── CLAUDE.md
-│   ├── VERSION
-│   ├── Directory.Build.props
-│   ├── docker-compose.yml
-│   ├── Atlas Balance Release/
-│   ├── backend/
-│   │   ├── GestionCaja.sln
-│   │   ├── src/
-│   │   │   ├── GestionCaja.API/
-│   │   │   │   ├── Program.cs
-│   │   │   │   ├── appsettings.json
-│   │   │   │   ├── appsettings.Development.json.template
-│   │   │   │   ├── Constants/
-│   │   │   │   ├── Models/
-│   │   │   │   ├── Data/
-│   │   │   │   ├── DTOs/
-│   │   │   │   ├── Services/
-│   │   │   │   ├── Controllers/
-│   │   │   │   ├── Middleware/
-│   │   │   │   ├── Jobs/
-│   │   │   │   ├── Migrations/
-│   │   │   │   └── wwwroot/
-│   │   │   └── GestionCaja.Watchdog/
-│   │   └── tests/
-│   ├── frontend/
-│   │   ├── package.json
-│   │   ├── vite.config.ts
-│   │   ├── tsconfig.json
-│   │   ├── index.html
-│   │   └── src/
-│   └── scripts/
-├── Documentacion/
-│   ├── Versiones/
-│   ├── Diseno/
-│   ├── SPEC.md
-│   ├── documentacion.md
-│   └── DOCUMENTACION_CAMBIOS.md
-└── Otros/
++-- CLAUDE.md
++-- AGENTS.md
++-- .github/
++-- .gitignore
++-- .gitattributes
++-- Atlas Balance/
+¦   +-- AGENTS.md
+¦   +-- CLAUDE.md
+¦   +-- VERSION
+¦   +-- Directory.Build.props
+¦   +-- docker-compose.yml
+¦   +-- Atlas Balance Release/
+¦   +-- backend/
+¦   ¦   +-- GestionCaja.sln
+¦   ¦   +-- src/
+¦   ¦   ¦   +-- GestionCaja.API/
+¦   ¦   ¦   ¦   +-- Program.cs
+¦   ¦   ¦   ¦   +-- appsettings.json
+¦   ¦   ¦   ¦   +-- appsettings.Development.json.template
+¦   ¦   ¦   ¦   +-- Constants/
+¦   ¦   ¦   ¦   +-- Models/
+¦   ¦   ¦   ¦   +-- Data/
+¦   ¦   ¦   ¦   +-- DTOs/
+¦   ¦   ¦   ¦   +-- Services/
+¦   ¦   ¦   ¦   +-- Controllers/
+¦   ¦   ¦   ¦   +-- Middleware/
+¦   ¦   ¦   ¦   +-- Jobs/
+¦   ¦   ¦   ¦   +-- Migrations/
+¦   ¦   ¦   ¦   +-- wwwroot/
+¦   ¦   ¦   +-- GestionCaja.Watchdog/
+¦   ¦   +-- tests/
+¦   +-- frontend/
+¦   ¦   +-- package.json
+¦   ¦   +-- vite.config.ts
+¦   ¦   +-- tsconfig.json
+¦   ¦   +-- index.html
+¦   ¦   +-- src/
+¦   +-- scripts/
++-- Documentacion/
+¦   +-- Versiones/
+¦   +-- Diseno/
+¦   +-- SPEC.md
+¦   +-- documentacion.md
+¦   +-- DOCUMENTACION_CAMBIOS.md
++-- Otros/
 ```
 
 ## Esquema de BD corregido
@@ -227,7 +228,7 @@ npm run build
 
 # Release Windows x64
 cd "Atlas Balance"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.04
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05
 
 # Conectar a PostgreSQL
 psql -h localhost -p 5433 -U app_user -d atlas_balance

@@ -1,6 +1,7 @@
 ﻿{
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=app_user;Password=<password-local-postgres>"
+    "DefaultConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=app_user;Password=<password-local-postgres-app>",
+    "MigrationConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=atlas_owner;Password=<password-local-postgres-owner>"
   },
   "JwtSettings": {
     "Secret": "<clave-local-minimo-32-caracteres>",
@@ -10,6 +11,9 @@
   "SeedAdmin": {
     "Email": "admin@atlasbalance.local",
     "Password": "<password-admin-inicial-local>"
+  },
+  "Security": {
+    "RequireMfaForWebUsers": true
   },
   "WatchdogSettings": {
     "BaseUrl": "http://localhost:5001",
@@ -22,6 +26,9 @@
   },
   "GitHubSettings": {
     "UpdateToken": ""
+  },
+  "UpdateSecurity": {
+    "ReleaseSigningPublicKeyPem": "<public-key-pem-release-local-o-vacio-si-no-usas-update-online>"
   },
   "Kestrel": {
     "Endpoints": {

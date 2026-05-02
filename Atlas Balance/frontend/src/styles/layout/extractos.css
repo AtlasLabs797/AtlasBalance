@@ -33,10 +33,16 @@
 }
 
 .extracto-table-section {
+  --sheet-grid: color-mix(in srgb, var(--border-soft) 78%, var(--text-secondary) 22%);
+  --sheet-grid-strong: color-mix(in srgb, var(--border-soft) 55%, var(--text-secondary) 45%);
+  --sheet-head-bg: color-mix(in srgb, var(--surface-bg-sunken) 88%, var(--bg-surface) 12%);
+  --sheet-row-hover: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface) 94%);
+  --sheet-selected: color-mix(in srgb, var(--accent-primary) 72%, var(--bg-surface) 28%);
+  --sheet-row-height: 42px;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-card);
+  border-radius: calc(var(--radius-card) - 2px);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -45,9 +51,9 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--bg-surface);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--sheet-grid-strong);
+  background: var(--sheet-head-bg);
 }
 
 .extracto-table-toolbar > div:first-child {
@@ -72,34 +78,68 @@
   justify-content: flex-end;
 }
 
+.extracto-table-actions > button {
+  min-height: 2.25rem;
+  border-radius: calc(var(--radius-control) - 3px);
+}
+
 .extracto-density-control {
   width: 10rem;
 }
 
 .extracto-density-control .app-select-trigger {
-  min-height: 2.5rem;
+  min-height: 2.25rem;
+  border-radius: calc(var(--radius-control) - 3px);
 }
 
 .column-visibility-panel {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 1px;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--bg-surface-soft);
+  border-bottom: 1px solid var(--sheet-grid-strong);
+  background: var(--sheet-grid);
+}
+
+.column-visibility-panel label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: none;
+}
+
+.extracto-table-viewport {
+  height: 560px;
+  overflow: auto;
+  position: relative;
+  background:
+    linear-gradient(var(--sheet-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sheet-grid) 1px, transparent 1px),
+    var(--bg-surface);
+  background-size: 100% var(--sheet-row-height), 120px 100%;
+  scrollbar-gutter: stable;
 }
 
 .extracto-table-head {
   display: grid;
   grid-template-columns: repeat(7, minmax(100px, 1fr));
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--sheet-grid-strong);
   min-width: max-content;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  box-shadow: 0 1px 0 var(--sheet-grid-strong);
 }
 
 .extracto-table-body {
-  height: 520px;
-  overflow: auto;
   position: relative;
+  min-width: max-content;
 }
 
 .extracto-row {
@@ -109,15 +149,22 @@
   width: 100%;
   display: grid;
   grid-template-columns: repeat(7, minmax(100px, 1fr));
-  min-height: 42px;
-  border-bottom: 1px solid var(--border-soft);
+  min-height: var(--sheet-row-height);
+  border-bottom: 1px solid var(--sheet-grid);
   background: var(--bg-surface);
   min-width: max-content;
+  transition: background-color var(--transition-fast);
+}
+
+.extracto-row:hover {
+  background: var(--sheet-row-hover);
 }
 
 .extracto-row.flagged {
   background: var(--color-row-flagged);
-  box-shadow: inset 0 0 0 1px var(--color-row-flagged-border);
+  box-shadow:
+    inset 0 1px 0 var(--color-row-flagged-border),
+    inset 0 -1px 0 var(--color-row-flagged-border);
 }
 
 .extracto-row.flagged .cell {
@@ -125,35 +172,68 @@
 }
 
 .cell {
-  padding: var(--space-1) var(--space-2);
-  border-right: 1px solid var(--border-soft);
+  min-height: var(--sheet-row-height);
+  padding: 0 var(--space-2);
+  border-right: 1px solid var(--sheet-grid);
   display: flex;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
   position: relative;
+  background: inherit;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.cell:focus-within {
+  z-index: 4;
+  box-shadow: inset 0 0 0 2px var(--sheet-selected);
 }
 
 .cell.head {
   flex-direction: column;
   align-items: stretch;
-  background: var(--bg-surface-soft);
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  justify-content: center;
+  min-height: 46px;
+  background: var(--sheet-head-bg);
+  border-right-color: var(--sheet-grid-strong);
+  color: var(--text-secondary);
 }
 
 .cell.head button {
-  padding: var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 0;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: inherit;
   text-align: left;
-  min-height: 2.5rem;
+  min-height: 1.8rem;
   border: 0;
+  border-radius: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+}
+
+.cell.head button:hover {
+  color: var(--text-primary);
+}
+
+.cell.head button small {
+  color: var(--text-link);
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-semibold);
 }
 
 .cell.head input {
   width: 100%;
+  min-height: 1.85rem;
+  border-radius: 0;
+  font-size: var(--font-size-xs);
 }
 
 .cell-edit-button {
@@ -163,7 +243,20 @@
   color: var(--color-text-primary);
   padding: 0;
   border: 0;
-  min-height: 2.5rem;
+  border-radius: 0;
+  min-height: calc(var(--sheet-row-height) - 2px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+}
+
+.cell-edit-button:hover {
+  color: var(--text-primary);
+}
+
+.cell-edit-button:focus-visible {
+  outline: 0;
 }
 
 .cell-edit-shell {
@@ -190,18 +283,27 @@
 .cell-audit-button {
   opacity: 0;
   pointer-events: none;
-  min-height: 2.5rem;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-surface);
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-height: 1.55rem;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--sheet-grid-strong);
+  border-radius: calc(var(--radius-control) - 5px);
+  background: var(--surface-bg-raised);
   color: var(--text-link);
   font-size: var(--font-size-xs);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .cell:hover .cell-audit-button,
 .cell:focus-within .cell-audit-button {
   opacity: 1;
   pointer-events: auto;
+  transform: translateY(-50%) translateX(-1px);
 }
 
 .cell--amount,
@@ -213,17 +315,23 @@
 }
 
 .cell--comentarios .cell-edit-button {
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .cell--fila_numero {
   position: sticky;
   left: 0;
-  z-index: 2;
-  background: inherit;
-  box-shadow: 1px 0 0 var(--border-soft);
+  z-index: 5;
+  background: var(--sheet-head-bg);
+  box-shadow: 1px 0 0 var(--sheet-grid-strong);
   font-family: var(--font-family-mono);
   font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  justify-content: flex-end;
+}
+
+.cell.head.cell--fila_numero {
+  z-index: 8;
 }
 
 .cell-edit-button.signed-amount--positive {
@@ -236,7 +344,7 @@
 
 .flag-cell {
   display: grid;
-  grid-template-columns: 20px auto minmax(72px, 1fr);
+  grid-template-columns: 18px auto minmax(70px, 1fr);
   align-items: center;
   gap: var(--space-1);
   width: 100%;
@@ -248,12 +356,37 @@
   font-weight: var(--font-weight-semibold);
 }
 
-.extracto-table-section--compact .extracto-row {
-  min-height: 34px;
+.extracto-table-section--compact {
+  --sheet-row-height: 34px;
 }
 
 .extracto-table-section--compact .cell {
-  padding-block: 0.15rem;
+  min-height: var(--sheet-row-height);
+}
+
+.extracto-table-section--compact .cell.head {
+  min-height: 40px;
+}
+
+.extracto-table-section .cell input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  border-radius: 0;
+}
+
+.extracto-table-section .cell > input:not([type="checkbox"]),
+.extracto-table-section .cell .flag-cell input:not([type="checkbox"]) {
+  min-height: calc(var(--sheet-row-height) - 8px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.extracto-table-section .cell > input:not([type="checkbox"]):focus,
+.extracto-table-section .cell .flag-cell input:not([type="checkbox"]):focus {
+  border-color: transparent;
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 2px var(--sheet-selected);
 }
 
 .extracto-empty {

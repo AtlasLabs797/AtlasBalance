@@ -9,6 +9,7 @@ public sealed class CsrfMiddleware
     private static readonly HashSet<string> ExcludedPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "/api/auth/login",
+        "/api/auth/mfa/verify",
         "/api/auth/refresh-token",
         "/api/health"
     };

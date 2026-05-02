@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-01.04",
+    [string]$Version = "V-01.05",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall
@@ -135,6 +135,27 @@ Write-JsonFile -Value $manifest -Path (Join-Path $packageRoot "version.json")
 $zipPath = Join-Path $releaseRoot "$packageName.zip"
 Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -Force
+
+$signaturePath = "$zipPath.sig"
+Remove-Item -LiteralPath $signaturePath -Force -ErrorAction SilentlyContinue
+if (-not [string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM)) {
+    $rsa = [System.Security.Cryptography.RSA]::Create()
+    try {
+        $privateKeyPem = $env:ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM -replace "\\n", "`n"
+        $rsa.ImportFromPem($privateKeyPem)
+        $zipBytes = [System.IO.File]::ReadAllBytes($zipPath)
+        $signature = $rsa.SignData(
+            $zipBytes,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        [System.IO.File]::WriteAllBytes($signaturePath, $signature)
+        Write-Host "Firma generada: $signaturePath" -ForegroundColor Green
+    } finally {
+        $rsa.Dispose()
+    }
+} else {
+    Write-Warning "ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM no definido; el actualizador online rechazara este ZIP sin su asset .sig."
+}
 
 Write-Host "Release generado: $packageRoot" -ForegroundColor Green
 Write-Host "ZIP generado: $zipPath" -ForegroundColor Green

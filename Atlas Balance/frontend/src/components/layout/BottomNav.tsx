@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { IconMenu } from '@/components/Icons';
-import { getVisibleNavigationItems } from '@/utils/navigation';
+import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
 import { useAlertCount } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
 import { useUpdateStore } from '@/stores/updateStore';
 
-const PRIMARY_ITEM_PATHS = ['/dashboard', '/titulares', '/cuentas', '/extractos'];
+const PRIMARY_ITEM_PATHS = ['/dashboard', '/titulares', '/cuentas', '/importacion'];
+const SECONDARY_GROUP_ORDER: NavigationGroup[] = ['operacion', 'control', 'sistema'];
 
 export function BottomNav() {
   const location = useLocation();
@@ -29,6 +30,16 @@ export function BottomNav() {
 
   const hiddenBadgeCount = alertCount + exportacionesPendientes + (updateAvailable ? 1 : 0);
   const secondaryActive = secondaryItems.some((item) => location.pathname.startsWith(item.to));
+  const secondaryGroups = useMemo(
+    () =>
+      SECONDARY_GROUP_ORDER
+        .map((group) => ({
+          group,
+          items: secondaryItems.filter((item) => item.group === group),
+        }))
+        .filter((item) => item.items.length > 0),
+    [secondaryItems]
+  );
 
   useEffect(() => {
     setMenuOpen(false);
@@ -75,7 +86,7 @@ export function BottomNav() {
           onClick={() => setMenuOpen((current) => !current)}
         >
           <span className="bottom-nav-icon" aria-hidden="true"><IconMenu /></span>
-          <span>Menu</span>
+          <span>Mas</span>
           {hiddenBadgeCount > 0 ? <span className="sidebar-alert-badge">{hiddenBadgeCount}</span> : null}
         </button>
       </nav>
@@ -92,8 +103,8 @@ export function BottomNav() {
           >
             <header className="bottom-nav-sheet-header">
               <div>
-                <strong>Menu</strong>
-                <p>Accesos secundarios y herramientas de administracion.</p>
+                <strong>Mas</strong>
+                <p>Extractos, control y sistema.</p>
               </div>
               <button
                 type="button"
@@ -105,35 +116,42 @@ export function BottomNav() {
               </button>
             </header>
 
-            <div className="bottom-nav-sheet-grid">
-              {secondaryItems.map((item) => {
-                const badge =
-                  item.to === '/alertas'
-                    ? alertCount
-                    : item.to === '/exportaciones' && usuario?.rol === 'ADMIN'
-                      ? exportacionesPendientes
-                      : item.to === '/configuracion' && updateAvailable
-                        ? 1
-                        : 0;
+            <div className="bottom-nav-sheet-sections">
+              {secondaryGroups.map(({ group, items }) => (
+                <section className="bottom-nav-sheet-section" key={group} aria-label={navigationGroups[group].label}>
+                  <h3>{navigationGroups[group].label}</h3>
+                  <div className="bottom-nav-sheet-grid">
+                    {items.map((item) => {
+                      const badge =
+                        item.to === '/alertas'
+                          ? alertCount
+                          : item.to === '/exportaciones' && usuario?.rol === 'ADMIN'
+                            ? exportacionesPendientes
+                            : item.to === '/configuracion' && updateAvailable
+                              ? 1
+                              : 0;
 
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      isActive ? 'bottom-nav-sheet-link bottom-nav-sheet-link--active' : 'bottom-nav-sheet-link'
-                    }
-                  >
-                    <span className="bottom-nav-sheet-icon">{item.icon}</span>
-                    <span>{item.label}</span>
-                    {badge > 0 ? (
-                      <span className={item.to === '/configuracion' ? 'sidebar-update-badge' : 'sidebar-alert-badge'}>
-                        {item.to === '/configuracion' ? 'Update' : badge}
-                      </span>
-                    ) : null}
-                  </NavLink>
-                );
-              })}
+                      return (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          className={({ isActive }) =>
+                            isActive ? 'bottom-nav-sheet-link bottom-nav-sheet-link--active' : 'bottom-nav-sheet-link'
+                          }
+                        >
+                          <span className="bottom-nav-sheet-icon">{item.icon}</span>
+                          <span>{item.label}</span>
+                          {badge > 0 ? (
+                            <span className={item.to === '/configuracion' ? 'sidebar-update-badge' : 'sidebar-alert-badge'}>
+                              {item.to === '/configuracion' ? 'Update' : badge}
+                            </span>
+                          ) : null}
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           </section>
         </div>

@@ -142,13 +142,67 @@ public sealed class CuentasControllerTests
         summary.Notas.Should().Be("Notas cuenta");
     }
 
-    private static CuentasController BuildController(AppDbContext db, Guid userId)
+    [Fact]
+    public async Task Resumen_Should_Hide_PlazoFijo_Reference_Account_When_User_Cannot_Access_It()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var referenciaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.plazo.resumen@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Plazo",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Plazo", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = referenciaId, TitularId = titularId, Nombre = "Cuenta Referencia Privada", Divisa = "EUR", TipoCuenta = TipoCuenta.NORMAL, Activa = true },
+            new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Deposito Gerente", Divisa = "EUR", TipoCuenta = TipoCuenta.PLAZO_FIJO, Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            PuedeVerCuentas = true
+        });
+        db.PlazosFijos.Add(new PlazoFijo
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            CuentaReferenciaId = referenciaId,
+            FechaInicio = new DateOnly(2026, 4, 25),
+            FechaVencimiento = new DateOnly(2026, 10, 25),
+            Renovable = true,
+            Estado = EstadoPlazoFijo.ACTIVO,
+            FechaCreacion = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Resumen(cuentaId, "1m", CancellationToken.None);
+
+        var summary = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<CuentaResumenResponse>().Subject;
+        summary.PlazoFijo.Should().NotBeNull();
+        summary.PlazoFijo!.CuentaReferenciaId.Should().BeNull();
+        summary.PlazoFijo.CuentaReferenciaNombre.Should().BeNull();
+    }
+
+    private static CuentasController BuildController(AppDbContext db, Guid userId, RolUsuario role = RolUsuario.ADMIN)
     {
         var controller = new CuentasController(db, new UserAccessService(db), new AuditService(db), new NoOpPlazoFijoService());
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
-            new Claim(ClaimTypes.Role, nameof(RolUsuario.ADMIN))
+            new Claim(ClaimTypes.Role, role.ToString())
         ], "TestAuth");
         controller.ControllerContext = new ControllerContext
         {
@@ -212,6 +266,61 @@ public sealed class CuentasControllerTests
         var plazo = await db.PlazosFijos.SingleAsync(p => p.CuentaId == cuenta.Id);
         plazo.FechaVencimiento.Should().Be(new DateOnly(2026, 10, 25));
         plazo.Estado.Should().Be(EstadoPlazoFijo.ACTIVO);
+    }
+
+    [Fact]
+    public async Task Crear_Should_Keep_Formato_For_Efectivo()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var formatoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.efectivo@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Efectivo",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Caja Central", Tipo = TipoTitular.EMPRESA });
+        db.DivisasActivas.Add(new DivisaActiva { Codigo = "EUR", Activa = true, EsBase = true });
+        db.FormatosImportacion.Add(new FormatoImportacion
+        {
+            Id = formatoId,
+            Nombre = "Caja EUR",
+            BancoNombre = "Caja",
+            Divisa = "EUR",
+            Activo = true,
+            MapeoJson = "{\"tipo_monto\":\"una_columna\",\"fecha\":0,\"concepto\":1,\"monto\":2,\"saldo\":3,\"columnas_extra\":[]}"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId);
+
+        var result = await controller.Crear(new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Caja Oficina",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.EFECTIVO,
+            FormatoId = formatoId,
+            BancoNombre = "No deberia persistir",
+            NumeroCuenta = "123",
+            Iban = "ES00"
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+        var cuenta = await db.Cuentas.SingleAsync(c => c.Nombre == "Caja Oficina");
+        cuenta.TipoCuenta.Should().Be(TipoCuenta.EFECTIVO);
+        cuenta.EsEfectivo.Should().BeTrue();
+        cuenta.FormatoId.Should().Be(formatoId);
+        cuenta.BancoNombre.Should().BeNull();
+        cuenta.NumeroCuenta.Should().BeNull();
+        cuenta.Iban.Should().BeNull();
     }
 
     [Fact]

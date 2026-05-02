@@ -22,6 +22,8 @@ interface DeleteCandidate {
   concepto: string | null;
 }
 
+const BULK_DELETE_PREVIEW_LIMIT = 6;
+
 interface UpdateExtractoPayload {
   fecha?: string;
   concepto?: string;
@@ -88,6 +90,8 @@ export default function CuentaDetailPage() {
   const [periodo, setPeriodo] = useState<PeriodoDashboard>('1m');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -162,6 +166,36 @@ export default function CuentaDetailPage() {
   }, [summary?.cuenta_id, summary?.notas]);
 
   useEffect(() => {
+    setSelectedRowIds((current) => {
+      if (current.size === 0) {
+        return current;
+      }
+
+      const validIds = new Set(rows.map((row) => row.id));
+      const next = new Set<string>();
+      current.forEach((rowId) => {
+        if (validIds.has(rowId)) {
+          next.add(rowId);
+        }
+      });
+      return next;
+    });
+  }, [rows]);
+
+  useEffect(() => {
+    if (!canDeleteRows) {
+      setSelectedRowIds(new Set());
+      setBulkDeleteOpen(false);
+    }
+  }, [canDeleteRows]);
+
+  useEffect(() => {
+    if (bulkDeleteOpen && rows.every((row) => !selectedRowIds.has(row.id))) {
+      setBulkDeleteOpen(false);
+    }
+  }, [bulkDeleteOpen, rows, selectedRowIds]);
+
+  useEffect(() => {
     if (!id || !allowedDashboard) {
       return;
     }
@@ -203,6 +237,15 @@ export default function CuentaDetailPage() {
     () => [...new Set(rows.flatMap((row) => Object.keys(row.columnas_extra ?? {})))],
     [rows]
   );
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedRowIds.has(row.id)),
+    [rows, selectedRowIds]
+  );
+  const selectedRowsCount = selectedRows.length;
+  const allRowsSelected = rows.length > 0 && selectedRowsCount === rows.length;
+  const bulkDeleteConfirmLabel = `Eliminar ${selectedRowsCount} ${selectedRowsCount === 1 ? 'linea' : 'lineas'}`;
+  const selectedRowsPreview = selectedRows.slice(0, BULK_DELETE_PREVIEW_LIMIT).map((row) => row.fila_numero).join(', ');
+  const hiddenSelectedRows = Math.max(0, selectedRowsCount - BULK_DELETE_PREVIEW_LIMIT);
 
   const importUrl = useMemo(() => {
     if (!summary) {
@@ -234,6 +277,62 @@ export default function CuentaDetailPage() {
       await loadCuentaData();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo eliminar la linea del desglose'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const toggleRowSelection = (rowId: string, selected: boolean) => {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      if (selected) {
+        next.add(rowId);
+      } else {
+        next.delete(rowId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllRows = (selected: boolean) => {
+    if (!selected) {
+      setSelectedRowIds(new Set());
+      return;
+    }
+
+    setSelectedRowIds(new Set(rows.map((row) => row.id)));
+  };
+
+  const confirmDeleteSelectedRows = async () => {
+    if (selectedRowsCount === 0) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError(null);
+
+    let deletedCount = 0;
+
+    for (const row of selectedRows) {
+      try {
+        await api.delete(`/extractos/${row.id}`);
+        deletedCount += 1;
+      } catch (err) {
+        setError(
+          extractErrorMessage(
+            err,
+            `Se eliminaron ${deletedCount} de ${selectedRowsCount} lineas. Revisa permisos o vuelve a intentarlo.`
+          )
+        );
+        break;
+      }
+    }
+
+    try {
+      if (deletedCount > 0) {
+        setBulkDeleteOpen(false);
+        await loadCuentaData();
+      }
     } finally {
       setActionLoading(false);
     }
@@ -442,6 +541,34 @@ export default function CuentaDetailPage() {
             {summary.ultima_actualizacion ? formatDateTime(summary.ultima_actualizacion) : 'Sin movimientos'}
           </span>
         </header>
+        {canDeleteRows && rows.length > 0 ? (
+          <div className="dashboard-bulk-actions">
+            <label className="dashboard-bulk-selection">
+              <input
+                type="checkbox"
+                checked={allRowsSelected}
+                disabled={actionLoading}
+                onChange={(event) => toggleSelectAllRows(event.target.checked)}
+              />
+              <span>Seleccionar todas ({rows.length})</span>
+            </label>
+            <div className="dashboard-bulk-actions-buttons">
+              <span className="dashboard-subtitle">
+                {selectedRowsCount > 0
+                  ? `${selectedRowsCount} ${selectedRowsCount === 1 ? 'linea seleccionada' : 'lineas seleccionadas'}`
+                  : 'Selecciona lineas para borrarlas en lote'}
+              </span>
+              <button
+                type="button"
+                className="dashboard-row-delete"
+                disabled={actionLoading || selectedRowsCount === 0}
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                Eliminar seleccionadas
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {rows.length === 0 ? (
           <EmptyState title="Esta cuenta no tiene movimientos todavía." />
@@ -461,6 +588,7 @@ export default function CuentaDetailPage() {
                   {extraColumns.map((column) => (
                     <th key={column}>{column}</th>
                   ))}
+                  {canDeleteRows ? <th>Seleccion</th> : null}
                   {canDeleteRows ? <th>Acciones</th> : null}
                 </tr>
               </thead>
@@ -537,6 +665,17 @@ export default function CuentaDetailPage() {
                     ))}
                     {canDeleteRows ? (
                       <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedRowIds.has(row.id)}
+                          disabled={actionLoading}
+                          aria-label={`Seleccionar linea ${row.fila_numero}`}
+                          onChange={(event) => toggleRowSelection(row.id, event.target.checked)}
+                        />
+                      </td>
+                    ) : null}
+                    {canDeleteRows ? (
+                      <td>
                         <button
                           type="button"
                           className="dashboard-row-delete"
@@ -602,6 +741,20 @@ export default function CuentaDetailPage() {
         loading={actionLoading}
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={confirmDeleteRow}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title="Eliminar lineas seleccionadas"
+        message={
+          selectedRowsCount > 0
+            ? `Vas a enviar a papelera ${selectedRowsCount} ${selectedRowsCount === 1 ? 'linea' : 'lineas'}${selectedRowsPreview ? ` (Nº ${selectedRowsPreview}${hiddenSelectedRows > 0 ? ` y ${hiddenSelectedRows} mas` : ''})` : ''}. Se auditaran y podras restaurarlas desde Papelera.`
+            : ''
+        }
+        confirmLabel={bulkDeleteConfirmLabel}
+        loading={actionLoading}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={confirmDeleteSelectedRows}
       />
     </section>
   );

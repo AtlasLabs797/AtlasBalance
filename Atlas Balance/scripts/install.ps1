@@ -31,7 +31,7 @@ $packageRoot = Split-Path -Parent $PSScriptRoot
 $apiExe = Join-Path $packageRoot "api\GestionCaja.API.exe"
 $watchdogExe = Join-Path $packageRoot "watchdog\GestionCaja.Watchdog.exe"
 if (-not (Test-Path $apiExe) -or -not (Test-Path $watchdogExe)) {
-    throw "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-V-01.04-win-x64.zip. Ejecuta el instalador desde la carpeta descomprimida que contiene api\GestionCaja.API.exe, watchdog\GestionCaja.Watchdog.exe, scripts e install.cmd."
+    throw "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-V-01.05-win-x64.zip. Ejecuta el instalador desde la carpeta descomprimida que contiene api\GestionCaja.API.exe, watchdog\GestionCaja.Watchdog.exe, scripts e install.cmd."
 }
 
 $forwardArgs = @()

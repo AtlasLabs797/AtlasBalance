@@ -12,7 +12,10 @@
     "DbPassword": "CAMBIAR_PASSWORD_POSTGRES_AQUI",
     "DockerPostgresContainer": "atlas_balance_db",
     "UpdateSourceRoot": "C:\\AtlasBalance\\updates",
-    "UpdateTargetPath": "C:\\AtlasBalance\\api"
+    "UpdateTargetPath": "C:\\AtlasBalance\\api",
+    "RequireDatabaseBackupBeforeUpdate": true,
+    "RequireHealthCheckAfterUpdate": true,
+    "ApiHealthUrl": "https://localhost/api/health"
   },
   "Serilog": {
     "MinimumLevel": {

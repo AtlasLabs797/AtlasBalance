@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using Serilog;
 using System.Security.Cryptography;
 using System.Text;
@@ -22,12 +23,16 @@ builder.Host.UseSerilog((context, config) => config
     .WriteTo.Console()
     .WriteTo.File("logs/atlas-balance-.log", rollingInterval: RollingInterval.Day));
 
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<RlsDbCommandInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options
         .UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
-        .UseSnakeCaseNamingConvention());
+        .UseSnakeCaseNamingConvention()
+        .AddInterceptors(serviceProvider.GetRequiredService<RlsDbCommandInterceptor>()));
 
 var jwtSecret = ResolveJwtSecret(builder.Configuration, builder.Environment);
+var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, jwtSecret);
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "atlas-balance-api";
 var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "atlas-balance-app";
 
@@ -143,7 +148,6 @@ if (builder.Environment.IsDevelopment())
     });
 }
 
-builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<ICsrfService, CsrfService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -173,8 +177,24 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    var runtimeConnectionString = app.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured.");
+    var migrationConnectionString = app.Configuration.GetConnectionString("MigrationConnection");
+    var effectiveMigrationConnectionString = string.IsNullOrWhiteSpace(migrationConnectionString)
+        ? runtimeConnectionString
+        : migrationConnectionString;
+
+    var migrationOptions = CreateDbContextOptions(effectiveMigrationConnectionString);
+    using (var migrationDb = new AppDbContext(migrationOptions))
+    {
+        migrationDb.Database.Migrate();
+    }
+
+    EnsureRlsContextSecret(effectiveMigrationConnectionString, rlsContextSecret);
+    GrantRuntimeDatabasePrivileges(effectiveMigrationConnectionString, runtimeConnectionString);
+    NpgsqlConnection.ClearAllPools();
+
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
     SeedData.Initialize(db, app.Configuration, app.Environment);
     ProtectExistingConfigurationSecrets(
         db,
@@ -327,6 +347,83 @@ static string ResolveJwtSecret(IConfiguration configuration, IHostEnvironment en
     configuration["JwtSettings:Secret"] = generated;
     return generated;
 }
+
+static string ResolveRlsContextSecret(IConfiguration configuration, string jwtSecret)
+{
+    var configured = configuration["Security:RlsContextSecret"];
+    return string.IsNullOrWhiteSpace(configured) ? jwtSecret : configured;
+}
+
+static DbContextOptions<AppDbContext> CreateDbContextOptions(string connectionString) =>
+    new DbContextOptionsBuilder<AppDbContext>()
+        .UseNpgsql(connectionString)
+        .UseSnakeCaseNamingConvention()
+        .Options;
+
+static void EnsureRlsContextSecret(string connectionString, string secret)
+{
+    using var connection = new NpgsqlConnection(connectionString);
+    connection.Open();
+    using var command = connection.CreateCommand();
+    command.CommandText = """
+        CREATE SCHEMA IF NOT EXISTS atlas_security;
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE TABLE IF NOT EXISTS atlas_security.rls_context_secret (
+            id boolean PRIMARY KEY DEFAULT true CHECK (id),
+            secret text NOT NULL,
+            updated_at timestamp with time zone NOT NULL DEFAULT now()
+        );
+        INSERT INTO atlas_security.rls_context_secret (id, secret, updated_at)
+        VALUES (true, @secret, now())
+        ON CONFLICT (id) DO UPDATE
+        SET secret = EXCLUDED.secret,
+            updated_at = now();
+        REVOKE ALL ON TABLE atlas_security.rls_context_secret FROM PUBLIC;
+        """;
+    command.Parameters.AddWithValue("secret", secret);
+    command.ExecuteNonQuery();
+}
+
+static void GrantRuntimeDatabasePrivileges(string migrationConnectionString, string runtimeConnectionString)
+{
+    var migrationBuilder = new NpgsqlConnectionStringBuilder(migrationConnectionString);
+    var runtimeBuilder = new NpgsqlConnectionStringBuilder(runtimeConnectionString);
+    if (string.Equals(migrationBuilder.Username, runtimeBuilder.Username, StringComparison.OrdinalIgnoreCase))
+    {
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(runtimeBuilder.Username))
+    {
+        throw new InvalidOperationException("Runtime database username is required for RLS grants.");
+    }
+
+    var databaseName = string.IsNullOrWhiteSpace(migrationBuilder.Database)
+        ? runtimeBuilder.Database
+        : migrationBuilder.Database;
+    if (string.IsNullOrWhiteSpace(databaseName))
+    {
+        throw new InvalidOperationException("Database name is required for RLS grants.");
+    }
+
+    var runtimeRole = QuotePostgresIdentifier(runtimeBuilder.Username);
+    using var connection = new NpgsqlConnection(migrationConnectionString);
+    connection.Open();
+    using var command = connection.CreateCommand();
+    command.CommandText = $$"""
+        GRANT CONNECT ON DATABASE {{QuotePostgresIdentifier(databaseName)}} TO {{runtimeRole}};
+        GRANT USAGE ON SCHEMA public TO {{runtimeRole}};
+        GRANT USAGE ON SCHEMA atlas_security TO {{runtimeRole}};
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {{runtimeRole}};
+        GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {{runtimeRole}};
+        GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA atlas_security TO {{runtimeRole}};
+        REVOKE ALL ON TABLE atlas_security.rls_context_secret FROM {{runtimeRole}};
+        """;
+    command.ExecuteNonQuery();
+}
+
+static string QuotePostgresIdentifier(string value) =>
+    "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
 static bool LooksLikePlaceholder(string value)
 {

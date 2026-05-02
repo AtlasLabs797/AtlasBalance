@@ -113,7 +113,7 @@ public sealed class CuentasController : ControllerBase
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var plazoMap = await BuildPlazoFijoMapAsync(pageRows.Select(x => x.Cuenta.Id).ToList(), cancellationToken);
+        var plazoMap = await BuildPlazoFijoMapAsync(pageRows.Select(x => x.Cuenta.Id).ToList(), scope, cancellationToken);
         var data = pageRows
             .Select(x => new CuentaListItemResponse
                 {
@@ -176,7 +176,7 @@ public sealed class CuentasController : ControllerBase
             .Where(t => t.Id == cuenta.TitularId)
             .Select(t => new { t.Nombre, t.Tipo })
             .FirstOrDefaultAsync(cancellationToken);
-        var plazoMap = await BuildPlazoFijoMapAsync([cuenta.Id], cancellationToken);
+        var plazoMap = await BuildPlazoFijoMapAsync([cuenta.Id], scope, cancellationToken);
 
         return Ok(new CuentaListItemResponse
         {
@@ -257,7 +257,7 @@ public sealed class CuentasController : ControllerBase
             .Select(e => (DateTime?)(e.FechaModificacion ?? e.FechaCreacion))
             .FirstOrDefaultAsync(cancellationToken);
         var tipoCuenta = ResolveTipoCuenta(new Cuenta { TipoCuenta = cuenta.TipoCuenta, EsEfectivo = cuenta.EsEfectivo });
-        var plazoMap = await BuildPlazoFijoMapAsync([cuenta.Id], cancellationToken);
+        var plazoMap = await BuildPlazoFijoMapAsync([cuenta.Id], scope, cancellationToken);
 
         return Ok(new CuentaResumenResponse
         {
@@ -329,7 +329,7 @@ public sealed class CuentasController : ControllerBase
             Iban = validation.Iban,
             BancoNombre = validation.BancoNombre,
             Divisa = validation.Divisa!,
-            FormatoId = validation.TipoCuenta == TipoCuenta.NORMAL ? request.FormatoId : null,
+            FormatoId = SupportsFormatoImportacion(validation.TipoCuenta) ? request.FormatoId : null,
             TipoCuenta = validation.TipoCuenta,
             EsEfectivo = validation.TipoCuenta == TipoCuenta.EFECTIVO,
             Activa = request.Activa,
@@ -396,7 +396,7 @@ public sealed class CuentasController : ControllerBase
         cuenta.Iban = validation.Iban;
         cuenta.BancoNombre = validation.BancoNombre;
         cuenta.Divisa = validation.Divisa!;
-        cuenta.FormatoId = validation.TipoCuenta == TipoCuenta.NORMAL ? request.FormatoId : null;
+        cuenta.FormatoId = SupportsFormatoImportacion(validation.TipoCuenta) ? request.FormatoId : null;
         cuenta.TipoCuenta = validation.TipoCuenta;
         cuenta.EsEfectivo = validation.TipoCuenta == TipoCuenta.EFECTIVO;
         cuenta.Activa = request.Activa;
@@ -597,7 +597,7 @@ public sealed class CuentasController : ControllerBase
             return CuentaValidationResult.Fail("La divisa indicada no esta activa", tipoCuenta);
         }
 
-        if (tipoCuenta == TipoCuenta.NORMAL && request.FormatoId.HasValue)
+        if (SupportsFormatoImportacion(tipoCuenta) && request.FormatoId.HasValue)
         {
             var formato = await _dbContext.FormatosImportacion.FirstOrDefaultAsync(f => f.Id == request.FormatoId.Value, cancellationToken);
             if (formato is null)
@@ -706,6 +706,11 @@ public sealed class CuentasController : ControllerBase
         return cuenta.TipoCuenta;
     }
 
+    private static bool SupportsFormatoImportacion(TipoCuenta tipoCuenta)
+    {
+        return tipoCuenta != TipoCuenta.PLAZO_FIJO;
+    }
+
     private static TipoCuenta ResolveRequestedTipoCuenta(SaveCuentaRequest request)
     {
         if (request.TipoCuenta.HasValue)
@@ -744,23 +749,27 @@ public sealed class CuentasController : ControllerBase
         };
     }
 
-    private async Task<Dictionary<Guid, PlazoFijoResponse>> BuildPlazoFijoMapAsync(IReadOnlyList<Guid> cuentaIds, CancellationToken cancellationToken)
+    private async Task<Dictionary<Guid, PlazoFijoResponse>> BuildPlazoFijoMapAsync(IReadOnlyList<Guid> cuentaIds, UserAccessScope scope, CancellationToken cancellationToken)
     {
         if (cuentaIds.Count == 0)
         {
             return [];
         }
 
+        var referenceAccounts = scope.IsAdmin
+            ? _dbContext.Cuentas.IgnoreQueryFilters()
+            : _userAccessService.ApplyCuentaScope(_dbContext.Cuentas, scope);
+
         var rows = await (
                 from plazo in _dbContext.PlazosFijos
-                join refCuenta in _dbContext.Cuentas.IgnoreQueryFilters() on plazo.CuentaReferenciaId equals refCuenta.Id into refJoin
+                join refCuenta in referenceAccounts on plazo.CuentaReferenciaId equals refCuenta.Id into refJoin
                 from cuentaReferencia in refJoin.DefaultIfEmpty()
                 where cuentaIds.Contains(plazo.CuentaId)
                 select new PlazoFijoResponse
                 {
                     Id = plazo.Id,
                     CuentaId = plazo.CuentaId,
-                    CuentaReferenciaId = plazo.CuentaReferenciaId,
+                    CuentaReferenciaId = cuentaReferencia != null ? plazo.CuentaReferenciaId : null,
                     CuentaReferenciaNombre = cuentaReferencia != null ? cuentaReferencia.Nombre : null,
                     FechaInicio = plazo.FechaInicio,
                     FechaVencimiento = plazo.FechaVencimiento,
