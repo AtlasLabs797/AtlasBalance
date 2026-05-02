@@ -8,6 +8,45 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-02 - Correccion de CI GitHub por lockfile npm
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Revisado el fallo de GitHub Actions en la rama `V-01.05`.
+- Identificada la causa en `npm ci`: el lockfile apuntaba a `once@1.5.0`, version inexistente en npm.
+- Fijada la resolucion transitiva a `once@1.4.0` mediante `overrides` y correccion del `package-lock.json`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Comandos ejecutados:**
+- `gh run list --branch V-01.05 --limit 10`
+- `gh run view 25250320278 --log-failed`
+- `npm.cmd view once version`
+- `npm.cmd view once@1.4.0 dist --json`
+- `npm.cmd pkg set overrides.once=1.4.0`
+- `npm.cmd ci`
+- `npm.cmd audit --audit-level=moderate`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+
+**Resultado de verificacion:**
+- `npm.cmd ci`: OK.
+- `npm.cmd audit --audit-level=moderate`: 0 vulnerabilidades.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Validacion previa en carpeta temporal limpia con `npm.cmd ci --ignore-scripts --no-audit`: OK.
+
+**Pendientes:**
+- Hacer push del commit para que GitHub Actions confirme el fix en remoto.
+
 ## 2026-05-02 - Generacion de paquete release V-01.05
 
 **Version:** V-01.05

@@ -1,5 +1,24 @@
 # Documentacion tecnica
 
+## 2026-05-02 - V-01.05 - Fix de lockfile npm para CI GitHub
+
+### Que cambio
+
+- `Atlas Balance/frontend/package.json` declara `overrides.once = 1.4.0`.
+- `Atlas Balance/frontend/package-lock.json` actualiza la entrada `node_modules/once` de `1.5.0` inexistente a `1.4.0`.
+- No cambia codigo runtime ni bundle servido; es una correccion de reproducibilidad de instalacion.
+
+### Por que
+
+GitHub Actions ejecuta `npm ci` en entorno limpio. El lockfile versionado apuntaba a un tarball que npm no publica (`once-1.5.0.tgz`), por lo que CI fallaba antes de auditar, lintar o compilar.
+
+### Verificacion
+
+- `npm.cmd ci`: OK.
+- `npm.cmd audit --audit-level=moderate`: 0 vulnerabilidades.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+
 ## 2026-05-02 - V-01.05 - Paquete release Windows x64
 
 ### Que cambio

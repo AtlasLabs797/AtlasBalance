@@ -11,6 +11,13 @@
 
 ## Cerrados
 
+### 2026-05-02 - V-01.05 - CI GitHub no podia instalar dependencias frontend
+
+- Contexto: GitHub Actions fallaba en `npm ci` con `404 Not Found - GET https://registry.npmjs.org/once/-/once-1.5.0.tgz`.
+- Causa: el lockfile apuntaba a `once@1.5.0`, version inexistente en npm.
+- Solucion: se fija `overrides.once = 1.4.0` y se actualiza `package-lock.json` para resolver `once@1.4.0`.
+- Verificacion: `npm.cmd ci` OK, `npm.cmd audit --audit-level=moderate` 0 vulnerabilidades, `npm.cmd run lint` OK y `npm.cmd run build` OK.
+
 ### 2026-05-02 - V-01.05 - Hallazgos residuales del escaneo repo-wide
 
 - Contexto: tras el cierre post-hardening quedaban ocho hallazgos en instalador/reset, permisos de extractos, dashboard, OpenClaw, importacion, RLS y CI.
