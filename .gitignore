@@ -42,6 +42,8 @@ logs/
 .claude/
 artifacts/
 .codex-logs/
+.codex-runlogs/
+output/
 .tmp*/
 tmp*
 test-results/

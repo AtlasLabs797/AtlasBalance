@@ -21,6 +21,10 @@ public class Usuario : ISoftDelete
     public DateTime? PasswordChangedAt { get; set; }
     public int FailedLoginAttempts { get; set; }
     public DateTime? LockedUntil { get; set; }
+    public bool MfaEnabled { get; set; }
+    public string? MfaSecret { get; set; }
+    public DateTime? MfaEnabledAt { get; set; }
+    public long? MfaLastAcceptedStep { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
 }

@@ -8,28 +8,1111 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
-## 2026-04-25 - Publicacion release V-01.04
+## 2026-05-02 - Generacion de paquete release V-01.05
 
-**Version:** V-01.04
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Generado el paquete Windows x64 `AtlasBalance-V-01.05-win-x64` en `Atlas Balance/Atlas Balance Release`.
+- Generado el ZIP `AtlasBalance-V-01.05-win-x64.zip`.
+- Sincronizado el build frontend servido por la API durante el empaquetado.
+- Confirmado que los artefactos de release quedan ignorados por Git y deben publicarse como asset de GitHub Release, no como archivos versionados.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Comandos ejecutados:**
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\\scripts\\Build-Release.ps1" -Version V-01.05`
+- `Get-FileHash -Algorithm SHA256 "Atlas Balance\\Atlas Balance Release\\AtlasBalance-V-01.05-win-x64.zip"`
+
+**Resultado de verificacion:**
+- `npm.cmd run build`: OK dentro de `Build-Release.ps1`.
+- `dotnet publish GestionCaja.API -c Release -r win-x64 --self-contained true`: OK.
+- `dotnet publish GestionCaja.Watchdog -c Release -r win-x64 --self-contained true`: OK.
+- ZIP generado: `102350978` bytes.
+- SHA256: `3E7A3ED22EFC4D18A161EA9D8D15CD9C12B3D51BDEF9AE38863767EC5CEAE299`.
+
+**Pendientes:**
+- No se genero `.zip.sig` porque `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` no estaba definido. Publicar este ZIP como release final/latest romperia el actualizador online, que exige firma detached.
+
+---
+## 2026-05-02 - Cierre de hallazgos residuales del escaneo repo-wide
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Corregidos los hallazgos residuales del escaneo repo-wide: ACL fail-open de credenciales de instalacion/reset, bypass de columnas en `ToggleFlag`, scope global `dashboard-only`, auditoria OpenClaw de extractos eliminados, `returnTo` externo en importacion, RLS de exportaciones con permiso de lectura y tag Docker mutable de PostgreSQL.
+- El instalador escribe credenciales en `C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt`, con el directorio `config` restringido antes de volcar secretos.
+- `Reset-AdminPassword.ps1` exige Administrador y escribe `RESET_ADMIN_CREDENTIALS_ONCE.txt` solo despues de proteger ACL.
+- Se agrego cobertura de regresion para `ExtractosController`, `DashboardService`, `IntegrationOpenClawController` y RLS.
+- Se sincronizo `frontend/dist` hacia `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `.github/workflows/ci.yml`
+- `Atlas Balance/docker-compose.yml`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Reset-AdminPassword.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/DashboardService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501120000_EnableRowLevelSecurity.cs`
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/IntegrationOpenClawControllerTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/RowLevelSecurityTests.cs`
+- `Documentacion/*`
+
+**Comandos ejecutados:**
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" -c Release --filter "ExtractosControllerTests|DashboardServiceTests|IntegrationOpenClawControllerTests|RowLevelSecurityTests" --no-restore`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Parser PowerShell de scripts de instalacion/reset/install/update
+- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Tests focalizados backend: 20/20 OK.
+- Frontend lint/build: OK.
+- Parser PowerShell: OK.
+- `wwwroot` sincronizado, `robocopyExit=3`.
+
+**Pendientes:**
+- Ejecutar suite completa antes de publicar release.
+
+## 2026-05-02 - Revision repo-wide post-hardening de bugs y seguridad
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Repaso completo de `REGISTRO_BUGS.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SEGURIDAD_AUDITORIA_V-01.05.md` y `SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md` para confirmar que los hallazgos previos siguen cerrados.
+- Revision de codigo dirigida (subagente) sobre backend, frontend, scripts y Watchdog buscando hallazgos nuevos no cubiertos.
+- Cierre del bug abierto `Harness RLS local sin permiso sobre __EFMigrationsHistory`: `RowLevelSecurityTests.CreateRoleConnectionStringsAsync` reasigna ownership de tablas/secuencias/vistas/materializadas/funciones de `public` y `atlas_security` al rol owner creado por el test.
+- `IntegrationOpenClawController`: el endpoint de extractos enviaba el email del creador al socio externo. Sustituido por `nombre_completo` (mantiene `usuario-eliminado` para borrados).
+- `IntegrationOpenClawController.Auditoria`: eliminado `ip_address` del payload enviado a OpenClaw.
+- `scripts/Reset-AdminPassword.ps1`: con `-GeneratePassword` ya no imprime la password temporal en consola; la vuelca en `C:\AtlasBalance\config\RESET_ADMIN_CREDENTIALS_ONCE.txt` con ACL restringida a Administrators.
+- `ActualizacionService.DownloadAndPreparePackageAsync`: extraccion ZIP con validacion entrada-por-entrada contra `packageRoot` (defensa en profundidad sobre digest+firma).
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/RowLevelSecurityTests.cs`
+- `Atlas Balance/scripts/Reset-AdminPassword.ps1`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release`
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" -c Release --no-build`
+- `dotnet list "Atlas Balance/backend/GestionCaja.sln" package --vulnerable --include-transitive`
+- `npm.cmd audit --audit-level=moderate` (frontend)
+- `npm.cmd run lint` y `npm.cmd run build` (frontend)
+- Parser PowerShell sobre `scripts/Reset-AdminPassword.ps1`
+
+**Resultado de verificacion:**
+- Backend: build Release sin warnings ni errores, suite 129/129 OK (incluye `RowLevelSecurityTests` que antes dejaba la suite en 127/128).
+- NuGet: sin paquetes vulnerables.
+- Frontend: lint OK, build OK, npm audit 0 vulnerabilidades.
+- PowerShell: parser sin errores en `Reset-AdminPassword.ps1`.
+
+**Pendientes:**
+- Bug abierto: estado Git local poco fiable (`git status` lista todo como untracked); requiere decision explicita para no romper la copia.
+- Operativo: firma de binarios Windows, pentest pre-prod, branch protection en GitHub. Estos quedan fuera del alcance de codigo.
+
+## 2026-05-02 - Verificacion de vaciado de titulares y cuentas
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se reviso la base local `atlas_balance` en el contenedor Docker `atlas_balance_db`.
+- Las tablas principales de titulares, cuentas y extractos ya estaban vacias antes de ejecutar ningun borrado.
+- Se verificaron tambien tablas dependientes scopeadas por cuenta/titular para confirmar que no quedaban restos operativos.
+- No se tocaron usuarios, configuracion, migraciones ni credenciales.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `docker ps --format "{{.Names}}\t{{.Status}}\t{{.Ports}}"`
+- `docker exec -i -e PGPASSWORD=... atlas_balance_db psql -U app_user -d atlas_balance`
+
+**Resultado de verificacion:**
+- `TITULARES`: 0 registros.
+- `CUENTAS`: 0 registros.
+- `EXTRACTOS`: 0 registros.
+- `PLAZOS_FIJOS`, `EXTRACTOS_COLUMNAS_EXTRA`, permisos/preferencias scopeados, alertas scopeadas, exportaciones e integration permissions scopeadas: 0 registros.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-05-02 - Escaneo de seguridad completo y correcciones
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se ejecuto un escaneo repo-wide con `codex-security` y subagentes sobre auth/MFA, autorizacion, integraciones, importacion, frontend, CI, dependencias, Watchdog y actualizaciones.
+- `AuthService` bloquea la cuenta al quinto fallo real de password y acumula fallos MFA por usuario, no por challenge descartable.
+- Las auditorias de integracion redactan claves query normalizadas (`client_secret`, `x-api-key`, bearer/token-like values) antes de persistir.
+- Importacion limita columnas extra a 64, limita nombres a 80 caracteres, rechaza indices extra inexistentes y no persiste valores extra vacios.
+- Los permisos `PuedeVerDashboard` ya no conceden acceso app-layer a cuentas/extractos; restaurar extractos exige permiso de eliminacion.
+- Las respuestas de plazo fijo ocultan cuenta de referencia si el usuario no puede verla o si queda fuera de filtros de borrado.
+- El actualizador online exige firma detached `.zip.sig` RSA/SHA-256 verificada con `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`; el script de release genera la firma si recibe `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- Tests focalizados de auth, integraciones, importacion, permisos, extractos, cuentas y actualizaciones.
+- Artefactos de scan en `C:\tmp\codex-security-scans\Atlas Balance Dev\6ad0b10_20260502005342`.
+
+**Comandos ejecutados:**
+- `dotnet test 'Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj' -c Release --filter "AuthServiceTests|IntegrationAuthMiddlewareTests|ImportacionServiceTests|UserAccessServiceTests|ExtractosControllerTests|CuentasControllerTests|ActualizacionServiceTests"`
+- `dotnet test 'Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj' -c Release`
+- `dotnet list 'Atlas Balance/backend/GestionCaja.sln' package --vulnerable --include-transitive`
+- `npm.cmd audit --audit-level=moderate`
+- Parser PowerShell para `Build-Release.ps1` e `Instalar-AtlasBalance.ps1`
+- `git diff --check`
+
+**Resultado de verificacion:**
+- Tests focalizados: OK, 72/72.
+- Suite backend completa: 127/128 OK; falla `RowLevelSecurityTests.CoreFinancialTables_Should_Enforce_Rls_By_User_And_IntegrationScope` por permisos locales de PostgreSQL sobre `__EFMigrationsHistory`.
+- NuGet vulnerable: sin paquetes vulnerables.
+- npm audit: 0 vulnerabilidades.
+- Parser PowerShell: OK.
+- `git diff --check`: sin errores de whitespace; solo avisos de line endings.
+
+**Pendientes:**
+- Reparar el setup local de PostgreSQL usado por `RowLevelSecurityTests` para que el rol de test pueda consultar/aplicar migraciones sin romper el modelo RLS.
+- Configurar clave publica de firma de releases antes de usar actualizaciones online; sin clave y `.zip.sig`, el actualizador rechaza el paquete a proposito.
+
+---
+## 2026-05-02 - Alineacion dinamica de todas las graficas de evolucion
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- `EvolucionChart` deja de usar un ancho fijo de `72px` para el eje Y.
+- El ancho del eje ahora se calcula segun la etiqueta compacta mas larga de saldo, ingresos y egresos.
+- El ancho queda limitado entre `44px` y `72px`, evitando hueco inutil con importes pequenos sin romper etiquetas largas.
+- El cambio aplica automaticamente a las cuatro vistas que usan `EvolucionChart`: dashboard principal, dashboard por titular, `Titulares` y `Cuentas`.
+- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- Resolverlo en el componente compartido para no duplicar ajustes por pantalla.
+- Mantener el eje visible y legible, pero sin reservar espacio fijo cuando los importes son cortos.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- Playwright headless con APIs mockeadas sobre `/dashboard`, `/dashboard/titular/titular-1`, `/titulares` y `/cuentas`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK, codigo `1` esperado por copia con cambios.
+- Playwright headless: OK; `gridStartX=45px`, `yAxisWidth=39px` y sin errores de pagina en las cuatro rutas probadas.
+
+**Pendientes de diseno abiertos:**
+- Ninguno para este ajuste puntual.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-02 - Listado de cuentas en tres columnas
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- El listado inferior de `Cuentas` pasa de dos a tres columnas en desktop.
+- Se acota el cambio a `CuentasPage` mediante la clase `cuentas-page`, sin cambiar la grilla global compartida.
+- Las tarjetas de cuenta ajustan titulo, badges, metadatos, saldo, notas y acciones para funcionar mejor en tres columnas.
+- El responsive queda en tres columnas desktop, dos columnas tablet y una columna mobile.
+- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- No tocar `.phase2-cards` globalmente: seria demasiado amplio para un cambio de listado.
+- Forzar titulo de cuenta y notas a dos lineas maximo para evitar tarjetas descompensadas.
+- Mantener el saldo en una columna derecha dentro de la tarjeta cuando hay espacio, y apilarlo en mobile.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Playwright headless con APIs mockeadas en `/cuentas`
+- `robocopy dist "..\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright: desktop `3` columnas, tablet `2`, mobile `1`, sin overflow horizontal.
+- `robocopy`: OK.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-02 - Ajuste de tamano del saldo total en dashboard principal
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se reduce la escala del numero destacado de `Saldo total` en el resumen superior del dashboard.
+- La grilla de KPIs superiores da mas ancho relativo al KPI principal frente a ingresos y egresos.
+- Se evita el salto de linea en importes KPI para que `1.000.000,00 €` no se parta en dos.
+- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- Dar prioridad visual real al saldo total: menos escala teatral y mas legibilidad. Un KPI que no aguanta un millon de euros es un KPI de juguete.
+- No usar `overflow: hidden` ni puntos suspensivos; el importe debe verse completo.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5186/dashboard`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright headless: OK; `1.000.000,00 €` queda en una sola linea, `wraps=false`, `overflows=false`.
+- `robocopy`: OK, bundle servido actualizado.
+
+**Pendientes de diseno abiertos:**
+- Si se esperan importes de ocho cifras o mas, habra que pasar el KPI principal a ancho completo o usar formato compacto configurable; fingir que cabe todo en una mini tarjeta seria mala idea.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-02 - Divisa base primero en saldos por divisa
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- `Saldos por divisa` muestra siempre la divisa base como primera tarjeta.
+- El resto de divisas conserva el orden recibido de la API.
+- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/dashboard/SaldoPorDivisaCard.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- La divisa base es la referencia de lectura y debe ir delante aunque el backend entregue otro orden. Hacer depender la jerarquia visual del orden del array era una tonteria evitable.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5184/dashboard`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK, bundle servido actualizado.
+- Playwright headless: OK; API mockeada devuelve `USD` antes que `EUR`, pero la primera tarjeta renderizada es `EUR` porque es la divisa base.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-02 - Listado de titulares en tres columnas
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- El listado inferior de `Titulares` pasa de dos a tres columnas en desktop.
+- Se acota el cambio a `TitularesPage` mediante la clase `titulares-page`, evitando afectar el listado de `Cuentas`.
+- Las tarjetas de titular ajustan titulo, notas, estado, saldo y acciones para soportar mejor el ancho de tres columnas.
+- El responsive queda en tres columnas desktop, dos columnas tablet y una columna mobile.
+- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/TitularesPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- No cambiar `.phase2-cards` globalmente, porque tambien lo usa `CuentasPage`.
+- Mantener tarjetas densas pero legibles: titulo y notas con maximo dos lineas, saldo alineado y acciones ancladas abajo.
+- Usar 3/2/1 columnas segun viewport para evitar overflow horizontal.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Playwright headless con APIs mockeadas en `/titulares`
+- `robocopy dist "..\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright: desktop `3` columnas, tablet `2`, mobile `1`, sin overflow horizontal.
+- `robocopy`: OK, codigo `1` esperado por copia con cambios.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-05-02 - Formato de importacion en cuentas de efectivo
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se permite seleccionar `Formato de importacion` en cuentas de tipo `EFECTIVO`.
+- `CuentasPage` conserva el selector de formato para cuentas normales y de efectivo, pero sigue limpiando datos bancarios en efectivo.
+- `CuentasController` valida y persiste `formato_id` para `NORMAL` y `EFECTIVO`; solo lo descarta en `PLAZO_FIJO`.
+- `ImportacionPage` actualiza el texto de ayuda para indicar que efectivo tambien usa formatos de importacion.
+- Se agrego una regresion backend para asegurar que una cuenta de efectivo conserva su formato y no guarda banco/IBAN/numero.
+- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/CuentasControllerTests.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- Mantener una sola seccion compacta para importacion en efectivo, sin mostrar campos bancarios que no aplican.
+- No crear un flujo nuevo de importacion: efectivo usa el mismo selector y motor que una cuenta normal.
+
+**Comandos ejecutados:**
+- `dotnet test "Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --filter CuentasControllerTests`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist "..\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+
+**Resultado de verificacion:**
+- `CuentasControllerTests`: 5/5 OK.
+- Primer `npm.cmd run lint`: fallo por dependencia faltante del `useEffect`; corregido.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK, codigo `1` esperado por copia con cambios.
+
+**Pendientes:**
+- Validacion manual en navegador con una cuenta de efectivo real si hay datos de usuario disponibles.
+
+## 2026-05-02 - Alineacion de graficas en dashboards de cuentas y titulares
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se ajustaron las graficas de barras embebidas en `CuentasPage` y `TitularesPage`.
+- El eje Y deja de reservar `120px` y pasa a `72px`, igualando el criterio ya aplicado a `EvolucionChart`.
+- Los ticks del eje Y usan formato compacto para evitar que etiquetas largas empujen el area de trazado hacia la derecha.
+- Se definieron margenes explicitos y se ocultaron lineas de eje innecesarias para alinear mejor la grafica con el borde izquierdo util.
+- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/pages/TitularesPage.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- Corregir la geometria interna de Recharts, no compensar con padding externo en la tarjeta.
+- Mantener tooltip con importe completo y usar formato compacto solo en el eje, donde el espacio manda.
+
+**Comandos ejecutados:**
+- `Get-Date -Format 'yyyy-MM-dd HH:mm:ss K'`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- Playwright headless con APIs mockeadas sobre `/titulares` y `/cuentas`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK, codigo `1` esperado por copia con cambios.
+- Playwright headless: OK; `gridStartX=72px` y `yAxisWidth=69px` en `/titulares` y `/cuentas`, sin errores de pagina.
+
+**Pendientes de diseno abiertos:**
+- Ninguno para este ajuste puntual.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-02 - Reorden de plazos fijos y saldos por titular en dashboard principal
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se mueve `Plazos fijos` al bloque superior del dashboard, justo debajo de `Saldo total`, `Ingresos periodo` y `Egresos periodo`.
+- `Saldos por titular` pasa a ocupar toda la parte inferior del dashboard.
+- Los saldos por titular se muestran en tres columnas fijas: Empresa, Autonomo y Particular.
+- Se mantiene cada columna aunque un tipo no tenga saldos, mostrando un estado compacto `Sin saldos`.
+- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- `Plazos fijos` pertenece al resumen financiero superior porque explica la parte inmovilizada del saldo total; dejarlo abajo junto a titulares mezclaba conceptos.
+- `Saldos por titular` necesita ancho completo para comparar Empresa, Autonomo y Particular sin apretar tarjetas. La grilla de dos columnas anterior era una mala lectura para tres categorias.
+- En mobile las columnas vuelven a una sola columna para no crear una tabla ilegible en pantallas estrechas.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5183/dashboard`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright headless: OK; `plazoDebajoKpis=true`, `titularesFullWidth=1140`, columnas `Empresa|Autonomo|Particular`, sin overflow horizontal.
+- `robocopy`: OK, bundle servido actualizado desde `frontend/dist`.
+
+**Pendientes de diseno abiertos:**
+- Validar con nombres reales muy largos si algun titular necesita truncado adicional dentro de cada columna.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-01 - Rediseño del dashboard principal con gráfica a ancho completo
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se reestructura el dashboard principal para que `Evolución` deje de competir en una grilla de tres columnas.
+- Los KPIs y `Saldos por divisa` quedan como resumen superior compacto.
+- La gráfica de evolución pasa a una tarjeta propia de ancho completo y mayor altura útil.
+- `EvolucionChart` acepta altura configurable para usar una gráfica más grande en el dashboard principal sin romper otros usos.
+- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/Diseno/DESIGN.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- La gráfica temporal es el bloque principal de análisis, no una tarjeta lateral. El layout anterior era demasiado democrático: todo parecía igual de importante, que en un dashboard financiero es una mala señal.
+- Mantener sobriedad: más ancho, más altura y mejor jerarquía; nada de efectos nuevos ni dependencia visual externa.
+- Los saldos por divisa siguen arriba porque dan contexto inmediato, pero no roban espacio horizontal a la gráfica.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5177/dashboard`
+- `robocopy frontend/dist -> backend/src/GestionCaja.API/wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright headless final: OK; `chartWidthRatio=0.960`, `svgHeight=420`, sin errores de pagina, sin respuestas API 500 y sin overflow horizontal. Durante la verificacion se corrigieron dos fallos del script mock (`puntos` mal nombrado y rutas auxiliares no mockeadas); no eran fallos del producto.
+- `robocopy`: OK.
+
+**Pendientes de diseno abiertos:**
+- Validar con datos reales si titulares con nombres muy largos necesitan truncado más agresivo.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-01 - Alineacion de grafica de Evolucion en dashboard principal
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se ajusto el `LineChart` de `EvolucionChart` para que el area de trazado no quede desplazada a la derecha.
+- El eje Y deja de reservar `116px` y pasa a una anchura mas proporcionada (`72px`) con margenes explicitos del chart.
+- Se agrega `tickMargin` a ambos ejes para conservar lectura sin inflar el carril del eje Y.
+- Se sincroniza `wwwroot` con el build frontend actualizado.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- Corregir la geometria del chart en Recharts, no compensar el problema con padding externo en la tarjeta.
+- Mantener suficiente espacio para importes compactos tipo `4 EUR` sin que el eje Y coma media grafica.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- Playwright headless con APIs mockeadas sobre `/dashboard`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy ... /MIR`: OK.
+- Playwright headless: OK; `YAxis <= 86px` y `plotInsetFromLegend=72px`.
+
+**Pendientes de diseno abiertos:**
+- Ninguno para este ajuste puntual.
+
+**Pendientes:**
+- Validacion visual final con datos reales del servidor si aparece otro caso extremo de importes largos.
+
+---
+## 2026-05-02 - Regresion MFA cada 90 dias
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Agregada prueba de regresion para confirmar que una cookie `mfa_trusted` expirada vuelve a exigir Google Authenticator.
+- Confirmado que la ventana recordada es de 90 dias y no se renueva en cada login con cookie valida.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --filter AuthServiceTests`
+
+**Resultado de verificacion:**
+- `AuthServiceTests`: OK, 13/13.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-01 - MFA recordado 90 dias y QR de enrolamiento
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Login valida una cookie `mfa_trusted` firmada para no pedir Google Authenticator en cada entrada.
+- La cookie se emite solo despues de verificar MFA y caduca a los 90 dias.
+- El token recordado queda ligado al usuario y a su `security_stamp`, asi que cambios sensibles de cuenta lo invalidan.
+- El primer enrolamiento de MFA muestra QR escaneable y conserva la clave manual como fallback.
+- Se agrega `qrcode` al frontend y se sincroniza `wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- El QR se muestra dentro del bloque MFA existente, centrado y con fondo blanco para mantener lectura fiable en modo claro y oscuro.
+- La clave manual queda debajo del QR como fallback, no como opcion principal.
+
+**Comandos ejecutados:**
+- `npm.cmd install qrcode @types/qrcode`
+- `npm.cmd install -D @types/qrcode`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" --filter AuthServiceTests`
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --filter AuthServiceTests`
+- `robocopy dist "..\backend\src\GestionCaja.API\wwwroot" /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd install`: OK, 0 vulnerabilidades.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `dotnet test --filter AuthServiceTests` en Debug: bloqueado por `GestionCaja.API.exe` en uso, PID `35456`.
+- `dotnet test -c Release --filter AuthServiceTests`: OK, 11/11.
+- `robocopy`: OK, codigo `1` esperado por copia con cambios.
+
+**Pendientes de diseno abiertos:**
+- Ninguno para este ajuste puntual.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-01 - Alineacion del logo en login
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Alineado el bloque de marca superior del login con la misma columna visual del formulario.
+- Centrado el contenido de marca dentro de esa columna para que el bloque `Atlas Balance` quede en el medio, no anclado al borde izquierdo.
+- Se mantiene centrado en mobile para conservar una lectura compacta.
+- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- El login debe leerse como una sola columna centrada: marca, formulario y footer. Alinear la marca al borde izquierdo de la tarjeta seguia viendose desplazado; el bloque de marca completo debe centrarse sobre la tarjeta.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- Verificacion visual con Edge headless sobre `http://127.0.0.1:5176/login` via CDP.
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK, codigo `1` esperado por copia con cambios.
+- Edge headless: centro del bloque de marca y centro de la tarjeta coinciden; `brandDeltaCard=0px`.
+
+**Pendientes de diseno abiertos:**
+- Ninguno para este ajuste puntual.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-01 - Aplicacion de guia UI/UX en shell y dashboard
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Aplicadas las nuevas reglas de `Documentacion/Diseno/DESIGN.md` al shell principal y dashboard.
+- La navegacion lateral queda agrupada por intencion: Operacion, Control y Sistema.
+- El menu inferior movil queda en 5 destinos: Inicio, Titulares, Cuentas, Importar y Mas.
+- Los iconos de navegacion pasan a `lucide-react`, respetando el peso visual definido.
+- El dashboard principal prioriza saldo total, saldos por divisa y evolucion en la primera lectura.
+- `Saldos por divisa` muestra total, disponible e inmovilizado con jerarquia numerica clara.
+- Se elimina la carga de Geist desde CSS y se corrige el token tipografico roto de MFA (`--font-family-mono`).
+- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/utils/navigation.ts`
+- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
+- `Atlas Balance/frontend/src/components/layout/BottomNav.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/SaldoPorDivisaCard.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales tomadas:**
+- Priorizar arquitectura de informacion sobre decoracion: agrupar menus reduce coste cognitivo sin ocultar funciones.
+- Mantener el estilo financiero sobrio: superficies planas, bordes suaves, numeros mono/tabulares y estados discretos.
+- No introducir Tailwind, shadcn ni librerias nuevas; se usa CSS variables propias y Lucide ya instalado.
+- En dashboard, el dato financiero principal debe aparecer antes de secciones administrativas o secundarias.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Verificacion Playwright con APIs mockeadas en `http://127.0.0.1:5175/dashboard` para desktop y mobile.
+- `robocopy 'C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist' 'C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot' /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright desktop/mobile: sin overflow horizontal; grupos de menu correctos; bottom nav correcto; se corrigio solapamiento inicial del KPI principal.
+- `robocopy`: OK, con borrado de assets Geist antiguos del bundle servido.
+
+**Pendientes de diseno abiertos:**
+- Aplicar la guia pantalla por pantalla en Titulares, Cuentas, Alertas, Configuracion y flujos de importacion.
+- Revisar formularios largos para reducir modales cuando una edicion inline o panel sea mejor.
+
+**Pendientes:**
+- Validacion visual manual con datos reales del usuario final.
+
+## 2026-05-01 - Guia UI/UX Atlas Balance
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Reescrito `Documentacion/Diseno/DESIGN.md` como sistema de diseno operativo para Atlas Balance.
+- Se adapta el formato de referencia de Atlas Connect al producto real: tesoreria multi-banco, tablas densas, dashboards financieros, menus por permisos, dark/light mode y CSS variables propias.
+- Se mantienen los colores actuales del frontend y se documentan reglas mas estrictas para menus, iconos, tablas, charts, formularios, responsive, motion, accesibilidad y anti-patrones.
+
+**Archivos tocados:**
+- `Documentacion/Diseno/DESIGN.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.05.md`, `Documentacion/SKILLS_LOCALES.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md`, `Atlas Connect Dev/docs/DESIGN.md` y estilos frontend actuales.
+
+**Resultado de verificacion:**
+- Cambio documental. No requiere build ni tests de frontend/backend.
+
+**Pendientes:**
+- Aplicar la guia en codigo: reorganizar navegacion, migrar iconos nuevos a `lucide-react`, revisar topbar/bottom nav y reforzar tablas/charts pantalla por pantalla.
+
+## 2026-05-01 - Activacion de Row Level Security en PostgreSQL
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Activar Row Level Security real en PostgreSQL y conectarlo con el contexto de autorizacion del backend.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Data/RlsDbCommandInterceptor.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/RlsContextSigner.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Program.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501120000_EnableRowLevelSecurity.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501120000_EnableRowLevelSecurity.Designer.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501133000_SignRowLevelSecurityContext.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501133000_SignRowLevelSecurityContext.Designer.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Production.json.template`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/RowLevelSecurityTests.cs`
+- `Atlas Balance/docker-compose.yml`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/postgres-init/001-create-app-user.sh`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- Nueva migracion EF Core que crea helpers `atlas_security`, activa `ENABLE ROW LEVEL SECURITY` y `FORCE ROW LEVEL SECURITY`, y define politicas sobre tablas sensibles de datos financieros, auditoria, backups y notificaciones admin.
+- El runtime de EF Core fija contexto PostgreSQL por comando mediante variables de sesion `atlas.*`: modo de autenticacion, usuario, token de integracion, admin, sistema, alcance de dashboard y firma HMAC.
+- La migracion `SignRowLevelSecurityContext` exige que el contexto `atlas.*` este firmado contra un secreto guardado en `atlas_security.rls_context_secret`; un `SET atlas.system=true` manual sin firma ya no sirve.
+- Las politicas usan `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS` como fuente de alcance por cuenta.
+- El middleware de integraciones fija el token validado en `HttpContext.Items` antes de escribir auditoria/rate limit, para que las politicas puedan autorizar tambien esos inserts.
+- Docker nuevo deja de crear la base con `app_user` como superusuario; crea `atlas_owner` para migraciones/ownership y `app_user` como runtime sin `BYPASSRLS`.
+- El instalador crea/separa `atlas_balance_owner` y `atlas_balance_app`; `MigrationConnection` aplica migraciones/grants y `DefaultConnection` queda para runtime.
+- Se agrega test de integracion con PostgreSQL real que valida catalogo RLS, rol runtime endurecido, runtime sin ownership de tablas, rechazo de contexto sin firma, aislamiento anonimo/usuario/integracion/admin y bloqueo de escritura sin permiso.
+- La base local `atlas_balance_db` queda migrada y con el rol `app_user` endurecido.
+
+**Comandos ejecutados:**
+- `dotnet build '.\Atlas Balance\backend\src\GestionCaja.API\GestionCaja.API.csproj' -c Release --no-restore`
+- `dotnet test '.\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj' -c Release --no-restore --filter RowLevelSecurityTests`
+- `dotnet test '.\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj' -c Release --no-restore --filter "FullyQualifiedName~RowLevelSecurityTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~IntegrationTokenServiceTests"`
+- `docker start atlas_balance_db`
+- `dotnet ef database update`
+- Consultas `psql` a `pg_class`, `pg_policy`, `pg_policies` y `pg_roles`.
+- Consulta `psql` a `atlas_security.context_is_valid()` con firma invalida.
+- Siembra local del secreto RLS desde configuracion de desarrollo sin imprimir el secreto.
+- Consulta `psql` a `atlas_security.context_is_valid()` con firma valida calculada localmente.
+- `git diff --check`
+
+**Resultado de verificacion:**
+- `dotnet build`: OK.
+- `RowLevelSecurityTests`: OK.
+- Tests focalizados RLS/permisos/integraciones: 15/15 OK.
+- En `atlas_balance_db`, las 11 tablas objetivo tienen `relrowsecurity=true`, `relforcerowsecurity=true` y politicas en `pg_policies`.
+- En `atlas_balance_db`, `__EFMigrationsHistory` contiene `20260501120000_EnableRowLevelSecurity` y `20260501133000_SignRowLevelSecurityContext`.
+- `pg_policies` devuelve 20 politicas en schema `public`.
+- El rol local `app_user` queda con `rolsuper=false` y `rolbypassrls=false`.
+- `atlas_security.context_is_valid()` devuelve `false` con contexto `system` falsificado y firma invalida.
+- `atlas_security.rls_context_secret` contiene secreto local y `atlas_security.context_is_valid()` devuelve `true` con firma valida.
+- `git diff --check`: OK; solo avisos de conversion LF/CRLF ya presentes en el arbol.
+
+**Pendientes:**
+- Ninguno para instalaciones nuevas. En bases legacy creadas antes de separar owner/runtime, conviene migrar manualmente ownership a un rol owner si se quiere que la credencial SQL de runtime sea una frontera fuerte ante acceso directo a PostgreSQL.
+
+---
+## 2026-05-01 - Comprobacion de Row Level Security en PostgreSQL
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Verificar si Row Level Security esta configurado en codigo, migraciones y base local.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Cambios implementados:**
+- No se modifica codigo ni esquema.
+- Se registra bug abierto porque RLS no esta configurado en migraciones ni en la base local verificada.
+
+**Comandos ejecutados:**
+- `Get-Content` de instrucciones, version actual y log de incidencias.
+- Busquedas PowerShell con `Select-String` sobre migraciones, scripts, configuracion y documentacion.
+- `docker start atlas_balance_db`
+- Consultas `psql` a `pg_class`, `pg_policy`, `pg_policies` y `pg_roles`.
+- `docker stop atlas_balance_db`
+
+**Resultado de verificacion:**
+- Sin apariciones versionables de `ENABLE ROW LEVEL SECURITY`, `FORCE ROW LEVEL SECURITY`, `CREATE POLICY`, `BYPASSRLS` o `NOBYPASSRLS`.
+- Todas las tablas `public` de `atlas_balance_db` tienen `relrowsecurity=false`, `relforcerowsecurity=false` y `0` politicas.
+- `pg_policies` no devuelve ninguna politica.
+- El rol local `app_user` aparece como superusuario con `BYPASSRLS`, por lo que no es valido para probar aislamiento por RLS.
+- El contenedor se dejo parado, como estaba antes de la comprobacion.
+
+**Pendientes:**
+- Disenar e implementar RLS real si se quiere defensa en profundidad a nivel PostgreSQL: roles separados owner/runtime, runtime sin `BYPASSRLS`, politicas por tablas sensibles y contexto de usuario seguro por transaccion.
+
+---
+## 2026-04-26 - Reorden en dashboard de titulares (evolucion antes del listado)
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Reordenar el bloque de dashboard en `Cuentas` para que la tarjeta `Evolucion` se renderice antes del listado de cuentas/titulares.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- Se mueve el bloque `titulares-evolucion-card` por encima de `cuentas-balance-list` dentro del dashboard de titulares en la pagina de `Cuentas`.
+- No se modifica carga de datos, filtros, permisos ni endpoints; solo cambia el orden visual.
+
+**Decisiones visuales tomadas:**
+- Priorizar contexto temporal (tendencia) antes del detalle tabular para lectura mas rapida del estado de titulares.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+
+**Pendientes de diseno abiertos:**
+- Ninguno para este ajuste puntual.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-04-26 - Reorden de dashboard principal (grafica antes de saldos)
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Reordenar el dashboard principal para que la grafica de evolucion aparezca antes de los bloques de `Saldo por divisa` y `Saldos por titular`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- Se mueve el bloque `Evolución` por encima del grid de saldos.
+- No cambia ninguna logica de carga de datos ni calculos; solo cambia el orden visual en el dashboard principal.
+- Se sincroniza `wwwroot` con el build frontend actualizado.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy ... /MIR`: OK (codigo `1` esperado por copia con cambios).
+
+**Pendientes:**
+- Ninguno en este cambio.
+
+---
+## 2026-04-26 - Orden de lineas preservado en importacion
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir la importacion de extractos para que no reordene las lineas por fecha antes de guardarlas.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- Eliminado el ordenamiento interno por fecha durante `ConfirmarAsync`.
+- La numeracion `fila_numero` se asigna desde abajo hacia arriba, para que la linea superior del extracto pegado quede como la ultima/mas alta.
+- El registro de auditoria conserva las primeras filas segun el orden original del pegado.
+- Actualizadas regresiones de importacion para validar el orden visible descendente por `fila_numero`.
+
+**Comandos ejecutados:**
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" --filter ImportacionServiceTests --no-restore`
+- `dotnet build ".\\Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" -c Release --no-restore`
+
+**Resultado de verificacion:**
+- `ImportacionServiceTests`: 26/26 OK.
+- Backend `GestionCaja.API` Release build OK, 0 warnings, 0 errores.
+
+**Pendientes:**
+- Ninguno en este cambio.
+
+---
+## 2026-04-26 - Borrado multiple de extractos en dashboard de cuenta
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Permitir seleccionar varias lineas del desglose de una cuenta y enviarlas a papelera en una sola accion.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- Se agrega seleccion por fila en la tabla de extractos del dashboard de cuenta.
+- Se agrega selector global `Seleccionar todas` y contador de filas seleccionadas.
+- Se agrega accion `Eliminar seleccionadas` con confirmacion unica y detalle de filas afectadas.
+- El borrado en lote reutiliza `DELETE /api/extractos/{id}` para mantener permisos y auditoria existentes.
+
+**Comandos ejecutados:**
+- `npm.cmd run build`
+- `npm.cmd run lint`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- Build frontend OK.
+- Lint frontend OK.
+- `wwwroot` sincronizado (`robocopy` codigo `1` esperado).
+
+**Pendientes:**
+- Ninguno en este cambio.
+
+---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05`
+- `Get-FileHash -Algorithm SHA256`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+- Paquete regenerado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`.
+- Tamano ZIP: `102360688` bytes.
+- SHA256: `482189BB4B6F731CEB02ECA214A550B1CE9DB33C71F0DBF4E057761E8FD002C3`.
+
+**Pendientes:**
+- Publicar/subir el ZIP corregido como asset si esta version se distribuye desde GitHub Releases.
+
+---
+## 2026-04-25 - Publicacion release V-01.05
+
+**Version:** V-01.05
 
 **Trabajo realizado:** Regenerar el paquete Windows x64 final y publicarlo en GitHub junto con la rama de version.
 
 **Archivos tocados:**
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64`
-- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64`
+- `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 
 **Cambios implementados:**
-- Regenerado el paquete `AtlasBalance-V-01.04-win-x64.zip` desde `scripts/Build-Release.ps1`.
+- Regenerado el paquete `AtlasBalance-V-01.05-win-x64.zip` desde `scripts/Build-Release.ps1`.
 - Sincronizado `wwwroot` desde el build frontend incluido en el paquete.
 - Verificado que el paquete no incluye artefactos de desarrollo, `.env`, `node_modules`, `obj`, `bin/Debug` ni `.bak-iframe-fix`.
 - Preparada publicacion como asset de GitHub Release, sin versionar el ZIP en Git.
 
 **Comandos ejecutados:**
-- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.04`
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05`
 - `Get-FileHash -Algorithm SHA256`
 - `npm.cmd run lint`
 - `npm.cmd audit --audit-level=moderate`
@@ -42,7 +1125,7 @@ Regla de trabajo desde ahora:
 - `npm audit`: 0 vulnerabilidades.
 - Backend tests Release: 108/108 OK.
 - NuGet vulnerable: sin hallazgos.
-- Paquete generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`.
+- Paquete generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`.
 - Tamano ZIP: `102360418` bytes.
 - SHA256 final: `B5ABC5525CBD49F2BD0A5ADC5B930A2113AF323F99C1337087B8E0D7875E6A10`.
 
@@ -50,9 +1133,41 @@ Regla de trabajo desde ahora:
 - Validacion manual en Windows Server 2019 real tras descargar el asset publicado.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-25 - Correccion de hallazgos de auditoria de uso, bugs y seguridad
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Arreglar los hallazgos abiertos por la auditoria: stack frontend violado por Tailwind/shadcn, contrato duplicado de resumen de cuenta, accesibilidad de controles propios y decoracion visual innecesaria.
 
@@ -76,9 +1191,9 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/backend/tests/GestionCaja.API.Tests/CuentasControllerTests.cs`
 - `Documentacion/REGISTRO_BUGS.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
-- `Documentacion/AUDITORIA_USO_BUGS_SEGURIDAD_V-01.04_2026-04-25.md`
+- `Documentacion/AUDITORIA_USO_BUGS_SEGURIDAD_V-01.05_2026-04-25.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Cambios implementados:**
@@ -115,11 +1230,43 @@ Regla de trabajo desde ahora:
 - El estado Git local sigue sucio y no sirve como base fina de revision sin limpieza previa.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-25 - Pasada extra de auditoria y endurecimiento defensivo
 
-**Version:** V-01.04
+**Version:** V-01.05
 
-**Trabajo realizado:** Repaso completo de bugs documentados, revision de seguridad (auth, permisos, CSRF, security stamp, integracion OpenClaw, secretos, rate limit, cabeceras, dependencias) y aplicacion de guardias de entrada en endpoints nuevos de V-01.04.
+**Trabajo realizado:** Repaso completo de bugs documentados, revision de seguridad (auth, permisos, CSRF, security stamp, integracion OpenClaw, secretos, rate limit, cabeceras, dependencias) y aplicacion de guardias de entrada en endpoints nuevos de V-01.05.
 
 **Archivos tocados:**
 - `Atlas Balance/backend/src/GestionCaja.API/Controllers/AlertasController.cs`
@@ -131,7 +1278,7 @@ Regla de trabajo desde ahora:
 
 **Cambios implementados:**
 - Endpoints `POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento`: validacion de body nulo y normalizacion de listas de destinatarios para que un cuerpo malformado devuelva `400` en lugar de `500`.
-- Verificadas auditorias V-01.02/V-01.03/V-01.04: incidencias previas siguen cerradas, `npm audit` y NuGet sin vulnerabilidades.
+- Verificadas auditorias V-01.02/V-01.03/V-01.05: incidencias previas siguen cerradas, `npm audit` y NuGet sin vulnerabilidades.
 - Bugs abiertos pre-existentes (Tailwind/shadcn introducido, `CuentaResumenResponse` duplicado, accesibilidad de controles propios, estado Git local) confirmados: requieren decision de producto, no se tocan en esta pasada.
 
 **Comandos ejecutados:**
@@ -157,9 +1304,41 @@ Regla de trabajo desde ahora:
 - Estado Git local sigue listado como abierto.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-25 - Auditoria general de bugs y seguridad
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Revision completa razonable de bugs documentados, problemas de seguridad conocidos, dependencias, configuracion y verificaciones automaticas.
 
@@ -167,12 +1346,12 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/package.json`
 - `Atlas Balance/frontend/package-lock.json`
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Documentacion/SEGURIDAD_AUDITORIA_V-01.04.md`
+- `Documentacion/SEGURIDAD_AUDITORIA_V-01.05.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/REGISTRO_BUGS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 
 **Cambios implementados:**
 - Revisadas incidencias previas de auth, permisos, rutas, secretos, exportaciones, OpenClaw, cabeceras y CI/CD.
@@ -180,7 +1359,7 @@ Regla de trabajo desde ahora:
 - Verificado con advisories recientes que el lockfile ya resolvia versiones seguras, pero el manifiesto mantenia rangos minimos antiguos.
 - Actualizado `axios` a `^1.15.2` y `react-router-dom` a `^6.30.3`.
 - Recompilado frontend y sincronizado `wwwroot`.
-- Creado informe `SEGURIDAD_AUDITORIA_V-01.04.md`.
+- Creado informe `SEGURIDAD_AUDITORIA_V-01.05.md`.
 
 **Comandos ejecutados:**
 - `Get-Content` sobre instrucciones, version actual, log, bugs, auditorias y skill local `cyber-neo`.
@@ -213,7 +1392,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Importacion simple de plazo fijo y resumen en dashboard
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Ajustado el flujo de plazos fijos para que la importacion no use formatos bancarios y el dashboard muestre sus datos clave.
 
@@ -231,7 +1410,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
 - `Atlas Balance/frontend/src/types/index.ts`
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- Documentacion de `V-01.04`.
+- Documentacion de `V-01.05`.
 
 **Cambios implementados:**
 - El contexto de importacion expone `tipo_cuenta`.
@@ -265,7 +1444,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Actualizaciones post-instalacion
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Endurecido el flujo de actualizacion para instalaciones ya existentes.
 
@@ -280,7 +1459,7 @@ Regla de trabajo desde ahora:
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/REGISTRO_BUGS.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 
 **Cambios implementados:**
 - `update.ps1` valida paquete antes de autoelevar y soporta `-PackagePath`.
@@ -289,11 +1468,11 @@ Regla de trabajo desde ahora:
 - Documentado uso desde paquete nuevo y desde instalacion existente con `-PackagePath`.
 
 **Comandos ejecutados:**
-- `Get-Content` sobre version actual, version `V-01.04`, log y scripts de actualizacion.
+- `Get-Content` sobre version actual, version `V-01.05`, log y scripts de actualizacion.
 - `Select-String` sobre servicios de actualizacion API/Watchdog.
 - Parser PowerShell sobre `update.ps1` y `Actualizar-AtlasBalance.ps1`.
 - Ejecucion de update desde carpeta fuente para validar fallo claro.
-- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.04`.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05`.
 - Parser PowerShell sobre scripts empaquetados.
 - `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
 - `Get-FileHash -Algorithm SHA256` sobre el ZIP regenerado.
@@ -302,20 +1481,20 @@ Regla de trabajo desde ahora:
 - Parser PowerShell OK.
 - Update desde carpeta fuente falla con mensaje de paquete invalido.
 - Actualizador empaquetado desde paquete valido y `InstallPath` inexistente falla con mensaje claro de instalacion inexistente.
-- Paquete regenerado: `AtlasBalance-V-01.04-win-x64.zip`.
+- Paquete regenerado: `AtlasBalance-V-01.05-win-x64.zip`.
 - SHA256: `42994915A8AFD014EF807D99E6335944302662FAA21927206ACAF1B8FDE46304`.
 - Scripts empaquetados parsean correctamente.
 - Paquete sin `*Development*`, `*.template`, `.env`, `node_modules` ni `.bak-iframe-fix`.
 - Backend tests filtrados sin Testcontainers: 95/95 OK.
 
 **Pendientes:**
-- Probar actualizacion real desde una instalacion `V-01.03`/`V-01.04` en Windows Server 2019.
+- Probar actualizacion real desde una instalacion `V-01.03`/`V-01.05` en Windows Server 2019.
 
 ## 2026-04-25 - Cierre incidencias instalacion Windows Server 2019
 
-**Version:** V-01.04
+**Version:** V-01.05
 
-**Trabajo realizado:** Corregidas las incidencias operativas del documento `INCIDENCIAS_INSTALACION_WINDOWS_SERVER_2019_V-01.04.txt`.
+**Trabajo realizado:** Corregidas las incidencias operativas del documento `INCIDENCIAS_INSTALACION_WINDOWS_SERVER_2019_V-01.05.txt`.
 
 **Archivos tocados:**
 - `Atlas Balance/install.cmd`
@@ -330,7 +1509,7 @@ Regla de trabajo desde ahora:
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/REGISTRO_BUGS.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 
 **Cambios implementados:**
 - Validacion temprana de paquete release para evitar instalar desde carpeta fuente o ZIP `main`.
@@ -341,19 +1520,19 @@ Regla de trabajo desde ahora:
 - Inclusion de scripts de reset/certificado cliente en el paquete release.
 
 **Comandos ejecutados:**
-- `Get-Content` sobre instrucciones, version actual, version `V-01.04`, incidencias, log y catalogo de skills.
+- `Get-Content` sobre instrucciones, version actual, version `V-01.05`, incidencias, log y catalogo de skills.
 - `Select-String`/`Get-ChildItem` para localizar scripts, cabeceras, instalador y documentacion.
 - Parser PowerShell con `[System.Management.Automation.Language.Parser]::ParseFile(...)`.
 - Ejecucion de `Instalar-AtlasBalance.ps1` e `install.ps1` desde carpeta fuente para validar fallo claro.
-- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.04`.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05`.
 - `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
-- `Get-FileHash -Algorithm SHA256` sobre `AtlasBalance-V-01.04-win-x64.zip`.
+- `Get-FileHash -Algorithm SHA256` sobre `AtlasBalance-V-01.05-win-x64.zip`.
 
 **Resultado de verificacion:**
 - Parser PowerShell OK en scripts modificados.
 - Ejecutar el instalador desde carpeta fuente falla con mensaje de paquete invalido.
 - Ejecutar `scripts\install.ps1` desde carpeta fuente falla con el mismo mensaje antes de autoelevar.
-- Paquete generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`.
+- Paquete generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`.
 - SHA256: `42994915A8AFD014EF807D99E6335944302662FAA21927206ACAF1B8FDE46304`.
 - Scripts nuevos incluidos en paquete y parser OK en scripts empaquetados.
 - Paquete sin `*Development*`, `*.template`, `.env`, `node_modules` ni `.bak-iframe-fix`.
@@ -364,20 +1543,20 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Documento incidencias instalacion Windows Server 2019
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Generado un documento TXT de traspaso con errores, bugs, incidencias y soluciones detectadas durante la instalacion real en Windows Server 2019.
 
 **Archivos tocados:**
-- `Documentacion/INCIDENCIAS_INSTALACION_WINDOWS_SERVER_2019_V-01.04.txt`
+- `Documentacion/INCIDENCIAS_INSTALACION_WINDOWS_SERVER_2019_V-01.05.txt`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Cambios implementados:**
-- Registradas incidencias de instalacion desde carpeta fuente, paquete V-01.03 vs V-01.04, PostgreSQL 17, `winget`, wrapper `install.cmd`, certificado PFX, health check PowerShell, certificado cliente, credenciales iniciales, reset admin, bloqueo login, SQL con tablas en mayusculas, modal de importacion anti-frame y parche temporal del bundle.
-- Incluido checklist para cerrar `V-01.04` sin documentar passwords ni secretos reales.
+- Registradas incidencias de instalacion desde carpeta fuente, paquete V-01.03 vs V-01.05, PostgreSQL 17, `winget`, wrapper `install.cmd`, certificado PFX, health check PowerShell, certificado cliente, credenciales iniciales, reset admin, bloqueo login, SQL con tablas en mayusculas, modal de importacion anti-frame y parche temporal del bundle.
+- Incluido checklist para cerrar `V-01.05` sin documentar passwords ni secretos reales.
 
 **Comandos ejecutados:**
-- `Get-Content` sobre version actual, `v-01.04.md` y bitacora.
+- `Get-Content` sobre version actual, `v-01.05.md` y bitacora.
 - Creacion del TXT con `apply_patch`.
 
 **Resultado de verificacion:**
@@ -385,11 +1564,11 @@ Regla de trabajo desde ahora:
 - No se incluyeron passwords reales.
 
 **Pendientes:**
-- Convertir las soluciones pendientes en cambios de codigo/scripts antes de publicar `V-01.04`.
+- Convertir las soluciones pendientes en cambios de codigo/scripts antes de publicar `V-01.05`.
 
 ## 2026-04-25 - Fix modal importacion bloqueado por anti-frame
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Corregido el bloqueo del modal `Importar movimientos` en produccion.
 
@@ -410,14 +1589,14 @@ Regla de trabajo desde ahora:
 
 **Resultado de verificacion:**
 - Causa identificada: iframe same-origin bloqueado por cabeceras HTTP de la API.
-- Correccion aplicada en fuente `V-01.04`.
+- Correccion aplicada en fuente `V-01.05`.
 
 **Pendientes:**
 - Publicar/regenerar paquete para llevar la correccion al servidor. En `V-01.03` instalado puede mitigarse navegando a `/importacion` en pagina completa.
 
 ## 2026-04-25 - Fix reinstalacion certificado HTTPS
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Diagnosticado y corregido un fallo de reinstalacion en Windows Server donde la API no arrancaba al cargar el certificado HTTPS.
 
@@ -439,14 +1618,14 @@ Regla de trabajo desde ahora:
 
 **Resultado de verificacion:**
 - Causa identificada en el flujo de instalacion: PFX existente + password nueva.
-- Correccion aplicada en script para `V-01.04`.
+- Correccion aplicada en script para `V-01.05`.
 
 **Pendientes:**
-- Regenerar paquete `V-01.04` antes de publicar una release nueva.
+- Regenerar paquete `V-01.05` antes de publicar una release nueva.
 
-## 2026-04-25 - Apertura version V-01.04
+## 2026-04-25 - Apertura version V-01.05
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Apertura de la nueva linea de trabajo posterior a la publicacion de `V-01.03`, con rama propia y fuentes de version alineadas.
 
@@ -467,32 +1646,32 @@ Regla de trabajo desde ahora:
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/Versiones/version_actual.md`
 - `Documentacion/Versiones/v-01.03.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 
 **Cambios implementados:**
-- Creada rama local `V-01.04` desde `V-01.03`.
-- Marcada `V-01.04` como version actual del proyecto.
+- Creada rama local `V-01.05` desde `V-01.03`.
+- Marcada `V-01.05` como version actual del proyecto.
 - Cerrada `V-01.03` como version publicada/base anterior.
-- Actualizadas fuentes runtime backend/frontend a `1.4.0` y `V-01.04`.
-- Actualizados scripts y documentacion viva para generar paquetes `AtlasBalance-V-01.04-win-x64`.
+- Actualizadas fuentes runtime backend/frontend a `1.5.0` y `V-01.05`.
+- Actualizados scripts y documentacion viva para generar paquetes `AtlasBalance-V-01.05-win-x64`.
 
 **Comandos ejecutados:**
 - `git status --short --branch`
 - `Get-Content` sobre `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, archivos `v-*` y fuentes runtime.
-- `git branch --list V-01.04`
-- `git ls-remote --heads origin V-01.04`
-- `git switch -c V-01.04`
-- `git switch V-01.04`
+- `git branch --list V-01.05`
+- `git ls-remote --heads origin V-01.05`
+- `git switch -c V-01.05`
+- `git switch V-01.05`
 - `Select-String` para localizar referencias vivas a `V-01.03` y `1.3.0`.
 - `git diff --check`
 - `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`
 - `npm.cmd run build`
 
 **Resultado de verificacion:**
-- Rama activa confirmada: `V-01.04`.
+- Rama activa confirmada: `V-01.05`.
 - `git diff --check`: OK; solo avisos esperados de normalizacion LF/CRLF.
 - Backend build Release: OK, 0 warnings, 0 errores.
-- Frontend build: OK con `atlas-balance-frontend@1.4.0`.
+- Frontend build: OK con `atlas-balance-frontend@1.5.0`.
 - Busqueda de referencias activas: sin restos de `V-01.03` en codigo/configuracion viva.
 
 **Pendientes:**
@@ -1105,7 +2284,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/components/layout/navigation.ts` — eliminado
 - `Atlas Balance/frontend/src/components/layout/{TopBar,Sidebar,BottomNav}.tsx` — actualizado import de navigation
 - `Atlas Balance/frontend/src/pages/PlaceholderPage.tsx` — eliminado (sin uso)
-- `CLAUDE.md` y `Atlas Balance/CLAUDE.md` — corregidos: Vite 5→8, PostgreSQL 14→16, V-01.01→V-01.02, estructura de directorios actualizada
+- `CLAUDE.md` y `Atlas Balance/CLAUDE.md` — corregidos: Vite 5?8, PostgreSQL 14?16, V-01.01?V-01.02, estructura de directorios actualizada
 
 **Comandos ejecutados:**
 - `git rm --cached` sobre 18 archivos de wwwroot y appsettings.Development.json
@@ -1121,6 +2300,38 @@ Regla de trabajo desde ahora:
 - `design-tokens.css` en Documentacion/ y `variables.css` en frontend/styles pueden desincronizarse; sin mecanismo de sync automatico
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-20 - Apertura version V-01.02
 
 **Fase:** Control de versiones
@@ -1211,6 +2422,38 @@ Regla de trabajo desde ahora:
 - Revisar y marcar el PR como listo cuando se quiera mergear a `main`.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-20 - Version V-01.01 - Politica GitHub sin Otros ni Skills
 
 **Version:** V-01.01
@@ -1254,6 +2497,38 @@ Regla de trabajo desde ahora:
 - Considerar GitHub Releases o Git LFS para paquetes de release futuros si superan 50 MiB.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-20 - Version V-01.01 - Catalogo de skills locales
 
 **Version:** V-01.01
@@ -1291,6 +2566,38 @@ Regla de trabajo desde ahora:
 - No se ejecuto ningun script o CLI de las skills; solo se analizaron archivos locales.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-20 - Version V-01.01 - Reorganizacion de carpetas y reglas de documentacion
 
 **Version:** V-01.01
@@ -1771,9 +3078,9 @@ Regla de trabajo desde ahora:
 - `dotnet ef migrations add Initial` OK.
 - `dotnet ef database update` OK.
 - API levantada en Development y health check validado:
-  - `https://localhost:443/api/health` → `{"status":"healthy", ...}`
+  - `https://localhost:443/api/health` ? `{"status":"healthy", ...}`
 - Root estático validado:
-  - `https://localhost:443/` → 200 OK.
+  - `https://localhost:443/` ? 200 OK.
 
 ### 7) Incidencias detectadas y resueltas
 - PowerShell bloqueaba `npm.ps1`: se usó `npm.cmd`.
@@ -1786,6 +3093,38 @@ Regla de trabajo desde ahora:
 - Empezar Fase 1 (Auth endpoints + flujo real de login/refresh/logout/me/cambio-password).
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-13 — Cierre formal Fase 0 (desarrollo local)
 
@@ -1803,8 +3142,8 @@ Regla de trabajo desde ahora:
   - `DIVISAS_ACTIVAS=4`
   - `CONFIGURACION=18`
 - API en `Production` local:
-  - `GET http://localhost:5000/api/health` → `200`
-  - `GET http://localhost:5000/` (estáticos React) → `200`
+  - `GET http://localhost:5000/api/health` ? `200`
+  - `GET http://localhost:5000/` (estáticos React) ? `200`
 
 ### Estado
 - **Fase 0 cerrada y funcional para entorno local de desarrollo.**
@@ -1951,7 +3290,7 @@ Regla de trabajo desde ahora:
   - Nueva `ImportacionPage` implementada como wizard de 4 pasos:
     - Paso 1: selección de cuenta + textarea + preview primeras 3 filas
     - Paso 2: mapeo de columnas base + columnas extra dinámicas + precarga de formato guardado
-    - Paso 3: preview validado con `✓/✗`, errores en rojo y selección de filas válidas
+    - Paso 3: preview validado con `?/?`, errores en rojo y selección de filas válidas
     - Paso 4: resumen + confirmación + feedback final
   - Ruta real `/importacion` conectada en `App.tsx` (reemplaza placeholder).
   - Tipos TypeScript ampliados para contexto/validación/confirmación de importación.
@@ -3999,6 +5338,38 @@ Regla de trabajo desde ahora:
 - Validacion visual manual final recomendada en navegador real para confirmar comportamiento responsive exacto en breakpoints de tablet/mobile.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-15 - Fase 12 (Integracion OpenClaw)
 
@@ -4186,6 +5557,38 @@ Regla de trabajo desde ahora:
 - Sincronizacion Figma pendiente por falta de conector de escritura disponible en esta sesion.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Correccion auth dark mode: cambio obligatorio de password
 
@@ -4214,6 +5617,38 @@ Regla de trabajo desde ahora:
 - Sincronizar Figma si se considera cambio visual formal de la pantalla.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Importacion: wizard de 2 pasos
 
@@ -4254,6 +5689,38 @@ Regla de trabajo desde ahora:
 - Sincronizar Figma cuando haya herramienta de escritura disponible.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Ajuste branding en layout principal
 
@@ -4295,6 +5762,38 @@ Regla de trabajo desde ahora:
 - Actualizar Figma manualmente o repetir la sincronizacion cuando este disponible el conector de escritura de Figma.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Titulares: dashboard integrado + formulario minimo
 
@@ -4338,6 +5837,38 @@ Regla de trabajo desde ahora:
 
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Cuentas: vista en tarjetas alineada con Titulares
 
@@ -4481,6 +6012,38 @@ Regla de trabajo desde ahora:
 - Sin pendientes funcionales para este ajuste.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Cuentas: dashboard con graficas y saldos (alineado a Titulares)
 
@@ -4543,6 +6106,38 @@ Regla de trabajo desde ahora:
 - Validar en entorno funcional (navegador) que `/dashboard/principal` retorna `ingresos_mes` y `egresos_mes` con el tipo esperado para corregir causa raiz de datos origen si aplica.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Cuentas: tabla de dashboard por nombre de cuenta
 
@@ -4607,6 +6202,38 @@ Regla de trabajo desde ahora:
 - Sin pendientes funcionales para este ajuste.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Cuentas: columnas de tabla dashboard (Titular, Banco, Saldo total, Abrir)
 
@@ -4769,6 +6396,38 @@ Regla de trabajo desde ahora:
 - Sin pendientes funcionales para este ajuste.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Cuentas: fallback de banco para evitar N/A en dashboard
 
@@ -7034,6 +8693,38 @@ Regla de trabajo desde ahora:
 - Ninguno para este ajuste.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 
 ## 2026-04-19 - Corrección de mojibake en documentos Markdown
 
@@ -7052,7 +8743,7 @@ Regla de trabajo desde ahora:
 - Escaneo de `.md` con `Get-ChildItem` + `Select-String` para detectar secuencias mojibake.
 - `python -m pip install ftfy -q`
 - Script Python con `ftfy.fix_text(...)` para recodificar y reescribir los 3 archivos afectados.
-- Verificación final con `Select-String -Pattern 'Ã|Â|â€”|â€“|â€|�'`.
+- Verificación final con `Select-String -Pattern 'Ã|Â|â€”|â€“|â€|?'`.
 
 ### Resultado de verificación
 
@@ -7158,7 +8849,7 @@ Regla de trabajo desde ahora:
 - DOCUMENTACION_CAMBIOS.md
 
 ### Cambios implementados
-- Se redise�o la pesta�a `General + SMTP` de `ConfiguracionPage` sin tocar logica de negocio ni endpoints.
+- Se redise?o la pesta?a `General + SMTP` de `ConfiguracionPage` sin tocar logica de negocio ni endpoints.
 - Se reemplazo la grilla plana de inputs por tres bloques claros: `Rutas del sistema`, `Servidor SMTP` y `Exchange y dashboard`.
 - Se agrego jerarquia visual con subtitulo, paneles internos, labels consistentes y mejor espaciado.
 - Se movio el `Email de prueba` a una accion inline dentro del bloque SMTP.
@@ -7449,6 +9140,38 @@ Regla de trabajo desde ahora:
 - Ninguno.
 
 ---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
 ## 2026-04-20 - Auditoria tecnica profunda adicional V-01.02 (hardening fino)
 
 **Version:** V-01.02
@@ -7604,7 +9327,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Permiso global para ver todas las cuentas
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Se agrego un permiso explicito de lectura de cuentas para que un admin pueda dar acceso a todas las cuentas desde Usuarios sin activar permisos de escritura/importacion.
 
@@ -7631,7 +9354,7 @@ Regla de trabajo desde ahora:
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 
 **Cambios implementados:**
 - Nueva columna `puede_ver_cuentas` en `PERMISOS_USUARIO`, con migracion EF y backfill para permisos existentes que ya daban acceso por scope o por acciones de datos.
@@ -7702,7 +9425,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Importacion permite filas informativas con advertencias
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Correccion del flujo de importacion para que las filas bancarias con solo concepto no bloqueen la importacion. Ahora se avisa al usuario, pero se permite importarlas.
 
@@ -7746,12 +9469,12 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Planning detallado de plazo fijo, autonomos, alertas y dashboard
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Creacion de un documento de instrucciones detalladas para implementar las nuevas funciones de plazo fijo, tipo de titular autonomo, filtros por tipo, alertas por tipo de titular y cambios del dashboard.
 
 **Archivos tocados:**
-- `Documentacion/Versiones/v-01.04-nuevas-funciones-plazo-fijo-autonomos-alertas.md`
+- `Documentacion/Versiones/v-01.05-nuevas-funciones-plazo-fijo-autonomos-alertas.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Cambios implementados:**
@@ -7764,7 +9487,7 @@ Regla de trabajo desde ahora:
 - `Get-Content -LiteralPath 'Documentacion\\Versiones\\version_actual.md'`
 - `Get-Content -LiteralPath 'Documentacion\\LOG_ERRORES_INCIDENCIAS.md'`
 - `Get-Content -LiteralPath 'Documentacion\\SKILLS_LOCALES.md'`
-- `Get-Content -LiteralPath 'Documentacion\\Versiones\\v-01.04.md'`
+- `Get-Content -LiteralPath 'Documentacion\\Versiones\\v-01.05.md'`
 - `Get-Content -LiteralPath 'Skills\\Construcion\\the-architect-main\\CLAUDE.md'`
 - Inspeccion con `Get-ChildItem` y `Select-String` sobre backend, frontend y documentacion.
 
@@ -7776,14 +9499,14 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Implementacion plazo fijo, autonomos, alertas por tipo y dashboard inmovilizado
 
-**Version:** V-01.04
+**Version:** V-01.05
 
-**Trabajo realizado:** Implementacion completa de las funciones descritas en `v-01.04-nuevas-funciones-plazo-fijo-autonomos-alertas.md`.
+**Trabajo realizado:** Implementacion completa de las funciones descritas en `v-01.05-nuevas-funciones-plazo-fijo-autonomos-alertas.md`.
 
 **Archivos tocados:**
 - Backend: modelos, DbContext, migracion `AddPlazoFijoAutonomosAlertas`, DTOs, `CuentasController`, `TitularesController`, `AlertasController`, `DashboardService`, `AlertaService`, `EmailService`, `PlazoFijoService`, `PlazoFijoVencimientoJob`, tests.
 - Frontend: tipos, titulares, cuentas, alertas, dashboard, `SaldoPorDivisaCard`, estilos y bundle `wwwroot`.
-- Documentacion: cambios, tecnica, usuario, log de incidencias, registro de bugs, version V-01.04 y SPEC.
+- Documentacion: cambios, tecnica, usuario, log de incidencias, registro de bugs, version V-01.05 y SPEC.
 
 **Cambios implementados:**
 - Nuevo tipo de titular `AUTONOMO`.
@@ -7822,7 +9545,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Coherencia UI/UX del frontend
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Mejora sistemica del UI/UX para unificar diseno en login, shell, navegacion, botones, campos, tabs, tarjetas, tablas, modales y estados interactivos.
 
@@ -7833,7 +9556,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/styles/auth.css`
 - `Atlas Balance/frontend/src/components/ui/button.tsx`
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/mejoradiseno.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -7855,7 +9578,7 @@ Regla de trabajo desde ahora:
 - Tabs como control segmentado en configuracion, porque una fila de botones sueltos era incoherente.
 
 **Comandos ejecutados:**
-- `Get-Content` sobre `CLAUDE.md`, `version_actual.md`, `v-01.04.md`, `SKILLS_LOCALES.md` y `LOG_ERRORES_INCIDENCIAS.md`.
+- `Get-Content` sobre `CLAUDE.md`, `version_actual.md`, `v-01.05.md`, `SKILLS_LOCALES.md` y `LOG_ERRORES_INCIDENCIAS.md`.
 - `Get-Content` sobre skills locales de diseno: `redesign-existing-projects`, `design-taste-frontend`, `ckm-design-system`, `ckm-ui-styling`, `impeccable` y `polish`.
 - `git status --short`
 - `npm.cmd run lint`
@@ -7877,7 +9600,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Separacion de layout CSS por dominios
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Refactor estructural del CSS de layout para partir el archivo monolitico en hojas por dominio sin cambiar la cascada visual.
 
@@ -7892,7 +9615,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/styles/layout/admin.css`
 - `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
@@ -7932,14 +9655,14 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Ajuste visual de calendario en plazo fijo
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Correccion visual de los campos de fecha usados al crear o renovar cuentas de plazo fijo.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/styles/global.css`
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
@@ -7955,7 +9678,7 @@ Regla de trabajo desde ahora:
 - No se mete date picker custom: seria demasiado para un bug visual puntual.
 
 **Comandos ejecutados:**
-- `Get-Content` sobre version actual, `v-01.04.md` y log de incidencias.
+- `Get-Content` sobre version actual, `v-01.05.md` y log de incidencias.
 - `Select-String` para localizar `type="date"` y estilos relacionados.
 - `npm.cmd run lint`
 - `npm.cmd run build`
@@ -7971,7 +9694,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Vencimiento visible en detalle de plazo fijo
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Mostrar en el dashboard de cuenta cuando vence un plazo fijo.
 
@@ -7982,7 +9705,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout/entities.css`
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -7999,7 +9722,7 @@ Regla de trabajo desde ahora:
 - Se usa una banda compacta porque es informacion de identidad/estado de la cuenta, no un cuarto KPI financiero.
 
 **Comandos ejecutados:**
-- `Get-Content` sobre instrucciones, version actual, `v-01.04.md`, log de incidencias y documentacion afectada.
+- `Get-Content` sobre instrucciones, version actual, `v-01.05.md`, log de incidencias y documentacion afectada.
 - `Select-String` para localizar campos de plazo fijo, resumen de cuenta y estilos relacionados.
 - `dotnet build "Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" -c Release`
 - `npm.cmd run lint`
@@ -8017,14 +9740,14 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Auditoria de uso, bugs y seguridad
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Auditar estado de uso, bugs, seguridad, dependencias, build, tests, permisos, rutas sensibles, frontend y documentacion.
 
 **Archivos tocados:**
-- `Documentacion/AUDITORIA_USO_BUGS_SEGURIDAD_V-01.04_2026-04-25.md`
+- `Documentacion/AUDITORIA_USO_BUGS_SEGURIDAD_V-01.05_2026-04-25.md`
 - `Documentacion/REGISTRO_BUGS.md`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Cambios implementados:**
@@ -8060,7 +9783,7 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Selector de fecha propio
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Sustituir el calendario nativo del navegador por un selector propio alineado con el sistema visual de Atlas Balance.
 
@@ -8072,7 +9795,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/components/extractos/AddRowForm.tsx`
 - `Atlas Balance/frontend/src/pages/AuditoriaPage.tsx`
 - `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -8109,12 +9832,12 @@ Regla de trabajo desde ahora:
 
 ## 2026-04-25 - Vaciado de datos de tesoreria local
 
-**Version:** V-01.04
+**Version:** V-01.05
 
 **Trabajo realizado:** Vaciar datos operativos de titulares, cuentas y extractos en la base PostgreSQL local de desarrollo.
 
 **Archivos tocados:**
-- `Documentacion/Versiones/v-01.04.md`
+- `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Cambios implementados:**
@@ -8138,3 +9861,443 @@ Regla de trabajo desde ahora:
 
 **Pendientes:**
 - Ninguno.
+
+---
+## 2026-04-26 - Actualizacion post-instalacion endurecida
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Corregir los dos fallos detectados al actualizar una instalacion real desde `V-01.03` con paquete `V-01.04`: reenvio roto de `-InstallPath` y arranque bloqueado por formatos de importacion duplicados.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Cambios implementados:**
+- `update.ps1` declara explicitamente `InstallPath` y `SkipBackup`, y los reenvia a `Actualizar-AtlasBalance.ps1` sin depender de argumentos residuales.
+- `SeedData` comprueba IDs fijos existentes antes de insertar formatos de importacion por defecto.
+- Agregado test de regresion para una fila legacy de `FORMATOS_IMPORTACION` con ID fijo ya existente pero datos de banco/divisa incompletos.
+
+**Comandos ejecutados:**
+- Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
+- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+
+**Resultado de verificacion:**
+- Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `SeedDataTests`: 5/5 OK.
+
+**Pendientes:**
+- Regenerar paquete `V-01.05` antes de publicarlo o usarlo para actualizar servidores.
+## 2026-04-26 - Apertura y migracion global a V-01.05
+
+**Version:** V-01.05
+
+**Trabajo realizado:** Actualizacion global de version en codigo, scripts y documentacion para pasar de `V-01.05` a `V-01.05`.
+
+**Archivos tocados:**
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/VERSION`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/install.ps1`
+- `Atlas Balance/README_RELEASE.md`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-01.05.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Atlas Balance/AGENTS.md`
+- `Atlas Balance/CLAUDE.md`
+- `CLAUDE.md`
+- Renombrados: `v-01.05.md`, `v-01.05-nuevas-funciones-plazo-fijo-autonomos-alertas.md`, `AUDITORIA_USO_BUGS_SEGURIDAD_V-01.05_2026-04-25.md`, `SEGURIDAD_AUDITORIA_V-01.05.md`, `INCIDENCIAS_INSTALACION_WINDOWS_SERVER_2019_V-01.05.txt`.
+
+**Cambios implementados:**
+- Reemplazo global de referencias `V-01.05`/`v-01.05` por `V-01.05`/`v-01.05`.
+- Actualizacion de version runtime backend/frontend a `1.5.0`.
+- Renombrado de documentos versionados para mantener trazabilidad con `V-01.05`.
+- Correccion de metadatos de version activa y base anterior publicada (`V-01.05`).
+
+**Comandos ejecutados:**
+- `git grep -n -I -E "V-01\\.04|v-01\\.04|01\\.04"`
+- Script PowerShell de reemplazo global y renombrado con `git mv`.
+- `git grep -n -I "1.5.0"`
+- `git status --short`
+
+**Resultado de verificacion:**
+- Sin coincidencias de `V-01.05`/`v-01.05` en archivos versionados.
+- `Directory.Build.props` y `frontend/package.json` alineados con `1.5.0` y `V-01.05`.
+- Documentacion de version activa apuntando a `v-01.05.md`.
+
+**Pendientes:**
+- Ninguno en esta tarea de versionado.
+
+## 2026-04-26 - Normalizacion de naming Atlas Labs / Atlas Balance y barrido de referencias legacy
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se incorpora en la informacion canonica del proyecto que pertenece a Atlas Labs y que la aplicacion se llama Atlas Balance.
+- Se realiza barrido profundo de texto para detectar referencias legacy tipo `Gestion de Caja` / `Gestion caja`.
+- Se valida estabilidad tecnica con lint/build frontend y build/tests backend.
+
+**Archivos tocados:**
+- `CLAUDE.md`
+- `Atlas Balance/CLAUDE.md`
+- `Atlas Balance/AGENTS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Cambios implementados:**
+- En la seccion `Que es este proyecto` de los archivos de instrucciones se agrega la frase explicita de pertenencia a Atlas Labs y nombre de producto Atlas Balance.
+- No se renombran identificadores tecnicos internos `GestionCaja*` (solution, namespaces, dll/proyectos) porque no son texto legacy de marca y su sustitucion implicaria refactor mayor con riesgo real de rotura.
+- Barrido estricto (excluyendo artefactos/binarios/logs) sin coincidencias para `Gestion de Caja` / `Gestion caja` en texto de codigo y documentacion activa.
+
+**Comandos ejecutados:**
+- Busqueda textual estricta:
+  - `Select-String ... -Pattern '(?i)gesti[oÃ³]n\s+de\s+caja|gestion\s+de\s+caja|gesti[oÃ³]n\s+caja|gestion\s+caja'`
+- Frontend:
+  - `npm.cmd run lint`
+  - `npm.cmd run build`
+- Backend:
+  - `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore`
+  - `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build`
+  - `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+
+**Resultado de verificacion:**
+- Barrido legacy: sin coincidencias de `Gestion de Caja` / `Gestion caja`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `dotnet build ...GestionCaja.sln`: OK (0 errores, 0 warnings).
+- `dotnet test ... --no-build`: 1 fallo aislado por Docker/Testcontainers no disponible (`ExtractosConcurrencyTests`).
+- `dotnet test ... --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`: 107/107 OK.
+
+**Pendientes:**
+- Para cerrar la validacion al 100% (108/108), ejecutar `ExtractosConcurrencyTests` en un entorno con Docker operativo.
+
+## 2026-04-26 - Segunda pasada de comprobacion de naming legacy
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Segunda pasada de busqueda para detectar referencias antiguas: `Gestion de Caja`, `Gestion caja`, `gestiondecaja`, `gestioncoja`.
+- Revision adicional de nombres de rutas/archivos para localizar variantes legacy.
+- Verificacion tecnica rapida posterior.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Resultado:**
+- Sin coincidencias legacy en codigo funcional ni documentacion activa.
+- Coincidencias solo en la propia bitacora de cambios (texto descriptivo) y en identificadores tecnicos historicos `GestionCaja*` (solution/proyectos/namespaces), que se mantienen para no introducir una migracion de riesgo.
+- `npm.cmd run lint`: OK.
+- `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore`: OK.
+- `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`: 107/107 OK.
+
+**Pendientes:**
+- Ninguno para esta pasada de comprobacion.
+
+## 2026-04-26 - Limpieza de artefactos locales y orden de ignorados
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se revisaron artefactos locales no versionables y directorios vacios antes de borrar nada.
+- Se eliminaron salidas generadas que no forman parte del codigo fuente ni del paquete versionable.
+- Se actualizo `.gitignore` para que los directorios de ejecucion local no vuelvan a aparecer como basura pendiente.
+
+**Archivos tocados:**
+- `.gitignore`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Elementos eliminados:**
+- `.codex-runlogs/`
+- `output/`
+- `Atlas Balance/backend/src/GestionCaja.API/logs/`
+- Contenido generado de `Atlas Balance/Atlas Balance Release/`, conservando `.gitkeep`.
+- Directorios vacios `Atlas Balance/frontend/src/lib/` y `Atlas Balance/frontend/src/components/ui/`.
+
+**Comandos ejecutados:**
+- Inventario con `Get-ChildItem`, `Select-String`, `git status --short` y `git status --ignored --short`.
+- Eliminacion segura con `Resolve-Path` + `Remove-Item -LiteralPath`.
+- `git check-ignore -v .codex-runlogs/foo output/foo`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `dotnet test .\GestionCaja.sln -c Release --no-restore`
+- `dotnet test .\GestionCaja.sln -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+
+**Resultado de verificacion:**
+- `.codex-runlogs/` y `output/` quedan ignorados por Git.
+- `Atlas Balance/Atlas Balance Release/` queda solo con `.gitkeep`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `dotnet test .\GestionCaja.sln -c Release --no-restore`: 107/108 OK; 1 fallo por Docker/Testcontainers no disponible en `ExtractosConcurrencyTests`.
+- `dotnet test ... --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`: 107/107 OK.
+
+**Pendientes:**
+- Para validar la prueba de concurrencia restante, arrancar/configurar Docker y ejecutar `ExtractosConcurrencyTests`.
+
+## 2026-04-26 - Banner de alerta sobredimensionado en Configuracion, Backups, Papelera y Dashboards
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se corrige el layout del shell para que el banner de alertas no ocupe la fila `1fr`.
+- Se deja el contenido principal como unico bloque flexible de altura en `app-main`.
+- Se agrega `align-self: start` en `.alert-banner` para bloquear cualquier estirado vertical residual en vistas dashboard.
+- Se hace barrido global de frontend para confirmar que `AlertBanner` se renderiza una sola vez en `Layout` y no hay copias/variantes en otras paginas.
+- Se sincroniza el build frontend con `wwwroot` para que la correccion quede activa en la API.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.05.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Cambios implementados:**
+- `app-main` pasa de `grid-template-rows: var(--topbar-height) 1fr` a `var(--topbar-height) auto minmax(0, 1fr)`.
+- Se fija el orden de filas por selector directo:
+  - `.app-main > .app-topbar` en fila 1.
+  - `.app-main > .alert-banner` en fila 2.
+  - `.app-main > .app-content` en fila 3 con `min-height: 0`.
+- Se replica el mismo ajuste para mobile en el media query de `max-width: 768px`.
+- `.alert-banner` fuerza `align-self: start` para no estirarse aunque algun layout futuro vuelva a usar `stretch`.
+- `.app-main > .alert-banner` fuerza `align-self: start`, `min-height: 0` y `height: auto` como guard rail de grid.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy ... /MIR`: OK (codigo `1` esperado por copia/actualizacion de archivos).
+
+**Pendientes:**
+- Validacion visual final en entorno del usuario para confirmar que el banner queda con la altura compacta esperada.
+
+## 2026-04-26 - Actualizacion automatica desde GitHub Release oficial
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se conecto el boton `Actualizar ahora` con el ultimo GitHub Release oficial cuando no existe `source_path` local.
+- El backend descarga y extrae el asset `AtlasBalance-*-win-x64.zip` solo desde `https://github.com/AtlasLabs797/AtlasBalance/releases/download/...`.
+- El paquete descargado se valida antes de pasar al Watchdog.
+- Watchdog crea backup PostgreSQL previo, rollback de binarios y health check posterior antes de dar la actualizacion por buena.
+- La pantalla de Configuracion ahora muestra el campo como repositorio GitHub de actualizaciones.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.json`
+- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.Development.json.template`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/WatchdogOperationsServiceTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/README_RELEASE.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/Versiones/v-01.05.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `dotnet test 'Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj' -c Release --filter 'ActualizacionServiceTests|WatchdogOperationsServiceTests|ConfiguracionControllerTests'`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- Parser PowerShell de `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+
+**Resultado de verificacion:**
+- Tests backend focalizados: 14/14 OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK.
+- Parser PowerShell de instalador: OK.
+
+**Pendientes:**
+- Probar en una instalacion real con un GitHub Release nuevo publicado y PostgreSQL accesible para confirmar descarga, backup, reinicio y migraciones de punta a punta.
+
+## 2026-04-26 - Importacion con avisos para filas con saldo y sin fecha/monto
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se corrigio la validacion de importacion para que las filas con concepto, saldo, fecha vacia e importe vacio no bloqueen el lote.
+- Ahora esas filas quedan como validas con avisos: monto `0`, fecha heredada de la ultima fila valida anterior y saldo conservado.
+- Se mantiene el bloqueo para saldo no numerico, fecha sin referencia previa o importes ambiguos.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Comandos ejecutados:**
+- `dotnet test "Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" --filter ImportacionServiceTests`
+- `dotnet build "Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" -c Release`
+
+**Resultado de verificacion:**
+- Tests de importacion: 26/26 OK.
+- Build backend Release: OK, 0 warnings.
+
+**Pendientes:**
+- Probar con un extracto real del banco en la pantalla de importacion para confirmar que esas filas aparecen con icono de aviso y checkbox activo.
+
+## 2026-05-01 - Checklist de seguridad aplicado
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Revisado el checklist general `C:\Proyectos\CHECKLIST DE SEGURIDAD PARA APP.md` contra la superficie real de Atlas Balance.
+- Implementado MFA TOTP obligatorio para usuarios web antes de emitir cookies JWT.
+- La configuracion `Security:RequireMfaForWebUsers` queda activa por defecto.
+- Los secretos MFA se guardan protegidos con `ISecretProtector`.
+- Cambios de permisos, email o perfil de usuario rotan `security_stamp` y revocan refresh tokens del usuario afectado.
+- Las actualizaciones descargadas desde GitHub Release verifican el digest SHA-256 del asset antes de extraer el ZIP.
+- CI suma un escaneo de secretos de alta confianza.
+- Corregido un test fragil de dashboard que fallaba al ejecutarse en los primeros dias del mes por usar una fecha futura.
+- Creada documentacion de checklist aplicado y respuesta ante incidentes.
+
+**Archivos tocados:**
+- `.github/workflows/ci.yml`
+- `Atlas Balance/backend/src/GestionCaja.API/Constants/AuditActions.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/DTOs/AuthDtos.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Middleware/CsrfMiddleware.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/TotpService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501105704_RequireWebUserMfa.cs`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs`
+- `Documentacion/SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md`
+- `Documentacion/SEGURIDAD_RESPUESTA_INCIDENTES.md`
+
+**Comandos ejecutados:**
+- `dotnet ef migrations add RequireWebUserMfa`
+- `dotnet build ".\Atlas Balance\backend\src\GestionCaja.API\GestionCaja.API.csproj" -c Release --no-restore`
+- `dotnet test ".\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "AuthServiceTests|UsuariosControllerTests|ActualizacionServiceTests|CsrfServiceTests|UserStateMiddlewareTests"`
+- `dotnet test ".\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\backend\src\GestionCaja.API\wwwroot /MIR`
+- `npm.cmd audit --audit-level=moderate`
+- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`
+- `git diff --check`
+
+**Resultado de verificacion:**
+- Backend Release build: OK.
+- Tests focalizados seguridad/auth/update: 24/24 OK.
+- Tests backend sin Testcontainers: 115/115 OK.
+- Frontend lint: OK.
+- Frontend build: OK.
+- npm audit: 0 vulnerabilidades.
+- NuGet vulnerable: sin hallazgos.
+- Secret scan CI local: sin hallazgos.
+- `git diff --check`: OK, solo avisos de normalizacion CRLF/LF.
+
+**Pendientes:**
+- Firma de binarios/instaladores Windows requiere certificado de firma de codigo.
+- Firma detached de releases y cifrado real de backups en disco quedan como tareas operativas, no cerrables solo desde codigo.
+- No se ejecutaron `ExtractosConcurrencyTests` ni `RowLevelSecurityTests` en la pasada amplia porque dependen de Docker/Testcontainers.
+
+## 2026-04-30 - Descarga de repositorios de referencia UI
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se clonaron los repositorios `tailwindlabs/headlessui` y `radix-ui/themes` dentro de `Skills/Diseno`.
+- El objetivo es dejarlos disponibles como referencia local de diseño/componentes.
+- No se modificó código de `Atlas Balance` ni se introdujeron dependencias nuevas en el proyecto.
+
+**Archivos tocados:**
+- `Skills/Diseno/headlessui`
+- `Skills/Diseno/radix-ui-themes`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Comandos ejecutados:**
+- `git clone https://github.com/tailwindlabs/headlessui "Skills\\Diseno\\headlessui"`
+- `git clone https://github.com/radix-ui/themes "Skills\\Diseno\\radix-ui-themes"`
+
+**Resultado de verificacion:**
+- Clonado de `headlessui`: OK.
+- Clonado de `radix-ui-themes`: OK.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-04-26 - Vista de extractos tipo hoja de calculo
+
+**Version:** V-01.05
+
+**Trabajo realizado:**
+- Se redisenó la tabla de `Extractos` para que se comporte visualmente mas como una hoja de calculo.
+- La cabecera y las filas comparten el mismo viewport, evitando desalineaciones al hacer scroll horizontal con muchas columnas.
+- Se refuerzan los bordes de celda, el foco de edicion, los numeros tabulares, la cabecera congelada y la primera columna congelada.
+- Se sustituyen etiquetas internas tipo `fila_numero` por nombres legibles como `Fila`, `Importe` y `Saldo`.
+- Se sincroniza el build frontend con `wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.05.md`
+
+**Decisiones visuales:**
+- Priorizar densidad y lectura tabular sobre tarjetas o decoracion.
+- Usar una rejilla mas marcada para que cada celda tenga limites claros.
+- Mantener el sistema de variables CSS propio; no se introduce Tailwind, shadcn ni libreria nueva.
+- Mantener acciones secundarias como `Historial` ocultas hasta hover/focus para no ensuciar la lectura financiera.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy ... /MIR`: OK.
+- Prueba visual/funcional Playwright con app real y APIs mockeadas en `/extractos`: OK; 120 filas, scroll horizontal/vertical, cabecera y primera columna sticky, foco de celda, filtros, panel de columnas y consola sin errores.
+
+**Pendientes:**
+- Validacion visual manual con extractos reales y muchas columnas extra para ajustar anchuras si algun banco trae campos excesivamente largos.

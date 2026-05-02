@@ -36,7 +36,7 @@ import type {
   Titular,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
 
 interface CuentaRow extends Cuenta {
   titular_nombre: string;
@@ -367,9 +367,17 @@ export default function CuentasPage() {
   };
 
   useEffect(() => {
-    if (form.tipo_cuenta === 'NORMAL') {
+    if (form.tipo_cuenta !== 'PLAZO_FIJO') {
       if (form.formato_id && !formatosDisponibles.some((formato) => formato.id === form.formato_id)) {
         setForm((prev) => ({ ...prev, formato_id: '' }));
+      }
+      if (form.tipo_cuenta === 'EFECTIVO' && (form.numero_cuenta || form.iban || form.banco_nombre)) {
+        setForm((prev) => ({
+          ...prev,
+          numero_cuenta: '',
+          iban: '',
+          banco_nombre: '',
+        }));
       }
       return;
     }
@@ -381,7 +389,7 @@ export default function CuentasPage() {
       banco_nombre: '',
       formato_id: '',
     }));
-  }, [form.divisa, form.tipo_cuenta, form.formato_id, formatosDisponibles]);
+  }, [form.banco_nombre, form.divisa, form.formato_id, form.iban, form.numero_cuenta, form.tipo_cuenta, formatosDisponibles]);
 
   const startEdit = async (id: string) => {
     setSaving(true);
@@ -398,7 +406,7 @@ export default function CuentasPage() {
         iban: data.iban ?? '',
         banco_nombre: data.banco_nombre ?? '',
         divisa: data.divisa,
-        formato_id: data.tipo_cuenta === 'NORMAL' ? (data.formato_id ?? '') : '',
+        formato_id: data.tipo_cuenta === 'PLAZO_FIJO' ? '' : (data.formato_id ?? ''),
         tipo_cuenta: data.tipo_cuenta ?? (data.es_efectivo ? 'EFECTIVO' : 'NORMAL'),
         activa: data.activa,
         notas: data.notas ?? '',
@@ -443,7 +451,7 @@ export default function CuentasPage() {
       iban: form.iban.trim() || null,
       banco_nombre: form.banco_nombre.trim() || null,
       divisa: form.divisa,
-      formato_id: form.tipo_cuenta === 'NORMAL' ? (form.formato_id || null) : null,
+      formato_id: form.tipo_cuenta === 'PLAZO_FIJO' ? null : (form.formato_id || null),
       tipo_cuenta: form.tipo_cuenta,
       es_efectivo: form.tipo_cuenta === 'EFECTIVO',
       activa: form.activa,
@@ -508,7 +516,7 @@ export default function CuentasPage() {
   };
 
   return (
-    <section className="phase2-page">
+    <section className="phase2-page cuentas-page">
       <header className="phase2-header">
         <h1>Cuentas</h1>
         {isAdmin && <button type="button" onClick={openCreateModal}>Nueva Cuenta</button>}
@@ -537,12 +545,15 @@ export default function CuentasPage() {
                   <EmptyState title="No hay saldos para mostrar." />
                 ) : (
                   <ResponsiveContainer width="100%" height={340}>
-                    <BarChart data={chartRows} margin={{ top: 12, right: 20, left: 8, bottom: 12 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
+                    <BarChart data={chartRows} margin={{ top: 12, right: 8, left: 0, bottom: 12 }}>
+                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="titular_nombre" interval={0} angle={-18} textAnchor="end" height={72} />
                       <YAxis
-                        width={120}
-                        tickFormatter={(value) => formatCurrency(Number(value), principal.divisa_principal)}
+                        width={72}
+                        axisLine={false}
+                        tickLine={false}
+                        tickMargin={10}
+                        tickFormatter={(value) => formatCompactCurrency(Number(value), principal.divisa_principal)}
                       />
                       <Tooltip
                         formatter={(value: number) => formatCurrency(value, principal.divisa_principal)}
@@ -560,6 +571,20 @@ export default function CuentasPage() {
                   </ResponsiveContainer>
                 )}
               </div>
+
+              {evolucion ? (
+                <section className="dashboard-card titulares-evolucion-card">
+                  <header className="dashboard-card-header">
+                    <h3>Evolucion</h3>
+                    <span className="dashboard-subtitle">Ultimo punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'N/A'}</span>
+                  </header>
+                  <EvolucionChart
+                    points={evolucion.puntos}
+                    divisa={principal.divisa_principal}
+                    colors={principal.chart_colors}
+                  />
+                </section>
+              ) : null}
 
               <div className="cuentas-balance-list" aria-label={`Saldos por cuenta bancaria en ${principal.divisa_principal}`}>
                 <div className="cuentas-balance-heading" aria-hidden="true">
@@ -617,20 +642,6 @@ export default function CuentasPage() {
                   );
                 })}
               </div>
-
-              {evolucion ? (
-                <section className="dashboard-card titulares-evolucion-card">
-                  <header className="dashboard-card-header">
-                    <h3>Evolucion</h3>
-                    <span className="dashboard-subtitle">Ultimo punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'N/A'}</span>
-                  </header>
-                  <EvolucionChart
-                    points={evolucion.puntos}
-                    divisa={principal.divisa_principal}
-                    colors={principal.chart_colors}
-                  />
-                </section>
-              ) : null}
 
               {saldosDivisa ? (
                 <div className="titulares-divisa-banners">
@@ -907,24 +918,28 @@ export default function CuentasPage() {
                 </label>
               </section>
 
-              {form.tipo_cuenta === 'NORMAL' ? (
+              {form.tipo_cuenta !== 'PLAZO_FIJO' ? (
                 <section className="users-modal-section">
-                  <h3>Datos bancarios</h3>
+                  <h3>{form.tipo_cuenta === 'NORMAL' ? 'Datos bancarios' : 'Importacion'}</h3>
                   <div className="users-form-grid">
-                    <label>
-                      <span>Banco</span>
-                      <input value={form.banco_nombre} onChange={(e) => setForm((f) => ({ ...f, banco_nombre: e.target.value }))} />
-                    </label>
+                    {form.tipo_cuenta === 'NORMAL' ? (
+                      <>
+                        <label>
+                          <span>Banco</span>
+                          <input value={form.banco_nombre} onChange={(e) => setForm((f) => ({ ...f, banco_nombre: e.target.value }))} />
+                        </label>
 
-                    <label>
-                      <span>Numero de cuenta</span>
-                      <input value={form.numero_cuenta} onChange={(e) => setForm((f) => ({ ...f, numero_cuenta: e.target.value }))} />
-                    </label>
+                        <label>
+                          <span>Numero de cuenta</span>
+                          <input value={form.numero_cuenta} onChange={(e) => setForm((f) => ({ ...f, numero_cuenta: e.target.value }))} />
+                        </label>
 
-                    <label>
-                      <span>IBAN</span>
-                      <input value={form.iban} onChange={(e) => setForm((f) => ({ ...f, iban: e.target.value }))} />
-                    </label>
+                        <label>
+                          <span>IBAN</span>
+                          <input value={form.iban} onChange={(e) => setForm((f) => ({ ...f, iban: e.target.value }))} />
+                        </label>
+                      </>
+                    ) : null}
 
                     <AppSelect
                       label="Formato de importacion"
@@ -941,7 +956,7 @@ export default function CuentasPage() {
                   </div>
                 </section>
               ) : (
-                <p className="import-muted">Las cuentas de efectivo y plazo fijo no usan datos bancarios ni formato de importacion.</p>
+                <p className="import-muted">Las cuentas de plazo fijo no usan datos bancarios ni formato de importacion.</p>
               )}
 
               {form.tipo_cuenta === 'PLAZO_FIJO' || renewingId ? (

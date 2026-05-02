@@ -1,7 +1,7 @@
 param(
     [string]$PackagePath = "",
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$RemainingArgs
+    [string]$InstallPath = "C:\AtlasBalance",
+    [switch]$SkipBackup
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,11 +45,20 @@ if (-not (Test-IsAdmin)) {
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
         "-File", (Quote-Argument $scriptPath),
-        "-PackagePath", (Quote-Argument $packageRoot)
-    ) + ($RemainingArgs | ForEach-Object { Quote-Argument $_ })
+        "-PackagePath", (Quote-Argument $packageRoot),
+        "-InstallPath", (Quote-Argument $InstallPath)
+    )
+    if ($SkipBackup) {
+        $argumentList += "-SkipBackup"
+    }
 
     Start-Process -FilePath "powershell.exe" -ArgumentList ($argumentList -join " ") -Verb RunAs | Out-Null
     exit 0
 }
 
-& $updater @RemainingArgs
+$updaterArgs = @("-InstallPath", $InstallPath)
+if ($SkipBackup) {
+    $updaterArgs += "-SkipBackup"
+}
+
+& $updater @updaterArgs

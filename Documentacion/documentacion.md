@@ -1,14 +1,14 @@
 # Atlas Balance - instalacion y actualizaciones
 
-Version actual del paquete: `V-01.04`.
+Version actual del paquete: `V-01.05`.
 
-No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido es `AtlasBalance-V-01.04-win-x64.zip` y, al descomprimirlo, debe contener `api\GestionCaja.API.exe`, `watchdog\GestionCaja.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido es `AtlasBalance-V-01.05-win-x64.zip` y, al descomprimirlo, debe contener `api\GestionCaja.API.exe`, `watchdog\GestionCaja.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
 
 ## Que queda preparado
 
-La version `V-01.04` deja el proyecto listo para generar un paquete instalable de Windows:
+La version `V-01.05` deja el proyecto listo para generar un paquete instalable de Windows:
 
-- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.04-win-x64.zip`.
+- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`.
 - `install.cmd`: instalador de un clic.
 - `update.cmd`: actualizador de un clic.
 - `uninstall.cmd`: desinstalador de un clic.
@@ -31,6 +31,8 @@ El paquete publicado es self-contained:
 
 Punto importante: PostgreSQL no es un detalle. Ahi viven los datos. Tratarlo como una carpeta mas seria una estupidez cara.
 
+Desde `V-01.05`, la base activa Row Level Security en las tablas sensibles. El usuario de aplicacion debe ser runtime, sin superusuario, sin ownership de tablas y sin `BYPASSRLS`. La credencial de migracion/owner va separada en `ConnectionStrings:MigrationConnection`. Si alguien intenta "simplificar" usando un rol superusuario para la app, esta rompiendo la defensa de la base.
+
 ## Primera instalacion en un servidor
 
 ### 1. Generar el paquete
@@ -44,17 +46,20 @@ En la maquina de desarrollo, desde la carpeta `Atlas Balance`:
 Salida esperada:
 
 ```text
-Atlas Balance Release\AtlasBalance-V-01.04-win-x64\
-Atlas Balance Release\AtlasBalance-V-01.04-win-x64.zip
+Atlas Balance Release\AtlasBalance-V-01.05-win-x64\
+Atlas Balance Release\AtlasBalance-V-01.05-win-x64.zip
+Atlas Balance Release\AtlasBalance-V-01.05-win-x64.zip.sig
 ```
+
+Si quieres que la actualizacion online desde la app acepte el paquete, ejecuta `Build-Release.ps1` con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` disponible en el entorno. La clave privada no va en el repo ni en documentacion.
 
 ### 2. Copiar al servidor
 
-1. Copia `AtlasBalance-V-01.04-win-x64.zip` al servidor.
+1. Copia `AtlasBalance-V-01.05-win-x64.zip` al servidor.
 2. Descomprime el ZIP, por ejemplo en:
 
 ```text
-C:\Temp\AtlasBalance-V-01.04-win-x64
+C:\Temp\AtlasBalance-V-01.05-win-x64
 ```
 
 ### 3. Ejecutar instalador
@@ -89,7 +94,7 @@ El instalador hace esto:
 2. Copia backend, frontend estatico y watchdog.
 3. Genera secretos seguros para JWT, Watchdog, certificado, DB y admin inicial.
 4. Instala o localiza PostgreSQL.
-5. Crea o actualiza la base `atlas_balance` y el usuario `atlas_balance_app`.
+5. Crea o actualiza la base `atlas_balance`, el usuario owner/migracion `atlas_balance_owner` y el usuario runtime `atlas_balance_app` sin superusuario ni `BYPASSRLS`.
 6. Genera `appsettings.Production.json` para API y Watchdog.
 7. Genera certificado HTTPS local en `C:\AtlasBalance\certs`.
 8. Instala servicios Windows:
@@ -113,13 +118,13 @@ https://NOMBRE_DEL_SERVIDOR
 El instalador guarda las credenciales iniciales en:
 
 ```text
-C:\AtlasBalance\INSTALL_CREDENTIALS_ONCE.txt
+C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt
 ```
 
 El archivo queda protegido para Administradores/SYSTEM. Si el explorador dice que no tienes permisos, abre PowerShell como Administrador:
 
 ```powershell
-Get-Content "C:\AtlasBalance\INSTALL_CREDENTIALS_ONCE.txt"
+Get-Content "C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt"
 ```
 
 Si reinstalas sobre una base existente, ese archivo no inventa una password nueva de admin. Mostrara que la base ya existia: usa el admin real o ejecuta el reset soportado:
@@ -133,7 +138,7 @@ Haz esto sin improvisar:
 1. Entra con el admin inicial.
 2. Cambia la password en el primer login.
 3. Guarda la password definitiva en un gestor de passwords.
-4. Borra `INSTALL_CREDENTIALS_ONCE.txt`.
+4. Borra `config\INSTALL_CREDENTIALS_ONCE.txt`.
 
 Dejar ese archivo vivo en el servidor es pedir que te roben el sistema.
 
@@ -170,12 +175,37 @@ Ese atajo:
 
 Regla de oro: los datos viven en PostgreSQL, no en la carpeta `api`. Una actualizacion buena cambia binarios y conserva base de datos, backups, exports y configuracion.
 
+### Actualizacion automatica desde la app
+
+En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
+
+```text
+https://github.com/AtlasLabs797/AtlasBalance
+```
+
+Al pulsar `Verificar actualizacion`, Atlas Balance consulta el ultimo GitHub Release oficial.
+
+Al pulsar `Actualizar ahora`, Atlas Balance:
+
+1. Descarga el asset `AtlasBalance-*-win-x64.zip` y su firma `*.zip.sig` del release oficial.
+2. Valida digest y firma RSA/SHA-256 antes de usarlo.
+3. Lo extrae dentro de `C:\AtlasBalance\updates`.
+4. Crea backup PostgreSQL previo.
+5. Crea rollback de binarios.
+6. Reemplaza la API conservando configuracion.
+7. Arranca de nuevo y aplica migraciones al iniciar.
+8. Comprueba `/api/health`; si no responde, revierte binarios.
+
+Si no puede verificar firma, crear backup previo o recuperar `/api/health`, no actualiza. Bien. Actualizar una app financiera sin backup o sin firma es una forma elegante de pedir problemas.
+
+La instalacion debe tener `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Sin clave publica, la actualizacion online falla cerrado.
+
 ### 1. Generar nuevo paquete
 
 En desarrollo, cuando haya una version nueva:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version V-01.04
+.\scripts\Build-Release.ps1 -Version V-01.05
 ```
 
 ### 2. Copiar al servidor
@@ -184,7 +214,7 @@ En desarrollo, cuando haya una version nueva:
 2. Descomprime en una carpeta temporal, por ejemplo:
 
 ```text
-C:\Temp\AtlasBalance-V-01.04-win-x64
+C:\Temp\AtlasBalance-V-01.05-win-x64
 ```
 
 ### 3. Ejecutar actualizador
@@ -195,10 +225,16 @@ Desde la carpeta descomprimida, como Administrador:
 .\update.cmd -InstallPath C:\AtlasBalance
 ```
 
+Desde `V-01.05`, `update.cmd` pasa `-InstallPath` de forma explicita al actualizador. Si vienes de un paquete anterior y el wrapper falla, ejecuta el actualizador directo desde la carpeta descomprimida:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Actualizar-AtlasBalance.ps1" -InstallPath C:\AtlasBalance
+```
+
 Si ya estas trabajando desde una instalacion que tiene los scripts nuevos y quieres apuntar a un paquete descargado/descomprimido:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.04-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.05-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador hace esto:
@@ -261,13 +297,14 @@ Datos de PostgreSQL
 
 Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exactamente como se pierden configuraciones y luego todo el mundo mira al techo.
 
-## Notas de seguridad V-01.04
+## Notas de seguridad V-01.05
 
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
+- PostgreSQL aplica Row Level Security con politicas por usuario, integracion, admin y operaciones internas. El contexto va firmado; el rol runtime de la app no debe tener `BYPASSRLS` ni ser owner de las tablas.
 - `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
-- La URL de actualizaciones queda limitada al repo oficial de Atlas Balance en GitHub por HTTPS.
-- `INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.
+- La URL de actualizaciones queda limitada al repo oficial de Atlas Balance en GitHub por HTTPS y el paquete online debe venir firmado con `.zip.sig`.
+- `config\INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial con ACL limitada a Administrators/SYSTEM y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.
 
 ## Recuperacion si una actualizacion falla
 
@@ -296,7 +333,7 @@ Start-Service AtlasBalance.API
 
 La version visible del backend se toma de `AssemblyInformationalVersion`.
 
-Para `V-01.04` queda fijado en:
+Para `V-01.05` queda fijado en:
 
 ```text
 Atlas Balance/Directory.Build.props
@@ -311,4 +348,5 @@ Para una version futura:
 2. Cambia `Directory.Build.props`.
 3. Cambia `frontend/package.json` y `package-lock.json`.
 4. Actualiza `Documentacion/Versiones/version_actual.md` y crea o actualiza el archivo de version correspondiente.
-5. Ejecuta `scripts/Build-Release.ps1 -Version V-XX.XX` desde `Atlas Balance`.
+5. Exporta `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en el entorno de release.
+6. Ejecuta `scripts/Build-Release.ps1 -Version V-XX.XX` desde `Atlas Balance`.

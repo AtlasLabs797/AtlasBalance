@@ -154,7 +154,7 @@ public sealed class ExtractosControllerTests
             Id = Guid.NewGuid(),
             UsuarioId = userId,
             CuentaId = cuentaId,
-            PuedeVerDashboard = true
+            PuedeVerCuentas = true
         });
         db.Extractos.AddRange(
             new Extracto
@@ -265,6 +265,56 @@ public sealed class ExtractosControllerTests
     }
 
     [Fact]
+    public async Task Listar_Should_Return_Empty_For_DashboardOnly_ScopedPermission()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.dashboard-scoped@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Dashboard Scoped",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Scoped", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Scoped", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            TitularId = titularId,
+            PuedeVerDashboard = true
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "No visible",
+            Monto = 10m,
+            Saldo = 10m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Listar(ct: CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var page = ok.Value.Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
+        page.Total.Should().Be(0);
+        page.Data.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Listar_Should_Return_All_Rows_For_ViewAccounts_GlobalPermission()
     {
         await using var db = BuildDbContext();
@@ -329,6 +379,174 @@ public sealed class ExtractosControllerTests
         var page = ok.Value.Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
         page.Total.Should().Be(2);
         page.Data.Select(row => row.Concepto).Should().BeEquivalentTo("Cuenta A", "Cuenta B");
+    }
+
+    [Fact]
+    public async Task Restaurar_Should_Require_DeletePermission()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.restore@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Restore",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Restore", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Restore", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            PuedeVerCuentas = true,
+            PuedeAgregarLineas = true,
+            PuedeEliminarLineas = false
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Eliminado",
+            Monto = 10m,
+            Saldo = 10m,
+            FilaNumero = 1,
+            DeletedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Restaurar(extractoId, CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+        (await db.Extractos.IgnoreQueryFilters().SingleAsync(x => x.Id == extractoId)).DeletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ToggleFlag_Should_Require_Flagged_EditPermission_When_Flag_Changes()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.flag-note@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Nota Flag",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Flag", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Flag", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            PuedeEditarLineas = true
+        });
+        db.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            ColumnasEditables = """["flagged_nota"]"""
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Flag",
+            Monto = 10m,
+            Saldo = 10m,
+            FilaNumero = 1,
+            Flagged = false
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.ToggleFlag(extractoId, new ToggleFlagRequest { Flagged = true, Nota = "No autorizada" }, CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+        var extracto = await db.Extractos.SingleAsync(x => x.Id == extractoId);
+        extracto.Flagged.Should().BeFalse();
+        extracto.FlaggedNota.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ToggleFlag_Should_Allow_Note_Edit_When_Flag_Does_Not_Change()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.flag-note-ok@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Nota Flag OK",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Flag OK", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Flag OK", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            PuedeEditarLineas = true
+        });
+        db.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            ColumnasEditables = """["flagged_nota"]"""
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Flag",
+            Monto = 10m,
+            Saldo = 10m,
+            FilaNumero = 1,
+            Flagged = true,
+            FlaggedNota = "Anterior"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.ToggleFlag(extractoId, new ToggleFlagRequest { Flagged = true, Nota = "Nueva" }, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var extracto = await db.Extractos.SingleAsync(x => x.Id == extractoId);
+        extracto.Flagged.Should().BeTrue();
+        extracto.FlaggedNota.Should().Be("Nueva");
     }
 
     [Fact]

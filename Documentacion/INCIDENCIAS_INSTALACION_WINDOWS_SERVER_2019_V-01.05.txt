@@ -1,5 +1,5 @@
 INCIDENCIAS INSTALACION WINDOWS SERVER 2019 - ATLAS BALANCE
-Version objetivo: V-01.04
+Version objetivo: V-01.05
 Fecha: 2026-04-25
 
 Objetivo
@@ -8,7 +8,7 @@ Registrar los errores, bugs, cambios operativos e incidencias detectadas durante
 
 Estado de cierre en fuente
 --------------------------
-Corregido en V-01.04:
+Corregido en V-01.05:
 - Validacion de carpeta instalable vs carpeta fuente.
 - Documentacion de ZIP `main` no instalable.
 - PostgreSQL 17 documentado como valido.
@@ -23,7 +23,7 @@ Corregido en V-01.04:
 - `Build-Release.ps1` incluye scripts operativos nuevos.
 
 Pendiente fuera de esta maquina:
-- Probar `AtlasBalance-V-01.04-win-x64.zip` en Windows Server 2019 real.
+- Probar `AtlasBalance-V-01.05-win-x64.zip` en Windows Server 2019 real.
 - Publicar el ZIP como asset de GitHub Release cuando la validacion real termine.
 - Rotar cualquier secreto que haya sido expuesto durante soporte.
 
@@ -41,7 +41,7 @@ Sintoma:
 Causa:
 - La documentacion y el flujo operativo no distinguen con suficiente dureza entre repositorio fuente y paquete instalable.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - El instalador debe validar al inicio que esta dentro de un paquete release.
 - Si no existen `api/GestionCaja.API.exe` y `watchdog/GestionCaja.Watchdog.exe`, debe parar con un mensaje claro:
   "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-V-XX-win-x64.zip."
@@ -49,25 +49,25 @@ Solucion para V-01.04:
 
 Verificacion esperada:
 - Ejecutar instalador desde carpeta fuente debe fallar con mensaje claro.
-- Ejecutar instalador desde `AtlasBalance-V-01.04-win-x64` debe continuar.
+- Ejecutar instalador desde `AtlasBalance-V-01.05-win-x64` debe continuar.
 
 
-2. Paquete disponible V-01.03 mientras la version actual es V-01.04
+2. Paquete disponible V-01.03 mientras la version actual es V-01.05
 ------------------------------------------------------------------
 Sintoma:
 - En disco estaba generado/publicado `AtlasBalance-V-01.03-win-x64`.
-- La version activa del proyecto era `V-01.04`.
+- La version activa del proyecto era `V-01.05`.
 
 Causa:
 - La version de codigo y el paquete instalado no estaban alineados.
 
-Solucion para V-01.04:
-- Regenerar paquete `AtlasBalance-V-01.04-win-x64.zip`.
+Solucion para V-01.05:
+- Regenerar paquete `AtlasBalance-V-01.05-win-x64.zip`.
 - Publicarlo como asset de GitHub Release.
-- No instalar V-01.03 si el objetivo es validar V-01.04.
+- No instalar V-01.03 si el objetivo es validar V-01.05.
 
 Verificacion esperada:
-- `C:\AtlasBalance\VERSION` debe mostrar `V-01.04`.
+- `C:\AtlasBalance\VERSION` debe mostrar `V-01.05`.
 - La pantalla/configuracion de version debe coincidir con `Atlas Balance/VERSION`.
 
 
@@ -79,7 +79,7 @@ Sintoma:
 Causa:
 - La documentacion hablaba de PostgreSQL 16+ pero el flujo estaba mentalmente centrado en 16.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - Documentar que PostgreSQL 17 es valido porque el requisito real es PostgreSQL 16+.
 - Mantener `PostgresBinPath` autodetectando 17 antes que 16.
 - En Windows Server 2019, recomendar instalacion manual de PostgreSQL en vez de depender de `winget`.
@@ -97,7 +97,7 @@ Sintoma:
 Causa:
 - En Windows Server 2019, `winget` y dependencias de App Installer/Store no son una base fiable para produccion.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - Documentacion: recomendar PostgreSQL manual en Windows Server 2019.
 - Instalador: si falla `winget`, mostrar instrucciones concretas para instalar PostgreSQL manualmente.
 - No vender "one click" como garantia en Server 2019 limpio.
@@ -115,7 +115,7 @@ Sintoma:
 Causa probable:
 - El wrapper `install.cmd`/`scripts/install.ps1` de V-01.03 reenvio argumentos de forma fragil desde PowerShell/CMD.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - Revisar y simplificar el wrapper.
 - Opcion preferida: `install.cmd` debe llamar al instalador real con argumentos preservados de forma no ambigua.
 - Documentar alternativa soportada:
@@ -142,7 +142,7 @@ Causa:
 - En cada reinstalacion generaba una password HTTPS nueva y la escribia en `appsettings.Production.json`.
 - Resultado: PFX viejo + password nueva.
 
-Solucion aplicada en fuente V-01.04:
+Solucion aplicada en fuente V-01.05:
 - `New-AtlasCertificate` elimina `atlas-balance.pfx` y `atlas-balance.cer` existentes antes de generar certificados nuevos.
 
 Mitigacion usada en servidor:
@@ -167,7 +167,7 @@ Sintoma:
 Causa:
 - PowerShell/WinHTTP antiguo en Windows Server 2019 puede fallar con TLS/certificado autofirmado aunque Kestrel este bien.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - En documentacion de instalacion, usar `curl.exe -k` como prueba primaria de health check.
 - No concluir que la API esta caida solo por `Invoke-WebRequest`.
 
@@ -193,7 +193,7 @@ Comando:
 - En servidor o cliente, como administrador:
   `certutil -addstore -f Root "C:\Ruta\atlas-balance.cer"`
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - Documentar paso obligatorio para clientes.
 - Incluir diagnostico: si `/api/health` responde con `curl.exe -k` pero navegador falla, revisar confianza del certificado.
 
@@ -206,7 +206,7 @@ Sintoma:
 Causa:
 - El instalador restringe ACL a Administradores/SYSTEM. Correcto por seguridad, pero poco explicado.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - Documentar que debe abrirse en PowerShell elevado:
   `Get-Content "C:\AtlasBalance\INSTALL_CREDENTIALS_ONCE.txt"`
 - Si hiciera falta:
@@ -227,7 +227,7 @@ Causa:
 - En reinstalacion sobre una base existente, el instalador regenera `INSTALL_CREDENTIALS_ONCE.txt`, pero el admin real ya existe con su password anterior.
 - El archivo nuevo puede mentir. Eso es mal UX y mala operacion.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - Si la BD ya tiene usuarios, el instalador NO debe escribir "Password admin inicial" nueva como si fuera valida.
 - Debe detectar usuarios existentes y mostrar:
   "Base existente detectada. Las credenciales iniciales no se regeneran. Usa el admin ya creado o ejecuta un reset de password."
@@ -265,7 +265,7 @@ Solucion operativa:
 - Enviar SQL por stdin con `psql -f -`:
   `$sql | psql.exe ... -f -`
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - No pedir al operador que escriba SQL largo a mano.
 - Crear script `Reset-AdminPassword.ps1` con parametros seguros.
 
@@ -286,7 +286,7 @@ Solucion operativa:
   `locked_until = NULL`
   para el usuario afectado.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - El script `Reset-AdminPassword.ps1` debe limpiar bloqueo y contador.
 - Documentar que el bloqueo operativo dura 30 minutos si no se limpia manualmente.
 
@@ -307,7 +307,7 @@ Causa:
   `Content-Security-Policy: frame-ancestors 'none'`
 - La app se bloquea a si misma. Esto no es seguridad, es pisarse el cable.
 
-Solucion aplicada en fuente V-01.04:
+Solucion aplicada en fuente V-01.05:
 - `X-Frame-Options: SAMEORIGIN`
 - `frame-ancestors 'self'`
 - Se mantienen bloqueados embebidos externos.
@@ -316,7 +316,7 @@ Mitigacion usada en V-01.03 instalado:
 - Parchear el bundle servido para que el boton navegue a `/importacion` como pagina completa, evitando el iframe.
 
 Pendiente:
-- Regenerar/publicar V-01.04 para restaurar el modal embebido sin parchear JS minificado.
+- Regenerar/publicar V-01.05 para restaurar el modal embebido sin parchear JS minificado.
 
 Verificacion esperada:
 - Pulsar `Importar movimientos` abre el modal correctamente.
@@ -331,7 +331,7 @@ Sintoma:
 Causa:
 - El parche operativo sustituyo `b(!0)` por navegacion a la ruta de importacion para saltarse el iframe bloqueado.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - No mantener este parche como arquitectura.
 - Publicar backend con cabeceras corregidas.
 - Restaurar comportamiento modal original desde fuente.
@@ -353,13 +353,13 @@ Solucion operativa:
 - Rotar password del usuario `postgres`.
 - Revisar si hay scripts, historial de PowerShell o capturas que la contengan.
 
-Solucion para V-01.04:
+Solucion para V-01.05:
 - Nunca pedir que se pegue una password real en el chat.
 - Usar `Read-Host -AsSecureString` cuando sea posible.
 - Si se necesita automatizar, usar variables de entorno temporales o prompt interactivo.
 
 
-Checklist para cerrar V-01.04
+Checklist para cerrar V-01.05
 -----------------------------
 1. Corregir wrapper `install.cmd`/`install.ps1` y probar parametros.
 2. Mantener correccion de PFX en `Instalar-AtlasBalance.ps1`.
@@ -367,10 +367,10 @@ Checklist para cerrar V-01.04
 4. Ajustar instalador para no generar credenciales falsas si la BD ya contiene usuarios.
 5. Mantener cabeceras `SAMEORIGIN` y `frame-ancestors 'self'`.
 6. Regenerar frontend desde fuente, sin parches manuales al bundle.
-7. Generar paquete `AtlasBalance-V-01.04-win-x64.zip`.
+7. Generar paquete `AtlasBalance-V-01.05-win-x64.zip`.
 8. Probar instalacion limpia en Windows Server 2019 + PostgreSQL 17.
 9. Probar reinstalacion sobre `C:\AtlasBalance` existente.
-10. Probar actualizacion desde V-01.03 a V-01.04.
+10. Probar actualizacion desde V-01.03 a V-01.05.
 11. Probar login inicial, cambio obligatorio de password y borrado de `INSTALL_CREDENTIALS_ONCE.txt`.
 12. Probar importacion desde dashboard de cuenta en modal.
 13. Probar health check con `curl.exe -k`.

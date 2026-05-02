@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$InstallPath = "C:\AtlasBalance",
     [string]$ServerName = $env:COMPUTERNAME,
     [int]$ApiPort = 443,
@@ -6,6 +6,8 @@
     [string]$DbHost = "localhost",
     [int]$DbPort = 5432,
     [string]$DbName = "atlas_balance",
+    [string]$DbOwnerUser = "atlas_balance_owner",
+    [string]$DbOwnerPassword = "",
     [string]$DbUser = "atlas_balance_app",
     [string]$DbPassword = "",
     [string]$PostgresAdminUser = "postgres",
@@ -22,12 +24,13 @@
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-01.04"
+$AppVersion = "V-01.05"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
 $GeneratedPostgresAdminPassword = ""
 $ExistingUsersDetected = $false
+$ReleaseSigningPublicKeyPem = if ([string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM)) { "" } else { $env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM -replace "\\n", "`n" }
 
 function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -67,6 +70,32 @@ function New-RandomSecret {
         $chars[$i] = $alphabet[$bytes[$i] % $alphabet.Length]
     }
     return -join $chars
+}
+
+function Protect-SecretDirectory {
+    param([string]$Path)
+
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "No se pudo restringir ACL en $Path. No se escribiran credenciales en claro."
+    }
+}
+
+function Write-SecretFile {
+    param(
+        [string]$Path,
+        [string[]]$Lines
+    )
+
+    $directory = Split-Path -Parent $Path
+    Protect-SecretDirectory -Path $directory
+    Set-Content -LiteralPath $Path -Value $Lines -Encoding UTF8
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        throw "No se pudo restringir ACL en $Path. El archivo de credenciales se elimino."
+    }
 }
 
 function Escape-SqlLiteral {
@@ -254,23 +283,34 @@ function Ensure-Database {
         throw "PostgresAdminPassword no esta configurada. Usa install.cmd para preparar PostgreSQL automaticamente o pasa -PostgresAdminPassword si usas una instancia existente."
     }
 
+    $ownerRoleName = Escape-SqlLiteral $DbOwnerUser
+    $ownerRolePassword = Escape-SqlLiteral $DbOwnerPassword
     $roleName = Escape-SqlLiteral $DbUser
     $rolePassword = Escape-SqlLiteral $DbPassword
     $dbNameLiteral = Escape-SqlLiteral $DbName
 
+    $ownerRoleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$ownerRoleName';"
+    if ($ownerRoleExists -eq "1") {
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE `"$DbOwnerUser`" WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+    } else {
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE `"$DbOwnerUser`" WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+    }
+
     $roleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$roleName';"
     if ($roleExists -eq "1") {
-        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE `"$DbUser`" WITH LOGIN PASSWORD '$rolePassword';" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE `"$DbUser`" WITH LOGIN PASSWORD '$rolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
     } else {
-        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE `"$DbUser`" WITH LOGIN PASSWORD '$rolePassword';" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE `"$DbUser`" WITH LOGIN PASSWORD '$rolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
     }
 
     $dbExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_database WHERE datname = '$dbNameLiteral';"
     if ($dbExists -ne "1") {
-        Invoke-Psql -PsqlExe $psql -Sql "CREATE DATABASE `"$DbName`" OWNER `"$DbUser`" ENCODING 'UTF8';" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE DATABASE `"$DbName`" OWNER `"$DbOwnerUser`" ENCODING 'UTF8';" | Out-Null
+    } else {
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER DATABASE `"$DbName`" OWNER TO `"$DbOwnerUser`";" | Out-Null
     }
 
-    Invoke-Psql -PsqlExe $psql -Database $DbName -Sql "GRANT ALL PRIVILEGES ON DATABASE `"$DbName`" TO `"$DbUser`";" | Out-Null
+    Invoke-Psql -PsqlExe $psql -Database $DbName -Sql "ALTER SCHEMA public OWNER TO `"$DbOwnerUser`"; GRANT CONNECT ON DATABASE `"$DbName`" TO `"$DbUser`"; GRANT USAGE ON SCHEMA public TO `"$DbUser`";" | Out-Null
 }
 
 function Test-ExistingApplicationUsers {
@@ -396,6 +436,7 @@ function Write-AppSettings {
     $apiTarget = Join-Path $InstallPath "api"
     $dataProtectionKeysPath = Join-Path $env:ProgramData "AtlasBalance\keys"
     $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword"
+    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword"
     $url = "https://0.0.0.0:$ApiPort"
 
     $seedAdminPassword = if ($ExistingUsersDetected) { "" } else { $AdminPassword }
@@ -403,6 +444,7 @@ function Write-AppSettings {
     $apiConfig = [ordered]@{
         ConnectionStrings = [ordered]@{
             DefaultConnection = $connection
+            MigrationConnection = $migrationConnection
         }
         JwtSettings = [ordered]@{
             Secret = $JwtSecret
@@ -421,9 +463,15 @@ function Write-AppSettings {
             DockerPostgresContainer = "atlas_balance_db"
             UpdateSourceRoot = $updateRoot
             UpdateTargetPath = $apiTarget
+            RequireDatabaseBackupBeforeUpdate = $true
+            RequireHealthCheckAfterUpdate = $true
+            ApiHealthUrl = if ($ApiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$ApiPort/api/health" }
         }
         GitHubSettings = [ordered]@{
             UpdateToken = ""
+        }
+        UpdateSecurity = [ordered]@{
+            ReleaseSigningPublicKeyPem = $ReleaseSigningPublicKeyPem
         }
         DataProtection = [ordered]@{
             KeysPath = $dataProtectionKeysPath
@@ -462,6 +510,8 @@ function Write-AppSettings {
             DbHost = $DbHost
             DbPort = [string]$DbPort
             DbName = $DbName
+            DbOwnerUser = $DbOwnerUser
+            DbOwnerPassword = $DbOwnerPassword
             DbUser = $DbUser
             DbPassword = $DbPassword
             DockerPostgresContainer = "atlas_balance_db"
@@ -613,7 +663,7 @@ function Write-RuntimeAndCredentials {
     Write-JsonFile -Value $runtime -Path (Join-Path $InstallPath "atlas-balance.runtime.json")
     Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $AppVersion -Encoding UTF8
 
-    $credentialsPath = Join-Path $InstallPath "INSTALL_CREDENTIALS_ONCE.txt"
+    $credentialsPath = Join-Path (Join-Path $InstallPath "config") "INSTALL_CREDENTIALS_ONCE.txt"
     if ($ExistingUsersDetected) {
         $lines = @(
             "Atlas Balance $AppVersion",
@@ -624,6 +674,8 @@ function Write-RuntimeAndCredentials {
             "Base de datos: $DbName",
             "Usuario DB app: $DbUser",
             "Password DB app: $DbPassword",
+            "Usuario DB migracion/owner: $DbOwnerUser",
+            "Password DB migracion/owner: $DbOwnerPassword",
             "PostgreSQL gestionado por Atlas: $ManagedPostgres",
             "",
             "Guarda esto en un gestor de passwords y borra este archivo.",
@@ -639,6 +691,8 @@ function Write-RuntimeAndCredentials {
             "Base de datos: $DbName",
             "Usuario DB app: $DbUser",
             "Password DB app: $DbPassword",
+            "Usuario DB migracion/owner: $DbOwnerUser",
+            "Password DB migracion/owner: $DbOwnerPassword",
             "PostgreSQL gestionado por Atlas: $ManagedPostgres",
             "",
             "Guarda esto en un gestor de passwords y borra este archivo.",
@@ -655,8 +709,7 @@ function Write-RuntimeAndCredentials {
             $lines[7..($lines.Count - 1)]
         ) | ForEach-Object { $_ }
     }
-    Set-Content -LiteralPath $credentialsPath -Value $lines -Encoding UTF8
-    & icacls.exe $credentialsPath /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
+    Write-SecretFile -Path $credentialsPath -Lines $lines
     Register-CredentialsCleanupTask -CredentialsPath $credentialsPath
 }
 
@@ -674,6 +727,7 @@ if (-not (Test-IsAdmin)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = New-RandomSecret 40 }
+if ([string]::IsNullOrWhiteSpace($DbOwnerPassword)) { $DbOwnerPassword = New-RandomSecret 40 }
 if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = New-RandomSecret 24 }
 if ([string]::IsNullOrWhiteSpace($PostgresInstallPath)) { $PostgresInstallPath = Join-Path $InstallPath "postgresql\16" }
 if ([string]::IsNullOrWhiteSpace($PostgresDataPath)) { $PostgresDataPath = Join-Path $InstallPath "postgres-data" }
@@ -682,7 +736,7 @@ $watchdogSecret = New-RandomSecret 64
 $certPassword = New-RandomSecret 40
 
 New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
-foreach ($dir in @("api", "watchdog", "scripts", "backups", "exports", "logs", "certs", "updates")) {
+foreach ($dir in @("api", "watchdog", "scripts", "backups", "exports", "logs", "certs", "updates", "config")) {
     New-Item -ItemType Directory -Path (Join-Path $InstallPath $dir) -Force | Out-Null
 }
 
@@ -796,5 +850,5 @@ try {
 Write-Host ""
 Write-Host "Atlas Balance $AppVersion instalado." -ForegroundColor Green
 Write-Host "URL: $appUrl" -ForegroundColor Cyan
-Write-Host "Credenciales iniciales: $InstallPath\INSTALL_CREDENTIALS_ONCE.txt" -ForegroundColor Yellow
+Write-Host "Credenciales iniciales: $InstallPath\config\INSTALL_CREDENTIALS_ONCE.txt" -ForegroundColor Yellow
 Write-Host "Atajo creado: Atlas Balance" -ForegroundColor Cyan

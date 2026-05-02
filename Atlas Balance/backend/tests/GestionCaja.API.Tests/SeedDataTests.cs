@@ -82,6 +82,37 @@ public sealed class SeedDataTests
     }
 
     [Fact]
+    public void Initialize_Should_Not_Duplicate_Default_Format_When_Fixed_Id_Already_Exists()
+    {
+        using var db = BuildDbContext();
+        db.Usuarios.Add(new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "admin.seed@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Seed",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.FormatosImportacion.Add(new FormatoImportacion
+        {
+            Id = Guid.Parse("e1b2cba0-60bd-4854-9b24-d2e88763fa5d"),
+            Nombre = "Formato legado",
+            BancoNombre = null,
+            Divisa = null,
+            MapeoJson = "{}",
+            Activo = true
+        });
+        db.SaveChanges();
+
+        var act = () => SeedData.Initialize(db);
+
+        act.Should().NotThrow();
+        db.FormatosImportacion.IgnoreQueryFilters().Should().HaveCount(8);
+    }
+
+    [Fact]
     public void Initialize_Should_Reject_Default_Admin_Password_In_Production()
     {
         using var db = BuildDbContext();

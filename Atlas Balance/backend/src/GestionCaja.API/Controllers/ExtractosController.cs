@@ -300,18 +300,23 @@ public sealed class ExtractosController : ControllerBase
     [HttpPatch("{id:guid}/flag")]
     public async Task<IActionResult> ToggleFlag(Guid id, [FromBody] ToggleFlagRequest req, CancellationToken ct)
     {
+        if (req is null) return BadRequest(new { error = "Solicitud invalida" });
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
         var p = await GetPermission(actor, cuenta, ct);
-        if (!p.CanEdit || (!CanEditColumn(p, "flagged") && !CanEditColumn(p, "flagged_nota"))) return Forbid();
+        if (!p.CanEdit) return Forbid();
 
         var oldFlag = ex.Flagged;
         var oldNote = ex.FlaggedNota;
+        var newNote = req.Flagged ? req.Nota?.Trim() : null;
+        if (oldFlag != req.Flagged && !CanEditColumn(p, "flagged")) return Forbid();
+        if (!string.Equals(oldNote, newNote, StringComparison.Ordinal) && !CanEditColumn(p, "flagged_nota")) return Forbid();
+
         ex.Flagged = req.Flagged;
-        ex.FlaggedNota = req.Flagged ? req.Nota?.Trim() : null;
+        ex.FlaggedNota = newNote;
         ex.FlaggedAt = req.Flagged ? DateTime.UtcNow : null;
         ex.FlaggedById = req.Flagged ? actor.Id : null;
         ex.UsuarioModificacionId = actor.Id;
@@ -351,7 +356,10 @@ public sealed class ExtractosController : ControllerBase
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         var ex = await _db.Extractos.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
-        if (!await CanView(actor, ex.CuentaId, ct)) return Forbid();
+        var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
+        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        var p = await GetPermission(actor, cuenta, ct);
+        if (!p.CanDelete) return Forbid();
         ex.DeletedAt = null;
         ex.DeletedById = null;
         ex.UsuarioModificacionId = actor.Id;
@@ -399,7 +407,7 @@ public sealed class ExtractosController : ControllerBase
         var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
         var titular = await _db.Titulares.Where(t => t.Id == cuenta.TitularId).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
-        return Ok(await BuildSummary(cuenta.Id, cuenta.Nombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct));
+        return Ok(await BuildSummary(actor, cuenta.Id, cuenta.Nombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct));
     }
 
     [HttpGet("titulares/{titularId:guid}/cuentas")]
@@ -414,7 +422,7 @@ public sealed class ExtractosController : ControllerBase
         var summary = new List<CuentaResumenKpiResponse>();
         foreach (var c in cuentas)
         {
-            summary.Add(await BuildSummary(c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct));
+            summary.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct));
         }
         return Ok(new TitularConCuentasResponse { TitularId = titular.Id, TitularNombre = titular.Nombre, Cuentas = summary });
     }
@@ -432,7 +440,7 @@ public sealed class ExtractosController : ControllerBase
         {
             var tc = cuentas.Where(c => c.TitularId == t.Id).ToList();
             var s = new List<CuentaResumenKpiResponse>();
-            foreach (var c in tc) s.Add(await BuildSummary(c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct));
+            foreach (var c in tc) s.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct));
             outData.Add(new TitularConCuentasResponse { TitularId = t.Id, TitularNombre = t.Nombre, Cuentas = s });
         }
         return Ok(outData);
@@ -481,7 +489,7 @@ public sealed class ExtractosController : ControllerBase
         return Ok(new { message = "Preferencias guardadas" });
     }
 
-    private async Task<CuentaResumenKpiResponse> BuildSummary(Guid cuentaId, string cuentaNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct)
+    private async Task<CuentaResumenKpiResponse> BuildSummary(Actor actor, Guid cuentaId, string cuentaNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct)
     {
         var q = _db.Extractos.Where(e => e.CuentaId == cuentaId);
         var latest = await q
@@ -498,14 +506,14 @@ public sealed class ExtractosController : ControllerBase
         var plazoFijo = tipoCuenta == TipoCuenta.PLAZO_FIJO
             ? await (
                 from plazo in _db.PlazosFijos
-                join refCuenta in _db.Cuentas.IgnoreQueryFilters() on plazo.CuentaReferenciaId equals refCuenta.Id into refJoin
+                join refCuenta in (actor.IsAdmin ? _db.Cuentas.IgnoreQueryFilters() : _db.Cuentas) on plazo.CuentaReferenciaId equals refCuenta.Id into refJoin
                 from cuentaReferencia in refJoin.DefaultIfEmpty()
                 where plazo.CuentaId == cuentaId
                 select new PlazoFijoResponse
                 {
                     Id = plazo.Id,
                     CuentaId = plazo.CuentaId,
-                    CuentaReferenciaId = plazo.CuentaReferenciaId,
+                    CuentaReferenciaId = cuentaReferencia != null ? plazo.CuentaReferenciaId : null,
                     CuentaReferenciaNombre = cuentaReferencia != null ? cuentaReferencia.Nombre : null,
                     FechaInicio = plazo.FechaInicio,
                     FechaVencimiento = plazo.FechaVencimiento,
@@ -518,6 +526,12 @@ public sealed class ExtractosController : ControllerBase
                 })
                 .FirstOrDefaultAsync(ct)
             : null;
+
+        if (!actor.IsAdmin && plazoFijo?.CuentaReferenciaId is Guid referenceId && !await CanView(actor, referenceId, ct))
+        {
+            plazoFijo.CuentaReferenciaId = null;
+            plazoFijo.CuentaReferenciaNombre = null;
+        }
 
         return new CuentaResumenKpiResponse
         {
@@ -619,8 +633,9 @@ public sealed class ExtractosController : ControllerBase
             return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
         }
 
-        var ids = perms.Where(p => p.CuentaId.HasValue).Select(p => p.CuentaId!.Value).ToHashSet();
-        var titularIds = perms.Where(p => p.TitularId.HasValue).Select(p => p.TitularId!.Value).ToList();
+        var accountPerms = perms.Where(GrantsAccountAccess).ToList();
+        var ids = accountPerms.Where(p => p.CuentaId.HasValue).Select(p => p.CuentaId!.Value).ToHashSet();
+        var titularIds = accountPerms.Where(p => p.TitularId.HasValue).Select(p => p.TitularId!.Value).ToList();
         if (titularIds.Any()) ids.UnionWith(await _db.Cuentas.Where(c => titularIds.Contains(c.TitularId)).Select(c => c.Id).ToListAsync(ct));
         return ids;
     }
@@ -645,7 +660,7 @@ public sealed class ExtractosController : ControllerBase
             return true;
         }
 
-        if (perms.Any(p => p.TitularId == titularId))
+        if (perms.Any(p => p.TitularId == titularId && GrantsAccountAccess(p)))
         {
             return true;
         }

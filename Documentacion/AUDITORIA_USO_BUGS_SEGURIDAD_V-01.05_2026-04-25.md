@@ -1,4 +1,4 @@
-# Auditoria de uso, bugs y seguridad - V-01.04
+# Auditoria de uso, bugs y seguridad - V-01.05
 
 Fecha: 2026-04-25
 

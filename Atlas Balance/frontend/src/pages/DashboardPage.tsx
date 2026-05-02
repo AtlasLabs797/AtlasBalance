@@ -79,14 +79,12 @@ export default function DashboardPage() {
   }, [evolucion, principal?.egresos_mes, principal?.ingresos_mes]);
   const saldosPorTipo = useMemo(
     () =>
-      TIPO_TITULAR_ORDER
-        .map((tipo) => ({
-          tipo,
-          items: (principal?.saldos_por_titular ?? [])
-            .filter((item) => item.tipo_titular === tipo)
-            .sort((a, b) => b.total_convertido - a.total_convertido),
-        }))
-        .filter((group) => group.items.length > 0),
+      TIPO_TITULAR_ORDER.map((tipo) => ({
+        tipo,
+        items: (principal?.saldos_por_titular ?? [])
+          .filter((item) => item.tipo_titular === tipo)
+          .sort((a, b) => b.total_convertido - a.total_convertido),
+      })),
     [principal?.saldos_por_titular],
   );
 
@@ -161,6 +159,8 @@ export default function DashboardPage() {
     );
   }
 
+  const lastEvolutionPoint = evolucion.puntos.length > 0 ? evolucion.puntos[evolucion.puntos.length - 1] : null;
+
   return (
     <section className="dashboard-page">
       <header className="dashboard-toolbar">
@@ -174,123 +174,139 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="dashboard-kpi-grid">
-        <KpiCard
-          title="Saldo total"
-          featured
-          helper={`Divisa base ${principal.divisa_principal}`}
-          value={
-            <SignedAmount value={principal.total_convertido}>
-              {formatCurrency(principal.total_convertido, principal.divisa_principal)}
-            </SignedAmount>
-          }
-        />
-        <KpiCard
-          title="Ingresos período"
-          value={
-            <SignedAmount value={periodTotals.ingresos}>
-              {formatCurrency(periodTotals.ingresos, principal.divisa_principal)}
-            </SignedAmount>
-          }
-        />
-        <KpiCard
-          title="Egresos período"
-          value={
-            <SignedAmount value={periodTotals.egresos} tone="negative">
-              {formatCurrency(periodTotals.egresos, principal.divisa_principal)}
-            </SignedAmount>
-          }
-        />
-      </div>
-
-      <section className="dashboard-card dashboard-plazo-card">
-        <header className="dashboard-card-header">
-          <h2>Plazos fijos</h2>
-          <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
-        </header>
-        <div className="dashboard-plazo-metrics">
-          <div>
-            <span>Monto total</span>
-            <strong>
-              <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
-                {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
-              </SignedAmount>
-            </strong>
+      <div className="dashboard-overview-grid">
+        <div className="dashboard-overview-primary">
+          <div className="dashboard-kpi-grid dashboard-kpi-grid--overview">
+            <KpiCard
+              title="Saldo total"
+              featured
+              helper={`Divisa base ${principal.divisa_principal}`}
+              value={
+                <SignedAmount value={principal.total_convertido}>
+                  {formatCurrency(principal.total_convertido, principal.divisa_principal)}
+                </SignedAmount>
+              }
+            />
+            <KpiCard
+              title="Ingresos período"
+              value={
+                <SignedAmount value={periodTotals.ingresos}>
+                  {formatCurrency(periodTotals.ingresos, principal.divisa_principal)}
+                </SignedAmount>
+              }
+            />
+            <KpiCard
+              title="Egresos período"
+              value={
+                <SignedAmount value={periodTotals.egresos} tone="negative">
+                  {formatCurrency(periodTotals.egresos, principal.divisa_principal)}
+                </SignedAmount>
+              }
+            />
           </div>
-          <div>
-            <span>Intereses aprox.</span>
-            <strong>
-              <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
-                {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
-              </SignedAmount>
-            </strong>
-          </div>
-          <div>
-            <span>Proximo vencimiento</span>
-            <strong>
-              {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
-                ? 'Sin fecha'
-                : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} dias`}
-            </strong>
-            {principal.plazos_fijos.proximo_vencimiento ? (
-              <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
-            ) : null}
-          </div>
-        </div>
-      </section>
 
-      <div className="dashboard-grid">
-        <SaldoPorDivisaCard items={saldosDivisa.divisas} divisaPrincipal={saldosDivisa.divisa_principal} />
-
-        <section className="dashboard-card">
-          <header className="dashboard-card-header">
-            <h2>Saldos por titular</h2>
-          </header>
-
-          {principal.saldos_por_titular.length === 0 ? (
-            <EmptyState title="No hay titulares con saldos." />
-          ) : (
-            <div className="dashboard-titular-groups">
-              {saldosPorTipo.map((group) => (
-                <article className="dashboard-titular-group" key={group.tipo}>
-                  <h3>{TIPO_TITULAR_LABELS[group.tipo]}</h3>
-                  <div className="dashboard-titular-list">
-                    {group.items.map((item) => (
-                      <Link
-                        key={item.titular_id}
-                        className="dashboard-titular-item"
-                        to={`/dashboard/titular/${item.titular_id}?periodo=${periodo}&divisa=${principal.divisa_principal}`}
-                      >
-                        <span>{item.titular_nombre}</span>
-                        <strong>
-                          <SignedAmount value={item.total_convertido}>
-                            {formatCurrency(item.total_convertido, principal.divisa_principal)}
-                          </SignedAmount>
-                        </strong>
-                        <small>
-                          Disponible {formatCurrency(item.saldo_disponible_convertido ?? item.total_convertido, principal.divisa_principal)}
-                          {' · '}
-                          Inmovilizado {formatCurrency(item.saldo_inmovilizado_convertido ?? 0, principal.divisa_principal)}
-                        </small>
-                      </Link>
-                    ))}
-                  </div>
-                </article>
-              ))}
+          <section className="dashboard-card dashboard-plazo-card">
+            <header className="dashboard-card-header">
+              <h2>Plazos fijos</h2>
+              <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
+            </header>
+            <div className="dashboard-plazo-metrics">
+              <div>
+                <span>Monto total</span>
+                <strong>
+                  <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
+                    {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
+                  </SignedAmount>
+                </strong>
+              </div>
+              <div>
+                <span>Intereses aprox.</span>
+                <strong>
+                  <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
+                    {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
+                  </SignedAmount>
+                </strong>
+              </div>
+              <div>
+                <span>Proximo vencimiento</span>
+                <strong>
+                  {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
+                    ? 'Sin fecha'
+                    : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} dias`}
+                </strong>
+                {principal.plazos_fijos.proximo_vencimiento ? (
+                  <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
+                ) : null}
+              </div>
             </div>
-          )}
-        </section>
+          </section>
+        </div>
+
+        <SaldoPorDivisaCard
+          className="dashboard-divisa-card"
+          items={saldosDivisa.divisas}
+          divisaPrincipal={saldosDivisa.divisa_principal}
+        />
       </div>
 
-      <section className="dashboard-card">
-        <header className="dashboard-card-header">
-          <h2>Evolución</h2>
+      <section className="dashboard-card dashboard-evolution-card">
+        <header className="dashboard-card-header dashboard-card-header--chart">
+          <div>
+            <h2>Evolución</h2>
+            <p>Saldo, ingresos y egresos del periodo seleccionado.</p>
+          </div>
+          {lastEvolutionPoint ? (
+            <span className="dashboard-card-meta">
+              Saldo final {formatCurrency(lastEvolutionPoint.saldo, principal.divisa_principal)}
+            </span>
+          ) : null}
         </header>
         <EvolucionChart
           points={evolucion.puntos}
           divisa={principal.divisa_principal}
           colors={principal.chart_colors}
+          height={420}
         />
+      </section>
+
+      <section className="dashboard-card dashboard-titulares-card dashboard-titulares-card--wide">
+        <header className="dashboard-card-header">
+          <h2>Saldos por titular</h2>
+        </header>
+
+        {principal.saldos_por_titular.length === 0 ? (
+          <EmptyState title="No hay titulares con saldos." />
+        ) : (
+          <div className="dashboard-titular-groups">
+            {saldosPorTipo.map((group) => (
+              <article className="dashboard-titular-group" key={group.tipo}>
+                <h3>{TIPO_TITULAR_LABELS[group.tipo]}</h3>
+                <div className="dashboard-titular-list">
+                  {group.items.map((item) => (
+                    <Link
+                      key={item.titular_id}
+                      className="dashboard-titular-item"
+                      to={`/dashboard/titular/${item.titular_id}?periodo=${periodo}&divisa=${principal.divisa_principal}`}
+                    >
+                      <span>{item.titular_nombre}</span>
+                      <strong>
+                        <SignedAmount value={item.total_convertido}>
+                          {formatCurrency(item.total_convertido, principal.divisa_principal)}
+                        </SignedAmount>
+                      </strong>
+                      <small>
+                        Disponible {formatCurrency(item.saldo_disponible_convertido ?? item.total_convertido, principal.divisa_principal)}
+                        {' · '}
+                        Inmovilizado {formatCurrency(item.saldo_inmovilizado_convertido ?? 0, principal.divisa_principal)}
+                      </small>
+                    </Link>
+                  ))}
+                  {group.items.length === 0 ? <div className="dashboard-titular-empty">Sin saldos</div> : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </section>
   );

@@ -12,6 +12,12 @@ public sealed class ChangePasswordRequest
     public string PasswordNueva { get; set; } = string.Empty;
 }
 
+public sealed class VerifyMfaRequest
+{
+    public string ChallengeId { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+}
+
 public sealed class AuthUsuarioResponse
 {
     public Guid Id { get; set; }
@@ -20,6 +26,7 @@ public sealed class AuthUsuarioResponse
     public string Rol { get; set; } = string.Empty;
     public bool Activo { get; set; }
     public bool PrimerLogin { get; set; }
+    public bool MfaEnabled { get; set; }
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaUltimaLogin { get; set; }
 }
@@ -27,8 +34,13 @@ public sealed class AuthUsuarioResponse
 public sealed class AuthResponse
 {
     public string CsrfToken { get; set; } = string.Empty;
-    public AuthUsuarioResponse Usuario { get; set; } = new();
+    public AuthUsuarioResponse? Usuario { get; set; }
     public IReadOnlyList<PermisoUsuarioResponse> Permisos { get; set; } = [];
+    public bool MfaRequired { get; set; }
+    public bool MfaSetupRequired { get; set; }
+    public string? MfaChallengeId { get; set; }
+    public string? MfaSecret { get; set; }
+    public string? MfaOtpAuthUri { get; set; }
 }
 
 public sealed class PermisoUsuarioResponse

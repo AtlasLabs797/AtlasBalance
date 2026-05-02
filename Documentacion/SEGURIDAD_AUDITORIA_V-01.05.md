@@ -1,6 +1,37 @@
-# Auditoria de seguridad V-01.04
+# Auditoria de seguridad V-01.05
 
 Fecha: 2026-04-25
+
+## Addendum 2026-05-01
+
+Se aplico el checklist general de seguridad de app contra la superficie real de Atlas Balance.
+
+Cambios cerrados:
+
+- MFA TOTP obligatorio para usuarios web antes de emitir JWT/cookies.
+- Revocacion de sesiones al cambiar permisos, email o perfil de usuario.
+- Verificacion SHA-256 del digest de assets descargados desde GitHub Releases.
+- Escaneo CI de secretos de alta confianza.
+- Documento de respuesta a incidentes.
+
+Detalle: `Documentacion/SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md`.
+
+## Addendum 2026-05-02
+
+Se cerro la segunda tanda de hallazgos residuales del escaneo repo-wide.
+
+Cambios cerrados:
+
+- Credenciales one-shot de instalacion/reset: directorio `C:\AtlasBalance\config` protegido antes de escribir secretos y fallo cerrado si ACL falla.
+- `Reset-AdminPassword.ps1`: ejecucion obligatoria como Administrador.
+- `ExtractosController.ToggleFlag`: permisos por campo real cambiado (`flagged` y `flagged_nota`).
+- `DashboardService`: `PuedeVerDashboard` global sin flags de datos ya no concede scope global.
+- `IntegrationOpenClawController.Auditoria`: no expone valores de auditoria de extractos soft-deleted.
+- `ImportacionPage`: `returnTo` solo acepta rutas internas.
+- RLS `EXPORTACIONES`: politica de escritura usa `can_write_cuenta_by_id`.
+- CI/compose: PostgreSQL fijado por digest OCI.
+
+Verificacion: tests focalizados backend 20/20 OK, frontend lint/build OK, parser PowerShell OK.
 
 ## Resumen
 

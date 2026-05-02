@@ -69,8 +69,8 @@ public static class SeedData
             ["backup_retention_weeks"] = ("6", "int", "Semanas de retención de backups"),
             ["backup_path"] = ("C:/AtlasBalance/backups", "string", "Ruta de almacenamiento de backups"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
-            ["app_version"] = ("V-01.04", "string", "Versión instalada"),
-            ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "URL del servidor de actualizaciones"),
+            ["app_version"] = ("V-01.05", "string", "Versión instalada"),
+            ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["smtp_host"] = ("", "string", "Host SMTP"),
             ["smtp_port"] = ("587", "int", "Puerto SMTP"),
             ["smtp_user"] = ("", "string", "Usuario SMTP"),
@@ -144,21 +144,31 @@ public static class SeedData
     {
         foreach (var formato in DefaultFormatosImportacion)
         {
-            var exists = context.FormatosImportacion
+            var defaultId = Guid.Parse(formato.Id);
+            var existsById = context.FormatosImportacion
+                .IgnoreQueryFilters()
+                .Any(f => f.Id == defaultId);
+
+            if (existsById)
+            {
+                continue;
+            }
+
+            var existsByBankAndCurrency = context.FormatosImportacion
                 .IgnoreQueryFilters()
                 .Any(f =>
                     f.BancoNombre != null &&
                     f.BancoNombre.ToLower() == formato.BancoNombre.ToLower() &&
                     (f.Divisa ?? string.Empty).ToUpper() == formato.Divisa);
 
-            if (exists)
+            if (existsByBankAndCurrency)
             {
                 continue;
             }
 
             context.FormatosImportacion.Add(new FormatoImportacion
             {
-                Id = Guid.Parse(formato.Id),
+                Id = defaultId,
                 Nombre = formato.Nombre,
                 BancoNombre = formato.BancoNombre,
                 Divisa = formato.Divisa,

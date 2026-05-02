@@ -657,16 +657,16 @@ export default function ConfiguracionPage() {
           <h2>Sistema y actualizacion</h2>
           <div className="config-grid-3">
             <label>
-              URL de actualizaciones
+              Repositorio GitHub de actualizaciones
               <input
                 type="url"
-                placeholder="https://servidor/atlas-balance/version.json"
+                placeholder="https://github.com/AtlasLabs797/AtlasBalance"
                 value={config.general.app_update_check_url}
                 onChange={(e) => setConfig((p) => ({ ...p, general: { ...p.general, app_update_check_url: e.target.value } }))}
               />
             </label>
           </div>
-          <p className="import-muted">Endpoint JSON con version, source_path y target_path.</p>
+          <p className="import-muted">Usa el repo oficial por HTTPS. Atlas Balance consulta el ultimo GitHub Release, descarga el ZIP win-x64 y lo prepara en la carpeta segura de actualizaciones.</p>
           <div className="config-status-grid">
             <article><h3>Version actual</h3><p>{currentVersion ?? 'N/D'}</p></article>
             <article><h3>Version disponible</h3><p>{availableVersion ?? 'Ninguna'}</p></article>
@@ -674,7 +674,7 @@ export default function ConfiguracionPage() {
           </div>
           {updateMessage ? <p>{updateMessage}</p> : null}
           <div className="import-actions">
-            <button type="submit" disabled={busy}>Guardar URL</button>
+            <button type="submit" disabled={busy}>Guardar repo</button>
             <button type="button" onClick={() => void checkUpdate(true)} disabled={busy}>Verificar actualizacion</button>
             <button type="button" onClick={updateNow} disabled={!updateAvailable || busy}>Actualizar ahora</button>
           </div>

@@ -15,11 +15,11 @@
 }
 
 .auth-logo-container {
-  width: min(100%, 1120px);
+  width: min(calc(100% - 2rem), 430px);
   margin: 0 auto;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: var(--space-3);
   text-align: left;
 }
@@ -165,6 +165,38 @@
   color: var(--success-text);
 }
 
+.auth-mfa-setup {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface-soft);
+}
+
+.auth-secret {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  user-select: all;
+}
+
+.auth-mfa-qr {
+  width: min(100%, 13rem);
+  aspect-ratio: 1;
+  justify-self: center;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--surface-border);
+  background: #fff;
+  padding: var(--space-2);
+}
+
 .auth-button {
   width: 100%;
   min-height: 3rem;
@@ -238,6 +270,7 @@
   }
 
   .auth-logo-container {
+    width: min(calc(100% - 1.5rem), 430px);
     justify-content: center;
     text-align: center;
   }

@@ -32,7 +32,7 @@ jobs:
         run: dotnet restore "./Atlas Balance/backend/GestionCaja.sln"
 
       - name: Pull PostgreSQL test image
-        run: docker pull postgres:16-alpine
+        run: docker pull postgres:16-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
 
       - name: Test backend
         run: dotnet test "./Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore
@@ -44,6 +44,36 @@ jobs:
           $output
           if ($output -match 'has the following vulnerable packages|tiene los paquetes vulnerables') {
             throw 'NuGet vulnerability audit failed.'
+          }
+
+      - name: Scan high-confidence secrets
+        shell: pwsh
+        run: |
+          $patterns = @(
+            '-----BEGIN (RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----',
+            'AKIA[0-9A-Z]{16}',
+            'gh[pousr]_[A-Za-z0-9_]{36,}',
+            'xox[baprs]-[A-Za-z0-9-]{20,}',
+            'sk-live-[A-Za-z0-9]{20,}'
+          )
+          $files = (git -c core.quotepath=false ls-files -z) -split "`0" | Where-Object {
+            $_ -and
+            $_ -notmatch '(^|/)(Otros|Skills)/' -and
+            $_ -notmatch '(^|/)(bin|obj|node_modules|dist)/'
+          }
+          $findings = @()
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+            $content = Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue
+            foreach ($pattern in $patterns) {
+              if ($content -match $pattern) {
+                $findings += "$file matches $pattern"
+              }
+            }
+          }
+          if ($findings.Count -gt 0) {
+            $findings | ForEach-Object { Write-Error $_ }
+            throw 'Secret scan failed.'
           }
 
       - name: Install frontend dependencies

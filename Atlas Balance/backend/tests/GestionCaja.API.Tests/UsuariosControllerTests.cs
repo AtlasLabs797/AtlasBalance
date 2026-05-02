@@ -147,6 +147,55 @@ public class UsuariosControllerTests
         (await db.Auditorias.AnyAsync(x => x.EntidadId == user.Id && x.TipoAccion == AuditActions.PasswordReset)).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task GuardarPermisos_Should_Revoke_Target_User_Sessions()
+    {
+        await using var db = BuildDbContext();
+        var audit = new AuditService(db);
+        var controller = new UsuariosController(db, audit);
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "perms.target@atlasbalance.local",
+            NombreCompleto = "Perms Target",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!", workFactor: 12),
+            Rol = RolUsuario.EMPLEADO,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow,
+            SecurityStamp = "old-stamp"
+        };
+        db.Usuarios.Add(user);
+        db.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = user.Id,
+            TokenHash = "permissions-token-hash",
+            ExpiraEn = DateTime.UtcNow.AddDays(1),
+            CreadoEn = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var request = new[]
+        {
+            new SavePermisoUsuarioRequest
+            {
+                PuedeVerCuentas = true,
+                PuedeVerDashboard = true
+            }
+        };
+
+        var result = await controller.GuardarPermisos(user.Id, request, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        persisted.SecurityStamp.Should().NotBe("old-stamp");
+        (await db.RefreshTokens.SingleAsync(x => x.UsuarioId == user.Id)).RevocadoEn.Should().NotBeNull();
+        (await db.Auditorias.AnyAsync(x => x.EntidadId == user.Id && x.TipoAccion == AuditActions.CambioPermisos)).Should().BeTrue();
+    }
+
     private static ControllerContext BuildControllerContext(Guid adminId)
     {
         var identity = new ClaimsIdentity(new[]

@@ -127,20 +127,51 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         _ = Task.Run(async () =>
         {
             var finalState = CreateState("FAILED", "UPDATE_APP", "Operacion interrumpida");
+            string? rollbackPath = null;
+            var apiStartedInOperation = false;
             try
             {
+                if (RequireDatabaseBackupBeforeUpdate())
+                {
+                    var backupResult = await CreateDatabaseBackupAsync(CancellationToken.None);
+                    if (!backupResult.Success)
+                    {
+                        finalState = CreateState("FAILED", "UPDATE_APP", backupResult.Error ?? "No se actualiza sin backup previo de base de datos");
+                        return;
+                    }
+                }
+
                 await StopApiServiceSafeAsync(CancellationToken.None);
+                rollbackPath = CreateRollbackCopy(fullTargetPath);
                 SyncDirectory(fullSourcePath, fullTargetPath);
+                await StartApiServiceSafeAsync(CancellationToken.None);
+                apiStartedInOperation = true;
+
+                if (RequireHealthCheckAfterUpdate() &&
+                    !await WaitForApiHealthAsync(CancellationToken.None))
+                {
+                    finalState = CreateState("FAILED", "UPDATE_APP", "Health check fallo tras actualizar; rollback de binarios aplicado.");
+                    await StopApiServiceSafeAsync(CancellationToken.None);
+                    TryRestoreRollback(rollbackPath, fullTargetPath);
+                    await StartApiServiceSafeAsync(CancellationToken.None);
+                    return;
+                }
+
                 finalState = CreateState("SUCCESS", "UPDATE_APP", "Actualizacion completada");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Update operation failed");
+                TryRestoreRollback(rollbackPath, fullTargetPath);
                 finalState = CreateState("FAILED", "UPDATE_APP", ex.Message);
             }
             finally
             {
-                await StartApiServiceSafeAsync(CancellationToken.None);
+                if (!apiStartedInOperation)
+                {
+                    await StartApiServiceSafeAsync(CancellationToken.None);
+                }
+
                 await _stateStore.SetAsync(finalState, CancellationToken.None);
                 _operationLock.Release();
             }
@@ -443,6 +474,134 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         catch
         {
             return false;
+        }
+    }
+
+    private async Task<(bool Success, string? Error)> CreateDatabaseBackupAsync(CancellationToken cancellationToken)
+    {
+        var dbPassword = _configuration["WatchdogSettings:DbPassword"];
+        if (string.IsNullOrWhiteSpace(dbPassword))
+        {
+            return (false, "WatchdogSettings:DbPassword no configurado; no se actualiza sin backup previo.");
+        }
+
+        var backupRoot = _configuration["WatchdogSettings:BackupPath"] ?? @"C:\AtlasBalance\backups";
+        Directory.CreateDirectory(backupRoot);
+        var backupPath = Path.Combine(backupRoot, $"pre_update_watchdog_{DateTime.UtcNow:yyyyMMdd_HHmmss}.dump");
+
+        var pgBinPath = _configuration["WatchdogSettings:PostgresBinPath"];
+        var dumpCandidate = string.IsNullOrWhiteSpace(pgBinPath) ? string.Empty : Path.Combine(pgBinPath, "pg_dump.exe");
+        var executable = File.Exists(dumpCandidate) ? dumpCandidate : "pg_dump";
+        var dbHost = _configuration["WatchdogSettings:DbHost"] ?? "localhost";
+        var dbPort = int.TryParse(_configuration["WatchdogSettings:DbPort"], out var parsedPort) ? parsedPort : 5432;
+        var dbName = _configuration["WatchdogSettings:DbName"] ?? "atlas_balance";
+        var dbUser = _configuration["WatchdogSettings:DbUser"] ?? "app_user";
+
+        var result = await RunProcessAsync(
+            executable,
+            ["-h", dbHost, "-p", dbPort.ToString(), "-U", dbUser, "-F", "c", "-b", "-f", backupPath, dbName],
+            dbPassword,
+            cancellationToken);
+
+        return result.Success
+            ? (true, null)
+            : (false, $"pg_dump fallo antes de actualizar: {result.ErrorMessage}");
+    }
+
+    private string CreateRollbackCopy(string targetPath)
+    {
+        var backupRoot = _configuration["WatchdogSettings:BackupPath"] ??
+                         Path.Combine(Path.GetDirectoryName(targetPath) ?? targetPath, "backups");
+        Directory.CreateDirectory(backupRoot);
+        var rollbackPath = Path.Combine(backupRoot, $"app_before_watchdog_update_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
+        CopyDirectory(targetPath, rollbackPath);
+        return rollbackPath;
+    }
+
+    private bool RequireDatabaseBackupBeforeUpdate()
+    {
+        var raw = _configuration["WatchdogSettings:RequireDatabaseBackupBeforeUpdate"];
+        return !bool.TryParse(raw, out var parsed) || parsed;
+    }
+
+    private bool RequireHealthCheckAfterUpdate()
+    {
+        var raw = _configuration["WatchdogSettings:RequireHealthCheckAfterUpdate"];
+        return bool.TryParse(raw, out var parsed) && parsed;
+    }
+
+    private async Task<bool> WaitForApiHealthAsync(CancellationToken cancellationToken)
+    {
+        var healthUrl = _configuration["WatchdogSettings:ApiHealthUrl"];
+        if (string.IsNullOrWhiteSpace(healthUrl))
+        {
+            healthUrl = "https://localhost/api/health";
+        }
+
+        using var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+        using var http = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+
+        var deadline = DateTime.UtcNow.AddMinutes(2);
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                using var response = await http.GetAsync(healthUrl, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // API can still be booting and applying migrations.
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+        }
+
+        return false;
+    }
+
+    private void TryRestoreRollback(string? rollbackPath, string targetPath)
+    {
+        if (string.IsNullOrWhiteSpace(rollbackPath) || !Directory.Exists(rollbackPath))
+        {
+            return;
+        }
+
+        try
+        {
+            SyncDirectory(rollbackPath, targetPath);
+            _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPath}", rollbackPath);
+        }
+        catch (Exception rollbackEx)
+        {
+            _logger.LogError(rollbackEx, "No se pudo aplicar rollback de binarios desde {RollbackPath}", rollbackPath);
+        }
+    }
+
+    private static void CopyDirectory(string sourcePath, string targetPath)
+    {
+        Directory.CreateDirectory(targetPath);
+        foreach (var directory in Directory.GetDirectories(sourcePath, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(sourcePath, directory);
+            Directory.CreateDirectory(Path.Combine(targetPath, relative));
+        }
+
+        foreach (var file in Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(sourcePath, file);
+            var destination = Path.Combine(targetPath, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, overwrite: true);
         }
     }
 

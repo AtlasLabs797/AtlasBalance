@@ -12,7 +12,10 @@
     "DbPassword": "<password-local-postgres>",
     "DockerPostgresContainer": "atlas_balance_db",
     "UpdateSourceRoot": "C:\\<ruta-local>\\updates",
-    "UpdateTargetPath": "C:\\<ruta-local>\\api"
+    "UpdateTargetPath": "C:\\<ruta-local>\\api",
+    "RequireDatabaseBackupBeforeUpdate": true,
+    "RequireHealthCheckAfterUpdate": true,
+    "ApiHealthUrl": "https://localhost:5000/api/health"
   },
   "Serilog": {
     "MinimumLevel": {

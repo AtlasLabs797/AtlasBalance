@@ -1,8 +1,8 @@
-# Atlas Balance V-01.04 - release Windows x64
+# Atlas Balance V-01.05 - release Windows x64
 
 Este paquete es autonomo para servidor Windows: el frontend ya esta compilado, el backend y Watchdog van publicados self-contained y la base de datos se prepara desde el instalador.
 
-El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.04-win-x64.zip`; dentro deben existir `api\GestionCaja.API.exe` y `watchdog\GestionCaja.Watchdog.exe`.
+El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.05-win-x64.zip`; dentro deben existir `api\GestionCaja.API.exe` y `watchdog\GestionCaja.Watchdog.exe`.
 
 ## Scripts de un clic
 
@@ -40,10 +40,10 @@ En Windows Server 2019, instala PostgreSQL manualmente si `winget` falla o no es
 El instalador genera passwords fuertes y guarda las credenciales iniciales en:
 
 ```text
-C:\AtlasBalance\INSTALL_CREDENTIALS_ONCE.txt
+C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt
 ```
 
-Guarda ese contenido en un gestor de passwords y borra el archivo despues del primer acceso. Dejarlo ahi es mala seguridad con sombrero.
+El directorio `config` queda restringido a Administrators/SYSTEM antes de escribir ese archivo. Guarda ese contenido en un gestor de passwords y borra el archivo despues del primer acceso. Dejarlo ahi es mala seguridad con sombrero.
 
 Si ya tienes PostgreSQL y quieres usarlo:
 
@@ -58,6 +58,8 @@ Si reinstalas sobre una BD existente, las credenciales iniciales no se regeneran
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Reset-AdminPassword.ps1" -InstallPath C:\AtlasBalance -AdminEmail admin@atlasbalance.local -GeneratePassword
 ```
+
+Ejecuta el reset como Administrador. Si usas `-GeneratePassword`, la password temporal queda en `C:\AtlasBalance\config\RESET_ADMIN_CREDENTIALS_ONCE.txt`.
 
 Health check recomendado:
 
@@ -76,7 +78,19 @@ Desde la carpeta descomprimida de este paquete:
 Si la instalacion ya tiene los scripts nuevos, tambien puedes lanzar desde la carpeta instalada apuntando al paquete:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.04-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.05-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador crea backup previo, conserva configuracion, reemplaza API/Watchdog, actualiza scripts operativos instalados, actualiza `VERSION`/runtime y valida `/api/health` con `curl.exe -k`.
+
+## Actualizacion desde la app
+
+En `Configuracion > Sistema`, deja el repositorio:
+
+```text
+https://github.com/AtlasLabs797/AtlasBalance
+```
+
+`Verificar actualizacion` consulta el ultimo GitHub Release. `Actualizar ahora` descarga el asset `AtlasBalance-*-win-x64.zip`, lo valida, lo prepara en `C:\AtlasBalance\updates` y pide al Watchdog aplicar la API nueva.
+
+El Watchdog crea backup PostgreSQL previo, rollback de binarios y health check posterior. Si no puede crear backup o la API no responde despues de actualizar, revierte o rechaza la operacion.

@@ -1,6 +1,7 @@
 ﻿{
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_app;Password=CAMBIAR_PASSWORD_AQUI"
+    "DefaultConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_app;Password=CAMBIAR_PASSWORD_APP_AQUI",
+    "MigrationConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_owner;Password=CAMBIAR_PASSWORD_OWNER_AQUI"
   },
   "JwtSettings": {
     "Secret": "GENERAR-CLAVE-SECRETA-MINIMO-32-CARACTERES-AQUI",
@@ -10,6 +11,9 @@
   "SeedAdmin": {
     "Email": "admin@atlasbalance.local",
     "Password": "CAMBIAR_PASSWORD_ADMIN_INICIAL_AQUI"
+  },
+  "Security": {
+    "RequireMfaForWebUsers": true
   },
   "WatchdogSettings": {
     "BaseUrl": "http://localhost:5001",
@@ -22,6 +26,9 @@
   },
   "GitHubSettings": {
     "UpdateToken": "PEGAR_TOKEN_FINE_GRAINED_READ_ONLY_O_USAR_VARIABLE_GITHUB_UPDATE_TOKEN"
+  },
+  "UpdateSecurity": {
+    "ReleaseSigningPublicKeyPem": "PEGAR_PUBLIC_KEY_PEM_DE_FIRMA_RELEASE_O_USAR_VARIABLE_ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM"
   },
   "DataProtection": {
     "KeysPath": "C:\\ProgramData\\AtlasBalance\\keys"
