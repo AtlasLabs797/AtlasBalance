@@ -14,8 +14,8 @@ Regla de trabajo desde ahora:
 
 **Trabajo realizado:**
 - Revisado el fallo de GitHub Actions en la rama `V-01.05`.
-- Identificada la causa en `npm ci`: el lockfile apuntaba a `once@1.5.0`, version inexistente en npm.
-- Fijada la resolucion transitiva a `once@1.4.0` mediante `overrides` y correccion del `package-lock.json`.
+- Identificada la causa en `npm ci`: el lockfile apuntaba a tarballs `1.5.0` inexistentes de `once`, `graphemer`, `loose-envify` y `natural-compare`.
+- Fijadas esas resoluciones transitivas a `1.4.0` mediante `overrides` y correccion del `package-lock.json`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/package.json`
@@ -31,7 +31,11 @@ Regla de trabajo desde ahora:
 - `gh run view 25250320278 --log-failed`
 - `npm.cmd view once version`
 - `npm.cmd view once@1.4.0 dist --json`
+- `npm.cmd view graphemer version dist --json`
+- `npm.cmd view loose-envify version dist --json`
+- `npm.cmd view natural-compare version dist --json`
 - `npm.cmd pkg set overrides.once=1.4.0`
+- `npm.cmd pkg set overrides.graphemer=1.4.0 overrides.loose-envify=1.4.0 overrides.natural-compare=1.4.0`
 - `npm.cmd ci`
 - `npm.cmd audit --audit-level=moderate`
 - `npm.cmd run lint`

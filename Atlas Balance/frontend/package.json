@@ -40,6 +40,9 @@
     "vite": "^8.0.8"
   },
   "overrides": {
-    "once": "1.4.0"
+    "once": "1.4.0",
+    "graphemer": "1.4.0",
+    "loose-envify": "1.4.0",
+    "natural-compare": "1.4.0"
   }
 }

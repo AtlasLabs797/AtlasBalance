@@ -3,8 +3,8 @@
 ## 2026-05-02 - V-01.05 - CI GitHub fallaba en `npm ci` por lockfile corrupto
 
 - Contexto: los workflows `push` y `pull_request` de GitHub Actions fallaban en la rama `V-01.05` durante `Install frontend dependencies`.
-- Causa: `Atlas Balance/frontend/package-lock.json` resolvia `once` a `1.5.0` y a `https://registry.npmjs.org/once/-/once-1.5.0.tgz`, version que no existe en npm. El rango transitivo de `glob@7.2.3`/`inflight@1.0.6` es `^1.3.0`; la version publicada correcta es `once@1.4.0`.
-- Solucion aplicada: se fija `overrides.once = 1.4.0` en `package.json` y se corrige el lockfile para que `node_modules/once` apunte a `once-1.4.0.tgz` con la integridad oficial.
+- Causa: `Atlas Balance/frontend/package-lock.json` resolvia `once`, `graphemer`, `loose-envify` y `natural-compare` a `1.5.0`, versiones/tarballs que no existen en npm. Las integridades coincidian con sus paquetes reales `1.4.0`, senal clara de lockfile contaminado al subir la version frontend a `1.5.0`.
+- Solucion aplicada: se fijan overrides a `1.4.0` en `package.json` y se corrige el lockfile para que esas entradas apunten a los tarballs publicados `1.4.0` con sus integridades oficiales.
 - Verificacion: `npm.cmd ci` OK, `npm.cmd audit --audit-level=moderate` 0 vulnerabilidades, `npm.cmd run lint` OK y `npm.cmd run build` OK.
 
 ## 2026-05-02 - V-01.05 - Cierre de hallazgos residuales del escaneo repo-wide

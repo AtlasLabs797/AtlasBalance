@@ -4,13 +4,13 @@
 
 ### Que cambio
 
-- `Atlas Balance/frontend/package.json` declara `overrides.once = 1.4.0`.
-- `Atlas Balance/frontend/package-lock.json` actualiza la entrada `node_modules/once` de `1.5.0` inexistente a `1.4.0`.
+- `Atlas Balance/frontend/package.json` declara overrides para `once`, `graphemer`, `loose-envify` y `natural-compare` en `1.4.0`.
+- `Atlas Balance/frontend/package-lock.json` actualiza esas entradas desde `1.5.0` inexistente a `1.4.0`.
 - No cambia codigo runtime ni bundle servido; es una correccion de reproducibilidad de instalacion.
 
 ### Por que
 
-GitHub Actions ejecuta `npm ci` en entorno limpio. El lockfile versionado apuntaba a un tarball que npm no publica (`once-1.5.0.tgz`), por lo que CI fallaba antes de auditar, lintar o compilar.
+GitHub Actions ejecuta `npm ci` en entorno limpio. El lockfile versionado apuntaba a tarballs que npm no publica (`once-1.5.0.tgz`, `graphemer-1.5.0.tgz`, `loose-envify-1.5.0.tgz` y `natural-compare-1.5.0.tgz`), por lo que CI fallaba antes de auditar, lintar o compilar.
 
 ### Verificacion
 
