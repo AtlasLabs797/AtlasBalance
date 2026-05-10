@@ -8,6 +8,949 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-10 - Redesign: Chat IA flotante en esquina inferior derecha (estilo Intercom)
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Remodeló la ventana `AiChatPanel` para ser más premium, compacta y coherente con el resto de la app.
+- Reposicionó el chat de esquina superior-derecha a esquina inferior-derecha (tipo Intercom/Drift).
+- Mejoró el diseño visual: eliminó clutter, ajustó espaciado, tipografía y contraste.
+- Añadió animación suave de entrada (slide-up) en lugar de drop-in.
+- Implementó scrollbar personalizado en messages para blend seamless con el tema.
+- Mejoró estados visuales: botones hover, formulario integrado, mensajes auditables.
+
+**Decisiones de diseño:**
+- **Posicionamiento**: Fixed bottom-right con respeto a safe-area-inset (mobile-first).
+- **Tamaño**: 380px ancho x 520px alto máximo (compacto, no invasivo).
+- **Tipografía**: Mantiene National Park + Hind Madurai existentes; header más pequeño (md en lugar de lg).
+- **Color**: Mensaje de usuario ahora usa --accent-primary solid (no soft), mejor contraste.
+- **Animación**: slide-up sin bounce, respeta timing del sistema (--ease-premium, --duration-base).
+- **Scrollbar**: Custom webkit para blend con tema light/dark vía CSS variables.
+- **Dark mode**: Full support sin cambios específicos; variables CSS manejan automáticamente.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css` (reescrito 60% del archivo)
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx` (cambios menores en header + placeholder)
+- `.impeccable.md` (nuevo; Design Context para futuro mantenimiento)
+
+**Comandos ejecutados:**
+- `npm run dev` en frontend (Vite, puerto por defecto 5173)
+- No se ejecutó build completo aún
+
+**Resultado de verificacion:**
+- Cambios CSS sintácticamente correctos (sin errores de Vite).
+- Componente React mantiene funcionalidad: can still ask, receive, close.
+- Mobile breakpoint (768px) respeta safe-area-inset para notch/bottom nav.
+- Pendiente: visual inspection en navegador.
+
+**Decisiones técnicas:**
+- CSS Grid se simplificó: menos brecha entre items, layout más ajustado.
+- Botón cerrar cambia de text "Cerrar" a símbolo "✕" para compacidad.
+- Placeholder textarea reducido a "Haz una pregunta financiera..."
+- rows textarea de 3 a 1 (auto-expand en compact).
+- Header border-bottom tenue (--border-soft) para separación clara.
+
+**Pendientes:**
+- [ ] Visual inspection en navegador (screenshot / preview)
+- [ ] Verificar dark mode rendering
+- [ ] Mobile viewport test (375x812)
+- [ ] npm run build full test antes de merge
+
+---
+## 2026-05-10 - Fix visual: chat flotante IA por debajo de filtros
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Corregida la jerarquia de capas del shell para que el chat flotante de IA se pinte por encima del contenido de la pagina.
+- `.app-topbar` pasa a crear un plano propio con `position: relative` y `z-index: var(--z-sticky)`, evitando que controles del dashboard como `Periodo` y `Divisa principal` aparezcan encima del panel de IA.
+- No se cambia el contrato de IA, permisos, llamadas a API ni textos funcionales.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build` dentro del sandbox: falla por `spawn EPERM` de Vite/Rolldown, incidencia ya conocida.
+- `npm.cmd run build` fuera del sandbox: OK; bundle generado `index-B8Ww_DgG.js` + `index-iV1XYHkN.css`.
+- Copia selectiva de `frontend/dist/index.html` y `frontend/dist/assets` a `backend/src/AtlasBalance.API/wwwroot`: OK con elevacion por permisos locales de Windows.
+- Playwright headless con CSS compilado: OK; en punto de solape `insideChat=true`, `topbarZ=200`, `chatZ=400`.
+- `git diff --check` sobre archivos tocados: OK, solo warnings CRLF/LF preexistentes.
+
+**Decisiones visuales:**
+- Se corrige el z-index del contenedor que aloja el chat, no el ancho ni la posicion del panel a ojo.
+- La topbar queda por encima del contenido normal, pero por debajo de modales/backdrops reales definidos con `--z-modal-backdrop` y `--z-modal`.
+
+**Pendientes:**
+- Ninguno abierto para este ajuste puntual.
+
+---
+## 2026-05-10 - Fix: guardado de token OpenRouter y modelo auto
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Anadido `openrouter/auto` como modelo permitido de OpenRouter y valor seguro por defecto al guardar configuracion IA.
+- `ConfiguracionController` normaliza modelos vacios o no permitidos del proveedor a un default seguro (`openrouter/auto` para OpenRouter, `gpt-4o-mini` para OpenAI) antes de guardar la API key protegida.
+- `AtlasAiService` envia `openrouter/auto` con plugin `auto-router` y `allowed_models` limitado a la allowlist interna, manteniendo `provider.zdr=true`.
+- `Configuracion > Revision e IA` ya no deja el modelo vacio ni reenvia modelos antiguos no permitidos; si el valor cargado esta desfasado, el formulario cae a `Auto (OpenRouter)`.
+- `wwwroot` se sincronizo con el build frontend generado.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/index.html`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/*`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Comandos ejecutados y verificacion:**
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~AtlasAiServiceTests|FullyQualifiedName~ConfiguracionControllerTests" --disable-build-servers`: 25/25 OK, con warning MSB3101 preexistente de cache `obj`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build` dentro del sandbox: falla por `spawn EPERM` de Vite/Rolldown, incidencia ya conocida.
+- `npm.cmd run build` fuera del sandbox: OK.
+- Copia selectiva de `frontend/dist/index.html` y `frontend/dist/assets` a `backend/src/AtlasBalance.API/wwwroot`: OK; `index.html` servido referencia `index-B8Ww_DgG.js` y `index-iV1XYHkN.css`.
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" -c Debug --no-restore --disable-build-servers`: OK; backend de desarrollo reiniciado con `AtlasBalance.API.exe` escuchando en `127.0.0.1:5000`.
+- `curl.exe --max-time 5 --silent --show-error http://localhost:5000/api/health`: OK (`healthy`).
+
+**Pendientes:**
+- La suite completa sigue dependiendo de Docker/Testcontainers para los dos tests PostgreSQL ya registrados como bloqueo de release.
+
+---
+## 2026-05-10 - Retirada del inicio de sesion ChatGPT externo
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Eliminado el flujo de inicio de sesion de ChatGPT contra Atlas Balance. La app vuelve a una regla simple: OpenAI se usa solo desde backend con API key protegida.
+- Eliminados los endpoints de autorizacion de ChatGPT, el controlador dedicado, los tests dedicados, la migracion experimental, la entidad temporal y el esquema OpenAPI de ejemplo.
+- Anadida una migracion defensiva de limpieza para borrar restos de base de datos si la migracion experimental llego a aplicarse en algun entorno.
+- Eliminadas las claves de configuracion, DTOs y mensajes de estado asociados a ese flujo en backend y frontend.
+- `Configuracion > Integraciones` ya no muestra boton ni formulario para iniciar sesion con ChatGPT.
+- `Configuracion > Revision e IA` queda centrado en proveedor, modelo y API key de servidor.
+- `LoginPage` ya no conserva retornos especiales hacia rutas de autorizacion externas.
+- `IntegrationToken` vuelve a no manejar caducidad por token; los tokens de integracion existentes siguen siendo bearer tokens administrados.
+- Corregida la metadata de la migracion de OpenAI para que EF la detecte; antes el archivo existia pero no salia en `migrations list`.
+
+**Archivos tocados:**
+- Backend API: configuracion, IA, integraciones, middleware CSRF, entidades, DbContext, seed, snapshot EF y servicios de tokens.
+- Tests backend: IA, configuracion e integraciones.
+- Frontend: tipos, configuracion y login.
+- Documentacion: cambios, tecnica, usuario, version, bugs, incidencias y SPEC.
+
+**Verificacion:**
+- Busqueda textual de rutas, DTOs, claves y mensajes del flujo retirado: sin resultados en codigo runtime, tests, frontend, `wwwroot` ni documentacion; solo queda la migracion defensiva con nombres antiguos para borrarlos de bases ya tocadas.
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" -c Release --no-restore --disable-build-servers`: OK, con warning preexistente de Hangfire/Npgsql obsoleto y reintentos transitorios por DLL en uso.
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~IntegrationTokenServiceTests|FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~AtlasAiServiceTests" --disable-build-servers`: 30/30 OK, con warning MSB3101 de cache sin impacto.
+- `dotnet ef migrations list --configuration Release --no-build`: la migracion de OpenAI y la migracion defensiva aparecen como pendientes; warning preexistente de filtro global en `Usuario`/`IaUsoUsuario`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build` dentro del sandbox: falla por `spawn EPERM` de Vite/Rolldown, incidencia ya conocida.
+- `npm.cmd run build` fuera del sandbox: OK.
+- Sincronizacion selectiva `frontend/dist -> backend/src/AtlasBalance.API/wwwroot`: OK; el bundle servido actual apunta a `index-B8Ww_DgG.js` e `index-iV1XYHkN.css`.
+- Verificado que el bundle servido no contiene textos, rutas ni claves del flujo retirado.
+
+---
+## 2026-05-10 - Feature: etiquetas/tags en columnas extra de formatos de importación
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+Implementado el sistema de etiquetas (tags) para columnas extra en formatos de importación. Dos formatos de bancos distintos que apunten al mismo concepto (ej: "referencia", "comision") ahora pueden declarar la misma etiqueta y sus datos se fusionan en una sola columna en la tabla de extractos, en lugar de aparecer separados en columnas distintas.
+
+**Cómo funciona:**
+- La clave de almacenamiento en `EXTRACTOS_COLUMNAS_EXTRA.nombre_columna` se deriva del campo `etiqueta` cuando existe, o del nombre bruto de la columna cuando no. La normalización (lowercase, trim) ocurre en `ClaveAlmacenamiento` del backend.
+- No se añade ninguna tabla nueva a la BD. La fusión es gratuita: al compartir la misma clave en `nombre_columna`, las filas de distintos formatos se agrupan solas.
+- Detección de duplicados en validación: si dos columnas extra del mismo formato comparten la misma clave efectiva (etiqueta normalizada, o nombre si no hay etiqueta), se devuelve error específico.
+
+**Archivos tocados:**
+
+### Backend
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ImportacionDtos.cs`
+  - `MapeoColumnaExtraRequest`: nuevo campo `Etiqueta` + propiedad computada `ClaveAlmacenamiento`.
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/FormatosImportacionDtos.cs`
+  - `MapeoImportacionColumnaExtraPayload`: nuevo campo `Etiqueta`.
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+  - `NormalizeMapeo`: incluye `Etiqueta` al deserializar el mapeo guardado.
+  - Parseo de filas: usa `ClaveAlmacenamiento` como clave en el diccionario `data`.
+  - Validación: `extraClaves` detecta duplicados por clave efectiva; valida longitud de etiqueta; mensaje de error específico cuando el conflicto es por etiqueta.
+
+### Frontend
+- `Atlas Balance/frontend/src/pages/FormatosImportacionPage.tsx`
+  - Interfaces `ColumnaExtra` y `ColumnaOrdenada`: campo `etiqueta?: string`.
+  - `startEdit`: carga `etiqueta` desde los datos del formato.
+  - `updateColumnEtiqueta(index, newEtiqueta)`: función para actualizar etiqueta en el form.
+  - `buildMapeo`: incluye `etiqueta` (lowercase) en `columnas_extra` cuando se proporciona.
+  - `save`: detección de duplicados por clave efectiva con mensaje de error diferenciado.
+  - **UI — editor de columna extra**: añadido segundo input "Etiqueta" bajo el input de nombre, con placeholder explicativo.
+  - **UI — tabla de formatos**: columna "Extra" muestra badges por cada columna extra. Los que tienen etiqueta se muestran con fondo accent-soft y borde accent; los sin etiqueta, en neutral. Tooltip muestra el nombre raw cuando hay etiqueta.
+
+**Comandos ejecutados:**
+- `npx tsc --noEmit`: OK (0 errores).
+
+**Resultado de verificación:**
+- TypeScript sin errores.
+- La lógica de `ClaveAlmacenamiento` es determinista: misma etiqueta → misma clave → misma columna en extractos.
+
+**Decisiones técnicas:**
+- Etiqueta se almacena lowercase porque `nombre_columna` ya funcionaba como case-sensitive; la normalización al guardar garantiza consistencia sin migración de datos.
+- No se obliga a usar etiqueta: es 100% opcional. Formatos que no usan etiqueta se comportan exactamente igual que antes.
+
+**Pendientes de diseño:**
+- La tabla de extractos ya agrupa por `nombre_columna`; no hace falta cambio de frontend en `ExtractoTable.tsx` para que la fusión funcione.
+
+---
+## 2026-05-10 - Revisión y mejora global de UI/UX y animaciones
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+Auditoria completa del sistema de CSS del frontend. Se identificaron y corrigieron inconsistencias de animacion, transicion y coherencia visual en todos los modulos. Se añadieron animaciones donde faltaban manteniendo el principio de diseño "Movimiento sobrio" (3/10 del DESIGN.md): solo `transform` + `opacity`, con `--ease-premium` y duraciones cortas.
+
+**Cambios por archivo:**
+
+### `system-coherence.css`
+- `config-tab`: añadida `transition` (background, border, color, box-shadow, transform) — antes cambiaba de estado sin animacion.
+- `.sidebar-toggle, .theme-toggle, .logout-button, .bottom-nav-link, .bottom-nav-sheet-link`: añadida `transition` completa + estado `:active` con `transform: scale(0.94)` — antes carecian de feedback tactil.
+- `.app-nav-link--active::before`: añadido indicador visual de barra vertical izquierda (3px, accent-primary) para marcar el item activo del sidebar mas claramente.
+- `@keyframes modal-backdrop-in`: animacion de aparicion del backdrop (fade 180ms).
+- `@keyframes modal-surface-in`: animacion de entrada del panel modal (fade + translateY + scale, 240ms).
+- Aplicados a: `.modal-backdrop`, `.config-modal-backdrop`, `.users-confirm-modal`, `.users-modal`, `.audit-modal`, `.config-modal-card`, `.phase2-form-modal`.
+- `@keyframes card-entrance`: entrada escalonada de cards con nth-child (30/70/110/150ms de delay).
+- Aplicado a: `.dashboard-kpi-grid .dashboard-kpi`, `.phase2-cards > *`, `.users-summary-grid > *`.
+- `@keyframes empty-state-in`: entrada suave del empty state (fade + translateY).
+- Bloque `@media (prefers-reduced-motion: reduce)` para desactivar todas las animaciones nuevas.
+
+### `shell.css`
+- `.toast-item`: añadida animacion `toast-slide-in` (fade + translateY + scale desde abajo, 240ms).
+- `.alert-banner`: añadida animacion `alert-banner-in` (fade + translateY desde arriba, 240ms).
+- `@keyframes toast-slide-in` y `@keyframes alert-banner-in` definidos antes del bloque reduced-motion.
+- Bloque `@media (prefers-reduced-motion: reduce)` ampliado para cubrir toast y alert-banner.
+
+### `entities.css`
+- `.kpi-card`: añadida `transition` (box-shadow, border-color, transform) + hover con `translateY(-1px)` y `shadow-card-hover`. Era inconsistente con `.dashboard-kpi` que ya tenia hover.
+
+### `importacion.css`
+- `.import-modal-backdrop`: añadida animacion `modal-backdrop-in`.
+- `.import-modal`: añadida animacion `modal-surface-in`. El modal de importacion (el mas grande de la app) antes aparecia de golpe.
+
+### `revision-ai.css`
+- `.ai-floating-chat`: añadida animacion `ai-chat-drop-in` (fade + translateY + scale desde arriba, 240ms). El panel flotante de IA ahora se despliega con fluidez.
+
+**Decisiones visuales:**
+- Sin rebotes ni springs: easing `cubic-bezier(0.22, 1, 0.36, 1)` de salida suave.
+- Duraciones: backdrop 180ms, paneles/cards/toasts 240ms. Conforme con DESIGN.md §16.
+- No se anima ancho, alto, top ni left — solo `transform` y `opacity`.
+- El stagger de cards usa delays cortos (max 150ms) para no parecer teatral.
+- Todos los keyframes nuevos respetan `prefers-reduced-motion`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Atlas Balance/frontend/src/styles/layout/importacion.css`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Solo cambios CSS: no requieren build para preview. Build a verificar antes de release.
+
+**Pendientes de diseño abiertos:**
+- Animacion de salida de modales (exit animation): requiere React state para montar/desmontar con delay — pendiente para siguiente sprint.
+- Transicion del titulo de pagina en la topbar al navegar — requiere cambio en `TopBar.tsx` con `key` prop.
+- Stagger en filas de tabla en primera carga — descartado por performance en tablas virtualizadas (50k+ filas).
+
+---
+## 2026-05-10 - Ajuste visual de identidad de cuenta
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Redisenada la ficha superior de datos de cuenta en `CuentaDetailPage` mediante estilos CSS de `account-identity-*`.
+- La zona `Titular / Banco / IBAN` deja de verse como una tabla estrecha con separador vertical y pasa a un panel compacto con tres bloques de lectura.
+- `dashboard-toolbar-main` ahora reclama espacio en desktop para que la ficha no se aplaste debajo del titulo.
+- Se mantuvo el stack actual: React/Vite, CSS variables propias, sin Tailwind ni dependencias nuevas.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build` dentro del sandbox: falla por `spawn EPERM` de Vite/Rolldown.
+- `npm.cmd run build` fuera del sandbox: OK.
+- Playwright fuera del sandbox con fixture HTML que carga los CSS reales de la app para validar desktop y movil.
+
+**Resultado de verificacion:**
+- Lint OK.
+- Build frontend OK fuera del sandbox.
+- Playwright desktop 2048x900: ficha `832px`, tres bloques en una fila, sin overflow horizontal.
+- Playwright movil 390x844: ficha `350px`, tres bloques apilados, sin overflow horizontal.
+
+**Decisiones visuales:**
+- Titular queda como dato principal con fondo de acento suave; banco e IBAN quedan como datos secundarios neutrales.
+- Se usa agrupacion por proximidad, borde suave y ritmo de gaps; nada de columna vacia ni separadores verticales de tabla cutre.
+- No se cambian textos, rutas ni comportamiento funcional.
+
+**Pendientes de diseno:**
+- Ninguno abierto para este ajuste puntual.
+
+---
+## 2026-05-10 - Proveedor IA OpenAI con API key de servidor
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Atlas Balance admite ahora `OPENAI` como proveedor IA directo, ademas de `OPENROUTER`.
+- La API key de OpenAI se guarda en `CONFIGURACION.openai_api_key` protegida con `ISecretProtector`; el frontend solo recibe `openai_api_key_configurada`.
+- `AtlasAiService` enruta `OPENAI` al `HttpClient` `openai` (`https://api.openai.com/v1/`) usando `chat/completions`.
+- OpenAI queda como proveedor de backend con API key protegida. No se usa la sesion web de ChatGPT como credencial de API.
+- `Configuracion > Revision e IA` permite elegir OpenRouter u OpenAI, muestra modelos permitidos por proveedor y guarda la clave correspondiente sin exponerla.
+- Se evito repetir el bloqueo con `robocopy`: se cerraron procesos `Robocopy.exe` colgados y se sustituyo la sincronizacion por `Copy-Item` acotado y elevado solo para `index.html` y assets.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260510180000_AddOpenAiProviderConfig.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/index.html`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/*`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Comandos ejecutados:**
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" --no-restore --disable-build-servers`: fallo por `AtlasBalance.API.exe` bloqueado por proceso Debug activo.
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" -c Release --no-restore --disable-build-servers`: OK.
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~AtlasAiServiceTests|FullyQualifiedName~ConfiguracionControllerTests"`: 22/22 OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build` dentro del sandbox: falla por `spawn EPERM` de Vite/Rolldown, incidencia ya conocida.
+- `npm.cmd run build` fuera del sandbox: OK.
+- `robocopy .\\dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`: abortado por bloqueo; se cerraron procesos `Robocopy.exe`.
+- `Copy-Item` elevado con timeout corto para `index.html` y `assets`: OK.
+
+**Resultado de verificacion:**
+- Backend Release build OK.
+- Tests focalizados IA/configuracion OK.
+- Frontend lint OK.
+- Frontend build OK fuera del sandbox.
+- `wwwroot` sincronizado sin usar `robocopy`.
+
+**Pendientes:**
+- Prueba manual con API key real en entorno controlado para validar timeout/error/modelo inexistente contra proveedor externo sin exponer datos reales.
+
+---
+## 2026-05-10 - Corrección animación sidebar colapsar/expandir
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+Corregidos 5 problemas de mecánica de animación en el sidebar que causaban un aspecto raro (jitter, snapping, desincronización):
+
+1. `grid-template-columns` en `.app-shell` animaba a 420ms (`--duration-slow`) mientras los elementos internos animaban a 240ms (`--transition-normal`). El sidebar exterior seguía colapsando 180ms después de que el contenido ya había terminado. Corregido sincronizando a `--transition-normal`.
+2. `.app-nav-section-label` tenía `max-height` en su `transition` pero sin valor de inicio explícito en el estado normal. El browser no puede interpolar desde `none/auto` → `0`, así que la etiqueta de sección snapeaba en lugar de animar. Corregido añadiendo `max-height: 2rem`.
+3. `.app-nav-label` transitaba `flex-basis` y `max-width` simultáneamente — dos constraints de flex peleando causaban jitter. Eliminado `flex-basis` de la lista de transiciones; `max-width: 0` con `overflow: hidden` es suficiente.
+4. `.app-nav-link` transitaba `gap`. El gap animando mientras la etiqueta desaparece añadía ruido visual. Eliminado.
+5. `.app-brand` transitaba `gap` por la misma razón. Eliminado.
+6. Añadido bloque `@media (prefers-reduced-motion: reduce)` que faltaba completamente — requisito de accesibilidad.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Ninguno (cambio puro de CSS, sin build necesario para verificación visual)
+
+**Resultado de verificación:**
+- CSS correcto. Pendiente de verificación visual en el navegador por el usuario.
+
+**Decisiones visuales:**
+- No se cambió la arquitectura de animación (CSS classes, Zustand state, timing general). Solo se corrigieron los valores que hacían que la mecánica no funcionara.
+- `prefers-reduced-motion` reduce todas las transiciones del sidebar a 0.01ms, respetando accesibilidad.
+
+**Pendientes de diseño:**
+- Verificación visual en navegador (colapsar/expandir varias veces, velocidades distintas)
+
+---
+## 2026-05-10 - Segunda ronda: corrección del salto de icono en sidebar
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+La primera ronda corrigió timing y animaciones no funcionales, pero el icono seguía haciendo un movimiento raro. Causa raíz diagnosticada: `justify-content: center` en el estado colapsado no es animable — el icono saltaba de posición en el frame 0 antes de que ninguna transición empezara. Dos problemas adicionales:
+
+1. `justify-content: center` en `.app-sidebar--collapsed .app-nav-link` y `.app-brand`: no interpolable → salto instantáneo al togglear la clase. Solución: eliminado por completo. En su lugar, se usa `padding-inline: var(--space-4) = 16px` para centrar el icono (cálculo: sidebar inner = 56px, icono = 23px → padding = (56-23)/2 ≈ 16px). El `padding` sí está en la transition, así que el centrado ocurre suavemente.
+
+2. `flex-basis: 9rem` + `flex-grow: 1` + `max-width` animando simultáneamente en `.app-nav-label`: dos mecanismos de flex peleando durante el colapso creaban comportamiento errático. Solución: el label cambia a `flex: 0 0 auto` (no crece ni encoge) y solo anima `opacity + transform`. El `overflow: hidden` del nav-link recorta el label a medida que el sidebar se estrecha. Sin animación de ancho explícita → sin conflictos de flex.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Decisiones visuales:**
+- El icono se centra vía padding (animable) en lugar de justify-content (no animable). Diferencia visual: 0.4px off-center — imperceptible.
+- El label desaparece solo con opacity+transform; el recorte lo hace overflow:hidden del contenedor padre.
+
+---
+## 2026-05-10 - Alineacion de Cuentas con pantallas phase2
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Corregida la pantalla `Cuentas`, que quedaba a ancho completo mientras `Titulares` usaba el contenedor maximo centrado del sistema.
+- La regla de coherencia visual se aplica ahora a `.phase2-page`, no solo a pantallas concretas, para que `Cuentas`, `Titulares` y otras vistas del mismo patron compartan ancho `1500px` y centrado.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build` dentro del sandbox: falla por `spawn EPERM` de Vite/Rolldown.
+- `npm.cmd run build` fuera del sandbox: OK.
+- `node .codex-verify-layout.mjs` fuera del sandbox con Playwright y APIs mockeadas; script temporal eliminado despues.
+
+**Resultado de verificacion:**
+- Lint OK.
+- Build frontend OK fuera del sandbox.
+- Playwright desktop 2048px: `Titulares` y `Cuentas` quedan con `left=400`, `width=1500`, `deltaLeft=0`, `deltaWidth=0`, sin errores de consola.
+
+**Decisiones visuales:**
+- Se corrigio el contenedor compartido en la capa `system-coherence`, no la pantalla de `Cuentas` a mano. Era el punto correcto: menos CSS duplicado y menos posibilidades de que otra vista phase2 vuelva a salirse.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-10 - Ajuste visual del modal de usuarios
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Corregido el bloque `Emails de notificación` del modal de usuarios: el textarea deja de renderizarse inline y pasa a comportarse como un campo ancho del formulario.
+- Se añade etiqueta visible `Destinatarios`, ayuda asociada por `aria-describedby` y estilos específicos para mantener anchura, ritmo vertical y jerarquía visual coherentes con el resto de la ventana emergente.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
+- `Atlas Balance/frontend/src/styles/layout/users.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build` dentro del sandbox: falla por `spawn EPERM` de Vite/Rolldown.
+- `npm.cmd run build` fuera del sandbox: OK.
+- Verificación visual Playwright/Vite desktop con APIs mockeadas.
+- Verificación visual Playwright/Vite móvil con APIs mockeadas.
+
+**Resultado de verificación:**
+- Lint OK.
+- Build frontend OK fuera del sandbox.
+- Desktop: textarea `1046px` dentro de modal `1080px`, sin errores de consola.
+- Móvil 390px: textarea `366px`, `documentElement.scrollWidth=390`, sin overflow horizontal ni errores de consola.
+
+**Decisiones visuales:**
+- El campo de emails ocupa el ancho útil del modal porque una lista de direcciones no debe partir emails en columnas estrechas.
+- La ayuda queda debajo del control, no a la izquierda, para seguir el patrón real de formulario y evitar el layout roto de la captura.
+
+**Pendientes:**
+- Ninguno.
+
+---
+## 2026-05-10 - Auditoria seguridad full-stack V-01.06
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Auditoria completa de seguridad del repositorio (backend ASP.NET Core 8, frontend React 18, watchdog, CI). Sin cambios de comportamiento.
+- Verificacion en codigo de los puntos sospechosos del informe inicial:
+  - `IUserAccessService.GetScopeAsync` y `IIntegrationAuthorizationService.GetScopeAsync`: la logica de scope respeta el modelo `permisos_usuario` (titular/cuenta/global), sin IDOR.
+  - `AtlasAiService.AskAsync`: contexto financiero limitado al scope del usuario via `ApplyCuentaScope`, allowlist de modelos OpenRouter, API key con DataProtection, header `provider.zdr=true`, system prompt anti-prompt-injection y rate-limit + presupuesto multinivel.
+  - `WatchdogOperationsService.IsAllowedUpdateTargetPath` ya valida contra `WatchdogSettings:UpdateTargetPath`; defensa en profundidad correcta.
+  - `ImportacionService` no toca filesystem (parsing en frontend); sin riesgo de path traversal ni XXE.
+  - Serilog `UseSerilogRequestLogging` por defecto no registra headers; sin leak del bearer de integracion.
+- Comentario en `Middleware/CsrfMiddleware.cs` documentando por que `/api/auth/login`, `/api/auth/mfa/verify` y `/api/auth/refresh-token` se excluyen de CSRF (mitigado por `SameSite=Strict`).
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs` (comentario, sin cambio funcional).
+
+**Comandos ejecutados:**
+- Lectura estatica del codigo, no se ejecutaron tests ni builds en esta sesion.
+
+**Resultado de verificacion:**
+- Sin vulnerabilidades criticas o altas confirmadas.
+- Auditoria detallada disponible en la conversacion del agente (informe en formato resumen ejecutivo + hallazgos + correcciones).
+
+**Pendientes:**
+- Ejecutar `dotnet test`, `npm audit` y la suite de Playwright como verificacion final antes de tag/release. CI ya cubre estas pruebas en push.
+- Considerar (opcional, V-01.07) registrar tests xUnit explicitos de IDOR para usuarios non-admin pidiendo titulares ajenos -> 403.
+
+---
+## 2026-05-10 - Auditoria release y cierre de riesgos altos pendientes
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Recuperada la ejecucion del proyecto backend de tests: se regenero restore tras el renombrado y `AtlasBalance.API.Tests.csproj` desactiva build paralelo para evitar carreras de referencias.
+- Implementada idempotencia de importacion con fingerprint SHA-256 por fila, hash de lote, fila origen, fecha de importacion e indice unico filtrado por cuenta.
+- Ampliados tests del parser europeo para importes con miles, coma decimal, espacios, simbolo euro, negativos y parentesis.
+- Corregido el parseo manual frontend de importes para altas/ediciones de extractos, desglose de cuenta y movimientos de plazo fijo; se aceptan formatos europeos con coma decimal.
+- `RevisionService` pagina en backend y deja de filtrar todo en memoria; frontend consume `PaginatedResponse`.
+- `ExportacionService` bloquea XLSX demasiado grandes con `export_max_rows`, auditoria `EXPORTACION_BLOQUEADA`, estado `FAILED` y respuesta 413 en exportacion manual.
+- `PlazoFijoService` solo marca `FechaUltimaNotificacion` cuando el email se envia; si falla SMTP o no hay admins activos queda reintento sin duplicar la notificacion interna.
+- Ampliados tests de IA para modelo no permitido, rate limit, presupuesto mensual, contexto no confiable y auditoria sin prompt/API key.
+- Ajuste menor de accesibilidad: chat IA flotante cierra con Escape y enfoca el textarea al estar disponible.
+
+**Archivos principales tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ExportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/PlazoFijoService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260510120740_AddExtractoImportacionFingerprint.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/*`
+- `Atlas Balance/frontend/src/pages/RevisionPage.tsx`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+
+**Comandos ejecutados:**
+- `dotnet restore "Atlas Balance\\backend\\AtlasBalance.sln" --disable-parallel -v:minimal`
+- `dotnet build "Atlas Balance\\backend\\AtlasBalance.sln" --no-restore -m:1 -v:minimal --disable-build-servers`
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter "ImportacionServiceTests|RevisionServiceTests|ExportacionServiceTests|AtlasAiServiceTests|AlertaServiceTests|PlazoFijoServiceTests|DashboardServiceTests|UserAccessServiceTests|ManualProcessResponseTests"`
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj"`
+- `dotnet list "Atlas Balance\\backend\\AtlasBalance.sln" package --vulnerable --include-transitive`
+- `npm.cmd install`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `npm.cmd audit`
+- `git diff --check`
+
+**Resultados:**
+- Tests focalizados nuevos: 78/78 OK.
+- Suite backend sin Docker/PostgreSQL: 163/163 OK.
+- Suite backend completa: 163/165 OK; fallan solo los tests que requieren Docker/Testcontainers porque Docker no esta disponible.
+- Frontend lint/build: OK.
+- Dependencias: npm audit 0 vulnerabilidades; NuGet vulnerable 0.
+- Secret scan basico con `rg`: sin claves/API tokens detectados en codigo versionable activo.
+- `git diff --check`: OK; solo warnings LF/CRLF.
+
+**Pendientes:**
+- Ejecutar Docker Desktop o servicio Docker y pasar `RowLevelSecurityTests` y `ExtractosConcurrencyTests`.
+- Hacer prueba E2E autenticada contra PostgreSQL real con dataset grande antes de release.
+- No publicar release hasta cerrar esos dos puntos. Punto.
+
+---
+## 2026-05-10 - Renombrado tecnico a AtlasBalance
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Renombrados proyectos .NET, namespaces, solucion y rutas tecnicas del nombre anterior a `AtlasBalance.*`.
+- Actualizados scripts, CI, docs, tests, imports, `ProjectReference`, migraciones EF snapshot/designer y referencias de build/deploy.
+- Textos visibles y metadatos quedan con `Atlas Balance`.
+- `Actualizar-AtlasBalance.ps1` reconfigura el `binPath` de los servicios tras copiar los nuevos ejecutables para evitar que una instalacion existente quede apuntando a binarios antiguos.
+- No se modificaron secretos ni recursos externos productivos.
+
+**Verificacion:**
+- `rg` final de variantes antiguas en codigo activo: sin resultados.
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" --no-restore`: OK.
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.Watchdog\\AtlasBalance.Watchdog.csproj" --no-restore`: OK.
+- `dotnet build "Atlas Balance\\backend\\AtlasBalance.sln" --no-restore --disable-build-servers`: bloqueado por el fallo ya registrado del proyecto de tests (`0 Errores`).
+- `dotnet build "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --no-restore --disable-build-servers`: bloqueado por el mismo fallo MSBuild/runner.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK fuera del sandbox; dentro falla por `spawn EPERM`.
+- `npm.cmd audit --audit-level=critical --json`: 0 vulnerabilidades.
+- `dotnet list AtlasBalance.API package --vulnerable --include-transitive`: sin vulnerabilidades.
+- `robocopy frontend/dist -> backend/src/AtlasBalance.API/wwwroot /MIR`: OK fuera del sandbox.
+
+**Pendientes:**
+- Arreglar el proyecto backend de tests para recuperar `dotnet test` y build de solucion completo.
+- Regenerar el paquete release V-01.06; los paquetes historicos de `Atlas Balance Release` pueden contener ejecutables antiguos y no deben reutilizarse.
+
+---
+## 2026-05-10 - Revision bancaria, IA y remate de validaciones
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Revisado lo dejado por sesiones anteriores y cerrado lo que seguia flojo: exportacion, RLS, formato numerico, barras de formula y validaciones.
+- `Revision` detecta comisiones y seguros por conceptos normalizados, permite filtrar por estado y guarda el estado por extracto.
+- `IA` incorpora chat de pagina y chat flotante superior usando datos reales visibles para el usuario; si falta proveedor/modelo/API key muestra error claro.
+- Ajustes permite configurar umbral minimo de comisiones, cooldown de emails de saldo bajo, proveedor OpenRouter, API key y modelo.
+- El email de saldo bajo se dispara solo cuando el saldo actual cae por debajo del umbral aplicable; se evita duplicado dentro de `alerta_saldo_cooldown_horas`.
+- La importacion conserva `fila_numero` y admite filas informativas con celdas en blanco como advertencias si hay datos suficientes.
+- La exportacion deja de ordenar por fecha y sale por `fila_numero desc`, con fecha `dd/mm/yyyy` y formato numerico con separador de miles.
+- Las barras de formula de extractos y desglose de cuenta ya no cortan el texto seleccionado.
+- Se anadio RLS a `REVISION_EXTRACTO_ESTADOS`.
+- Auditoria final general con 6 subagentes: seguridad, bugs funcionales, datos/integridad, UI/UX, IA y rendimiento.
+- Correcciones derivadas de la auditoria:
+  - IA gobernada por interruptor global, permiso por usuario, limites de uso/coste/tokens y auditoria de metadatos sin guardar prompts.
+  - Modelos IA validados tambien en backend con allowlist.
+  - Contexto IA minimizado: conceptos tratados como datos no confiables, menos movimientos crudos y saldos actuales por `fila_numero`.
+  - Escritura de estados de `Revision` y exportacion manual exigen permiso real de escritura sobre la cuenta, no solo lectura.
+  - Saldo bajo ya no marca `FechaUltimaAlerta` si no hay destinatarios validos o falla el envio SMTP.
+  - Dashboard, alertas y movimientos de plazo fijo toman el ultimo saldo por `fila_numero`, no por fecha.
+
+**Archivos principales tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AlertaService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/UserAccessService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ExportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/IaController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260509160722_AddRevisionEstadosAiConfig.cs`
+- `Atlas Balance/frontend/src/pages/RevisionPage.tsx`
+- `Atlas Balance/frontend/src/pages/IaPage.tsx`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/utils/formatters.ts`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+
+**Comandos ejecutados:**
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" --no-restore --disable-build-servers`
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter "ExportacionServiceTests|AlertaServiceTests|RevisionServiceTests|AtlasAiServiceTests"`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `npm.cmd audit --audit-level=critical --json`
+- `dotnet list "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" package --vulnerable --include-transitive`
+- `python Skills\\Seguridad\\cyber-neo-main\\skills\\cyber-neo\\scripts\\scan_secrets.py "Atlas Balance" --json`
+- Browser in-app sobre `http://127.0.0.1:5173/login`
+- Comprobacion Node de `1.000`, `10.000`, `100.000`
+
+**Resultado de verificacion:**
+- Backend API build: OK.
+- Frontend lint: OK.
+- Frontend build: OK; requirio ejecutar fuera del sandbox porque Vite fallaba dentro con `spawn EPERM`.
+- `npm audit`: 0 vulnerabilidades.
+- NuGet vulnerable: 0 paquetes vulnerables en API.
+- Secret scan: 1 falso positivo bajo en test (`RowLevelSecurityTests` usa secreto literal de prueba).
+- Browser local: OK en carga de app/login; la validacion autenticada queda limitada porque no habia sesion/backend de datos levantado.
+- Tests backend: bloqueados por fallo preexistente al resolver `AtlasBalance.Watchdog` desde el proyecto de tests (`MSBuild` termina con error y `0 Errores`). No es aceptable, pero no viene de estos cambios funcionales.
+
+**Pendientes:**
+- Arreglar el bloqueo del proyecto de tests con `AtlasBalance.Watchdog` para recuperar ejecucion completa de regresiones backend.
+- Validacion visual autenticada con datos reales o backend de pruebas levantado.
+- Pendientes de auditoria no cerrados en esta sesion: deduplicacion/idempotencia de importaciones, parser europeo para altas manuales, paginacion/server-side en Revision/importacion/exportaciones grandes y accesibilidad completa de modales/tablas.
+
+## 2026-05-02 - Reticula tipo Excel en Extractos
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Ajustada la tabla virtualizada de `Extractos` para que cabecera, cuerpo y filas hereden el mismo ancho de hoja desde el viewport.
+- Eliminada la cuadricula de fondo con columnas fijas de `120px`, porque no coincidia con los anchos reales y hacia parecer que las celdas estaban movidas.
+- Las lineas horizontales y verticales salen ahora de los bordes reales de cada celda.
+- Las filas virtualizadas tienen altura fija y cada celda ocupa exactamente esa altura, evitando saltos visuales.
+- Sincronizado el build frontend con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Decisiones visuales:**
+- Priorizar lectura de hoja de calculo: bordes reales por celda, alturas rigidas y columnas fijas.
+- Quitar la reticula decorativa del viewport; una tabla financiera no puede fingir columnas que no existen.
+- Mantener densidad alta sin meter tarjetas ni separadores extra.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Playwright headless con `/extractos` mockeado en `http://127.0.0.1:4177/extractos`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright: OK; 13 columnas visibles, `maxLeftDelta=0`, `maxWidthDelta=0`, `maxBottomDelta=0`, altura de fila `42px` y sin cuadricula falsa de fondo.
+- `robocopy`: OK.
+
+**Pendientes:**
+- Ninguno abierto para esta correccion visual.
+
+## 2026-05-02 - Insercion intermedia en desglose de cuenta
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- `POST /api/extractos` acepta `insert_before_fila_numero` para insertar una linea manual en una posicion concreta de la cuenta.
+- El backend desplaza las lineas posteriores dentro de una transaccion y mantiene el indice unico `(cuenta_id, fila_numero)` sin reutilizar numeros.
+- El dashboard de cuenta muestra `Insertar debajo` por fila cuando el usuario tiene permiso de alta de lineas.
+- La nueva linea se edita inline con fecha, concepto, comentarios, monto, saldo y columnas extra, y se guarda en el orden visual esperado.
+- El desglose de cuenta carga por `fila_numero desc` para mostrar el orden persistido real, no una reinterpretacion por fecha.
+- Sincronizado el build frontend con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Decisiones visuales:**
+- Mantener la accion en la columna `Acciones` de cada fila para que el punto de insercion sea explicito.
+- Usar un formulario inline, no modal, porque la posicion entre lineas es el dato importante.
+- Conservar la densidad tabular; el formulario aparece solo en la fila seleccionada.
+
+**Comandos ejecutados:**
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter ExtractosControllerTests -c Release`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `ExtractosControllerTests`: 11/11 OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK.
+
+**Pendientes:**
+- Validacion visual manual con datos reales si se quiere ajustar anchura de la columna `Acciones` en extractos con muchas columnas extra.
+
+## 2026-05-02 - Filtro de periodo en Extractos
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Agregado selector de periodo libre en `Extractos` con fechas `Desde` y `Hasta`.
+- Los filtros de fecha se guardan en la URL como `fechaDesde` y `fechaHasta`.
+- La carga de extractos envia el rango al endpoint existente `GET /api/extractos`.
+- Se valida rango invertido antes de llamar a la API.
+- Sincronizado el build frontend con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/dist`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Decisiones visuales:**
+- Reutilizar `DatePickerField` para mantener el calendario propio de Atlas Balance.
+- Colocar el rango junto a titular y cuenta, porque es filtro de consulta principal, no filtro de celda.
+- Mantener controles compactos y con wrap para no romper mobile.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy ... /MIR`: OK.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-05-02 - Fix recorte superior graficas Evolucion
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Corregido el recorte superior de las graficas `Evolucion` cuando la serie de saldo quedaba pegada al limite del eje Y.
+- `EvolucionChart` calcula ahora un dominio vertical explicito con padding del 4% sobre rango/magnitud.
+- Se mantiene el cero como base cuando todos los valores son positivos y se respeta el rango negativo si aparece.
+- Sincronizado el build frontend con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `Atlas Balance/frontend/dist`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Decisiones visuales:**
+- Dar aire real al dominio de datos, no compensar con margenes CSS arbitrarios.
+- Mantener la escala financiera anclada a cero en escenarios positivos para no exagerar variaciones pequenas.
+- Aplicar el ajuste en el componente compartido para cubrir dashboard principal, titulares y cuentas.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- `robocopy`: OK.
+
+**Pendientes:**
+- Validacion visual manual con datos reales en una pantalla grande si se quiere ajustar cuanto aire exacto debe tener el chart.
+
+## 2026-05-02 - Reticula fija en tabla de extractos
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Corregida la desalineacion visual de la tabla de `Extractos` cuando hay muchas columnas visibles.
+- Las columnas dejan de usar tracks flexibles `fr` y pasan a anchos fijos calculados por columna.
+- Cabecera, espaciador virtualizado y filas comparten el mismo ancho total de hoja mediante `--extracto-sheet-width`.
+- Eliminado el desplazamiento vertical negativo de las filas virtualizadas, que podia meter la primera fila bajo la cabecera sticky.
+- Sincronizado el build frontend con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/dist`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Decisiones visuales:**
+- Priorizar una cuadricula tipo Excel: cada columna conserva el mismo borde y ancho en cabecera y cuerpo.
+- Evitar `fr` en una hoja financiera virtualizada; es comodo, pero fragil con scroll horizontal y filas absolutas.
+- Mantener el truncado por ellipsis en texto largo para no romper la altura de fila.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Playwright headless con APIs mockeadas en `/extractos` y viewport `2048x900`
+- `robocopy dist ..\backend\src\AtlasBalance.API\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright headless: OK; 9 columnas visibles, filas renderizadas y sin diferencias de posicion/ancho entre cabecera y celdas.
+- `robocopy ... /MIR`: OK.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-05-02 - Fix overflow KPIs dashboard principal
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Corregido el desbordamiento de importes largos en los KPIs superiores del dashboard principal.
+- Reequilibrado el layout superior para dar mas ancho a `Saldo total`, `Ingresos periodo` y `Egresos periodo`, reduciendo la zona de `Saldos por divisa`.
+- `dashboard-kpi` pasa a usar container queries para ajustar el tamano del importe al ancho real de cada tarjeta.
+- Se mantiene `white-space: nowrap` para no partir importes financieros, pero sin permitir que invadan la tarjeta contigua.
+- Sincronizado el build frontend con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/frontend/dist`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.06.md`
+
+**Decisiones visuales:**
+- Priorizar visualmente los KPIs principales frente al desglose por divisa.
+- No truncar importes: en una app de tesoreria ocultar cifras es peor que ajustar escala.
+- Conservar la lectura en una linea y reducir solo lo necesario segun el ancho de la tarjeta.
+- Mantener CSS variables propias y no introducir dependencias ni componentes nuevos.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Prueba Playwright headless con APIs mockeadas en `/dashboard` y viewport `1060x640`
+- `robocopy dist ..\backend\src\AtlasBalance.API\wwwroot /MIR`
+
+**Resultado de verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Playwright headless: OK; en viewport `1975x768`, bloque principal `979px`, divisas `505px`, `bodyOverflow=false` y sin overflow en KPIs ni tarjetas de divisa.
+- `robocopy ... /MIR`: OK.
+
+**Pendientes:**
+- Ninguno.
+
+## 2026-05-02 - Apertura de version V-01.06
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Actualizada la version activa del proyecto de `V-01.05` a `V-01.06`.
+- Actualizadas las fuentes runtime a `1.6.0` / `V-01.06`.
+- Creada la documentacion de version `v-01.06.md`.
+- Marcada `v-01.05.md` como base anterior de la nueva version.
+- Creada la rama local `V-01.06` desde `V-01.05`.
+
+**Archivos tocados:**
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-01.05.md`
+- `Documentacion/Versiones/v-01.06.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+
+**Comandos ejecutados:**
+- `Get-Content .\CLAUDE.md`
+- `Get-Content .\Documentacion\Versiones\version_actual.md`
+- `Get-ChildItem .\Documentacion\Versiones`
+- `git status --short --branch`
+- `git branch --list V-01.06 v-01.06`
+- `Select-String ... -Pattern 'V-01\.05','1\.5\.0','v-01\.05'`
+- `git switch -c V-01.06`
+
+**Resultado de verificacion:**
+- `git switch -c V-01.06`: OK.
+- `git status --short --branch`: rama activa `V-01.06`.
+- `Select-String` confirma `V-01.06` / `1.6.0` en `VERSION`, `Directory.Build.props`, `package.json`, `package-lock.json`, `version_actual.md` y `v-01.06.md`.
+
+**Pendientes:**
+- Commit y push cuando se quiera publicar la rama en remoto.
+
 ## 2026-05-02 - Correccion de CI GitHub por lockfile npm
 
 **Version:** V-01.05
@@ -62,7 +1005,7 @@ Regla de trabajo desde ahora:
 - Confirmado que los artefactos de release quedan ignorados por Git y deben publicarse como asset de GitHub Release, no como archivos versionados.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64`
 - `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
@@ -76,8 +1019,8 @@ Regla de trabajo desde ahora:
 
 **Resultado de verificacion:**
 - `npm.cmd run build`: OK dentro de `Build-Release.ps1`.
-- `dotnet publish GestionCaja.API -c Release -r win-x64 --self-contained true`: OK.
-- `dotnet publish GestionCaja.Watchdog -c Release -r win-x64 --self-contained true`: OK.
+- `dotnet publish AtlasBalance.API -c Release -r win-x64 --self-contained true`: OK.
+- `dotnet publish AtlasBalance.Watchdog -c Release -r win-x64 --self-contained true`: OK.
 - ZIP generado: `102350978` bytes.
 - SHA256: `3E7A3ED22EFC4D18A161EA9D8D15CD9C12B3D51BDEF9AE38863767EC5CEAE299`.
 
@@ -94,30 +1037,30 @@ Regla de trabajo desde ahora:
 - El instalador escribe credenciales en `C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt`, con el directorio `config` restringido antes de volcar secretos.
 - `Reset-AdminPassword.ps1` exige Administrador y escribe `RESET_ADMIN_CREDENTIALS_ONCE.txt` solo despues de proteger ACL.
 - Se agrego cobertura de regresion para `ExtractosController`, `DashboardService`, `IntegrationOpenClawController` y RLS.
-- Se sincronizo `frontend/dist` hacia `backend/src/GestionCaja.API/wwwroot`.
+- Se sincronizo `frontend/dist` hacia `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `.github/workflows/ci.yml`
 - `Atlas Balance/docker-compose.yml`
 - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 - `Atlas Balance/scripts/Reset-AdminPassword.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/DashboardService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501120000_EnableRowLevelSecurity.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/DashboardService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260501120000_EnableRowLevelSecurity.cs`
 - `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/IntegrationOpenClawControllerTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/RowLevelSecurityTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/IntegrationOpenClawControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
 - `Documentacion/*`
 
 **Comandos ejecutados:**
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" -c Release --filter "ExtractosControllerTests|DashboardServiceTests|IntegrationOpenClawControllerTests|RowLevelSecurityTests" --no-restore`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --filter "ExtractosControllerTests|DashboardServiceTests|IntegrationOpenClawControllerTests|RowLevelSecurityTests" --no-restore`
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Parser PowerShell de scripts de instalacion/reset/install/update
-- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR`
+- `robocopy frontend/dist backend/src/AtlasBalance.API/wwwroot /MIR`
 
 **Resultado de verificacion:**
 - Tests focalizados backend: 20/20 OK.
@@ -142,18 +1085,18 @@ Regla de trabajo desde ahora:
 - `ActualizacionService.DownloadAndPreparePackageAsync`: extraccion ZIP con validacion entrada-por-entrada contra `packageRoot` (defensa en profundidad sobre digest+firma).
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/RowLevelSecurityTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
 - `Atlas Balance/scripts/Reset-AdminPassword.ps1`
 - `Documentacion/REGISTRO_BUGS.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Comandos ejecutados:**
-- `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release`
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" -c Release --no-build`
-- `dotnet list "Atlas Balance/backend/GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet build "Atlas Balance/backend/AtlasBalance.sln" -c Release`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-build`
+- `dotnet list "Atlas Balance/backend/AtlasBalance.sln" package --vulnerable --include-transitive`
 - `npm.cmd audit --audit-level=moderate` (frontend)
 - `npm.cmd run lint` y `npm.cmd run build` (frontend)
 - Parser PowerShell sobre `scripts/Reset-AdminPassword.ps1`
@@ -208,21 +1151,21 @@ Regla de trabajo desde ahora:
 - El actualizador online exige firma detached `.zip.sig` RSA/SHA-256 verificada con `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`; el script de release genera la firma si recibe `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
 
 **Archivos tocados principales:**
-- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/UserAccessService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
 - `Atlas Balance/scripts/Build-Release.ps1`
 - Tests focalizados de auth, integraciones, importacion, permisos, extractos, cuentas y actualizaciones.
 - Artefactos de scan en `C:\tmp\codex-security-scans\Atlas Balance Dev\6ad0b10_20260502005342`.
 
 **Comandos ejecutados:**
-- `dotnet test 'Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj' -c Release --filter "AuthServiceTests|IntegrationAuthMiddlewareTests|ImportacionServiceTests|UserAccessServiceTests|ExtractosControllerTests|CuentasControllerTests|ActualizacionServiceTests"`
-- `dotnet test 'Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj' -c Release`
-- `dotnet list 'Atlas Balance/backend/GestionCaja.sln' package --vulnerable --include-transitive`
+- `dotnet test 'Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj' -c Release --filter "AuthServiceTests|IntegrationAuthMiddlewareTests|ImportacionServiceTests|UserAccessServiceTests|ExtractosControllerTests|CuentasControllerTests|ActualizacionServiceTests"`
+- `dotnet test 'Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj' -c Release`
+- `dotnet list 'Atlas Balance/backend/AtlasBalance.sln' package --vulnerable --include-transitive`
 - `npm.cmd audit --audit-level=moderate`
 - Parser PowerShell para `Build-Release.ps1` e `Instalar-AtlasBalance.ps1`
 - `git diff --check`
@@ -249,11 +1192,11 @@ Regla de trabajo desde ahora:
 - El ancho del eje ahora se calcula segun la etiqueta compacta mas larga de saldo, ingresos y egresos.
 - El ancho queda limitado entre `44px` y `72px`, evitando hueco inutil con importes pequenos sin romper etiquetas largas.
 - El cambio aplica automaticamente a las cuatro vistas que usan `EvolucionChart`: dashboard principal, dashboard por titular, `Titulares` y `Cuentas`.
-- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincronizo `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -267,7 +1210,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\wwwroot" /MIR`
 - Playwright headless con APIs mockeadas sobre `/dashboard`, `/dashboard/titular/titular-1`, `/titulares` y `/cuentas`
 
 **Resultado de verificacion:**
@@ -292,12 +1235,12 @@ Regla de trabajo desde ahora:
 - Se acota el cambio a `CuentasPage` mediante la clase `cuentas-page`, sin cambiar la grilla global compartida.
 - Las tarjetas de cuenta ajustan titulo, badges, metadatos, saldo, notas y acciones para funcionar mejor en tres columnas.
 - El responsive queda en tres columnas desktop, dos columnas tablet y una columna mobile.
-- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincronizo `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout/entities.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/Versiones/v-01.05.md`
@@ -311,7 +1254,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Playwright headless con APIs mockeadas en `/cuentas`
-- `robocopy dist "..\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+- `robocopy dist "..\\backend\\src\\AtlasBalance.API\\wwwroot" /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -331,11 +1274,11 @@ Regla de trabajo desde ahora:
 - Se reduce la escala del numero destacado de `Saldo total` en el resumen superior del dashboard.
 - La grilla de KPIs superiores da mas ancho relativo al KPI principal frente a ingresos y egresos.
 - Se evita el salto de linea en importes KPI para que `1.000.000,00 €` no se parta en dos.
-- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -349,7 +1292,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5186/dashboard`
-- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\wwwroot" /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -371,11 +1314,11 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:**
 - `Saldos por divisa` muestra siempre la divisa base como primera tarjeta.
 - El resto de divisas conserva el orden recibido de la API.
-- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/components/dashboard/SaldoPorDivisaCard.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -388,7 +1331,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\wwwroot" /MIR`
 - Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5184/dashboard`
 
 **Resultado de verificacion:**
@@ -410,12 +1353,12 @@ Regla de trabajo desde ahora:
 - Se acota el cambio a `TitularesPage` mediante la clase `titulares-page`, evitando afectar el listado de `Cuentas`.
 - Las tarjetas de titular ajustan titulo, notas, estado, saldo y acciones para soportar mejor el ancho de tres columnas.
 - El responsive queda en tres columnas desktop, dos columnas tablet y una columna mobile.
-- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincronizo `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/TitularesPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout/entities.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/Versiones/v-01.05.md`
@@ -429,7 +1372,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Playwright headless con APIs mockeadas en `/titulares`
-- `robocopy dist "..\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+- `robocopy dist "..\\backend\\src\\AtlasBalance.API\\wwwroot" /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -450,14 +1393,14 @@ Regla de trabajo desde ahora:
 - `CuentasController` valida y persiste `formato_id` para `NORMAL` y `EFECTIVO`; solo lo descarta en `PLAZO_FIJO`.
 - `ImportacionPage` actualiza el texto de ayuda para indicar que efectivo tambien usa formatos de importacion.
 - Se agrego una regresion backend para asegurar que una cuenta de efectivo conserva su formato y no guarda banco/IBAN/numero.
-- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincronizo `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
 - `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/CuentasControllerTests.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/CuentasControllerTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -470,10 +1413,10 @@ Regla de trabajo desde ahora:
 - No crear un flujo nuevo de importacion: efectivo usa el mismo selector y motor que una cuenta normal.
 
 **Comandos ejecutados:**
-- `dotnet test "Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --filter CuentasControllerTests`
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release --filter CuentasControllerTests`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist "..\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+- `robocopy dist "..\\backend\\src\\AtlasBalance.API\\wwwroot" /MIR`
 
 **Resultado de verificacion:**
 - `CuentasControllerTests`: 5/5 OK.
@@ -494,12 +1437,12 @@ Regla de trabajo desde ahora:
 - El eje Y deja de reservar `120px` y pasa a `72px`, igualando el criterio ya aplicado a `EvolucionChart`.
 - Los ticks del eje Y usan formato compacto para evitar que etiquetas largas empujen el area de trazado hacia la derecha.
 - Se definieron margenes explicitos y se ocultaron lineas de eje innecesarias para alinear mejor la grafica con el borde izquierdo util.
-- Se sincronizo `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincronizo `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
 - `Atlas Balance/frontend/src/pages/TitularesPage.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -514,7 +1457,7 @@ Regla de trabajo desde ahora:
 - `Get-Date -Format 'yyyy-MM-dd HH:mm:ss K'`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\wwwroot" /MIR`
 - Playwright headless con APIs mockeadas sobre `/titulares` y `/cuentas`
 
 **Resultado de verificacion:**
@@ -539,12 +1482,12 @@ Regla de trabajo desde ahora:
 - `Saldos por titular` pasa a ocupar toda la parte inferior del dashboard.
 - Los saldos por titular se muestran en tres columnas fijas: Empresa, Autonomo y Particular.
 - Se mantiene cada columna aunque un tipo no tenga saldos, mostrando un estado compacto `Sin saldos`.
-- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -559,7 +1502,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5183/dashboard`
-- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\wwwroot" /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -583,13 +1526,13 @@ Regla de trabajo desde ahora:
 - Los KPIs y `Saldos por divisa` quedan como resumen superior compacto.
 - La gráfica de evolución pasa a una tarjeta propia de ancho completo y mayor altura útil.
 - `EvolucionChart` acepta altura configurable para usar una gráfica más grande en el dashboard principal sin romper otros usos.
-- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
 - `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
 - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/Diseno/DESIGN.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
@@ -605,7 +1548,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Playwright headless con APIs mockeadas sobre `http://127.0.0.1:5177/dashboard`
-- `robocopy frontend/dist -> backend/src/GestionCaja.API/wwwroot /MIR`
+- `robocopy frontend/dist -> backend/src/AtlasBalance.API/wwwroot /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -632,7 +1575,7 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -646,7 +1589,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 - Playwright headless con APIs mockeadas sobre `/dashboard`
 
 **Resultado de verificacion:**
@@ -671,11 +1614,11 @@ Regla de trabajo desde ahora:
 - Confirmado que la ventana recordada es de 90 dias y no se renueva en cada login con cookie valida.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Comandos ejecutados:**
-- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --filter AuthServiceTests`
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -c Release --filter AuthServiceTests`
 
 **Resultado de verificacion:**
 - `AuthServiceTests`: OK, 13/13.
@@ -696,14 +1639,14 @@ Regla de trabajo desde ahora:
 - Se agrega `qrcode` al frontend y se sincroniza `wwwroot`.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/AuthController.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
 - `Atlas Balance/frontend/package.json`
 - `Atlas Balance/frontend/package-lock.json`
 - `Atlas Balance/frontend/src/pages/LoginPage.tsx`
 - `Atlas Balance/frontend/src/styles/auth.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -718,15 +1661,15 @@ Regla de trabajo desde ahora:
 - `npm.cmd install -D @types/qrcode`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" --filter AuthServiceTests`
-- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --filter AuthServiceTests`
-- `robocopy dist "..\backend\src\GestionCaja.API\wwwroot" /MIR`
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter AuthServiceTests`
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -c Release --filter AuthServiceTests`
+- `robocopy dist "..\backend\src\AtlasBalance.API\wwwroot" /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd install`: OK, 0 vulnerabilidades.
 - `npm.cmd run lint`: OK.
 - `npm.cmd run build`: OK.
-- `dotnet test --filter AuthServiceTests` en Debug: bloqueado por `GestionCaja.API.exe` en uso, PID `35456`.
+- `dotnet test --filter AuthServiceTests` en Debug: bloqueado por `AtlasBalance.API.exe` en uso, PID `35456`.
 - `dotnet test -c Release --filter AuthServiceTests`: OK, 11/11.
 - `robocopy`: OK, codigo `1` esperado por copia con cambios.
 
@@ -745,11 +1688,11 @@ Regla de trabajo desde ahora:
 - Alineado el bloque de marca superior del login con la misma columna visual del formulario.
 - Centrado el contenido de marca dentro de esa columna para que el bloque `Atlas Balance` quede en el medio, no anclado al borde izquierdo.
 - Se mantiene centrado en mobile para conservar una lectura compacta.
-- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/styles/auth.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -762,7 +1705,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot" /MIR`
+- `robocopy "C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist" "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\wwwroot" /MIR`
 - Verificacion visual con Edge headless sobre `http://127.0.0.1:5176/login` via CDP.
 
 **Resultado de verificacion:**
@@ -790,7 +1733,7 @@ Regla de trabajo desde ahora:
 - El dashboard principal prioriza saldo total, saldos por divisa y evolucion en la primera lectura.
 - `Saldos por divisa` muestra total, disponible e inmovilizado con jerarquia numerica clara.
 - Se elimina la carga de Geist desde CSS y se corrige el token tipografico roto de MFA (`--font-family-mono`).
-- Se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/utils/navigation.ts`
@@ -802,7 +1745,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/styles/auth.css`
 - `Atlas Balance/frontend/src/styles/layout/shell.css`
 - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -820,7 +1763,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Verificacion Playwright con APIs mockeadas en `http://127.0.0.1:5175/dashboard` para desktop y mobile.
-- `robocopy 'C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist' 'C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\GestionCaja.API\wwwroot' /MIR`
+- `robocopy 'C:\Proyectos\Atlas Balance Dev\Atlas Balance\frontend\dist' 'C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\wwwroot' /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -865,17 +1808,17 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Activar Row Level Security real en PostgreSQL y conectarlo con el contexto de autorizacion del backend.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Data/RlsDbCommandInterceptor.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/RlsContextSigner.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Program.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501120000_EnableRowLevelSecurity.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501120000_EnableRowLevelSecurity.Designer.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501133000_SignRowLevelSecurityContext.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501133000_SignRowLevelSecurityContext.Designer.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json.template`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Production.json.template`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/RowLevelSecurityTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/RlsDbCommandInterceptor.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/RlsContextSigner.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260501120000_EnableRowLevelSecurity.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260501120000_EnableRowLevelSecurity.Designer.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260501133000_SignRowLevelSecurityContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260501133000_SignRowLevelSecurityContext.Designer.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
 - `Atlas Balance/docker-compose.yml`
 - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 - `Atlas Balance/scripts/postgres-init/001-create-app-user.sh`
@@ -899,9 +1842,9 @@ Regla de trabajo desde ahora:
 - La base local `atlas_balance_db` queda migrada y con el rol `app_user` endurecido.
 
 **Comandos ejecutados:**
-- `dotnet build '.\Atlas Balance\backend\src\GestionCaja.API\GestionCaja.API.csproj' -c Release --no-restore`
-- `dotnet test '.\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj' -c Release --no-restore --filter RowLevelSecurityTests`
-- `dotnet test '.\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj' -c Release --no-restore --filter "FullyQualifiedName~RowLevelSecurityTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~IntegrationTokenServiceTests"`
+- `dotnet build '.\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj' -c Release --no-restore`
+- `dotnet test '.\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj' -c Release --no-restore --filter RowLevelSecurityTests`
+- `dotnet test '.\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj' -c Release --no-restore --filter "FullyQualifiedName~RowLevelSecurityTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~IntegrationTokenServiceTests"`
 - `docker start atlas_balance_db`
 - `dotnet ef database update`
 - Consultas `psql` a `pg_class`, `pg_policy`, `pg_policies` y `pg_roles`.
@@ -1001,7 +1944,7 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -1015,7 +1958,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -1033,8 +1976,8 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Corregir la importacion de extractos para que no reordene las lineas por fecha antes de guardarlas.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -1049,12 +1992,12 @@ Regla de trabajo desde ahora:
 - Actualizadas regresiones de importacion para validar el orden visible descendente por `fila_numero`.
 
 **Comandos ejecutados:**
-- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" --filter ImportacionServiceTests --no-restore`
-- `dotnet build ".\\Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" -c Release --no-restore`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter ImportacionServiceTests --no-restore`
+- `dotnet build ".\\Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" -c Release --no-restore`
 
 **Resultado de verificacion:**
 - `ImportacionServiceTests`: 26/26 OK.
-- Backend `GestionCaja.API` Release build OK, 0 warnings, 0 errores.
+- Backend `AtlasBalance.API` Release build OK, 0 warnings, 0 errores.
 
 **Pendientes:**
 - Ninguno en este cambio.
@@ -1069,7 +2012,7 @@ Regla de trabajo desde ahora:
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -1084,7 +2027,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run build`
 - `npm.cmd run lint`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - Build frontend OK.
@@ -1103,8 +2046,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -1119,7 +2062,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05`
 - `Get-FileHash -Algorithm SHA256`
 
@@ -1141,7 +2084,7 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Regenerar el paquete Windows x64 final y publicarlo en GitHub junto con la rama de version.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64`
 - `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
@@ -1159,8 +2102,8 @@ Regla de trabajo desde ahora:
 - `Get-FileHash -Algorithm SHA256`
 - `npm.cmd run lint`
 - `npm.cmd audit --audit-level=moderate`
-- `dotnet test "Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release`
-- `dotnet list "Atlas Balance\backend\src\GestionCaja.API\GestionCaja.API.csproj" package --vulnerable --include-transitive`
+- `dotnet test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -c Release`
+- `dotnet list "Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" package --vulnerable --include-transitive`
 
 **Resultado de verificacion:**
 - Frontend build OK dentro del script de release.
@@ -1184,8 +2127,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -1200,7 +2143,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -1228,10 +2171,10 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/components/common/DatePickerField.tsx`
 - `Atlas Balance/frontend/src/components/common/ConfirmDialog.tsx`
 - `Atlas Balance/frontend/src/components/common/AppSelect.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/CuentasDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/CuentasControllerTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/CuentasDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/CuentasControllerTests.cs`
 - `Documentacion/REGISTRO_BUGS.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/Versiones/v-01.05.md`
@@ -1253,11 +2196,11 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - `npm.cmd audit --audit-level=moderate`
-- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --filter CuentasControllerTests`
-- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release`
-- `dotnet list ".\\Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" package --vulnerable --include-transitive`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release --filter CuentasControllerTests`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release`
+- `dotnet list ".\\Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" package --vulnerable --include-transitive`
 - Busquedas `Select-String` para restos de Tailwind/shadcn y degradados decorativos.
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - Sin restos directos de Tailwind/shadcn en codigo/configuracion versionable.
@@ -1281,8 +2224,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -1297,7 +2240,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -1312,9 +2255,9 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Repaso completo de bugs documentados, revision de seguridad (auth, permisos, CSRF, security stamp, integracion OpenClaw, secretos, rate limit, cabeceras, dependencias) y aplicacion de guardias de entrada en endpoints nuevos de V-01.05.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/AlertasController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ImportacionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AlertasController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ImportacionController.cs`
 - `Documentacion/REGISTRO_BUGS.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
@@ -1325,9 +2268,9 @@ Regla de trabajo desde ahora:
 - Bugs abiertos pre-existentes (Tailwind/shadcn introducido, `CuentaResumenResponse` duplicado, accesibilidad de controles propios, estado Git local) confirmados: requieren decision de producto, no se tocan en esta pasada.
 
 **Comandos ejecutados:**
-- `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release`
-- `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build`
-- `dotnet list "Atlas Balance/backend/GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet build "Atlas Balance/backend/AtlasBalance.sln" -c Release`
+- `dotnet test "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-build`
+- `dotnet list "Atlas Balance/backend/AtlasBalance.sln" package --vulnerable --include-transitive`
 - `npm.cmd audit --audit-level=moderate`
 - `npm.cmd run lint`
 - `npm.cmd run build`
@@ -1355,8 +2298,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -1371,7 +2314,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -1388,7 +2331,7 @@ Regla de trabajo desde ahora:
 **Archivos tocados:**
 - `Atlas Balance/frontend/package.json`
 - `Atlas Balance/frontend/package-lock.json`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/SEGURIDAD_AUDITORIA_V-01.05.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/REGISTRO_BUGS.md`
@@ -1413,11 +2356,11 @@ Regla de trabajo desde ahora:
 - `npm.cmd install axios@^1.15.2 react-router-dom@^6.30.3`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy .\dist ..\backend\src\GestionCaja.API\wwwroot /MIR`
-- `dotnet build ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-restore`
-- `dotnet test ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-build`
-- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`
-- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --deprecated`
+- `robocopy .\dist ..\backend\src\AtlasBalance.API\wwwroot /MIR`
+- `dotnet build ".\Atlas Balance\backend\AtlasBalance.sln" -c Release --no-restore`
+- `dotnet test ".\Atlas Balance\backend\AtlasBalance.sln" -c Release --no-build`
+- `dotnet list ".\Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
+- `dotnet list ".\Atlas Balance\backend\AtlasBalance.sln" package --deprecated`
 - `git diff --check -- ...`
 
 **Resultado de verificacion:**
@@ -1440,19 +2383,19 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Ajustado el flujo de plazos fijos para que la importacion no use formatos bancarios y el dashboard muestre sus datos clave.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/ImportacionDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ImportacionController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/DashboardDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/DashboardService.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ImportacionDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ImportacionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/DashboardDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/DashboardService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs`
 - `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
 - `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout/importacion.css`
 - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
 - `Atlas Balance/frontend/src/types/index.ts`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - Documentacion de `V-01.05`.
 
 **Cambios implementados:**
@@ -1470,9 +2413,9 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter "ImportacionServiceTests|DashboardServiceTests"`
-- `dotnet build "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj" -c Release`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter "ImportacionServiceTests|DashboardServiceTests"`
+- `dotnet build "Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" -c Release`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -1480,7 +2423,7 @@ Regla de trabajo desde ahora:
 - `robocopy /MIR`: OK.
 - Tests focalizados importacion/dashboard: 28/28 OK.
 - Backend Release build: OK, 0 warnings, 0 errores.
-- Primer intento de tests quedo bloqueado por una `GestionCaja.API.exe` local en Debug; se detuvo ese proceso y se repitio correctamente.
+- Primer intento de tests quedo bloqueado por una `AtlasBalance.API.exe` local en Debug; se detuvo ese proceso y se repitio correctamente.
 
 **Pendientes:**
 - Validacion manual con datos reales: crear plazo fijo, registrar entrada/salida desde importacion y revisar dashboard tras refrescar.
@@ -1517,7 +2460,7 @@ Regla de trabajo desde ahora:
 - Ejecucion de update desde carpeta fuente para validar fallo claro.
 - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05`.
 - Parser PowerShell sobre scripts empaquetados.
-- `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
+- `dotnet test ".\backend\AtlasBalance.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
 - `Get-FileHash -Algorithm SHA256` sobre el ZIP regenerado.
 
 **Resultado de verificacion:**
@@ -1568,7 +2511,7 @@ Regla de trabajo desde ahora:
 - Parser PowerShell con `[System.Management.Automation.Language.Parser]::ParseFile(...)`.
 - Ejecucion de `Instalar-AtlasBalance.ps1` e `install.ps1` desde carpeta fuente para validar fallo claro.
 - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05`.
-- `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
+- `dotnet test ".\backend\AtlasBalance.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`.
 - `Get-FileHash -Algorithm SHA256` sobre `AtlasBalance-V-01.05-win-x64.zip`.
 
 **Resultado de verificacion:**
@@ -1616,7 +2559,7 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Corregido el bloqueo del modal `Importar movimientos` en produccion.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/REGISTRO_BUGS.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
@@ -1680,7 +2623,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/Directory.Build.props`
 - `Atlas Balance/frontend/package.json`
 - `Atlas Balance/frontend/package-lock.json`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
 - `Atlas Balance/scripts/Build-Release.ps1`
 - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 - `Atlas Balance/README_RELEASE.md`
@@ -1707,7 +2650,7 @@ Regla de trabajo desde ahora:
 - `git switch V-01.05`
 - `Select-String` para localizar referencias vivas a `V-01.03` y `1.3.0`.
 - `git diff --check`
-- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`
+- `dotnet build '.\Atlas Balance\backend\AtlasBalance.sln' -c Release --no-restore`
 - `npm.cmd run build`
 
 **Resultado de verificacion:**
@@ -1780,11 +2723,11 @@ Regla de trabajo desde ahora:
 - `gh auth status`
 - `git ls-remote --heads origin V-01.03`
 - `git diff --check`
-- `dotnet test ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-restore`
+- `dotnet test ".\Atlas Balance\backend\AtlasBalance.sln" -c Release --no-restore`
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - `npm.cmd audit --audit-level=low`
-- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet list ".\Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
 - `git add -A -- .`
 - `git config user.name "Codex"`
 - `git config user.email "codex@atlasbalance.local"`
@@ -1813,7 +2756,7 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Generacion del paquete instalable Windows x64 de la version actual, equivalente al release previo pero con runtime, frontend, API, Watchdog, scripts y manifiesto alineados a `V-01.03`.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.03-win-x64`
 - `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.03-win-x64.zip`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
@@ -1822,7 +2765,7 @@ Regla de trabajo desde ahora:
 
 **Cambios implementados:**
 - Ejecutado `scripts/Build-Release.ps1 -Version V-01.03`.
-- Recompilado frontend React/Vite y sincronizado en `GestionCaja.API/wwwroot`.
+- Recompilado frontend React/Vite y sincronizado en `AtlasBalance.API/wwwroot`.
 - Publicada API ASP.NET Core y Watchdog como self-contained `win-x64`.
 - Copiados scripts operativos `install/update/uninstall/start`, wrappers historicos, `VERSION`, `README.md`, `.gitignore`, `documentacion.md` y `version.json`.
 - Generados carpeta y ZIP finales `AtlasBalance-V-01.03-win-x64`.
@@ -1851,25 +2794,25 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Analisis de seguridad sobre backend, frontend, configuracion, scripts, dependencias y Watchdog; remediacion directa de hallazgos de sesion, SSRF, path traversal, rate limiting y dependencias.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Constants/AuthClaimNames.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Constants/SecurityPolicy.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Constants/AuditActions.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Models/Entities.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/AppDbContext.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260425081244_UserSessionHardening.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Middleware/UserStateMiddleware.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/UserSessionState.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/UsuariosController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/ConfigurationDefaults.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/BackupService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ExportacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExportacionesController.cs`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AuthClaimNames.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/SecurityPolicy.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AuditActions.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260425081244_UserSessionHardening.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/UserStateMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/UserSessionState.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/ConfigurationDefaults.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ExportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
 - `Atlas Balance/frontend/package-lock.json`
 - `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
 - `Atlas Balance/frontend/src/pages/ChangePasswordPage.tsx`
@@ -1891,12 +2834,12 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd update postcss`
 - `npm.cmd audit --audit-level=moderate`
-- `dotnet list '.\Atlas Balance\backend\GestionCaja.sln' package --vulnerable --include-transitive`
+- `dotnet list '.\Atlas Balance\backend\AtlasBalance.sln' package --vulnerable --include-transitive`
 - `dotnet ef migrations add UserSessionHardening`
-- `dotnet test "GestionCaja.sln" --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~UserStateMiddlewareTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~UsuariosControllerTests|FullyQualifiedName~SeedDataTests|FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~ActualizacionServiceTests"`
-- `dotnet test "GestionCaja.sln"`
-- `dotnet build "GestionCaja.sln" -c Release --no-restore`
-- `dotnet test "GestionCaja.sln" -c Release --no-build`
+- `dotnet test "AtlasBalance.sln" --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~UserStateMiddlewareTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~UsuariosControllerTests|FullyQualifiedName~SeedDataTests|FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~ActualizacionServiceTests"`
+- `dotnet test "AtlasBalance.sln"`
+- `dotnet build "AtlasBalance.sln" -c Release --no-restore`
+- `dotnet test "AtlasBalance.sln" -c Release --no-build`
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Parser PowerShell sobre `Instalar-AtlasBalance.ps1`.
@@ -1926,7 +2869,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/Directory.Build.props`
 - `Atlas Balance/frontend/package.json`
 - `Atlas Balance/frontend/package-lock.json`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
 - `Atlas Balance/scripts/Build-Release.ps1`
 - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 - `Atlas Balance/README_RELEASE.md`
@@ -1951,7 +2894,7 @@ Regla de trabajo desde ahora:
 - `git switch -c V-01.03`
 - `Select-String` para localizar referencias vivas a `V-01.02` y `1.2.0`.
 - `git diff --check`
-- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`
+- `dotnet build '.\Atlas Balance\backend\AtlasBalance.sln' -c Release --no-restore`
 - `npm.cmd run build`
 
 **Resultado de verificacion:**
@@ -1987,8 +2930,8 @@ Regla de trabajo desde ahora:
 - `git merge --ff-only origin/main`
 - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.02`
 - `npm.cmd run lint`
-- `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore`
-- `dotnet test ".\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet test ".\backend\AtlasBalance.sln" -c Release --no-restore`
+- `dotnet test ".\backend\AtlasBalance.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 - Inspeccion automatizada del ZIP con `System.IO.Compression.ZipFile`.
 - `Get-FileHash -Algorithm SHA256`
 - `git add -A`
@@ -2040,7 +2983,7 @@ Regla de trabajo desde ahora:
 - `Documentacion/Versiones/v-01.02.md`
 
 **Cambios implementados:**
-- Detectado flujo real: frontend React/Vite se compila a `dist`, se copia a `GestionCaja.API/wwwroot`, la API ASP.NET Core 8 sirve API + SPA y aplica migraciones EF Core al arrancar.
+- Detectado flujo real: frontend React/Vite se compila a `dist`, se copia a `AtlasBalance.API/wwwroot`, la API ASP.NET Core 8 sirve API + SPA y aplica migraciones EF Core al arrancar.
 - Confirmado que produccion no necesita Node ni .NET Runtime en servidor por paquete self-contained; si necesita PostgreSQL.
 - Creados scripts one-click `install.cmd`, `update.cmd`, `uninstall.cmd` y `start.cmd`.
 - Creados wrappers PowerShell `install.ps1`, `update.ps1`, `start.ps1` y `uninstall.ps1`.
@@ -2056,8 +2999,8 @@ Regla de trabajo desde ahora:
 - Parser PowerShell sobre scripts fuente y empaquetados.
 - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.02`
 - `npm.cmd run lint`
-- `dotnet test .\backend\GestionCaja.sln -c Release --no-restore`
-- `dotnet test .\backend\GestionCaja.sln -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet test .\backend\AtlasBalance.sln -c Release --no-restore`
+- `dotnet test .\backend\AtlasBalance.sln -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 - Scanner local de secretos `cyber-neo` sobre el paquete generado.
 - Inspeccion de ZIP con `System.IO.Compression.ZipFile`.
 - `winget search PostgreSQL.PostgreSQL --source winget`
@@ -2087,21 +3030,21 @@ Regla de trabajo desde ahora:
 **Archivos tocados:**
 - `.gitignore`
 - `Atlas Balance/.gitignore`
-- `Atlas Balance/backend/src/GestionCaja.API/Program.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.json`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Production.json.template`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/SecretProtector.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/EmailService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/TiposCambioService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExportacionesController.cs`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/Program.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/PlainTextSecretProtector.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ConfiguracionControllerTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/TiposCambioServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UserAccessServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/SecretProtector.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/EmailService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/TiposCambioService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/UserAccessService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Program.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PlainTextSecretProtector.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/TiposCambioServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UserAccessServiceTests.cs`
 - `Atlas Balance/scripts/backup-manual.ps1`
 - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 - `Atlas Balance/scripts/restore-backup.ps1`
@@ -2116,7 +3059,7 @@ Regla de trabajo desde ahora:
 - `Documentacion/Versiones/v-01.02.md`
 
 **Artefactos eliminados:**
-- Logs runtime temporales de API en `backend/src/GestionCaja.API`.
+- Logs runtime temporales de API en `backend/src/AtlasBalance.API`.
 - JSON/cookies/cabeceras de smoke/login en `Otros/Auxiliares/artifacts`.
 - Captura auxiliar de login rellenado en `Otros/Auxiliares/artifacts/phase4-visual`.
 
@@ -2141,12 +3084,12 @@ Regla de trabajo desde ahora:
 - `Get-ChildItem` para localizar logs, backups, temporales, artefactos, certificados, dumps y archivos sensibles por nombre.
 - Barrido de patrones sensibles (`password`, `secret`, `token`, `api_key`, `connectionstring`, `PGPASSWORD`, `csrf`) con salida redactada.
 - `git check-ignore` sobre `.env`, `appsettings.Development.json`, logs y artefactos de `Otros`.
-- `dotnet list "Atlas Balance/backend/GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet list "Atlas Balance/backend/AtlasBalance.sln" package --vulnerable --include-transitive`
 - `npm.cmd audit --audit-level=moderate`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore`
-- `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build`
+- `dotnet build "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-restore`
+- `dotnet test "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-build`
 
 **Resultado de verificacion:**
 - Backend build Release: OK, 0 warnings, 0 errores.
@@ -2169,14 +3112,14 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/AGENTS.md`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.json`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json.template`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Production.json.template`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot/*` (bundle generado, ignorado por Git)
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ExportacionServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/WatchdogOperationsServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/*` (bundle generado, ignorado por Git)
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExportacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs`
 - `Atlas Balance/frontend/e2e/README.md`
 - `Atlas Balance/frontend/e2e/admin-smoke.spec.ts`
 - `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
@@ -2206,7 +3149,7 @@ Regla de trabajo desde ahora:
 - Creada constante compartida `IMPORTACION_COMPLETADA_EVENT` para que importacion y cuenta no repitan el string del evento.
 - Corregido `Instalar-AtlasBalance.ps1`, que seguia escribiendo `V-01.01` en runtime.
 - Actualizada documentacion de instalacion y SPEC a `V-01.02` y rutas `C:/AtlasBalance`.
-- Recompilado el frontend y sincronizado `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Recompilado el frontend y sincronizado `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 **Decisiones visuales:**
 - No hubo cambios de diseno visual. Solo se corrigieron placeholders de ejemplo y nombres internos.
@@ -2214,14 +3157,14 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `Get-Content` sobre instrucciones, version, log de errores y archivos afectados.
 - `Get-ChildItem ... | Select-String -Pattern 'atlasbalnace|atlas-blance|V-01\.01'`
-- `dotnet test "Atlas Balance\backend\GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 - `npm.cmd run lint`
 - `docker compose ps`
 - `docker ps --filter "name=atlas_balance_db" --format "{{.Names}}\t{{.Status}}\t{{.Ports}}"`
 - `docker compose ps -a`
 - `npm.cmd run build`
-- Limpieza segura de `backend/src/GestionCaja.API/wwwroot` y copia de `frontend/dist`.
-- `dotnet test "Atlas Balance\backend\GestionCaja.sln" -c Release --no-restore`
+- Limpieza segura de `backend/src/AtlasBalance.API/wwwroot` y copia de `frontend/dist`.
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" -c Release --no-restore`
 
 **Resultado de verificacion:**
 - Backend tests Release sin Docker/Testcontainers: 81/81 OK.
@@ -2246,21 +3189,21 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/.env.example`
 - `Atlas Balance/.gitignore`
 - `Atlas Balance/docker-compose.yml`
-- `Atlas Balance/backend/src/GestionCaja.API/Program.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.json`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json.template`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/EmailService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.json`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.Development.json.template`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.Production.json.template`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/PostgresFixture.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/EmailService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.json`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Development.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PostgresFixture.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs`
 - `Atlas Balance/frontend/e2e/README.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
@@ -2287,10 +3230,10 @@ Regla de trabajo desde ahora:
 - `Get-Content` / `Get-ChildItem` / `Select-String` para inspeccion estatica.
 - `python Skills/Seguridad/cyber-neo-main/skills/cyber-neo/scripts/scan_secrets.py "Atlas Balance" --json`
 - `python Skills/Seguridad/cyber-neo-main/skills/cyber-neo/scripts/check_lockfiles.py "Atlas Balance/frontend"`
-- `dotnet list "Atlas Balance/backend/GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet list "Atlas Balance/backend/AtlasBalance.sln" package --vulnerable --include-transitive`
 - `npm.cmd audit --json`
 - `npm.cmd ci`
-- `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet test "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 - `npm.cmd run lint`
 - `npm.cmd run build`
 
@@ -2316,13 +3259,13 @@ Regla de trabajo desde ahora:
 **Archivos tocados:**
 - `.gitignore` — añadidos: `wwwroot/assets/`, `wwwroot/index.html`, `wwwroot/fonts/`, `wwwroot/logos/`, `appsettings.Development.json`
 - `Atlas Balance/docker-compose.yml` — postgres actualizado de 14 a 16
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json` — reducido a solo los overrides reales (Kestrel, Serilog, paths watchdog dev)
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json.template` — creado para nuevos devs
-- `Atlas Balance/backend/src/GestionCaja.API/Constants/AuditActions.cs` — creado (movido desde Services/)
-- `Atlas Balance/backend/src/GestionCaja.API/Services/AuditActions.cs` — eliminado
-- `Atlas Balance/backend/src/GestionCaja.API/Services/{ExportacionService,BackupService,AuthService,AlertaService}.cs` — añadido `using GestionCaja.API.Constants`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/{AlertasController,UsuariosController,AuthController,IntegracionesController,ConfiguracionController}.cs` — añadido `using GestionCaja.API.Constants`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/{AlertaServiceTests,UsuariosControllerTests,ConfiguracionControllerTests}.cs` — añadido `using GestionCaja.API.Constants`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json` — reducido a solo los overrides reales (Kestrel, Serilog, paths watchdog dev)
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template` — creado para nuevos devs
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AuditActions.cs` — creado (movido desde Services/)
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuditActions.cs` — eliminado
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/{ExportacionService,BackupService,AuthService,AlertaService}.cs` — añadido `using AtlasBalance.API.Constants`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/{AlertasController,UsuariosController,AuthController,IntegracionesController,ConfiguracionController}.cs` — añadido `using AtlasBalance.API.Constants`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/{AlertaServiceTests,UsuariosControllerTests,ConfiguracionControllerTests}.cs` — añadido `using AtlasBalance.API.Constants`
 - `Atlas Balance/frontend/src/utils/navigation.ts` — creado (movido desde components/layout/)
 - `Atlas Balance/frontend/src/components/layout/navigation.ts` — eliminado
 - `Atlas Balance/frontend/src/components/layout/{TopBar,Sidebar,BottomNav}.tsx` — actualizado import de navigation
@@ -2331,7 +3274,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - `git rm --cached` sobre 18 archivos de wwwroot y appsettings.Development.json
-- `dotnet restore GestionCaja.sln` + `dotnet build GestionCaja.sln -c Release --no-restore`
+- `dotnet restore AtlasBalance.sln` + `dotnet build AtlasBalance.sln -c Release --no-restore`
 
 **Resultado de verificacion:**
 - Backend: `Compilación correcta. 0 Advertencias, 0 Errores`
@@ -2351,8 +3294,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -2367,7 +3310,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -2473,8 +3416,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -2489,7 +3432,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -2548,8 +3491,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -2564,7 +3507,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -2617,8 +3560,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -2633,7 +3576,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -2685,7 +3628,7 @@ Regla de trabajo desde ahora:
 - `Get-ChildItem -Recurse -Directory`
 - `git status --short --untracked-files=all`
 - `Move-Item` para app, documentacion, releases y auxiliares.
-- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' --no-restore`
+- `dotnet build '.\Atlas Balance\backend\AtlasBalance.sln' --no-restore`
 - `npm.cmd run build` en `Atlas Balance/frontend`
 - `PSParser` sobre `Atlas Balance/scripts/Build-Release.ps1`
 
@@ -2715,16 +3658,16 @@ Regla de trabajo desde ahora:
 - `documentacion.md`
 - `frontend/package.json`
 - `frontend/package-lock.json`
-- `backend/src/GestionCaja.API/Data/SeedData.cs`
-- `backend/src/GestionCaja.API/Services/ActualizacionService.cs`
-- `backend/src/GestionCaja.API/appsettings.json`
-- `backend/src/GestionCaja.API/appsettings.Production.json.template`
-- `backend/src/GestionCaja.Watchdog/appsettings.json`
+- `backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `backend/src/AtlasBalance.API/appsettings.json`
+- `backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `backend/src/AtlasBalance.Watchdog/appsettings.json`
 - `scripts/Build-Release.ps1`
 - `scripts/Instalar-AtlasBalance.ps1`
 - `scripts/Actualizar-AtlasBalance.ps1`
 - `scripts/Launch-AtlasBalance.ps1`
-- `backend/src/GestionCaja.API/wwwroot/**` (sincronizado desde build frontend)
+- `backend/src/AtlasBalance.API/wwwroot/**` (sincronizado desde build frontend)
 
 **Cambios implementados:**
 - Fijada la version de backend como `V-01.01` mediante `AssemblyInformationalVersion`.
@@ -2743,7 +3686,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - Parser PowerShell sobre `scripts/Instalar-AtlasBalance.ps1`, `scripts/Actualizar-AtlasBalance.ps1`, `scripts/Build-Release.ps1`, `scripts/Launch-AtlasBalance.ps1`.
 - Validacion JSON de `appsettings.json`, `appsettings.Production.json.template` y Watchdog `appsettings.json`.
-- `dotnet build backend\GestionCaja.sln -c Release --no-restore`
+- `dotnet build backend\AtlasBalance.sln -c Release --no-restore`
 - `npm.cmd run build`
 - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Release.ps1 -Version V-01.01`
 - `npm.cmd install` para reparar `node_modules` tras un intento bloqueado de `npm ci` por un binario de Rolldown en uso.
@@ -2756,7 +3699,7 @@ Regla de trabajo desde ahora:
 - Release generado correctamente:
   - `release\AtlasBalance-V-01.01-win-x64`
   - `release\AtlasBalance-V-01.01-win-x64.zip`
-- `GestionCaja.API.exe` publicado muestra:
+- `AtlasBalance.API.exe` publicado muestra:
   - `ProductName = Atlas Balance`
   - `ProductVersion = V-01.01`
   - `FileVersion = 1.1.0.0`
@@ -2772,7 +3715,7 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `.github/workflows/ci.yml`
-- `backend/tests/GestionCaja.API.Tests/PostgresFixture.cs`
+- `backend/tests/AtlasBalance.API.Tests/PostgresFixture.cs`
 - `DOCUMENTACION_CAMBIOS.md`
 
 **Problema detectado:**
@@ -2781,16 +3724,16 @@ Regla de trabajo desde ahora:
 
 **Cambios implementados:**
 - CI cambiado de `windows-latest` a `ubuntu-latest`, donde Docker Linux y Testcontainers funcionan de forma natural.
-- Rutas del workflow ajustadas a `./backend/GestionCaja.sln`.
+- Rutas del workflow ajustadas a `./backend/AtlasBalance.sln`.
 - Anadido `docker pull postgres:16-alpine` antes de `dotnet test` para que el fallo sea temprano y claro si Docker Hub o la imagen fallan.
 - `PostgresFixture` ahora declara explicitamente `WithImagePullPolicy(PullPolicy.Missing)`.
 
 **Comandos ejecutados:**
-- `dotnet test .\GestionCaja.sln -c Release --no-restore`
+- `dotnet test .\AtlasBalance.sln -c Release --no-restore`
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - `npm.cmd audit --audit-level=moderate`
-- `dotnet list .\GestionCaja.sln package --vulnerable --include-transitive`
+- `dotnet list .\AtlasBalance.sln package --vulnerable --include-transitive`
 
 **Resultado de verificacion:**
 - Backend tests pasan localmente: 75/75.
@@ -2852,7 +3795,7 @@ Regla de trabajo desde ahora:
 - `DOCUMENTACION_CAMBIOS.md`
 
 **Cambios implementados:**
-- Ajustado `.gitignore` para excluir `.claude/`, `artifacts/`, `frontend/.env.*` y `backend/src/GestionCaja.Watchdog/watchdog-state.json`.
+- Ajustado `.gitignore` para excluir `.claude/`, `artifacts/`, `frontend/.env.*` y `backend/src/AtlasBalance.Watchdog/watchdog-state.json`.
 - Anadido `.gitattributes` para normalizar finales de linea y marcar binarios.
 - Creado commit local inicial en rama `main`: `6876494 initial project baseline`.
 - Antes del commit se verifico que no entraran cookies, headers/login JSON, `.env`, `node_modules`, `dist`, `bin/obj`, artefactos ni estado runtime del Watchdog.
@@ -2860,7 +3803,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `git branch -M main`
 - `git add -A`
-- `git rm --cached -- backend/src/GestionCaja.Watchdog/watchdog-state.json`
+- `git rm --cached -- backend/src/AtlasBalance.Watchdog/watchdog-state.json`
 - `git commit -m "initial project baseline"`
 - `git remote -v`
 - `gh --version`
@@ -2879,12 +3822,12 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `.github/workflows/ci.yml`
-- `backend/src/GestionCaja.API/Program.cs`
-- `backend/src/GestionCaja.API/Data/SeedData.cs`
-- `backend/src/GestionCaja.API/appsettings.json`
-- `backend/src/GestionCaja.API/appsettings.Development.json`
-- `backend/src/GestionCaja.API/appsettings.Production.json.template`
-- `backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `backend/src/AtlasBalance.API/Program.cs`
+- `backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `backend/src/AtlasBalance.API/appsettings.json`
+- `backend/src/AtlasBalance.API/appsettings.Development.json`
+- `backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `DOCUMENTACION_CAMBIOS.md`
 
 **Cambios implementados:**
@@ -2897,11 +3840,11 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - `git init`
-- `dotnet test .\GestionCaja.sln -c Release`
+- `dotnet test .\AtlasBalance.sln -c Release`
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - `npm.cmd audit --audit-level=moderate`
-- `dotnet list .\GestionCaja.sln package --vulnerable --include-transitive`
+- `dotnet list .\AtlasBalance.sln package --vulnerable --include-transitive`
 - `git status --short`
 
 **Resultado de verificacion:**
@@ -2921,28 +3864,28 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `.gitignore`
-- `backend/src/GestionCaja.API/GestionCaja.API.csproj`
-- `backend/src/GestionCaja.API/Program.cs`
-- `backend/src/GestionCaja.API/Controllers/AuthController.cs`
-- `backend/src/GestionCaja.API/Controllers/BackupsController.cs`
-- `backend/src/GestionCaja.API/Controllers/ExportacionesController.cs`
-- `backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `backend/src/GestionCaja.API/Services/AuthService.cs`
-- `backend/src/GestionCaja.API/Services/BackupService.cs`
-- `backend/src/GestionCaja.API/Services/EmailService.cs`
-- `backend/src/GestionCaja.API/Services/ImportacionService.cs`
-- `backend/src/GestionCaja.Watchdog/Program.cs`
-- `backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs`
-- `backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
-- `backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `backend/src/AtlasBalance.API/Program.cs`
+- `backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `backend/src/AtlasBalance.API/Controllers/BackupsController.cs`
+- `backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs`
+- `backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `backend/src/AtlasBalance.API/Services/EmailService.cs`
+- `backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `backend/src/AtlasBalance.Watchdog/Program.cs`
+- `backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs`
 - `DOCUMENTACION_CAMBIOS.md`
 
 **Archivos locales eliminados:**
-- `backend/src/GestionCaja.API/phase12-login.json`
-- `backend/src/GestionCaja.API/phase12.cookies.txt`
-- `backend/src/GestionCaja.API/phase12-create-token.json`
-- `backend/src/GestionCaja.API/phase12-create-token-rate.json`
-- `backend/src/GestionCaja.API/phase12-create-token-write.json`
+- `backend/src/AtlasBalance.API/phase12-login.json`
+- `backend/src/AtlasBalance.API/phase12.cookies.txt`
+- `backend/src/AtlasBalance.API/phase12-create-token.json`
+- `backend/src/AtlasBalance.API/phase12-create-token-rate.json`
+- `backend/src/AtlasBalance.API/phase12-create-token-write.json`
 
 **Cambios implementados:**
 - Eliminadas cookies/JWTs/credenciales de humo local y anadidas reglas `.gitignore` para que no vuelvan a colarse.
@@ -2960,12 +3903,12 @@ Regla de trabajo desde ahora:
 - Anadidos tests de regresion para soft-deletes no admin, acceso a titulares no autorizados y limites de importacion.
 
 **Comandos ejecutados:**
-- `dotnet test .\GestionCaja.sln -c Release`
+- `dotnet test .\AtlasBalance.sln -c Release`
 - `npm.cmd run build`
 - `npm.cmd run lint`
 - `npm.cmd audit --audit-level=moderate`
-- `dotnet list .\GestionCaja.sln package --vulnerable --include-transitive`
-- `dotnet nuget why .\src\GestionCaja.API\GestionCaja.API.csproj Newtonsoft.Json`
+- `dotnet list .\AtlasBalance.sln package --vulnerable --include-transitive`
+- `dotnet nuget why .\src\AtlasBalance.API\AtlasBalance.API.csproj Newtonsoft.Json`
 - `dotnet package search Newtonsoft.Json --exact-match --format json`
 
 **Resultado de verificacion:**
@@ -2985,15 +3928,15 @@ Regla de trabajo desde ahora:
 **Fase:** Ajuste funcional post-Fase 13
 
 **Archivos tocados:**
-- `backend/src/GestionCaja.API/Models/Entities.cs`
-- `backend/src/GestionCaja.API/DTOs/ExtractosDtos.cs`
-- `backend/src/GestionCaja.API/DTOs/CuentasDtos.cs`
-- `backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `backend/src/GestionCaja.API/Controllers/CuentasController.cs`
-- `backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs`
-- `backend/src/GestionCaja.API/Migrations/20260419161617_AddCuentaNotasExtractoComentarios.cs`
-- `backend/src/GestionCaja.API/Migrations/20260419161617_AddCuentaNotasExtractoComentarios.Designer.cs`
-- `backend/src/GestionCaja.API/Migrations/AppDbContextModelSnapshot.cs`
+- `backend/src/AtlasBalance.API/Models/Entities.cs`
+- `backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `backend/src/AtlasBalance.API/DTOs/CuentasDtos.cs`
+- `backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `backend/src/AtlasBalance.API/Controllers/CuentasController.cs`
+- `backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs`
+- `backend/src/AtlasBalance.API/Migrations/20260419161617_AddCuentaNotasExtractoComentarios.cs`
+- `backend/src/AtlasBalance.API/Migrations/20260419161617_AddCuentaNotasExtractoComentarios.Designer.cs`
+- `backend/src/AtlasBalance.API/Migrations/AppDbContextModelSnapshot.cs`
 - `frontend/src/types/index.ts`
 - `frontend/src/components/extractos/AddRowForm.tsx`
 - `frontend/src/components/extractos/ExtractoTable.tsx`
@@ -3002,7 +3945,7 @@ Regla de trabajo desde ahora:
 - `frontend/src/pages/CuentasPage.tsx`
 - `frontend/src/styles/layout.css`
 - `frontend/dist/**`
-- `backend/src/GestionCaja.API/wwwroot/**`
+- `backend/src/AtlasBalance.API/wwwroot/**`
 
 **Cambios implementados:**
 - `EXTRACTOS` ahora tiene columna `comentarios` para anotaciones libres por linea.
@@ -3025,7 +3968,7 @@ Regla de trabajo desde ahora:
 - `dotnet build --configuration Release`
 - `dotnet ef database update --configuration Release`
 - `npm.cmd run build`
-- `Copy-Item -Path 'dist\*' -Destination '..\backend\src\GestionCaja.API\wwwroot' -Recurse -Force`
+- `Copy-Item -Path 'dist\*' -Destination '..\backend\src\AtlasBalance.API\wwwroot' -Recurse -Force`
 - Restart del backend local en `https://localhost:5000`
 - Smoke con Playwright contra `https://localhost:5000`
 
@@ -3047,7 +3990,7 @@ Regla de trabajo desde ahora:
 - `frontend/src/styles/layout.css`
 - `frontend/src/pages/CuentaDetailPage.tsx`
 - `frontend/dist/**`
-- `backend/src/GestionCaja.API/wwwroot/**`
+- `backend/src/AtlasBalance.API/wwwroot/**`
 
 **Cambios implementados:**
 - Subido el contraste del color flagged a un amarillo visible en light/dark.
@@ -3058,7 +4001,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run build`
 - `dotnet build`
-- `Copy-Item -Path 'dist\*' -Destination '..\backend\src\GestionCaja.API\wwwroot' -Recurse -Force`
+- `Copy-Item -Path 'dist\*' -Destination '..\backend\src\AtlasBalance.API\wwwroot' -Recurse -Force`
 - `curl.exe -k -s -o NUL -w "%{http_code}" https://localhost:5000/api/health`
 
 **Resultado de verificacion:**
@@ -3113,7 +4056,7 @@ Regla de trabajo desde ahora:
 ### 5) Frontend — Build y publicación en backend
 - `npm install` ejecutado.
 - `npm run build` ejecutado con éxito.
-- `dist` copiado a `backend/src/GestionCaja.API/wwwroot`.
+- `dist` copiado a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### 6) Verificaciones realizadas
 - `docker compose up -d` OK.
@@ -3144,8 +4087,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -3160,7 +4103,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -3221,13 +4164,13 @@ Regla de trabajo desde ahora:
   - logout funcional desde `TopBar`
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Controllers/AuthController.cs
-- backend/src/GestionCaja.API/DTOs/AuthDtos.cs
-- backend/src/GestionCaja.API/Middleware/CsrfMiddleware.cs
-- backend/src/GestionCaja.API/Models/Entities.cs
-- backend/src/GestionCaja.API/Services/AuthService.cs
-- backend/src/GestionCaja.API/Services/CsrfService.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Controllers/AuthController.cs
+- backend/src/AtlasBalance.API/DTOs/AuthDtos.cs
+- backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs
+- backend/src/AtlasBalance.API/Models/Entities.cs
+- backend/src/AtlasBalance.API/Services/AuthService.cs
+- backend/src/AtlasBalance.API/Services/CsrfService.cs
 - frontend/src/App.tsx
 - frontend/src/main.tsx
 - frontend/src/components/auth/ProtectedRoute.tsx
@@ -3244,7 +4187,7 @@ Regla de trabajo desde ahora:
 ### Comandos ejecutados
 - `dotnet build` (backend)
 - `npm.cmd run build` (frontend)
-- copia de `frontend/dist` -> `backend/src/GestionCaja.API/wwwroot`
+- copia de `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot`
 
 ### Resultado de verificación
 - Backend compila OK.
@@ -3285,10 +4228,10 @@ Regla de trabajo desde ahora:
   - Estilos añadidos para la pantalla de usuarios.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/UsuariosController.cs
-- backend/src/GestionCaja.API/DTOs/UsuariosDtos.cs
-- backend/src/GestionCaja.API/Services/AuditService.cs
-- backend/src/GestionCaja.API/Program.cs
+- backend/src/AtlasBalance.API/Controllers/UsuariosController.cs
+- backend/src/AtlasBalance.API/DTOs/UsuariosDtos.cs
+- backend/src/AtlasBalance.API/Services/AuditService.cs
+- backend/src/AtlasBalance.API/Program.cs
 - frontend/src/pages/UsuariosPage.tsx
 - frontend/src/App.tsx
 - frontend/src/styles/layout.css
@@ -3296,7 +4239,7 @@ Regla de trabajo desde ahora:
 ### Comandos ejecutados
 - `dotnet build` (backend)
 - `npm.cmd run build` (frontend)
-- copia de `frontend/dist` -> `backend/src/GestionCaja.API/wwwroot`
+- copia de `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot`
 
 ### Resultado de verificación
 - Backend compila OK.
@@ -3341,10 +4284,10 @@ Regla de trabajo desde ahora:
   - Fix adicional de tipos de dashboard faltantes para recuperar build frontend global.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/DTOs/ImportacionDtos.cs
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/src/GestionCaja.API/Controllers/ImportacionController.cs
-- backend/src/GestionCaja.API/Program.cs
+- backend/src/AtlasBalance.API/DTOs/ImportacionDtos.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/src/AtlasBalance.API/Controllers/ImportacionController.cs
+- backend/src/AtlasBalance.API/Program.cs
 - frontend/src/pages/ImportacionPage.tsx
 - frontend/src/App.tsx
 - frontend/src/types/index.ts
@@ -3354,7 +4297,7 @@ Regla de trabajo desde ahora:
 - `dotnet build` (backend)
 - `npm.cmd run build` (frontend)
 - `docker compose up -d`
-- copia `frontend/dist/*` -> `backend/src/GestionCaja.API/wwwroot/`
+- copia `frontend/dist/*` -> `backend/src/AtlasBalance.API/wwwroot/`
 - prueba E2E con script Python contra API real:
   - login admin
   - `GET /api/importacion/contexto`
@@ -3403,7 +4346,7 @@ Regla de trabajo desde ahora:
 - Se corrigió warning de EF de relación `RefreshToken.UsuarioId1` configurando explícitamente navegación en `AppDbContext`.
 
 ### Tests automatizados añadidos
-- Nuevo proyecto: `backend/tests/GestionCaja.API.Tests`
+- Nuevo proyecto: `backend/tests/AtlasBalance.API.Tests`
 - Añadidos tests:
   - `AuthServiceTests`
     - bloqueo tras 5 intentos fallidos
@@ -3416,8 +4359,8 @@ Regla de trabajo desde ahora:
 ### Comandos ejecutados
 - `dotnet build` (backend)
 - ejecución local API + pruebas E2E con sesión/cookies
-- `dotnet sln add backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj`
-- `dotnet test backend/GestionCaja.sln`
+- `dotnet sln add backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj`
+- `dotnet test backend/AtlasBalance.sln`
 
 ### Resultado de verificación
 - `dotnet test` -> **4/4 tests OK**.
@@ -3465,14 +4408,14 @@ Regla de trabajo desde ahora:
   - Estilos añadidos en `layout.css` para vistas y formularios de Fase 2.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Services/UserAccessService.cs
-- backend/src/GestionCaja.API/Controllers/TitularesController.cs
-- backend/src/GestionCaja.API/Controllers/CuentasController.cs
-- backend/src/GestionCaja.API/Controllers/FormatosImportacionController.cs
-- backend/src/GestionCaja.API/DTOs/TitularesDtos.cs
-- backend/src/GestionCaja.API/DTOs/CuentasDtos.cs
-- backend/src/GestionCaja.API/DTOs/FormatosImportacionDtos.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Services/UserAccessService.cs
+- backend/src/AtlasBalance.API/Controllers/TitularesController.cs
+- backend/src/AtlasBalance.API/Controllers/CuentasController.cs
+- backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs
+- backend/src/AtlasBalance.API/DTOs/TitularesDtos.cs
+- backend/src/AtlasBalance.API/DTOs/CuentasDtos.cs
+- backend/src/AtlasBalance.API/DTOs/FormatosImportacionDtos.cs
 - frontend/src/App.tsx
 - frontend/src/services/api.ts
 - frontend/src/pages/CuentasPage.tsx
@@ -3491,7 +4434,7 @@ Regla de trabajo desde ahora:
   - get resumen
   - create usuario con permisos acotados
   - login usuario no-admin y verificación de filtrado (`titulares=1`, `cuentas=1`)
-- copia de `frontend/dist` -> `backend/src/GestionCaja.API/wwwroot`
+- copia de `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot`
 
 ### Resultado de verificación
 - Backend compila OK (sin errores).
@@ -3501,7 +4444,7 @@ Regla de trabajo desde ahora:
 - Filtro de permisos confirmado para usuario no admin (solo ve titular/cuenta autorizados).
 
 ### Incidencias detectadas y resueltas
-- `dotnet build` inicialmente falló por binario bloqueado (`GestionCaja.API.exe` en uso). Se liberó el proceso y compiló correctamente.
+- `dotnet build` inicialmente falló por binario bloqueado (`AtlasBalance.API.exe` en uso). Se liberó el proceso y compiló correctamente.
 - En pruebas PowerShell hubo error de certificado TLS local; se resolvió habilitando callback de validación para la sesión de smoke test.
 
 ### Pendientes
@@ -3515,14 +4458,14 @@ Regla de trabajo desde ahora:
 - Corregir deuda de seguridad reportada tras Fase 2.
 
 ### Cambios aplicados
-- `GestionCaja.API.csproj`:
+- `AtlasBalance.API.csproj`:
   - Se forzó `Newtonsoft.Json` a `13.0.3` para neutralizar dependencia vulnerable transitiva.
   - Se actualizaron paquetes Hangfire:
     - `Hangfire.AspNetCore` `1.8.17` -> `1.8.23`
     - `Hangfire.PostgreSql` `1.20.10` -> `1.21.1`
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/GestionCaja.API.csproj
+- backend/src/AtlasBalance.API/AtlasBalance.API.csproj
 
 ### Comandos ejecutados
 - `dotnet clean`
@@ -3533,10 +4476,10 @@ Regla de trabajo desde ahora:
 
 ### Resultado de verificación
 - Compilación backend: OK (0 errores, 0 warnings).
-- Vulnerabilidades NuGet: `sin paquetes vulnerables` en `GestionCaja.API`.
+- Vulnerabilidades NuGet: `sin paquetes vulnerables` en `AtlasBalance.API`.
 
 ### Incidencias
-- Durante build hubo lock temporal de proceso sobre binarios `GestionCaja.API`; recompilación posterior completó correctamente.
+- Durante build hubo lock temporal de proceso sobre binarios `AtlasBalance.API`; recompilación posterior completó correctamente.
 
 ## 2026-04-13 — Fase 1 (cierre y verificación final)
 
@@ -3544,19 +4487,19 @@ Regla de trabajo desde ahora:
 - Confirmar si Fase 1 queda realmente cerrada tras los últimos cambios en auth/usuarios/permisos.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/AuthController.cs
-- backend/src/GestionCaja.API/Data/AppDbContext.cs
-- backend/src/GestionCaja.API/Controllers/UsuariosController.cs
-- backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj
-- backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs
-- backend/GestionCaja.sln
+- backend/src/AtlasBalance.API/Controllers/AuthController.cs
+- backend/src/AtlasBalance.API/Data/AppDbContext.cs
+- backend/src/AtlasBalance.API/Controllers/UsuariosController.cs
+- backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj
+- backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs
+- backend/AtlasBalance.sln
 - frontend/src/pages/UsuariosPage.tsx
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build` (backend/src/GestionCaja.API)
-- `dotnet test GestionCaja.sln` (backend)
+- `dotnet build` (backend/src/AtlasBalance.API)
+- `dotnet test AtlasBalance.sln` (backend)
 - `npm.cmd run build` (frontend)
 
 ### Resultado de verificación
@@ -3594,24 +4537,24 @@ Regla de trabajo desde ahora:
   - Se aclaró desarrollo local vs despliegue real.
 
 ### Archivos tocados
-- `backend/src/GestionCaja.API/appsettings.Development.json`
-- `backend/src/GestionCaja.API/Properties/launchSettings.json`
-- `backend/src/GestionCaja.API/Data/AppDbContext.cs`
-- `backend/src/GestionCaja.API/Models/Entities.cs`
-- `backend/src/GestionCaja.API/GestionCaja.API.csproj`
-- `backend/src/GestionCaja.Watchdog/Program.cs`
+- `backend/src/AtlasBalance.API/appsettings.Development.json`
+- `backend/src/AtlasBalance.API/Properties/launchSettings.json`
+- `backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `backend/src/AtlasBalance.API/Models/Entities.cs`
+- `backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `backend/src/AtlasBalance.Watchdog/Program.cs`
 - `frontend/package.json`
 - `frontend/package-lock.json`
 - `frontend/vite.config.ts`
 - `frontend/dist/*`
-- `backend/src/GestionCaja.API/wwwroot/*`
+- `backend/src/AtlasBalance.API/wwwroot/*`
 - `scripts/setup-https.ps1`
 
 ### Comandos ejecutados
 - `docker compose up -d`
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln --no-build`
-- `dotnet list backend/src/GestionCaja.API/GestionCaja.API.csproj package --vulnerable`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln --no-build`
+- `dotnet list backend/src/AtlasBalance.API/AtlasBalance.API.csproj package --vulnerable`
 - `npm.cmd install`
 - `npm.cmd run build`
 - `npm.cmd audit --json`
@@ -3700,15 +4643,15 @@ Regla de trabajo desde ahora:
     - `/dashboard/titular/:id`
   - Tipos TypeScript de dashboard actualizados en `types/index.ts`.
   - Estilos dashboard añadidos en `styles/layout.css`.
-  - Build frontend copiado a `backend/src/GestionCaja.API/wwwroot`.
+  - Build frontend copiado a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/DashboardController.cs
-- backend/src/GestionCaja.API/Controllers/UsuariosController.cs
-- backend/src/GestionCaja.API/DTOs/DashboardDtos.cs
-- backend/src/GestionCaja.API/Services/DashboardService.cs
-- backend/src/GestionCaja.API/Services/TiposCambioService.cs
-- backend/src/GestionCaja.API/Program.cs
+- backend/src/AtlasBalance.API/Controllers/DashboardController.cs
+- backend/src/AtlasBalance.API/Controllers/UsuariosController.cs
+- backend/src/AtlasBalance.API/DTOs/DashboardDtos.cs
+- backend/src/AtlasBalance.API/Services/DashboardService.cs
+- backend/src/AtlasBalance.API/Services/TiposCambioService.cs
+- backend/src/AtlasBalance.API/Program.cs
 - frontend/src/App.tsx
 - frontend/src/types/index.ts
 - frontend/src/pages/DashboardPage.tsx
@@ -3723,9 +4666,9 @@ Regla de trabajo desde ahora:
 - `dotnet build -c Release` (backend)
 - `dotnet test -c Release --no-build` (backend tests)
 - `npm.cmd run build` (frontend)
-- Copia de `frontend/dist` -> `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot`
 - Smoke test HTTPS local levantando API:
-  - `dotnet .\\bin\\Release\\net8.0\\GestionCaja.API.dll --urls https://127.0.0.1:5081`
+  - `dotnet .\\bin\\Release\\net8.0\\AtlasBalance.API.dll --urls https://127.0.0.1:5081`
   - `curl -k https://127.0.0.1:5081/api/health`
   - login y consumo de endpoints dashboard con cookies (`curl -k -c/-b ...`)
 
@@ -3776,8 +4719,8 @@ Regla de trabajo desde ahora:
   - Rutas actualizadas en `App.tsx` para las 3 vistas de fase 3.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/ExtractosController.cs
-- backend/src/GestionCaja.API/DTOs/ExtractosDtos.cs
+- backend/src/AtlasBalance.API/Controllers/ExtractosController.cs
+- backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs
 - frontend/src/components/extractos/EditableCell.tsx
 - frontend/src/components/extractos/AuditCellModal.tsx
 - frontend/src/components/extractos/AddRowForm.tsx
@@ -3788,10 +4731,10 @@ Regla de trabajo desde ahora:
 - frontend/src/App.tsx
 - frontend/src/types/index.ts
 - frontend/src/styles/layout.css
-- backend/src/GestionCaja.API/wwwroot/* (build frontend copiado)
+- backend/src/AtlasBalance.API/wwwroot/* (build frontend copiado)
 
 ### Comandos ejecutados
-- `dotnet build backend/GestionCaja.sln /p:UseAppHost=false`
+- `dotnet build backend/AtlasBalance.sln /p:UseAppHost=false`
 - `npm.cmd run build` (frontend)
 - Smoke API en entorno local:
   - login admin
@@ -3848,7 +4791,7 @@ Regla de trabajo desde ahora:
   - Se ajustó para no disparar bootstrap en `/login` ni cuando la sesión ya está cargada en store.
 
 ### Verificación E2E ejecutada
-- Se levantó `GestionCaja.API` en `https://localhost:5000`.
+- Se levantó `AtlasBalance.API` en `https://localhost:5000`.
 - Se ejecutó prueba headless con Playwright + Edge sobre `/login`.
 - Para permitir llegar al shell sin forzar cambio de contraseña, se puso temporalmente `primer_login = false` al admin seed en BD.
 - Tras la prueba, se restauró `primer_login = true`.
@@ -3877,7 +4820,7 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - `node C:\Users\PcVIP\AppData\Local\Temp\gce2e-run\gce2e-phase0-full.js`
-- `docker exec -i gestion_caja_db psql -U app_user -d gestion_caja`
+- `docker exec -i atlas_balance_db psql -U app_user -d atlas_balance`
 
 ### Resultado de verificación
 - Login del admin correcto.
@@ -3906,27 +4849,27 @@ Regla de trabajo desde ahora:
 - Auditoria de auth/usuarios no estaba alineada con acciones de la spec (`LOGIN`, `LOGOUT`, `LOGIN_FAILED`, `ACCOUNT_LOCKED`, `CREATE_USUARIO`, etc.).
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/AuthController.cs
-- backend/src/GestionCaja.API/Controllers/UsuariosController.cs
-- backend/src/GestionCaja.API/DTOs/UsuariosDtos.cs
-- backend/src/GestionCaja.API/Middleware/UserStateMiddleware.cs
-- backend/src/GestionCaja.API/Middleware/PrimerLoginMiddleware.cs
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Services/AuditActions.cs
-- backend/src/GestionCaja.API/Services/AuditService.cs
-- backend/src/GestionCaja.API/Services/AuthService.cs
-- backend/src/GestionCaja.API/Services/UserAccessService.cs
+- backend/src/AtlasBalance.API/Controllers/AuthController.cs
+- backend/src/AtlasBalance.API/Controllers/UsuariosController.cs
+- backend/src/AtlasBalance.API/DTOs/UsuariosDtos.cs
+- backend/src/AtlasBalance.API/Middleware/UserStateMiddleware.cs
+- backend/src/AtlasBalance.API/Middleware/PrimerLoginMiddleware.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Services/AuditActions.cs
+- backend/src/AtlasBalance.API/Services/AuditService.cs
+- backend/src/AtlasBalance.API/Services/AuthService.cs
+- backend/src/AtlasBalance.API/Services/UserAccessService.cs
 - frontend/src/services/api.ts
 - frontend/src/stores/permisosStore.ts
 - frontend/src/pages/ExtractosPage.tsx
 - frontend/src/pages/UsuariosPage.tsx
-- backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/UserAccessServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs
+- backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/UserAccessServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs
 
 ### Comandos ejecutados
-- `dotnet build GestionCaja.sln`
-- `dotnet test GestionCaja.sln`
+- `dotnet build AtlasBalance.sln`
+- `dotnet test AtlasBalance.sln`
 - `npm.cmd run build`
 - Smoke tests HTTP via PowerShell contra `https://localhost:5000`:
 - login/logout/refresh
@@ -3980,7 +4923,7 @@ Regla de trabajo desde ahora:
 - Verificar visualmente la UI real de usuarios y comprobar que el modal de alta/edicion y la confirmacion de borrado funcionan sin regresiones.
 
 ### Cambios aplicados
-- Se recompila frontend y se copia frontend/dist/ a backend/src/GestionCaja.API/wwwroot/ para validar el escenario real servido por Kestrel.
+- Se recompila frontend y se copia frontend/dist/ a backend/src/AtlasBalance.API/wwwroot/ para validar el escenario real servido por Kestrel.
 - Se ejecuta verificacion automatizada con Chrome headless sobre https://localhost:5000 y tambien sobre http://localhost:5173.
 - Se valida login, acceso a /usuarios, apertura de modal nuevo, apertura de modal edicion y flujo UI de crear -> eliminar -> restaurar.
 - Se limpian a papelera los usuarios temporales ui.modal.* creados durante QA para no dejar ruido en la vista por defecto.
@@ -3990,7 +4933,7 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - npm.cmd run build
-- Copia de frontend/dist/* a backend/src/GestionCaja.API/wwwroot/
+- Copia de frontend/dist/* a backend/src/AtlasBalance.API/wwwroot/
 - Script Node + Chrome headless para smoke visual en https://localhost:5000
 - Script Node + Chrome headless para smoke visual en http://localhost:5173
 - Script Node para soft delete de usuarios ui.modal.* creados en QA
@@ -4015,14 +4958,14 @@ Regla de trabajo desde ahora:
 - Se corrigen mensajes con mojibake/encoding roto en backend (`FormatosImportacionController`, `PrimerLoginMiddleware`) y frontend (`TitularesPage`, `CuentasPage`, `ImportacionPage`, `index.html`).
 - `CuentasPage` ahora filtra formatos por divisa, limpia el formato al pasar a efectivo y oculta el selector de formato para cuentas de efectivo.
 - Se mantiene protegido `/api/formatos-importacion` para admin y se confirma por smoke test que los usuarios no admin solo ven titulares/cuentas autorizados.
-- Se recompila frontend y se sincroniza `frontend/dist` con `backend/src/GestionCaja.API/wwwroot` para que Kestrel sirva la version corregida.
+- Se recompila frontend y se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot` para que Kestrel sirva la version corregida.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/CuentasController.cs
-- backend/src/GestionCaja.API/Controllers/FormatosImportacionController.cs
-- backend/src/GestionCaja.API/Middleware/PrimerLoginMiddleware.cs
+- backend/src/AtlasBalance.API/Controllers/CuentasController.cs
+- backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs
+- backend/src/AtlasBalance.API/Middleware/PrimerLoginMiddleware.cs
 - frontend/src/pages/CuentasPage.tsx
-- backend/src/GestionCaja.API/DTOs/FormatosImportacionDtos.cs
+- backend/src/AtlasBalance.API/DTOs/FormatosImportacionDtos.cs
 - frontend/src/App.tsx
 - frontend/src/components/layout/Sidebar.tsx
 - frontend/index.html
@@ -4032,7 +4975,7 @@ Regla de trabajo desde ahora:
 ### Comandos ejecutados
 - `dotnet build`
 - `npm.cmd run build`
-- Copia de `frontend/dist/*` a `backend/src/GestionCaja.API/wwwroot/`
+- Copia de `frontend/dist/*` a `backend/src/AtlasBalance.API/wwwroot/`
 - Smoke tests HTTP manuales con `curl.exe` contra `https://localhost:5000`:
 - login admin
 - validacion negativa de formatos (`mapeo_json` con indices duplicados)
@@ -4066,7 +5009,7 @@ Regla de trabajo desde ahora:
 - `TitularesPage` deja de usar `window.confirm()` y pasa a confirmacion visual antes de enviar a papelera.
 - `CuentasPage` deja de usar `window.confirm()` y pasa a confirmacion visual antes de soft delete.
 - `ImportacionPage` deja de usar `window.confirm()` y pasa a confirmacion visual antes de soft delete.
-- Se recompila frontend y se vuelve a sincronizar `frontend/dist` con `backend/src/GestionCaja.API/wwwroot`.
+- Se recompila frontend y se vuelve a sincronizar `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Archivos tocados
 - frontend/src/components/common/ConfirmDialog.tsx
@@ -4078,7 +5021,7 @@ Regla de trabajo desde ahora:
 ### Comandos ejecutados
 - `Get-ChildItem frontend/src -Recurse -Include *.ts,*.tsx | Select-String -Pattern 'window\.confirm'`
 - `npm.cmd run build`
-- Copia de `frontend/dist/*` a `backend/src/GestionCaja.API/wwwroot/`
+- Copia de `frontend/dist/*` a `backend/src/AtlasBalance.API/wwwroot/`
 
 ### Resultado de verificacion
 - No quedan usos de `window.confirm` en `frontend/src`.
@@ -4113,14 +5056,14 @@ Regla de trabajo desde ahora:
 - frontend/src/components/extractos/EditableCell.tsx
 - frontend/src/components/extractos/AuditCellModal.tsx
 - frontend/src/components/extractos/AddRowForm.tsx
-- backend/src/GestionCaja.API/Controllers/ExtractosController.cs
-- backend/src/GestionCaja.API/wwwroot/* (build actualizado)
+- backend/src/AtlasBalance.API/Controllers/ExtractosController.cs
+- backend/src/AtlasBalance.API/wwwroot/* (build actualizado)
 
 ### Comandos ejecutados
-- `dotnet build backend/GestionCaja.sln /p:UseAppHost=false`
-- `dotnet test backend/GestionCaja.sln --no-build`
+- `dotnet build backend/AtlasBalance.sln /p:UseAppHost=false`
+- `dotnet test backend/AtlasBalance.sln --no-build`
 - `npm.cmd run build` (frontend)
-- Copia de `frontend/dist` -> `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot`
 - Smoke test API fase 3 (create/update/check/flag/audit/delete/restore) con sesión autenticada
 
 ### Resultado de verificación
@@ -4158,7 +5101,7 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - npm.cmd run build
-- Copia de frontend/dist/* a backend/src/GestionCaja.API/wwwroot/
+- Copia de frontend/dist/* a backend/src/AtlasBalance.API/wwwroot/
 - Verificacion automatizada con Chrome headless en https://localhost:5000 para desktop, tablet y movil
 
 ### Resultado de verificacion
@@ -4190,7 +5133,7 @@ Regla de trabajo desde ahora:
 - frontend/src/App.tsx
 - frontend/src/components/layout/Sidebar.tsx
 - frontend/dist/* (build)
-- backend/src/GestionCaja.API/wwwroot/* (copia de build)
+- backend/src/AtlasBalance.API/wwwroot/* (copia de build)
 
 ### Comandos ejecutados
 - dotnet build (backend)
@@ -4203,7 +5146,7 @@ Regla de trabajo desde ahora:
   - POST /api/importacion/validar (caso tab + errores por fila)
   - POST /api/importacion/confirmar (importacion parcial)
   - POST /api/importacion/validar (caso semicolon + fecha serial Excel)
-- copia de frontend/dist/* -> backend/src/GestionCaja.API/wwwroot/
+- copia de frontend/dist/* -> backend/src/AtlasBalance.API/wwwroot/
 
 ### Resultado de verificacion
 - Backend compila OK.
@@ -4221,7 +5164,7 @@ Regla de trabajo desde ahora:
 ## 2026-04-13 - Fase 4 (verificacion visual E2E en navegador)
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/wwwroot/* (sync de build frontend final)
+- backend/src/AtlasBalance.API/wwwroot/* (sync de build frontend final)
 
 ### Comandos ejecutados
 - curl.exe -k https://localhost:5000/api/health
@@ -4229,7 +5172,7 @@ Regla de trabajo desde ahora:
 - node scripts de verificacion visual (Playwright via NODE_PATH cache npx)
 - dotnet build (backend)
 - npm run build (frontend)
-- copia de dist -> backend/src/GestionCaja.API/wwwroot/
+- copia de dist -> backend/src/AtlasBalance.API/wwwroot/
 
 ### Resultado de verificacion
 - OK: flujo visual E2E login + wizard importacion completo (4 pasos) con capturas.
@@ -4251,17 +5194,17 @@ Regla de trabajo desde ahora:
 ## 2026-04-13 - Fase 1 (auditoria y correcciones finales)
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/AuthService.cs
-- backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs
+- backend/src/AtlasBalance.API/Services/AuthService.cs
+- backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs
 - frontend/src/services/api.ts
-- backend/src/GestionCaja.API/wwwroot/* (sync del build frontend tras fix)
+- backend/src/AtlasBalance.API/wwwroot/* (sync del build frontend tras fix)
 
 ### Comandos ejecutados
 - python requests contra `https://localhost:5000/api/*` para auditar login, me, cambio-password, refresh, logout, CRUD usuarios, restore y lockout
 - dotnet build
 - dotnet test
 - npm run build
-- copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot/`
+- copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot/`
 
 ### Resultado de verificacion
 - OK: `POST /api/auth/login` entrega cookies + CSRF y `GET /api/auth/me` devuelve usuario + permisos.
@@ -4297,13 +5240,13 @@ Regla de trabajo desde ahora:
     - mensajes especificos para valores vacios/no numericos
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs
 - frontend/src/pages/ImportacionPage.tsx
 - atlas-blance/DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- dotnet test backend/GestionCaja.sln
+- dotnet test backend/AtlasBalance.sln
 - npm.cmd run build
 - npx.cmd eslint src/pages/ImportacionPage.tsx
 
@@ -4327,7 +5270,7 @@ Regla de trabajo desde ahora:
 - Frontend:
   - `DashboardTitularPage` se alineo con la spec de Fase 5 y ahora replica el layout principal con bloque de saldos por divisa + desglose por cuenta.
   - `SaldoPorDivisaCard` dejo de desperdiciar `saldo_convertido`: ahora muestra el equivalente en la divisa principal seleccionada cuando aplica.
-  - Se copio el build actualizado a `backend/src/GestionCaja.API/wwwroot` para que el backend sirva el frontend corregido.
+  - Se copio el build actualizado a `backend/src/AtlasBalance.API/wwwroot` para que el backend sirva el frontend corregido.
 - Testing:
   - Se agregaron tests de regresion para `DashboardService` cubriendo agregacion multi-divisa, KPIs mensuales, filtro por titular en `saldos-divisa` y denegacion de acceso para gerentes sin permiso sobre el titular.
 
@@ -4341,22 +5284,22 @@ Regla de trabajo desde ahora:
 - Motivo: en esta sesion solo hubo herramientas de lectura de Figma; no hubo herramienta de escritura para sincronizar el archivo fuente `Gestion-de-Caja`.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/DashboardController.cs
-- backend/src/GestionCaja.API/Services/DashboardService.cs
-- backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs
+- backend/src/AtlasBalance.API/Controllers/DashboardController.cs
+- backend/src/AtlasBalance.API/Services/DashboardService.cs
+- backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs
 - frontend/src/components/dashboard/SaldoPorDivisaCard.tsx
 - frontend/src/pages/DashboardPage.tsx
 - frontend/src/pages/DashboardTitularPage.tsx
 - frontend/src/styles/layout.css
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - atlas-blance/DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `docker compose up -d`
-- `dotnet build backend/GestionCaja.sln -c Release`
-- `dotnet test backend/GestionCaja.sln -c Release`
+- `dotnet build backend/AtlasBalance.sln -c Release`
+- `dotnet test backend/AtlasBalance.sln -c Release`
 - `npm.cmd run build`
-- Copia de `frontend/dist` -> `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot`
 - Smoke real contra HTTPS local:
   - login `POST /api/auth/login`
   - `GET /api/dashboard/principal`
@@ -4408,12 +5351,12 @@ Regla de trabajo desde ahora:
   - Estilos CSS para la pagina de configuracion.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/TiposCambioService.cs
-- backend/src/GestionCaja.API/Controllers/TiposCambioController.cs
-- backend/src/GestionCaja.API/Controllers/DivisasController.cs
-- backend/src/GestionCaja.API/Jobs/SyncTiposCambioJob.cs
-- backend/src/GestionCaja.API/Jobs/LimpiezaRefreshTokensJob.cs
-- backend/src/GestionCaja.API/Program.cs
+- backend/src/AtlasBalance.API/Services/TiposCambioService.cs
+- backend/src/AtlasBalance.API/Controllers/TiposCambioController.cs
+- backend/src/AtlasBalance.API/Controllers/DivisasController.cs
+- backend/src/AtlasBalance.API/Jobs/SyncTiposCambioJob.cs
+- backend/src/AtlasBalance.API/Jobs/LimpiezaRefreshTokensJob.cs
+- backend/src/AtlasBalance.API/Program.cs
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/App.tsx
 - frontend/src/components/layout/Sidebar.tsx
@@ -4457,10 +5400,10 @@ Regla de trabajo desde ahora:
 - No se actualizo Figma porque el ajuste en frontend fue de validacion/estado, no de diseno.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/TiposCambioService.cs
-- backend/src/GestionCaja.API/Services/DashboardService.cs
-- backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/TiposCambioServiceTests.cs
+- backend/src/AtlasBalance.API/Services/TiposCambioService.cs
+- backend/src/AtlasBalance.API/Services/DashboardService.cs
+- backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/TiposCambioServiceTests.cs
 - frontend/src/pages/ConfiguracionPage.tsx
 - DOCUMENTACION_CAMBIOS.md
 
@@ -4469,7 +5412,7 @@ Regla de trabajo desde ahora:
 - `dotnet build -c Release`
 - `dotnet test -c Release`
 - `npm.cmd run build`
-- Arranque aislado de `GestionCaja.API` Release contra base PostgreSQL temporal para smoke real de Fase 6.
+- Arranque aislado de `AtlasBalance.API` Release contra base PostgreSQL temporal para smoke real de Fase 6.
 - Verificacion SQL directa en PostgreSQL temporal para `CONFIGURACION`, `TIPOS_CAMBIO` y hashes de recurring jobs de Hangfire.
 
 ### Resultado de verificacion
@@ -4518,13 +5461,13 @@ Regla de trabajo desde ahora:
   - Ruta `/alertas` deja de ser placeholder y queda protegida para `ADMIN`.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/AlertasController.cs
-- backend/src/GestionCaja.API/Controllers/ExtractosController.cs
-- backend/src/GestionCaja.API/DTOs/AlertasDtos.cs
-- backend/src/GestionCaja.API/Services/AlertaService.cs
-- backend/src/GestionCaja.API/Services/EmailService.cs
-- backend/src/GestionCaja.API/Services/AuditActions.cs
-- backend/src/GestionCaja.API/Program.cs
+- backend/src/AtlasBalance.API/Controllers/AlertasController.cs
+- backend/src/AtlasBalance.API/Controllers/ExtractosController.cs
+- backend/src/AtlasBalance.API/DTOs/AlertasDtos.cs
+- backend/src/AtlasBalance.API/Services/AlertaService.cs
+- backend/src/AtlasBalance.API/Services/EmailService.cs
+- backend/src/AtlasBalance.API/Services/AuditActions.cs
+- backend/src/AtlasBalance.API/Program.cs
 - frontend/src/App.tsx
 - frontend/src/components/layout/AlertBanner.tsx
 - frontend/src/components/layout/Layout.tsx
@@ -4534,15 +5477,15 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/LoginPage.tsx
 - frontend/src/stores/alertasStore.ts
 - frontend/src/styles/layout.css
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - atlas-blance/DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `docker compose up -d`
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln --no-build`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln --no-build`
 - `npm.cmd run build`
-- copia `frontend/dist/*` -> `backend/src/GestionCaja.API/wwwroot/`
+- copia `frontend/dist/*` -> `backend/src/AtlasBalance.API/wwwroot/`
 - Smoke Fase 7 real contra `https://localhost:5000`:
   - login admin
   - limpieza de alertas previas
@@ -4555,7 +5498,7 @@ Regla de trabajo desde ahora:
   - creación de extracto con saldo bajo en cuenta sin alerta específica
   - validación de que se usa `alerta_id` global
 - SMTP de prueba:
-  - contenedor `gestion_caja_mailhog` (puertos `1025/8025`)
+  - contenedor `atlas_balance_mailhog` (puertos `1025/8025`)
   - actualización de claves SMTP en `CONFIGURACION`
   - verificación de mensajes en `http://localhost:8025/api/v2/messages`
 
@@ -4596,13 +5539,13 @@ Regla de trabajo desde ahora:
 - Se añadieron tests para cubrir override de alerta por cuenta sobre alerta global y la exclusion de cuentas inactivas.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Data/AppDbContext.cs
-- backend/src/GestionCaja.API/Services/AlertaService.cs
-- backend/src/GestionCaja.API/Controllers/AlertasController.cs
-- backend/src/GestionCaja.API/Migrations/20260414200917_AlertasSaldoConstraints.cs
-- backend/src/GestionCaja.API/Migrations/20260414200917_AlertasSaldoConstraints.Designer.cs
-- backend/src/GestionCaja.API/Migrations/AppDbContextModelSnapshot.cs
-- backend/tests/GestionCaja.API.Tests/AlertaServiceTests.cs
+- backend/src/AtlasBalance.API/Data/AppDbContext.cs
+- backend/src/AtlasBalance.API/Services/AlertaService.cs
+- backend/src/AtlasBalance.API/Controllers/AlertasController.cs
+- backend/src/AtlasBalance.API/Migrations/20260414200917_AlertasSaldoConstraints.cs
+- backend/src/AtlasBalance.API/Migrations/20260414200917_AlertasSaldoConstraints.Designer.cs
+- backend/src/AtlasBalance.API/Migrations/AppDbContextModelSnapshot.cs
+- backend/tests/AtlasBalance.API.Tests/AlertaServiceTests.cs
 - frontend/src/stores/alertasStore.ts
 - frontend/src/components/layout/Sidebar.tsx
 - frontend/src/App.tsx
@@ -4610,12 +5553,12 @@ Regla de trabajo desde ahora:
 - atlas-blance/DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build` en `backend/src/GestionCaja.API`
-- `dotnet test` en `backend/tests/GestionCaja.API.Tests`
+- `dotnet build` en `backend/src/AtlasBalance.API`
+- `dotnet test` en `backend/tests/AtlasBalance.API.Tests`
 - `dotnet ef migrations add AlertasSaldoConstraints`
 - `dotnet ef database update`
 - `npm.cmd run build` en `frontend`
-- `docker exec gestion_caja_db psql ...` para verificar indices unicos
+- `docker exec atlas_balance_db psql ...` para verificar indices unicos
 - `curl.exe -k ...` para login y smoke de:
   - `GET /api/alertas`
   - `GET /api/alertas/activas`
@@ -4666,14 +5609,14 @@ Regla de trabajo desde ahora:
 - Motivo: en esta sesión no se ejecutó escritura sobre Figma (bloqueo de permisos ya reportado en fases previas).
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/AuditoriaController.cs
-- backend/src/GestionCaja.API/DTOs/AuditoriaDtos.cs
+- backend/src/AtlasBalance.API/Controllers/AuditoriaController.cs
+- backend/src/AtlasBalance.API/DTOs/AuditoriaDtos.cs
 - frontend/src/pages/AuditoriaPage.tsx
 - frontend/src/App.tsx
 - frontend/src/components/layout/Sidebar.tsx
 - frontend/src/styles/layout.css
 - frontend/src/types/index.ts
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - atlas-blance/DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
@@ -4687,7 +5630,7 @@ Regla de trabajo desde ahora:
   - `GET /api/auditoria?page=1&pageSize=25`
   - `GET /api/auditoria` con filtros combinados
   - `GET /api/auditoria/exportar-csv` (general y filtrado)
-- copia `frontend/dist/*` -> `backend/src/GestionCaja.API/wwwroot/`
+- copia `frontend/dist/*` -> `backend/src/AtlasBalance.API/wwwroot/`
 
 ### Resultado de verificación
 - Backend compila OK (`0 errores`).
@@ -4718,14 +5661,14 @@ Regla de trabajo desde ahora:
 - Sigue pendiente el gap historico ya documentado de la implementacion original de Fase 8.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/AuditoriaController.cs
-- backend/src/GestionCaja.API/Services/AuditActions.cs
-- backend/tests/GestionCaja.API.Tests/AuditoriaControllerTests.cs
+- backend/src/AtlasBalance.API/Controllers/AuditoriaController.cs
+- backend/src/AtlasBalance.API/Services/AuditActions.cs
+- backend/tests/AtlasBalance.API.Tests/AuditoriaControllerTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build backend/src/GestionCaja.API/GestionCaja.API.csproj`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj --no-restore`
+- `dotnet build backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --no-restore`
 - `npm.cmd run build`
 
 ### Resultado de verificacion
@@ -4751,7 +5694,7 @@ Regla de trabajo desde ahora:
     - `GET /api/exportaciones/{id}/descargar`
     - `GET /api/sistema/estado` (polling de estado del Watchdog)
   - Nuevos servicios:
-    - `BackupService` con ejecución de `pg_dump`, fallback automático a Docker (`gestion_caja_db`) en dev, auditoría y retención automática de backups.
+    - `BackupService` con ejecución de `pg_dump`, fallback automático a Docker (`atlas_balance_db`) en dev, auditoría y retención automática de backups.
     - `ExportacionService` con generación XLSX (ClosedXML), registro en `EXPORTACIONES`, descarga y notificación admin.
     - `WatchdogClientService` para comunicación segura API -> Watchdog con `X-Watchdog-Secret`.
   - Nuevos jobs Hangfire:
@@ -4781,45 +5724,45 @@ Regla de trabajo desde ahora:
     - exportación manual
     - descarga de XLSX
   - Rutas actualizadas en `App.tsx` y control de visibilidad de navegación en `Sidebar.tsx`.
-  - Build actualizado y sincronizado a `backend/src/GestionCaja.API/wwwroot`.
+  - Build actualizado y sincronizado a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/appsettings.json
-- backend/src/GestionCaja.API/appsettings.Development.json
-- backend/src/GestionCaja.API/appsettings.Production.json.template
-- backend/src/GestionCaja.API/Controllers/BackupsController.cs
-- backend/src/GestionCaja.API/Controllers/ExportacionesController.cs
-- backend/src/GestionCaja.API/Controllers/SistemaController.cs
-- backend/src/GestionCaja.API/DTOs/BackupsDtos.cs
-- backend/src/GestionCaja.API/DTOs/ExportacionesDtos.cs
-- backend/src/GestionCaja.API/Jobs/BackupWeeklyJob.cs
-- backend/src/GestionCaja.API/Jobs/ExportMensualJob.cs
-- backend/src/GestionCaja.API/Services/BackupService.cs
-- backend/src/GestionCaja.API/Services/ExportacionService.cs
-- backend/src/GestionCaja.API/Services/WatchdogClientService.cs
-- backend/src/GestionCaja.API/Services/AuditActions.cs
-- backend/src/GestionCaja.Watchdog/Program.cs
-- backend/src/GestionCaja.Watchdog/appsettings.json
-- backend/src/GestionCaja.Watchdog/Controllers/WatchdogController.cs
-- backend/src/GestionCaja.Watchdog/Models/WatchdogContracts.cs
-- backend/src/GestionCaja.Watchdog/Services/WatchdogStateStore.cs
-- backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/appsettings.json
+- backend/src/AtlasBalance.API/appsettings.Development.json
+- backend/src/AtlasBalance.API/appsettings.Production.json.template
+- backend/src/AtlasBalance.API/Controllers/BackupsController.cs
+- backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs
+- backend/src/AtlasBalance.API/Controllers/SistemaController.cs
+- backend/src/AtlasBalance.API/DTOs/BackupsDtos.cs
+- backend/src/AtlasBalance.API/DTOs/ExportacionesDtos.cs
+- backend/src/AtlasBalance.API/Jobs/BackupWeeklyJob.cs
+- backend/src/AtlasBalance.API/Jobs/ExportMensualJob.cs
+- backend/src/AtlasBalance.API/Services/BackupService.cs
+- backend/src/AtlasBalance.API/Services/ExportacionService.cs
+- backend/src/AtlasBalance.API/Services/WatchdogClientService.cs
+- backend/src/AtlasBalance.API/Services/AuditActions.cs
+- backend/src/AtlasBalance.Watchdog/Program.cs
+- backend/src/AtlasBalance.Watchdog/appsettings.json
+- backend/src/AtlasBalance.Watchdog/Controllers/WatchdogController.cs
+- backend/src/AtlasBalance.Watchdog/Models/WatchdogContracts.cs
+- backend/src/AtlasBalance.Watchdog/Services/WatchdogStateStore.cs
+- backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs
 - frontend/src/App.tsx
 - frontend/src/components/layout/Sidebar.tsx
 - frontend/src/pages/BackupsPage.tsx
 - frontend/src/pages/ExportacionesPage.tsx
 - frontend/src/styles/layout.css
 - frontend/src/types/index.ts
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - atlas-blance/DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln --no-build`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln --no-build`
 - `npm.cmd run build`
 - `docker compose up -d`
-- Copia de `frontend/dist/*` -> `backend/src/GestionCaja.API/wwwroot/`
+- Copia de `frontend/dist/*` -> `backend/src/AtlasBalance.API/wwwroot/`
 - Arranque temporal en background:
   - `dotnet run --no-build` (Watchdog)
   - `dotnet run --no-build` (API)
@@ -4884,23 +5827,23 @@ Regla de trabajo desde ahora:
 - Sigue pendiente operativo del proyecto: mantener sincronía de Figma cuando el conector permita escritura en sesión.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/SistemaController.cs
-- backend/src/GestionCaja.API/DTOs/SistemaDtos.cs
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Services/ActualizacionService.cs
-- backend/src/GestionCaja.API/Services/WatchdogClientService.cs
+- backend/src/AtlasBalance.API/Controllers/SistemaController.cs
+- backend/src/AtlasBalance.API/DTOs/SistemaDtos.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Services/ActualizacionService.cs
+- backend/src/AtlasBalance.API/Services/WatchdogClientService.cs
 - frontend/src/components/layout/Sidebar.tsx
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/pages/LoginPage.tsx
 - frontend/src/stores/updateStore.ts
 - frontend/src/styles/layout.css
 - frontend/src/types/index.ts
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln --no-build`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln --no-build`
 - `npm.cmd run build`
 - `docker compose up -d`
 - arranque local:
@@ -4914,7 +5857,7 @@ Regla de trabajo desde ahora:
   - polling `GET /api/sistema/estado`
 - actualización de config de test para smoke:
   - `CONFIGURACION.app_update_check_url = http://localhost:5088/update.json`
-- copia de `frontend/dist/*` -> `backend/src/GestionCaja.API/wwwroot/`
+- copia de `frontend/dist/*` -> `backend/src/AtlasBalance.API/wwwroot/`
 
 ### Resultado de verificación
 - Backend compila OK (`0 errores`).
@@ -4952,7 +5895,7 @@ Regla de trabajo desde ahora:
   - Nuevo store `notificacionesAdminStore` para resumen y marcado de notificaciones admin.
   - Sidebar admin ahora muestra badge en `Exportaciones` cuando hay exportaciones pendientes de revisar.
   - `ExportacionesPage` marca como leidas las notificaciones de exportacion al entrar y tras generar exportacion manual.
-  - Rebuild de frontend y copia a `backend/src/GestionCaja.API/wwwroot/`.
+  - Rebuild de frontend y copia a `backend/src/AtlasBalance.API/wwwroot/`.
 - Tests:
   - Nuevo test para exportaciones con rutas de archivo distintas por ejecucion.
   - Nuevo test para resumen/marcado de `NOTIFICACIONES_ADMIN`.
@@ -4963,30 +5906,30 @@ Regla de trabajo desde ahora:
 - Pendiente abierto: reflejar el badge de exportaciones en el archivo fuente cuando se haga una pasada de UI/Figma con el conector activo.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/BackupsController.cs
-- backend/src/GestionCaja.API/Controllers/ExportacionesController.cs
-- backend/src/GestionCaja.API/Controllers/NotificacionesAdminController.cs
-- backend/src/GestionCaja.API/DTOs/NotificacionesAdminDtos.cs
-- backend/src/GestionCaja.API/Services/ExportacionService.cs
-- backend/src/GestionCaja.API/Services/WatchdogClientService.cs
-- backend/src/GestionCaja.Watchdog/Controllers/WatchdogController.cs
-- backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs
-- backend/tests/GestionCaja.API.Tests/ExportacionServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/ManualProcessResponseTests.cs
-- backend/tests/GestionCaja.API.Tests/NotificacionesAdminControllerTests.cs
-- backend/tests/GestionCaja.API.Tests/WatchdogClientServiceTests.cs
+- backend/src/AtlasBalance.API/Controllers/BackupsController.cs
+- backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs
+- backend/src/AtlasBalance.API/Controllers/NotificacionesAdminController.cs
+- backend/src/AtlasBalance.API/DTOs/NotificacionesAdminDtos.cs
+- backend/src/AtlasBalance.API/Services/ExportacionService.cs
+- backend/src/AtlasBalance.API/Services/WatchdogClientService.cs
+- backend/src/AtlasBalance.Watchdog/Controllers/WatchdogController.cs
+- backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs
+- backend/tests/AtlasBalance.API.Tests/ExportacionServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/ManualProcessResponseTests.cs
+- backend/tests/AtlasBalance.API.Tests/NotificacionesAdminControllerTests.cs
+- backend/tests/AtlasBalance.API.Tests/WatchdogClientServiceTests.cs
 - frontend/src/components/layout/Sidebar.tsx
 - frontend/src/pages/ExportacionesPage.tsx
 - frontend/src/stores/notificacionesAdminStore.ts
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet test backend/GestionCaja.sln`
+- `dotnet test backend/AtlasBalance.sln`
 - `npm.cmd run build`
-- `dotnet build backend/src/GestionCaja.API/GestionCaja.API.csproj`
-- `dotnet build backend/src/GestionCaja.Watchdog/GestionCaja.Watchdog.csproj`
-- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR`
+- `dotnet build backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `dotnet build backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
+- `robocopy frontend/dist backend/src/AtlasBalance.API/wwwroot /MIR`
 - smoke manual fase 9:
   - `POST /api/auth/login`
   - `POST /api/exportaciones/manual`
@@ -5026,17 +5969,17 @@ Regla de trabajo desde ahora:
   - Corregido stub `RecordingEmailService` en tests para compilar con la interfaz actual de `IEmailService`.
 
 ### Archivos tocados
-- backend/src/GestionCaja.Watchdog/Controllers/WatchdogController.cs
-- backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs
-- backend/tests/GestionCaja.API.Tests/AlertaServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj
-- backend/tests/GestionCaja.API.Tests/WatchdogOperationsServiceTests.cs
+- backend/src/AtlasBalance.Watchdog/Controllers/WatchdogController.cs
+- backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs
+- backend/tests/AtlasBalance.API.Tests/AlertaServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj
+- backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs
 - frontend/src/pages/ConfiguracionPage.tsx
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet test backend/GestionCaja.sln --no-restore`
-- `dotnet build backend/GestionCaja.sln --no-restore`
+- `dotnet test backend/AtlasBalance.sln --no-restore`
+- `dotnet build backend/AtlasBalance.sln --no-restore`
 - `npm.cmd run build`
 
 ### Resultado de verificacion
@@ -5085,27 +6028,27 @@ Regla de trabajo desde ahora:
 - Pendiente abierto: reflejar `PapeleraPage` y la nueva estructura de `ConfiguracionPage` en el archivo fuente cuando el conector de escritura este operativo.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs
-- backend/src/GestionCaja.API/Controllers/IntegracionesController.cs
-- backend/src/GestionCaja.API/DTOs/ConfiguracionDtos.cs
-- backend/src/GestionCaja.API/DTOs/IntegracionesDtos.cs
-- backend/src/GestionCaja.API/Services/AuditActions.cs
-- backend/src/GestionCaja.API/Services/EmailService.cs
+- backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs
+- backend/src/AtlasBalance.API/Controllers/IntegracionesController.cs
+- backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs
+- backend/src/AtlasBalance.API/DTOs/IntegracionesDtos.cs
+- backend/src/AtlasBalance.API/Services/AuditActions.cs
+- backend/src/AtlasBalance.API/Services/EmailService.cs
 - frontend/src/App.tsx
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/pages/PapeleraPage.tsx
 - frontend/src/styles/layout.css
 - frontend/src/types/index.ts
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `docker compose -f docker-compose.yml up -d`
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln --no-build`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln --no-build`
 - `npm.cmd run build`
-- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR`
-- `docker run -d --name gestion_caja_mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog`
+- `robocopy frontend/dist backend/src/AtlasBalance.API/wwwroot /MIR`
+- `docker run -d --name atlas_balance_mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog`
 - smoke runtime Fase 11:
   - `POST /api/auth/login`
   - `GET/PUT /api/configuracion`
@@ -5161,8 +6104,8 @@ Regla de trabajo desde ahora:
 - Pendiente abierto: reflejar en el archivo fuente la proteccion de `/papelera`, los nuevos bloques de divisas/tipos en `ConfiguracionPage` y los estados de validacion del modal de tokens.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/IntegracionesController.cs
-- backend/tests/GestionCaja.API.Tests/IntegracionesControllerTests.cs
+- backend/src/AtlasBalance.API/Controllers/IntegracionesController.cs
+- backend/tests/AtlasBalance.API.Tests/IntegracionesControllerTests.cs
 - frontend/src/App.tsx
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/pages/PapeleraPage.tsx
@@ -5172,9 +6115,9 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - `docker compose up -d`
-- `docker run -d --name gestion_caja_mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog`
-- `dotnet build backend/GestionCaja.sln -c Release`
-- `dotnet test backend/GestionCaja.sln -c Release --no-build`
+- `docker run -d --name atlas_balance_mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog`
+- `dotnet build backend/AtlasBalance.sln -c Release`
+- `dotnet test backend/AtlasBalance.sln -c Release --no-build`
 - `npm.cmd run build`
 - smoke backend:
   - `POST /api/auth/login`
@@ -5207,7 +6150,7 @@ Regla de trabajo desde ahora:
     - aplica rate limit por token (`integration_rate_limit_per_minute`, default 100 req/min)
     - registra cada request en `AUDITORIA_INTEGRACIONES` con endpoint, metodo, codigo, IP y tiempo
   - Nuevo `IntegrationTokenService`:
-    - generacion de token plano (`sk_gestion_caja_*`)
+    - generacion de token plano (`sk_atlas_balance_*`)
     - hash SHA-256
     - validacion de token activo
     - revocacion de token
@@ -5245,15 +6188,15 @@ Regla de trabajo desde ahora:
 - Pendiente operativo abierto: reflejar en Figma la nueva pestaña de auditoria de integraciones y el flujo modal de tokens en configuracion cuando el conector de escritura este disponible.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Controllers/IntegracionesController.cs
-- backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs
-- backend/src/GestionCaja.API/DTOs/IntegracionesDtos.cs
-- backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs
-- backend/src/GestionCaja.API/Services/IntegrationTokenService.cs
-- backend/src/GestionCaja.API/Services/IntegrationAuthorizationService.cs
-- backend/tests/GestionCaja.API.Tests/IntegrationTokenServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/IntegrationAuthorizationServiceTests.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Controllers/IntegracionesController.cs
+- backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs
+- backend/src/AtlasBalance.API/DTOs/IntegracionesDtos.cs
+- backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs
+- backend/src/AtlasBalance.API/Services/IntegrationTokenService.cs
+- backend/src/AtlasBalance.API/Services/IntegrationAuthorizationService.cs
+- backend/tests/AtlasBalance.API.Tests/IntegrationTokenServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/IntegrationAuthorizationServiceTests.cs
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/pages/AuditoriaPage.tsx
 - frontend/src/components/integraciones/CreateTokenModal.tsx
@@ -5267,8 +6210,8 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - `docker compose -f docker-compose.yml up -d`
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj`
 - `npm.cmd run build`
 - smoke backend fase 12:
   - `POST /api/auth/login`
@@ -5323,7 +6266,7 @@ Regla de trabajo desde ahora:
 - Pendiente abierto: reflejar en Figma la navegacion responsive final (colapso de sidebar y comportamiento mobile), estados de error boundary y 404 final.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Migrations/20260413120705_Initial.cs
+- backend/src/AtlasBalance.API/Migrations/20260413120705_Initial.cs
 - frontend/src/App.tsx
 - frontend/src/components/auth/ProtectedRoute.tsx
 - frontend/src/components/common/AppErrorBoundary.tsx
@@ -5348,16 +6291,16 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/TitularesPage.tsx
 - frontend/src/services/api.ts
 - frontend/src/styles/layout.css
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln --no-build`
-- `dotnet build backend/GestionCaja.sln -c Release`
-- `dotnet test backend/GestionCaja.sln -c Release --no-build`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln --no-build`
+- `dotnet build backend/AtlasBalance.sln -c Release`
+- `dotnet test backend/AtlasBalance.sln -c Release --no-build`
 - `npm.cmd run build`
-- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR`
+- `robocopy frontend/dist backend/src/AtlasBalance.API/wwwroot /MIR`
 - revision de seguridad/logs:
   - busqueda de logging sensible (`token|password|secret`) en backend
   - verificacion de atributos de endpoints mutables en controllers
@@ -5366,7 +6309,7 @@ Regla de trabajo desde ahora:
 - Frontend build OK.
 - Backend tests OK (`36/36`) en Debug y Release.
 - Backend build OK en Release.
-- Backend build en Debug no concluye mientras la API esta corriendo por bloqueo del ejecutable (`GestionCaja.API.exe` en uso); no es error de codigo.
+- Backend build en Debug no concluye mientras la API esta corriendo por bloqueo del ejecutable (`AtlasBalance.API.exe` en uso); no es error de codigo.
 - Activos de frontend copiados a `wwwroot`.
 - Checklist fase 13 cubierta en codigo:
   - dark/light mode preservado y aplicado en componentes de layout
@@ -5389,8 +6332,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -5405,7 +6348,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -5434,20 +6377,20 @@ Regla de trabajo desde ahora:
 - No se sincronizo Figma en esta sesion porque no hubo cambios de UI.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs
-- backend/src/GestionCaja.API/DTOs/IntegracionesDtos.cs
-- backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Services/IntegrationAuthorizationService.cs
-- backend/src/GestionCaja.API/Services/IntegrationTokenService.cs
-- backend/tests/GestionCaja.API.Tests/IntegrationAuthorizationServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/IntegrationOpenClawControllerTests.cs
-- backend/tests/GestionCaja.API.Tests/IntegrationTokenServiceTests.cs
+- backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs
+- backend/src/AtlasBalance.API/DTOs/IntegracionesDtos.cs
+- backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Services/IntegrationAuthorizationService.cs
+- backend/src/AtlasBalance.API/Services/IntegrationTokenService.cs
+- backend/tests/AtlasBalance.API.Tests/IntegrationAuthorizationServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/IntegrationOpenClawControllerTests.cs
+- backend/tests/AtlasBalance.API.Tests/IntegrationTokenServiceTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln`
 - `npm.cmd run build`
 - smoke manual sobre API:
   - `curl.exe -k https://localhost:5000/api/health`
@@ -5491,16 +6434,16 @@ Regla de trabajo desde ahora:
   - Corregido tipado de `deleted_at` en `PapeleraPage.tsx` para evitar error de TypeScript en build.
 
 ### Archivos tocados
-- `backend/src/GestionCaja.API/Models/Entities.cs`
-- `backend/src/GestionCaja.API/Data/AppDbContext.cs`
-- `backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `backend/src/GestionCaja.API/Controllers/UsuariosController.cs`
-- `backend/src/GestionCaja.API/Services/AuthService.cs`
-- `backend/src/GestionCaja.API/Services/BackupService.cs`
-- `backend/src/GestionCaja.API/Migrations/20260418173448_SplitPermisosPreferencias.cs`
-- `backend/src/GestionCaja.API/Migrations/20260418173448_SplitPermisosPreferencias.Designer.cs`
-- `backend/src/GestionCaja.API/Migrations/AppDbContextModelSnapshot.cs`
-- `backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
+- `backend/src/AtlasBalance.API/Models/Entities.cs`
+- `backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `backend/src/AtlasBalance.API/Migrations/20260418173448_SplitPermisosPreferencias.cs`
+- `backend/src/AtlasBalance.API/Migrations/20260418173448_SplitPermisosPreferencias.Designer.cs`
+- `backend/src/AtlasBalance.API/Migrations/AppDbContextModelSnapshot.cs`
+- `backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
 - `frontend/src/pages/PapeleraPage.tsx`
 - `TICKET-005_AUDITORIA_PERMISOS_USUARIO.md`
 - `DOCUMENTACION_CAMBIOS.md`
@@ -5510,8 +6453,8 @@ Regla de trabajo desde ahora:
 - busquedas de auditoria:
   - `Get-ChildItem -Path backend/src -Recurse -Include *.cs | Select-String -Pattern 'new PermisoUsuario\\s*\\{|PermisosUsuario\\.Add\\('`
 - `dotnet build` en:
-  - `backend/src/GestionCaja.API`
-  - `backend/src/GestionCaja.Watchdog`
+  - `backend/src/AtlasBalance.API`
+  - `backend/src/AtlasBalance.Watchdog`
 - `dotnet ef migrations add SplitPermisosPreferencias`
 - `npm.cmd run lint`
 - `npm.cmd run build` (fallo por entorno Vite `spawn EPERM`)
@@ -5527,7 +6470,7 @@ Regla de trabajo desde ahora:
 - `dotnet test` del proyecto de tests no devolvio salida util en este entorno (se queda colgado o finaliza sin diagnostico), por lo que no hay corrida de tests confirmada en esta sesion.
 
 ### Pendientes
-- Ejecutar `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj` en entorno estable para validar regresion completa.
+- Ejecutar `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj` en entorno estable para validar regresion completa.
 - Ejecutar `npm run build` en entorno donde Vite pueda spawnear procesos sin `EPERM`.
 ## 2026-04-15 - Fase 13 re-auditada y corregida
 
@@ -5550,8 +6493,8 @@ Regla de trabajo desde ahora:
 - Pendiente abierto: actualizar en Figma la navegacion mobile nueva (bottom nav + hoja `Mas`) y el fallback visual del error boundary.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs
-- backend/src/GestionCaja.API/Services/WatchdogClientService.cs
+- backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs
+- backend/src/AtlasBalance.API/Services/WatchdogClientService.cs
 - frontend/src/App.tsx
 - frontend/src/components/common/AppErrorBoundary.tsx
 - frontend/src/components/layout/AlertBanner.tsx
@@ -5563,16 +6506,16 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/AuditoriaPage.tsx
 - frontend/src/styles/global.css
 - frontend/src/styles/layout.css
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build backend/GestionCaja.sln`
-- `dotnet test backend/GestionCaja.sln --no-build`
+- `dotnet build backend/AtlasBalance.sln`
+- `dotnet test backend/AtlasBalance.sln --no-build`
 - `npm.cmd run build`
 - `npm.cmd run lint`
 - `docker compose up -d`
-- copia build frontend -> `backend/src/GestionCaja.API/wwwroot/`
+- copia build frontend -> `backend/src/AtlasBalance.API/wwwroot/`
 - smoke HTTP:
   - `curl.exe -k https://localhost:5000/api/health`
   - `curl.exe -k -I https://localhost:5000/`
@@ -5608,8 +6551,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -5624,7 +6567,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -5668,8 +6611,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -5684,7 +6627,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -5740,8 +6683,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -5756,7 +6699,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -5774,7 +6717,7 @@ Regla de trabajo desde ahora:
 - Se elimino el texto `Tesoreria` visible del `TopBar`, manteniendo el boton de colapso del sidebar.
 - Se sustituyo el monograma `AB` del brand del sidebar por el logo de Atlas Balance.
 - El logo del sidebar se renderiza como mascara CSS con `currentColor`, asi queda del mismo color que el texto `Atlas Balance` y respeta el estado visual del sidebar.
-- Se regenero el build de frontend y se copio a `backend/src/GestionCaja.API/wwwroot`.
+- Se regenero el build de frontend y se copio a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - No se pudo sincronizar Figma en esta sesion: las herramientas Figma disponibles son de lectura, screenshot, contexto y Code Connect; no hay herramienta de escritura de canvas expuesta.
@@ -5786,7 +6729,7 @@ Regla de trabajo desde ahora:
 - frontend/src/components/layout/TopBar.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/*
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
@@ -5794,7 +6737,7 @@ Regla de trabajo desde ahora:
 - Inspeccion del asset `frontend/public/logos/Atlas Balance.png` con `System.Drawing`.
 - `npm.cmd run build`
 - `npx.cmd eslint src/components/layout/Sidebar.tsx src/components/layout/TopBar.tsx --max-warnings 0`
-- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR` (ejecutado dos veces para sincronizar el hash final del bundle)
+- `robocopy frontend/dist backend/src/AtlasBalance.API/wwwroot /MIR` (ejecutado dos veces para sincronizar el hash final del bundle)
 
 ### Resultado de verificacion
 - Frontend build OK (`tsc && vite build`).
@@ -5813,8 +6756,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -5829,7 +6772,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -5858,8 +6801,8 @@ Regla de trabajo desde ahora:
 - Decision visual: convertir Titulares en vista hibrida CRUD + dashboard, manteniendo acceso directo a dashboard por titular.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/DTOs/TitularesDtos.cs
-- backend/src/GestionCaja.API/Controllers/TitularesController.cs
+- backend/src/AtlasBalance.API/DTOs/TitularesDtos.cs
+- backend/src/AtlasBalance.API/Controllers/TitularesController.cs
 - frontend/src/pages/TitularesPage.tsx
 - frontend/src/styles/layout.css
 - DOCUMENTACION_CAMBIOS.md
@@ -5888,8 +6831,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -5904,7 +6847,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -6063,8 +7006,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -6079,7 +7022,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -6157,8 +7100,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -6173,7 +7116,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -6253,8 +7196,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -6269,7 +7212,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -6297,14 +7240,14 @@ Regla de trabajo desde ahora:
 - Decision visual: tabla alineada al requerimiento funcional de negocio con columnas explicitas de titular y banco.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/DTOs/DashboardDtos.cs
-- backend/src/GestionCaja.API/Services/DashboardService.cs
+- backend/src/AtlasBalance.API/DTOs/DashboardDtos.cs
+- backend/src/AtlasBalance.API/Services/DashboardService.cs
 - frontend/src/types/index.ts
 - frontend/src/pages/CuentasPage.tsx
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet build GestionCaja.API.csproj /p:OutDir=.tmp-build\\ /p:UseAppHost=false`
+- `dotnet build AtlasBalance.API.csproj /p:OutDir=.tmp-build\\ /p:UseAppHost=false`
 - `npm.cmd run build`
 
 ### Resultado de verificacion
@@ -6385,7 +7328,7 @@ Regla de trabajo desde ahora:
   - Se renombro el label de KPI a `Ingresos período` y `Egresos período` para que coincida con el calculo mostrado.
   - Se mantuvo fallback defensivo a `ingresos_mes/egresos_mes` cuando no hay puntos de evolucion.
 - Deploy local:
-  - Se reconstruyo frontend y se copio `dist/` a `backend/src/GestionCaja.API/wwwroot/` para que el backend sirva el fix.
+  - Se reconstruyo frontend y se copio `dist/` a `backend/src/AtlasBalance.API/wwwroot/` para que el backend sirva el fix.
 
 ### Archivos tocados
 - frontend/src/pages/DashboardPage.tsx
@@ -6394,7 +7337,7 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - `npm.cmd run build` (frontend)
-- `Copy-Item frontend/dist/* -> backend/src/GestionCaja.API/wwwroot/`
+- `Copy-Item frontend/dist/* -> backend/src/AtlasBalance.API/wwwroot/`
 - Verificacion API con JWT de desarrollo:
   - `GET /api/dashboard/evolucion?periodo=1m&divisaPrincipal=EUR`
   - Resultado observado: `ingresosPeriodo=5000`, `egresosPeriodo=2000`.
@@ -6447,8 +7390,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -6463,7 +7406,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -6518,15 +7461,15 @@ Regla de trabajo desde ahora:
 - Decisiones visuales: no aplica.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release --filter "FullyQualifiedName~ImportacionServiceTests"`
-- `dotnet build backend/src/GestionCaja.API/GestionCaja.API.csproj -c Release`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release` (fallo por 2 tests preexistentes no relacionados)
-- `dotnet test ...` y `dotnet build ...` en Debug (fallo por bloqueo de `GestionCaja.API.exe` en uso por proceso activo)
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release --filter "FullyQualifiedName~ImportacionServiceTests"`
+- `dotnet build backend/src/AtlasBalance.API/AtlasBalance.API.csproj -c Release`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release` (fallo por 2 tests preexistentes no relacionados)
+- `dotnet test ...` y `dotnet build ...` en Debug (fallo por bloqueo de `AtlasBalance.API.exe` en uso por proceso activo)
 
 ### Resultado de verificacion
 - Pruebas de importacion: OK (10/10).
@@ -6535,7 +7478,7 @@ Regla de trabajo desde ahora:
 
 ### Pendientes
 - Corregir fallos preexistentes de suite completa (`IntegrationAuthMiddlewareTests` y `IntegrationTokenServiceTests`) para recuperar verde total.
-- Si se quiere validar Debug completo, detener primero el proceso `GestionCaja.API` en ejecucion.
+- Si se quiere validar Debug completo, detener primero el proceso `AtlasBalance.API` en ejecucion.
 
 ## 2026-04-19 - Dashboard por cuenta: importar en pestana nueva con cierre automatico
 
@@ -6710,22 +7653,22 @@ Regla de trabajo desde ahora:
   - `GET /api/extractos/titulares-resumen`
 - `CuentasController` aplica la misma lógica de período en `GET /api/cuentas/{id}/resumen`.
 - `CuentaDetailPage` y `TitularDetailPage` agregan selector de período y cambian etiquetas de `Ingresos mes/Egresos mes` a `Ingresos período/Egresos período`.
-- Se reconstruyó el frontend y se publicó en `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyó el frontend y se publicó en `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Bloqueado: el conector disponible no expuso herramienta de escritura `use_figma`; solo lecturas/generación contextual. No se pudo sincronizar el nodo de Figma en esta sesión.
 - Pendiente obligatorio: actualizar el dashboard por cuenta/titular en Figma con selector de período y etiquetas `Ingresos período` / `Egresos período`.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/DashboardService.cs
-- backend/src/GestionCaja.API/Controllers/ExtractosController.cs
-- backend/src/GestionCaja.API/Controllers/CuentasController.cs
-- backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs
+- backend/src/AtlasBalance.API/Services/DashboardService.cs
+- backend/src/AtlasBalance.API/Controllers/ExtractosController.cs
+- backend/src/AtlasBalance.API/Controllers/CuentasController.cs
+- backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs
 - frontend/src/pages/CuentaDetailPage.tsx
 - frontend/src/pages/TitularDetailPage.tsx
 - frontend/dist/*
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
@@ -6733,9 +7676,9 @@ Regla de trabajo desde ahora:
 - Consultas `psql` sobre `EXTRACTOS` para confirmar fechas y movimientos disponibles.
 - `npm run build` (falló por policy de PowerShell en `npm.ps1`)
 - `npm.cmd run build`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj --no-restore` (compiló, pero fallaron 2 tests preexistentes no relacionados: prefijo de token de integración y auditoría con cliente cancelado)
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj --no-restore --filter "FullyQualifiedName~DashboardServiceTests|FullyQualifiedName~ExtractosControllerTests"`
-- Copia verificada de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`.
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --no-restore` (compiló, pero fallaron 2 tests preexistentes no relacionados: prefijo de token de integración y auditoría con cliente cancelado)
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --no-restore --filter "FullyQualifiedName~DashboardServiceTests|FullyQualifiedName~ExtractosControllerTests"`
+- Copia verificada de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`.
 - `curl` contra `/api/dashboard/principal`, `/api/dashboard/evolucion?periodo=1m` y `/api/extractos/cuentas/{id}/resumen?periodo=1m`.
 
 ### Resultado de verificación
@@ -6761,7 +7704,7 @@ Regla de trabajo desde ahora:
 ### Implementado
 - `SignedAmount` ahora permite forzar tono visual cuando el significado no coincide con el signo numérico.
 - Los KPIs de `Egresos período` se fuerzan a tono negativo en dashboard principal, dashboard por titular y dashboard por cuenta.
-- Se reconstruyó el frontend y se publicó el bundle en `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyó el frontend y se publicó el bundle en `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Bloqueado: el conector Figma disponible solo expone lecturas/contexto/capturas y Code Connect; no expone herramienta de escritura para actualizar el archivo.
@@ -6773,12 +7716,12 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/DashboardTitularPage.tsx
 - frontend/src/pages/CuentaDetailPage.tsx
 - frontend/dist/*
-- backend/src/GestionCaja.API/wwwroot/*
+- backend/src/AtlasBalance.API/wwwroot/*
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run build`
-- `Copy-Item -Path frontend/dist/* -Destination backend/src/GestionCaja.API/wwwroot -Recurse -Force`
+- `Copy-Item -Path frontend/dist/* -Destination backend/src/AtlasBalance.API/wwwroot -Recurse -Force`
 
 ### Resultado de verificación
 - Build frontend OK (`tsc && vite build`).
@@ -6859,12 +7802,12 @@ Regla de trabajo desde ahora:
 
 ### Archivos tocados
 - frontend/src/pages/FormatosImportacionPage.tsx
-- backend/src/GestionCaja.API/Controllers/FormatosImportacionController.cs
+- backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run build` (frontend)
-- `dotnet build backend/src/GestionCaja.API/GestionCaja.API.csproj -c Release`
+- `dotnet build backend/src/AtlasBalance.API/AtlasBalance.API.csproj -c Release`
 
 ### Resultado de verificacion
 - Build frontend OK (`tsc && vite build`).
@@ -6926,11 +7869,11 @@ Regla de trabajo desde ahora:
 - Pendiente: la herramienta Figma disponible en esta sesion solo expone lectura/contexto, no escritura de nodos. Hay que sincronizar la pantalla de Formatos agregando el selector `Tipo de importe` y la pantalla de Importacion mostrando columnas `Ingreso`/`Egreso`.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/DTOs/ImportacionDtos.cs
-- backend/src/GestionCaja.API/DTOs/FormatosImportacionDtos.cs
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/src/GestionCaja.API/Controllers/FormatosImportacionController.cs
-- backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs
+- backend/src/AtlasBalance.API/DTOs/ImportacionDtos.cs
+- backend/src/AtlasBalance.API/DTOs/FormatosImportacionDtos.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs
+- backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs
 - frontend/src/types/index.ts
 - frontend/src/pages/FormatosImportacionPage.tsx
 - frontend/src/pages/ImportacionPage.tsx
@@ -6939,13 +7882,13 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - `npm.cmd run build`
-- `dotnet test backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj --filter ImportacionServiceTests` (bloqueado en Debug por API en ejecucion PID 22548)
-- `dotnet test backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release --filter ImportacionServiceTests`
+- `dotnet test backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj --filter ImportacionServiceTests` (bloqueado en Debug por API en ejecucion PID 22548)
+- `dotnet test backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj -c Release --filter ImportacionServiceTests`
 
 ### Resultado de verificacion
 - Frontend build OK (`tsc && vite build`).
 - Tests de importacion OK en Release: 12 superados, 0 fallidos.
-- Debug no pudo compilar porque `GestionCaja.API.exe` estaba en uso por un proceso local existente.
+- Debug no pudo compilar porque `AtlasBalance.API.exe` estaba en uso por un proceso local existente.
 
 ### Pendientes
 - Sincronizar Figma con los cambios visuales de Formatos e Importacion.
@@ -6974,9 +7917,9 @@ Regla de trabajo desde ahora:
 - Pendiente: sincronizar pantalla de Formatos con la nueva opcion `Tres columnas` y pantalla de Importacion con columna `Monto banco`. La herramienta Figma disponible en esta sesion no expone escritura de nodos.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/src/GestionCaja.API/Controllers/FormatosImportacionController.cs
-- backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs
+- backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs
 - frontend/src/types/index.ts
 - frontend/src/pages/FormatosImportacionPage.tsx
 - frontend/src/pages/ImportacionPage.tsx
@@ -6985,7 +7928,7 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 - `npm.cmd run build`
-- `dotnet test backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release --filter ImportacionServiceTests`
+- `dotnet test backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj -c Release --filter ImportacionServiceTests`
 
 ### Resultado de verificacion
 - Frontend build OK (`tsc && vite build`).
@@ -7037,7 +7980,7 @@ Regla de trabajo desde ahora:
   - Si falta un indice obligatorio, se devuelve error de faltante en vez de un falso duplicado por default `0`.
 - Frontend deploy:
   - Se regenero `frontend/dist`.
-  - Se sincronizo `backend/src/GestionCaja.API/wwwroot` para no servir el bundle viejo, que no incluia `tipo_monto`.
+  - Se sincronizo `backend/src/AtlasBalance.API/wwwroot` para no servir el bundle viejo, que no incluia `tipo_monto`.
 - Tests:
   - Se agregaron pruebas del controlador para aceptar `dos_columnas` y para evitar el falso error de duplicado cuando falta un indice obligatorio.
 
@@ -7045,18 +7988,18 @@ Regla de trabajo desde ahora:
 - No aplica: no se cambio diseno ni flujo visual; solo validacion backend y sincronizacion del build estatico existente.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/DTOs/FormatosImportacionDtos.cs
-- backend/src/GestionCaja.API/Controllers/FormatosImportacionController.cs
-- backend/tests/GestionCaja.API.Tests/FormatosImportacionControllerTests.cs
+- backend/src/AtlasBalance.API/DTOs/FormatosImportacionDtos.cs
+- backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs
+- backend/tests/AtlasBalance.API.Tests/FormatosImportacionControllerTests.cs
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj --filter FormatosImportacionControllerTests --artifacts-path C:\GestionCajaTestArtifacts`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --filter FormatosImportacionControllerTests --artifacts-path C:\AtlasBalanceTestArtifacts`
 - `npm.cmd run build`
-- sincronizacion de `frontend/dist` hacia `backend/src/GestionCaja.API/wwwroot`
-- reinicio local de `GestionCaja.API`
+- sincronizacion de `frontend/dist` hacia `backend/src/AtlasBalance.API/wwwroot`
+- reinicio local de `AtlasBalance.API`
 - `curl.exe -k -s https://localhost:5000/api/health`
 - `curl.exe -k -s https://localhost:5000/`
 
@@ -7096,14 +8039,14 @@ Regla de trabajo desde ahora:
 - No aplica: no cambia UI/UX.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Data/SeedData.cs
-- backend/tests/GestionCaja.API.Tests/SeedDataTests.cs
+- backend/src/AtlasBalance.API/Data/SeedData.cs
+- backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"`
 - consulta SQL a `FORMATOS_IMPORTACION` via `docker exec -i atlas_balance_db psql`
-- `dotnet test backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj --filter SeedDataTests --artifacts-path C:\GestionCajaTestArtifacts`
+- `dotnet test backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --filter SeedDataTests --artifacts-path C:\AtlasBalanceTestArtifacts`
 
 ### Resultado de verificacion
 - Tests especificos OK: 2 superados, 0 fallidos.
@@ -7130,22 +8073,22 @@ Regla de trabajo desde ahora:
 - No aplica: no hubo cambio visual ni de flujo UI/UX, solo correccion de datos entregados al frontend.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `Get-ChildItem` / `Select-String` para localizar el flujo de importacion.
 - consultas SQL via `docker exec -i atlas_balance_db psql` para revisar cuentas, formatos y mapeos activos.
-- `dotnet test backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj --filter ImportacionServiceTests`
-- `dotnet test backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj -c Release --filter ImportacionServiceTests`
-- reinicio local de `GestionCaja.API` con `dotnet run`
+- `dotnet test backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --filter ImportacionServiceTests`
+- `dotnet test backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj -c Release --filter ImportacionServiceTests`
+- reinicio local de `AtlasBalance.API` con `dotnet run`
 - `curl.exe -k -s https://localhost:5000/api/health`
 - `curl.exe -k -s ... /api/importacion/contexto` con cookie JWT de smoke test
 - `curl.exe -k -s ... /api/importacion/validar` con formato `dos_columnas`
 
 ### Resultado de verificacion
-- El primer test en Debug no llego a ejecutarse porque el backend local tenia bloqueado `GestionCaja.API.exe`.
+- El primer test en Debug no llego a ejecutarse porque el backend local tenia bloqueado `AtlasBalance.API.exe`.
 - Tests de importacion en Release OK: 15 superados, 0 fallidos.
 - Backend reiniciado y healthcheck OK.
 - `/api/importacion/contexto` devuelve para BBVA MX `tipo_monto = dos_columnas`, `ingreso = 3`, `egreso = 2`, `saldo = 4`.
@@ -7165,22 +8108,22 @@ Regla de trabajo desde ahora:
 - Se paro temporalmente la API/frontend que mantenian logs bloqueados, se limpiaron los restos y luego se verifico el arranque desde cero.
 - Se quito `Newtonsoft.Json` del proyecto API porque no habia uso directo y el proyecto exige `System.Text.Json`.
 - Se elimino `vite.svg` de `frontend/public` y de `wwwroot` porque no estaba referenciado.
-- Se regenero `frontend/dist` y se sincronizo correctamente con `backend/src/GestionCaja.API/wwwroot`.
+- Se regenero `frontend/dist` y se sincronizo correctamente con `backend/src/AtlasBalance.API/wwwroot`.
 - Se normalizo `.gitignore` y se agregaron patrones para evitar que temporales/logs vuelvan a ensuciar el arbol.
 - No se elimino la copia parcial `C:\Proyectos\Atlas Balance\frontend` ni las carpetas `Diseno`/`Diseño`, porque contienen codigo/assets ambiguos y no hay Git en la raiz para recuperar un borrado accidental.
 
 ### Archivos tocados
 - .gitignore
-- backend/src/GestionCaja.API/GestionCaja.API.csproj
+- backend/src/AtlasBalance.API/AtlasBalance.API.csproj
 - frontend/public/vite.svg
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - Inventario con `Get-ChildItem`, `Get-Content`, `Select-String`, `Compare-Object` y `Get-CimInstance`.
-- `dotnet build backend\GestionCaja.sln`
+- `dotnet build backend\AtlasBalance.sln`
 - `npm.cmd run build`
-- `dotnet test backend\GestionCaja.sln --no-build`
+- `dotnet test backend\AtlasBalance.sln --no-build`
 - `npm.cmd run lint`
 - `docker compose up -d`
 - Arranque temporal de `dotnet run --no-build` para API.
@@ -7218,7 +8161,7 @@ Regla de trabajo desde ahora:
 - Se mejoro `AppSelect` con semantica combobox/listbox, `aria-controls`, `aria-activedescendant`, `aria-labelledby` y navegacion `Home/End`.
 - Se convirtio el sheet movil en dialog modal con cierre por `Escape`.
 - Se mejoraron los estados de Extractos con skeleton y empty state accionable.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decisiones visuales
 - Direccion visual: dashboard financiero sobrio, local, legible y rapido; nada de estetica startup ni colorines decorativos.
@@ -7242,7 +8185,7 @@ Regla de trabajo desde ahora:
 - frontend/src/components/layout/BottomNav.tsx
 - frontend/src/components/extractos/ExtractoTable.tsx
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - mejoradiseno.md
 - DOCUMENTACION_CAMBIOS.md
 - C:\Proyectos\Atlas Balance\Diseno\impeccable\.codex\skills\impeccable\SKILL.md
@@ -7255,7 +8198,7 @@ Regla de trabajo desde ahora:
 - Script local de contraste WCAG con Python.
 - `npm.cmd run lint`.
 - `npm.cmd run build`.
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`.
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`.
 - Verificacion de ausencia de Google Fonts en `frontend/dist/index.html` y `wwwroot/index.html`.
 
 ### Resultado de verificacion
@@ -7266,7 +8209,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint` OK.
 - `npm.cmd run build` OK.
 - `frontend/dist` generado con fuentes locales.
-- `backend/src/GestionCaja.API/wwwroot` sincronizado con el build nuevo.
+- `backend/src/AtlasBalance.API/wwwroot` sincronizado con el build nuevo.
 
 ### Pendientes
 - No se ejecuto `npm run test:e2e` porque requiere `E2E_ADMIN_PASSWORD`; no se deben adivinar credenciales por el rate limit de login.
@@ -7284,7 +8227,7 @@ Regla de trabajo desde ahora:
 - Se agrego guardado desde esa misma pestana y re-verificacion inmediata tras guardar.
 - Se actualizo el contrato TypeScript de configuracion.
 - Se cubrio el guardado de `app_update_check_url` en tests del controlador.
-- Se reconstruyo `frontend/dist` y se copio el build a `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se copio el build a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decisiones visuales
 - La URL de actualizaciones queda en Sistema, no en General, porque el mensaje de error y las acciones de version viven ahi.
@@ -7292,26 +8235,26 @@ Regla de trabajo desde ahora:
 - Pendientes de diseno abiertos: ninguno.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/DTOs/ConfiguracionDtos.cs
-- backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs
-- backend/tests/GestionCaja.API.Tests/ConfiguracionControllerTests.cs
+- backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs
+- backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs
+- backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs
 - frontend/src/types/index.ts
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - Busqueda con `Select-String` porque `rg` devolvio acceso denegado en esta maquina.
 - `npm run build` fallo por politica de ejecucion de PowerShell al cargar `npm.ps1`.
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj --filter ConfiguracionControllerTests` fallo en Debug porque `GestionCaja.API.exe` estaba bloqueado por el proceso API en ejecucion.
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --filter ConfiguracionControllerTests` fallo en Debug porque `AtlasBalance.API.exe` estaba bloqueado por el proceso API en ejecucion.
 - `npm.cmd run build`
 - `npm.cmd run lint`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release --filter ConfiguracionControllerTests`
-- `Copy-Item frontend/dist/* backend/src/GestionCaja.API/wwwroot -Recurse -Force`
-- `Remove-Item backend/src/GestionCaja.API/wwwroot/assets/index-C7DSJA7N.js`
-- Re-sincronizacion de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot` tras cambio de hash de build.
-- `Remove-Item backend/src/GestionCaja.API/wwwroot/assets/index-BLioW7Ul.js, backend/src/GestionCaja.API/wwwroot/assets/index-CHhfbrQn.css`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release --filter ConfiguracionControllerTests`
+- `Copy-Item frontend/dist/* backend/src/AtlasBalance.API/wwwroot -Recurse -Force`
+- `Remove-Item backend/src/AtlasBalance.API/wwwroot/assets/index-C7DSJA7N.js`
+- Re-sincronizacion de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot` tras cambio de hash de build.
+- `Remove-Item backend/src/AtlasBalance.API/wwwroot/assets/index-BLioW7Ul.js, backend/src/AtlasBalance.API/wwwroot/assets/index-CHhfbrQn.css`
 
 ### Resultado de verificacion
 - Frontend build OK con `npm.cmd run build`.
@@ -7329,7 +8272,7 @@ Regla de trabajo desde ahora:
 - Soporte correctivo sobre `V-01.02` para restaurar ejecucion local completa.
 
 ### Archivos tocados
-- Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json
+- Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json
 - Atlas Balance/.env
 - Documentacion/LOG_ERRORES_INCIDENCIAS.md
 - Documentacion/DOCUMENTACION_CAMBIOS.md
@@ -7369,8 +8312,8 @@ Regla de trabajo desde ahora:
 - Se ejecutaron verificaciones completas de backend y frontend para confirmar que los cambios de nomenclatura no introdujeron errores de compilacion o test.
 
 ### Comandos ejecutados
-- `dotnet restore GestionCaja.sln`
-- `dotnet test GestionCaja.sln -c Release --no-restore`
+- `dotnet restore AtlasBalance.sln`
+- `dotnet test AtlasBalance.sln -c Release --no-restore`
 - `npm.cmd install`
 - `npm.cmd run lint`
 - `npm.cmd run build`
@@ -7389,19 +8332,19 @@ Regla de trabajo desde ahora:
 - Soporte correctivo y verificacion post-cambios (`V-01.02`).
 
 ### Archivos tocados
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/index.html
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/index-Cg83cLPm.js
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/charts-BHc04VeD.js
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/vendor-BKB5mC3p.js
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/state-Bhv_Ph1d.js
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/rolldown-runtime-Dw2cE7zH.js
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/index-Bnw8enpR.css
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/index.html
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/index-Cg83cLPm.js
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/charts-BHc04VeD.js
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/vendor-BKB5mC3p.js
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/state-Bhv_Ph1d.js
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/rolldown-runtime-Dw2cE7zH.js
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/index-Bnw8enpR.css
 - Documentacion/LOG_ERRORES_INCIDENCIAS.md
 - Documentacion/DOCUMENTACION_CAMBIOS.md
 
 ### Cambios implementados
 - Se reprodujo el problema y se aisló que el frontend en preview carga correctamente; el bloqueo real viene del backend cuando no tiene cadena de conexion.
-- Se regenero `frontend/dist` y se sincronizo en `backend/src/GestionCaja.API/wwwroot` para descartar artefactos inconsistentes tras reemplazos textuales.
+- Se regenero `frontend/dist` y se sincronizo en `backend/src/AtlasBalance.API/wwwroot` para descartar artefactos inconsistentes tras reemplazos textuales.
 - Se documento la incidencia en `LOG_ERRORES_INCIDENCIAS.md`.
 
 ### Comandos ejecutados
@@ -7409,7 +8352,7 @@ Regla de trabajo desde ahora:
 - `$env:ConnectionStrings__DefaultConnection='Host=localhost;Port=5433;Database=atlas_balance;Username=app_user;Password=x'; dotnet run --no-build` -> fallo de autenticacion PostgreSQL (esperado con password invalida), confirmando que ya no falla por host nulo.
 - `npm.cmd run preview -- --host 127.0.0.1 --port 4173` + verificacion automatizada de carga con Playwright (status 200, title OK).
 - `npm.cmd run build`
-- `Copy-Item -Path dist\\* -Destination ..\\backend\\src\\GestionCaja.API\\wwwroot -Recurse -Force`
+- `Copy-Item -Path dist\\* -Destination ..\\backend\\src\\AtlasBalance.API\\wwwroot -Recurse -Force`
 
 ### Resultado de verificacion
 - Frontend: renderiza correctamente en preview; no se detectaron errores JS fatales.
@@ -7425,19 +8368,19 @@ Regla de trabajo desde ahora:
 - Normalizacion adicional de nomenclatura asociada a `V-01.02`.
 
 ### Archivos tocados
-- Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs
-- Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs
-- Atlas Balance/backend/src/GestionCaja.API/Services/EmailService.cs
-- Atlas Balance/backend/src/GestionCaja.API/Program.cs
-- Atlas Balance/backend/src/GestionCaja.API/appsettings.json
-- Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json
-- Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json.template
-- Atlas Balance/backend/src/GestionCaja.API/appsettings.Production.json.template
-- Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/index-CyemfdpH.js
-- Atlas Balance/backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs
-- Atlas Balance/backend/tests/GestionCaja.API.Tests/ExportacionServiceTests.cs
-- Atlas Balance/backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs
-- Atlas Balance/backend/tests/GestionCaja.API.Tests/WatchdogOperationsServiceTests.cs
+- Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs
+- Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs
+- Atlas Balance/backend/src/AtlasBalance.API/Services/EmailService.cs
+- Atlas Balance/backend/src/AtlasBalance.API/Program.cs
+- Atlas Balance/backend/src/AtlasBalance.API/appsettings.json
+- Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json
+- Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template
+- Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template
+- Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/index-CyemfdpH.js
+- Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs
+- Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExportacionServiceTests.cs
+- Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs
+- Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs
 - Atlas Balance/frontend/e2e/admin-smoke.spec.ts
 - Atlas Balance/frontend/e2e/README.md
 - Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx
@@ -7501,29 +8444,29 @@ Regla de trabajo desde ahora:
 - Pendientes de diseno abiertos: ninguno.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/ConfigurationDefaults.cs
-- backend/src/GestionCaja.API/appsettings.json
-- backend/src/GestionCaja.API/appsettings.Development.json
-- backend/src/GestionCaja.API/appsettings.Production.json.template
-- backend/src/GestionCaja.API/Data/SeedData.cs
-- backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs
-- backend/src/GestionCaja.API/Services/ActualizacionService.cs
-- backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/ConfiguracionControllerTests.cs
-- backend/tests/GestionCaja.API.Tests/SeedDataTests.cs
+- backend/src/AtlasBalance.API/ConfigurationDefaults.cs
+- backend/src/AtlasBalance.API/appsettings.json
+- backend/src/AtlasBalance.API/appsettings.Development.json
+- backend/src/AtlasBalance.API/appsettings.Production.json.template
+- backend/src/AtlasBalance.API/Data/SeedData.cs
+- backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs
+- backend/src/AtlasBalance.API/Services/ActualizacionService.cs
+- backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs
+- backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `Invoke-WebRequest -UseBasicParsing -Method Head -Uri https://github.com/AtlasLabs797/AtlasBalance -TimeoutSec 20`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release -p:UseAppHost=false --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release -p:BaseOutputPath=.tmp-test-bin/ --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"` (6 tests)
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release -p:BaseOutputPath=.tmp-test-bin/ --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"` (7 tests tras agregar token GitHub)
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release -p:UseAppHost=false --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release -p:BaseOutputPath=.tmp-test-bin/ --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"` (6 tests)
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release -p:BaseOutputPath=.tmp-test-bin/ --filter "ActualizacionServiceTests|ConfiguracionControllerTests|SeedDataTests"` (7 tests tras agregar token GitHub)
 - Limpieza de `.tmp-test-bin`.
 
 ### Resultado de verificacion
 - La URL GitHub devolvio 404 desde esta maquina; puede ser repo privado o URL no publica.
-- Los tests normales fallaron porque `GestionCaja.API` en ejecucion bloqueo `bin/Release`.
+- Los tests normales fallaron porque `AtlasBalance.API` en ejecucion bloqueo `bin/Release`.
 - Tests con `BaseOutputPath` temporal OK: 7 superados, 0 fallos.
 
 ### Pendientes
@@ -7537,7 +8480,7 @@ Regla de trabajo desde ahora:
 ### Implementado
 - Se corrigio el eje Y del grafico de evolucion para usar importes compactos por divisa (`1,5 M MXN`, `100 mil MXN`) y evitar que los importes completos se recorten.
 - Se mantuvo el importe completo en tooltip y texto accesible del grafico.
-- Se reconstruyo el frontend y se copio el build actualizado a `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo el frontend y se copio el build actualizado a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Pendiente: no se actualizo Figma en esta sesion porque las herramientas disponibles solo exponen lectura/screenshot/Code Connect, no escritura del archivo.
@@ -7548,14 +8491,14 @@ Regla de trabajo desde ahora:
 - frontend/src/utils/formatters.ts
 - frontend/src/components/dashboard/EvolucionChart.tsx
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `Get-Content` / `Get-ChildItem` / `Select-String` para localizar el chart y el helper de moneda.
 - `npm.cmd run build`
 - `npm.cmd run lint`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion local con `Intl.NumberFormat` para valores MXN compactos.
 - Verificacion Playwright controlada de `/dashboard?periodo=1m&divisa=MXN` con APIs mockeadas.
 
@@ -7655,13 +8598,13 @@ Regla de trabajo desde ahora:
 - No aplica: no hubo cambio visual ni de flujo UI/UX, solo correccion de parsing backend.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `Get-ChildItem` / `Select-String` para localizar el flujo de importacion.
-- `dotnet test .\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj -c Release --filter ImportacionServiceTests`
+- `dotnet test .\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj -c Release --filter ImportacionServiceTests`
 
 ### Resultado de verificacion
 - Tests de importacion OK: 16 superados, 0 fallidos.
@@ -7699,10 +8642,10 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/CuentasPage.tsx
 - frontend/src/pages/CuentaDetailPage.tsx
 - frontend/src/pages/TitularDetailPage.tsx
-- backend/src/GestionCaja.API/Services/DashboardService.cs
-- backend/src/GestionCaja.API/Controllers/CuentasController.cs
-- backend/src/GestionCaja.API/Controllers/ExtractosController.cs
-- backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs
+- backend/src/AtlasBalance.API/Services/DashboardService.cs
+- backend/src/AtlasBalance.API/Controllers/CuentasController.cs
+- backend/src/AtlasBalance.API/Controllers/ExtractosController.cs
+- backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs
 - SPEC.md
 - CLAUDE.md
 - DOCUMENTACION_CAMBIOS.md
@@ -7713,14 +8656,14 @@ Regla de trabajo desde ahora:
 - Figma `_get_design_context` sobre `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1` (fallo por falta de capa seleccionada).
 - `npm run build` (fallo por politica local de PowerShell sobre `npm.ps1`).
 - `npm.cmd run build`
-- `dotnet build backend\GestionCaja.sln` (fallo por `GestionCaja.API.exe` bloqueado por proceso 7720).
-- `dotnet build backend\GestionCaja.sln /p:UseAppHost=false` (fallo por `GestionCaja.API.dll` bloqueado por proceso 7720).
-- `dotnet build backend\src\GestionCaja.API\GestionCaja.API.csproj -o .tmp-build-check\api`
+- `dotnet build backend\AtlasBalance.sln` (fallo por `AtlasBalance.API.exe` bloqueado por proceso 7720).
+- `dotnet build backend\AtlasBalance.sln /p:UseAppHost=false` (fallo por `AtlasBalance.API.dll` bloqueado por proceso 7720).
+- `dotnet build backend\src\AtlasBalance.API\AtlasBalance.API.csproj -o .tmp-build-check\api`
 
 ### Resultado de verificacion
 - Build frontend OK: `tsc && vite build` completo sin errores.
 - Build backend API OK compilando a salida temporal `.tmp-build-check\api`.
-- Build de solucion completa bloqueado por una instancia local en ejecucion: `GestionCaja.API (7720)`, no por errores de compilacion del cambio.
+- Build de solucion completa bloqueado por una instancia local en ejecucion: `AtlasBalance.API (7720)`, no por errores de compilacion del cambio.
 
 ### Pendientes
 - Sincronizar Figma manualmente o repetir con herramienta de escritura disponible y una capa de dashboard seleccionada.
@@ -7741,13 +8684,13 @@ Regla de trabajo desde ahora:
 - No aplica: no hubo cambio visual ni de flujo UI/UX, solo correccion backend.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `Get-Content` / `Select-String` para revisar el flujo de confirmacion de importacion y los logs backend.
-- `dotnet test .\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj -c Release --filter ImportacionServiceTests`
+- `dotnet test .\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj -c Release --filter ImportacionServiceTests`
 
 ### Resultado de verificacion
 - Tests de importacion OK: 17 superados, 0 fallidos.
@@ -7763,7 +8706,7 @@ Regla de trabajo desde ahora:
 - Revision transversal post-Fase 13: frontend, backend, dependencias, seguridad y smoke test real en navegador.
 
 ### Implementado
-- Se corrigio el prefijo de tokens OpenClaw para volver al contrato esperado `sk_gestion_caja_`.
+- Se corrigio el prefijo de tokens OpenClaw para volver al contrato esperado `sk_atlas_balance_`.
 - Se corrigio la auditoria de integraciones cuando el cliente cancela la request: la validacion de token y rate limit ya no aborta antes de persistir auditoria.
 - Se corrigio el fallo 500 en confirmacion de importacion cuando otra importacion/alta manual pisa el mismo `fila_numero`; ahora devuelve conflicto controlado 409.
 - Se bloqueo la filtracion de `smtp_password` en `GET /api/configuracion`.
@@ -7785,14 +8728,14 @@ Regla de trabajo desde ahora:
 - Pendiente si se exige paridad estricta: reflejar microcopy de SMTP password y estado "Copiado" del modal de token.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Services/IntegrationTokenService.cs
-- backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs
-- backend/src/GestionCaja.API/Services/ImportacionService.cs
-- backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/GestionCaja.API.csproj
-- backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj
-- backend/tests/GestionCaja.API.Tests/ConfiguracionControllerTests.cs
+- backend/src/AtlasBalance.API/Services/IntegrationTokenService.cs
+- backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs
+- backend/src/AtlasBalance.API/Services/ImportacionService.cs
+- backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/AtlasBalance.API.csproj
+- backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj
+- backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs
 - frontend/src/hooks/useSessionTimeout.ts
 - frontend/src/stores/permisosStore.ts
 - frontend/src/components/extractos/EditableCell.tsx
@@ -7809,9 +8752,9 @@ Regla de trabajo desde ahora:
 - `npm.cmd run build`
 - `npm.cmd audit --audit-level=moderate`
 - `npm.cmd audit fix`
-- `dotnet list .\backend\GestionCaja.sln package --vulnerable --include-transitive`
-- `dotnet test .\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj -c Release`
-- `dotnet build .\backend\GestionCaja.sln -c Release --no-restore /p:UseAppHost=false`
+- `dotnet list .\backend\AtlasBalance.sln package --vulnerable --include-transitive`
+- `dotnet test .\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj -c Release`
+- `dotnet build .\backend\AtlasBalance.sln -c Release --no-restore /p:UseAppHost=false`
 - `curl.exe -k https://localhost:5000/api/health`
 - Playwright con Chromium sobre `http://localhost:5173`.
 - Consultas PostgreSQL via `docker exec ... psql` para preparar y restaurar credenciales temporales de QA.
@@ -7902,15 +8845,15 @@ Regla de trabajo desde ahora:
 - No aplica: cambio de logica backend sin cambio visual ni UX.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/ExtractosController.cs
-- backend/src/GestionCaja.API/Controllers/CuentasController.cs
-- backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs
-- backend/tests/GestionCaja.API.Tests/CuentasControllerTests.cs
+- backend/src/AtlasBalance.API/Controllers/ExtractosController.cs
+- backend/src/AtlasBalance.API/Controllers/CuentasController.cs
+- backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs
+- backend/tests/AtlasBalance.API.Tests/CuentasControllerTests.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
-- `dotnet test backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests|FullyQualifiedName~CuentasControllerTests"`
-- `dotnet test backend\GestionCaja.sln`
+- `dotnet test backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests|FullyQualifiedName~CuentasControllerTests"`
+- `dotnet test backend\AtlasBalance.sln`
 - `curl.exe -k https://localhost:5000/api/health`
 - `docker ps --format ...`
 - Consultas PostgreSQL via `docker exec atlas_balance_db psql ...` para verificar la cuenta `Jase BBVA MX` y restaurar el contador de login admin despues de un intento local fallido.
@@ -8036,7 +8979,7 @@ Regla de trabajo desde ahora:
 - frontend/src/styles/layout.css
 - frontend/src/styles/variables.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-redesign-login.png
 - DOCUMENTACION_CAMBIOS.md
 
@@ -8046,7 +8989,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `Start-Process npm.cmd run dev -- --host 127.0.0.1 --port 5174`
 - Verificacion Playwright local de `/login` con screenshot y comprobacion de overlay/consola.
-- Copia del build `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`.
+- Copia del build `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`.
 - Figma `_get_metadata` sobre `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1` (bloqueado por limite del plan).
 
 ### Resultado de verificacion
@@ -8067,7 +9010,7 @@ Regla de trabajo desde ahora:
 ### Implementado
 - Se centro el bloque de marca superior de Atlas Balance dentro del viewport.
 - Se centro el bloque inferior `by Atlas Labs`, que antes quedaba pegado al extremo derecho del contenedor.
-- Se reconstruyo el frontend y se copio el build actualizado a `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo el frontend y se copio el build actualizado a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Pendiente: sincronizar Login en Figma cuando se libere el limite MCP reportado en la entrada anterior.
@@ -8075,13 +9018,13 @@ Regla de trabajo desde ahora:
 ### Archivos tocados
 - frontend/src/styles/auth.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-login-logos-centered.png
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright local de `/login` a 2048x980
 - `npm.cmd run lint`
 
@@ -8103,7 +9046,7 @@ Regla de trabajo desde ahora:
 - Se reemplazaron los selectores visibles de periodo, divisa principal y densidad de tabla por `AppSelect`.
 - Se dejo un estilo base para `select` nativo como fallback en formularios no migrados, con flecha propia, foco visible y colores de tema.
 - Se ajustaron anchos y ritmo visual de los selectores de dashboard y de densidad para que no parezcan controles del navegador.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Intento de lectura/sincronizacion sobre archivo fuente `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1`.
@@ -8118,14 +9061,14 @@ Regla de trabajo desde ahora:
 - frontend/src/styles/global.css
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-app-select-open.png
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run build`
 - `npm.cmd run lint`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Limpieza de bundle obsoleto no referenciado en `wwwroot/assets`.
 - Verificacion Playwright local con fixture visual de `AppSelect` abierto.
 - Cierre del servidor Vite usado en `127.0.0.1:5174`.
@@ -8152,7 +9095,7 @@ Regla de trabajo desde ahora:
 - Se migraron filtros, formularios, auditoria, backups, exportaciones, importacion, titulares, cuentas, usuarios, permisos e integraciones.
 - Se redisenaron todos los `input[type='checkbox']` globalmente con radio, borde, foco, hover, checked y disabled coherentes con tokens.
 - Se ajustaron anchos y comportamiento responsive de selectores en filtros, paginacion, formularios y configuracion.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Intento de lectura/sincronizacion sobre archivo fuente `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1`.
@@ -8184,7 +9127,7 @@ Regla de trabajo desde ahora:
 - frontend/src/styles/global.css
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-controls-system.png
 - DOCUMENTACION_CAMBIOS.md
 
@@ -8192,7 +9135,7 @@ Regla de trabajo desde ahora:
 - Busqueda de `<select>`, `<option>` y `type="checkbox"` en `frontend/src`.
 - `npm.cmd run build`
 - `npm.cmd run lint`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright local con fixture visual de periodo abierto, page size y checks.
 - Figma `_get_design_context` sobre `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1` (bloqueado por limite del plan).
 
@@ -8215,7 +9158,7 @@ Regla de trabajo desde ahora:
 - El saldo total de cada cuenta en el listado inferior ya no usa `saldo_convertido`.
 - Ahora usa `saldo_actual` y se formatea con la `divisa` propia de la cuenta.
 - Se ajusto el padding de `cuenta-card` a `var(--space-4)` para igualarlo con el resto de tarjetas.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Intento de lectura/sincronizacion sobre archivo fuente `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1`.
@@ -8226,14 +9169,14 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/CuentasPage.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-cuenta-native-currency-spacing.png
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright local con fixture visual de cuenta MXN.
 - Figma `_get_design_context` sobre `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1` (bloqueado por limite del plan).
 
@@ -8258,7 +9201,7 @@ Regla de trabajo desde ahora:
 - Los saldos se alimentan desde los datos reales del dashboard ya cargados en la pantalla; si no hay saldo disponible se muestra `N/A`.
 - Se ajusto el ritmo de las tarjetas: mayor separacion entre tarjetas, grupos internos con gaps de tokens, acciones separadas por divisor y numeros tabulares alineados a la derecha.
 - En cuentas, el saldo queda fijado en la tercera columna derecha aunque el resto de metadatos ocupe dos filas.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Intento de lectura/sincronizacion sobre archivo fuente `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1`.
@@ -8270,7 +9213,7 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/TitularesPage.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-phase2-card-balances-spacing.png
 - DOCUMENTACION_CAMBIOS.md
 
@@ -8278,7 +9221,7 @@ Regla de trabajo desde ahora:
 - Lectura de skills locales de diseno en `C:\Proyectos\Atlas Balance\Diseno`.
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright local con fixture visual de tarjetas, saldos y espaciado.
 - Figma `_get_design_context` sobre `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1` (bloqueado por limite del plan).
 
@@ -8301,7 +9244,7 @@ Regla de trabajo desde ahora:
 - Se reemplazo la tabla plana de saldos por titular por una lista financiera accionable.
 - Cada fila ahora muestra inicial del titular, nombre, saldo destacado y acceso directo al dashboard del titular.
 - Se agregaron estados hover/focus y adaptacion mobile para evitar columnas comprimidas.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decisiones visuales
 - El listado deja de parecer una tabla HTML pegada y pasa a funcionar como lista de decision: titular, saldo, abrir.
@@ -8312,7 +9255,7 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/TitularesPage.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/titulares-list-redesign-mocked.png
 - artifacts/titulares-list-redesign-mobile-mocked.png
 - DOCUMENTACION_CAMBIOS.md
@@ -8324,7 +9267,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run build`
 - Verificacion Playwright mockeada de `/titulares` en desktop `1440x900`.
 - Verificacion Playwright mockeada de `/titulares` en mobile `390x844`.
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`.
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`.
 - `npm.cmd run lint`
 
 ### Resultado de verificacion
@@ -8346,17 +9289,17 @@ Regla de trabajo desde ahora:
 
 ### Implementado
 - Se elimino el simbolo `>` del boton `Abrir` en la lista de saldos por titular.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Archivos tocados
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 
 ### Resultado de verificacion
 - Build frontend OK.
@@ -8374,7 +9317,7 @@ Regla de trabajo desde ahora:
 - El saldo total ahora se muestra en la divisa original de la cuenta (`saldo_actual` + `divisa`) en vez de la divisa principal convertida.
 - Se ajusto la grilla desktop y mobile de `.cuentas-balance-row` para soportar cinco columnas.
 - Se corrigio el estado inicial de `ConfiguracionPage` agregando `app_update_check_url`, porque bloqueaba el build TypeScript.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decisiones visuales
 - En un listado de cuentas bancarias, la divisa de la cuenta es informacion primaria; ocultarla era una mala decision.
@@ -8385,7 +9328,7 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/cuentas-list-divisa-mocked.png
 - DOCUMENTACION_CAMBIOS.md
 
@@ -8393,7 +9336,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run build` (primer intento fallo por `ConfiguracionPage` sin `app_update_check_url`).
 - `npm.cmd run build`
 - `npm.cmd run lint`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright mockeada de `/cuentas` en desktop `1440x900`.
 
 ### Resultado de verificacion
@@ -8414,7 +9357,7 @@ Regla de trabajo desde ahora:
 - Cada fila ahora muestra inicial de cuenta, nombre de cuenta, titular, banco, saldo destacado y boton `Abrir` sin simbolos.
 - Se agrego `cuenta_nombre` al modelo local de filas del dashboard de cuentas para no depender solo de titular/banco.
 - Se agrego adaptacion mobile para que banco, saldo y accion no generen overflow horizontal.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decisiones visuales
 - La cuenta bancaria debe ser el dato primario; antes la tabla arrancaba con titular y ocultaba lo importante.
@@ -8425,7 +9368,7 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/CuentasPage.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/cuentas-list-redesign-mocked.png
 - artifacts/cuentas-list-redesign-mobile-mocked.png
 - DOCUMENTACION_CAMBIOS.md
@@ -8433,7 +9376,7 @@ Regla de trabajo desde ahora:
 ### Comandos ejecutados
 - `npm.cmd run build`
 - `npm.cmd run lint`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright mockeada de `/cuentas` en desktop `1440x900`.
 - Verificacion Playwright mockeada de `/cuentas` en mobile `390x844`.
 
@@ -8455,7 +9398,7 @@ Regla de trabajo desde ahora:
 - `PeriodoSelector` y `DivisaSelector` ahora comparten la clase `dashboard-select-control`.
 - Se unifico el ancho, label y estructura CSS de ambos controles bajo una sola regla.
 - El trigger global de `AppSelect` fuerza `inline-flex`, centrado vertical, alineacion izquierda y chevron de bloque para evitar diferencias entre botones.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Intento de lectura/sincronizacion sobre archivo fuente `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1`.
@@ -8468,14 +9411,14 @@ Regla de trabajo desde ahora:
 - frontend/src/styles/global.css
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-period-divisa-equal.png
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright local con fixture visual de `Periodo` y `Divisa principal`.
 - Figma `_get_design_context` sobre `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1` (bloqueado por limite del plan).
 
@@ -8500,7 +9443,7 @@ Regla de trabajo desde ahora:
 - Se elimino el formulario permanente del layout de ambas pantallas.
 - Las tarjetas de cuentas/titulares ahora ocupan una grilla de dos columnas en escritorio y una columna en pantallas estrechas.
 - La paginacion y estados de carga/vacio ocupan todo el ancho de la grilla.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Figma
 - Intento de lectura/sincronizacion sobre archivo fuente `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1`.
@@ -8512,14 +9455,14 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/TitularesPage.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - artifacts/ui-phase2-modal-two-columns.png
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Verificacion Playwright local con fixture visual de grilla 2 columnas y modal.
 - Figma `_get_design_context` sobre `cFYBwjPLqAArvgg04DJLmp`, nodo `0:1` (bloqueado por limite del plan).
 
@@ -8543,7 +9486,7 @@ Regla de trabajo desde ahora:
 - Se agrego transicion al ancho de columna del shell al expandir o contraer el menu lateral.
 - Se suavizaron padding, gap, opacidad y desplazamiento de labels/badges durante el cambio de estado.
 - El boton de menu ahora expone `aria-expanded`, cambia su `aria-label/title` segun estado y rota el icono en modo contraido.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decisiones visuales
 - Animacion corta y sobria, porque esta app es de tesoreria operativa: tiene que sentirse rapida, no teatral.
@@ -8556,7 +9499,7 @@ Regla de trabajo desde ahora:
 - frontend/src/components/layout/TopBar.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
@@ -8566,7 +9509,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run build`
 - Arranque de Vite en `127.0.0.1:5174`
 - Verificacion Playwright mockeada de `/dashboard` en estado expandido, colapsando y reexpandido.
-- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR`
+- `robocopy frontend/dist backend/src/AtlasBalance.API/wwwroot /MIR`
 
 ### Resultado de verificacion
 - Lint frontend OK.
@@ -8588,7 +9531,7 @@ Regla de trabajo desde ahora:
 ### Implementado
 - Se elimino la rotacion del icono hamburger en el boton de expandir/contraer sidebar.
 - Se mantuvo solo una escala sutil para feedback visual, dejando las tres lineas siempre horizontales.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decision visual
 - El icono hamburger debe conservar su lectura de menu en ambos estados. Rotarlo era ruido visual innecesario.
@@ -8596,14 +9539,14 @@ Regla de trabajo desde ahora:
 ### Archivos tocados
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Verificacion Playwright mockeada de `/dashboard` con sidebar contraido.
-- `robocopy frontend/dist backend/src/GestionCaja.API/wwwroot /MIR`
+- `robocopy frontend/dist backend/src/AtlasBalance.API/wwwroot /MIR`
 
 ### Resultado de verificacion
 - Lint frontend OK.
@@ -8624,7 +9567,7 @@ Regla de trabajo desde ahora:
 - Se cambio la rejilla de `auth-page` para reservar una franja superior fluida a la marca `Atlas Balance`.
 - El bloque de marca queda centrado entre el borde superior del viewport y el inicio de la tarjeta de login.
 - La tarjeta de login queda alineada al inicio de la zona media y el footer permanece anclado abajo.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decision visual
 - Usar una fila superior `clamp(...)` evita depender de padding arbitrario y mantiene el centrado en escritorio y mobile.
@@ -8636,7 +9579,7 @@ Regla de trabajo desde ahora:
 ### Archivos tocados
 - frontend/src/styles/auth.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
@@ -8644,7 +9587,7 @@ Regla de trabajo desde ahora:
 - Busqueda de `Atlas Balance`, `Iniciar sesion` y `Login` con fallback a `Select-String` porque `rg` devolvio acceso denegado.
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Arranque temporal de Vite en `127.0.0.1:5174`
 - Verificacion Playwright local de `/login` en desktop `2048x980` y mobile `390x844`
 - Cierre del servidor Vite temporal.
@@ -8671,19 +9614,19 @@ Regla de trabajo desde ahora:
 - No se creo migracion porque no cambia el esquema de base de datos.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Jobs/LimpiezaAuditoriaJob.cs
-- backend/src/GestionCaja.API/Program.cs
+- backend/src/AtlasBalance.API/Jobs/LimpiezaAuditoriaJob.cs
+- backend/src/AtlasBalance.API/Program.cs
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
 - `Get-ChildItem`, `Get-Content` y `Select-String` para revisar entidades, DbContext, AuditService, Program.cs y jobs existentes.
-- `dotnet build .\backend\src\GestionCaja.API\GestionCaja.API.csproj`
-- `dotnet build .\backend\src\GestionCaja.API\GestionCaja.API.csproj -p:UseAppHost=false`
-- `dotnet build .\backend\src\GestionCaja.API\GestionCaja.API.csproj -c Release`
-- `dotnet test .\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj -c Release --filter AuditoriaControllerTests`
+- `dotnet build .\backend\src\AtlasBalance.API\AtlasBalance.API.csproj`
+- `dotnet build .\backend\src\AtlasBalance.API\AtlasBalance.API.csproj -p:UseAppHost=false`
+- `dotnet build .\backend\src\AtlasBalance.API\AtlasBalance.API.csproj -c Release`
+- `dotnet test .\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj -c Release --filter AuditoriaControllerTests`
 
 ### Resultado de verificacion
-- Build Debug no pudo sobrescribir binarios porque `GestionCaja.API` ya estaba en ejecucion y bloqueaba `bin\Debug\net8.0`.
+- Build Debug no pudo sobrescribir binarios porque `AtlasBalance.API` ya estaba en ejecucion y bloqueaba `bin\Debug\net8.0`.
 - Build Release OK, 0 warnings y 0 errores.
 - Tests filtrados de auditoria OK: 2 superados, 0 fallos.
 
@@ -8699,7 +9642,7 @@ Regla de trabajo desde ahora:
 - Se dio a `.app-brand` la misma altura, padding y radio base que una fila de navegacion.
 - Se centro explicitamente la marca cuando el sidebar esta contraido.
 - Se fijo la columna de `.app-nav-icon` al mismo ancho que el logo para que `Atlas Balance` y el resto del menu compartan eje visual.
-- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/GestionCaja.API/wwwroot`.
+- Se reconstruyo `frontend/dist` y se sincronizo con `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Decisiones visuales
 - La alineacion se resolvio con estructura de fila y columna de icono, no con margenes sueltos a ojo.
@@ -8709,7 +9652,7 @@ Regla de trabajo desde ahora:
 ### Archivos tocados
 - frontend/src/styles/layout.css
 - frontend/dist/
-- backend/src/GestionCaja.API/wwwroot/
+- backend/src/AtlasBalance.API/wwwroot/
 - DOCUMENTACION_CAMBIOS.md
 
 ### Comandos ejecutados
@@ -8717,12 +9660,12 @@ Regla de trabajo desde ahora:
 - Busqueda de `Atlas Balance`, `Sidebar`, `sidebar`, `collapsed` y `menu` con fallback a `Select-String` porque `rg` devolvio acceso denegado.
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 - Arranque temporal de Vite en `127.0.0.1:5174`
 - Verificacion Playwright mockeada de `/dashboard` en estado extendido y contraido.
 - Cierre del servidor Vite temporal.
 - Cierre del proceso hijo Vite que quedo escuchando en `127.0.0.1:5174`.
-- Limpieza de bundles obsoletos no referenciados en `backend/src/GestionCaja.API/wwwroot/assets`.
+- Limpieza de bundles obsoletos no referenciados en `backend/src/AtlasBalance.API/wwwroot/assets`.
 
 ### Resultado de verificacion
 - Lint frontend OK.
@@ -8744,8 +9687,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -8760,7 +9703,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -8817,12 +9760,12 @@ Regla de trabajo desde ahora:
 
 ### Archivos tocados
 
-- backend/src/GestionCaja.API/Controllers/ConfiguracionController.cs
-- backend/src/GestionCaja.API/DTOs/ConfiguracionDtos.cs
-- backend/src/GestionCaja.API/Data/SeedData.cs
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Services/TiposCambioService.cs
-- backend/tests/GestionCaja.API.Tests/TiposCambioServiceTests.cs
+- backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs
+- backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs
+- backend/src/AtlasBalance.API/Data/SeedData.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Services/TiposCambioService.cs
+- backend/tests/AtlasBalance.API.Tests/TiposCambioServiceTests.cs
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/types/index.ts
 - DOCUMENTACION_CAMBIOS.md
@@ -8831,7 +9774,7 @@ Regla de trabajo desde ahora:
 
 - Inspeccion de codigo con `Get-ChildItem`, `Get-Content`, `Select-String`, `git grep`, `git diff`, `git status`.
 - `cmd /c npm run build`
-- `dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj --filter TiposCambioServiceTests -c Release`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --filter TiposCambioServiceTests -c Release`
 
 ### Resultado de verificacion
 
@@ -8855,7 +9798,7 @@ Regla de trabajo desde ahora:
 - frontend/public/fonts/HindMadurai-Medium.ttf
 - frontend/public/fonts/HindMadurai-SemiBold.ttf
 - frontend/public/fonts/HindMadurai-Bold.ttf
-- backend/src/GestionCaja.API/wwwroot/** (sync desde dist)
+- backend/src/AtlasBalance.API/wwwroot/** (sync desde dist)
 - DOCUMENTACION_CAMBIOS.md
 
 ### Cambios implementados
@@ -8869,7 +9812,7 @@ Regla de trabajo desde ahora:
 - `curl.exe -L https://fonts.googleapis.com/css2?family=Hind+Madurai:wght@400;500;600;700;800&display=swap`
 - `curl.exe -L <fonts.gstatic URL> -o frontend/public/fonts/HindMadurai-*.ttf` (4 archivos)
 - `npm.cmd run build`
-- Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot`
+- Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
 
 ### Resultado de verificacion
 - Build frontend OK (`tsc && vite build`).
@@ -8888,7 +9831,7 @@ Regla de trabajo desde ahora:
 - frontend/src/pages/ConfiguracionPage.tsx
 - frontend/src/styles/layout.css
 - frontend/dist/**
-- backend/src/GestionCaja.API/wwwroot/**
+- backend/src/AtlasBalance.API/wwwroot/**
 - DOCUMENTACION_CAMBIOS.md
 
 ### Cambios implementados
@@ -8909,7 +9852,7 @@ Regla de trabajo desde ahora:
 ### Comandos ejecutados
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 ### Resultado de verificacion
 - Lint frontend OK (0 warnings).
@@ -8947,18 +9890,18 @@ Regla de trabajo desde ahora:
 - Hardening transversal de seguridad y correccion de bugs encontrados en auditoria.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Controllers/AuditoriaController.cs
-- backend/src/GestionCaja.API/Services/ActualizacionService.cs
-- backend/src/GestionCaja.API/Services/BackupService.cs
-- backend/src/GestionCaja.API/Services/EmailService.cs
-- backend/src/GestionCaja.API/appsettings.json
-- backend/src/GestionCaja.API/appsettings.Development.json
-- backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs
-- backend/src/GestionCaja.Watchdog/appsettings.json
-- backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs
-- backend/tests/GestionCaja.API.Tests/AuditoriaControllerTests.cs
-- backend/tests/GestionCaja.API.Tests/WatchdogOperationsServiceTests.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Controllers/AuditoriaController.cs
+- backend/src/AtlasBalance.API/Services/ActualizacionService.cs
+- backend/src/AtlasBalance.API/Services/BackupService.cs
+- backend/src/AtlasBalance.API/Services/EmailService.cs
+- backend/src/AtlasBalance.API/appsettings.json
+- backend/src/AtlasBalance.API/appsettings.Development.json
+- backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs
+- backend/src/AtlasBalance.Watchdog/appsettings.json
+- backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs
+- backend/tests/AtlasBalance.API.Tests/AuditoriaControllerTests.cs
+- backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs
 - scripts/install-services.ps1
 - artifacts/phase9-cookies.txt
 - artifacts/phase9-login.json
@@ -8977,13 +9920,13 @@ Regla de trabajo desde ahora:
 - Se agregaron regresiones para CSV injection y rutas de actualizacion Watchdog/API.
 
 ### Comandos ejecutados
-- dotnet list backend/src/GestionCaja.API/GestionCaja.API.csproj package --vulnerable --include-transitive
-- dotnet list backend/src/GestionCaja.Watchdog/GestionCaja.Watchdog.csproj package --vulnerable --include-transitive
-- dotnet list backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj package --vulnerable --include-transitive
+- dotnet list backend/src/AtlasBalance.API/AtlasBalance.API.csproj package --vulnerable --include-transitive
+- dotnet list backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj package --vulnerable --include-transitive
+- dotnet list backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj package --vulnerable --include-transitive
 - npm.cmd audit --audit-level=moderate
 - npm.cmd run lint
 - npm.cmd run build
-- dotnet test backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj -c Release --no-restore
+- dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj -c Release --no-restore
 - git diff --check
 - Busquedas estaticas de secretos, SQL raw, tokens en frontend y artefactos locales.
 
@@ -8994,7 +9937,7 @@ Regla de trabajo desde ahora:
 - NuGet audit OK para API, Watchdog y Tests: sin paquetes vulnerables.
 - npm audit OK: 0 vulnerabilidades.
 - git diff --check OK; solo avisos esperados de normalizacion CRLF/LF.
-- dotnet test en Debug no pudo ejecutarse porque GestionCaja.API PID 18760 mantiene bloqueado el binario Debug; se verifico correctamente en Release.
+- dotnet test en Debug no pudo ejecutarse porque AtlasBalance.API PID 18760 mantiene bloqueado el binario Debug; se verifico correctamente en Release.
 
 ### Pendientes
 - Revisar en despliegue real que WatchdogSettings:UpdateSourceRoot y WatchdogSettings:UpdateTargetPath apunten a las rutas definitivas del instalador.
@@ -9058,17 +10001,17 @@ Regla de trabajo desde ahora:
 - Revision transversal de seguridad y bugs sobre backend, watchdog y frontend.
 
 ### Archivos tocados
-- backend/src/GestionCaja.API/Controllers/AuthController.cs
-- backend/src/GestionCaja.API/Controllers/BackupsController.cs
-- backend/src/GestionCaja.API/Controllers/ExportacionesController.cs
-- backend/src/GestionCaja.API/Middleware/UserStateMiddleware.cs
-- backend/src/GestionCaja.API/Program.cs
-- backend/src/GestionCaja.API/Services/AuthService.cs
-- backend/src/GestionCaja.Watchdog/Program.cs
-- backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs
+- backend/src/AtlasBalance.API/Controllers/AuthController.cs
+- backend/src/AtlasBalance.API/Controllers/BackupsController.cs
+- backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs
+- backend/src/AtlasBalance.API/Middleware/UserStateMiddleware.cs
+- backend/src/AtlasBalance.API/Program.cs
+- backend/src/AtlasBalance.API/Services/AuthService.cs
+- backend/src/AtlasBalance.Watchdog/Program.cs
+- backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs
 - frontend/src/pages/ChangePasswordPage.tsx
-- backend/src/GestionCaja.API/wwwroot/index.html
-- backend/src/GestionCaja.API/wwwroot/assets/index-syL5LdP5.js
+- backend/src/AtlasBalance.API/wwwroot/index.html
+- backend/src/AtlasBalance.API/wwwroot/assets/index-syL5LdP5.js
 - DOCUMENTACION_CAMBIOS.md
 
 ### Cambios implementados
@@ -9080,15 +10023,15 @@ Regla de trabajo desde ahora:
 - Backups/exportaciones ya no devuelven `ex.Message` al cliente; registran el detalle en logs y devuelven mensaje generico.
 - Watchdog rechaza `WatchdogSettings:DbPassword` insegura/default fuera de Development.
 - API desconocida bajo `/api/*` devuelve 404 JSON en vez de caer al fallback SPA.
-- Se copio el build frontend actualizado a `backend/src/GestionCaja.API/wwwroot`.
+- Se copio el build frontend actualizado a `backend/src/AtlasBalance.API/wwwroot`.
 
 ### Comandos ejecutados
 - Busquedas estaticas con `git grep` sobre autorizacion, SQL raw, procesos, rutas de archivo, tokens, storage web y sinks de errores.
-- `dotnet test backend/GestionCaja.sln --no-restore`
-- `dotnet list backend/GestionCaja.sln package --vulnerable --include-transitive`
+- `dotnet test backend/AtlasBalance.sln --no-restore`
+- `dotnet list backend/AtlasBalance.sln package --vulnerable --include-transitive`
 - `npm.cmd audit --omit=dev`
 - `npm.cmd run build`
-- `Copy-Item -Path frontend\dist\* -Destination backend\src\GestionCaja.API\wwwroot -Recurse -Force`
+- `Copy-Item -Path frontend\dist\* -Destination backend\src\AtlasBalance.API\wwwroot -Recurse -Force`
 
 ### Resultado de verificacion
 - Backend tests OK: 82/82 en Debug.
@@ -9111,15 +10054,15 @@ Regla de trabajo desde ahora:
 ### Cambios implementados
 - Se creo la rama local `V-01.01` desde `main`.
 - Se versionaron los cambios locales del proyecto en el commit `ef2a634`.
-- Se sincronizo el build de frontend con `backend/src/GestionCaja.API/wwwroot`.
+- Se sincronizo el build de frontend con `backend/src/AtlasBalance.API/wwwroot`.
 - Se publico la rama remota `origin/V-01.01`.
 
 ### Comandos ejecutados
 - `git fetch origin --prune`
 - `git switch -c V-01.01`
-- `dotnet test backend/GestionCaja.sln --no-restore`
+- `dotnet test backend/AtlasBalance.sln --no-restore`
 - `npm.cmd run build`
-- `Copy-Item -Path frontend/dist/* -Destination backend/src/GestionCaja.API/wwwroot -Recurse -Force`
+- `Copy-Item -Path frontend/dist/* -Destination backend/src/AtlasBalance.API/wwwroot -Recurse -Force`
 - `git add -A`
 - `git commit -m "Version V-01.01"`
 - `git push -u origin V-01.01`
@@ -9160,7 +10103,7 @@ Regla de trabajo desde ahora:
 
 ### Cambios implementados
 - Se sustituyeron las referencias textuales de la denominacion antigua por `Atlas Balance`.
-- El reemplazo fue intencionalmente textual para no tocar identificadores tecnicos sin espacio como `GestionCaja`.
+- El reemplazo fue intencionalmente textual para no tocar identificadores tecnicos sin espacio como `AtlasBalance`.
 - Se actualizaron scripts, documentacion principal y archivos historicos auxiliares donde aun quedaban referencias antiguas.
 
 ### Comandos ejecutados
@@ -9177,7 +10120,7 @@ Regla de trabajo desde ahora:
 
 ### Resultado de verificacion
 - Resultado: 0 coincidencias restantes de la denominacion antigua en los archivos de texto revisados del workspace.
-- No se modificaron nombres de tipos, namespaces o soluciones que usan `GestionCaja` sin espacio.
+- No se modificaron nombres de tipos, namespaces o soluciones que usan `AtlasBalance` sin espacio.
 
 ### Pendientes
 - Ninguno.
@@ -9191,8 +10134,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -9207,7 +10150,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -9222,14 +10165,14 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Pasada adicional sobre backend, frontend y superficie de distribucion tras el hardening inicial del dia. Se verificaron hallazgos en codigo real y se corrigio lo que quedaba.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Middleware/IntegrationAuthMiddleware.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/BackupService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ExportacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/IntegrationOpenClawController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json`
-- `Atlas Balance/backend/src/GestionCaja.API/appsettings.Development.json.template`
-- `Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/GestionCaja.Watchdog.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ExportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
 - `Otros/Auxiliares/phase2-smoke.ps1`
 - `Otros/Auxiliares/phase2-smoke-curl.ps1`
 - `Otros/Raiz anterior/SPEC.md`
@@ -9240,7 +10183,7 @@ Regla de trabajo desde ahora:
 - `BackupService` y `ExportacionService` resuelven `backup_path`/`export_path` mediante `ResolveSafeDirectory`, que rechaza rutas relativas, traversal con `..` y caracteres invalidos. Evita escribir backups o exportaciones fuera del directorio configurado si un admin edita el valor.
 - `IntegrationOpenClawController` ya no filtra emails de usuarios borrados al incluir metadatos de `creado_por_id` en extractos. Sustituye el email por el literal `usuario-eliminado` para los registros con `deleted_at` no nulo.
 - `appsettings.Development.json` y su plantilla dejan de bindear Kestrel a `https://0.0.0.0:5000` y pasan a `localhost`; `AllowedHosts` deja de ser `*` y baja a `localhost`.
-- `GestionCaja.API.csproj` y `GestionCaja.Watchdog.csproj` excluyen de `dotnet publish` los archivos `appsettings.Development.json`, `appsettings.Development.json.template` y `appsettings.Production.json.template` con `CopyToPublishDirectory="Never" ExcludeFromSingleFile="true"`. Evita que los zips de release incluyan secretos de desarrollo si alguien ejecuta el build sin limpieza previa.
+- `AtlasBalance.API.csproj` y `AtlasBalance.Watchdog.csproj` excluyen de `dotnet publish` los archivos `appsettings.Development.json`, `appsettings.Development.json.template` y `appsettings.Production.json.template` con `CopyToPublishDirectory="Never" ExcludeFromSingleFile="true"`. Evita que los zips de release incluyan secretos de desarrollo si alguien ejecuta el build sin limpieza previa.
 - `Otros/Auxiliares/phase2-smoke.ps1` y `phase2-smoke-curl.ps1` dejan de usar passwords hardcodeadas de admin y test; ahora leen `ATLAS_SMOKE_ADMIN_PASSWORD` y `ATLAS_SMOKE_TEST_PASSWORD` y fallan limpios si no estan definidas.
 - `Otros/Raiz anterior/SPEC.md` y `CORRECCIONES.md` dejan de documentar credenciales historicas; se sustituyeron por placeholders.
 
@@ -9269,8 +10212,8 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Correccion de una brecha de autorizacion en `ExtractosController` que permitia alcance global de extractos a usuarios con permiso global solo de dashboard.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
@@ -9284,7 +10227,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - `Get-Content` sobre `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.03.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y archivos de codigo.
-- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~GestionCaja.API.Tests.ExtractosControllerTests|FullyQualifiedName~GestionCaja.API.Tests.UserAccessServiceTests"`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~AtlasBalance.API.Tests.ExtractosControllerTests|FullyQualifiedName~AtlasBalance.API.Tests.UserAccessServiceTests"`
 
 **Resultado de verificacion:**
 - Suite focalizada de autorizacion: 8/8 tests OK, 0 fallos.
@@ -9313,13 +10256,13 @@ Regla de trabajo desde ahora:
 - `Get-Content -Raw Documentacion/Versiones/version_actual.md`
 - `Get-Content -Raw Documentacion/Versiones/v-01.03.md`
 - `Get-Content -Raw Documentacion/LOG_ERRORES_INCIDENCIAS.md`
-- `Get-Content -Raw "Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs"`
-- `Get-Content -Raw "Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs"`
-- `Get-Content -Raw "Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs"`
-- `Get-Content -Raw "Atlas Balance/backend/tests/GestionCaja.API.Tests/UserAccessServiceTests.cs"`
-- `Select-String -Path "Atlas Balance/backend/src/GestionCaja.API/**/*.cs" -Pattern "PuedeVerDashboard|HasGlobalAccess|GrantsDataAccess|GetAllowedAccountIds|CanViewTitular"`
+- `Get-Content -Raw "Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs"`
+- `Get-Content -Raw "Atlas Balance/backend/src/AtlasBalance.API/Services/UserAccessService.cs"`
+- `Get-Content -Raw "Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs"`
+- `Get-Content -Raw "Atlas Balance/backend/tests/AtlasBalance.API.Tests/UserAccessServiceTests.cs"`
+- `Select-String -Path "Atlas Balance/backend/src/AtlasBalance.API/**/*.cs" -Pattern "PuedeVerDashboard|HasGlobalAccess|GrantsDataAccess|GetAllowedAccountIds|CanViewTitular"`
 - `Select-String -Path "Atlas Balance/frontend/src/**/*.ts*" -Pattern "canViewCuenta|canViewDashboard|dashboard/cuenta|/extractos\\?cuentaId"`
-- `dotnet test ".\\Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~GestionCaja.API.Tests.ExtractosControllerTests|FullyQualifiedName~GestionCaja.API.Tests.UserAccessServiceTests"`
+- `dotnet test ".\\Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName~AtlasBalance.API.Tests.ExtractosControllerTests|FullyQualifiedName~AtlasBalance.API.Tests.UserAccessServiceTests"`
 
 **Resultado de verificacion:**
 - Vulnerabilidad reportada: cerrada en el codigo actual.
@@ -9358,12 +10301,12 @@ Regla de trabajo desde ahora:
 - `git diff -- "Atlas Balance/frontend/src/stores/permisosStore.ts" "Atlas Balance/frontend/src/pages/CuentasPage.tsx" "Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx"`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
 - `npm.cmd run build`: OK.
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`: OK (`robocopy` devolvio codigo `1`, que en este caso significa copia correcta con archivos actualizados).
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`: OK (`robocopy` devolvio codigo `1`, que en este caso significa copia correcta con archivos actualizados).
 
 **Pendientes:**
 - Ninguno para este bug.
@@ -9375,24 +10318,24 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Se agrego un permiso explicito de lectura de cuentas para que un admin pueda dar acceso a todas las cuentas desde Usuarios sin activar permisos de escritura/importacion.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Models/Entities.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/AuthDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/UsuariosDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/UserAccessService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/UsuariosController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260425130139_AddPuedeVerCuentasPermiso.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260425130139_AddPuedeVerCuentasPermiso.Designer.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/AppDbContextModelSnapshot.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UserAccessServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/AuthDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/UsuariosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/UserAccessService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260425130139_AddPuedeVerCuentasPermiso.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260425130139_AddPuedeVerCuentasPermiso.Designer.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/AppDbContextModelSnapshot.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UserAccessServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
 - `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
 - `Atlas Balance/frontend/src/stores/permisosStore.ts`
 - `Atlas Balance/frontend/src/types/index.ts`
 - `Atlas Balance/frontend/src/styles/layout.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/SPEC.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
@@ -9411,13 +10354,13 @@ Regla de trabajo desde ahora:
 - No hubo rediseño. Se agrego un boton de accion rapida en la cabecera de permisos y un checkbox dentro de la grilla existente para no romper el flujo actual.
 
 **Comandos ejecutados:**
-- `dotnet ef migrations add AddPuedeVerCuentasPermiso --project "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj" --startup-project "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj"`
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter "UserAccessServiceTests|UsuariosControllerTests|ExtractosControllerTests"`
+- `dotnet ef migrations add AddPuedeVerCuentasPermiso --project "Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" --startup-project "Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj"`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter "UserAccessServiceTests|UsuariosControllerTests|ExtractosControllerTests"`
 - `npm.cmd run build`
-- `robocopy "C:\\Proyectos\\Atlas Balance Dev\\Atlas Balance\\frontend\\dist" "C:\\Proyectos\\Atlas Balance Dev\\Atlas Balance\\backend\\src\\GestionCaja.API\\wwwroot" /MIR`
+- `robocopy "C:\\Proyectos\\Atlas Balance Dev\\Atlas Balance\\frontend\\dist" "C:\\Proyectos\\Atlas Balance Dev\\Atlas Balance\\backend\\src\\AtlasBalance.API\\wwwroot" /MIR`
 - `npm.cmd run lint`
-- `dotnet build "Atlas Balance/backend/src/GestionCaja.API/GestionCaja.API.csproj" -c Release`
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet build "Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" -c Release`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 
 **Resultado de verificacion:**
 - Migracion EF generada correctamente.
@@ -9449,12 +10392,12 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - `Get-Content` sobre instrucciones, version actual, log de incidencias, controladores, servicios, middleware, configuracion y scripts.
-- `git check-ignore -v .env backend/src/GestionCaja.API/appsettings.Development.json backend/src/GestionCaja.Watchdog/appsettings.Development.json`
-- `git ls-files .env backend/src/GestionCaja.API/appsettings.Development.json backend/src/GestionCaja.Watchdog/appsettings.Development.json frontend/.env`
+- `git check-ignore -v .env backend/src/AtlasBalance.API/appsettings.Development.json backend/src/AtlasBalance.Watchdog/appsettings.Development.json`
+- `git ls-files .env backend/src/AtlasBalance.API/appsettings.Development.json backend/src/AtlasBalance.Watchdog/appsettings.Development.json frontend/.env`
 - `npm.cmd audit --audit-level=low`
-- `dotnet list "GestionCaja.sln" package --vulnerable --include-transitive`
-- `dotnet list "GestionCaja.sln" package --deprecated`
-- `dotnet test "GestionCaja.sln" --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~CsrfServiceTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~ExportacionServiceTests|FullyQualifiedName~IntegrationTokenServiceTests"`
+- `dotnet list "AtlasBalance.sln" package --vulnerable --include-transitive`
+- `dotnet list "AtlasBalance.sln" package --deprecated`
+- `dotnet test "AtlasBalance.sln" --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~CsrfServiceTests|FullyQualifiedName~IntegrationAuthMiddlewareTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~ExportacionServiceTests|FullyQualifiedName~IntegrationTokenServiceTests"`
 
 **Resultado de verificacion:**
 - `npm audit`: 0 vulnerabilidades.
@@ -9473,13 +10416,13 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Correccion del flujo de importacion para que las filas bancarias con solo concepto no bloqueen la importacion. Ahora se avisa al usuario, pero se permite importarlas.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/ImportacionDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ImportacionDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs`
 - `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout.css`
 - `Atlas Balance/frontend/src/types/index.ts`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -9497,15 +10440,15 @@ Regla de trabajo desde ahora:
 - Se uso el color de warning existente para distinguir avisos de errores sin redisenar la pantalla.
 
 **Comandos ejecutados:**
-- `dotnet test "Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" --filter ImportacionServiceTests`
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter ImportacionServiceTests`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
-- Primer intento de `dotnet test` bloqueado por `GestionCaja.API` en ejecucion; se detuvo el proceso local y se repitio.
+- Primer intento de `dotnet test` bloqueado por `AtlasBalance.API` en ejecucion; se detuvo el proceso local y se repitio.
 - `dotnet test ... --filter ImportacionServiceTests`: 21/21 OK.
 - `npm.cmd run build`: OK.
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`: OK.
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`: OK.
 
 **Pendientes:**
 - Ninguno para este bug.
@@ -9566,14 +10509,14 @@ Regla de trabajo desde ahora:
 - Los plazos fijos se distinguen con badges de tipo/estado y vencimiento visible.
 
 **Comandos ejecutados:**
-- `dotnet build Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj -c Release`
+- `dotnet build Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj -c Release`
 - `dotnet ef migrations add AddPlazoFijoAutonomosAlertas`
-- `dotnet build Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release`
-- `dotnet test Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release --no-build --filter "CuentasControllerTests|DashboardServiceTests|AlertaServiceTests|PlazoFijoServiceTests"`
-- `dotnet test Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet build Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj -c Release`
+- `dotnet test Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj -c Release --no-build --filter "CuentasControllerTests|DashboardServiceTests|AlertaServiceTests|PlazoFijoServiceTests"`
+- `dotnet test Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - Backend build Release OK.
@@ -9598,7 +10541,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/styles/layout.css`
 - `Atlas Balance/frontend/src/styles/auth.css`
 - `Atlas Balance/frontend/src/components/ui/button.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/mejoradiseno.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
@@ -9626,7 +10569,7 @@ Regla de trabajo desde ahora:
 - `git status --short`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 - `npx.cmd playwright screenshot --viewport-size=1440,900 http://127.0.0.1:5174/login output/playwright/ui-login-desktop.png`
 - `npx.cmd playwright screenshot --viewport-size=390,844 http://127.0.0.1:5174/login output/playwright/ui-login-mobile.png`
 - `git diff --check -- ...`
@@ -9657,7 +10600,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/styles/layout/importacion.css`
 - `Atlas Balance/frontend/src/styles/layout/admin.css`
 - `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
@@ -9685,7 +10628,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - `git diff --check -- 'Atlas Balance/frontend/src/styles/layout.css' 'Atlas Balance/frontend/src/styles/layout'`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - Frontend lint OK.
@@ -9704,7 +10647,7 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/styles/global.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
@@ -9725,7 +10668,7 @@ Regla de trabajo desde ahora:
 - `Select-String` para localizar `type="date"` y estilos relacionados.
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - Frontend lint OK.
@@ -9742,12 +10685,12 @@ Regla de trabajo desde ahora:
 **Trabajo realizado:** Mostrar en el dashboard de cuenta cuando vence un plazo fijo.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/ExtractosDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
 - `Atlas Balance/frontend/src/types/index.ts`
 - `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
 - `Atlas Balance/frontend/src/styles/layout/entities.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -9767,10 +10710,10 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `Get-Content` sobre instrucciones, version actual, `v-01.05.md`, log de incidencias y documentacion afectada.
 - `Select-String` para localizar campos de plazo fijo, resumen de cuenta y estilos relacionados.
-- `dotnet build "Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" -c Release`
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" -c Release`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - Backend Release build OK.
@@ -9804,7 +10747,7 @@ Regla de trabajo desde ahora:
 - `npm.cmd run build`
 - `npm.cmd ls axios react-router-dom postcss vite`
 - `dotnet list ... package --vulnerable --include-transitive`
-- `dotnet test ...GestionCaja.API.Tests.csproj -c Release`
+- `dotnet test ...AtlasBalance.API.Tests.csproj -c Release`
 - Parser PowerShell para `Atlas Balance/scripts/*.ps1`
 - `git diff --check`
 - `git check-ignore`
@@ -9837,7 +10780,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
 - `Atlas Balance/frontend/src/components/extractos/AddRowForm.tsx`
 - `Atlas Balance/frontend/src/pages/AuditoriaPage.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/Versiones/v-01.05.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -9861,7 +10804,7 @@ Regla de trabajo desde ahora:
 - `Select-String` para localizar `input type="date"` y usos de fecha.
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 - Verificacion en navegador in-app sobre `http://localhost:5173/cuentas`.
 
 **Resultado de verificacion:**
@@ -9914,8 +10857,8 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/scripts/update.ps1`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -9930,7 +10873,7 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - Parser PowerShell sobre `Atlas Balance/scripts/update.ps1` y `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`.
-- `dotnet test "Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj" --filter SeedDataTests`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter SeedDataTests`
 
 **Resultado de verificacion:**
 - Parser PowerShell OK para `update.ps1` y `Actualizar-AtlasBalance.ps1`.
@@ -9949,7 +10892,7 @@ Regla de trabajo desde ahora:
 - `Atlas Balance/frontend/package.json`
 - `Atlas Balance/frontend/package-lock.json`
 - `Atlas Balance/VERSION`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
 - `Atlas Balance/scripts/Build-Release.ps1`
 - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 - `Atlas Balance/scripts/install.ps1`
@@ -9993,7 +10936,7 @@ Regla de trabajo desde ahora:
 
 **Trabajo realizado:**
 - Se incorpora en la informacion canonica del proyecto que pertenece a Atlas Labs y que la aplicacion se llama Atlas Balance.
-- Se realiza barrido profundo de texto para detectar referencias legacy tipo `Gestion de Caja` / `Gestion caja`.
+- Se realiza barrido profundo de texto para detectar referencias legacy tipo `Atlas Balance` / `Gestion caja`.
 - Se valida estabilidad tecnica con lint/build frontend y build/tests backend.
 
 **Archivos tocados:**
@@ -10004,8 +10947,8 @@ Regla de trabajo desde ahora:
 
 **Cambios implementados:**
 - En la seccion `Que es este proyecto` de los archivos de instrucciones se agrega la frase explicita de pertenencia a Atlas Labs y nombre de producto Atlas Balance.
-- No se renombran identificadores tecnicos internos `GestionCaja*` (solution, namespaces, dll/proyectos) porque no son texto legacy de marca y su sustitucion implicaria refactor mayor con riesgo real de rotura.
-- Barrido estricto (excluyendo artefactos/binarios/logs) sin coincidencias para `Gestion de Caja` / `Gestion caja` en texto de codigo y documentacion activa.
+- No se renombran identificadores tecnicos internos `AtlasBalance*` (solution, namespaces, dll/proyectos) porque no son texto legacy de marca y su sustitucion implicaria refactor mayor con riesgo real de rotura.
+- Barrido estricto (excluyendo artefactos/binarios/logs) sin coincidencias para `Atlas Balance` / `Gestion caja` en texto de codigo y documentacion activa.
 
 **Comandos ejecutados:**
 - Busqueda textual estricta:
@@ -10014,15 +10957,15 @@ Regla de trabajo desde ahora:
   - `npm.cmd run lint`
   - `npm.cmd run build`
 - Backend:
-  - `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore`
-  - `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build`
-  - `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+  - `dotnet build "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-restore`
+  - `dotnet test "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-build`
+  - `dotnet test "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 
 **Resultado de verificacion:**
-- Barrido legacy: sin coincidencias de `Gestion de Caja` / `Gestion caja`.
+- Barrido legacy: sin coincidencias de `Atlas Balance` / `Gestion caja`.
 - `npm.cmd run lint`: OK.
 - `npm.cmd run build`: OK.
-- `dotnet build ...GestionCaja.sln`: OK (0 errores, 0 warnings).
+- `dotnet build ...AtlasBalance.sln`: OK (0 errores, 0 warnings).
 - `dotnet test ... --no-build`: 1 fallo aislado por Docker/Testcontainers no disponible (`ExtractosConcurrencyTests`).
 - `dotnet test ... --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`: 107/107 OK.
 
@@ -10034,7 +10977,7 @@ Regla de trabajo desde ahora:
 **Version:** V-01.05
 
 **Trabajo realizado:**
-- Segunda pasada de busqueda para detectar referencias antiguas: `Gestion de Caja`, `Gestion caja`, `gestiondecaja`, `gestioncoja`.
+- Segunda pasada de busqueda para detectar referencias antiguas: `Atlas Balance`, `Gestion caja`, `gestiondecaja`, `gestioncoja`.
 - Revision adicional de nombres de rutas/archivos para localizar variantes legacy.
 - Verificacion tecnica rapida posterior.
 
@@ -10043,10 +10986,10 @@ Regla de trabajo desde ahora:
 
 **Resultado:**
 - Sin coincidencias legacy en codigo funcional ni documentacion activa.
-- Coincidencias solo en la propia bitacora de cambios (texto descriptivo) y en identificadores tecnicos historicos `GestionCaja*` (solution/proyectos/namespaces), que se mantienen para no introducir una migracion de riesgo.
+- Coincidencias solo en la propia bitacora de cambios (texto descriptivo) y en identificadores tecnicos historicos `AtlasBalance*` (solution/proyectos/namespaces), que se mantienen para no introducir una migracion de riesgo.
 - `npm.cmd run lint`: OK.
-- `dotnet build "Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore`: OK.
-- `dotnet test "Atlas Balance/backend/GestionCaja.sln" -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`: 107/107 OK.
+- `dotnet build "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-restore`: OK.
+- `dotnet test "Atlas Balance/backend/AtlasBalance.sln" -c Release --no-build --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`: 107/107 OK.
 
 **Pendientes:**
 - Ninguno para esta pasada de comprobacion.
@@ -10069,7 +11012,7 @@ Regla de trabajo desde ahora:
 **Elementos eliminados:**
 - `.codex-runlogs/`
 - `output/`
-- `Atlas Balance/backend/src/GestionCaja.API/logs/`
+- `Atlas Balance/backend/src/AtlasBalance.API/logs/`
 - Contenido generado de `Atlas Balance/Atlas Balance Release/`, conservando `.gitkeep`.
 - Directorios vacios `Atlas Balance/frontend/src/lib/` y `Atlas Balance/frontend/src/components/ui/`.
 
@@ -10079,15 +11022,15 @@ Regla de trabajo desde ahora:
 - `git check-ignore -v .codex-runlogs/foo output/foo`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `dotnet test .\GestionCaja.sln -c Release --no-restore`
-- `dotnet test .\GestionCaja.sln -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet test .\AtlasBalance.sln -c Release --no-restore`
+- `dotnet test .\AtlasBalance.sln -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`
 
 **Resultado de verificacion:**
 - `.codex-runlogs/` y `output/` quedan ignorados por Git.
 - `Atlas Balance/Atlas Balance Release/` queda solo con `.gitkeep`.
 - `npm.cmd run lint`: OK.
 - `npm.cmd run build`: OK.
-- `dotnet test .\GestionCaja.sln -c Release --no-restore`: 107/108 OK; 1 fallo por Docker/Testcontainers no disponible en `ExtractosConcurrencyTests`.
+- `dotnet test .\AtlasBalance.sln -c Release --no-restore`: 107/108 OK; 1 fallo por Docker/Testcontainers no disponible en `ExtractosConcurrencyTests`.
 - `dotnet test ... --filter "FullyQualifiedName!~ExtractosConcurrencyTests"`: 107/107 OK.
 
 **Pendientes:**
@@ -10106,7 +11049,7 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/styles/layout/shell.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/Versiones/v-01.05.md`
@@ -10125,7 +11068,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -10147,16 +11090,16 @@ Regla de trabajo desde ahora:
 - La pantalla de Configuracion ahora muestra el campo como repositorio GitHub de actualizaciones.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/SeedData.cs`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/Services/WatchdogOperationsService.cs`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.json`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.Production.json.template`
-- `Atlas Balance/backend/src/GestionCaja.Watchdog/appsettings.Development.json.template`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/WatchdogOperationsServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.json`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Development.json.template`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs`
 - `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 - `Atlas Balance/README_RELEASE.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
@@ -10166,10 +11109,10 @@ Regla de trabajo desde ahora:
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 
 **Comandos ejecutados:**
-- `dotnet test 'Atlas Balance/backend/tests/GestionCaja.API.Tests/GestionCaja.API.Tests.csproj' -c Release --filter 'ActualizacionServiceTests|WatchdogOperationsServiceTests|ConfiguracionControllerTests'`
+- `dotnet test 'Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj' -c Release --filter 'ActualizacionServiceTests|WatchdogOperationsServiceTests|ConfiguracionControllerTests'`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 - Parser PowerShell de `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
 
 **Resultado de verificacion:**
@@ -10192,8 +11135,8 @@ Regla de trabajo desde ahora:
 - Se mantiene el bloqueo para saldo no numerico, fecha sin referencia previa o importes ambiguos.
 
 **Archivos tocados:**
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ImportacionService.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -10202,8 +11145,8 @@ Regla de trabajo desde ahora:
 - `Documentacion/Versiones/v-01.05.md`
 
 **Comandos ejecutados:**
-- `dotnet test "Atlas Balance\\backend\\tests\\GestionCaja.API.Tests\\GestionCaja.API.Tests.csproj" --filter ImportacionServiceTests`
-- `dotnet build "Atlas Balance\\backend\\src\\GestionCaja.API\\GestionCaja.API.csproj" -c Release`
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter ImportacionServiceTests`
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" -c Release`
 
 **Resultado de verificacion:**
 - Tests de importacion: 26/26 OK.
@@ -10229,38 +11172,38 @@ Regla de trabajo desde ahora:
 
 **Archivos tocados:**
 - `.github/workflows/ci.yml`
-- `Atlas Balance/backend/src/GestionCaja.API/Constants/AuditActions.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/AuthController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/UsuariosController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/AuthDtos.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Data/AppDbContext.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Middleware/CsrfMiddleware.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Models/Entities.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/AuthService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/TotpService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Services/ActualizacionService.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Migrations/20260501105704_RequireWebUserMfa.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AuditActions.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/AuthDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/TotpService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260501105704_RequireWebUserMfa.cs`
 - `Atlas Balance/frontend/src/pages/LoginPage.tsx`
 - `Atlas Balance/frontend/src/styles/auth.css`
 - `Atlas Balance/frontend/src/types/index.ts`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/AuthServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/UsuariosControllerTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/ActualizacionServiceTests.cs`
-- `Atlas Balance/backend/tests/GestionCaja.API.Tests/DashboardServiceTests.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs`
 - `Documentacion/SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md`
 - `Documentacion/SEGURIDAD_RESPUESTA_INCIDENTES.md`
 
 **Comandos ejecutados:**
 - `dotnet ef migrations add RequireWebUserMfa`
-- `dotnet build ".\Atlas Balance\backend\src\GestionCaja.API\GestionCaja.API.csproj" -c Release --no-restore`
-- `dotnet test ".\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "AuthServiceTests|UsuariosControllerTests|ActualizacionServiceTests|CsrfServiceTests|UserStateMiddlewareTests"`
-- `dotnet test ".\Atlas Balance\backend\tests\GestionCaja.API.Tests\GestionCaja.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`
+- `dotnet build ".\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" -c Release --no-restore`
+- `dotnet test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "AuthServiceTests|UsuariosControllerTests|ActualizacionServiceTests|CsrfServiceTests|UserStateMiddlewareTests"`
+- `dotnet test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\backend\src\GestionCaja.API\wwwroot /MIR`
+- `robocopy dist ..\backend\src\AtlasBalance.API\wwwroot /MIR`
 - `npm.cmd audit --audit-level=moderate`
-- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`
+- `dotnet list ".\Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
 - `git diff --check`
 
 **Resultado de verificacion:**
@@ -10319,7 +11262,7 @@ Regla de trabajo desde ahora:
 **Archivos tocados:**
 - `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
 - `Atlas Balance/frontend/src/styles/layout/extractos.css`
-- `Atlas Balance/backend/src/GestionCaja.API/wwwroot`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
 - `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/DOCUMENTACION_USUARIO.md`
@@ -10334,7 +11277,7 @@ Regla de trabajo desde ahora:
 **Comandos ejecutados:**
 - `npm.cmd run lint`
 - `npm.cmd run build`
-- `robocopy dist ..\\backend\\src\\GestionCaja.API\\wwwroot /MIR`
+- `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`
 
 **Resultado de verificacion:**
 - `npm.cmd run lint`: OK.
@@ -10344,3 +11287,79 @@ Regla de trabajo desde ahora:
 
 **Pendientes:**
 - Validacion visual manual con extractos reales y muchas columnas extra para ajustar anchuras si algun banco trae campos excesivamente largos.
+
+## 2026-05-10 - Hardening especifico de IA
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Se anade interruptor global de IA (`ai_enabled`) y permiso persistente por usuario (`puede_usar_ia`).
+- `POST /api/ia/chat` bloquea llamadas sin autenticacion, sin permiso, con IA global desactivada, modelo no permitido, configuracion incompleta, exceso de requests, presupuesto agotado o contexto demasiado grande.
+- Los limites de IA pasan a configuracion: requests por minuto/hora/dia por usuario, requests globales por dia, presupuesto mensual/total, aviso de presupuesto, coste estimado por 1M tokens, tokens maximos de entrada/salida y movimientos relevantes maximos enviados.
+- El coste mensual/total se persiste en claves `ai_usage_*`; no depende de `AUDITORIAS`, porque `LimpiezaAuditoriaJob` elimina logs antiguos a 28 dias.
+- La auditoria IA registra metadatos de uso, errores y bloqueos sin guardar prompt completo ni respuesta completa.
+- Las llamadas OpenRouter se envian con `provider.zdr=true` para exigir Zero Data Retention por request.
+- El frontend oculta menu y boton IA si la IA no esta disponible para el usuario; la ruta directa muestra bloqueo claro sin formulario usable.
+- `Usuarios` permite activar/desactivar el permiso `Puede usar IA`.
+- Se agrega migracion `20260510123000_HardenAiGovernance`.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/IaController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260510123000_HardenAiGovernance.cs`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
+- `Atlas Balance/frontend/src/components/layout/BottomNav.tsx`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
+
+**Verificacion:**
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" --no-restore`: OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK fuera del sandbox por `spawn EPERM` de Vite dentro del sandbox.
+- `dotnet build "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --no-restore`: bloqueado por fallo MSBuild preexistente sin errores detallados.
+- `dotnet test ... --filter AtlasAiServiceTests`: bloqueado por el mismo runner, sin salida util.
+
+**Pendientes:**
+- Recuperar la suite backend de tests antes de release final.
+- Prueba manual con API key real en entorno controlado para validar timeout/error/modelo inexistente contra proveedor externo sin exponer datos reales.
+
+## 2026-05-10 - Cierre de riesgos pendientes IA y release readiness
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Se agrega presupuesto mensual por usuario (`ai_user_monthly_budget_eur`) y tabla `IA_USO_USUARIOS` con requests, tokens y coste acumulado por usuario/mes.
+- `AtlasAiService` bloquea antes de llamar a OpenRouter si el usuario supera su presupuesto mensual, manteniendo presupuesto global como segunda barrera.
+- El contexto IA se genera con agregados SQL y limite defensivo de rango, caracteres y movimientos relevantes; ya no necesita cargar todos los extractos accesibles.
+- Se endurece el parser de respuesta del proveedor para JSON invalido, `choices` vacio o `message.content` ausente.
+- Se descarta usar la sesion de ChatGPT como credencial para consumir OpenAI desde Atlas Balance.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260510124158_AddIaUserUsageTableAndBudget.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/types/index.ts`
+
+**Verificacion:**
+- `dotnet restore "Atlas Balance\\backend\\AtlasBalance.sln" --disable-parallel -v:minimal`: OK fuera del sandbox.
+- `dotnet build "Atlas Balance\\backend\\src\\AtlasBalance.API\\AtlasBalance.API.csproj" --no-restore`: OK.
+- `dotnet build "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --no-restore`: OK con warning MSB3101 no bloqueante de cache `obj`.
+- `dotnet test ... --filter FullyQualifiedName~AtlasAiServiceTests`: 18/18 OK.
+- `dotnet test ... --filter FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests`: 173/173 OK.
+- `dotnet test ...`: 173 OK, 2 KO por Docker/Testcontainers no disponible.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK fuera del sandbox; dentro falla Vite por `spawn EPERM`.
+- `npm.cmd audit --audit-level=critical --json`: 0 vulnerabilidades.
+- `dotnet list ... package --vulnerable --include-transitive`: 0 vulnerabilidades fuera del sandbox.
+
+**Pendientes:**
+- El release sigue bloqueado hasta ejecutar y pasar los dos tests Testcontainers con Docker Desktop operativo.
