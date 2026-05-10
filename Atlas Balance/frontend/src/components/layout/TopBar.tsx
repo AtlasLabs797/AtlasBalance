@@ -90,39 +90,41 @@ export function TopBar() {
   }, [location.pathname, usuario]);
 
   return (
-    <header className="app-topbar">
-      <div className="app-topbar-title">
-        <button
-          type="button"
-          className={`sidebar-toggle${sidebarCollapsed ? ' sidebar-toggle--collapsed' : ''}`}
-          onClick={toggleSidebar}
-          aria-expanded={!sidebarCollapsed}
-          aria-label={sidebarCollapsed ? 'Expandir navegacion lateral' : 'Contraer navegacion lateral'}
-          title={sidebarCollapsed ? 'Expandir navegacion lateral' : 'Contraer navegacion lateral'}
-        >
-          <IconMenu />
-        </button>
-        <div className="app-topbar-heading">
-          <span className="app-topbar-page">{pageContext.title}</span>
-          <span className="app-topbar-breadcrumb">{pageContext.breadcrumb}</span>
+    <>
+      <header className="app-topbar">
+        <div className="app-topbar-title">
+          <button
+            type="button"
+            className={`sidebar-toggle${sidebarCollapsed ? ' sidebar-toggle--collapsed' : ''}`}
+            onClick={toggleSidebar}
+            aria-expanded={!sidebarCollapsed}
+            aria-label={sidebarCollapsed ? 'Expandir navegacion lateral' : 'Contraer navegacion lateral'}
+            title={sidebarCollapsed ? 'Expandir navegacion lateral' : 'Contraer navegacion lateral'}
+          >
+            <IconMenu />
+          </button>
+          <div className="app-topbar-heading">
+            <span className="app-topbar-page">{pageContext.title}</span>
+            <span className="app-topbar-breadcrumb">{pageContext.breadcrumb}</span>
+          </div>
         </div>
-      </div>
-      <div className="app-topbar-actions">
-        <span className="app-topbar-user">{usuario?.nombre_completo ?? 'Sin sesion'}</span>
-        <button
-          type="button"
-          className="theme-toggle"
-          onClick={toggleTheme}
-          aria-pressed={theme === 'dark'}
-          aria-label={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
-          title={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
-        >
-          {theme === 'light' ? <IconMoon /> : <IconSun />}
-        </button>
-        <button type="button" className="logout-button" onClick={handleLogout} aria-label="Cerrar sesion">
-          <IconSalir />
-        </button>
-      </div>
+        <div className="app-topbar-actions">
+          <span className="app-topbar-user">{usuario?.nombre_completo ?? 'Sin sesion'}</span>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-pressed={theme === 'dark'}
+            aria-label={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+            title={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+          >
+            {theme === 'light' ? <IconMoon /> : <IconSun />}
+          </button>
+          <button type="button" className="logout-button" onClick={handleLogout} aria-label="Cerrar sesion">
+            <IconSalir />
+          </button>
+        </div>
+      </header>
       {aiAvailable ? (
         <div className="ai-floating-widget">
           <button
@@ -142,6 +144,6 @@ export function TopBar() {
           ) : null}
         </div>
       ) : null}
-    </header>
+    </>
   );
 }
