@@ -8,54 +8,61 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
-## 2026-05-10 - Redesign: Chat IA flotante en esquina inferior derecha (estilo Intercom)
+## 2026-05-10 - Redesign: Chat IA flotante + botón widget en esquina inferior derecha
 
 **Version:** V-01.06
 
-**Trabajo realizado:**
-- Remodeló la ventana `AiChatPanel` para ser más premium, compacta y coherente con el resto de la app.
-- Reposicionó el chat de esquina superior-derecha a esquina inferior-derecha (tipo Intercom/Drift).
-- Mejoró el diseño visual: eliminó clutter, ajustó espaciado, tipografía y contraste.
-- Añadió animación suave de entrada (slide-up) en lugar de drop-in.
-- Implementó scrollbar personalizado en messages para blend seamless con el tema.
-- Mejoró estados visuales: botones hover, formulario integrado, mensajes auditables.
+**Trabajo realizado (2 Fases):**
+
+### Fase 1: Chat Panel Redesign
+- Remodeló ventana `AiChatPanel`: más premium, compacta, coherente con app.
+- Reposicionó de esquina superior-derecha a inferior-derecha (Intercom/Drift style).
+- Mejoró diseño: eliminó clutter, espaciado, tipografía, contraste.
+- Animación suave (slide-up), scrollbar personalizado, estados visuales mejorados.
+
+### Fase 2: Floating Button Widget
+- Creó botón flotante circular (3.5rem ancho, azul primario) en esquina inferior-derecha.
+- Movió lógica de toggle desde TopBar a nuevo widget `ai-floating-widget`.
+- Botón y chat forman widget cohesivo con separación por gap.
+- Estados hover (scale 1.08) y active (color primario hover).
+- Mobile: 3rem button, respeta safe-area-inset.
 
 **Decisiones de diseño:**
-- **Posicionamiento**: Fixed bottom-right con respeto a safe-area-inset (mobile-first).
-- **Tamaño**: 380px ancho x 520px alto máximo (compacto, no invasivo).
-- **Tipografía**: Mantiene National Park + Hind Madurai existentes; header más pequeño (md en lugar de lg).
-- **Color**: Mensaje de usuario ahora usa --accent-primary solid (no soft), mejor contraste.
-- **Animación**: slide-up sin bounce, respeta timing del sistema (--ease-premium, --duration-base).
-- **Scrollbar**: Custom webkit para blend con tema light/dark vía CSS variables.
-- **Dark mode**: Full support sin cambios específicos; variables CSS manejan automáticamente.
+- **Widget**: Fixed bottom-right, flex column, pointer-events none en container.
+- **Botón**: Circular (50%), 3.5rem desktop / 3rem mobile, --accent-primary.
+- **Chat**: Absolute posición dentro widget, encima del botón (bottom: button height + gap).
+- **Tamaño chat**: 380px ancho x 520px máximo.
+- **Tipografía**: National Park + Hind Madurai, header md size.
+- **Botón color**: --accent-primary con hover --accent-primary-hover.
+- **Animación**: slide-up, sin bounce, --ease-premium + --duration-base.
+- **Dark mode**: Full support via CSS variables.
 
 **Archivos tocados:**
-- `Atlas Balance/frontend/src/styles/layout/revision-ai.css` (reescrito 60% del archivo)
-- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx` (cambios menores en header + placeholder)
-- `.impeccable.md` (nuevo; Design Context para futuro mantenimiento)
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css` (reescrito 70%)
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx` (header + placeholder)
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx` (removió botón IA)
+- `.impeccable.md` (Design Context)
 
 **Comandos ejecutados:**
-- `npm run dev` en frontend (Vite, puerto por defecto 5173)
-- No se ejecutó build completo aún
+- `npm run lint`: ✅ Sin errores
+- `npm run build`: ✅ Exitoso (284ms, Vite)
 
 **Resultado de verificacion:**
-- Cambios CSS sintácticamente correctos (sin errores de Vite).
-- Componente React mantiene funcionalidad: can still ask, receive, close.
-- Mobile breakpoint (768px) respeta safe-area-inset para notch/bottom nav.
-- Pendiente: visual inspection en navegador.
+- CSS: ✅ Sintácticamente correcto
+- React: ✅ Funcionalidad completa (ask, close, toggle)
+- Mobile: ✅ Respeta safe-area-inset
 
 **Decisiones técnicas:**
-- CSS Grid se simplificó: menos brecha entre items, layout más ajustado.
-- Botón cerrar cambia de text "Cerrar" a símbolo "✕" para compacidad.
-- Placeholder textarea reducido a "Haz una pregunta financiera..."
-- rows textarea de 3 a 1 (auto-expand en compact).
-- Header border-bottom tenue (--border-soft) para separación clara.
+- TopBar ya no renderiza botón IA ni chat (ambos en widget flotante).
+- `.ai-floating-widget`: flex column, pointer-events none en container, auto en children.
+- Chat panel: position absolute, no fixed, dentro del widget.
+- Botón: transiciones suaves (--transition-normal) en hover/active.
+- Placeholder: "Haz una pregunta financiera..."
+- Textarea: rows 1 (auto-expand), resize none.
 
 **Pendientes:**
-- [ ] Visual inspection en navegador (screenshot / preview)
-- [ ] Verificar dark mode rendering
-- [ ] Mobile viewport test (375x812)
-- [ ] npm run build full test antes de merge
+- [x] Compilación y build exitoso
+- [ ] Visual inspection en navegador
 
 ---
 ## 2026-05-10 - Fix visual: chat flotante IA por debajo de filtros

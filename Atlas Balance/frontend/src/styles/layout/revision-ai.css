@@ -73,12 +73,57 @@
   border-color: color-mix(in srgb, var(--success-text) 24%, var(--border-soft));
 }
 
-.ai-floating-chat {
+.ai-floating-widget {
   position: fixed;
   right: var(--space-4);
   bottom: var(--space-4);
   z-index: var(--z-modal);
-  width: min(380px, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-3);
+  pointer-events: none;
+}
+
+.ai-floating-widget > * {
+  pointer-events: auto;
+}
+
+.ai-floating-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  color: white;
+  cursor: pointer;
+  box-shadow: var(--shadow-overlay);
+  transition: all var(--transition-normal);
+}
+
+.ai-floating-button:hover {
+  background: var(--accent-primary-hover);
+  transform: scale(1.08);
+}
+
+.ai-floating-button:active {
+  transform: scale(0.96);
+}
+
+.ai-floating-button--active {
+  background: var(--accent-primary-hover);
+}
+
+.ai-floating-chat {
+  position: absolute;
+  right: 0;
+  bottom: calc(3.5rem + var(--space-3));
+  width: 380px;
+  max-width: 90vw;
   animation: ai-chat-slide-up var(--duration-base) var(--ease-premium) both;
 }
 
@@ -357,9 +402,19 @@
 }
 
 @media (max-width: 768px) {
-  .ai-floating-chat {
+  .ai-floating-widget {
     right: var(--space-3);
     bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+
+  .ai-floating-button {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .ai-floating-chat {
+    right: 0;
+    bottom: calc(3rem + var(--space-3));
     width: min(100vw - 2rem, 340px);
   }
 
