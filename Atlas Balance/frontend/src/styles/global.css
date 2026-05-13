@@ -29,9 +29,17 @@ body {
   line-height: var(--line-height-normal);
   color: var(--color-text-primary);
   background: var(--bg-app);
+  min-width: 0;
+  overflow-x: clip;
   transition: background-color var(--transition-normal), color var(--transition-normal);
   font-variant-numeric: tabular-nums;
   text-rendering: optimizeLegibility;
+}
+
+@supports not (overflow: clip) {
+  body {
+    overflow-x: hidden;
+  }
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -45,6 +53,9 @@ h1, h2, h3, h4, h5, h6 {
 h1 { font-size: var(--font-size-2xl); }
 h2 { font-size: var(--font-size-xl); }
 h3 { font-size: var(--font-size-lg); }
+h4 { font-size: var(--font-size-md); }
+h5 { font-size: var(--font-size-base); }
+h6 { font-size: var(--font-size-sm); }
 
 a {
   color: var(--color-text-link);
@@ -215,8 +226,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   position: absolute;
   top: calc(100% + var(--space-2));
   left: 0;
-  z-index: 80;
-  width: min(19.5rem, calc(100vw - 2rem));
+  z-index: var(--z-dropdown);
+  width: min(19.5rem, calc(100dvw - 2rem));
   padding: var(--space-3);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
@@ -231,6 +242,16 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   top: auto;
   bottom: calc(100% + var(--space-2));
   transform-origin: bottom left;
+}
+
+.date-picker-popover--align-right {
+  right: 0;
+  left: auto;
+  transform-origin: top right;
+}
+
+.date-picker-popover--top.date-picker-popover--align-right {
+  transform-origin: bottom right;
 }
 
 .date-picker-header {
@@ -250,7 +271,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-picker-header button,
 .date-picker-footer button {
-  min-height: 2.25rem;
+  min-height: 2.5rem;
   padding: 0;
   border-color: var(--border-soft);
   background: var(--bg-surface-soft);
@@ -265,7 +286,13 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 .date-picker-footer button:hover {
   border-color: var(--border-strong);
   background: var(--accent-primary-soft);
-  transform: translateY(-1px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .date-picker-header button:hover,
+  .date-picker-footer button:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .date-picker-weekdays,
@@ -286,7 +313,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 .date-picker-grid button,
 .date-picker-grid span {
   min-width: 0;
-  min-height: 2.25rem;
+  min-height: 2.5rem;
 }
 
 .date-picker-grid button {
@@ -393,9 +420,12 @@ input[type='checkbox']::before {
   margin-top: -0.08rem;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
-  transform: rotate(40deg) scale(0);
+  opacity: 0;
+  transform: rotate(40deg) scale(0.72);
   transform-origin: 55% 60%;
-  transition: transform var(--transition-fast);
+  transition:
+    opacity var(--duration-instant) var(--ease-premium),
+    transform var(--transition-fast);
 }
 
 input[type='checkbox']:hover:not(:disabled) {
@@ -409,6 +439,7 @@ input[type='checkbox']:checked {
 }
 
 input[type='checkbox']:checked::before {
+  opacity: 1;
   transform: rotate(40deg) scale(1);
 }
 
@@ -478,6 +509,14 @@ th, td {
   border-bottom: 1px solid var(--color-border-primary);
 }
 
+td {
+  transition: background-color var(--duration-instant) var(--ease-premium);
+}
+
+tr:hover td {
+  background-color: var(--bg-hover);
+}
+
 th {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-sm);
@@ -523,6 +562,17 @@ th {
   text-decoration: none;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .button-primary:hover {
+    transform: translateY(-1px);
+  }
+}
+
+.button-primary:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: var(--shadow-sm);
+}
+
 .button-secondary {
   background: var(--bg-surface-soft);
   border-color: var(--control-border);
@@ -560,6 +610,32 @@ th {
 .button-icon {
   width: var(--control-height);
   padding: 0;
+}
+
+.close-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--control-height);
+  min-width: var(--control-height);
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--surface-bg-raised);
+  color: var(--text-secondary);
+}
+
+.close-icon-button:hover:not(:disabled) {
+  border-color: var(--surface-border-hover);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.close-icon-button svg {
+  pointer-events: none;
 }
 
 .app-select-field {
@@ -638,14 +714,19 @@ th {
   border-radius: var(--radius-control);
   background: var(--bg-surface);
   box-shadow: var(--shadow-overlay);
-  transform-origin: top center;
+  transform-origin: top left;
   animation: app-select-pop 160ms var(--ease-premium);
+}
+
+.app-select-popover[data-open-source='keyboard'] {
+  animation: none;
 }
 
 .app-select-option {
   display: flex;
   align-items: center;
   width: 100%;
+  min-width: 0;
   min-height: 2.45rem;
   justify-content: space-between;
   border: 0;
@@ -661,10 +742,16 @@ th {
     transform var(--duration-instant) var(--ease-premium);
 }
 
+.app-select-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .app-select-option:hover:not(:disabled),
 .app-select-option:focus-visible {
   background: var(--bg-hover);
   outline: none;
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
 }
 
 .app-select-option--selected {
@@ -691,11 +778,12 @@ th {
   background: var(--color-bg-secondary);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border-primary);
+  background: color-mix(in srgb, var(--text-primary) 22%, transparent);
   border-radius: 4px;
+  border: 2px solid var(--color-bg-secondary);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+  background: color-mix(in srgb, var(--text-primary) 38%, transparent);
 }
 
 .sr-only {
@@ -726,7 +814,7 @@ th {
 @keyframes app-select-pop {
   from {
     opacity: 0;
-    transform: translateY(-0.25rem) scale(0.98);
+    transform: translateY(-0.25rem) scale(0.97);
   }
 
   to {
@@ -743,5 +831,60 @@ th {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 1ms !important;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .date-picker-popover {
+    position: fixed;
+    inset: auto 0 env(safe-area-inset-bottom) 0;
+    width: 100dvw;
+    max-height: calc(100dvh - var(--space-4));
+    padding: 0.35rem;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    overflow: auto;
+    transform-origin: bottom center;
+  }
+
+  .date-picker-popover--top,
+  .date-picker-popover--align-right,
+  .date-picker-popover--top.date-picker-popover--align-right {
+    top: auto;
+    right: 0;
+    bottom: env(safe-area-inset-bottom);
+    left: 0;
+    transform-origin: bottom center;
+  }
+
+  .date-picker-header {
+    grid-template-columns: var(--control-height) minmax(0, 1fr) var(--control-height);
+    gap: var(--space-1);
+  }
+
+  .date-picker-weekdays,
+  .date-picker-grid {
+    grid-template-columns: repeat(7, minmax(var(--control-height), 1fr));
+    gap: 0;
+  }
+
+  input[type='checkbox'] {
+    width: 1.25rem;
+    height: 1.25rem;
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+  }
+
+  label:has(> input[type='checkbox']),
+  .auth-checkbox-row,
+  .config-check {
+    min-height: var(--control-height);
+  }
+
+  .app-select-option,
+  .date-picker-header button,
+  .date-picker-footer button,
+  .date-picker-grid button,
+  .date-picker-grid span {
+    min-height: var(--control-height);
   }
 }

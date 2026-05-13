@@ -1,12 +1,14 @@
 ﻿import { AxiosError } from 'axios';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
+import { EmptyState } from '@/components/common/EmptyState';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
+import { extractErrorMessage } from '@/utils/errorMessage';
 import type {
   ImportConfirmResult,
   ImportContextoResponse,
@@ -15,7 +17,7 @@ import type {
   ImportPlazoFijoMovimientoResult,
   ImportValidationResult,
 } from '@/types';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
 
 const EFFECTIVO_MARKER = '\u2022 Efectivo';
 const EMPTY_MARKER = '\u2014';
@@ -24,6 +26,9 @@ const INVALID_MARKER = '\u2717';
 const WARNING_MARKER = '!';
 const PLAZO_FIJO_MARKER = '\u2022 Plazo fijo';
 const DEFAULT_RETURN_TO = '/dashboard';
+const PREVIEW_ROW_LIMIT = 3;
+const SEPARATOR_SAMPLE_LIMIT = 5;
+const VALIDATION_PAGE_SIZE = 200;
 
 type ImportStep = 1 | 2;
 type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
@@ -36,10 +41,10 @@ function getTodayInputValue(): string {
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof AxiosError) {
-    return (error.response?.data as { error?: string } | undefined)?.error ?? fallback;
+    return extractErrorMessage(error, fallback);
   }
 
-  return fallback;
+  return extractErrorMessage(error, fallback);
 }
 
 function normalizeReturnTo(value: string | null): string {
@@ -70,6 +75,31 @@ function detectSeparator(lines: string[]): 'tab' | 'comma' | 'semicolon' {
   }
 
   return best.key;
+}
+
+function getNonEmptySampleLines(value: string, limit: number): string[] {
+  const lines: string[] = [];
+  let current = '';
+
+  for (let index = 0; index <= value.length && lines.length < limit; index++) {
+    const char = index < value.length ? value[index] : '\n';
+    if (char === '\r') {
+      continue;
+    }
+
+    if (char === '\n') {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        lines.push(trimmed);
+      }
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  return lines;
 }
 
 function splitLine(line: string, separator: 'tab' | 'comma' | 'semicolon'): string[] {
@@ -121,8 +151,10 @@ export default function ImportacionPage() {
   const [separator, setSeparator] = useState<'tab' | 'comma' | 'semicolon'>('tab');
   const [validacion, setValidacion] = useState<ImportValidationResult | null>(null);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [validationPage, setValidationPage] = useState(1);
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [closeAttempted, setCloseAttempted] = useState(false);
   const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
   const [plazoMonto, setPlazoMonto] = useState('');
@@ -154,7 +186,7 @@ export default function ImportacionPage() {
           return;
         }
 
-        setError(getApiErrorMessage(err, 'No se pudo cargar el contexto de importacion'));
+        setError(getApiErrorMessage(err, 'No se pudo cargar el contexto de importación'));
       } finally {
         if (mounted) {
           setLoadingContext(false);
@@ -207,19 +239,37 @@ export default function ImportacionPage() {
   }, [selectedMapeo]);
 
   const previewRows = useMemo(() => {
-    const lines = rawData
-      .replace(/\r\n/g, '\n')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .slice(0, 3);
-
+    const lines = getNonEmptySampleLines(rawData, PREVIEW_ROW_LIMIT);
     return lines.map((line) => splitLine(line, separator));
   }, [rawData, separator]);
 
   const canValidate = Boolean(!isPlazoFijo && cuentaId && rawData.trim().length > 0 && selectedMapeo && hasRequiredMapeo);
-  const canSubmitPlazoFijo = Boolean(isPlazoFijo && cuentaId && plazoFecha && Number(plazoMonto) > 0);
+  const plazoMontoNumber = useMemo(() => parseEuropeanNumber(plazoMonto), [plazoMonto]);
+  const canSubmitPlazoFijo = Boolean(isPlazoFijo && cuentaId && plazoFecha && plazoMontoNumber !== null && plazoMontoNumber > 0);
   const selectedValidRowsCount = selectedRows.length;
+  const selectedRowsSet = useMemo(() => new Set(selectedRows), [selectedRows]);
+  const validationWarningsCount = useMemo(
+    () => validacion?.filas.reduce((total, row) => total + (row.advertencias.length > 0 ? 1 : 0), 0) ?? 0,
+    [validacion],
+  );
+  const validationTotalPages = validacion
+    ? Math.max(1, Math.ceil(validacion.filas.length / VALIDATION_PAGE_SIZE))
+    : 1;
+  const validationPageRows = useMemo(() => {
+    if (!validacion) {
+      return [];
+    }
+
+    const safePage = Math.min(Math.max(validationPage, 1), validationTotalPages);
+    const startIndex = (safePage - 1) * VALIDATION_PAGE_SIZE;
+    return validacion.filas.slice(startIndex, startIndex + VALIDATION_PAGE_SIZE);
+  }, [validacion, validationPage, validationTotalPages]);
+  const validationPageStart = validacion && validacion.filas.length > 0
+    ? (Math.min(Math.max(validationPage, 1), validationTotalPages) - 1) * VALIDATION_PAGE_SIZE + 1
+    : 0;
+  const validationPageEnd = validacion
+    ? Math.min(validationPageStart + validationPageRows.length - 1, validacion.filas.length)
+    : 0;
   const canManageFormatos = usuario?.rol === 'ADMIN';
   const importAlreadyConfirmed = confirmResult !== null;
 
@@ -255,6 +305,7 @@ export default function ImportacionPage() {
   const resetValidationState = () => {
     setValidacion(null);
     setSelectedRows([]);
+    setValidationPage(1);
     setConfirmResult(null);
     setSuccess(null);
   };
@@ -280,12 +331,12 @@ export default function ImportacionPage() {
     }
 
     if (!selectedMapeo) {
-      setError('La cuenta seleccionada no tiene un formato de importacion activo. Asignalo en Cuentas antes de importar.');
+      setError('La cuenta seleccionada no tiene un formato de importación activo. Asígnalo en Cuentas antes de importar.');
       return;
     }
 
     if (!hasRequiredMapeo) {
-      setError('El formato de importacion no tiene las columnas de importe requeridas. Revisalo en Formatos.');
+      setError('El formato de importación no tiene las columnas de importe requeridas. Revísalo en Formatos.');
       return;
     }
 
@@ -304,19 +355,21 @@ export default function ImportacionPage() {
 
       setValidacion(data);
       setSelectedRows(data.filas.filter((row) => row.valida).map((row) => row.indice));
+      setValidationPage(1);
       setStep(2);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo validar la importacion'));
+      setError(getApiErrorMessage(err, 'No se pudo validar la importación'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const confirmImport = async () => {
-    if (!validacion || importAlreadyConfirmed || !selectedMapeo) {
+    if (!validacion || importAlreadyConfirmed || !selectedMapeo || submittingRef.current) {
       return;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     setSuccess(null);
@@ -331,10 +384,11 @@ export default function ImportacionPage() {
       });
 
       setConfirmResult(data);
-      setSuccess(`Importacion completada: ${data.filas_importadas} filas importadas.`);
+      setSuccess(`Importación completada: ${data.filas_importadas} filas importadas.`);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo confirmar la importacion'));
+      setError(getApiErrorMessage(err, 'No se pudo confirmar la importación'));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -344,6 +398,7 @@ export default function ImportacionPage() {
     setSeparator('tab');
     setValidacion(null);
     setSelectedRows([]);
+    setValidationPage(1);
     setConfirmResult(null);
     setSuccess(null);
     setError(null);
@@ -355,8 +410,8 @@ export default function ImportacionPage() {
       return;
     }
 
-    const monto = Number(plazoMonto);
-    if (!Number.isFinite(monto) || monto <= 0) {
+    const monto = plazoMontoNumber;
+    if (monto === null || monto <= 0) {
       setError('Introduce un monto mayor que cero.');
       return;
     }
@@ -400,7 +455,23 @@ export default function ImportacionPage() {
   if (loadingContext) {
     return (
       <section className="import-page">
-        <p>Cargando configuracion de importacion...</p>
+        <p>Cargando configuración de importación...</p>
+      </section>
+    );
+  }
+
+  if (error && contexto.length === 0) {
+    return (
+      <section className="import-page">
+        <header className="import-header">
+          <h1>Importación de extractos</h1>
+        </header>
+        <EmptyState
+          variant="error"
+          title="No se pudo cargar la importación."
+          subtitle={error}
+          primaryAction={<button type="button" onClick={() => window.location.reload()}>Reintentar</button>}
+        />
       </section>
     );
   }
@@ -409,12 +480,12 @@ export default function ImportacionPage() {
     return (
       <section className="import-page">
         <header className="import-header">
-          <h1>Importacion de Extractos</h1>
+          <h1>Importación de extractos</h1>
           <p>No tienes cuentas habilitadas para importar.</p>
         </header>
         {canManageFormatos && (
           <div className="import-actions">
-            <Link to="/formatos-importacion">Gestionar formatos de importacion</Link>
+            <Link to="/formatos-importacion">Gestionar formatos de importación</Link>
           </div>
         )}
       </section>
@@ -424,11 +495,11 @@ export default function ImportacionPage() {
   return (
     <section className="import-page">
       <header className="import-header">
-        <h1>Importacion de Extractos</h1>
-        <p>Las cuentas normales y de efectivo usan formato de importacion. Las de plazo fijo solo permiten anadir o sacar dinero.</p>
+        <h1>Importación de extractos</h1>
+        <p>Las cuentas normales y de efectivo usan formato de importación. Las de plazo fijo solo permiten añadir o sacar dinero.</p>
         {canManageFormatos && (
           <div className="import-actions">
-            <Link to="/formatos-importacion">Gestionar formatos de importacion</Link>
+            <Link to="/formatos-importacion">Gestionar formatos de importación</Link>
           </div>
         )}
       </header>
@@ -441,11 +512,11 @@ export default function ImportacionPage() {
       {error && <p className="auth-error">{error}</p>}
       {success && <p className="import-success">{success}</p>}
       {autoCloseOnSuccess && importAlreadyConfirmed && !isEmbedded && (
-        <p className="import-muted">Importacion confirmada. Esta pestana se cerrara automaticamente.</p>
+        <p className="import-muted">Importación confirmada. Esta pestaña se cerrará automáticamente.</p>
       )}
       {autoCloseOnSuccess && importAlreadyConfirmed && !isEmbedded && closeAttempted && (
         <p className="import-muted">
-          Si no se cierra sola, vuelve a <Link to={returnTo}>la cuenta</Link> y cierra esta pestana manualmente.
+          Si no se cierra sola, vuelve a <Link to={returnTo}>la cuenta</Link> y cierra esta pestaña manualmente.
         </p>
       )}
 
@@ -491,9 +562,7 @@ export default function ImportacionPage() {
                   <label>
                     Monto
                     <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      inputMode="decimal"
                       value={plazoMonto}
                       onChange={(event) => setPlazoMonto(event.target.value)}
                       placeholder="0,00"
@@ -526,7 +595,7 @@ export default function ImportacionPage() {
             <p className={selectedMapeo ? 'import-muted' : 'auth-error'}>
               {selectedMapeo
                 ? `Formato automatico aplicado: ${selectedMapeo.tipo_monto === 'tres_columnas' ? 'ingreso/egreso + monto de control' : selectedMapeo.tipo_monto === 'dos_columnas' ? 'ingreso/egreso separados' : 'monto firmado'} (${selectedMapeo.columnas_extra.length} columnas extra).`
-                : 'Esta cuenta no tiene formato de importacion activo. Asignalo en la ficha de cuenta antes de importar.'}
+                : 'Esta cuenta no tiene formato de importación activo. Asígnalo en la ficha de cuenta antes de importar.'}
             </p>
 
             <AppSelect
@@ -550,11 +619,7 @@ export default function ImportacionPage() {
               onChange={(e) => {
                 const nextRaw = e.target.value;
                 setRawData(nextRaw);
-                const lines = nextRaw
-                  .replace(/\r\n/g, '\n')
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter((line) => line.length > 0);
+                const lines = getNonEmptySampleLines(nextRaw, SEPARATOR_SAMPLE_LIMIT);
                 if (lines.length > 0) {
                   setSeparator(detectSeparator(lines));
                 }
@@ -603,7 +668,7 @@ export default function ImportacionPage() {
             <h3>Validar y confirmar</h3>
             <p>
               {validacion.filas_ok} filas validas, {validacion.filas_error} con errores,{' '}
-              {validacion.filas.filter((row) => row.advertencias.length > 0).length} con avisos. Separador:{' '}
+              {validationWarningsCount} con avisos. Separador:{' '}
               {validacion.separador_detectado}.
             </p>
             <ul className="import-summary">
@@ -629,7 +694,7 @@ export default function ImportacionPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {validacion.filas.map((row) => (
+                  {validationPageRows.map((row) => (
                     <tr
                       key={`valid-${row.indice}`}
                       className={!row.valida ? 'invalid' : row.advertencias.length > 0 ? 'warning' : ''}
@@ -638,12 +703,15 @@ export default function ImportacionPage() {
                         {row.valida ? (
                           <input
                             type="checkbox"
+                            aria-label={`Importar fila ${row.indice}`}
                             disabled={importAlreadyConfirmed}
-                            checked={selectedRows.includes(row.indice)}
+                            checked={selectedRowsSet.has(row.indice)}
                             onChange={(e) => {
                               setSelectedRows((prev) => {
                                 if (e.target.checked) {
-                                  return [...new Set([...prev, row.indice])];
+                                  const next = new Set(prev);
+                                  next.add(row.indice);
+                                  return [...next];
                                 }
 
                                 return prev.filter((value) => value !== row.indice);
@@ -680,6 +748,28 @@ export default function ImportacionPage() {
               </table>
             </div>
 
+            {validacion.filas.length > VALIDATION_PAGE_SIZE && (
+              <div className="users-pagination">
+                <button
+                  type="button"
+                  onClick={() => setValidationPage((page) => Math.max(1, page - 1))}
+                  disabled={validationPage <= 1}
+                >
+                  Anterior
+                </button>
+                <span>
+                  Filas {validationPageStart}-{validationPageEnd} / {validacion.filas.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setValidationPage((page) => Math.min(validationTotalPages, page + 1))}
+                  disabled={validationPage >= validationTotalPages}
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
+
             {confirmResult && (
               <div className="import-result-box">
                 <p>Procesadas: {confirmResult.filas_procesadas}</p>
@@ -690,7 +780,7 @@ export default function ImportacionPage() {
 
             {importAlreadyConfirmed && (
               <p className="import-muted">
-                Esta importacion ya fue confirmada. Inicia una nueva para evitar duplicados.
+                Esta importación ya fue confirmada. Inicia una nueva para evitar duplicados.
               </p>
             )}
 
@@ -703,11 +793,11 @@ export default function ImportacionPage() {
                     onClick={() => void confirmImport()}
                     disabled={submitting || selectedValidRowsCount === 0}
                   >
-                    {submitting ? 'Importando...' : 'Confirmar importacion'}
+                    {submitting ? 'Importando...' : 'Confirmar importación'}
                   </button>
                 </>
               )}
-              <button type="button" onClick={startNextImport}>Nueva importacion</button>
+              <button type="button" onClick={startNextImport}>Nueva importación</button>
             </div>
           </>
         )}

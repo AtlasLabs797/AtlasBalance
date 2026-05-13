@@ -1,8 +1,8 @@
-# Atlas Balance V-01.05 - release Windows x64
+# Atlas Balance V-01.06 - release Windows x64
 
 Este paquete es autonomo para servidor Windows: el frontend ya esta compilado, el backend y Watchdog van publicados self-contained y la base de datos se prepara desde el instalador.
 
-El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.05-win-x64.zip`; dentro deben existir `api\GestionCaja.API.exe` y `watchdog\GestionCaja.Watchdog.exe`.
+El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.06-win-x64.zip`; dentro deben existir `api\AtlasBalance.API.exe` y `watchdog\AtlasBalance.Watchdog.exe`.
 
 ## Scripts de un clic
 
@@ -43,7 +43,7 @@ El instalador genera passwords fuertes y guarda las credenciales iniciales en:
 C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt
 ```
 
-El directorio `config` queda restringido a Administrators/SYSTEM antes de escribir ese archivo. Guarda ese contenido en un gestor de passwords y borra el archivo despues del primer acceso. Dejarlo ahi es mala seguridad con sombrero.
+El directorio `config` queda restringido a Administrators/SYSTEM antes de escribir ese archivo. Guarda ese contenido en un gestor de passwords y borra el archivo despues del primer acceso. Si se queda en el servidor, quedan credenciales recuperables.
 
 Si ya tienes PostgreSQL y quieres usarlo:
 
@@ -78,7 +78,7 @@ Desde la carpeta descomprimida de este paquete:
 Si la instalacion ya tiene los scripts nuevos, tambien puedes lanzar desde la carpeta instalada apuntando al paquete:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.05-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.06-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador crea backup previo, conserva configuracion, reemplaza API/Watchdog, actualiza scripts operativos instalados, actualiza `VERSION`/runtime y valida `/api/health` con `curl.exe -k`.

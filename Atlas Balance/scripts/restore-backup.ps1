@@ -6,7 +6,7 @@
 param(
     [Parameter(Mandatory=$true)]
     [string]$BackupFile,
-    [string]$PgBinPath = "C:\Program Files\PostgreSQL\14\bin",
+    [string]$PgBinPath = "C:\Program Files\PostgreSQL\16\bin",
     [string]$DbName = "atlas_balance",
     [string]$DbUser = "atlas_balance_app",
     [string]$DbHost = "localhost",

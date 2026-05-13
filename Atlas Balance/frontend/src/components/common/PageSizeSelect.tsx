@@ -12,7 +12,7 @@ export function PageSizeSelect({
   value,
   options,
   onChange,
-  ariaLabel = 'Filas por pagina',
+  ariaLabel = 'Filas por página',
   className = 'pagination-select',
 }: PageSizeSelectProps) {
   return (

@@ -46,6 +46,18 @@
   border-radius: var(--border-radius-lg);
   background: var(--color-bg-primary);
   padding: var(--space-3);
+  transition:
+    box-shadow var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kpi-card:hover {
+    border-color: var(--surface-border-hover);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
 }
 
 .phase2-page {
@@ -424,6 +436,7 @@
   border: 1px solid transparent;
   border-radius: calc(var(--radius-card) - 6px);
   background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  animation: card-entrance var(--duration-base) var(--ease-premium) both;
   color: var(--text-primary);
   text-decoration: none;
   transition:
@@ -433,12 +446,25 @@
     transform var(--duration-instant) var(--ease-premium);
 }
 
-.titulares-balance-row:hover {
-  border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
-  text-decoration: none;
-  transform: translateY(-1px);
+.titulares-balance-list > .titulares-balance-row:nth-child(2) { animation-delay: 30ms; }
+.titulares-balance-list > .titulares-balance-row:nth-child(3) { animation-delay: 65ms; }
+.titulares-balance-list > .titulares-balance-row:nth-child(4) { animation-delay: 100ms; }
+.titulares-balance-list > .titulares-balance-row:nth-child(5) { animation-delay: 135ms; }
+.titulares-balance-list > .titulares-balance-row:nth-child(n+6) { animation-delay: 165ms; }
+
+@media (hover: hover) and (pointer: fine) {
+  .titulares-balance-row:hover {
+    border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-sm);
+    text-decoration: none;
+    transform: translateY(-1px);
+  }
+}
+
+.titulares-balance-row:active {
+  transform: scale(0.99) translateY(0);
+  box-shadow: none;
 }
 
 .titulares-balance-row:focus-visible {
@@ -501,10 +527,12 @@
     color var(--transition-fast);
 }
 
-.titulares-balance-row:hover .titulares-balance-avatar,
-.titulares-balance-row:hover .titulares-balance-open {
-  background: var(--accent-primary);
-  color: var(--text-inverse);
+@media (hover: hover) and (pointer: fine) {
+  .titulares-balance-row:hover .titulares-balance-avatar,
+  .titulares-balance-row:hover .titulares-balance-open {
+    background: var(--accent-primary);
+    color: var(--text-inverse);
+  }
 }
 
 .cuentas-balance-list {
@@ -545,6 +573,7 @@
   border: 1px solid transparent;
   border-radius: calc(var(--radius-card) - 6px);
   background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  animation: card-entrance var(--duration-base) var(--ease-premium) both;
   color: var(--text-primary);
   text-decoration: none;
   transition:
@@ -554,12 +583,25 @@
     transform var(--duration-instant) var(--ease-premium);
 }
 
-.cuentas-balance-row:hover {
-  border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
-  text-decoration: none;
-  transform: translateY(-1px);
+.cuentas-balance-list > .cuentas-balance-row:nth-child(2) { animation-delay: 30ms; }
+.cuentas-balance-list > .cuentas-balance-row:nth-child(3) { animation-delay: 65ms; }
+.cuentas-balance-list > .cuentas-balance-row:nth-child(4) { animation-delay: 100ms; }
+.cuentas-balance-list > .cuentas-balance-row:nth-child(5) { animation-delay: 135ms; }
+.cuentas-balance-list > .cuentas-balance-row:nth-child(n+6) { animation-delay: 165ms; }
+
+@media (hover: hover) and (pointer: fine) {
+  .cuentas-balance-row:hover {
+    border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-sm);
+    text-decoration: none;
+    transform: translateY(-1px);
+  }
+}
+
+.cuentas-balance-row:active {
+  transform: scale(0.99) translateY(0);
+  box-shadow: none;
 }
 
 .cuentas-balance-row:focus-visible {
@@ -648,10 +690,12 @@
     color var(--transition-fast);
 }
 
-.cuentas-balance-row:hover .cuentas-balance-avatar,
-.cuentas-balance-row:hover .cuentas-balance-open {
-  background: var(--accent-primary);
-  color: var(--text-inverse);
+@media (hover: hover) and (pointer: fine) {
+  .cuentas-balance-row:hover .cuentas-balance-avatar,
+  .cuentas-balance-row:hover .cuentas-balance-open {
+    background: var(--accent-primary);
+    color: var(--text-inverse);
+  }
 }
 
 .titulares-evolucion-card {
@@ -664,11 +708,23 @@
 
 .extra-col-row {
   display: grid;
-  grid-template-columns: 1fr 130px auto;
+  grid-template-columns: 1fr auto;
   gap: var(--space-2);
+  align-items: center;
 }
 
-@media (max-width: 1024px) {
+.extra-col-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  min-width: 2rem;
+  padding: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+}
+
+@media (max-width: 1023.98px) {
   .phase2-grid {
     grid-template-columns: 1fr;
   }
@@ -700,7 +756,7 @@
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
   .titulares-balance-heading {
     display: none;
   }

@@ -29,6 +29,7 @@
   border-color: var(--color-accent);
   color: var(--color-accent);
   font-weight: var(--font-weight-semibold);
+  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
 }
 
 .import-card {
@@ -98,6 +99,7 @@
 .import-preview-grid table,
 .import-validation-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
 }
 
@@ -107,6 +109,7 @@
   border: 1px solid var(--color-border-primary);
   padding: var(--space-2);
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .import-validation-table-wrap {
@@ -157,6 +160,7 @@
 
 .import-modal-backdrop {
   z-index: calc(var(--z-modal-backdrop) + 2);
+  animation: modal-backdrop-in var(--duration-fast) var(--ease-premium);
 }
 
 .import-modal {
@@ -168,15 +172,20 @@
   box-shadow: var(--shadow-overlay);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  animation: modal-surface-in var(--duration-base) var(--ease-premium) both;
 }
 
 .import-modal-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-3);
   border-bottom: 1px solid var(--color-border-primary);
+}
+
+.import-modal-close {
+  justify-self: end;
 }
 
 .import-modal-header h2 {
@@ -201,5 +210,14 @@
 @media (max-width: 760px) {
   .import-plazo-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .import-validation-table input[type="checkbox"] {
+    width: var(--control-height);
+    min-width: var(--control-height);
+    height: var(--control-height);
+    min-height: var(--control-height);
   }
 }

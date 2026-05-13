@@ -4,10 +4,11 @@ interface EditableCellProps {
   value: string;
   editable: boolean;
   onSave: (next: string) => Promise<void> | void;
+  displayValue?: string;
   displayClassName?: string;
 }
 
-export default function EditableCell({ value, editable, onSave, displayClassName }: EditableCellProps) {
+export default function EditableCell({ value, editable, onSave, displayValue, displayClassName }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -50,7 +51,7 @@ export default function EditableCell({ value, editable, onSave, displayClassName
   };
 
   if (!editable) {
-    return <span className={displayClassName}>{value || '-'}</span>;
+    return <span className={displayClassName}>{displayValue || value || '-'}</span>;
   }
 
   if (isEditing) {
@@ -91,11 +92,11 @@ export default function EditableCell({ value, editable, onSave, displayClassName
         }}
         aria-label={`Editar celda ${value || 'sin valor'}`}
       >
-        {value || '-'}
+        {displayValue || value || '-'}
       </button>
       {saving ? <small className="cell-save-state">Guardando</small> : null}
       {saveState === 'saved' ? <small className="cell-save-state cell-save-state--ok">Guardado</small> : null}
-      {saveState === 'error' ? <small className="cell-save-state cell-save-state--error">Error</small> : null}
+      {saveState === 'error' ? <small className="cell-save-state cell-save-state--error">No guardado</small> : null}
     </span>
   );
 }

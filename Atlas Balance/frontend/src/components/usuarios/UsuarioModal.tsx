@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
+import { CloseIconButton } from '@/components/common/CloseIconButton';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
@@ -35,6 +37,7 @@ interface UserFormState {
   rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
   activo: boolean;
   primer_login: boolean;
+  puede_usar_ia: boolean;
   password: string;
   emails: string;
   permisos: PermisoFormRow[];
@@ -60,6 +63,7 @@ interface UsuarioDetalleResponse {
     rol: UserFormState['rol'];
     activo: boolean;
     primer_login: boolean;
+    puede_usar_ia: boolean;
   };
   emails?: string[];
   permisos?: PermisoApiRow[];
@@ -94,6 +98,7 @@ const emptyForm = (): UserFormState => ({
   rol: 'EMPLEADO',
   activo: true,
   primer_login: true,
+  puede_usar_ia: false,
   password: '',
   emails: '',
   permisos: [emptyPermiso()],
@@ -141,6 +146,9 @@ export default function UsuarioModal({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
+    onEscape: submitting ? undefined : onClose,
+  });
 
   const title = useMemo(
     () => (editingId ? 'Editar Usuario' : 'Nuevo Usuario'),
@@ -193,6 +201,7 @@ export default function UsuarioModal({
           rol: data.usuario.rol,
           activo: data.usuario.activo,
           primer_login: data.usuario.primer_login,
+          puede_usar_ia: data.usuario.puede_usar_ia,
           password: '',
           emails: (data.emails ?? []).join('\n'),
           permisos: mappedPermisos.length > 0 ? mappedPermisos : [emptyPermiso()],
@@ -214,19 +223,6 @@ export default function UsuarioModal({
       cancelled = true;
     };
   }, [editingId, open]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, open, submitting]);
 
   const parseEmails = (value: string): string[] =>
     value
@@ -347,17 +343,17 @@ export default function UsuarioModal({
 
   const save = async () => {
     if (!form.nombre_completo.trim() || !form.email.trim()) {
-      setError('Nombre y email son obligatorios');
+      setError('Escribe el nombre y el email del usuario.');
       return;
     }
 
     if (!editingId && form.password.length < 12) {
-      setError('Password mínimo 12 caracteres para crear usuario');
+      setError('La contraseña debe tener al menos 12 caracteres para crear el usuario.');
       return;
     }
 
     if (editingId && form.password.length > 0 && form.password.length < 12) {
-      setError('Password mínimo 12 caracteres para cambiarlo');
+      setError('La contraseña debe tener al menos 12 caracteres para cambiarla.');
       return;
     }
 
@@ -370,6 +366,7 @@ export default function UsuarioModal({
       rol: form.rol,
       activo: form.activo,
       primer_login: form.primer_login,
+      puede_usar_ia: form.puede_usar_ia,
       password: form.password,
       password_nueva: form.password || undefined,
       emails: parseEmails(form.emails),
@@ -386,7 +383,7 @@ export default function UsuarioModal({
       await onSaved();
       onClose();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar'));
+      setError(extractErrorMessage(err, 'No se pudo guardar el usuario. Revisa los datos y vuelve a intentarlo.'));
     } finally {
       setSubmitting(false);
     }
@@ -399,25 +396,25 @@ export default function UsuarioModal({
   return (
     <div className="modal-backdrop users-modal-backdrop" onClick={closeModal}>
       <div
+        ref={dialogRef}
         className="users-modal"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="usuarios-modal-title"
+        tabIndex={-1}
       >
         <div className="users-modal-header">
           <div>
             <h2 id="usuarios-modal-title">{title}</h2>
             <p>Datos base, emails de notificación y permisos granulares.</p>
           </div>
-          <button
-            type="button"
+          <CloseIconButton
             className="users-modal-close"
             onClick={closeModal}
             disabled={submitting}
-          >
-            Cerrar
-          </button>
+            ariaLabel="Cerrar modal de usuario"
+          />
         </div>
 
         {loading ? (
@@ -516,16 +513,31 @@ export default function UsuarioModal({
                       }))
                     }
                   />
-                  Forzar primer login
+                  Forzar cambio en primer acceso
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    className="users-check-input"
+                    checked={form.puede_usar_ia}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        puede_usar_ia: event.target.checked,
+                      }))
+                    }
+                  />
+                  Puede usar IA
                 </label>
               </div>
             </section>
 
-            <section className="users-modal-section">
+            <section className="users-modal-section users-notifications-section">
               <h3>Emails de notificación</h3>
-              <label>
-                <span>Uno por línea o separados por coma</span>
+              <label className="users-notification-field">
+                <span>Destinatarios</span>
                 <textarea
+                  aria-describedby="notification-emails-help"
                   rows={4}
                   placeholder={'alertas@atlasbalance.local\nsupervisor@atlasbalance.local'}
                   value={form.emails}
@@ -534,6 +546,9 @@ export default function UsuarioModal({
                   }
                 />
               </label>
+              <p id="notification-emails-help" className="users-field-help">
+                Uno por línea o separados por coma.
+              </p>
             </section>
 
             <section className="users-modal-section">
@@ -660,7 +675,7 @@ export default function UsuarioModal({
                               })
                             }
                           />
-                          Puede Agregar
+                          Añadir movimientos
                         </label>
                         <label>
                           <input
@@ -673,7 +688,7 @@ export default function UsuarioModal({
                               })
                             }
                           />
-                          Puede Editar
+                          Editar movimientos
                         </label>
                         <label>
                           <input
@@ -686,7 +701,7 @@ export default function UsuarioModal({
                               })
                             }
                           />
-                          Puede Eliminar
+                          Eliminar movimientos
                         </label>
                         <label>
                           <input
@@ -699,7 +714,7 @@ export default function UsuarioModal({
                               })
                             }
                           />
-                          Puede Importar
+                          Importar extractos
                         </label>
                         <label>
                           <input
@@ -712,7 +727,7 @@ export default function UsuarioModal({
                               })
                             }
                           />
-                          Puede Ver Dashboard
+                          Ver dashboard
                         </label>
                       </div>
                     </div>

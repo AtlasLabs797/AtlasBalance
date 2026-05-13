@@ -6,17 +6,31 @@ import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { BackupItem, PaginatedResponse, WatchdogState } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { formatDateTime, formatNumber } from '@/utils/formatters';
 
 const pageSizeOptions = [10, 20, 50];
+const estadoCopiaLabels: Record<string, string> = {
+  PENDING: 'Pendiente',
+  SUCCESS: 'Lista',
+  FAILED: 'Fallida',
+};
+const tipoCopiaLabels: Record<string, string> = {
+  AUTO: 'Automática',
+  MANUAL: 'Manual',
+};
 
 function formatBytes(value: number | null): string {
-  if (!value || value <= 0) return 'N/A';
+  if (!value || value <= 0) return 'Sin tamaño';
   const mb = value / (1024 * 1024);
-  return `${mb.toFixed(2)} MB`;
+  return `${formatNumber(mb)} MB`;
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString();
+function formatEstadoCopia(value: string) {
+  return estadoCopiaLabels[value.toUpperCase()] ?? value;
+}
+
+function formatTipoCopia(value: string) {
+  return tipoCopiaLabels[value.toUpperCase()] ?? value;
 }
 
 export default function BackupsPage() {
@@ -35,11 +49,11 @@ export default function BackupsPage() {
   const [doubleConfirmOpen, setDoubleConfirmOpen] = useState(false);
 
   const [overlayVisible, setOverlayVisible] = useState(false);
-  const [overlayMessage, setOverlayMessage] = useState('Restauración en progreso...');
+  const [overlayMessage, setOverlayMessage] = useState('No cierres esta ventana; al terminar volverás al inicio de sesión.');
 
   const logout = useAuthStore((state) => state.logout);
 
-  const totalRowsText = useMemo(() => `${rows.length} backups en esta página`, [rows.length]);
+  const totalRowsText = useMemo(() => `${rows.length} copias en esta página`, [rows.length]);
 
   const fetchRows = async () => {
     setLoading(true);
@@ -56,7 +70,7 @@ export default function BackupsPage() {
       setRows(data.data ?? []);
       setTotalPages(Math.max(1, data.total_pages ?? 1));
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar backups'));
+      setError(extractErrorMessage(err, 'No se pudieron cargar las copias de seguridad.'));
       setRows([]);
       setTotalPages(1);
     } finally {
@@ -71,7 +85,7 @@ export default function BackupsPage() {
       await api.post('/backups/manual');
       await fetchRows();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo crear backup manual'));
+      setError(extractErrorMessage(err, 'No se pudo crear la copia de seguridad manual.'));
     } finally {
       setCreating(false);
     }
@@ -79,7 +93,7 @@ export default function BackupsPage() {
 
   const pollRestoreState = async () => {
     setOverlayVisible(true);
-    setOverlayMessage('Restauración en progreso...');
+    setOverlayMessage('No cierres esta ventana; al terminar volverás al inicio de sesión.');
     const timeoutAt = Date.now() + 10 * 60 * 1000;
 
     while (Date.now() < timeoutAt) {
@@ -87,16 +101,16 @@ export default function BackupsPage() {
         const { data } = await api.get<WatchdogState>('/sistema/estado');
         const state = (data.estado ?? '').toUpperCase();
         if (state === 'RUNNING') {
-          setOverlayMessage(data.mensaje || 'Restauración en progreso...');
+          setOverlayMessage(data.mensaje || 'No cierres esta ventana; al terminar volverás al inicio de sesión.');
         } else if (state === 'SUCCESS') {
-          setOverlayMessage('Restauración completada. Redirigiendo a login...');
+          setOverlayMessage('Restauración completada. Volverás al inicio de sesión.');
           await new Promise((resolve) => setTimeout(resolve, 1200));
           logout();
           window.location.href = '/login';
           return;
         } else if (state === 'FAILED') {
           setOverlayVisible(false);
-          setError(data.mensaje || 'La restauración falló');
+          setError(data.mensaje || 'La restauración falló. Revisa el estado del sistema antes de intentarlo de nuevo.');
           return;
         }
       } catch {
@@ -107,7 +121,7 @@ export default function BackupsPage() {
     }
 
     setOverlayVisible(false);
-    setError('Timeout esperando finalización de restauración');
+    setError('La restauración está tardando más de lo esperado. Comprueba el estado antes de iniciar otra restauración.');
   };
 
   const triggerRestore = async () => {
@@ -120,7 +134,7 @@ export default function BackupsPage() {
       setDoubleConfirmOpen(false);
       await pollRestoreState();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo iniciar restauración'));
+      setError(extractErrorMessage(err, 'No se pudo iniciar la restauración.'));
     } finally {
       setRestoring(false);
     }
@@ -135,19 +149,24 @@ export default function BackupsPage() {
     <section className="backups-page">
       <header className="backups-header">
         <div>
-          <h1>Backups</h1>
-          <p className="dashboard-subtitle">Backups manuales y automáticos con retención de 6 semanas</p>
+          <h1>Copias de seguridad</h1>
+          <p className="dashboard-subtitle">Copias manuales y automáticas con retención de 6 semanas</p>
         </div>
         <button type="button" onClick={createBackup} disabled={creating || loading}>
-          {creating ? 'Creando backup...' : 'Crear backup manual'}
+          {creating ? 'Creando copia...' : 'Crear copia manual'}
         </button>
       </header>
 
       {error ? <p className="auth-error">{error}</p> : null}
 
       <div className="users-table-card">
-        {loading ? <p className="import-muted">Cargando backups...</p> : null}
-        {!loading && rows.length === 0 ? <EmptyState title="No hay backups registrados." /> : null}
+        {loading ? <p className="import-muted">Cargando copias de seguridad...</p> : null}
+        {!loading && rows.length === 0 ? (
+          <EmptyState
+            title="No hay copias de seguridad registradas."
+            subtitle="Crea una copia manual antes de hacer cambios de riesgo."
+          />
+        ) : null}
 
         {!loading && rows.length > 0 ? (
           <>
@@ -167,9 +186,9 @@ export default function BackupsPage() {
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{formatDate(row.fecha_creacion)}</td>
-                      <td>{row.estado}</td>
-                      <td>{row.tipo}</td>
+                      <td>{formatDateTime(row.fecha_creacion)}</td>
+                      <td>{formatEstadoCopia(row.estado)}</td>
+                      <td>{formatTipoCopia(row.tipo)}</td>
                       <td>{formatBytes(row.tamanio_bytes)}</td>
                       <td>{row.iniciado_por_nombre ?? 'Sistema'}</td>
                       <td>{row.ruta_archivo}</td>
@@ -216,9 +235,9 @@ export default function BackupsPage() {
 
       <ConfirmDialog
         open={confirmOpen}
-        title="Confirmar restauración"
-        message={confirmTarget ? `Vas a restaurar el backup del ${formatDate(confirmTarget.fecha_creacion)}.` : 'Confirma restauración.'}
-        confirmLabel="Continuar"
+        title="Restaurar copia"
+        message={confirmTarget ? `Vas a restaurar la copia del ${formatDateTime(confirmTarget.fecha_creacion)}.` : 'Confirma qué copia quieres restaurar.'}
+        confirmLabel="Revisar restauración"
         onCancel={() => {
           setConfirmOpen(false);
           setConfirmTarget(null);
@@ -231,9 +250,10 @@ export default function BackupsPage() {
 
       <ConfirmDialog
         open={doubleConfirmOpen}
-        title="Confirmación final"
-        message="Esto reemplaza toda la base de datos y cerrará sesión. ¿Confirmas?"
-        confirmLabel="Sí, restaurar"
+        title="Última confirmación"
+        message="Esto reemplazará toda la base de datos y cerrará tu sesión. No sigas si no tienes claro que esta copia es la correcta."
+        confirmLabel="Restaurar base de datos"
+        loadingLabel="Restaurando..."
         loading={restoring}
         onCancel={() => {
           setDoubleConfirmOpen(false);
@@ -245,8 +265,8 @@ export default function BackupsPage() {
       {overlayVisible ? (
         <div className="modal-backdrop">
           <div className="loading-overlay">
-            <h2>Restaurando backup</h2>
-            <p>{overlayMessage}</p>
+            <h2>Restaurando copia de seguridad</h2>
+            <p>{overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}</p>
           </div>
         </div>
       ) : null}

@@ -1,8 +1,9 @@
 param(
-    [string]$Version = "V-01.05",
+    [string]$Version = "V-01.06",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
-    [switch]$CleanNpmInstall
+    [switch]$CleanNpmInstall,
+    [switch]$AllowUnsignedLocal
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,9 +12,9 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $workspaceRoot = Split-Path -Parent $repoRoot
 $documentationRoot = Join-Path $workspaceRoot "Documentacion"
 $frontendPath = Join-Path $repoRoot "frontend"
-$apiProject = Join-Path $repoRoot "backend\src\GestionCaja.API\GestionCaja.API.csproj"
-$watchdogProject = Join-Path $repoRoot "backend\src\GestionCaja.Watchdog\GestionCaja.Watchdog.csproj"
-$apiWwwroot = Join-Path $repoRoot "backend\src\GestionCaja.API\wwwroot"
+$apiProject = Join-Path $repoRoot "backend\src\AtlasBalance.API\AtlasBalance.API.csproj"
+$watchdogProject = Join-Path $repoRoot "backend\src\AtlasBalance.Watchdog\AtlasBalance.Watchdog.csproj"
+$apiWwwroot = Join-Path $repoRoot "backend\src\AtlasBalance.API\wwwroot"
 $releaseRoot = Join-Path $repoRoot "Atlas Balance Release"
 $packageName = "AtlasBalance-$Version-$Runtime"
 $packageRoot = Join-Path $releaseRoot $packageName
@@ -32,6 +33,58 @@ function Write-JsonFile {
     Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
 }
 
+function Invoke-ReleaseSigner {
+    param([string]$ZipPath, [string]$SignaturePath)
+
+    $signerRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("atlas-release-signer-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $signerRoot -Force | Out-Null
+    try {
+        $signerProject = Join-Path $signerRoot "AtlasReleaseSigner.csproj"
+        $signerProgram = Join-Path $signerRoot "Program.cs"
+        Set-Content -LiteralPath $signerProject -Encoding UTF8 -Value @'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+'@
+        Set-Content -LiteralPath $signerProgram -Encoding UTF8 -Value @'
+using System.Security.Cryptography;
+
+if (args.Length != 2)
+{
+    Console.Error.WriteLine("Usage: AtlasReleaseSigner <zipPath> <signaturePath>");
+    return 2;
+}
+
+var privateKeyPem = Environment.GetEnvironmentVariable("ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM");
+if (string.IsNullOrWhiteSpace(privateKeyPem))
+{
+    Console.Error.WriteLine("ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM is required.");
+    return 3;
+}
+
+using var rsa = RSA.Create();
+rsa.ImportFromPem(privateKeyPem.Replace("\\n", "\n"));
+var zipBytes = await File.ReadAllBytesAsync(args[0]);
+var signature = rsa.SignData(
+    zipBytes,
+    HashAlgorithmName.SHA256,
+    RSASignaturePadding.Pkcs1);
+await File.WriteAllBytesAsync(args[1], signature);
+return 0;
+'@
+
+        & dotnet run --project $signerProject --configuration Release -- $ZipPath $SignaturePath
+        if ($LASTEXITCODE -ne 0) { throw "Firma RSA del release fallo." }
+    } finally {
+        Remove-Item -LiteralPath $signerRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if (-not (Test-Path $apiProject) -or -not (Test-Path $watchdogProject)) {
     throw "No se encontraron los proyectos .NET desde $repoRoot."
 }
@@ -41,19 +94,12 @@ New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
 Push-Location $frontendPath
 try {
-    if ($CleanNpmInstall -and (Test-Path "node_modules")) {
-        Remove-Item -LiteralPath "node_modules" -Recurse -Force
+    if (-not (Test-Path "package-lock.json")) {
+        throw "package-lock.json es obligatorio para generar releases reproducibles."
     }
 
-    if ((-not (Test-Path "node_modules")) -and (Test-Path "package-lock.json")) {
-        & npm.cmd ci
-        if ($LASTEXITCODE -ne 0) { throw "npm ci fallo." }
-    } elseif (-not (Test-Path "node_modules")) {
-        & npm.cmd install
-        if ($LASTEXITCODE -ne 0) { throw "npm install fallo." }
-    } else {
-        Write-Host "node_modules existente; se omite npm ci. Usa -CleanNpmInstall para una instalacion limpia." -ForegroundColor Yellow
-    }
+    & npm.cmd ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci fallo." }
 
     & npm.cmd run build
     if ($LASTEXITCODE -ne 0) { throw "npm run build fallo." }
@@ -61,13 +107,25 @@ try {
     Pop-Location
 }
 
-Remove-Item -LiteralPath $apiWwwroot -Recurse -Force -ErrorAction SilentlyContinue
+& dotnet restore $apiProject --locked-mode -r $Runtime
+if ($LASTEXITCODE -ne 0) { throw "dotnet restore API --locked-mode fallo." }
+
+& dotnet restore $watchdogProject --locked-mode -r $Runtime
+if ($LASTEXITCODE -ne 0) { throw "dotnet restore Watchdog --locked-mode fallo." }
+
+if (Test-Path -LiteralPath $apiWwwroot) {
+    Remove-Item -LiteralPath $apiWwwroot -Recurse -Force -ErrorAction Stop
+}
 New-Item -ItemType Directory -Path $apiWwwroot -Force | Out-Null
+if (Get-ChildItem -LiteralPath $apiWwwroot -Force | Select-Object -First 1) {
+    throw "wwwroot no quedo limpio; abortando release para no empaquetar assets antiguos."
+}
 Copy-DirectoryContents -Source (Join-Path $frontendPath "dist") -Target $apiWwwroot
 
 & dotnet publish $apiProject `
     -c $Configuration `
     -r $Runtime `
+    --no-restore `
     --self-contained true `
     -p:PublishSingleFile=false `
     -p:InformationalVersion=$Version `
@@ -77,6 +135,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish API fallo." }
 & dotnet publish $watchdogProject `
     -c $Configuration `
     -r $Runtime `
+    --no-restore `
     --self-contained true `
     -p:PublishSingleFile=false `
     -p:InformationalVersion=$Version `
@@ -139,22 +198,15 @@ Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -F
 $signaturePath = "$zipPath.sig"
 Remove-Item -LiteralPath $signaturePath -Force -ErrorAction SilentlyContinue
 if (-not [string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM)) {
-    $rsa = [System.Security.Cryptography.RSA]::Create()
-    try {
-        $privateKeyPem = $env:ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM -replace "\\n", "`n"
-        $rsa.ImportFromPem($privateKeyPem)
-        $zipBytes = [System.IO.File]::ReadAllBytes($zipPath)
-        $signature = $rsa.SignData(
-            $zipBytes,
-            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
-        [System.IO.File]::WriteAllBytes($signaturePath, $signature)
-        Write-Host "Firma generada: $signaturePath" -ForegroundColor Green
-    } finally {
-        $rsa.Dispose()
-    }
+    Invoke-ReleaseSigner -ZipPath $zipPath -SignaturePath $signaturePath
+    Write-Host "Firma generada: $signaturePath" -ForegroundColor Green
 } else {
-    Write-Warning "ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM no definido; el actualizador online rechazara este ZIP sin su asset .sig."
+    if (-not $AllowUnsignedLocal) {
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        throw "ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM es obligatorio para un release publicable. Usa -AllowUnsignedLocal solo para pruebas locales."
+    }
+
+    Write-Warning "Release local sin firma generado por -AllowUnsignedLocal. No lo publiques."
 }
 
 Write-Host "Release generado: $packageRoot" -ForegroundColor Green

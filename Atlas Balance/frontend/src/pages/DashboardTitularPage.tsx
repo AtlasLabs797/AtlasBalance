@@ -18,6 +18,7 @@ import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { SignedAmount } from '@/components/common/SignedAmount';
+import { extractErrorMessage } from '@/utils/errorMessage';
 
 const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '9m', '12m', '18m', '24m'];
 
@@ -118,7 +119,7 @@ export default function DashboardTitularPage() {
           return;
         }
 
-        setError(err instanceof Error ? err.message : 'No se pudo cargar el dashboard del titular.');
+        setError(extractErrorMessage(err, 'No se pudo cargar el dashboard del titular.'));
       } finally {
         if (mounted) {
           setLoading(false);
@@ -149,7 +150,7 @@ export default function DashboardTitularPage() {
     return (
       <div className="page-placeholder">
         <h1>Dashboard Titular</h1>
-        <p>{error ?? 'No hay datos para este titular.'}</p>
+        <p>{error ?? 'Carga cuentas o extractos para ver el dashboard de este titular.'}</p>
       </div>
     );
   }
@@ -206,7 +207,10 @@ export default function DashboardTitularPage() {
           </header>
 
           {titular.saldos_por_cuenta.length === 0 ? (
-            <EmptyState title="No hay cuentas para este titular." />
+            <EmptyState
+              title="Este titular no tiene cuentas visibles."
+              subtitle="Asigna una cuenta o revisa tus permisos para ver el desglose."
+            />
           ) : (
             <div className="dashboard-table-wrap">
               <table>

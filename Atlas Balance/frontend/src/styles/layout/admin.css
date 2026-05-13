@@ -32,7 +32,7 @@
   gap: var(--space-2);
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1023.98px) {
   .import-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -49,39 +49,21 @@
 
 @media (max-width: 720px) {
   .import-modal {
-    width: 100vw;
+    width: 100%;
+    max-width: 100dvw;
     height: 100dvh;
     border-radius: 0;
   }
 
   .import-modal-header {
     padding: var(--space-2);
-    flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
   }
 }
 
 .config-page {
   display: grid;
   gap: var(--space-4);
-}
-
-.config-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.config-tab {
-  border: 1px solid var(--color-border-primary);
-  background: var(--color-bg-primary);
-  color: var(--color-text-primary);
-}
-
-.config-tab--active {
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
-  border-color: var(--color-accent);
 }
 
 .config-header {
@@ -164,8 +146,14 @@
   font-weight: var(--font-weight-medium);
 }
 
-.config-field input {
+.config-field input,
+.config-field textarea {
   width: 100%;
+}
+
+.config-field textarea {
+  min-height: 6rem;
+  resize: vertical;
 }
 
 .config-inline-action {
@@ -367,6 +355,10 @@
 }
 
 .config-modal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
 

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
+import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import api from '@/services/api';
 import type { IntegrationAuditItem, IntegrationTokenListItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { formatDateTime } from '@/utils/formatters';
 
 const pageSizeOptions = [25, 50, 100];
+const EMPTY_VALUE = 'Sin dato';
 
 export function IntegrationAuditTable() {
   const [rows, setRows] = useState<IntegrationAuditItem[]>([]);
@@ -74,7 +77,12 @@ export function IntegrationAuditTable() {
       {error ? <p className="auth-error">{error}</p> : null}
       <div className="users-table-card auditoria-table-card">
         {loading ? <p>Cargando auditoría de integraciones...</p> : null}
-        {!loading && rows.length === 0 ? <p>Sin registros de integración.</p> : null}
+        {!loading && rows.length === 0 ? (
+          <EmptyState
+            title="No hay llamadas de integración con estos filtros."
+            subtitle="Cuando OpenClaw use un token, sus accesos aparecerán aquí."
+          />
+        ) : null}
         {!loading && rows.length > 0 ? (
           <>
             <div className="users-table-scroll">
@@ -85,7 +93,7 @@ export function IntegrationAuditTable() {
                     <th>Token</th>
                     <th>Método</th>
                     <th>Endpoint</th>
-                    <th>Status</th>
+                    <th>Código</th>
                     <th>Tiempo (ms)</th>
                     <th>IP</th>
                   </tr>
@@ -93,13 +101,13 @@ export function IntegrationAuditTable() {
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{new Date(row.timestamp).toLocaleString('es-ES')}</td>
+                      <td>{formatDateTime(row.timestamp)}</td>
                       <td>{row.token_nombre ?? row.token_id}</td>
                       <td>{row.metodo}</td>
                       <td>{row.endpoint}</td>
-                      <td>{row.codigo_respuesta ?? 'N/A'}</td>
-                      <td>{row.tiempo_ejecucion_ms ?? 'N/A'}</td>
-                      <td>{row.ip_address ?? 'N/A'}</td>
+                      <td>{row.codigo_respuesta ?? EMPTY_VALUE}</td>
+                      <td>{row.tiempo_ejecucion_ms ?? EMPTY_VALUE}</td>
+                      <td>{row.ip_address ?? EMPTY_VALUE}</td>
                     </tr>
                   ))}
                 </tbody>

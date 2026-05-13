@@ -7,7 +7,8 @@ import '@/styles/global.css';
 import '@/styles/layout.css';
 import '@/styles/auth.css';
 
-const savedTheme = localStorage.getItem('theme') ?? 'light';
+const rawTheme = localStorage.getItem('theme');
+const savedTheme = rawTheme === 'dark' || rawTheme === 'light' ? rawTheme : 'light';
 document.documentElement.setAttribute('data-theme', savedTheme);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

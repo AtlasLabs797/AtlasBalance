@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 import UsuarioModal, {
   type CatalogCuenta,
   type CatalogTitular,
@@ -14,6 +15,7 @@ interface UsuarioRow {
   rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
   activo: boolean;
   primer_login: boolean;
+  puede_usar_ia: boolean;
   deleted_at: string | null;
 }
 
@@ -21,6 +23,14 @@ interface DeleteCandidate {
   id: string;
   email: string;
 }
+
+const rolLabels: Record<UsuarioRow['rol'], string> = {
+  ADMIN: 'Administrador',
+  GERENTE: 'Gerente',
+  EMPLEADO_ULTRA: 'Empleado ultra',
+  EMPLEADO_PLUS: 'Empleado plus',
+  EMPLEADO: 'Empleado',
+};
 
 export default function UsuariosPage() {
   const [rows, setRows] = useState<UsuarioRow[]>([]);
@@ -38,6 +48,9 @@ export default function UsuariosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const deleteDialogRef = useDialogFocus<HTMLDivElement>(Boolean(deleteCandidate), {
+    onEscape: actionLoading ? undefined : () => setDeleteCandidate(null),
+  });
 
   const activeCount = useMemo(
     () => rows.filter((row) => !row.deleted_at && row.activo).length,
@@ -74,7 +87,7 @@ export default function UsuariosPage() {
       setTotal(data.total ?? 0);
       setTotalPages(Math.max(data.total_pages ?? 1, 1));
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo cargar usuarios'));
+      setError(extractErrorMessage(err, 'No se pudieron cargar los usuarios.'));
     } finally {
       setLoading(false);
     }
@@ -121,7 +134,7 @@ export default function UsuariosPage() {
       setDeleteCandidate(null);
       await loadData();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo eliminar'));
+      setError(extractErrorMessage(err, 'No se pudo enviar el usuario a papelera.'));
     } finally {
       setActionLoading(false);
     }
@@ -135,7 +148,7 @@ export default function UsuariosPage() {
       await api.post(`/usuarios/${id}/restaurar`);
       await loadData();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo restaurar'));
+      setError(extractErrorMessage(err, 'No se pudo restaurar el usuario.'));
     } finally {
       setActionLoading(false);
     }
@@ -152,7 +165,7 @@ export default function UsuariosPage() {
         </div>
         <div className="users-actions">
           <button type="button" className="users-primary-button" onClick={openCreateModal}>
-            Nuevo Usuario
+            Nuevo usuario
           </button>
         </div>
       </header>
@@ -160,7 +173,7 @@ export default function UsuariosPage() {
       <div className="users-summary-grid">
         <article className="users-summary-card">
           <strong>{total}</strong>
-          <span>Total cargados</span>
+          <span>Usuarios en esta vista</span>
         </article>
         <article className="users-summary-card">
           <strong>{activeCount}</strong>
@@ -175,6 +188,7 @@ export default function UsuariosPage() {
       <div className="users-filters">
         <input
           type="search"
+          aria-label="Buscar usuarios por nombre o email"
           placeholder="Buscar por nombre o email"
           value={search}
           onChange={(event) => {
@@ -199,7 +213,7 @@ export default function UsuariosPage() {
 
       <div className="users-table-card">
         {loading ? (
-          <p>Cargando...</p>
+          <p>Cargando usuarios...</p>
         ) : rows.length === 0 ? (
           <div className="users-empty-state">
             <h2>Sin usuarios en esta vista</h2>
@@ -214,7 +228,8 @@ export default function UsuariosPage() {
                 <th>Nombre</th>
                 <th>Rol</th>
                 <th>Estado</th>
-                <th>Primer login</th>
+                <th>Cambio inicial</th>
+                <th>IA</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -223,13 +238,14 @@ export default function UsuariosPage() {
                 <tr key={row.id}>
                   <td>{row.email}</td>
                   <td>{row.nombre_completo}</td>
-                  <td>{row.rol}</td>
+                  <td>{rolLabels[row.rol] ?? row.rol}</td>
                   <td>
                     <span className={row.deleted_at ? 'users-badge users-badge--danger' : row.activo ? 'users-badge users-badge--ok' : 'users-badge'}>
                       {row.deleted_at ? 'Eliminado' : row.activo ? 'Activo' : 'Inactivo'}
                     </span>
                   </td>
-                  <td>{row.primer_login ? 'Sí' : 'No'}</td>
+                  <td>{row.primer_login ? 'Pendiente' : 'Completado'}</td>
+                  <td>{row.puede_usar_ia ? 'Sí' : 'No'}</td>
                   <td className="users-row-actions">
                     <button
                       type="button"
@@ -307,11 +323,13 @@ export default function UsuariosPage() {
           onClick={() => setDeleteCandidate(null)}
         >
           <div
+            ref={deleteDialogRef}
             className="users-confirm-modal"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-user-title"
+            tabIndex={-1}
           >
             <h2 id="delete-user-title">Eliminar usuario</h2>
             <p>
@@ -327,7 +345,7 @@ export default function UsuariosPage() {
                 Cancelar
               </button>
               <button type="button" onClick={() => void softDelete()} disabled={actionLoading}>
-                {actionLoading ? 'Eliminando...' : 'Confirmar eliminación'}
+                {actionLoading ? 'Enviando...' : 'Enviar a papelera'}
               </button>
             </div>
           </div>

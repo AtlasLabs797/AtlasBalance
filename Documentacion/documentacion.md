@@ -1,14 +1,14 @@
 # Atlas Balance - instalacion y actualizaciones
 
-Version actual del paquete: `V-01.05`.
+Version actual del paquete: `V-01.06`.
 
-No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido es `AtlasBalance-V-01.05-win-x64.zip` y, al descomprimirlo, debe contener `api\GestionCaja.API.exe`, `watchdog\GestionCaja.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-01.06-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
 
 ## Que queda preparado
 
-La version `V-01.05` deja el proyecto listo para generar un paquete instalable de Windows:
+La version `V-01.06` deja el proyecto listo para generar un paquete instalable de Windows:
 
-- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.05-win-x64.zip`.
+- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip`.
 - `install.cmd`: instalador de un clic.
 - `update.cmd`: actualizador de un clic.
 - `uninstall.cmd`: desinstalador de un clic.
@@ -46,20 +46,34 @@ En la maquina de desarrollo, desde la carpeta `Atlas Balance`:
 Salida esperada:
 
 ```text
-Atlas Balance Release\AtlasBalance-V-01.05-win-x64\
-Atlas Balance Release\AtlasBalance-V-01.05-win-x64.zip
-Atlas Balance Release\AtlasBalance-V-01.05-win-x64.zip.sig
+Atlas Balance Release\AtlasBalance-V-01.06-win-x64\
+Atlas Balance Release\AtlasBalance-V-01.06-win-x64.zip
+Atlas Balance Release\AtlasBalance-V-01.06-win-x64.zip.sig
 ```
 
 Si quieres que la actualizacion online desde la app acepte el paquete, ejecuta `Build-Release.ps1` con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` disponible en el entorno. La clave privada no va en el repo ni en documentacion.
 
+### Limpieza de datos antes de publicar
+
+Si la base local tiene datos de prueba, limpiala antes de entregar o generar una demo publicable:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Purge-DeliveryData.ps1" -ConfirmDeliveryPurge
+```
+
+La purga borra usuarios, titulares, cuentas, extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien vacia claves SMTP, OpenRouter, OpenAI y tipos de cambio externos.
+
+No la ejecutes contra una base de cliente real salvo que quieras dejarla vacia. Esto no es un reset estetico; borra datos operativos.
+
+Tras purgar, el primer arranque solo crea el admin inicial si `SeedAdmin:Password` esta configurado.
+
 ### 2. Copiar al servidor
 
-1. Copia `AtlasBalance-V-01.05-win-x64.zip` al servidor.
+1. Copia `AtlasBalance-V-01.06-win-x64.zip` al servidor.
 2. Descomprime el ZIP, por ejemplo en:
 
 ```text
-C:\Temp\AtlasBalance-V-01.05-win-x64
+C:\Temp\AtlasBalance-V-01.06-win-x64
 ```
 
 ### 3. Ejecutar instalador
@@ -198,14 +212,14 @@ Al pulsar `Actualizar ahora`, Atlas Balance:
 
 Si no puede verificar firma, crear backup previo o recuperar `/api/health`, no actualiza. Bien. Actualizar una app financiera sin backup o sin firma es una forma elegante de pedir problemas.
 
-La instalacion debe tener `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Sin clave publica, la actualizacion online falla cerrado.
+La instalacion debe tener `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Desde el paquete firmado `V-01.06`, el instalador escribe una clave publica por defecto si no se proporciona override. Sin clave publica valida, la actualizacion online falla cerrado.
 
 ### 1. Generar nuevo paquete
 
 En desarrollo, cuando haya una version nueva:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version V-01.05
+.\scripts\Build-Release.ps1 -Version V-01.06
 ```
 
 ### 2. Copiar al servidor
@@ -214,7 +228,7 @@ En desarrollo, cuando haya una version nueva:
 2. Descomprime en una carpeta temporal, por ejemplo:
 
 ```text
-C:\Temp\AtlasBalance-V-01.05-win-x64
+C:\Temp\AtlasBalance-V-01.06-win-x64
 ```
 
 ### 3. Ejecutar actualizador
@@ -234,7 +248,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Actualizar-At
 Si ya estas trabajando desde una instalacion que tiene los scripts nuevos y quieres apuntar a un paquete descargado/descomprimido:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.05-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.06-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador hace esto:
@@ -297,7 +311,7 @@ Datos de PostgreSQL
 
 Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exactamente como se pierden configuraciones y luego todo el mundo mira al techo.
 
-## Notas de seguridad V-01.05
+## Notas de seguridad V-01.06
 
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
@@ -333,7 +347,7 @@ Start-Service AtlasBalance.API
 
 La version visible del backend se toma de `AssemblyInformationalVersion`.
 
-Para `V-01.05` queda fijado en:
+Para `V-01.06` queda fijado en:
 
 ```text
 Atlas Balance/Directory.Build.props

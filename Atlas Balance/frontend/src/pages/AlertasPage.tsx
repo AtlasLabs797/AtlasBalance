@@ -1,12 +1,14 @@
-﻿import axios from 'axios';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { TipoTitular } from '@/types';
+import { extractErrorMessage } from '@/utils/errorMessage';
+import { formatCurrency, formatDateTime } from '@/utils/formatters';
 
 interface AlertaContextoCuenta {
   id: string;
@@ -61,11 +63,7 @@ const EMPTY_FORM: SaveAlertaPayload = {
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
-  if (axios.isAxiosError(error)) {
-    return error.response?.data?.error ?? error.message ?? fallback;
-  }
-
-  return error instanceof Error ? error.message : fallback;
+  return extractErrorMessage(error, fallback);
 }
 
 export default function AlertasPage() {
@@ -88,13 +86,14 @@ export default function AlertasPage() {
   const [tipoForm, setTipoForm] = useState<SaveAlertaPayload>({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
   const [editingCuentaAlertId, setEditingCuentaAlertId] = useState<string | null>(null);
   const [editingTipoAlertId, setEditingTipoAlertId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AlertaItem | null>(null);
 
   const cuentaAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id !== null), [alertas]);
   const tipoAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id === null && item.tipo_titular !== null), [alertas]);
   const onlyGlobalAlert = useMemo(() => alertas.find((item) => item.cuenta_id === null && item.tipo_titular === null) ?? null, [alertas]);
   const tipoTitularOptions: Array<{ value: TipoTitular; label: string }> = [
     { value: 'EMPRESA', label: 'Empresa' },
-    { value: 'AUTONOMO', label: 'Autonomo' },
+    { value: 'AUTONOMO', label: 'Autónomo' },
     { value: 'PARTICULAR', label: 'Particular' },
   ];
   const availableCuentas = useMemo(() => {
@@ -367,10 +366,10 @@ export default function AlertasPage() {
                     <td>{item.cuenta_nombre}</td>
                     <td>{item.divisa}</td>
                     <td>
-                      <SignedAmount value={item.saldo_actual}>{item.saldo_actual.toFixed(2)}</SignedAmount>
+                      <SignedAmount value={item.saldo_actual}>{formatCurrency(item.saldo_actual, item.divisa ?? 'EUR')}</SignedAmount>
                     </td>
                     <td>
-                      <SignedAmount value={item.saldo_minimo}>{item.saldo_minimo.toFixed(2)}</SignedAmount>
+                      <SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount>
                     </td>
                     <td>
                       <Link to={`/cuentas/${item.cuenta_id}`}>Abrir cuenta</Link>
@@ -595,17 +594,17 @@ export default function AlertasPage() {
                     {tipoAlerts.map((item) => (
                       <tr key={item.id}>
                         <td>Tipo: {item.tipo_titular}</td>
-                        <td><SignedAmount value={item.saldo_minimo}>{item.saldo_minimo.toFixed(2)}</SignedAmount></td>
+                        <td><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
                         <td>{item.activa ? 'Sí' : 'No'}</td>
                         <td>{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
-                        <td>{item.fecha_ultima_alerta ? new Date(item.fecha_ultima_alerta).toLocaleString() : '—'}</td>
+                        <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
                         <td>
                           <div className="users-row-actions">
                             <button type="button" onClick={() => editTipoAlert(item)}>
                               Editar
                             </button>
-                            <button type="button" onClick={() => void deleteAlert(item.id)} disabled={saving}>
-                              Eliminar
+                            <button type="button" onClick={() => setDeleteTarget(item)} disabled={saving}>
+                              Eliminar alerta
                             </button>
                           </div>
                         </td>
@@ -646,17 +645,17 @@ export default function AlertasPage() {
                         <td>{item.titular_nombre ?? '—'}</td>
                         <td>{item.cuenta_nombre ?? '—'}</td>
                         <td>{item.divisa ?? '—'}</td>
-                        <td><SignedAmount value={item.saldo_minimo}>{item.saldo_minimo.toFixed(2)}</SignedAmount></td>
+                        <td><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
                         <td>{item.activa ? 'Sí' : 'No'}</td>
                         <td>{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
-                        <td>{item.fecha_ultima_alerta ? new Date(item.fecha_ultima_alerta).toLocaleString() : '—'}</td>
+                        <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
                         <td>
                           <div className="users-row-actions">
                             <button type="button" onClick={() => editCuentaAlert(item)}>
                               Editar
                             </button>
-                            <button type="button" onClick={() => void deleteAlert(item.id)} disabled={saving}>
-                              Eliminar
+                            <button type="button" onClick={() => setDeleteTarget(item)} disabled={saving}>
+                              Eliminar alerta
                             </button>
                           </div>
                         </td>
@@ -669,6 +668,27 @@ export default function AlertasPage() {
           </article>
         </>
       ) : null}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Eliminar alerta"
+        message={
+          deleteTarget?.cuenta_nombre
+            ? `Vas a eliminar la alerta de ${deleteTarget.cuenta_nombre}.`
+            : deleteTarget?.tipo_titular
+              ? `Vas a eliminar la alerta para titulares de tipo ${deleteTarget.tipo_titular}.`
+              : 'Vas a eliminar la alerta global.'
+        }
+        confirmLabel="Eliminar alerta"
+        loadingLabel="Eliminando..."
+        loading={saving}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          await deleteAlert(deleteTarget.id);
+          setDeleteTarget(null);
+        }}
+      />
     </section>
   );
 }

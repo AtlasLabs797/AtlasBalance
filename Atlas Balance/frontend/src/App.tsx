@@ -1,32 +1,44 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import AppErrorBoundary from '@/components/common/AppErrorBoundary';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { Layout } from '@/components/layout/Layout';
-import AlertasPage from '@/pages/AlertasPage';
-import AuditoriaPage from '@/pages/AuditoriaPage';
-import BackupsPage from '@/pages/BackupsPage';
-import ChangePasswordPage from '@/pages/ChangePasswordPage';
-import ConfiguracionPage from '@/pages/ConfiguracionPage';
-import CuentaDetailPage from '@/pages/CuentaDetailPage';
-import CuentasPage from '@/pages/CuentasPage';
-import DashboardPage from '@/pages/DashboardPage';
-import DashboardTitularPage from '@/pages/DashboardTitularPage';
-import ExportacionesPage from '@/pages/ExportacionesPage';
-import ExtractosPage from '@/pages/ExtractosPage';
-import FormatosImportacionPage from '@/pages/FormatosImportacionPage';
-import ImportacionPage from '@/pages/ImportacionPage';
 import LoginPage from '@/pages/LoginPage';
-import NotFoundPage from '@/pages/NotFoundPage';
-import PapeleraPage from '@/pages/PapeleraPage';
-import TitularDetailPage from '@/pages/TitularDetailPage';
-import TitularesPage from '@/pages/TitularesPage';
-import UsuariosPage from '@/pages/UsuariosPage';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermisosStore } from '@/stores/permisosStore';
+
+const AlertasPage            = lazy(() => import('@/pages/AlertasPage'));
+const AuditoriaPage          = lazy(() => import('@/pages/AuditoriaPage'));
+const BackupsPage            = lazy(() => import('@/pages/BackupsPage'));
+const ChangePasswordPage     = lazy(() => import('@/pages/ChangePasswordPage'));
+const ConfiguracionPage      = lazy(() => import('@/pages/ConfiguracionPage'));
+const CuentaDetailPage       = lazy(() => import('@/pages/CuentaDetailPage'));
+const CuentasPage            = lazy(() => import('@/pages/CuentasPage'));
+const DashboardPage          = lazy(() => import('@/pages/DashboardPage'));
+const DashboardTitularPage   = lazy(() => import('@/pages/DashboardTitularPage'));
+const ExportacionesPage      = lazy(() => import('@/pages/ExportacionesPage'));
+const ExtractosPage          = lazy(() => import('@/pages/ExtractosPage'));
+const FormatosImportacionPage = lazy(() => import('@/pages/FormatosImportacionPage'));
+const ImportacionPage        = lazy(() => import('@/pages/ImportacionPage'));
+const IaPage                 = lazy(() => import('@/pages/IaPage'));
+const NotFoundPage           = lazy(() => import('@/pages/NotFoundPage'));
+const PapeleraPage           = lazy(() => import('@/pages/PapeleraPage'));
+const RevisionPage           = lazy(() => import('@/pages/RevisionPage'));
+const TitularDetailPage      = lazy(() => import('@/pages/TitularDetailPage'));
+const TitularesPage          = lazy(() => import('@/pages/TitularesPage'));
+const UsuariosPage           = lazy(() => import('@/pages/UsuariosPage'));
+
+function DashboardRoute({ children }: { children: JSX.Element }) {
+  const usuario = useAuthStore((state) => state.usuario);
+  const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
+  const allowed = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+
+  return allowed ? children : <Navigate to="/extractos" replace />;
+}
 
 function getCsrfTokenFromCookie(): string | null {
   const cookies = document.cookie.split(';').map((item) => item.trim());
@@ -91,7 +103,13 @@ export default function App() {
     };
   }, [isAuthenticated, location.pathname, clearAlertas, loadAlertasActivas, logout, setLoading, setPermisos, setUsuario]);
 
-  const section = (element: JSX.Element) => <AppErrorBoundary resetKey={location.key}>{element}</AppErrorBoundary>;
+  const section = (element: JSX.Element) => (
+    <AppErrorBoundary resetKey={location.key}>
+      <Suspense fallback={<PageSkeleton />}>
+        {element}
+      </Suspense>
+    </AppErrorBoundary>
+  );
 
   return (
     <Routes>
@@ -113,7 +131,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={section(<DashboardPage />)} />
+        <Route path="/dashboard" element={section(<DashboardRoute><DashboardPage /></DashboardRoute>)} />
         <Route path="/dashboard/titular/:id" element={section(<DashboardTitularPage />)} />
         <Route path="/dashboard/cuenta/:id" element={section(<CuentaDetailPage />)} />
         <Route path="/titulares" element={section(<TitularesPage />)} />
@@ -122,6 +140,8 @@ export default function App() {
         <Route path="/cuentas/:id" element={section(<CuentaDetailPage />)} />
         <Route path="/extractos" element={section(<ExtractosPage />)} />
         <Route path="/importacion" element={section(<ImportacionPage />)} />
+        <Route path="/revision" element={section(<RevisionPage />)} />
+        <Route path="/ia" element={section(<IaPage />)} />
         <Route
           path="/formatos-importacion"
           element={section(

@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import api from '@/services/api';
 import type { CreateIntegrationTokenResponse } from '@/types';
 import { TokenPermissionsEditor, type TokenPermisoDraft } from '@/components/integraciones/TokenPermissionsEditor';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 interface CatalogoPermisos {
@@ -25,6 +26,9 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   const [tokenLectura, setTokenLectura] = useState(true);
   const [tokenEscritura, setTokenEscritura] = useState(false);
   const [tokenPermisos, setTokenPermisos] = useState<TokenPermisoDraft[]>([]);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
+    onEscape: busy || submitting ? undefined : onClose,
+  });
 
   if (!open) {
     return null;
@@ -33,7 +37,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!tokenNombre.trim()) {
-      onError('Nombre de token obligatorio.');
+      onError('Escribe un nombre para el token.');
       return;
     }
 
@@ -43,7 +47,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
     }
 
     if (tokenPermisos.length === 0) {
-      onError('Anade al menos un permiso de alcance para el token.');
+      onError('Añade al menos un permiso de alcance para el token.');
       return;
     }
 
@@ -82,10 +86,18 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   };
 
   return (
-    <div className="config-modal-backdrop">
-      <div className="config-modal-card">
+    <div className="config-modal-backdrop" role="presentation" onClick={busy || submitting ? undefined : onClose}>
+      <div
+        ref={dialogRef}
+        className="config-modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-token-modal-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <header className="config-modal-header">
-          <h3>Crear token OpenClaw</h3>
+          <h3 id="create-token-modal-title">Crear token OpenClaw</h3>
         </header>
         <form onSubmit={submit}>
           <div className="config-grid-3">

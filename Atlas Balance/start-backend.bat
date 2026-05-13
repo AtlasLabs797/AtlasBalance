@@ -1,3 +1,2 @@
 @echo off
-cd backend\src\GestionCaja.API
-dotnet run
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-BackendDev.ps1"

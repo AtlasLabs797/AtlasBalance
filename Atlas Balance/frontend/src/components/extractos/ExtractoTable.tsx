@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useId } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
@@ -6,7 +7,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import EditableCell from '@/components/extractos/EditableCell';
 import type { Extracto } from '@/types';
-import { getAmountTone } from '@/utils/formatters';
+import { formatCurrency, formatDate, getAmountTone } from '@/utils/formatters';
 
 interface ExtractoTableProps {
   rows: Extracto[];
@@ -26,6 +27,7 @@ interface ExtractoTableProps {
 const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo'] as const;
 const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
 const ACTION_COLUMNS = new Set(['checked', 'flagged']);
+const DEFAULT_SELECTED_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda' };
 
 export default function ExtractoTable({
   rows,
@@ -46,6 +48,7 @@ export default function ExtractoTable({
   const [showColumns, setShowColumns] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
+  const [selectedCell, setSelectedCell] = useState(DEFAULT_SELECTED_CELL);
   const parentRef = useRef<HTMLDivElement | null>(null);
   const filtersId = useId();
   const columnsId = useId();
@@ -62,7 +65,8 @@ export default function ExtractoTable({
       return allColumns;
     }
     const selected = new Set(visibleColumns);
-    return allColumns.filter((col) => selected.has(col));
+    const next = allColumns.filter((col) => selected.has(col));
+    return next.length > 0 ? next : ['fila_numero'];
   }, [allColumns, visibleColumns]);
 
   const filteredRows = useMemo(() => {
@@ -82,7 +86,7 @@ export default function ExtractoTable({
     getScrollElement: () => parentRef.current,
     estimateSize: () => (density === 'compact' ? 34 : 42),
     overscan: 15,
-    scrollMargin: headerOffset,
+    scrollMargin: 0,
     scrollPaddingStart: headerOffset,
     getItemKey: (index) => filteredRows[index]?.id ?? index
   });
@@ -92,6 +96,13 @@ export default function ExtractoTable({
   }, [density, rowVirtualizer]);
 
   const gridTemplateColumns = activeColumns.length > 0 ? activeColumns.map(getColumnTrack).join(' ') : '1fr';
+  const sheetWidth = activeColumns.reduce((total, column) => total + getColumnWidth(column), 0);
+  const sheetRootStyle = {
+    '--extracto-sheet-width': `${sheetWidth}px`,
+  } as CSSProperties;
+  const sheetGridStyle = {
+    gridTemplateColumns
+  } as CSSProperties;
 
   return (
     <section
@@ -135,27 +146,40 @@ export default function ExtractoTable({
 
       {showColumns ? (
         <div id={columnsId} className="column-visibility-panel" role="group" aria-label="Columnas visibles">
-          {allColumns.map((column) => (
-            <label key={column}>
-              <input
-                type="checkbox"
-                checked={visibleColumns ? visibleColumns.includes(column) : true}
-                onChange={() => onToggleColumn(column)}
-              />
-              {getColumnLabel(column)}
-            </label>
-          ))}
+          {allColumns.map((column) => {
+            const checked = visibleColumns ? visibleColumns.includes(column) || (visibleColumns.length === 0 && column === 'fila_numero') : true;
+            const isLastVisibleColumn = checked && activeColumns.length <= 1 && activeColumns.includes(column);
+
+            return (
+              <label key={column} title={isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={isLastVisibleColumn}
+                  onChange={() => onToggleColumn(column)}
+                />
+                {getColumnLabel(column)}
+              </label>
+            );
+          })}
         </div>
       ) : null}
+
+      <div className="extracto-formula-bar" aria-live="polite">
+        <span className="extracto-formula-ref">{selectedCell.ref}</span>
+        <span className="extracto-formula-label">{selectedCell.label}</span>
+        <output>{selectedCell.value || '-'}</output>
+      </div>
 
       <div
         ref={parentRef}
         className="extracto-table-viewport"
+        style={sheetRootStyle}
         role="grid"
         aria-rowcount={filteredRows.length + 1}
         aria-colcount={activeColumns.length}
       >
-        <div id={filtersId} className="extracto-table-head" style={{ gridTemplateColumns }} role="row">
+        <div id={filtersId} className="extracto-table-head" style={sheetGridStyle} role="row">
           {activeColumns.map((column) => (
             <div
               key={column}
@@ -190,12 +214,17 @@ export default function ExtractoTable({
           ) : filteredRows.length === 0 ? (
             <div className="extracto-empty">
               <EmptyState
-                title="Sin filas para mostrar"
+                title="No hay movimientos con estos filtros"
                 subtitle="Ajusta los filtros o importa movimientos para llenar esta vista."
               />
             </div>
           ) : (
-            <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+            <div
+              className="extracto-table-spacer"
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`
+              } as CSSProperties}
+            >
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                 const row = filteredRows[virtualRow.index];
                 return (
@@ -203,7 +232,7 @@ export default function ExtractoTable({
                     key={row.id}
                     className={`extracto-row ${row.flagged ? 'flagged' : ''}`}
                     style={{
-                      transform: `translateY(${virtualRow.start - headerOffset}px)`,
+                      transform: `translateY(${virtualRow.start}px)`,
                       gridTemplateColumns
                     }}
                     role="row"
@@ -214,6 +243,25 @@ export default function ExtractoTable({
                         key={`${row.id}-${column}`}
                         className={`cell ${getColumnClassName(column)}`}
                         role="gridcell"
+                        tabIndex={ACTION_COLUMNS.has(column) ? -1 : 0}
+                        onClick={() => {
+                          if (!ACTION_COLUMNS.has(column)) {
+                            setSelectedCell({
+                              ref: getSheetCellReference(row.fila_numero, activeColumns.indexOf(column)),
+                              label: getColumnLabel(column),
+                              value: getDisplayCellValue(row, column),
+                            });
+                          }
+                        }}
+                        onFocus={() => {
+                          if (!ACTION_COLUMNS.has(column)) {
+                            setSelectedCell({
+                              ref: getSheetCellReference(row.fila_numero, activeColumns.indexOf(column)),
+                              label: getColumnLabel(column),
+                              value: getDisplayCellValue(row, column),
+                            });
+                          }
+                        }}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           onOpenAudit(row, column);
@@ -235,7 +283,7 @@ export default function ExtractoTable({
                             type="button"
                             className="cell-audit-button"
                             onClick={() => onOpenAudit(row, column)}
-                            aria-label={`Ver auditoria de ${column} en fila ${row.fila_numero}`}
+                            aria-label={`Ver auditoría de ${column} en fila ${row.fila_numero}`}
                           >
                             Historial
                           </button>
@@ -296,10 +344,10 @@ function renderCell({
           aria-label={`Marcar fila ${row.fila_numero} con alerta`}
           onChange={(e) => void onToggleFlag(row, e.target.checked, note)}
         />
-        <span className="flag-label">{row.flagged ? 'Flag' : 'Sin flag'}</span>
+        <span className="flag-label">{row.flagged ? 'Marcada' : 'Sin marca'}</span>
         <input
           value={note}
-          placeholder="nota"
+          placeholder="Nota de alerta"
           disabled={!canEdit}
           onChange={(e) => onNoteChange(e.target.value)}
           onBlur={() => {
@@ -316,10 +364,27 @@ function renderCell({
     <EditableCell
       value={getCellValue(row, column)}
       editable={canEdit}
+      displayValue={getDisplayCellValue(row, column)}
       displayClassName={amountClassName}
       onSave={(value) => onSaveCell(row, column, value)}
     />
   );
+}
+
+function getDisplayCellValue(row: Extracto, column: string): string {
+  if (column === 'fecha' && row.fecha) {
+    return formatDate(row.fecha);
+  }
+
+  if (column === 'monto') {
+    return formatCurrency(row.monto, row.divisa ?? 'EUR');
+  }
+
+  if (column === 'saldo') {
+    return formatCurrency(row.saldo, row.divisa ?? 'EUR');
+  }
+
+  return getCellValue(row, column);
 }
 
 function getCellValue(row: Extracto, column: string): string {
@@ -349,14 +414,18 @@ function getAmountClassName(row: Extracto, column: string): string {
 }
 
 function getColumnTrack(column: string): string {
-  if (column === 'fila_numero') return '72px';
-  if (column === 'checked') return '92px';
-  if (column === 'flagged') return '210px';
-  if (column === 'fecha') return '124px';
-  if (column === 'concepto') return 'minmax(320px, 2fr)';
-  if (column === 'comentarios') return 'minmax(260px, 1.35fr)';
-  if (AMOUNT_COLUMNS.has(column)) return 'minmax(142px, 164px)';
-  return 'minmax(156px, 1fr)';
+  return `${getColumnWidth(column)}px`;
+}
+
+function getColumnWidth(column: string): number {
+  if (column === 'fila_numero') return 88;
+  if (column === 'checked') return 112;
+  if (column === 'flagged') return 210;
+  if (column === 'fecha') return 124;
+  if (column === 'concepto') return 420;
+  if (column === 'comentarios') return 316;
+  if (AMOUNT_COLUMNS.has(column)) return 164;
+  return 176;
 }
 
 function getColumnClassName(column: string): string {
@@ -373,7 +442,7 @@ function getColumnLabel(column: string): string {
     case 'fila_numero':
       return 'Fila';
     case 'checked':
-      return 'Rev.';
+      return 'Revisada';
     case 'flagged':
       return 'Alerta';
     case 'fecha':
@@ -389,4 +458,14 @@ function getColumnLabel(column: string): string {
     default:
       return column.replace(/_/g, ' ');
   }
+}
+
+function getSheetCellReference(filaNumero: number, columnIndex: number): string {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const index = Math.max(0, columnIndex);
+  const letter =
+    index < letters.length
+      ? letters[index]
+      : `${letters[Math.floor(index / letters.length) - 1] ?? 'Z'}${letters[index % letters.length]}`;
+  return `${letter}${filaNumero}`;
 }

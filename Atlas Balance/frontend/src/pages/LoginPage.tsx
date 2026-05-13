@@ -1,7 +1,6 @@
 ﻿import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
-import QRCode from 'qrcode';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -13,6 +12,7 @@ interface LoginForm {
   email: string;
   password: string;
   mfaCode: string;
+  rememberDevice: boolean;
 }
 
 interface MfaChallenge {
@@ -22,8 +22,19 @@ interface MfaChallenge {
   otpAuthUri: string | null;
 }
 
+function normalizeReturnTo(value: string | null): string | null {
+  const candidate = value?.trim();
+  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\')) {
+    return null;
+  }
+
+  return candidate;
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
@@ -53,26 +64,30 @@ export default function LoginPage() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!mfaChallenge?.setupRequired || !mfaChallenge.otpAuthUri) {
+    const otpAuthUri = mfaChallenge?.otpAuthUri;
+    if (!mfaChallenge?.setupRequired || !otpAuthUri) {
       setMfaQrCode(null);
       return;
     }
 
-    QRCode.toDataURL(mfaChallenge.otpAuthUri, {
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 208,
-    })
-      .then((dataUrl) => {
-        if (!cancelled) {
-          setMfaQrCode(dataUrl);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMfaQrCode(null);
-        }
+    const renderQrCode = async () => {
+      const QRCode = await import('qrcode');
+      const dataUrl: string = await QRCode.toDataURL(otpAuthUri, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 208,
       });
+
+      if (!cancelled) {
+        setMfaQrCode(dataUrl);
+      }
+    };
+
+    void renderQrCode().catch(() => {
+      if (!cancelled) {
+        setMfaQrCode(null);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -81,7 +96,7 @@ export default function LoginPage() {
 
   const completeLogin = async (data: LoginResponse) => {
     if (!data.usuario) {
-      setError('Respuesta de login invalida');
+      setError('No pudimos confirmar el inicio de sesión. Vuelve a intentarlo; si se repite, avisa al administrador.');
       return;
     }
 
@@ -92,7 +107,12 @@ export default function LoginPage() {
       await loadAlertasActivas();
     }
 
-    navigate(data.usuario.primer_login ? '/cambiar-password' : '/dashboard', { replace: true });
+    if (data.usuario.primer_login) {
+      navigate('/cambiar-password', { replace: true });
+      return;
+    }
+
+    navigate(returnTo ?? '/dashboard', { replace: true });
   };
 
   const onSubmit = handleSubmit(async (values) => {
@@ -102,6 +122,7 @@ export default function LoginPage() {
         const { data } = await api.post<LoginResponse>('/auth/mfa/verify', {
           challenge_id: mfaChallenge.id,
           code: values.mfaCode,
+          remember_device: values.rememberDevice === true,
         });
         await completeLogin(data);
         return;
@@ -126,7 +147,7 @@ export default function LoginPage() {
       setError(
         extractErrorMessage(
           err,
-          'Revisa email y contrasena. Si has fallado varias veces, espera 30 minutos.'
+          'Revisa el email y la contraseña. Si has fallado varias veces, espera 30 minutos.'
         )
       );
     }
@@ -148,9 +169,9 @@ export default function LoginPage() {
       </div>
 
       <form className="auth-card" onSubmit={onSubmit}>
-        <h2 className="auth-card-title">{mfaChallenge ? 'Verificar acceso' : 'Iniciar sesion'}</h2>
+        <h2 className="auth-card-title">{mfaChallenge ? 'Verificar acceso' : 'Iniciar sesión'}</h2>
         <p className="auth-card-description">
-          {mfaChallenge ? 'Introduce el codigo temporal de tu app de autenticacion.' : 'Acceso privado para operar saldos, extractos y alertas.'}
+          {mfaChallenge ? 'Introduce el código temporal de tu app de autenticación.' : 'Acceso privado para operar saldos, extractos y alertas.'}
         </p>
 
         {!mfaChallenge && (
@@ -164,21 +185,25 @@ export default function LoginPage() {
                 autoComplete="username"
                 className="auth-input"
                 placeholder="tu@email.com"
+                aria-invalid={errors.email ? true : undefined}
+                aria-describedby={errors.email ? 'email-error' : undefined}
                 {...register('email', { required: 'Email obligatorio' })}
               />
-              {errors.email && <p className="auth-error">{errors.email.message}</p>}
+              {errors.email && <p id="email-error" className="auth-error" role="alert">{errors.email.message}</p>}
             </div>
 
             <div className="auth-form-group">
-              <label htmlFor="password" className="auth-label">Contrasena</label>
+              <label htmlFor="password" className="auth-label">Contraseña</label>
               <div className="auth-password-row">
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   className="auth-input"
-                  placeholder="Contrasena"
-                  {...register('password', { required: 'Contrasena obligatoria' })}
+                  placeholder="Contraseña"
+                  aria-invalid={errors.password ? true : undefined}
+                  aria-describedby={errors.password ? 'password-error' : undefined}
+                  {...register('password', { required: 'Contraseña obligatoria' })}
                 />
                 <button
                   type="button"
@@ -189,7 +214,7 @@ export default function LoginPage() {
                   {showPassword ? 'Ocultar' : 'Mostrar'}
                 </button>
               </div>
-              {errors.password && <p className="auth-error">{errors.password.message}</p>}
+              {errors.password && <p id="password-error" className="auth-error" role="alert">{errors.password.message}</p>}
             </div>
           </>
         )}
@@ -207,12 +232,12 @@ export default function LoginPage() {
                   />
                 )}
                 <code className="auth-secret">{mfaChallenge.secret}</code>
-                <p className="auth-card-description">Si el QR falla, introduce la clave manualmente y confirma el primer codigo.</p>
+                <p className="auth-card-description">Si el QR falla, introduce la clave manualmente y confirma el primer código.</p>
               </div>
             )}
 
             <div className="auth-form-group">
-              <label htmlFor="mfaCode" className="auth-label">Codigo MFA</label>
+              <label htmlFor="mfaCode" className="auth-label">Código de verificación</label>
               <input
                 id="mfaCode"
                 type="text"
@@ -220,10 +245,21 @@ export default function LoginPage() {
                 autoComplete="one-time-code"
                 className="auth-input"
                 placeholder="000000"
-                {...register('mfaCode', { required: 'Codigo obligatorio' })}
+                aria-invalid={errors.mfaCode ? true : undefined}
+                aria-describedby={errors.mfaCode ? 'mfa-code-error' : undefined}
+                {...register('mfaCode', { required: 'Introduce el código de verificación.' })}
               />
-              {errors.mfaCode && <p className="auth-error">{errors.mfaCode.message}</p>}
+              {errors.mfaCode && <p id="mfa-code-error" className="auth-error" role="alert">{errors.mfaCode.message}</p>}
             </div>
+
+            <label className="auth-checkbox-row">
+              <input
+                type="checkbox"
+                className="auth-checkbox"
+                {...register('rememberDevice')}
+              />
+              <span>Recordar este dispositivo durante 30 días</span>
+            </label>
           </>
         )}
 
@@ -235,7 +271,7 @@ export default function LoginPage() {
           disabled={isSubmitting}
           className="auth-button"
         >
-          {isSubmitting ? 'Validando...' : (mfaChallenge ? 'Verificar' : 'Entrar')}
+          {isSubmitting ? 'Validando...' : (mfaChallenge ? 'Verificar acceso' : 'Entrar')}
         </button>
       </form>
 

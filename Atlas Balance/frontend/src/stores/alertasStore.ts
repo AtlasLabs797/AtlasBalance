@@ -1,6 +1,6 @@
-import axios from 'axios';
 import { create } from 'zustand';
 import api from '@/services/api';
+import { extractErrorMessage } from '@/utils/errorMessage';
 
 export interface AlertaActiva {
   alerta_id: string;
@@ -57,15 +57,10 @@ export const useAlertasStore = create<AlertasState>((set) => ({
         set({ bannerDismissed: false });
       }
     } catch (error: unknown) {
-      const message =
-        axios.isAxiosError(error)
-          ? error.response?.data?.error ?? error.message
-          : 'No se pudieron cargar las alertas activas.';
-
       set({
         alertasActivas: [],
         bannerDismissed: false,
-        lastError: message,
+        lastError: extractErrorMessage(error, 'No se pudieron cargar las alertas activas.'),
       });
     } finally {
       set({ loading: false });

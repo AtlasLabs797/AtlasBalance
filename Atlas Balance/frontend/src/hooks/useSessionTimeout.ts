@@ -24,19 +24,20 @@ export const useSessionTimeout = (): SessionTimeoutState => {
   const clearPermisos = usePermisosStore((state) => state.clear);
   const clearAlertas = useAlertasStore((state) => state.clear);
 
-  const [inactiveSeconds, setInactiveSeconds] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(TIMEOUT_MINUTES * 60);
   const [isToastVisible, setIsToastVisible] = useState(false);
   const [isWarningVisible, setIsWarningVisible] = useState(false);
 
   const lastActivityRef = useRef<number>(Date.now());
+  const inactiveSecondsRef = useRef(0);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const toastShownRef = useRef(false);
   const warningShownRef = useRef(false);
+  const logoutStartedRef = useRef(false);
 
   const timeoutSeconds = TIMEOUT_MINUTES * 60;
   const warningSeconds = WARNING_MINUTES * 60;
   const toastWarningSeconds = TOAST_WARNING_MINUTES * 60;
-  const remainingSeconds = Math.max(0, timeoutSeconds - inactiveSeconds);
 
   const performLogout = useCallback(async () => {
     try {
@@ -53,12 +54,14 @@ export const useSessionTimeout = (): SessionTimeoutState => {
 
   const resetTimeout = useCallback(() => {
     lastActivityRef.current = Date.now();
-    setInactiveSeconds(0);
+    inactiveSecondsRef.current = 0;
+    logoutStartedRef.current = false;
+    setRemainingSeconds(timeoutSeconds);
     setIsToastVisible(false);
     setIsWarningVisible(false);
     toastShownRef.current = false;
     warningShownRef.current = false;
-  }, []);
+  }, [timeoutSeconds]);
 
   // Debounced activity handler
   const handleActivity = useCallback(() => {
@@ -71,43 +74,43 @@ export const useSessionTimeout = (): SessionTimeoutState => {
     }, ACTIVITY_DEBOUNCE_MS);
   }, [resetTimeout]);
 
-  // Timer interval to track inactive seconds
+  // Keep the shell quiet: only update React state when warning surfaces change.
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
       const elapsed = Math.floor((now - lastActivityRef.current) / 1000);
-      setInactiveSeconds(elapsed);
+      inactiveSecondsRef.current = elapsed;
 
-      // Auto logout after timeout
-      if (elapsed >= timeoutSeconds) {
-        performLogout();
+      if (elapsed >= toastWarningSeconds && !toastShownRef.current) {
+        toastShownRef.current = true;
+        setIsToastVisible(true);
+      } else if (elapsed < toastWarningSeconds && toastShownRef.current) {
+        toastShownRef.current = false;
+        setIsToastVisible(false);
+      }
+
+      const shouldShowModal = elapsed >= timeoutSeconds - warningSeconds;
+      if (shouldShowModal) {
+        const nextRemainingSeconds = Math.max(0, timeoutSeconds - elapsed);
+        if (!warningShownRef.current) {
+          warningShownRef.current = true;
+          setIsWarningVisible(true);
+        }
+        setRemainingSeconds(nextRemainingSeconds);
+      } else if (warningShownRef.current) {
+        warningShownRef.current = false;
+        setIsWarningVisible(false);
+        setRemainingSeconds(timeoutSeconds);
+      }
+
+      if (elapsed >= timeoutSeconds && !logoutStartedRef.current) {
+        logoutStartedRef.current = true;
+        void performLogout();
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeoutSeconds, performLogout]);
-
-  // Show toast warning at 18 minutes
-  useEffect(() => {
-    if (inactiveSeconds >= toastWarningSeconds && !toastShownRef.current) {
-      toastShownRef.current = true;
-      setIsToastVisible(true);
-    } else if (inactiveSeconds < toastWarningSeconds && toastShownRef.current) {
-      toastShownRef.current = false;
-      setIsToastVisible(false);
-    }
-  }, [inactiveSeconds, toastWarningSeconds]);
-
-  // Show warning modal at 19 minutes
-  useEffect(() => {
-    if (inactiveSeconds >= timeoutSeconds - warningSeconds && !warningShownRef.current) {
-      warningShownRef.current = true;
-      setIsWarningVisible(true);
-    } else if (inactiveSeconds < timeoutSeconds - warningSeconds && warningShownRef.current) {
-      warningShownRef.current = false;
-      setIsWarningVisible(false);
-    }
-  }, [inactiveSeconds, timeoutSeconds, warningSeconds]);
+  }, [performLogout, timeoutSeconds, toastWarningSeconds, warningSeconds]);
 
   // Attach activity listeners
   useEffect(() => {

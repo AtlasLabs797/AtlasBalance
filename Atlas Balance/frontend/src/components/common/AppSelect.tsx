@@ -18,6 +18,7 @@ interface AppSelectProps {
 
 export function AppSelect({ value, options, onChange, label, ariaLabel, className, disabled = false }: AppSelectProps) {
   const [open, setOpen] = useState(false);
+  const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const labelId = useId();
   const listboxId = useId();
@@ -33,12 +34,14 @@ export function AppSelect({ value, options, onChange, label, ariaLabel, classNam
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
+        setOpenedByKeyboard(false);
         setOpen(false);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        setOpenedByKeyboard(false);
         setOpen(false);
       }
     };
@@ -74,11 +77,16 @@ export function AppSelect({ value, options, onChange, label, ariaLabel, classNam
         aria-expanded={open}
         aria-controls={listboxId}
         aria-activedescendant={open ? activeOptionId : undefined}
-        onClick={() => setOpen((current) => !current)}
+        title={selected?.label ?? value}
+        onClick={() => {
+          setOpenedByKeyboard(false);
+          setOpen((current) => !current);
+        }}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
             if (!open) {
+              setOpenedByKeyboard(true);
               setOpen(true);
             } else {
               chooseByOffset(event.key === 'ArrowDown' ? 1 : -1);
@@ -87,7 +95,11 @@ export function AppSelect({ value, options, onChange, label, ariaLabel, classNam
 
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            setOpen((current) => !current);
+            setOpen((current) => {
+              const next = !current;
+              setOpenedByKeyboard(next);
+              return next;
+            });
           }
 
           if (event.key === 'Home' || event.key === 'End') {
@@ -105,7 +117,13 @@ export function AppSelect({ value, options, onChange, label, ariaLabel, classNam
       </button>
 
       {open ? (
-        <div id={listboxId} className="app-select-popover" role="listbox" aria-label={ariaLabel ?? label}>
+        <div
+          id={listboxId}
+          className="app-select-popover"
+          role="listbox"
+          aria-label={ariaLabel ?? label}
+          data-open-source={openedByKeyboard ? 'keyboard' : 'pointer'}
+        >
           {options.map((option, index) => (
             <button
               key={option.value}
@@ -117,12 +135,14 @@ export function AppSelect({ value, options, onChange, label, ariaLabel, classNam
               aria-posinset={index + 1}
               aria-setsize={options.length}
               disabled={option.disabled}
+              title={option.label}
               onClick={() => {
                 onChange(option.value);
+                setOpenedByKeyboard(false);
                 setOpen(false);
               }}
             >
-              {option.label}
+              <span className="app-select-option-label">{option.label}</span>
             </button>
           ))}
         </div>

@@ -18,8 +18,8 @@ if (-not $isAdmin) {
     exit 1
 }
 
-$apiExe = Join-Path $InstallPath "api\GestionCaja.API.exe"
-$watchdogExe = Join-Path $InstallPath "watchdog\GestionCaja.Watchdog.exe"
+$apiExe = Join-Path $InstallPath "api\AtlasBalance.API.exe"
+$watchdogExe = Join-Path $InstallPath "watchdog\AtlasBalance.Watchdog.exe"
 $apiServiceName = "AtlasBalance.API"
 $watchdogServiceName = "AtlasBalance.Watchdog"
 

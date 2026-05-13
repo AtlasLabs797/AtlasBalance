@@ -36,14 +36,14 @@ No documentar passwords, tokens ni secretos reales. Durante la instalacion se co
 -----------------------------------------------------
 Sintoma:
 - Se intento instalar desde `AtlasBalance-main`, una carpeta con la estructura completa del repositorio.
-- El instalador solo funciona correctamente desde el paquete release que contiene `api/GestionCaja.API.exe`, `watchdog/GestionCaja.Watchdog.exe`, `scripts` y wrappers `.cmd`.
+- El instalador solo funciona correctamente desde el paquete release que contiene `api/AtlasBalance.API.exe`, `watchdog/AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
 
 Causa:
 - La documentacion y el flujo operativo no distinguen con suficiente dureza entre repositorio fuente y paquete instalable.
 
 Solucion para V-01.05:
 - El instalador debe validar al inicio que esta dentro de un paquete release.
-- Si no existen `api/GestionCaja.API.exe` y `watchdog/GestionCaja.Watchdog.exe`, debe parar con un mensaje claro:
+- Si no existen `api/AtlasBalance.API.exe` y `watchdog/AtlasBalance.Watchdog.exe`, debe parar con un mensaje claro:
   "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-V-XX-win-x64.zip."
 - La documentacion de usuario debe decir explicitamente que el ZIP `main` de GitHub no sirve como instalador de servidor.
 

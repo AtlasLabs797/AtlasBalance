@@ -79,6 +79,20 @@ Guardar toda la documentacion en `Documentacion`.
 - Cada registro debe incluir: fecha, version, trabajo realizado, archivos tocados, comandos ejecutados, resultado de verificacion y pendientes.
 - No cerrar una tarea sin dejar su entrada en la bitacora.
 
+## Protocolo anti-encallamiento
+
+- Diagnostico real: los atascos recientes no han sido misterio; han venido de Vite/Rolldown/Chromium con `spawn EPERM`, servidores temporales que no se cierran, `robocopy /MIR` o copias sobre `wwwroot` bloqueado, procesos `dotnet` vivos bloqueando `apphost.exe`, Docker/Testcontainers no disponible y limpiezas recursivas con `Access denied`.
+- Antes de una verificacion potencialmente larga, define la salida: timeout, comando finito, criterio de exito y alternativa estatica si falla.
+- Maximo dos intentos por la misma via. Si el mismo error se repite, corta. Cambia de estrategia, pide elevacion una vez si procede o documenta el bloqueo. Insistir no es rigor; es perder la sesion.
+- No arranques servidores dev desde `shell_command` para "mirar rapido". Si hace falta UI, usa build finito, Playwright `setContent`, mocks o un comando que arranque y cierre el proceso dentro del mismo timeout.
+- Para reiniciar backend/API, no lances `dotnet` con `Start-Process` ni `[Diagnostics.Process]` desde `shell_command` si puede heredar stdout/stderr y dejar la herramienta colgada. Usa script finito con logs redirigidos, healthcheck con timeout y salida obligatoria, o valida por tests/build si el reinicio no es imprescindible.
+- Si Vite/Rolldown/Chromium falla con `spawn EPERM` dentro del sandbox, no lo reintentes ahi. Usa `npm.cmd run lint`, TypeScript/build fuera del sandbox con aprobacion si es imprescindible, o registra el bloqueo.
+- Si `dotnet` falla por `apphost.exe` bloqueado, prueba primero `-p:UseAppHost=false`. No mates procesos a ciegas; identifica el PID exacto y escala solo si hace falta.
+- Para sincronizar `frontend/dist` con `wwwroot`, evita `robocopy /MIR`. Usa copia selectiva con timeout/reintentos bajos; si hay `Access denied`, pide elevacion una vez o deja el bloqueo registrado.
+- Si Docker/Testcontainers no esta disponible, ejecuta la suite filtrada no Docker y deja el release bloqueado por los tests Docker pendientes. No finjas verde.
+- Las limpiezas temporales solo sobre rutas absolutas verificadas dentro del workspace. Si Windows devuelve permisos repetidos, para y documenta; mirar ruido no arregla nada.
+- En la respuesta final, separa verificado, bloqueado y pendiente. No digas que hubo validacion visual si solo hubo lint/build.
+
 ## Reglas de desarrollo
 
 ### Backend (C#)
@@ -135,6 +149,8 @@ Guardar toda la documentacion en `Documentacion`.
 - Backend: xUnit + FluentAssertions para servicios criticos
 - Frontend: tipos TypeScript estrictos como primer nivel de validacion
 - Tests manuales al final de cada bloque de trabajo antes de avanzar
+- Si una validacion visual, servidor dev o herramienta externa se encalla o repite el mismo fallo, corta el intento, registra el bloqueo y sigue con lint/build/validacion estatica util.
+- No arranques servidores Node/Vite/HTTP de larga duracion desde `shell_command` para validar UI. Usa comandos finitos; si hace falta navegador, renderiza con Playwright `setContent` o cierra el proceso en el mismo comando con timeout.
 
 ## Estructura del proyecto
 
@@ -153,9 +169,9 @@ Atlas Balance/
 ¦   +-- docker-compose.yml
 ¦   +-- Atlas Balance Release/
 ¦   +-- backend/
-¦   ¦   +-- GestionCaja.sln
+¦   ¦   +-- AtlasBalance.sln
 ¦   ¦   +-- src/
-¦   ¦   ¦   +-- GestionCaja.API/
+¦   ¦   ¦   +-- AtlasBalance.API/
 ¦   ¦   ¦   ¦   +-- Program.cs
 ¦   ¦   ¦   ¦   +-- appsettings.json
 ¦   ¦   ¦   ¦   +-- appsettings.Development.json.template
@@ -169,7 +185,7 @@ Atlas Balance/
 ¦   ¦   ¦   ¦   +-- Jobs/
 ¦   ¦   ¦   ¦   +-- Migrations/
 ¦   ¦   ¦   ¦   +-- wwwroot/
-¦   ¦   ¦   +-- GestionCaja.Watchdog/
+¦   ¦   ¦   +-- AtlasBalance.Watchdog/
 ¦   ¦   +-- tests/
 ¦   +-- frontend/
 ¦   ¦   +-- package.json
@@ -208,11 +224,11 @@ cd "Atlas Balance"
 docker compose up -d
 
 # Backend - ejecutar
-cd "Atlas Balance/backend/src/GestionCaja.API"
+cd "Atlas Balance/backend/src/AtlasBalance.API"
 dotnet run
 
 # Backend - nueva migracion
-cd "Atlas Balance/backend/src/GestionCaja.API"
+cd "Atlas Balance/backend/src/AtlasBalance.API"
 dotnet ef migrations add NombreMigracion
 
 # Backend - aplicar migraciones
@@ -228,7 +244,7 @@ npm run build
 
 # Release Windows x64
 cd "Atlas Balance"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.05
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.06
 
 # Conectar a PostgreSQL
 psql -h localhost -p 5433 -U app_user -d atlas_balance

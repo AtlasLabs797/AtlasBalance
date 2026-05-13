@@ -1,0 +1,25 @@
+{
+  "WatchdogSettings": {
+    "SharedSecret": "<shared-secret-local-minimo-32-caracteres>",
+    "ApiServiceName": "AtlasBalance.API",
+    "PostgresBinPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
+    "BackupPath": "C:\\<ruta-local>\\backups",
+    "StateFilePath": "C:\\<ruta-local>\\watchdog-state.json",
+    "DbHost": "localhost",
+    "DbPort": "5433",
+    "DbName": "atlas_balance",
+    "DbUser": "app_user",
+    "DbPassword": "<password-local-postgres>",
+    "DockerPostgresContainer": "atlas_balance_db",
+    "UpdateSourceRoot": "C:\\<ruta-local>\\updates",
+    "UpdateTargetPath": "C:\\<ruta-local>\\api",
+    "RequireDatabaseBackupBeforeUpdate": true,
+    "RequireHealthCheckAfterUpdate": true,
+    "ApiHealthUrl": "https://localhost:5000/api/health"
+  },
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Debug"
+    }
+  }
+}

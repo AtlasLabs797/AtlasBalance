@@ -97,7 +97,7 @@ function Find-PostgresBin {
         "C:\Program Files\PostgreSQL\17\bin",
         "C:\Program Files\PostgreSQL\16\bin",
         "C:\Program Files\PostgreSQL\15\bin",
-        "C:\Program Files\PostgreSQL\14\bin"
+        "C:\Program Files\PostgreSQL\16\bin"
     )) {
         if (Test-Path (Join-Path $candidate "psql.exe")) {
             return $candidate
@@ -289,5 +289,5 @@ if ($passwordWasGenerated) {
     Write-Host "Password temporal escrita en: $credentialsFile" -ForegroundColor Yellow
     Write-Host "Acceso restringido a Administrators. Borra el archivo tras iniciar sesion." -ForegroundColor Yellow
 } else {
-    Write-Host "Usa la password temporal introducida y cambiala en el primer login." -ForegroundColor Yellow
+    Write-Host "Usa la password temporal introducida y cambiala en el primer acceso." -ForegroundColor Yellow
 }

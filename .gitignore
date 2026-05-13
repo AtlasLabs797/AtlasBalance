@@ -9,6 +9,7 @@ Skills/
 # Backend
 Atlas Balance/backend/**/bin/
 Atlas Balance/backend/**/obj/
+Atlas Balance/backend/.codex-build/
 Atlas Balance/backend/**/*.user
 Atlas Balance/backend/**/.vs/
 Atlas Balance/backend/**/appsettings.Production.json
@@ -16,10 +17,10 @@ Atlas Balance/backend/**/appsettings.Development.json
 Atlas Balance/backend/**/.dataprotection-keys/
 
 # Frontend build artifacts copied to wwwroot (generados por npm run build + Build-Release.ps1)
-Atlas Balance/backend/src/GestionCaja.API/wwwroot/assets/
-Atlas Balance/backend/src/GestionCaja.API/wwwroot/index.html
-Atlas Balance/backend/src/GestionCaja.API/wwwroot/fonts/
-Atlas Balance/backend/src/GestionCaja.API/wwwroot/logos/
+Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/
+Atlas Balance/backend/src/AtlasBalance.API/wwwroot/index.html
+Atlas Balance/backend/src/AtlasBalance.API/wwwroot/fonts/
+Atlas Balance/backend/src/AtlasBalance.API/wwwroot/logos/
 
 # Frontend
 Atlas Balance/frontend/node_modules/
@@ -41,13 +42,17 @@ logs/
 # Temporary files
 .claude/
 artifacts/
+.codex-verify/
 .codex-logs/
 .codex-runlogs/
+.learnings/
 output/
 .tmp*/
 tmp*
 test-results/
-Atlas Balance/backend/src/GestionCaja.Watchdog/watchdog-state.json
+backend_log.txt
+Atlas Balance/backend/src/AtlasBalance.Watchdog/watchdog-state.json
+Atlas Balance/backend/**/.codex-test-obj/
 
 # Environment
 .env
@@ -57,9 +62,13 @@ Atlas Balance/frontend/.env.*
 *.env.local
 
 # Local API smoke artifacts with credentials/cookies
-Atlas Balance/backend/src/GestionCaja.API/phase*.json
-Atlas Balance/backend/src/GestionCaja.API/phase*.cookies.txt
-Atlas Balance/backend/src/GestionCaja.API/*.cookies.txt
+Atlas Balance/backend/src/AtlasBalance.API/phase*.json
+Atlas Balance/backend/src/AtlasBalance.API/phase*.cookies.txt
+Atlas Balance/backend/src/AtlasBalance.API/*.cookies.txt
+
+# Local/demo datasets must never be published
+Atlas Balance/scripts/seed-demo-data*.sql
+Atlas Balance/Atlas Balance/
 
 # Certificates (never commit)
 *.pem

@@ -193,10 +193,10 @@ Regla simple: si una pantalla financiera necesita scroll, perfecto; si necesita 
 ## 7. Radios, bordes y sombras
 
 ```css
---radius-control: 12px;
---radius-card: 18px;
---radius-panel: 24px;
---radius-shell: 30px;
+--radius-control: 8px;
+--radius-card: 8px;
+--radius-panel: 18px;
+--radius-shell: 22px;
 --radius-pill: 999px;
 
 --shadow-card: 0 8px 24px color-mix(in srgb, var(--text-primary) 6%, transparent);

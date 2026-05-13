@@ -1,6 +1,7 @@
 .extractos-page {
   display: grid;
   gap: var(--space-4);
+  min-width: 0;
 }
 
 .extractos-header {
@@ -10,14 +11,45 @@
   align-items: center;
 }
 
+.extractos-header h1,
+.extractos-filters {
+  min-width: 0;
+}
+
 .extractos-filters {
   display: flex;
   gap: var(--space-2);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: min(100%, 68rem);
+}
+
+.extractos-date-field {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 9.5rem;
+}
+
+.extractos-date-field > span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.extractos-date-field .date-picker-trigger {
+  min-height: 2.625rem;
+}
+
+.extractos-clear-period {
+  min-height: 2.625rem;
+  white-space: nowrap;
 }
 
 .add-row-form {
   display: grid;
   gap: var(--space-2);
+  min-width: 0;
   border: 1px solid var(--color-border-primary);
   border-radius: var(--border-radius-lg);
   background: var(--color-bg-primary);
@@ -30,6 +62,19 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--space-2);
+  align-items: end;
+}
+
+.add-row-field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.add-row-field > span {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
 }
 
 .extracto-table-section {
@@ -39,10 +84,13 @@
   --sheet-row-hover: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface) 94%);
   --sheet-selected: color-mix(in srgb, var(--accent-primary) 72%, var(--bg-surface) 28%);
   --sheet-row-height: 42px;
+  --sheet-head-height: 46px;
+  --extracto-sheet-width: 100%;
   border: 1px solid var(--border-soft);
   border-radius: calc(var(--radius-card) - 2px);
   background: var(--bg-surface);
   box-shadow: var(--shadow-sm);
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -95,7 +143,7 @@
 .column-visibility-panel {
   display: flex;
   flex-wrap: wrap;
-  gap: 1px;
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--sheet-grid-strong);
   background: var(--sheet-grid);
@@ -105,32 +153,69 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: 2rem;
+  min-height: 2.75rem;
   padding: 0 var(--space-2);
   background: var(--bg-surface);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   text-transform: none;
+  cursor: pointer;
+  border-radius: calc(var(--radius-control) - 4px);
+  transition: background-color var(--transition-fast);
+}
+
+.column-visibility-panel label:hover {
+  background: var(--bg-hover);
+}
+
+.extracto-formula-bar {
+  display: grid;
+  grid-template-columns: 5rem 8rem minmax(0, 1fr);
+  align-items: center;
+  gap: 1px;
+  border-bottom: 1px solid var(--sheet-grid-strong);
+  background: var(--sheet-grid);
+}
+
+.extracto-formula-bar > * {
+  min-height: 2.35rem;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  background: var(--bg-surface);
+  min-width: 0;
+}
+
+.extracto-formula-ref,
+.extracto-formula-label {
+  color: var(--text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.extracto-formula-bar output {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .extracto-table-viewport {
-  height: 560px;
+  height: min(560px, calc(100dvh - var(--topbar-height) - 14rem));
   overflow: auto;
   position: relative;
-  background:
-    linear-gradient(var(--sheet-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--sheet-grid) 1px, transparent 1px),
-    var(--bg-surface);
-  background-size: 100% var(--sheet-row-height), 120px 100%;
+  background: var(--bg-surface);
   scrollbar-gutter: stable;
 }
 
 .extracto-table-head {
   display: grid;
-  grid-template-columns: repeat(7, minmax(100px, 1fr));
+  grid-template-columns: repeat(7, 120px);
   border-bottom: 1px solid var(--sheet-grid-strong);
-  min-width: max-content;
+  width: max(100%, var(--extracto-sheet-width));
+  min-width: var(--extracto-sheet-width);
   position: sticky;
   top: 0;
   z-index: 6;
@@ -139,20 +224,27 @@
 
 .extracto-table-body {
   position: relative;
-  min-width: max-content;
+  width: max(100%, var(--extracto-sheet-width));
+  min-width: var(--extracto-sheet-width);
+}
+
+.extracto-table-spacer {
+  position: relative;
+  width: max(100%, var(--extracto-sheet-width));
+  min-width: var(--extracto-sheet-width);
 }
 
 .extracto-row {
   position: absolute;
   left: 0;
   top: 0;
-  width: 100%;
+  width: max(100%, var(--extracto-sheet-width));
+  min-width: var(--extracto-sheet-width);
   display: grid;
-  grid-template-columns: repeat(7, minmax(100px, 1fr));
-  min-height: var(--sheet-row-height);
-  border-bottom: 1px solid var(--sheet-grid);
+  grid-template-columns: repeat(7, 120px);
+  align-items: stretch;
+  height: var(--sheet-row-height);
   background: var(--bg-surface);
-  min-width: max-content;
   transition: background-color var(--transition-fast);
 }
 
@@ -172,9 +264,12 @@
 }
 
 .cell {
+  box-sizing: border-box;
+  height: var(--sheet-row-height);
   min-height: var(--sheet-row-height);
   padding: 0 var(--space-2);
   border-right: 1px solid var(--sheet-grid);
+  border-bottom: 1px solid var(--sheet-grid);
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -195,9 +290,11 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  min-height: 46px;
+  height: auto;
+  min-height: var(--sheet-head-height);
   background: var(--sheet-head-bg);
   border-right-color: var(--sheet-grid-strong);
+  border-bottom: 0;
   color: var(--text-secondary);
 }
 
@@ -264,6 +361,13 @@
   min-width: 0;
   display: grid;
   gap: 0.1rem;
+}
+
+.cell > span:not(.cell-edit-shell):not(.flag-label) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cell-save-state {
@@ -358,6 +462,7 @@
 
 .extracto-table-section--compact {
   --sheet-row-height: 34px;
+  --sheet-head-height: 40px;
 }
 
 .extracto-table-section--compact .cell {
@@ -419,8 +524,86 @@
 }
 
 .audit-modal-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
+}
+
+.audit-modal table {
+  min-width: 640px;
+}
+
+.audit-modal td {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .extractos-header {
+    display: grid;
+  }
+
+  .extractos-filters {
+    justify-content: stretch;
+  }
+
+  .extractos-filters .app-select-field,
+  .extractos-date-field {
+    min-width: min(100%, 12rem);
+    flex: 1 1 12rem;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .extracto-table-section {
+    --sheet-row-height: 48px;
+    --sheet-head-height: 54px;
+  }
+
+  .extracto-table-section--compact {
+    --sheet-row-height: 44px;
+    --sheet-head-height: 48px;
+  }
+
+  .extractos-date-field .date-picker-trigger,
+  .extractos-clear-period,
+  .extracto-table-actions > button,
+  .extracto-density-control .app-select-trigger,
+  .cell.head button,
+  .cell.head input {
+    min-height: var(--control-height);
+  }
+
+  .extracto-table-section .cell input[type="checkbox"] {
+    width: var(--control-height);
+    min-width: var(--control-height);
+    height: var(--control-height);
+    min-height: var(--control-height);
+  }
+
+  .flag-cell {
+    grid-template-columns: var(--control-height) auto minmax(70px, 1fr);
+  }
+
+  .cell-audit-button {
+    opacity: 1;
+    pointer-events: auto;
+    width: var(--control-height);
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    padding: 0;
+    font-size: 0;
+    transform: translateY(-50%);
+  }
+
+  .cell-audit-button::before {
+    content: "Hist.";
+    font-size: var(--font-size-xs);
+  }
+
+  .cell-edit-button,
+  .cell > span:not(.cell-edit-shell):not(.flag-label) {
+    padding-right: calc(var(--control-height) + var(--space-1));
+  }
 }

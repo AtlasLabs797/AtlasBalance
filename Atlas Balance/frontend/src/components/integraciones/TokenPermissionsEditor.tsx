@@ -24,7 +24,7 @@ export function TokenPermissionsEditor({ permisos, onChange, catalogos }: TokenP
   return (
     <div className="config-token-perm-list">
       {permisos.length === 0 ? (
-        <p className="import-muted">Sin permisos de alcance el token no vera ningun dato. Anade al menos uno.</p>
+        <p className="import-muted">Añade al menos un alcance. Sin alcance, el token no podrá ver ni escribir datos.</p>
       ) : null}
       {permisos.map((permiso, index) => (
         <div className="config-token-perm-row" key={`permiso-${index}`}>
