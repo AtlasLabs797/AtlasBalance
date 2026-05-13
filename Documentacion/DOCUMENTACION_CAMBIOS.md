@@ -20,6 +20,7 @@ Regla de trabajo desde ahora:
 - `Build-Release.ps1` restaura API y Watchdog por proyecto con `-r win-x64`, publica con `--no-restore` y firma el ZIP mediante un firmador temporal .NET 8 para evitar la limitacion de Windows PowerShell 5 con PEM.
 - El instalador y la plantilla productiva incluyen la clave publica de firma por defecto; la clave privada sigue fuera del repositorio.
 - Se actualizan aserciones backend que esperaban textos antiguos de IA y tipos de cambio.
+- GitHub Copilot Autofix aplica hardening adicional para no registrar directamente el destinatario SMTP de prueba con CR/LF o caracteres de control.
 - Se genera paquete firmado publicable: `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig` en `Atlas Balance/Atlas Balance Release`.
 
 **Archivos tocados principales:**
@@ -50,7 +51,7 @@ Regla de trabajo desde ahora:
 - `dotnet list <proyecto> package --vulnerable --include-transitive`: bloqueado localmente por conexion a `127.0.0.1:9`; se registra incidencia y se mantiene como gate de GitHub Actions.
 - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.06`: OK fuera del sandbox con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` definido en el entorno.
 - Verificador temporal .NET 8 de firma RSA/SHA-256: `SIGNATURE_OK`.
-- `Get-FileHash -Algorithm SHA256 AtlasBalance-V-01.06-win-x64.zip`: `95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1`.
+- `Get-FileHash -Algorithm SHA256 AtlasBalance-V-01.06-win-x64.zip`: `A901F53B2431C3A987C2C9F73B7C1B7C5553A3D070F2BDB2630ABFA4116CAD31`.
 
 **Resultado de verificacion:**
 - `npm ci`: OK, 0 vulnerabilidades reportadas.
@@ -62,10 +63,10 @@ Regla de trabajo desde ahora:
 - ZIP generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip`.
 - Firma generada: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip.sig`.
 - Firma verificada: OK.
-- GitHub Actions en rama/PR: CI y CodeQL OK para `a82639f`.
+- GitHub Actions en rama/PR: CI y CodeQL OK hasta `f044beb`.
 - GitHub Actions del tag `V-01.06-win-x64`: CI OK.
 - Release publicado como pre-release: `https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-01.06-win-x64`.
-- Assets subidos: `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`.
+- Assets subidos y reemplazados tras el Autofix: `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`.
 - `Atlas Balance/Atlas Balance Release/*` sigue ignorado por Git salvo `.gitkeep`.
 
 **Pendientes:**

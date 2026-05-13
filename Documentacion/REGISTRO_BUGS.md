@@ -19,6 +19,14 @@
 
 ## Cerrados
 
+### 2026-05-13 - V-01.06 - Cerrado - CodeQL detecta log injection en test SMTP
+
+- Contexto: CodeQL marco el destinatario del correo de prueba SMTP como entrada de usuario escrita en logs.
+- Impacto: un valor con saltos de linea o caracteres de control podia ensuciar logs y hacerlos menos fiables.
+- Solucion: sanear CR/LF, tabs y caracteres de control antes de escribir el destino en `_logger.LogError`.
+- Verificacion: CodeQL verde tras Autofix remoto y CI completo OK.
+- Estado: cerrado.
+
 ### 2026-05-13 - V-01.06 - Cerrado - GitHub Actions fallaba en restore locked
 
 - Contexto: PR #6 fallaba en `dotnet restore "./Atlas Balance/backend/AtlasBalance.sln" --locked-mode`.
@@ -32,7 +40,7 @@
 - Contexto: `Atlas Balance/Atlas Balance Release` solo tenia un ZIP local sin `.zip.sig`; el actualizador online rechaza bien cualquier paquete sin firma detached.
 - Impacto: no se podia publicar un release online verificable. Subir ZIP sin firma habria roto el flujo de actualizacion de la propia app.
 - Solucion: generar el paquete con `Build-Release.ps1 -Version V-01.06` usando clave privada de firma en el entorno, producir `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`, y dejar la clave publica por defecto en instalador/plantilla productiva.
-- Verificacion: SHA256 del ZIP firmado `95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1`; firma RSA/SHA-256 verificada localmente como `SIGNATURE_OK`.
+- Verificacion: SHA256 del ZIP firmado `A901F53B2431C3A987C2C9F73B7C1B7C5553A3D070F2BDB2630ABFA4116CAD31`; firma RSA/SHA-256 verificada localmente como `SIGNATURE_OK`.
 - Publicacion: release `V-01.06-win-x64` subido a GitHub como pre-release con ZIP y `.sig`.
 - Estado: cerrado para el bloqueo de firma. Sigue abierto el E2E autenticado con PostgreSQL real/datos de volumen si se quiere llamar release final.
 

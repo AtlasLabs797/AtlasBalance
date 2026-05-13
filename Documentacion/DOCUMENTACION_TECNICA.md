@@ -10,6 +10,7 @@
 - El script de release genera `.zip.sig` con RSA/SHA-256 mediante un firmador temporal .NET 8 cuando recibe `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
 - `Instalar-AtlasBalance.ps1` y `appsettings.Production.json.template` incluyen una clave publica de firma por defecto; `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM` sigue pudiendo sobrescribirla.
 - Tests backend de IA y tipos de cambio se ajustan a los mensajes saneados vigentes.
+- `ConfiguracionController` sanea el destinatario del test SMTP antes de escribirlo en logs, cerrando el finding CodeQL de log injection.
 
 ### Por que
 
@@ -24,7 +25,7 @@ El restore de solucion tambien falla localmente sin error MSBuild concreto. Mant
 - `Build-Release.ps1 -Version V-01.06`: OK con build frontend, restore locked, publish API/Watchdog y firma.
 - ZIP: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip`.
 - Firma: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip.sig`.
-- SHA256 ZIP: `95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1`.
+- SHA256 ZIP: `A901F53B2431C3A987C2C9F73B7C1B7C5553A3D070F2BDB2630ABFA4116CAD31`.
 - Verificacion local de firma RSA/SHA-256: `SIGNATURE_OK`.
 
 ### Pendiente real
