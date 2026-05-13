@@ -1,25 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
+import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
-import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermisosStore } from '@/stores/permisosStore';
@@ -27,7 +19,6 @@ import type {
   Cuenta,
   DashboardEvolucion,
   DashboardPrincipal,
-  DashboardTitular,
   DashboardSaldosDivisa,
   PaginatedResponse,
   PeriodoDashboard,
@@ -36,7 +27,12 @@ import type {
   Titular,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency, formatDate } from '@/utils/formatters';
+
+const EvolucionChart = lazy(() =>
+  import('@/components/dashboard/EvolucionChart').then((module) => ({ default: module.EvolucionChart }))
+);
+const TitularSaldoBarChart = lazy(() => import('@/components/dashboard/TitularSaldoBarChart'));
 
 interface CuentaRow extends Cuenta {
   titular_nombre: string;
@@ -120,6 +116,23 @@ function getCuentaInitials(nombre: string) {
   return initials || 'C';
 }
 
+const tipoCuentaLabels: Record<string, string> = {
+  NORMAL: 'Cuenta bancaria',
+  EFECTIVO: 'Efectivo',
+  PLAZO_FIJO: 'Plazo fijo',
+};
+
+const estadoPlazoLabels: Record<string, string> = {
+  ACTIVO: 'Activo',
+  VENCIDO: 'Vencido',
+  CANCELADO: 'Cancelado',
+};
+
+function formatCatalogLabel(labels: Record<string, string>, value?: string | null) {
+  if (!value) return 'Sin dato';
+  return labels[value] ?? value;
+}
+
 export default function CuentasPage() {
   const navigate = useNavigate();
   const usuario = useAuthStore((state) => state.usuario);
@@ -141,6 +154,7 @@ export default function CuentasPage() {
   const [tipoTitularFilter, setTipoTitularFilter] = useState('');
   const [tipoCuentaFilter, setTipoCuentaFilter] = useState('');
   const [incluirEliminados, setIncluirEliminados] = useState(false);
+  const debouncedSearch = useDebouncedValue(search);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -170,11 +184,8 @@ export default function CuentasPage() {
   );
 
   const chartRows = useMemo(
-    () => (principal?.saldos_por_titular ?? []).map((item) => ({
-      ...item,
-      total_convertido_formatted: formatCurrency(item.total_convertido, principal?.divisa_principal ?? divisaPrincipal),
-    })),
-    [divisaPrincipal, principal],
+    () => principal?.saldos_por_titular ?? [],
+    [principal?.saldos_por_titular],
   );
 
   const divisaOptions = useMemo(() => {
@@ -236,7 +247,7 @@ export default function CuentasPage() {
         params: {
           page,
           pageSize,
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           titularId: titularFilter || undefined,
           tipoTitular: tipoTitularFilter || undefined,
           tipoCuenta: tipoCuentaFilter || undefined,
@@ -262,7 +273,7 @@ export default function CuentasPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros/paginacion
-  }, [page, pageSize, search, titularFilter, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
+  }, [page, pageSize, debouncedSearch, titularFilter, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -281,32 +292,17 @@ export default function CuentasPage() {
           api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal } }),
           api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal } }),
         ]);
-        const cuentasRes = await api.get<PaginatedResponse<CuentaRow>>('/cuentas', {
-          params: { page: 1, pageSize: 2000, sortBy: 'nombre', sortDir: 'asc' },
-        });
-        const bancoByCuentaId = new Map<string, string | null>(
-          (cuentasRes.data.data ?? []).map((cuenta) => [cuenta.id, cuenta.banco_nombre ?? null]),
-        );
-        const titularesDashboard = await Promise.all(
-          principalRes.data.saldos_por_titular.map((item) =>
-            api.get<DashboardTitular>(`/dashboard/titular/${item.titular_id}`, {
-              params: { divisaPrincipal: principalRes.data.divisa_principal },
-            }),
-          ),
-        );
-        const cuentaRows = titularesDashboard
-          .flatMap((response) =>
-            response.data.saldos_por_cuenta.map((cuenta) => ({
-              cuenta_id: cuenta.cuenta_id,
-              cuenta_nombre: cuenta.cuenta_nombre,
-              titular_id: response.data.titular_id,
-              titular_nombre: response.data.titular_nombre,
-              banco_nombre: cuenta.banco_nombre ?? bancoByCuentaId.get(cuenta.cuenta_id) ?? null,
-              divisa: cuenta.divisa,
-              saldo_actual: cuenta.saldo_actual,
-              saldo_convertido: cuenta.saldo_convertido,
-            })),
-          )
+        const cuentaRows = (principalRes.data.saldos_por_cuenta ?? [])
+          .map((cuenta) => ({
+            cuenta_id: cuenta.cuenta_id,
+            cuenta_nombre: cuenta.cuenta_nombre,
+            titular_id: cuenta.titular_id,
+            titular_nombre: cuenta.titular_nombre,
+            banco_nombre: cuenta.banco_nombre ?? null,
+            divisa: cuenta.divisa,
+            saldo_actual: cuenta.saldo_actual,
+            saldo_convertido: cuenta.saldo_convertido,
+          }))
           .sort((a, b) => b.saldo_convertido - a.saldo_convertido);
 
         if (!mounted) {
@@ -365,6 +361,10 @@ export default function CuentasPage() {
     setFormError(null);
     resetForm();
   };
+
+  const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
+    onEscape: saving ? undefined : closeFormModal,
+  });
 
   useEffect(() => {
     if (form.tipo_cuenta !== 'PLAZO_FIJO') {
@@ -434,11 +434,11 @@ export default function CuentasPage() {
   const save = async () => {
     if (!isAdmin) return;
     if (!form.titular_id || !form.nombre.trim()) {
-      setFormError('Titular y nombre son obligatorios');
+      setFormError('Selecciona un titular y escribe el nombre de la cuenta.');
       return;
     }
     if (form.tipo_cuenta === 'PLAZO_FIJO' && (!form.fecha_inicio || !form.fecha_vencimiento)) {
-      setFormError('Fecha de inicio y vencimiento son obligatorias para plazo fijo');
+      setFormError('Indica fecha de inicio y fecha de vencimiento para el plazo fijo.');
       return;
     }
 
@@ -526,7 +526,7 @@ export default function CuentasPage() {
         <section className="dashboard-card titulares-dashboard-card">
           <header className="dashboard-card-header titulares-dashboard-header">
             <div>
-              <h2>Saldos y evolucion</h2>
+              <h2>Saldos y evolución</h2>
               <p className="dashboard-subtitle">Vista consolidada para saldos, divisas y tendencia.</p>
             </div>
             <div className="dashboard-toolbar-actions">
@@ -542,47 +542,30 @@ export default function CuentasPage() {
             <>
               <div className="titulares-chart-wrap">
                 {chartRows.length === 0 ? (
-                  <EmptyState title="No hay saldos para mostrar." />
+                  <EmptyState
+                    title="No hay saldos visibles."
+                    subtitle="Importa movimientos o revisa permisos para poblar este resumen."
+                  />
                 ) : (
-                  <ResponsiveContainer width="100%" height={340}>
-                    <BarChart data={chartRows} margin={{ top: 12, right: 8, left: 0, bottom: 12 }}>
-                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="titular_nombre" interval={0} angle={-18} textAnchor="end" height={72} />
-                      <YAxis
-                        width={72}
-                        axisLine={false}
-                        tickLine={false}
-                        tickMargin={10}
-                        tickFormatter={(value) => formatCompactCurrency(Number(value), principal.divisa_principal)}
-                      />
-                      <Tooltip
-                        formatter={(value: number) => formatCurrency(value, principal.divisa_principal)}
-                        labelFormatter={(value) => `Titular: ${value}`}
-                      />
-                      <Bar dataKey="total_convertido" name={`Saldo total (${principal.divisa_principal})`}>
-                        {chartRows.map((item) => (
-                          <Cell
-                            key={item.titular_id}
-                            fill={item.total_convertido >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <Suspense fallback={<p className="import-muted">Cargando gráfica...</p>}>
+                    <TitularSaldoBarChart rows={chartRows} divisa={principal.divisa_principal} />
+                  </Suspense>
                 )}
               </div>
 
               {evolucion ? (
                 <section className="dashboard-card titulares-evolucion-card">
                   <header className="dashboard-card-header">
-                    <h3>Evolucion</h3>
-                    <span className="dashboard-subtitle">Ultimo punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'N/A'}</span>
+                    <h3>Evolución</h3>
+                    <span className="dashboard-subtitle">Último punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'Sin dato'}</span>
                   </header>
-                  <EvolucionChart
-                    points={evolucion.puntos}
-                    divisa={principal.divisa_principal}
-                    colors={principal.chart_colors}
-                  />
+                  <Suspense fallback={<p className="import-muted">Cargando evolución...</p>}>
+                    <EvolucionChart
+                      points={evolucion.puntos}
+                      divisa={principal.divisa_principal}
+                      colors={principal.chart_colors}
+                    />
+                  </Suspense>
                 </section>
               ) : null}
 
@@ -614,7 +597,7 @@ export default function CuentasPage() {
                           <span className="cuentas-balance-owner">{item.titular_nombre}</span>
                         </span>
                       </span>
-                      <span className="cuentas-balance-bank">{item.banco_nombre || 'N/A'}</span>
+                      <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -632,7 +615,7 @@ export default function CuentasPage() {
                           <span className="cuentas-balance-owner">{item.titular_nombre}</span>
                         </span>
                       </span>
-                      <span className="cuentas-balance-bank">{item.banco_nombre || 'N/A'}</span>
+                      <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -656,6 +639,7 @@ export default function CuentasPage() {
       <div className="phase2-filters">
         <input
           type="search"
+          aria-label="Buscar cuentas por cuenta, banco o IBAN"
           placeholder="Buscar por cuenta, banco, IBAN..."
           value={search}
           onChange={(e) => {
@@ -681,7 +665,7 @@ export default function CuentasPage() {
           options={[
             { value: '', label: 'Todos los tipos de titular' },
             { value: 'EMPRESA', label: 'Empresa' },
-            { value: 'AUTONOMO', label: 'Autonomo' },
+            { value: 'AUTONOMO', label: 'Autónomo' },
             { value: 'PARTICULAR', label: 'Particular' },
           ]}
           onChange={(next) => {
@@ -731,7 +715,12 @@ export default function CuentasPage() {
       <div className="phase2-grid">
         <div className="phase2-cards">
           {loading ? <p className="import-muted">Cargando cuentas...</p> : null}
-          {!loading && items.length === 0 ? <EmptyState title="Sin cuentas para mostrar." /> : null}
+          {!loading && items.length === 0 ? (
+            <EmptyState
+              title="No hay cuentas con estos filtros."
+              subtitle="Ajusta la búsqueda o crea una cuenta nueva."
+            />
+          ) : null}
           {!loading && items.map((item) => {
             const saldoCuenta = saldoCuentaById.get(item.id);
             const fallbackSaldo = typeof item.saldo_actual === 'number' ? item.saldo_actual : null;
@@ -743,8 +732,8 @@ export default function CuentasPage() {
               <article className="titular-card cuenta-card" key={item.id}>
                 <div className="titular-card-title">
                   <h3>{item.nombre}</h3>
-                  <span className="pill">{item.tipo_cuenta ?? (item.es_efectivo ? 'EFECTIVO' : 'NORMAL')}</span>
-                  {item.plazo_fijo ? <span className="pill">{item.plazo_fijo.estado}</span> : null}
+                  <span className="pill">{formatCatalogLabel(tipoCuentaLabels, item.tipo_cuenta ?? (item.es_efectivo ? 'EFECTIVO' : 'NORMAL'))}</span>
+                  {item.plazo_fijo ? <span className="pill">{formatCatalogLabel(estadoPlazoLabels, item.plazo_fijo.estado)}</span> : null}
                 </div>
                 <div className="cuenta-card-meta">
                   <div className="cuenta-card-meta-item">
@@ -757,7 +746,7 @@ export default function CuentasPage() {
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Banco</span>
-                    <strong className="cuenta-card-meta-value">{item.banco_nombre || 'N/A'}</strong>
+                    <strong className="cuenta-card-meta-value">{item.banco_nombre || 'Sin banco'}</strong>
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Estado</span>
@@ -772,7 +761,7 @@ export default function CuentasPage() {
                   <div className="cuenta-card-meta-item cuenta-card-balance">
                     <span className="cuenta-card-meta-label">Saldo total</span>
                     {saldoValue === null ? (
-                      <strong className="cuenta-card-meta-value">N/A</strong>
+                      <strong className="cuenta-card-meta-value">Sin saldo</strong>
                     ) : (
                       <SignedAmount value={saldoValue}>
                         {formatCurrency(saldoValue, saldoCurrency)}
@@ -793,6 +782,7 @@ export default function CuentasPage() {
                         type="button"
                         className="cuenta-open-button"
                         onClick={() => navigate(`/dashboard/cuenta/${item.id}`)}
+                        aria-label={`Abrir dashboard de cuenta ${item.nombre}`}
                       >
                         Abrir
                       </button>
@@ -801,22 +791,23 @@ export default function CuentasPage() {
                       <span className="dashboard-open-link dashboard-open-link--disabled">Sin acceso</span>
                     ) : null}
                   {isAdmin ? (
-                    <button type="button" onClick={() => startEdit(item.id)} disabled={saving}>Editar</button>
+                    <button type="button" onClick={() => startEdit(item.id)} disabled={saving} aria-label={`Editar cuenta ${item.nombre}`}>Editar</button>
                   ) : null}
                   {isAdmin && item.tipo_cuenta === 'PLAZO_FIJO' ? (
-                    <button type="button" onClick={() => void startRenew(item.id)} disabled={saving}>Renovar</button>
+                    <button type="button" onClick={() => void startRenew(item.id)} disabled={saving} aria-label={`Renovar plazo fijo ${item.nombre}`}>Renovar</button>
                   ) : null}
                     {isAdmin && !item.deleted_at ? (
                       <button
                         type="button"
                         onClick={() => setDeleteCandidate({ id: item.id, nombre: item.nombre })}
                         disabled={saving}
+                        aria-label={`Eliminar cuenta ${item.nombre}`}
                       >
                         Eliminar
                       </button>
                     ) : null}
                     {isAdmin && item.deleted_at ? (
-                      <button type="button" onClick={() => restore(item.id)} disabled={saving}>Restaurar</button>
+                      <button type="button" onClick={() => restore(item.id)} disabled={saving} aria-label={`Restaurar cuenta ${item.nombre}`}>Restaurar</button>
                     ) : null}
                   </div>
                 ) : null}
@@ -825,7 +816,7 @@ export default function CuentasPage() {
           })}
           <div className="users-pagination">
             <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Anterior</button>
-            <span>Pagina {page} / {totalPages}</span>
+            <span>Página {page} / {totalPages}</span>
             <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Siguiente</button>
           </div>
         </div>
@@ -834,20 +825,25 @@ export default function CuentasPage() {
       {isAdmin && isFormModalOpen ? (
         <div className="modal-backdrop users-modal-backdrop" onClick={closeFormModal}>
           <div
+            ref={formDialogRef}
             className="users-modal phase2-form-modal phase2-form-modal--wide"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="cuentas-modal-title"
+            tabIndex={-1}
           >
             <div className="users-modal-header">
               <div>
-                <h2 id="cuentas-modal-title">{renewingId ? 'Renovar plazo fijo' : editingId ? 'Editar Cuenta' : 'Nueva Cuenta'}</h2>
+                <h2 id="cuentas-modal-title">{renewingId ? 'Renovar plazo fijo' : editingId ? 'Editar cuenta' : 'Nueva cuenta'}</h2>
                 <p>Alta y edición de cuentas bancarias o efectivo asociadas a un titular.</p>
               </div>
-              <button type="button" className="users-modal-close" onClick={closeFormModal} disabled={saving}>
-                Cerrar
-              </button>
+              <CloseIconButton
+                className="users-modal-close"
+                onClick={closeFormModal}
+                disabled={saving}
+                ariaLabel="Cerrar modal de cuenta"
+              />
             </div>
 
             <form
@@ -920,7 +916,7 @@ export default function CuentasPage() {
 
               {form.tipo_cuenta !== 'PLAZO_FIJO' ? (
                 <section className="users-modal-section">
-                  <h3>{form.tipo_cuenta === 'NORMAL' ? 'Datos bancarios' : 'Importacion'}</h3>
+                  <h3>{form.tipo_cuenta === 'NORMAL' ? 'Datos bancarios' : 'Importación'}</h3>
                   <div className="users-form-grid">
                     {form.tipo_cuenta === 'NORMAL' ? (
                       <>
@@ -930,7 +926,7 @@ export default function CuentasPage() {
                         </label>
 
                         <label>
-                          <span>Numero de cuenta</span>
+                          <span>Número de cuenta</span>
                           <input value={form.numero_cuenta} onChange={(e) => setForm((f) => ({ ...f, numero_cuenta: e.target.value }))} />
                         </label>
 
@@ -942,7 +938,7 @@ export default function CuentasPage() {
                     ) : null}
 
                     <AppSelect
-                      label="Formato de importacion"
+                      label="Formato de importación"
                       value={form.formato_id}
                       options={[
                         { value: '', label: 'Sin formato' },
@@ -956,7 +952,7 @@ export default function CuentasPage() {
                   </div>
                 </section>
               ) : (
-                <p className="import-muted">Las cuentas de plazo fijo no usan datos bancarios ni formato de importacion.</p>
+                <p className="import-muted">Las cuentas de plazo fijo no usan datos bancarios ni formato de importación.</p>
               )}
 
               {form.tipo_cuenta === 'PLAZO_FIJO' || renewingId ? (
@@ -980,14 +976,14 @@ export default function CuentasPage() {
                       />
                     </div>
                     <label>
-                      <span>Interes previsto</span>
+                      <span>Interés previsto</span>
                       <input type="number" step="0.01" min="0" value={form.interes_previsto} onChange={(e) => setForm((f) => ({ ...f, interes_previsto: e.target.value }))} />
                     </label>
                     <AppSelect
-                      label="Cuenta referencia"
+                      label="Cuenta de referencia"
                       value={form.cuenta_referencia_id}
                       options={[
-                        { value: '', label: 'Sin cuenta referencia' },
+                        { value: '', label: 'Sin cuenta de referencia' },
                         ...cuentaReferenciaOptions.map((cuenta) => ({
                           value: cuenta.id,
                           label: `${cuenta.titular_nombre} - ${cuenta.nombre}`,
@@ -1027,10 +1023,11 @@ export default function CuentasPage() {
         title="Eliminar cuenta"
         message={
           deleteCandidate
-            ? `Vas a enviar a papelera la cuenta ${deleteCandidate.nombre}. El movimiento queda auditado y podras restaurarla despues.`
+            ? `Vas a enviar a papelera la cuenta ${deleteCandidate.nombre}. El movimiento queda auditado y podrás restaurarla después.`
             : ''
         }
-        confirmLabel="Confirmar eliminacion"
+        confirmLabel="Confirmar eliminación"
+        loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={remove}

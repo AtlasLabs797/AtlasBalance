@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
+import { extractErrorMessage } from '@/utils/errorMessage';
+import { parseEuropeanNumber } from '@/utils/formatters';
 
 interface AddRowFormProps {
   cuentas: Array<{ id: string; nombre: string; titular_nombre: string; divisa: string }>;
@@ -26,8 +28,14 @@ export default function AddRowForm({ cuentas, extraColumns, onCreate }: AddRowFo
   const [saldo, setSaldo] = useState('');
   const [extras, setExtras] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const canSubmit = useMemo(() => !!cuentaId && !!fecha && monto !== '' && saldo !== '', [cuentaId, fecha, monto, saldo]);
+  const montoNumber = useMemo(() => parseEuropeanNumber(monto), [monto]);
+  const saldoNumber = useMemo(() => parseEuropeanNumber(saldo), [saldo]);
+  const canSubmit = useMemo(
+    () => !!cuentaId && !!fecha && montoNumber !== null && saldoNumber !== null,
+    [cuentaId, fecha, montoNumber, saldoNumber]
+  );
 
   return (
     <form
@@ -38,20 +46,26 @@ export default function AddRowForm({ cuentas, extraColumns, onCreate }: AddRowFo
           return;
         }
         setSaving(true);
+        setSubmitError(null);
         void onCreate({
           cuenta_id: cuentaId,
           fecha,
           concepto,
           comentarios,
-          monto: Number(monto),
-          saldo: Number(saldo),
+          monto: montoNumber ?? 0,
+          saldo: saldoNumber ?? 0,
           columnas_extra: extras
-        }).finally(() => setSaving(false));
+        })
+          .catch((error) => {
+            setSubmitError(extractErrorMessage(error, 'No se pudo agregar la fila manual.'));
+          })
+          .finally(() => setSaving(false));
       }}
     >
       <h3>Agregar fila manual</h3>
       <div className="add-row-grid">
         <AppSelect
+          label="Cuenta"
           ariaLabel="Cuenta"
           value={cuentaId}
           options={[
@@ -63,24 +77,38 @@ export default function AddRowForm({ cuentas, extraColumns, onCreate }: AddRowFo
           ]}
           onChange={setCuentaId}
         />
-        <DatePickerField ariaLabel="Fecha" value={fecha} onChange={setFecha} />
-        <input placeholder="Concepto" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
-        <input placeholder="Comentarios" value={comentarios} onChange={(e) => setComentarios(e.target.value)} />
-        <input type="number" step="0.0001" placeholder="Monto" value={monto} onChange={(e) => setMonto(e.target.value)} />
-        <input type="number" step="0.0001" placeholder="Saldo" value={saldo} onChange={(e) => setSaldo(e.target.value)} />
+        <DatePickerField label="Fecha" ariaLabel="Fecha" value={fecha} onChange={setFecha} />
+        <label className="add-row-field">
+          <span>Concepto</span>
+          <input value={concepto} onChange={(e) => setConcepto(e.target.value)} />
+        </label>
+        <label className="add-row-field">
+          <span>Comentarios</span>
+          <input value={comentarios} onChange={(e) => setComentarios(e.target.value)} />
+        </label>
+        <label className="add-row-field">
+          <span>Monto</span>
+          <input inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </label>
+        <label className="add-row-field">
+          <span>Saldo</span>
+          <input inputMode="decimal" value={saldo} onChange={(e) => setSaldo(e.target.value)} />
+        </label>
       </div>
       {extraColumns.length > 0 && (
         <div className="add-row-extra">
           {extraColumns.map((name) => (
-            <input
-              key={name}
-              placeholder={name}
-              value={extras[name] ?? ''}
-              onChange={(e) => setExtras((prev) => ({ ...prev, [name]: e.target.value }))}
-            />
+            <label key={name} className="add-row-field">
+              <span>{name}</span>
+              <input
+                value={extras[name] ?? ''}
+                onChange={(e) => setExtras((prev) => ({ ...prev, [name]: e.target.value }))}
+              />
+            </label>
           ))}
         </div>
       )}
+      {submitError ? <p className="auth-error" role="alert">{submitError}</p> : null}
       <button type="submit" disabled={!canSubmit || saving}>
         {saving ? 'Guardando...' : 'Agregar fila'}
       </button>

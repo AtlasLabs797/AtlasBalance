@@ -8,6 +8,7 @@ import api from '@/services/api';
 import { IntegrationAuditTable } from '@/components/auditoria/IntegrationAuditTable';
 import type { AuditoriaFiltros, AuditoriaListItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { formatDateTime } from '@/utils/formatters';
 
 type ExpandedRowsState = Record<string, boolean>;
 type AuditTab = 'sistema' | 'integraciones';
@@ -15,21 +16,21 @@ type AuditTab = 'sistema' | 'integraciones';
 const pageSizeOptions = [25, 50, 100];
 
 function mapColumnaNombre(columna: string | null): string {
-  if (!columna) return 'N/A';
+  if (!columna) return 'Sin datos';
 
   const key = columna.trim().toLowerCase();
   if (key === 'fecha') return 'Fecha';
   if (key === 'concepto') return 'Concepto';
   if (key === 'monto') return 'Monto';
   if (key === 'saldo') return 'Saldo';
-  if (key === 'checked') return 'Check';
-  if (key === 'flagged') return 'Flag';
-  if (key === 'flagged_nota') return 'Nota flag';
+  if (key === 'checked') return 'Revisión';
+  if (key === 'flagged') return 'Marca';
+  if (key === 'flagged_nota') return 'Nota de marca';
   return columna;
 }
 
 function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString();
+  return formatDateTime(value);
 }
 
 function parseDetallesJson(raw: string | null): string | null {
@@ -65,7 +66,7 @@ export default function AuditoriaPage() {
   const [pageSize, setPageSize] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
 
-  const totalRowsText = useMemo(() => `${rows.length} registros en esta pagina`, [rows.length]);
+  const totalRowsText = useMemo(() => `${rows.length} registros en esta página`, [rows.length]);
 
   const fetchFiltros = async () => {
     setLoadingFiltros(true);
@@ -73,7 +74,7 @@ export default function AuditoriaPage() {
       const { data } = await api.get<AuditoriaFiltros>('/auditoria/filtros');
       setFiltros(data);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar filtros de auditoria'));
+      setError(extractErrorMessage(err, 'No se pudieron cargar filtros de auditoría'));
     } finally {
       setLoadingFiltros(false);
     }
@@ -98,7 +99,7 @@ export default function AuditoriaPage() {
       setTotalPages(Math.max(1, data.total_pages ?? 1));
       setExpandedRows({});
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar registros de auditoria'));
+      setError(extractErrorMessage(err, 'No se pudieron cargar registros de auditoría'));
       setRows([]);
       setTotalPages(1);
     } finally {
@@ -169,17 +170,17 @@ export default function AuditoriaPage() {
     <section className="auditoria-page">
       <header className="auditoria-header">
         <div>
-          <h1>Auditoria</h1>
-          <p className="dashboard-subtitle">Historial completo con filtros combinados y exportacion CSV</p>
+          <h1>Auditoría</h1>
+          <p className="dashboard-subtitle">Historial completo con filtros combinados y exportación CSV</p>
         </div>
       </header>
 
       <div className="config-tabs">
         <button type="button" className={tab === 'sistema' ? 'config-tab config-tab--active' : 'config-tab'} onClick={() => setTab('sistema')}>
-          Auditoria Sistema
+          Auditoría Sistema
         </button>
         <button type="button" className={tab === 'integraciones' ? 'config-tab config-tab--active' : 'config-tab'} onClick={() => setTab('integraciones')}>
-          Auditoria Integraciones
+          Auditoría Integraciones
         </button>
       </div>
 
@@ -271,7 +272,7 @@ export default function AuditoriaPage() {
           {error ? <p className="auth-error">{error}</p> : null}
 
           <div className="users-table-card auditoria-table-card">
-            {loading ? <p className="import-muted">Cargando auditoria...</p> : null}
+            {loading ? <p className="import-muted">Cargando auditoría...</p> : null}
             {!loading && rows.length === 0 ? <EmptyState title="Sin registros para los filtros seleccionados." /> : null}
             {!loading && rows.length > 0 ? (
               <>
@@ -301,10 +302,10 @@ export default function AuditoriaPage() {
                             <td>{formatTimestamp(row.timestamp)}</td>
                             <td>{row.usuario_nombre ?? 'Sistema'}</td>
                             <td>{row.tipo_accion}</td>
-                            <td>{row.cuenta_nombre ? `${row.titular_nombre ?? 'N/A'} - ${row.cuenta_nombre}` : 'N/A'}</td>
-                            <td>{row.celda_referencia ?? 'N/A'}</td>
+                            <td>{row.cuenta_nombre ? `${row.titular_nombre ?? 'Sin titular'} - ${row.cuenta_nombre}` : 'Sin cuenta'}</td>
+                            <td>{row.celda_referencia ?? 'Sin celda'}</td>
                             <td>{mapColumnaNombre(row.columna_nombre)}</td>
-                            <td>{row.ip_address ?? 'N/A'}</td>
+                            <td>{row.ip_address ?? 'Sin IP'}</td>
                           </tr>
 
                           {expandedRows[row.id] ? (
@@ -312,14 +313,14 @@ export default function AuditoriaPage() {
                               <td colSpan={8}>
                                 <div className="auditoria-expanded">
                                   <div>
-                                    <strong>Entidad:</strong> {row.entidad_tipo ?? 'N/A'} {row.entidad_id ?? ''}
+                                    <strong>Entidad:</strong> {row.entidad_tipo ?? 'Sin entidad'} {row.entidad_id ?? ''}
                                   </div>
                                   <div>
                                     <strong>Valor anterior:</strong>{' '}
                                     {isAmountColumn(row.columna_nombre) && row.valor_anterior !== null ? (
                                       <SignedAmount value={row.valor_anterior}>{row.valor_anterior}</SignedAmount>
                                     ) : (
-                                      row.valor_anterior ?? 'N/A'
+                                      row.valor_anterior ?? 'Sin valor'
                                     )}
                                   </div>
                                   <div>
@@ -327,12 +328,12 @@ export default function AuditoriaPage() {
                                     {isAmountColumn(row.columna_nombre) && row.valor_nuevo !== null ? (
                                       <SignedAmount value={row.valor_nuevo}>{row.valor_nuevo}</SignedAmount>
                                     ) : (
-                                      row.valor_nuevo ?? 'N/A'
+                                      row.valor_nuevo ?? 'Sin valor'
                                     )}
                                   </div>
                                   <div>
                                     <strong>Referencia legible:</strong>{' '}
-                                    {row.celda_referencia ? `${row.celda_referencia} (${mapColumnaNombre(row.columna_nombre)})` : 'N/A'}
+                                    {row.celda_referencia ? `${row.celda_referencia} (${mapColumnaNombre(row.columna_nombre)})` : 'Sin referencia'}
                                   </div>
                                   {row.detalles_json ? (
                                     <div>
@@ -355,7 +356,7 @@ export default function AuditoriaPage() {
                     Anterior
                   </button>
                   <span>
-                    Pagina {page} / {totalPages} · {totalRowsText}
+                    Página {page} / {totalPages} · {totalRowsText}
                   </span>
                   <button type="button" onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))} disabled={page >= totalPages}>
                     Siguiente

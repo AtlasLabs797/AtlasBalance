@@ -10,7 +10,7 @@ permissions:
 jobs:
   verify:
     name: Build, test, and audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -19,28 +19,28 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
-          dotnet-version: 8.0.x
+          global-json-file: global.json
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
+          node-version-file: ".node-version"
           cache: npm
           cache-dependency-path: "Atlas Balance/frontend/package-lock.json"
 
       - name: Restore backend
-        run: dotnet restore "./Atlas Balance/backend/GestionCaja.sln"
+        run: dotnet restore "./Atlas Balance/backend/AtlasBalance.sln" --locked-mode
 
       - name: Pull PostgreSQL test image
         run: docker pull postgres:16-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
 
       - name: Test backend
-        run: dotnet test "./Atlas Balance/backend/GestionCaja.sln" -c Release --no-restore
+        run: dotnet test "./Atlas Balance/backend/AtlasBalance.sln" -c Release --no-restore
 
       - name: Audit NuGet vulnerabilities
         shell: pwsh
         run: |
-          $output = dotnet list "./Atlas Balance/backend/GestionCaja.sln" package --vulnerable --include-transitive
+          $output = dotnet list "./Atlas Balance/backend/AtlasBalance.sln" package --vulnerable --include-transitive
           $output
           if ($output -match 'has the following vulnerable packages|tiene los paquetes vulnerables') {
             throw 'NuGet vulnerability audit failed.'
@@ -53,8 +53,13 @@ jobs:
             '-----BEGIN (RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----',
             'AKIA[0-9A-Z]{16}',
             'gh[pousr]_[A-Za-z0-9_]{36,}',
+            'github_pat_[A-Za-z0-9_]{20,}',
             'xox[baprs]-[A-Za-z0-9-]{20,}',
-            'sk-live-[A-Za-z0-9]{20,}'
+            'sk-live-[A-Za-z0-9]{20,}',
+            'sk_live_[A-Za-z0-9]{20,}',
+            'npm_[A-Za-z0-9]{36,}',
+            'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+',
+            'postgres(ql)?://[^:\s]+:[^@\s]+@'
           )
           $files = (git -c core.quotepath=false ls-files -z) -split "`0" | Where-Object {
             $_ -and

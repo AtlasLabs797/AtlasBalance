@@ -2,7 +2,7 @@
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@atlasbalance.local';
 const adminPassword = process.env.E2E_ADMIN_PASSWORD;
-const apiHealthUrl = process.env.E2E_API_HEALTH_URL ?? 'https://localhost:5000/api/health';
+const apiHealthUrl = process.env.E2E_API_HEALTH_URL ?? 'http://localhost:5000/api/health';
 
 const adminRoutes = [
   '/dashboard',

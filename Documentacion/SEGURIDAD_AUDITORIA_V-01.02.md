@@ -61,7 +61,7 @@ La revision cubrio backend ASP.NET Core, Watchdog, frontend React/Vite, configur
 ### Watchdog con binding demasiado laxo
 
 - Severidad inicial: media.
-- Archivo afectado: `GestionCaja.Watchdog/Program.cs`.
+- Archivo afectado: `AtlasBalance.Watchdog/Program.cs`.
 - Solucion: Kestrel escucha solo en `localhost:5001`.
 
 ### `AllowedHosts` wildcard en produccion
@@ -120,7 +120,7 @@ Segunda pasada sobre el arbol completo tras el hardening inicial. Enfoque: secre
 
 #### `dotnet publish` empaquetando dev secrets
 - Severidad inicial: alta. No lo habian detectado los agentes en la primera pasada.
-- Archivos afectados: `GestionCaja.API.csproj`, `GestionCaja.Watchdog.csproj`.
+- Archivos afectados: `AtlasBalance.API.csproj`, `AtlasBalance.Watchdog.csproj`.
 - Solucion: `Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true"` y equivalentes para las plantillas.
 
 #### Passwords hardcodeadas en scripts y docs historicas en `Otros/`

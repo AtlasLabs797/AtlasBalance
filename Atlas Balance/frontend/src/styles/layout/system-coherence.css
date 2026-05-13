@@ -7,6 +7,7 @@
 .users-page,
 .extractos-page,
 .cuenta-detail-page,
+.phase2-page,
 .titulares-page,
 .import-page,
 .alertas-page,
@@ -14,10 +15,17 @@
 .auditoria-page,
 .backups-page,
 .exportaciones-page,
-.trash-page {
+.trash-page,
+.revision-page,
+.ia-page {
   width: 100%;
-  max-width: 1500px;
+  max-width: 1280px;
   margin-inline: auto;
+}
+
+.extractos-page,
+.cuenta-detail-page {
+  max-width: 1600px;
 }
 
 .dashboard-toolbar,
@@ -49,11 +57,8 @@
 .page-placeholder,
 .users-table-card,
 .users-form-card,
-.users-modal,
-.users-confirm-modal,
 .add-row-form,
 .extracto-table-section,
-.audit-modal,
 .account-notes-card,
 .titular-card,
 .dashboard-kpi,
@@ -64,11 +69,19 @@
 .config-section-panel,
 .config-status-grid article,
 .config-divisa-card,
-.config-modal-card,
 .loading-overlay {
   border-color: var(--surface-border);
   background: var(--surface-bg-raised);
   box-shadow: var(--shadow-card);
+}
+
+.users-modal,
+.users-confirm-modal,
+.audit-modal,
+.config-modal-card {
+  border-color: var(--surface-border);
+  background: var(--surface-bg-raised);
+  box-shadow: var(--shadow-overlay);
 }
 
 .users-table-card,
@@ -97,22 +110,31 @@
     transform var(--duration-instant) var(--ease-premium);
 }
 
-.dashboard-card:hover,
-.titular-card:hover,
-.config-section-panel:hover,
-.config-status-grid article:hover,
-.config-divisa-card:hover,
-.dashboard-divisa-item:hover,
-.dashboard-titular-item:hover {
-  border-color: var(--surface-border-hover);
-  box-shadow: var(--shadow-card-hover);
+.dashboard-kpi,
+.dashboard-titular-item,
+.titular-card,
+.config-divisa-card {
+  will-change: transform;
 }
 
-.dashboard-kpi:hover,
-.dashboard-titular-item:hover,
-.titular-card:hover,
-.config-divisa-card:hover {
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .dashboard-card:hover,
+  .titular-card:hover,
+  .config-section-panel:hover,
+  .config-status-grid article:hover,
+  .config-divisa-card:hover,
+  .dashboard-divisa-item:hover,
+  .dashboard-titular-item:hover {
+    border-color: var(--surface-border-hover);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  .dashboard-kpi:hover,
+  .dashboard-titular-item:hover,
+  .titular-card:hover,
+  .config-divisa-card:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .dashboard-card-header,
@@ -124,41 +146,90 @@
 }
 
 .config-tabs {
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
-  padding: var(--space-1);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-panel);
-  background: var(--surface-bg-sunken);
+  padding: var(--space-2);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-bg-sunken) 82%, var(--bg-surface) 18%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg-surface) 70%, transparent);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.config-tabs--settings {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .config-tab {
-  min-height: var(--control-height-compact);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  min-width: 0;
   border-color: transparent;
+  border-radius: calc(var(--radius-control) - 2px);
   background: transparent;
   color: var(--text-secondary);
   box-shadow: none;
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--duration-instant) var(--ease-premium);
+}
+
+.config-tabs--settings .config-tab {
+  justify-content: flex-start;
+}
+
+.config-tab > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: currentColor;
+  opacity: 0.86;
 }
 
 .config-tab:hover:not(:disabled) {
-  background: var(--bg-surface);
+  border-color: var(--surface-border-hover);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .config-tab--active {
-  border-color: var(--surface-border-hover);
-  background: var(--bg-surface);
-  color: var(--text-link);
-  box-shadow: var(--shadow-sm);
+  border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--surface-border));
+  background: var(--color-sidebar-active-bg);
+  color: var(--color-sidebar-active-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 14%, transparent);
 }
 
-.app-nav-link:hover {
-  transform: translateX(1px);
+@media (hover: hover) and (pointer: fine) {
+  .app-nav-link:hover {
+    transform: translateX(1px);
+  }
 }
 
 .app-nav-link--active {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 16%, transparent);
 }
+
 
 .app-nav-link--active .app-nav-icon {
   color: var(--color-sidebar-active-text);
@@ -172,6 +243,11 @@
 .bottom-nav-sheet-link {
   border-color: var(--control-border);
   background: var(--surface-bg-raised);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--duration-instant) var(--ease-premium);
 }
 
 .sidebar-toggle:hover,
@@ -181,6 +257,12 @@
 .bottom-nav-sheet-link:hover {
   border-color: var(--surface-border-hover);
   background: var(--bg-hover);
+}
+
+.sidebar-toggle:active:not(:disabled),
+.theme-toggle:active:not(:disabled),
+.logout-button:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .app-select-trigger,
@@ -220,10 +302,7 @@ tbody tr:hover {
 }
 
 .pill,
-.config-badge,
-.alert-banner-pill,
-.sidebar-alert-badge,
-.sidebar-update-badge {
+.config-badge {
   border-radius: calc(var(--radius-control) - 2px);
 }
 
@@ -234,8 +313,9 @@ tbody tr:hover {
 
 .modal-backdrop,
 .config-modal-backdrop,
+.users-modal-backdrop,
 .bottom-nav-sheet-backdrop {
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
 }
 
 .dashboard-table-wrap tbody tr.dashboard-row-flagged > td:first-child,
@@ -245,11 +325,12 @@ tbody tr:hover {
     inset 0 -1px 0 var(--color-row-flagged-border);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
   .dashboard-page,
   .users-page,
   .extractos-page,
   .cuenta-detail-page,
+  .phase2-page,
   .titulares-page,
   .import-page,
   .alertas-page,
@@ -257,7 +338,9 @@ tbody tr:hover {
   .auditoria-page,
   .backups-page,
   .exportaciones-page,
-  .trash-page {
+  .trash-page,
+  .revision-page,
+  .ia-page {
     max-width: none;
   }
 
@@ -265,8 +348,24 @@ tbody tr:hover {
     width: 100%;
   }
 
+  .config-tabs--settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .config-tab {
     flex: 1 1 auto;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1200px) {
+  .config-tabs--settings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .config-tabs--settings {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -276,7 +375,7 @@ tbody tr:hover {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
   .auditoria-header {
     flex-direction: column;
     align-items: stretch;
@@ -298,16 +397,136 @@ tbody tr:hover {
 }
 
 @media (max-width: 560px) {
-  .bottom-nav-sheet-header,
   .bottom-nav-sheet-grid {
     grid-template-columns: 1fr;
   }
 
   .bottom-nav-sheet-header {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-start;
   }
 
   .bottom-nav-sheet-close {
-    width: 100%;
+    width: var(--control-height);
+    justify-self: end;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .dashboard-open-link,
+  .titulares-balance-open,
+  .cuentas-balance-open,
+  .extra-col-btn-icon,
+  .remove-permiso,
+  .cuenta-card .phase2-row-actions button {
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+  }
+}
+
+/* ===== ANIMACIONES GLOBALES ===== */
+
+/* Modales: backdrop */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Modales: superficie del panel */
+@keyframes modal-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.45rem) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-backdrop,
+.config-modal-backdrop {
+  animation: modal-backdrop-in var(--duration-fast) var(--ease-premium);
+}
+
+.users-confirm-modal,
+.users-modal,
+.audit-modal,
+.config-modal-card,
+.phase2-form-modal,
+.phase2-form-modal--wide {
+  animation: modal-surface-in var(--duration-base) var(--ease-premium) both;
+}
+
+/* Cards: entrada escalonada */
+@keyframes card-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dashboard-kpi-grid .dashboard-kpi,
+.phase2-cards > *:not(.empty-state):not(.users-pagination),
+.users-summary-grid > * {
+  animation: card-entrance var(--duration-base) var(--ease-premium) both;
+}
+
+.dashboard-kpi-grid .dashboard-kpi:nth-child(1),
+.phase2-cards > *:nth-child(1),
+.users-summary-grid > *:nth-child(1) { animation-delay: 30ms; }
+
+.dashboard-kpi-grid .dashboard-kpi:nth-child(2),
+.phase2-cards > *:nth-child(2),
+.users-summary-grid > *:nth-child(2) { animation-delay: 70ms; }
+
+.dashboard-kpi-grid .dashboard-kpi:nth-child(3),
+.phase2-cards > *:nth-child(3),
+.users-summary-grid > *:nth-child(3) { animation-delay: 110ms; }
+
+.dashboard-kpi-grid .dashboard-kpi:nth-child(n+4),
+.phase2-cards > *:nth-child(n+4),
+.users-summary-grid > *:nth-child(n+4) { animation-delay: 150ms; }
+
+/* Empty state: entrada suave */
+@keyframes empty-state-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.3rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.empty-state {
+  animation: empty-state-in var(--duration-base) var(--ease-premium) both;
+}
+
+/* Prefers-reduced-motion: deshabilitar todas las animaciones nuevas */
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .config-modal-backdrop,
+  .users-confirm-modal,
+  .users-modal,
+  .audit-modal,
+  .config-modal-card,
+  .phase2-form-modal,
+  .phase2-form-modal--wide,
+  .dashboard-kpi-grid .dashboard-kpi,
+  .phase2-cards > *,
+  .users-summary-grid > *,
+  .empty-state,
+  .dashboard-titular-item,
+  .titulares-balance-row,
+  .cuentas-balance-row {
+    animation: none !important;
+    animation-delay: 0ms !important;
   }
 }

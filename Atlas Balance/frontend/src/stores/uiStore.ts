@@ -2,6 +2,10 @@ import { create } from 'zustand';
 
 type Theme = 'light' | 'dark';
 
+function normalizeTheme(value: string | null): Theme {
+  return value === 'dark' || value === 'light' ? value : 'light';
+}
+
 interface Toast {
   id: string;
   type: 'success' | 'error' | 'warning' | 'info';
@@ -26,7 +30,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  theme: (localStorage.getItem('theme') as Theme) || 'light',
+  theme: normalizeTheme(localStorage.getItem('theme')),
   sidebarCollapsed: false,
   activeModal: null,
   toasts: [],

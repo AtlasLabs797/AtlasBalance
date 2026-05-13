@@ -8,20 +8,81 @@ export function toSafeNumber(value: unknown): number {
   }
 
   if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) {
-      return 0;
-    }
-
-    const normalized = trimmed
-      .replace(/\s+/g, '')
-      .replace(/\.(?=\d{3}(?:[.,]|$))/g, '')
-      .replace(',', '.');
-    const parsed = Number.parseFloat(normalized);
-    return Number.isFinite(parsed) ? parsed : 0;
+    return parseEuropeanNumber(value) ?? 0;
   }
 
   return 0;
+}
+
+export function parseEuropeanNumber(value: string | number | null | undefined): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  let normalized = String(value)
+    .replace(/\u00a0/g, ' ')
+    .trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  let negative = false;
+  if (/^\(.*\)$/.test(normalized)) {
+    negative = true;
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  normalized = normalized
+    .replace(/[€$£]/g, '')
+    .replace(/\b(EUR|USD|GBP)\b/gi, '')
+    .replace(/\s+/g, '')
+    .trim();
+
+  if (normalized.startsWith('+')) {
+    normalized = normalized.slice(1);
+  } else if (normalized.startsWith('-')) {
+    negative = !negative;
+    normalized = normalized.slice(1);
+  }
+
+  if (!/^\d[\d.,]*$/.test(normalized)) {
+    return null;
+  }
+
+  const commaIndex = normalized.lastIndexOf(',');
+  const dotIndex = normalized.lastIndexOf('.');
+  if (commaIndex >= 0 && dotIndex >= 0) {
+    const decimalSeparator = commaIndex > dotIndex ? ',' : '.';
+    const thousandsSeparator = decimalSeparator === ',' ? '.' : ',';
+    normalized = normalized.split(thousandsSeparator).join('');
+    normalized = normalized.replace(decimalSeparator, '.');
+  } else if (commaIndex >= 0) {
+    normalized = normalized.replace(',', '.');
+  } else if (dotIndex >= 0) {
+    const dotParts = normalized.split('.');
+    const hasThousandsGrouping =
+      dotParts.length > 1 &&
+      dotParts[0].length >= 1 &&
+      dotParts[0].length <= 3 &&
+      dotParts.slice(1).every((part) => part.length === 3);
+    normalized = hasThousandsGrouping ? dotParts.join('') : normalized;
+  }
+
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return negative ? -parsed : parsed;
 }
 
 export type AmountTone = 'positive' | 'negative' | 'neutral';
@@ -40,12 +101,13 @@ export function formatCurrency(amount: number | string | null | undefined, divis
       currencyFormatters[divisa] = new Intl.NumberFormat('es-ES', {
         style: 'currency',
         currency: divisa,
+        useGrouping: true,
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
     } catch {
       // Fallback for unknown currency codes
-      return `${safeAmount.toFixed(2)} ${divisa}`;
+      return `${formatNumber(safeAmount)} ${divisa}`;
     }
   }
   return currencyFormatters[divisa].format(safeAmount);
@@ -59,9 +121,9 @@ export function formatCompactCurrency(amount: number | string | null | undefined
         notation: 'compact',
         compactDisplay: 'short',
         maximumFractionDigits: 1,
-      });
-    } catch {
-      return `${safeAmount.toFixed(0)} ${divisa}`;
+    });
+  } catch {
+      return `${formatNumber(safeAmount, 0)} ${divisa}`;
     }
   }
   return `${compactCurrencyFormatters[divisa].format(safeAmount)} ${divisa}`;
@@ -69,13 +131,24 @@ export function formatCompactCurrency(amount: number | string | null | undefined
 
 export function formatNumber(value: number, decimals: number = 2): string {
   return new Intl.NumberFormat('es-ES', {
+    useGrouping: true,
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value);
 }
 
 export function formatDate(dateStr: string): string {
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    return `${day}/${month}/${year}`;
+  }
+
   const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) {
+    return dateStr;
+  }
+
   return date.toLocaleDateString('es-ES', {
     day: '2-digit',
     month: '2-digit',

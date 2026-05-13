@@ -42,7 +42,9 @@ export const useDivisaStore = create<DivisaState>((set, get) => ({
 
     if (inverso) return monto / inverso.tasa;
 
-    console.warn(`No exchange rate found: ${origen} -> ${target}`);
+    if (import.meta.env.DEV) {
+      console.warn(`No exchange rate found: ${origen} -> ${target}`);
+    }
     return monto;
   },
 }));

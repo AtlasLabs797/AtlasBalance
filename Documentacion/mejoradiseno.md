@@ -79,7 +79,7 @@ Eso ya quedo corregido en la base. No he fingido un redisenio total: seria una b
 | Extractos | Botones de filtros/columnas con `aria-pressed`; loading/vacio textual. | `aria-expanded`, paneles enlazados, skeleton y empty state util. | La pantalla mas critica queda mas robusta. |
 | Touch targets | Algunas acciones densas en `2rem`/`2.25rem`. | Se suben acciones criticas de tabla/cards a `2.5rem`. | Menos mis-taps en tablet/mobile sin reventar densidad. |
 | Motion | Selects y sheet aparecian bruscos. | Entrada corta con `transform`/`opacity`; `prefers-reduced-motion` ya lo cubre. | Feedback sin convertir tesoreria en feria. |
-| Build servido por backend | `frontend/dist` podia divergir de `wwwroot`. | `dist` reconstruido y copiado a `backend/src/GestionCaja.API/wwwroot`. | Backend sirve la UI corregida. |
+| Build servido por backend | `frontend/dist` podia divergir de `wwwroot`. | `dist` reconstruido y copiado a `backend/src/AtlasBalance.API/wwwroot`. | Backend sirve la UI corregida. |
 
 ### Contraste verificado
 
@@ -109,7 +109,7 @@ Eso ya quedo corregido en la base. No he fingido un redisenio total: seria una b
 | `frontend/src/components/layout/BottomNav.tsx` | Sheet como dialog modal y cierre con Escape. |
 | `frontend/src/components/extractos/ExtractoTable.tsx` | Paneles enlazados, skeleton, empty state y microcopy "Historial". |
 | `frontend/dist/` | Build regenerado. |
-| `backend/src/GestionCaja.API/wwwroot/` | Build sincronizado para servir la UI corregida. |
+| `backend/src/AtlasBalance.API/wwwroot/` | Build sincronizado para servir la UI corregida. |
 
 ### Verificacion ejecutada
 
@@ -118,7 +118,7 @@ Eso ya quedo corregido en la base. No he fingido un redisenio total: seria una b
 | `npm.cmd run lint` | OK |
 | `npm.cmd run build` | OK |
 | Script local de contraste WCAG | OK en los pares corregidos principales |
-| Copia de `frontend/dist` a `backend/src/GestionCaja.API/wwwroot` | OK |
+| Copia de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot` | OK |
 
 No ejecute `npm run test:e2e` porque exige `E2E_ADMIN_PASSWORD` y el propio README avisa que adivinar credenciales puede bloquear el admin por rate limit. Adivinar passwords en una app con bloqueo de login seria hacer el payaso.
 

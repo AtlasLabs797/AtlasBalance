@@ -16,6 +16,7 @@ export interface Usuario {
   rol: RolUsuario;
   activo: boolean;
   primer_login: boolean;
+  puede_usar_ia: boolean;
   mfa_enabled: boolean;
   fecha_creacion: string;
   fecha_ultima_login: string | null;
@@ -99,6 +100,8 @@ export interface Extracto {
 export interface CuentaResumenKpi {
   cuenta_id: string;
   cuenta_nombre: string;
+  iban: string | null;
+  banco_nombre: string | null;
   divisa: string;
   titular_id: string;
   titular_nombre: string;
@@ -285,6 +288,41 @@ export interface ConfiguracionSistema {
     color_egresos: string;
     color_saldo: string;
   };
+  revision: {
+    comisiones_importe_minimo: number;
+    saldo_bajo_cooldown_horas: number;
+  };
+  ia: {
+    provider: string;
+    openrouter_api_key: string;
+    openrouter_api_key_configurada: boolean;
+    openai_api_key: string;
+    openai_api_key_configurada: boolean;
+    model: string;
+    habilitada: boolean;
+    usuario_puede_usar: boolean;
+    configurada: boolean;
+    mensaje_estado: string;
+    requests_por_minuto: number;
+    requests_por_hora: number;
+    requests_por_dia: number;
+    requests_globales_por_dia: number;
+    presupuesto_mensual_eur: number;
+    presupuesto_mensual_usuario_eur: number;
+    presupuesto_total_eur: number;
+    coste_mes_estimado_eur: number;
+    coste_mes_usuario_estimado_eur: number;
+    coste_total_estimado_eur: number;
+    requests_mes_usuario: number;
+    tokens_entrada_mes_usuario: number;
+    tokens_salida_mes_usuario: number;
+    porcentaje_aviso_presupuesto: number;
+    input_cost_per_million_tokens_eur: number;
+    output_cost_per_million_tokens_eur: number;
+    max_input_tokens: number;
+    max_output_tokens: number;
+    max_context_rows: number;
+  };
 }
 
 export interface SaveConfiguracionSistemaRequest {
@@ -309,6 +347,101 @@ export interface SaveConfiguracionSistemaRequest {
     color_egresos: string;
     color_saldo: string;
   };
+  revision: {
+    comisiones_importe_minimo: number;
+    saldo_bajo_cooldown_horas: number;
+  };
+  ia: {
+    provider: string;
+    openrouter_api_key: string;
+    openai_api_key: string;
+    model: string;
+    habilitada: boolean;
+    requests_por_minuto: number;
+    requests_por_hora: number;
+    requests_por_dia: number;
+    requests_globales_por_dia: number;
+    presupuesto_mensual_eur: number;
+    presupuesto_mensual_usuario_eur: number;
+    presupuesto_total_eur: number;
+    porcentaje_aviso_presupuesto: number;
+    input_cost_per_million_tokens_eur: number;
+    output_cost_per_million_tokens_eur: number;
+    max_input_tokens: number;
+    max_output_tokens: number;
+    max_context_rows: number;
+  };
+}
+
+export type RevisionEstadoComision = 'PENDIENTE' | 'DEVUELTA' | 'DESCARTADA';
+export type RevisionEstadoSeguro = 'PENDIENTE' | 'CORRECTO' | 'DESCARTADA';
+
+export interface RevisionComisionItem {
+  extracto_id: string;
+  cuenta_id: string;
+  titular_id: string;
+  titular: string;
+  cuenta: string;
+  fecha: string;
+  monto: number;
+  concepto: string;
+  estado_devolucion: RevisionEstadoComision;
+  divisa: string;
+}
+
+export interface RevisionSeguroItem {
+  extracto_id: string;
+  cuenta_id: string;
+  titular_id: string;
+  titular: string;
+  cuenta: string;
+  fecha: string;
+  importe: number;
+  concepto: string;
+  estado: RevisionEstadoSeguro;
+  divisa: string;
+}
+
+export interface IaConfig {
+  provider: string;
+  openrouter_api_key_configurada: boolean;
+  openai_api_key_configurada: boolean;
+  model: string;
+  habilitada: boolean;
+  usuario_puede_usar: boolean;
+  configurada: boolean;
+  mensaje_estado: string;
+  requests_por_minuto: number;
+  requests_por_hora: number;
+  requests_por_dia: number;
+  requests_globales_por_dia: number;
+  presupuesto_mensual_eur: number;
+  presupuesto_mensual_usuario_eur: number;
+  presupuesto_total_eur: number;
+  coste_mes_estimado_eur: number;
+  coste_mes_usuario_estimado_eur: number;
+  coste_total_estimado_eur: number;
+  requests_mes_usuario: number;
+  tokens_entrada_mes_usuario: number;
+  tokens_salida_mes_usuario: number;
+  porcentaje_aviso_presupuesto: number;
+  input_cost_per_million_tokens_eur: number;
+  output_cost_per_million_tokens_eur: number;
+  max_input_tokens: number;
+  max_output_tokens: number;
+  max_context_rows: number;
+}
+
+export interface IaChatResponse {
+  respuesta: string;
+  provider: string;
+  model: string;
+  movimientos_analizados: number;
+  tokens_entrada_estimados: number;
+  tokens_salida_estimados: number;
+  coste_estimado_eur: number;
+  aviso_presupuesto: boolean;
+  aviso: string | null;
 }
 
 export interface BackupItem {
@@ -442,6 +575,12 @@ export interface LoginResponse {
   mfa_otp_auth_uri?: string | null;
 }
 
+export interface DashboardConcentracionBanco {
+  banco_nombre: string;
+  saldo_convertido: number;
+  porcentaje: number;
+}
+
 export interface DashboardPrincipal {
   divisa_principal: string;
   saldos_por_divisa: Record<string, number>;
@@ -450,6 +589,8 @@ export interface DashboardPrincipal {
   egresos_mes: number;
   plazos_fijos: DashboardPlazosFijosResumen;
   saldos_por_titular: DashboardSaldoTitular[];
+  saldos_por_cuenta: DashboardSaldoCuenta[];
+  concentracion_bancos: DashboardConcentracionBanco[];
   chart_colors: DashboardChartColors;
 }
 
@@ -487,6 +628,11 @@ export interface DashboardEvolucion {
   periodo: PeriodoDashboard;
   granularidad: 'diaria' | 'semanal';
   divisa_principal: string;
+  saldo_inicio_periodo: number;
+  disponible_inicio_periodo: number;
+  inmovilizado_inicio_periodo: number;
+  ingresos_anterior: number;
+  egresos_anterior: number;
   puntos: DashboardPuntoEvolucion[];
 }
 
@@ -509,6 +655,8 @@ export interface DashboardSaldoTitular {
 export interface DashboardSaldoCuenta {
   cuenta_id: string;
   cuenta_nombre: string;
+  titular_id: string;
+  titular_nombre: string;
   banco_nombre?: string | null;
   divisa: string;
   es_efectivo: boolean;

@@ -4,6 +4,7 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import type { PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { formatCurrency, formatDate as formatDateOnly, formatDateTime } from '@/utils/formatters';
 
 type TabKey = 'titulares' | 'cuentas' | 'extractos' | 'usuarios';
 
@@ -70,7 +71,7 @@ const restorePaths: Record<TabKey, string> = {
 };
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString('es-ES');
+  return formatDateTime(value);
 }
 
 export default function PapeleraPage() {
@@ -129,7 +130,7 @@ export default function PapeleraPage() {
           .map((row) => ({
             id: row.id,
             titulo: `${row.cuenta_nombre ?? 'Cuenta'} · fila ${row.fila_numero}`,
-            subtitulo: `${row.fecha} · ${row.concepto ?? 'Sin concepto'}`,
+            subtitulo: `${formatDateOnly(row.fecha)} · ${row.concepto ?? 'Sin concepto'}`,
             monto: row.monto,
             deleted_at: row.deleted_at ?? '',
           }));
@@ -223,7 +224,7 @@ export default function PapeleraPage() {
                     <td>
                       {row.monto !== undefined ? (
                         <>
-                          {row.subtitulo} · <SignedAmount value={row.monto}>{row.monto.toFixed(2)}</SignedAmount>
+                          {row.subtitulo} · <SignedAmount value={row.monto}>{formatCurrency(row.monto, 'EUR')}</SignedAmount>
                         </>
                       ) : (
                         row.subtitulo

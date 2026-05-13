@@ -1,20 +1,20 @@
-# Política de Seguridad
+# Politica de seguridad
 
-Nos tomamos muy en serio la seguridad de **AtlasBalance**. Agradecemos a la comunidad por ayudarnos a mantener este proyecto seguro.
+No abras issues publicos para vulnerabilidades. Un fallo de seguridad publicado antes de tiempo ayuda mas al atacante que al proyecto.
 
-## Versiones Soportadas
+## Versiones soportadas
 
-Actualmente, solo la rama principal (`main`) y la última versión de lanzamiento reciben actualizaciones de seguridad.
+Solo `main` y la ultima version publicada reciben parches de seguridad.
 
-## Cómo reportar una vulnerabilidad
+## Reportar una vulnerabilidad
 
-**🚨 POR FAVOR, NO abras un "Issue" público para reportar vulnerabilidades de seguridad.** Esto podría exponer el fallo a atacantes antes de que podamos solucionarlo.
+Usa GitHub Security Advisories:
 
-Para reportar un problema de seguridad de forma privada, sigue estos pasos:
+1. Abre la pestana `Security` del repositorio.
+2. Entra en `Advisories`.
+3. Pulsa `Report a vulnerability`.
+4. Incluye pasos de reproduccion, impacto, version afectada y cualquier evidencia util.
 
-1. Ve a la pestaña **Security** en este repositorio.
-2. Haz clic en **Advisories** en el menú de la izquierda.
-3. Haz clic en el botón **Report a vulnerability**.
-4. Rellena el formulario con todos los detalles posibles (pasos para reproducirlo, impacto potencial, etc.).
+No pegues tokens, passwords, cookies, dumps de base de datos ni datos reales de clientes. Si necesitas compartir evidencia sensible, describe primero el caso y acuerda un canal privado.
 
-Revisaremos tu reporte lo antes posible y trabajaremos en privado contigo para validar y crear un parche para la vulnerabilidad. ¡Gracias por tu ayuda!
+Validaremos el reporte en privado y publicaremos el parche cuando haya una correccion preparada.

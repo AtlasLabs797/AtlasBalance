@@ -1,118 +1,112 @@
 :root {
-  color-scheme: light;
+  /*
+   * Snapshot documental V-01.06.
+   * Fuente runtime: Atlas Balance/frontend/src/styles/variables.css.
+   * Si este archivo y variables.css difieren, manda variables.css.
+   */
 
-  --bg-app: #F5F8FC;
-  --bg-canvas: #F8FAFD;
-  --bg-surface: #FFFFFF;
-  --bg-surface-soft: #F2F6FC;
-  --bg-surface-muted: #EEF3FA;
+  --bg-app: #f3f7fb;
+  --bg-canvas: #f7fafc;
+  --bg-surface: #fbfcfe;
+  --bg-surface-soft: #f1f5fa;
+  --bg-surface-muted: #e9eff6;
+  --bg-input: #fbfcfe;
+  --bg-hover: #e9eff6;
+  --bg-selected: #e6eefc;
 
-  --border-soft: rgba(23, 33, 52, 0.08);
-  --border-strong: rgba(23, 33, 52, 0.14);
+  --border-soft: rgba(23, 33, 52, 0.10);
+  --border-strong: rgba(23, 33, 52, 0.18);
+  --border-focus: #285bd9;
 
-  --text-primary: #1E2430;
-  --text-secondary: #6E7787;
-  --text-muted: #98A2B3;
-  --text-inverse: #FFFFFF;
+  --text-primary: #172033;
+  --text-secondary: #536174;
+  --text-muted: #5f6b7a;
+  --text-inverse: #f8fbff;
+  --text-link: #244fbd;
 
-  --accent-primary: #4C7DFF;
-  --accent-primary-hover: #3F6FEF;
-  --accent-primary-soft: #EAF1FF;
-  --accent-primary-soft-2: #DCE8FF;
+  --accent-primary: #285bd9;
+  --accent-primary-hover: #214cad;
+  --accent-primary-soft: #e6eefc;
 
-  --accent-teal: #58C7C2;
-  --accent-teal-soft: #E8FAF8;
-  --accent-indigo: #6C72FF;
-  --accent-indigo-soft: #ECEEFF;
-  --accent-lilac: #9B8CFF;
-  --accent-lilac-soft: #F1EEFF;
+  --success-bg: #eaf8f0;
+  --success-text: #176a3a;
+  --warning-bg: #fff4df;
+  --warning-text: #8a5200;
+  --danger-bg: #fdecef;
+  --danger-text: #a82234;
+  --info-bg: #eaf1ff;
+  --info-text: #315fcf;
 
-  --success: #2FB36D;
-  --success-soft: #EAF8F0;
-  --warning: #F5A524;
-  --warning-soft: #FFF4DF;
-  --danger: #E05666;
-  --danger-soft: #FDECEF;
+  --amount-positive: #176a3a;
+  --amount-negative: #a82234;
 
-  --font-sans: "Inter", "Geist", "SF Pro Display", system-ui, sans-serif;
+  --chart-ingresos: #2f9f68;
+  --chart-egresos: #c94a5a;
+  --chart-saldo: #285bd9;
+  --chart-grid: rgba(23, 33, 52, 0.10);
 
-  --fs-display: 32px;
-  --fs-section: 20px;
-  --fs-card-title: 14px;
-  --fs-kpi-hero: 36px;
-  --fs-kpi-secondary: 24px;
-  --fs-body: 14px;
-  --fs-meta: 12px;
-  --fs-table: 13px;
+  --font-family-heading: "Hind Madurai", "National Park", "Aptos Display", "Segoe UI", sans-serif;
+  --font-family: "National Park", "Aptos", "Segoe UI", sans-serif;
+  --font-family-mono: "Atlas Mono", "JetBrains Mono", "SF Mono", monospace;
 
-  --fw-medium: 500;
-  --fw-semibold: 600;
-  --fw-bold: 700;
-  --fw-extrabold: 800;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-base: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  --font-size-kpi: clamp(2rem, 3vw, 2.75rem);
 
-  --lh-tight: 1.1;
-  --lh-base: 1.45;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+  --space-10: 4rem;
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-
-  --radius-sm: 12px;
-  --radius-md: 18px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
+  --radius-control: 8px;
+  --radius-card: 8px;
+  --radius-panel: 18px;
+  --radius-shell: 22px;
   --radius-pill: 999px;
 
-  --shadow-card: 0 8px 24px rgba(16, 24, 40, 0.06);
-  --shadow-card-hover: 0 12px 28px rgba(16, 24, 40, 0.08);
-  --shadow-shell: 0 24px 60px rgba(16, 24, 40, 0.10);
+  --control-height: 2.75rem;
+  --shadow-card: 0 8px 24px color-mix(in srgb, var(--text-primary) 6%, transparent);
+  --shadow-card-hover: 0 16px 34px color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --shadow-overlay: 0 24px 60px color-mix(in srgb, var(--text-primary) 16%, transparent);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
 
   --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-instant: 120ms;
   --duration-fast: 180ms;
   --duration-base: 240ms;
   --duration-slow: 420ms;
-
-  --sidebar-width: 248px;
-  --header-height: 72px;
-  --card-padding: 24px;
-  --page-gutter: 24px;
-  --grid-gap: 24px;
 }
 
 [data-theme="dark"] {
-  color-scheme: dark;
+  --bg-app: #12171f;
+  --bg-canvas: #151b24;
+  --bg-surface: #1b2330;
+  --bg-surface-soft: #202a38;
+  --bg-surface-muted: #293545;
+  --bg-input: #161d27;
+  --bg-hover: #242f3e;
+  --bg-selected: #233558;
 
-  --bg-app: #0F141C;
-  --bg-canvas: #111722;
-  --bg-surface: #151C26;
-  --bg-surface-soft: #1A2230;
-  --bg-surface-muted: #202A39;
+  --border-soft: rgba(216, 226, 240, 0.10);
+  --border-strong: rgba(216, 226, 240, 0.18);
+  --border-focus: #82a4ff;
 
-  --border-soft: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --text-primary: #f1f5f9;
+  --text-secondary: #b7c2d2;
+  --text-muted: #98a6ba;
+  --text-inverse: #101720;
+  --text-link: #a8bdff;
 
-  --text-primary: #F2F5FA;
-  --text-secondary: #A7B0C0;
-  --text-muted: #7F8A9E;
-  --text-inverse: #0F141C;
-
-  --accent-primary-soft: rgba(76, 125, 255, 0.18);
-  --accent-primary-soft-2: rgba(76, 125, 255, 0.24);
-  --accent-teal-soft: rgba(88, 199, 194, 0.18);
-  --accent-indigo-soft: rgba(108, 114, 255, 0.18);
-  --accent-lilac-soft: rgba(155, 140, 255, 0.18);
-
-  --success-soft: rgba(47, 179, 109, 0.18);
-  --warning-soft: rgba(245, 165, 36, 0.18);
-  --danger-soft: rgba(224, 86, 102, 0.18);
-
-  --shadow-card: 0 10px 26px rgba(0, 0, 0, 0.24);
-  --shadow-card-hover: 0 14px 32px rgba(0, 0, 0, 0.28);
-  --shadow-shell: 0 28px 64px rgba(0, 0, 0, 0.36);
+  --accent-primary: #82a4ff;
+  --accent-primary-hover: #a8bdff;
+  --accent-primary-soft: rgba(130, 164, 255, 0.14);
 }

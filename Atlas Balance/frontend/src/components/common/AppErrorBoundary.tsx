@@ -35,8 +35,8 @@ export default class AppErrorBoundary extends Component<AppErrorBoundaryProps, A
     if (this.state.hasError) {
       return (
         <section className="page-placeholder">
-          <h1>Seccion no disponible</h1>
-          <p>Hubo un error inesperado en esta vista. Recarga la pagina para continuar.</p>
+          <h1>Sección no disponible</h1>
+          <p>Hubo un error inesperado en esta vista. Recarga la página para continuar.</p>
           <div className="not-found-actions">
             <button type="button" onClick={() => window.location.reload()}>
               Recargar vista

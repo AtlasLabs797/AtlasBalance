@@ -7,17 +7,31 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
 import type { Cuenta, ExportacionItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { formatDateTime, formatNumber } from '@/utils/formatters';
 
 const pageSizeOptions = [10, 20, 50];
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString();
-}
+const estadoExportacionLabels: Record<string, string> = {
+  PENDING: 'Pendiente',
+  SUCCESS: 'Lista',
+  FAILED: 'Fallida',
+};
+const tipoExportacionLabels: Record<string, string> = {
+  AUTO: 'Automática',
+  MANUAL: 'Manual',
+};
 
 function formatBytes(value: number | null): string {
-  if (!value || value <= 0) return 'N/A';
+  if (!value || value <= 0) return 'Sin tamaño';
   const mb = value / (1024 * 1024);
-  return `${mb.toFixed(2)} MB`;
+  return `${formatNumber(mb)} MB`;
+}
+
+function formatEstadoExportacion(value: string) {
+  return estadoExportacionLabels[value.toUpperCase()] ?? value;
+}
+
+function formatTipoExportacion(value: string) {
+  return tipoExportacionLabels[value.toUpperCase()] ?? value;
 }
 
 export default function ExportacionesPage() {
@@ -35,7 +49,7 @@ export default function ExportacionesPage() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const totalRowsText = useMemo(() => `${rows.length} exportaciones en esta pagina`, [rows.length]);
+  const totalRowsText = useMemo(() => `${rows.length} exportaciones en esta página`, [rows.length]);
 
   const loadCuentas = async () => {
     try {
@@ -69,7 +83,7 @@ export default function ExportacionesPage() {
       setRows(data.data ?? []);
       setTotalPages(Math.max(1, data.total_pages ?? 1));
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar exportaciones'));
+      setError(extractErrorMessage(err, 'No se pudieron cargar las exportaciones.'));
       setRows([]);
       setTotalPages(1);
     } finally {
@@ -79,7 +93,7 @@ export default function ExportacionesPage() {
 
   const createManualExport = async () => {
     if (!selectedCuentaId) {
-      setError('Selecciona una cuenta para exportar');
+      setError('Selecciona la cuenta que quieres exportar.');
       return;
     }
 
@@ -92,7 +106,7 @@ export default function ExportacionesPage() {
         await markExportacionesRead();
       }
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo generar exportacion manual'));
+      setError(extractErrorMessage(err, 'No se pudo generar exportación manual'));
     } finally {
       setExporting(false);
     }
@@ -118,7 +132,7 @@ export default function ExportacionesPage() {
       anchor.remove();
       URL.revokeObjectURL(href);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo descargar el archivo'));
+      setError(extractErrorMessage(err, 'No se pudo descargar el archivo.'));
     }
   };
 
@@ -142,7 +156,7 @@ export default function ExportacionesPage() {
       <header className="exportaciones-header">
         <div>
           <h1>Exportaciones</h1>
-          <p className="dashboard-subtitle">Historial y generacion manual de XLSX por cuenta</p>
+          <p className="dashboard-subtitle">Historial y generación manual de XLSX por cuenta</p>
         </div>
       </header>
 
@@ -151,7 +165,7 @@ export default function ExportacionesPage() {
           label="Cuenta"
           value={selectedCuentaId}
           options={[
-            { value: '', label: 'Selecciona una cuenta...' },
+            { value: '', label: 'Selecciona una cuenta' },
             ...cuentas.map((cuenta) => ({ value: cuenta.id, label: `${cuenta.nombre} (${cuenta.divisa})` })),
           ]}
           onChange={(next) => {
@@ -160,7 +174,7 @@ export default function ExportacionesPage() {
           }}
         />
         <button type="button" onClick={createManualExport} disabled={exporting || loading}>
-          {exporting ? 'Generando...' : 'Exportacion manual'}
+          {exporting ? 'Generando...' : 'Generar exportación'}
         </button>
       </div>
 
@@ -168,7 +182,12 @@ export default function ExportacionesPage() {
 
       <div className="users-table-card">
         {loading ? <p className="import-muted">Cargando exportaciones...</p> : null}
-        {!loading && rows.length === 0 ? <EmptyState title="No hay exportaciones para los filtros seleccionados." /> : null}
+        {!loading && rows.length === 0 ? (
+          <EmptyState
+            title="No hay exportaciones con estos filtros."
+            subtitle="Selecciona una cuenta y genera una exportación para descargar el XLSX."
+          />
+        ) : null}
 
         {!loading && rows.length > 0 ? (
           <>
@@ -181,7 +200,7 @@ export default function ExportacionesPage() {
                     <th>Titular</th>
                     <th>Estado</th>
                     <th>Tipo</th>
-                    <th>Tamano</th>
+                    <th>Tamaño</th>
                     <th>Iniciado por</th>
                     <th>Acciones</th>
                   </tr>
@@ -189,16 +208,16 @@ export default function ExportacionesPage() {
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{formatDate(row.fecha_exportacion)}</td>
+                      <td>{formatDateTime(row.fecha_exportacion)}</td>
                       <td>{row.cuenta_nombre}</td>
                       <td>{row.titular_nombre}</td>
-                      <td>{row.estado}</td>
-                      <td>{row.tipo}</td>
+                      <td>{formatEstadoExportacion(row.estado)}</td>
+                      <td>{formatTipoExportacion(row.tipo)}</td>
                       <td>{formatBytes(row.tamanio_bytes)}</td>
                       <td>{row.iniciado_por_nombre ?? 'Sistema'}</td>
                       <td className="users-row-actions">
                         <button type="button" onClick={() => void downloadExport(row.id)} disabled={row.estado !== 'SUCCESS'}>
-                          Descargar
+                          Descargar XLSX
                         </button>
                       </td>
                     </tr>
@@ -212,7 +231,7 @@ export default function ExportacionesPage() {
                 Anterior
               </button>
               <span>
-                Pagina {page} / {totalPages} · {totalRowsText}
+                Página {page} / {totalPages} · {totalRowsText}
               </span>
               <button type="button" onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))} disabled={page >= totalPages}>
                 Siguiente

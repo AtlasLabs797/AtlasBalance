@@ -9,20 +9,35 @@ backend/**/.dataprotection-keys/
 # Build artifacts
 backend/**/bin/
 backend/**/obj/
+backend/.codex-build/
+backend/**/.codex-test-obj/
 frontend/node_modules/
 frontend/dist/
 
 # Runtime output
 Atlas Balance Release/*
 !Atlas Balance Release/.gitkeep
-backend/src/GestionCaja.API/wwwroot/assets/
-backend/src/GestionCaja.API/wwwroot/index.html
+Atlas Balance/
+backend/src/AtlasBalance.API/wwwroot/assets/
+backend/src/AtlasBalance.API/wwwroot/index.html
 logs/
 *.log
 pgdata/
+
+# Local/demo datasets
+scripts/seed-demo-data*.sql
 
 # Certificates
 *.pem
 *.key
 *.crt
 *.pfx
+*.p12
+*.jks
+
+# Local credential stores
+.npmrc
+.pypirc
+credentials.json
+service-account*.json
+*.cookies.txt

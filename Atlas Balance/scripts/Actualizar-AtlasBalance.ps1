@@ -110,7 +110,7 @@ function Find-PostgresDump {
         "C:\Program Files\PostgreSQL\17\bin",
         "C:\Program Files\PostgreSQL\16\bin",
         "C:\Program Files\PostgreSQL\15\bin",
-        "C:\Program Files\PostgreSQL\14\bin"
+        "C:\Program Files\PostgreSQL\16\bin"
     )) {
         $candidate = Join-Path $candidateBin "pg_dump.exe"
         if (Test-Path $candidate) {
@@ -138,6 +138,24 @@ function Start-ServiceIfExists {
     if ($service -and $service.Status -ne "Running") {
         Start-Service -Name $Name
         $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(45))
+    }
+}
+
+function Set-ServiceBinaryPathIfExists {
+    param(
+        [string]$Name,
+        [string]$ExePath
+    )
+
+    $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+    if (-not $service) {
+        return
+    }
+
+    $quotedPath = '"' + $ExePath + '"'
+    $result = & sc.exe config $Name binPath= $quotedPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "No se pudo actualizar la ruta binaria del servicio $Name. sc.exe devolvio $LASTEXITCODE. $result"
     }
 }
 
@@ -247,9 +265,9 @@ $watchdogSource = Join-Path $packageRoot "watchdog"
 $apiTarget = Join-Path $InstallPath "api"
 $watchdogTarget = Join-Path $InstallPath "watchdog"
 
-if (-not (Test-Path (Join-Path $apiSource "GestionCaja.API.exe")) -or
-    -not (Test-Path (Join-Path $watchdogSource "GestionCaja.Watchdog.exe"))) {
-    throw "Esta carpeta no es el paquete de actualizacion. Ejecuta update.cmd desde la carpeta descomprimida que contiene api\GestionCaja.API.exe, watchdog\GestionCaja.Watchdog.exe y scripts."
+if (-not (Test-Path (Join-Path $apiSource "AtlasBalance.API.exe")) -or
+    -not (Test-Path (Join-Path $watchdogSource "AtlasBalance.Watchdog.exe"))) {
+    throw "Esta carpeta no es el paquete de actualizacion. Ejecuta update.cmd desde la carpeta descomprimida que contiene api\AtlasBalance.API.exe, watchdog\AtlasBalance.Watchdog.exe y scripts."
 }
 if (-not (Test-Path (Join-Path $apiTarget "appsettings.Production.json"))) {
     throw "No se encontro una instalacion existente en $InstallPath."
@@ -284,6 +302,9 @@ Copy-Item -LiteralPath $watchdogTarget -Destination (Join-Path $rollbackRoot "wa
 
 Sync-DirectoryPreserveConfig -Source $apiSource -Target $apiTarget
 Sync-DirectoryPreserveConfig -Source $watchdogSource -Target $watchdogTarget
+
+Set-ServiceBinaryPathIfExists -Name $WatchdogServiceName -ExePath (Join-Path $watchdogTarget "AtlasBalance.Watchdog.exe")
+Set-ServiceBinaryPathIfExists -Name $ApiServiceName -ExePath (Join-Path $apiTarget "AtlasBalance.API.exe")
 
 Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $newVersion -Encoding UTF8
 

@@ -4,11 +4,10 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PermisoUsuario, Usuario } from '@/types';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { extractErrorMessage } from '@/utils/errorMessage';
 
 const api = axios.create({
-  baseURL: `${API_BASE}/api`,
+  baseURL: '/api',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -68,21 +67,40 @@ const processQueue = (error: unknown | null) => {
   failedQueue = [];
 };
 
+const getSafeErrorLogDetail = (error: unknown): string => {
+  const message = extractErrorMessage(error, '');
+  if (message) return message;
+  if (error instanceof Error) return error.message;
+  return 'Error sin detalle seguro';
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const status: number | undefined = error.response?.status;
+
+    if (import.meta.env.DEV) {
+      console.error(
+        `[API] ${originalRequest?.method?.toUpperCase() ?? '?'} ${originalRequest?.url ?? '?'} ->`,
+        status ?? 'SIN RESPUESTA',
+        getSafeErrorLogDetail(error)
+      );
+    }
 
     if (
       !originalRequest ||
-      error.response?.status !== 401 ||
+      status !== 401 ||
       originalRequest._retry ||
       shouldSkipRefreshRetry(originalRequest.url)
     ) {
-      const status = error.response?.status;
-      const payloadMessage = error.response?.data?.error;
       if (status !== 401) {
-        pushErrorToast(payloadMessage ?? 'La operación no pudo completarse. Revisa los datos e inténtalo de nuevo.');
+        if (!status) {
+          // Sin respuesta del servidor: backend caído, red cortada
+          pushErrorToast('No se puede conectar con el servidor. Espera un momento e inténtalo de nuevo.');
+        } else {
+          pushErrorToast(extractErrorMessage(error, 'La operación no pudo completarse. Revisa los datos e inténtalo de nuevo.'));
+        }
       }
       return Promise.reject(error);
     }

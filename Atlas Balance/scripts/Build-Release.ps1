@@ -1,8 +1,9 @@
 param(
-    [string]$Version = "V-01.05",
+    [string]$Version = "V-01.06",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
-    [switch]$CleanNpmInstall
+    [switch]$CleanNpmInstall,
+    [switch]$AllowUnsignedLocal
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,9 +12,9 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $workspaceRoot = Split-Path -Parent $repoRoot
 $documentationRoot = Join-Path $workspaceRoot "Documentacion"
 $frontendPath = Join-Path $repoRoot "frontend"
-$apiProject = Join-Path $repoRoot "backend\src\GestionCaja.API\GestionCaja.API.csproj"
-$watchdogProject = Join-Path $repoRoot "backend\src\GestionCaja.Watchdog\GestionCaja.Watchdog.csproj"
-$apiWwwroot = Join-Path $repoRoot "backend\src\GestionCaja.API\wwwroot"
+$apiProject = Join-Path $repoRoot "backend\src\AtlasBalance.API\AtlasBalance.API.csproj"
+$watchdogProject = Join-Path $repoRoot "backend\src\AtlasBalance.Watchdog\AtlasBalance.Watchdog.csproj"
+$apiWwwroot = Join-Path $repoRoot "backend\src\AtlasBalance.API\wwwroot"
 $releaseRoot = Join-Path $repoRoot "Atlas Balance Release"
 $packageName = "AtlasBalance-$Version-$Runtime"
 $packageRoot = Join-Path $releaseRoot $packageName
@@ -41,19 +42,12 @@ New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
 Push-Location $frontendPath
 try {
-    if ($CleanNpmInstall -and (Test-Path "node_modules")) {
-        Remove-Item -LiteralPath "node_modules" -Recurse -Force
+    if (-not (Test-Path "package-lock.json")) {
+        throw "package-lock.json es obligatorio para generar releases reproducibles."
     }
 
-    if ((-not (Test-Path "node_modules")) -and (Test-Path "package-lock.json")) {
-        & npm.cmd ci
-        if ($LASTEXITCODE -ne 0) { throw "npm ci fallo." }
-    } elseif (-not (Test-Path "node_modules")) {
-        & npm.cmd install
-        if ($LASTEXITCODE -ne 0) { throw "npm install fallo." }
-    } else {
-        Write-Host "node_modules existente; se omite npm ci. Usa -CleanNpmInstall para una instalacion limpia." -ForegroundColor Yellow
-    }
+    & npm.cmd ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci fallo." }
 
     & npm.cmd run build
     if ($LASTEXITCODE -ne 0) { throw "npm run build fallo." }
@@ -61,8 +55,16 @@ try {
     Pop-Location
 }
 
-Remove-Item -LiteralPath $apiWwwroot -Recurse -Force -ErrorAction SilentlyContinue
+& dotnet restore (Join-Path $repoRoot "backend\AtlasBalance.sln") --locked-mode
+if ($LASTEXITCODE -ne 0) { throw "dotnet restore --locked-mode fallo." }
+
+if (Test-Path -LiteralPath $apiWwwroot) {
+    Remove-Item -LiteralPath $apiWwwroot -Recurse -Force -ErrorAction Stop
+}
 New-Item -ItemType Directory -Path $apiWwwroot -Force | Out-Null
+if (Get-ChildItem -LiteralPath $apiWwwroot -Force | Select-Object -First 1) {
+    throw "wwwroot no quedo limpio; abortando release para no empaquetar assets antiguos."
+}
 Copy-DirectoryContents -Source (Join-Path $frontendPath "dist") -Target $apiWwwroot
 
 & dotnet publish $apiProject `
@@ -154,7 +156,12 @@ if (-not [string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM
         $rsa.Dispose()
     }
 } else {
-    Write-Warning "ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM no definido; el actualizador online rechazara este ZIP sin su asset .sig."
+    if (-not $AllowUnsignedLocal) {
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        throw "ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM es obligatorio para un release publicable. Usa -AllowUnsignedLocal solo para pruebas locales."
+    }
+
+    Write-Warning "Release local sin firma generado por -AllowUnsignedLocal. No lo publiques."
 }
 
 Write-Host "Release generado: $packageRoot" -ForegroundColor Green

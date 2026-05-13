@@ -1,10 +1,11 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface DatePickerFieldProps {
   value: string;
   onChange: (value: string) => void;
   ariaLabel: string;
+  label?: string;
   disabled?: boolean;
   placeholder?: string;
   allowClear?: boolean;
@@ -64,20 +65,33 @@ export function DatePickerField({
   value,
   onChange,
   ariaLabel,
+  label,
   disabled = false,
   placeholder = 'Selecciona fecha',
   allowClear = true,
 }: DatePickerFieldProps) {
   const dialogId = useId();
+  const labelId = useId();
+  const valueId = useId();
   const selectedDate = useMemo(() => parseIsoDate(value), [value]);
   const [isOpen, setIsOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(selectedDate ?? new Date()));
   const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom');
+  const [horizontalPlacement, setHorizontalPlacement] = useState<'left' | 'right'>('left');
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const today = useMemo(() => new Date(), []);
   const days = useMemo(() => buildMonthDays(viewMonth), [viewMonth]);
   const displayValue = selectedDate ? DISPLAY_FORMATTER.format(selectedDate) : placeholder;
+
+  const closePicker = useCallback((restoreFocus = false) => {
+    setIsOpen(false);
+
+    if (restoreFocus) {
+      window.setTimeout(() => triggerRef.current?.focus(), 0);
+    }
+  }, []);
 
   const focusDate = (date: Date) => {
     const iso = toIsoDate(date);
@@ -125,11 +139,15 @@ export function DatePickerField({
 
     const triggerRect = rootRef.current.getBoundingClientRect();
     const popoverHeight = popoverRef.current.offsetHeight;
+    const popoverWidth = popoverRef.current.offsetWidth;
     const spaceBelow = window.innerHeight - triggerRect.bottom;
     const spaceAbove = triggerRect.top;
     const shouldOpenUp = spaceBelow < popoverHeight + 16 && spaceAbove > spaceBelow;
+    const wouldOverflowRight = triggerRect.left + popoverWidth > window.innerWidth - 16;
+    const hasRoomOnLeft = triggerRect.right - popoverWidth >= 16;
 
     setPlacement(shouldOpenUp ? 'top' : 'bottom');
+    setHorizontalPlacement(wouldOverflowRight && hasRoomOnLeft ? 'right' : 'left');
   }, [isOpen, viewMonth]);
 
   useEffect(() => {
@@ -137,13 +155,13 @@ export function DatePickerField({
 
     const handlePointerDown = (event: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+        closePicker(false);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setIsOpen(false);
+        closePicker(true);
       }
     };
 
@@ -153,21 +171,24 @@ export function DatePickerField({
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [closePicker, isOpen]);
 
   return (
-    <div className="date-picker-field" ref={rootRef}>
+    <div className={label ? 'date-picker-field date-field' : 'date-picker-field'} ref={rootRef}>
+      {label ? <span id={labelId}>{label}</span> : null}
       <button
+        ref={triggerRef}
         type="button"
         className={`date-picker-trigger ${selectedDate ? '' : 'date-picker-trigger--empty'}`.trim()}
-        aria-label={ariaLabel}
+        aria-label={label ? undefined : ariaLabel}
+        aria-labelledby={label ? `${labelId} ${valueId}` : undefined}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         aria-controls={isOpen ? dialogId : undefined}
         disabled={disabled}
         onClick={() => setIsOpen((current) => !current)}
       >
-        <span>{displayValue}</span>
+        <span id={valueId}>{displayValue}</span>
         <CalendarDays aria-hidden="true" size={20} strokeWidth={1.9} />
       </button>
 
@@ -175,7 +196,7 @@ export function DatePickerField({
         <div
           ref={popoverRef}
           id={dialogId}
-          className={`date-picker-popover date-picker-popover--${placement}`}
+          className={`date-picker-popover date-picker-popover--${placement} date-picker-popover--align-${horizontalPlacement}`}
           role="dialog"
           aria-label={ariaLabel}
         >
@@ -214,7 +235,7 @@ export function DatePickerField({
                   onKeyDown={(event) => handleDayKeyDown(event, date)}
                   onClick={() => {
                     onChange(toIsoDate(date));
-                    setIsOpen(false);
+                    closePicker(true);
                   }}
                 >
                   {date.getDate()}
@@ -230,7 +251,7 @@ export function DatePickerField({
               type="button"
               onClick={() => {
                 onChange(toIsoDate(new Date()));
-                setIsOpen(false);
+                closePicker(true);
               }}
             >
               Hoy
@@ -240,7 +261,7 @@ export function DatePickerField({
                 type="button"
                 onClick={() => {
                   onChange('');
-                  setIsOpen(false);
+                  closePicker(true);
                 }}
               >
                 Limpiar

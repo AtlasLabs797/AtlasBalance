@@ -1,24 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
+import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
-import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermisosStore } from '@/stores/permisosStore';
@@ -32,7 +24,12 @@ import type {
   Titular,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency, formatDate } from '@/utils/formatters';
+
+const EvolucionChart = lazy(() =>
+  import('@/components/dashboard/EvolucionChart').then((module) => ({ default: module.EvolucionChart }))
+);
+const TitularSaldoBarChart = lazy(() => import('@/components/dashboard/TitularSaldoBarChart'));
 
 interface TitularCard extends Titular {
   cuentas_count: number;
@@ -67,6 +64,17 @@ function getTitularInitials(nombre: string) {
   return initials || 'T';
 }
 
+const tipoTitularLabels: Record<string, string> = {
+  EMPRESA: 'Empresa',
+  AUTONOMO: 'Autónomo',
+  PARTICULAR: 'Particular',
+};
+
+function formatTipoTitular(value?: string | null) {
+  if (!value) return 'Sin dato';
+  return tipoTitularLabels[value] ?? value;
+}
+
 export default function TitularesPage() {
   const navigate = useNavigate();
   const usuario = useAuthStore((state) => state.usuario);
@@ -81,6 +89,7 @@ export default function TitularesPage() {
   const [search, setSearch] = useState('');
   const [tipoFilter, setTipoFilter] = useState('');
   const [incluirEliminados, setIncluirEliminados] = useState(false);
+  const debouncedSearch = useDebouncedValue(search);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -100,11 +109,8 @@ export default function TitularesPage() {
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
 
   const chartRows = useMemo(
-    () => (principal?.saldos_por_titular ?? []).map((item) => ({
-      ...item,
-      total_convertido_formatted: formatCurrency(item.total_convertido, principal?.divisa_principal ?? divisaPrincipal),
-    })),
-    [divisaPrincipal, principal],
+    () => principal?.saldos_por_titular ?? [],
+    [principal?.saldos_por_titular],
   );
 
   const divisaOptions = useMemo(() => {
@@ -138,7 +144,7 @@ export default function TitularesPage() {
         params: {
           page,
           pageSize,
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           tipoTitular: tipoFilter || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
           sortBy: 'nombre',
@@ -157,7 +163,7 @@ export default function TitularesPage() {
   useEffect(() => {
     void loadTitulares();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros y paginacion
-  }, [page, pageSize, search, tipoFilter, incluirEliminados, isAdmin]);
+  }, [page, pageSize, debouncedSearch, tipoFilter, incluirEliminados, isAdmin]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -228,6 +234,10 @@ export default function TitularesPage() {
     resetForm();
   };
 
+  const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
+    onEscape: saving ? undefined : closeFormModal,
+  });
+
   const startEdit = async (id: string) => {
     setSaving(true);
     setError(null);
@@ -253,7 +263,7 @@ export default function TitularesPage() {
   const save = async () => {
     if (!isAdmin) return;
     if (!form.nombre.trim()) {
-      setFormError('Nombre obligatorio');
+      setFormError('Escribe el nombre del titular.');
       return;
     }
 
@@ -336,33 +346,14 @@ export default function TitularesPage() {
             <>
               <div className="titulares-chart-wrap">
                 {chartRows.length === 0 ? (
-                  <EmptyState title="No hay titulares con saldos." />
+                  <EmptyState
+                    title="No hay titulares con saldo visible."
+                    subtitle="Importa movimientos o revisa permisos para poblar este resumen."
+                  />
                 ) : (
-                  <ResponsiveContainer width="100%" height={340}>
-                    <BarChart data={chartRows} margin={{ top: 12, right: 8, left: 0, bottom: 12 }}>
-                      <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="titular_nombre" interval={0} angle={-18} textAnchor="end" height={72} />
-                      <YAxis
-                        width={72}
-                        axisLine={false}
-                        tickLine={false}
-                        tickMargin={10}
-                        tickFormatter={(value) => formatCompactCurrency(Number(value), principal.divisa_principal)}
-                      />
-                      <Tooltip
-                        formatter={(value: number) => formatCurrency(value, principal.divisa_principal)}
-                        labelFormatter={(value) => `Titular: ${value}`}
-                      />
-                      <Bar dataKey="total_convertido" name={`Saldo total (${principal.divisa_principal})`}>
-                        {chartRows.map((item) => (
-                          <Cell
-                            key={item.titular_id}
-                            fill={item.total_convertido >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <Suspense fallback={<p className="import-muted">Cargando gráfica...</p>}>
+                    <TitularSaldoBarChart rows={chartRows} divisa={principal.divisa_principal} />
+                  </Suspense>
                 )}
               </div>
 
@@ -397,14 +388,16 @@ export default function TitularesPage() {
               {evolucion ? (
                 <section className="dashboard-card titulares-evolucion-card">
                   <header className="dashboard-card-header">
-                    <h3>Evolucion</h3>
-                    <span className="dashboard-subtitle">Ultimo punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'N/A'}</span>
+                    <h3>Evolución</h3>
+                    <span className="dashboard-subtitle">Último punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'Sin dato'}</span>
                   </header>
-                  <EvolucionChart
-                    points={evolucion.puntos}
-                    divisa={principal.divisa_principal}
-                    colors={principal.chart_colors}
-                  />
+                  <Suspense fallback={<p className="import-muted">Cargando evolución...</p>}>
+                    <EvolucionChart
+                      points={evolucion.puntos}
+                      divisa={principal.divisa_principal}
+                      colors={principal.chart_colors}
+                    />
+                  </Suspense>
                 </section>
               ) : null}
 
@@ -421,6 +414,7 @@ export default function TitularesPage() {
       <div className="phase2-filters">
         <input
           type="search"
+          aria-label="Buscar titular"
           placeholder="Buscar titular"
           value={search}
           onChange={(e) => {
@@ -442,7 +436,7 @@ export default function TitularesPage() {
           options={[
             { value: '', label: 'Todos los tipos' },
             { value: 'EMPRESA', label: 'Empresa' },
-            { value: 'AUTONOMO', label: 'Autonomo' },
+            { value: 'AUTONOMO', label: 'Autónomo' },
             { value: 'PARTICULAR', label: 'Particular' },
           ]}
           onChange={(next) => {
@@ -470,7 +464,12 @@ export default function TitularesPage() {
       <div className="phase2-grid">
         <div className="phase2-cards">
           {loading ? <p className="import-muted">Cargando titulares...</p> : null}
-          {!loading && items.length === 0 ? <EmptyState title="Sin titulares para mostrar." /> : null}
+          {!loading && items.length === 0 ? (
+            <EmptyState
+              title="No hay titulares con estos filtros."
+              subtitle="Ajusta la búsqueda o crea un titular nuevo."
+            />
+          ) : null}
           {!loading && items.map((item) => {
             const saldoTotal = saldoTitularById.get(item.id);
 
@@ -478,7 +477,7 @@ export default function TitularesPage() {
               <article className="titular-card" key={item.id}>
                 <div className="titular-card-title">
                   <h3>{item.nombre}</h3>
-                  <span className="pill">{item.tipo}</span>
+                  <span className="pill">{formatTipoTitular(item.tipo)}</span>
                 </div>
                 <div className="titular-card-meta">
                   <div className="titular-card-meta-item titular-card-notes">
@@ -496,7 +495,7 @@ export default function TitularesPage() {
                         {formatCurrency(saldoTotal, saldoDivisa)}
                       </SignedAmount>
                     ) : (
-                      <strong className="cuenta-card-meta-value">N/A</strong>
+                      <strong className="cuenta-card-meta-value">Sin saldo</strong>
                     )}
                   </div>
                 </div>
@@ -506,24 +505,26 @@ export default function TitularesPage() {
                       type="button"
                       className="titular-open-button"
                       onClick={() => navigate(`/dashboard/titular/${item.id}?periodo=${periodo}&divisa=${principal?.divisa_principal ?? divisaPrincipal}`)}
+                      aria-label={`Abrir dashboard de titular ${item.nombre}`}
                     >
                       Abrir
                     </button>
                   ) : null}
                   {isAdmin ? (
-                    <button type="button" onClick={() => startEdit(item.id)} disabled={saving}>Editar</button>
+                    <button type="button" onClick={() => startEdit(item.id)} disabled={saving} aria-label={`Editar titular ${item.nombre}`}>Editar</button>
                   ) : null}
                   {isAdmin && !item.deleted_at ? (
                     <button
                       type="button"
                       onClick={() => setDeleteCandidate({ id: item.id, nombre: item.nombre })}
                       disabled={saving}
+                      aria-label={`Eliminar titular ${item.nombre}`}
                     >
                       Eliminar
                     </button>
                   ) : null}
                   {isAdmin && item.deleted_at ? (
-                    <button type="button" onClick={() => restore(item.id)} disabled={saving}>Restaurar</button>
+                    <button type="button" onClick={() => restore(item.id)} disabled={saving} aria-label={`Restaurar titular ${item.nombre}`}>Restaurar</button>
                   ) : null}
                 </div>
               </article>
@@ -531,7 +532,7 @@ export default function TitularesPage() {
           })}
           <div className="users-pagination">
             <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Anterior</button>
-            <span>Pagina {page} / {totalPages}</span>
+            <span>Página {page} / {totalPages}</span>
             <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Siguiente</button>
           </div>
         </div>
@@ -540,20 +541,25 @@ export default function TitularesPage() {
       {isAdmin && isFormModalOpen ? (
         <div className="modal-backdrop users-modal-backdrop" onClick={closeFormModal}>
           <div
+            ref={formDialogRef}
             className="users-modal phase2-form-modal"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="titulares-modal-title"
+            tabIndex={-1}
           >
             <div className="users-modal-header">
               <div>
-                <h2 id="titulares-modal-title">{editingId ? 'Editar Titular' : 'Nuevo Titular'}</h2>
+                <h2 id="titulares-modal-title">{editingId ? 'Editar titular' : 'Nuevo titular'}</h2>
                 <p>Alta y edición de titulares usados para agrupar cuentas y permisos.</p>
               </div>
-              <button type="button" className="users-modal-close" onClick={closeFormModal} disabled={saving}>
-                Cerrar
-              </button>
+              <CloseIconButton
+                className="users-modal-close"
+                onClick={closeFormModal}
+                disabled={saving}
+                ariaLabel="Cerrar modal de titular"
+              />
             </div>
 
             <form
@@ -578,7 +584,7 @@ export default function TitularesPage() {
                     value={form.tipo}
                     options={[
                       { value: 'EMPRESA', label: 'Empresa' },
-                      { value: 'AUTONOMO', label: 'Autonomo' },
+                      { value: 'AUTONOMO', label: 'Autónomo' },
                       { value: 'PARTICULAR', label: 'Particular' },
                     ]}
                     onChange={(next) => setForm((f) => ({ ...f, tipo: next as TipoTitular }))}
@@ -605,10 +611,11 @@ export default function TitularesPage() {
         title="Eliminar titular"
         message={
           deleteCandidate
-            ? `Vas a enviar a papelera a ${deleteCandidate.nombre}. Las cuentas asociadas quedaran ocultas y la accion se auditara.`
+            ? `Vas a enviar a papelera a ${deleteCandidate.nombre}. Las cuentas asociadas quedarán ocultas y la acción se auditará.`
             : ''
         }
-        confirmLabel="Confirmar eliminacion"
+        confirmLabel="Confirmar eliminación"
+        loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={remove}

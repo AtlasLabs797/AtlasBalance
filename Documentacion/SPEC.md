@@ -136,7 +136,7 @@ Arquitectura abierta: el admin puede añadir nuevas divisas desde la UI sin modi
 
 │  ┌──────────────────────────────────┐   │
 
-│  │  Windows Service: GestionCaja.API │   │
+│  │  Windows Service: AtlasBalance.API │   │
 
 │  │  Puerto 443 (HTTPS)               │   │
 
@@ -152,7 +152,7 @@ Arquitectura abierta: el admin puede añadir nuevas divisas desde la UI sin modi
 
 │  ┌──────────────────────────────────┐   │
 
-│  │  Windows Service: GestionCaja    │   │
+│  │  Windows Service: AtlasBalance    │   │
 
 │  │  .Watchdog                        │   │
 
@@ -178,7 +178,7 @@ Arquitectura abierta: el admin puede añadir nuevas divisas desde la UI sin modi
 
 └─────────────────────────────────────────┘
 
-         ↑ Bearer Token (sk_gestion_caja_xxx)
+         ↑ Bearer Token (sk_atlas_balance_xxx)
 
 [OpenClaw main agent — red local o misma máquina]
 
@@ -822,7 +822,7 @@ OpenClaw:
 
 └──────┬──────┘
 
-       │ Authorization: Bearer sk_gestion_caja_xxx
+       │ Authorization: Bearer sk_atlas_balance_xxx
 
        ?
 
@@ -890,9 +890,9 @@ OpenClaw:
 
 ```
 
-sk_gestion_caja_[32 caracteres aleatorios Base64]
+sk_atlas_balance_[32 caracteres aleatorios Base64]
 
-Ejemplo: sk_gestion_caja_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
+Ejemplo: sk_atlas_balance_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
 
 ```
 
@@ -928,7 +928,7 @@ Todos los endpoints de integración requieren:
 
 ```
 
-Authorization: Bearer sk_gestion_caja_xxx
+Authorization: Bearer sk_atlas_balance_xxx
 
 ```
 
@@ -2990,7 +2990,7 @@ CsrfMiddleware                   -- valida X-CSRF-Token en mutaciones de usuario
 
 
 
-- Proyecto `GestionCaja.Watchdog` como Windows Service separado
+- Proyecto `AtlasBalance.Watchdog` como Windows Service separado
 
 - Puerto `localhost:5001` (NUNCA expuesto a la red)
 
@@ -3316,11 +3316,11 @@ mkcert caja.empresa.local localhost 127.0.0.1
 
 ```sql
 
-createdb gestion_caja
+createdb atlas_balance
 
 createuser app_user --pwprompt
 
-GRANT ALL PRIVILEGES ON DATABASE gestion_caja TO app_user;
+GRANT ALL PRIVILEGES ON DATABASE atlas_balance TO app_user;
 
 ```
 
@@ -3332,7 +3332,7 @@ GRANT ALL PRIVILEGES ON DATABASE gestion_caja TO app_user;
 
 git clone <repo-url>
 
-cd backend/src/GestionCaja.API
+cd backend/src/AtlasBalance.API
 
 
 
@@ -3384,9 +3384,9 @@ npm run build
 
 # Instala y configura:
 
-# - GestionCaja.API (puerto 443, arranque automático, reinicio si falla)
+# - AtlasBalance.API (puerto 443, arranque automático, reinicio si falla)
 
-# - GestionCaja.Watchdog (localhost:5001, arranque automático)
+# - AtlasBalance.Watchdog (localhost:5001, arranque automático)
 
 ```
 
@@ -3426,7 +3426,7 @@ npm run build
 
   "ConnectionStrings": {
 
-    "DefaultConnection": "Host=localhost;Database=gestion_caja;User Id=app_user;Password=XXXX"
+    "DefaultConnection": "Host=localhost;Database=atlas_balance;User Id=app_user;Password=XXXX"
 
   },
 
@@ -3454,11 +3454,7 @@ npm run build
 
 **Frontend — `.env.production`:**
 
-```
-
-VITE_API_URL=https://caja.empresa.local
-
-```
+No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mismo origen. En desarrollo lo resuelve el proxy de Vite y en produccion lo sirve Kestrel. Poner `localhost` aqui rompe el acceso desde otros equipos.
 
 
 
@@ -3514,7 +3510,7 @@ VITE_API_URL=https://caja.empresa.local
 
 **Días 1-2: Backend**
 
-- Crear solución `GestionCaja.sln` con dos proyectos: `API` y `Watchdog`
+- Crear solución `AtlasBalance.sln` con dos proyectos: `API` y `Watchdog`
 
 - Configurar Windows Service con `UseWindowsService()` en ambos
 
@@ -3882,7 +3878,7 @@ VITE_API_URL=https://caja.empresa.local
 
 **Días 38-39: Watchdog Service**
 
-- Proyecto `GestionCaja.Watchdog` completo como Windows Service
+- Proyecto `AtlasBalance.Watchdog` completo como Windows Service
 
 - `POST /watchdog/restaurar-backup`: para API → pg_restore → reinicia API
 

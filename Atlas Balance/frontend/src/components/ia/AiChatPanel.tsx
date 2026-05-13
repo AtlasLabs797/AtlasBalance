@@ -1,12 +1,26 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { SendHorizontal } from 'lucide-react';
+import { AppSelect } from '@/components/common/AppSelect';
+import { CloseIconButton } from '@/components/common/CloseIconButton';
+import { EmptyState } from '@/components/common/EmptyState';
+import { AiMessageContent } from '@/components/ia/AiMessageContent';
 import api from '@/services/api';
 import type { IaChatResponse, IaConfig } from '@/types';
+import { getAiModelLabel, getAiModelOptions, normalizeAiModel, normalizeAiProvider } from '@/utils/aiModels';
 import { extractErrorMessage } from '@/utils/errorMessage';
+
+interface AssistantMessageMeta {
+  movimientosAnalizados: number;
+  model: string;
+  tokens: string;
+  coste: string;
+  aviso: string | null;
+}
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  meta?: AssistantMessageMeta;
 }
 
 interface AiChatPanelProps {
@@ -15,16 +29,21 @@ interface AiChatPanelProps {
 }
 
 const EXAMPLE_PROMPTS = [
-  'Que comisiones bancarias estan pendientes de devolucion?',
-  'Cuanto se ha pagado en seguros este ano?',
-  'Que cuentas han tenido mas gastos este trimestre?',
+  '¿Qué comisiones bancarias están pendientes de devolución?',
+  '¿Cuánto se ha pagado en seguros este año?',
+  '¿Qué cuentas han tenido más gastos este trimestre?',
 ];
 const MAX_PROMPT_LENGTH = 500;
+
+function getCompactModelLabel(label: string) {
+  return label.replace(' (elige el mejor)', '').replace(' (gratis permitido)', '').replace(' (free)', '');
+}
 
 export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const [config, setConfig] = useState<IaConfig | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -32,6 +51,17 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const configured = Boolean(config?.configurada);
   const disabledReason = config?.mensaje_estado || 'Falta configurar la IA en Ajustes.';
   const accessBlocked = Boolean(config && (!config.habilitada || !config.usuario_puede_usar));
+  const canAsk = configured && !accessBlocked;
+  const configProvider = config?.provider;
+  const configModel = config?.model;
+  const selectedProvider = normalizeAiProvider(configProvider);
+  const modelOptions = useMemo(() => getAiModelOptions(selectedProvider), [selectedProvider]);
+  const chatModelOptions = useMemo(
+    () => modelOptions.map((model) => ({ ...model, label: getCompactModelLabel(model.label) })),
+    [modelOptions],
+  );
+  const activeModel = normalizeAiModel(selectedProvider, selectedModel || configModel);
+  const providerLabel = selectedProvider === 'OPENAI' ? 'OpenAI' : 'OpenRouter';
 
   useEffect(() => {
     let mounted = true;
@@ -40,6 +70,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
         const { data } = await api.get<IaConfig>('/ia/config');
         if (!mounted) return;
         setConfig(data);
+        setSelectedModel(normalizeAiModel(data.provider, data.model));
         if (!data.configurada) {
           setMessages([
             {
@@ -50,7 +81,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
         }
       } catch (err) {
         if (mounted) {
-          setError(extractErrorMessage(err, 'No se pudo cargar la configuracion de IA.'));
+          setError(extractErrorMessage(err, 'No se pudo cargar la configuración de IA.'));
         }
       }
     };
@@ -66,10 +97,18 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   }, [messages, loading]);
 
   useEffect(() => {
-    if (configured && !loading) {
+    if (canAsk && !loading) {
       inputRef.current?.focus();
     }
-  }, [configured, loading]);
+  }, [canAsk, loading]);
+
+  useEffect(() => {
+    if (!configProvider) {
+      return;
+    }
+
+    setSelectedModel((current) => normalizeAiModel(configProvider, current || configModel));
+  }, [configProvider, configModel]);
 
   const ask = async (question: string) => {
     const prompt = question.trim();
@@ -77,7 +116,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
       return;
     }
 
-    if (!configured) {
+    if (!canAsk) {
       setError(disabledReason);
       return;
     }
@@ -93,12 +132,19 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     setLoading(true);
 
     try {
-      const { data } = await api.post<IaChatResponse>('/ia/chat', { pregunta: prompt });
+      const { data } = await api.post<IaChatResponse>('/ia/chat', { pregunta: prompt, model: activeModel });
       setMessages((current) => [
         ...current,
         {
           role: 'assistant',
-          content: `${data.respuesta}\n\nMovimientos analizados: ${data.movimientos_analizados}. Modelo: ${data.model}. Tokens aprox.: ${data.tokens_entrada_estimados}/${data.tokens_salida_estimados}. Coste estimado: ${data.coste_estimado_eur.toFixed(6)} EUR.${data.aviso ? `\n${data.aviso}` : ''}`,
+          content: data.respuesta,
+          meta: {
+            movimientosAnalizados: data.movimientos_analizados,
+            model: getAiModelLabel(data.provider, data.model),
+            tokens: `${data.tokens_entrada_estimados}/${data.tokens_salida_estimados}`,
+            coste: `${data.coste_estimado_eur.toFixed(6)} EUR`,
+            aviso: data.aviso,
+          },
         },
       ]);
     } catch (err) {
@@ -109,6 +155,22 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   };
 
   const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void ask(input);
+  };
+
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key !== 'Enter' ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+
     event.preventDefault();
     void ask(input);
   };
@@ -125,11 +187,23 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
       }}
     >
       <header className="ai-chat-header">
-        <h2>Análisis IA</h2>
+        <div className="ai-chat-heading">
+          <h2>Análisis IA</h2>
+          {canAsk ? (
+            <div className="ai-chat-toolbar" aria-label="Opciones de consulta IA">
+              <span className="ai-chat-provider">{providerLabel}</span>
+              <AppSelect
+                value={activeModel}
+                options={chatModelOptions}
+                onChange={setSelectedModel}
+                ariaLabel={`Modelo de IA en ${providerLabel}`}
+                disabled={!canAsk || loading}
+              />
+            </div>
+          ) : null}
+        </div>
         {onClose ? (
-          <button type="button" className="ai-chat-close" onClick={onClose} aria-label="Cerrar chat IA" title="Cerrar">
-            ✕
-          </button>
+          <CloseIconButton className="ai-chat-close" onClick={onClose} ariaLabel="Cerrar chat IA" title="Cerrar" />
         ) : null}
       </header>
 
@@ -140,13 +214,21 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
         </div>
       ) : null}
 
-      {!accessBlocked ? (
+      {accessBlocked ? (
+        <EmptyState
+          variant="permission"
+          title="IA no disponible para tu usuario."
+          subtitle={disabledReason}
+        />
+      ) : null}
+
+      {canAsk ? (
         <>
           <div ref={scrollRef} className="ai-chat-messages" aria-live="polite">
             {messages.length === 0 ? (
               <div className="ai-chat-empty">
                 {EXAMPLE_PROMPTS.map((prompt) => (
-                  <button key={prompt} type="button" onClick={() => void ask(prompt)} disabled={!configured || loading}>
+                  <button key={prompt} type="button" onClick={() => void ask(prompt)} disabled={!canAsk || loading}>
                     {prompt}
                   </button>
                 ))}
@@ -154,13 +236,42 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
             ) : (
               messages.map((message, index) => (
                 <article key={`${message.role}-${index}`} className={`ai-chat-message ai-chat-message--${message.role}`}>
-                  <span>{message.role === 'user' ? 'Tu' : message.role === 'assistant' ? 'IA' : 'Sistema'}</span>
-                  <p>{message.content}</p>
+                  <span>{message.role === 'user' ? 'Tú' : message.role === 'assistant' ? 'IA' : 'Sistema'}</span>
+                  <AiMessageContent content={message.content} />
+                  {message.meta ? (
+                    <details className="ai-chat-message-meta">
+                      <summary>Detalles de IA</summary>
+                      <dl>
+                        <div>
+                          <dt>Movimientos</dt>
+                          <dd>{message.meta.movimientosAnalizados}</dd>
+                        </div>
+                        <div>
+                          <dt>Modelo</dt>
+                          <dd>{message.meta.model}</dd>
+                        </div>
+                        <div>
+                          <dt>Tokens</dt>
+                          <dd>{message.meta.tokens}</dd>
+                        </div>
+                        <div>
+                          <dt>Coste</dt>
+                          <dd>{message.meta.coste}</dd>
+                        </div>
+                      </dl>
+                      {message.meta.aviso ? <p>{message.meta.aviso}</p> : null}
+                    </details>
+                  ) : null}
                 </article>
               ))
             )}
             {loading ? (
-              <p className="ai-chat-loading" role="status">
+              <p className="ai-chat-loading" role="status" aria-label="Analizando datos reales">
+                <span className="ai-chat-loading-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
                 Analizando datos reales...
               </p>
             ) : null}
@@ -177,12 +288,13 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
               id={compact ? 'ai-chat-floating-question' : 'ai-chat-page-question'}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Haz una pregunta financiera..."
-              disabled={!configured || loading}
+              onKeyDown={handleInputKeyDown}
+              placeholder="Pregunta por movimientos, comisiones o saldos..."
+              disabled={!canAsk || loading}
               maxLength={MAX_PROMPT_LENGTH}
               rows={1}
             />
-            <button type="submit" disabled={!configured || loading || !input.trim()} aria-label="Enviar pregunta a IA">
+            <button type="submit" disabled={!canAsk || loading || !input.trim()} aria-label="Enviar pregunta a IA">
               <SendHorizontal size={18} aria-hidden="true" />
             </button>
           </form>

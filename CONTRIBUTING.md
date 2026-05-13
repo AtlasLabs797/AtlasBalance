@@ -1,37 +1,47 @@
-# Cómo contribuir a AtlasBalance
+# Como contribuir a AtlasBalance
 
-¡Gracias por tu interés en contribuir a **AtlasBalance**! Todas las aportaciones son bienvenidas, desde reportar errores hasta proponer nuevas funciones o escribir código.
+AtlasBalance es una app de tesoreria. Eso exige cambios pequenos, revisables y sin sorpresas.
 
-Para mantener el proyecto organizado y seguro, te pedimos que sigas estas directrices:
+## Bugs y propuestas
 
-## 💡 Sugerir Funciones o Reportar Errores
+Usa `Issues` para bugs y mejoras funcionales. Incluye:
 
-Si tienes una idea o encontraste un fallo, por favor usa la pestaña de **Issues**:
+- version afectada;
+- pasos para reproducir;
+- resultado esperado;
+- resultado real;
+- capturas o logs saneados si ayudan.
 
-1. Ve a la pestaña [Issues](../../issues) y haz clic en **New Issue**.
-2. Selecciona la plantilla adecuada (**Bug report** para errores o **Feature request** para sugerencias).
-3. Rellena el formulario con la mayor cantidad de detalles posible. 
-   *(Nota: Para problemas graves de seguridad, lee nuestro archivo `SECURITY.md`).*
+No publiques vulnerabilidades en issues. Para seguridad, usa `SECURITY.md`.
 
-## 💻 Contribuir con Código
+## Pull requests
 
-La rama `main` está **protegida**. No se aceptan subidas de código (pushes) directas. Todo el código nuevo debe integrarse mediante un **Pull Request (PR)** y ser aprobado por un administrador.
+`main` no acepta pushes directos. Todo cambio entra por pull request.
 
-### Flujo de trabajo (Workflow):
+Flujo recomendado:
 
-1. **Haz un Fork** de este repositorio hacia tu cuenta de GitHub.
-2. **Clona** tu fork localmente:
-   `git clone https://github.com/TU-USUARIO/AtlasBalance.git`
-3. **Crea una rama nueva** para tu función o corrección. Usa un nombre descriptivo:
-   `git checkout -b feature/nueva-funcion` o `git checkout -b fix/error-login`
-4. **Haz tus cambios** y asegúrate de que el código funcione correctamente.
-5. **Sube los cambios (Commit & Push)** a tu repositorio:
-   `git add .`
-   `git commit -m "Añade una descripción clara de lo que hiciste"`
-   `git push origin nombre-de-tu-rama`
-6. **Abre un Pull Request** desde tu fork hacia la rama `main` de este repositorio.
+1. Haz fork del repositorio.
+2. Clona tu fork:
 
-### Revisión de Código
-Una vez abierto el PR, el administrador del repositorio revisará tu código. Es posible que te dejemos comentarios o te pidamos algunos ajustes antes de aprobar y hacer el merge definitivo (Squash merge).
+```powershell
+git clone https://github.com/TU-USUARIO/AtlasBalance.git
+```
 
-¡Gracias por hacer de AtlasBalance un proyecto mejor!
+3. Crea una rama descriptiva:
+
+```powershell
+git checkout -b fix/login-healthcheck
+```
+
+4. Haz cambios acotados y prueba lo que toques.
+5. Sube la rama:
+
+```powershell
+git add .
+git commit -m "Corrige healthcheck de login"
+git push origin fix/login-healthcheck
+```
+
+6. Abre un pull request hacia `main`.
+
+No mezcles refactors, cambios visuales y fixes de seguridad en el mismo PR. Parece productivo hasta que toca revisarlo.

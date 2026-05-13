@@ -7,6 +7,8 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
+import { useAuthStore } from '@/stores/authStore';
+import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
 import { useUiStore } from '@/stores/uiStore';
 
 export function Layout() {
@@ -15,6 +17,9 @@ export function Layout() {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const addToast = useUiStore((state) => state.addToast);
+  const usuarioId = useAuthStore((state) => state.usuario?.id ?? null);
+  const loadIaAvailability = useIaAvailabilityStore((state) => state.load);
+  const clearIaAvailability = useIaAvailabilityStore((state) => state.clear);
 
   const { isToastVisible, isWarningVisible, remainingSeconds, resetTimeout, performLogout } =
     useSessionTimeout();
@@ -39,13 +44,24 @@ export function Layout() {
     }
 
     const onResize = () => {
-      setSidebarCollapsed(window.innerWidth <= 1024 && window.innerWidth > 768);
+      setSidebarCollapsed(window.matchMedia('(min-width: 768px) and (max-width: 1023.98px)').matches);
     };
 
     onResize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [isEmbedded, setSidebarCollapsed]);
+
+  useEffect(() => {
+    if (!usuarioId) {
+      clearIaAvailability();
+      return undefined;
+    }
+
+    void loadIaAvailability(true);
+    const timer = window.setInterval(() => void loadIaAvailability(true), 60000);
+    return () => window.clearInterval(timer);
+  }, [clearIaAvailability, loadIaAvailability, usuarioId]);
 
   if (isEmbedded) {
     return (

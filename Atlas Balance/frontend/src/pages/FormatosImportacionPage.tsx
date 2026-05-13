@@ -11,6 +11,7 @@ import { extractErrorMessage } from '@/utils/errorMessage';
 interface ColumnaExtra {
   nombre: string;
   indice: number;
+  etiqueta?: string;
 }
 
 interface MapeoColumnas {
@@ -69,18 +70,20 @@ const emptyForm: FormatoFormState = {
   columnas: [
     { nombre: 'Fecha', tipo: 'base', indice: 0 },
     { nombre: 'Concepto', tipo: 'base', indice: 1 },
-    { nombre: 'Monto', tipo: 'base', indice: 2 },
+    { nombre: 'Importe', tipo: 'base', indice: 2 },
     { nombre: 'Saldo', tipo: 'base', indice: 3 },
   ],
   columnas_extra_nuevas: [],
 };
 
+const EMPTY_VALUE = 'Sin dato';
+
 function getBaseColumns(tipoMonto: TipoMontoImportacion): ColumnaOrdenada[] {
   const labels = tipoMonto === 'tres_columnas'
-    ? ['Fecha', 'Concepto', 'Ingreso', 'Egreso', 'Monto', 'Saldo']
+    ? ['Fecha', 'Concepto', 'Ingreso', 'Egreso', 'Importe', 'Saldo']
     : tipoMonto === 'dos_columnas'
       ? ['Fecha', 'Concepto', 'Ingreso', 'Egreso', 'Saldo']
-      : ['Fecha', 'Concepto', 'Monto', 'Saldo'];
+      : ['Fecha', 'Concepto', 'Importe', 'Saldo'];
 
   return labels.map((nombre, indice) => ({
     nombre,
@@ -190,7 +193,7 @@ export default function FormatosImportacionPage() {
             { nombre: 'Concepto', tipo: 'base', indice: mapeo.concepto ?? 1 },
             { nombre: 'Ingreso', tipo: 'base', indice: mapeo.ingreso ?? 2 },
             { nombre: 'Egreso', tipo: 'base', indice: mapeo.egreso ?? 3 },
-            { nombre: 'Monto', tipo: 'base', indice: mapeo.monto ?? 4 },
+            { nombre: 'Importe', tipo: 'base', indice: mapeo.monto ?? 4 },
             { nombre: 'Saldo', tipo: 'base', indice: mapeo.saldo ?? 5 },
           ]
         : tipoMonto === 'dos_columnas'
@@ -204,7 +207,7 @@ export default function FormatosImportacionPage() {
           : [
               { nombre: 'Fecha', tipo: 'base', indice: mapeo.fecha ?? 0 },
               { nombre: 'Concepto', tipo: 'base', indice: mapeo.concepto ?? 1 },
-              { nombre: 'Monto', tipo: 'base', indice: mapeo.monto ?? 2 },
+              { nombre: 'Importe', tipo: 'base', indice: mapeo.monto ?? 2 },
               { nombre: 'Saldo', tipo: 'base', indice: mapeo.saldo ?? 3 },
             ];
 
@@ -212,6 +215,7 @@ export default function FormatosImportacionPage() {
         nombre: col.nombre,
         tipo: 'extra',
         indice: col.indice,
+        etiqueta: col.etiqueta ?? '',
       }));
 
       const todasLasColumnas = [...columnasBase, ...columnasExtra].sort((a, b) => a.indice - b.indice);
@@ -278,12 +282,17 @@ export default function FormatosImportacionPage() {
       if (col.tipo === 'base') {
         if (col.nombre === 'Fecha') mapeo.fecha = index;
         else if (col.nombre === 'Concepto') mapeo.concepto = index;
-        else if (col.nombre === 'Monto') mapeo.monto = index;
+        else if (col.nombre === 'Monto' || col.nombre === 'Importe') mapeo.monto = index;
         else if (col.nombre === 'Ingreso') mapeo.ingreso = index;
         else if (col.nombre === 'Egreso') mapeo.egreso = index;
         else if (col.nombre === 'Saldo') mapeo.saldo = index;
       } else {
-        columnasExtra.push({ nombre: col.nombre.trim(), indice: index });
+        const nombre = col.nombre.trim();
+        columnasExtra.push({
+          nombre,
+          indice: index,
+          etiqueta: nombre.toLowerCase(),
+        });
       }
     });
 
@@ -298,48 +307,46 @@ export default function FormatosImportacionPage() {
     if (!isAdmin) return;
     const bancoNombre = form.banco_nombre.trim();
     if (!bancoNombre) {
-      setError('Banco obligatorio');
+      setError('Escribe el banco del formato.');
       return;
     }
 
     if (!form.divisa.trim()) {
-      setError('Divisa obligatoria');
+      setError('Selecciona la divisa del formato.');
       return;
     }
 
     if (form.columnas.length === 0) {
-      setError('Debes tener al menos 4 columnas base');
+      setError('Manten al menos las columnas base necesarias para importar.');
       return;
     }
 
     const baseColumnas = form.columnas.filter((col) => col.tipo === 'base');
     const expectedBaseCount = form.tipo_monto === 'tres_columnas' ? 6 : form.tipo_monto === 'dos_columnas' ? 5 : 4;
     const expectedBaseLabels = form.tipo_monto === 'tres_columnas'
-      ? 'Fecha, Concepto, Ingreso, Egreso, Monto, Saldo'
+      ? 'Fecha, Concepto, Ingreso, Egreso, Importe, Saldo'
       : form.tipo_monto === 'dos_columnas'
         ? 'Fecha, Concepto, Ingreso, Egreso, Saldo'
-        : 'Fecha, Concepto, Monto, Saldo';
+        : 'Fecha, Concepto, Importe, Saldo';
     if (baseColumnas.length !== expectedBaseCount) {
-      setError(`Debes tener exactamente ${expectedBaseCount} columnas base (${expectedBaseLabels})`);
+      setError(`Manten exactamente ${expectedBaseCount} columnas base: ${expectedBaseLabels}.`);
       return;
     }
 
-    const extraNames = new Set<string>();
+    const extraClaves = new Set<string>();
     for (const col of form.columnas) {
       if (col.tipo === 'extra') {
         const trimmedName = col.nombre.trim();
         if (trimmedName.length === 0) {
-          setError('Las columnas extra no pueden estar vacías');
+          setError('Escribe un nombre para cada columna extra.');
           return;
         }
-
-        const normalizedName = trimmedName.toLowerCase();
-        if (extraNames.has(normalizedName)) {
-          setError('No repitas nombres de columnas extra');
+        const clave = trimmedName.toLowerCase();
+        if (extraClaves.has(clave)) {
+          setError(`No repitas nombres de columnas extra: "${trimmedName}"`);
           return;
         }
-
-        extraNames.add(normalizedName);
+        extraClaves.add(clave);
       }
     }
 
@@ -408,12 +415,13 @@ export default function FormatosImportacionPage() {
     <section className="phase2-page">
       <header className="phase2-header">
         <h1>Formatos de Importación</h1>
-        {isAdmin && <button type="button" onClick={resetForm}>Nuevo Formato</button>}
+        {isAdmin && <button type="button" className="users-primary-button" onClick={resetForm}>Nuevo Formato</button>}
       </header>
 
       <div className="phase2-filters">
         <input
           type="search"
+          aria-label="Buscar formatos por nombre, banco o divisa"
           placeholder="Buscar por nombre/banco/divisa"
           value={search}
           onChange={(e) => {
@@ -446,11 +454,17 @@ export default function FormatosImportacionPage() {
 
       {error && <p className="auth-error">{error}</p>}
 
-      <div className="users-grid">
+      <div className="phase2-grid">
         <div className="users-table-card">
           {loading ? <p className="import-muted">Cargando formatos...</p> : null}
-          {!loading && items.length === 0 ? <EmptyState title="Sin formatos para mostrar." /> : null}
+          {!loading && items.length === 0 ? (
+            <EmptyState
+              title="No hay formatos con estos filtros."
+              subtitle="Crea un formato para importar extractos bancarios sin mapear columnas a mano cada vez."
+            />
+          ) : null}
           {!loading && items.length > 0 && (
+            <div className="users-table-scroll">
             <table>
               <thead>
                 <tr>
@@ -465,8 +479,8 @@ export default function FormatosImportacionPage() {
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.banco_nombre || 'N/A'}</td>
-                    <td>{item.divisa || 'N/A'}</td>
+                    <td>{item.banco_nombre || EMPTY_VALUE}</td>
+                    <td>{item.divisa || EMPTY_VALUE}</td>
                     <td>
                       {(item.mapeo_json?.tipo_monto ?? 'una_columna') === 'tres_columnas'
                         ? `F:${item.mapeo_json?.fecha ?? '-'} / C:${item.mapeo_json?.concepto ?? '-'} / I:${item.mapeo_json?.ingreso ?? '-'} / E:${item.mapeo_json?.egreso ?? '-'} / M:${item.mapeo_json?.monto ?? '-'} / S:${item.mapeo_json?.saldo ?? '-'}`
@@ -474,21 +488,52 @@ export default function FormatosImportacionPage() {
                           ? `F:${item.mapeo_json?.fecha ?? '-'} / C:${item.mapeo_json?.concepto ?? '-'} / I:${item.mapeo_json?.ingreso ?? '-'} / E:${item.mapeo_json?.egreso ?? '-'} / S:${item.mapeo_json?.saldo ?? '-'}`
                           : `F:${item.mapeo_json?.fecha ?? '-'} / C:${item.mapeo_json?.concepto ?? '-'} / M:${item.mapeo_json?.monto ?? '-'} / S:${item.mapeo_json?.saldo ?? '-'}`}
                     </td>
-                    <td>{item.mapeo_json?.columnas_extra?.length ?? 0}</td>
-                    <td>{item.deleted_at ? 'Eliminado' : (item.activo ? 'Activo' : 'Inactivo')}</td>
+                    <td>
+                      {(item.mapeo_json?.columnas_extra?.length ?? 0) === 0
+                        ? <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
+                        : (
+                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)' }}>
+                            {item.mapeo_json!.columnas_extra!.map((col, i) => (
+                              <span
+                                key={i}
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '0.1em 0.45em',
+                                  borderRadius: '0.85em',
+                                  fontSize: 'var(--font-size-xs)',
+                                  background: 'var(--surface-bg-raised)',
+                                  color: 'var(--color-text-secondary)',
+                                  border: '1px solid var(--surface-border)',
+                                }}
+                              >
+                                {col.nombre}
+                              </span>
+                            ))}
+                          </span>
+                        )
+                      }
+                    </td>
+                    <td>
+                      {item.deleted_at
+                        ? <span className="users-badge users-badge--danger">Eliminado</span>
+                        : item.activo
+                          ? <span className="users-badge users-badge--ok">Activo</span>
+                          : <span className="users-badge">Inactivo</span>}
+                    </td>
                     {isAdmin && (
                       <td className="phase2-row-actions">
-                        <button type="button" onClick={() => startEdit(item.id)} disabled={saving}>Editar</button>
+                        <button type="button" onClick={() => startEdit(item.id)} disabled={saving} aria-label={`Editar formato ${item.nombre}`}>Editar</button>
                         {!item.deleted_at ? (
                           <button
                             type="button"
                             onClick={() => setDeleteCandidate({ id: item.id, nombre: item.nombre })}
                             disabled={saving}
+                            aria-label={`Eliminar formato ${item.nombre}`}
                           >
                             Eliminar
                           </button>
                         ) : (
-                          <button type="button" onClick={() => restore(item.id)} disabled={saving}>Restaurar</button>
+                          <button type="button" onClick={() => restore(item.id)} disabled={saving} aria-label={`Restaurar formato ${item.nombre}`}>Restaurar</button>
                         )}
                       </td>
                     )}
@@ -496,6 +541,7 @@ export default function FormatosImportacionPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           <div className="users-pagination">
             <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Anterior</button>
@@ -533,9 +579,9 @@ export default function FormatosImportacionPage() {
               ariaLabel="Tipo de importe"
               value={form.tipo_monto}
               options={[
-                { value: 'una_columna', label: 'Una columna: Monto firmado' },
+                { value: 'una_columna', label: 'Una columna: Importe firmado' },
                 { value: 'dos_columnas', label: 'Dos columnas: Ingreso y Egreso' },
-                { value: 'tres_columnas', label: 'Tres columnas: Ingreso, Egreso y Monto' },
+                { value: 'tres_columnas', label: 'Tres columnas: Ingreso, Egreso e Importe' },
               ]}
               onChange={(next) => updateTipoMonto(next as TipoMontoImportacion)}
             />
@@ -543,7 +589,7 @@ export default function FormatosImportacionPage() {
             <fieldset>
               <legend>Orden de columnas de importación</legend>
               <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-2)' }}>
-                Define el orden real del archivo bancario. En dos/tres columnas, Ingreso/Egreso calculan el monto firmado; Monto banco solo valida cuadre.
+                Define el orden real del archivo bancario. En dos/tres columnas, Ingreso/Egreso calculan el importe firmado; Importe banco solo valida cuadre.
               </p>
               <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
                 {form.columnas.map((col, index) => (
@@ -557,33 +603,52 @@ export default function FormatosImportacionPage() {
                       ) : (
                         <input
                           type="text"
-                          placeholder="Nombre columna"
+                          placeholder="Nombre de columna"
                           value={col.nombre}
                           onChange={(e) => updateColumnName(index, e.target.value)}
                           style={{ flex: 1 }}
                         />
                       )}
                     </span>
-                    <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                      <button type="button" onClick={() => moveColumn(index, 'up')} disabled={index === 0} title="Mover arriba">↑</button>
-                      <button type="button" onClick={() => moveColumn(index, 'down')} disabled={index === form.columnas.length - 1} title="Mover abajo">↓</button>
+                    <div style={{ display: 'flex', gap: 'var(--space-1)', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="extra-col-btn-icon"
+                        onClick={() => moveColumn(index, 'up')}
+                        disabled={index === 0}
+                        title="Mover arriba"
+                        aria-label={`Mover columna ${col.nombre} arriba`}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="extra-col-btn-icon"
+                        onClick={() => moveColumn(index, 'down')}
+                        disabled={index === form.columnas.length - 1}
+                        title="Mover abajo"
+                        aria-label={`Mover columna ${col.nombre} abajo`}
+                      >
+                        ↓
+                      </button>
                       {col.tipo === 'extra' && (
-                        <button type="button" onClick={() => removeColumn(index)}>Quitar</button>
+                        <button type="button" onClick={() => removeColumn(index)} aria-label={`Quitar columna ${col.nombre}`}>Quitar</button>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
-              <button type="button" onClick={addExtraColumn} style={{ marginTop: 'var(--space-2)' }}>Agregar columna extra</button>
+              <button type="button" onClick={addExtraColumn} style={{ marginTop: 'var(--space-2)' }}>Añadir columna extra</button>
             </fieldset>
 
-            <label>
+            <label className="users-check-row-item">
               <input
                 type="checkbox"
+                className="users-check-input"
                 checked={form.activo}
                 onChange={(e) => setForm((prev) => ({ ...prev, activo: e.target.checked }))}
               />
-              Formato activo
+              <span>Formato activo</span>
             </label>
 
             <div className="users-form-actions">
@@ -603,6 +668,7 @@ export default function FormatosImportacionPage() {
             : ''
         }
         confirmLabel="Confirmar eliminación"
+        loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={remove}

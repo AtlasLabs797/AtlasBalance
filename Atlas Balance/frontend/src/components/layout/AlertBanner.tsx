@@ -13,7 +13,7 @@ export function AlertBanner() {
   return (
     <section className="alert-banner" role="status" aria-live="polite">
       <div className="alert-banner-content">
-        <span className="alert-banner-pill">Atencion</span>
+        <span className="alert-banner-pill">Atención</span>
         <strong>Saldo bajo detectado</strong>
         <span>
           {alertasActivas.length} cuenta{alertasActivas.length === 1 ? '' : 's'} por debajo del mínimo.

@@ -12,7 +12,7 @@ Estado posterior a la correccion: los hallazgos que no debian pasar a release ya
 2. `CuentasController.Resumen` se alineo con metadatos de cuenta/titular/plazo fijo.
 3. `DatePickerField`, `ConfirmDialog` y `AppSelect` recibieron mejoras de teclado/accesibilidad.
 4. Los gradientes decorativos detectados se redujeron a superficies planas.
-5. `backend/src/GestionCaja.API/wwwroot` se sincronizo con el build frontend corregido.
+5. `backend/src/AtlasBalance.API/wwwroot` se sincronizo con el build frontend corregido.
 
 Lo que sigue sin estar perfecto: falta ejecutar Playwright E2E con `E2E_ADMIN_PASSWORD` en una base disposable y el estado Git local sigue siendo mala base para revisar diffs finos.
 
@@ -23,7 +23,7 @@ Lo que sigue sin estar perfecto: falta ejecutar Playwright E2E con `E2E_ADMIN_PA
 - `npm.cmd run build`: OK.
 - `npm.cmd ls axios react-router-dom postcss vite`: axios 1.15.2, react-router-dom 6.30.3, postcss 8.5.10, vite 8.0.8.
 - `dotnet list ... package --vulnerable --include-transitive`: sin paquetes vulnerables en NuGet.
-- `dotnet test ...GestionCaja.API.Tests.csproj -c Release`: 107/107 OK.
+- `dotnet test ...AtlasBalance.API.Tests.csproj -c Release`: 107/107 OK.
 - Parser PowerShell sobre `Atlas Balance/scripts/*.ps1`: sin errores.
 - `git diff --check`: sin errores de whitespace; solo avisos de normalizacion LF/CRLF.
 - Revision manual de auth, cookies, CSRF, middleware de integracion, headers, permisos, exportaciones, backups, updates, CI/CD, Docker y frontend critico.
@@ -53,9 +53,9 @@ Ejecutada: se quitaron Tailwind/shadcn, sus dependencias, plugin Vite, imports C
 
 Ubicacion:
 
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/CuentasController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/Controllers/ExtractosController.cs`
-- `Atlas Balance/backend/src/GestionCaja.API/DTOs/CuentasDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/CuentasController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/CuentasDtos.cs`
 
 Impacto:
 

@@ -24,7 +24,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-01.05"
+$AppVersion = "V-01.06"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
@@ -82,6 +82,19 @@ function Protect-SecretDirectory {
     }
 }
 
+function Protect-SecretFile {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "No existe el archivo secreto que se quiere proteger: $Path"
+    }
+
+    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "No se pudo restringir ACL en $Path."
+    }
+}
+
 function Write-SecretFile {
     param(
         [string]$Path,
@@ -103,6 +116,20 @@ function Escape-SqlLiteral {
     return $Value.Replace("'", "''")
 }
 
+function Quote-PgIdentifier {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value.Length -gt 63) {
+        throw "Identificador PostgreSQL invalido."
+    }
+
+    if ($Value -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+        throw "Identificador PostgreSQL invalido: $Value"
+    }
+
+    return '"' + $Value.Replace('"', '""') + '"'
+}
+
 function Find-PostgresBin {
     param([string]$PreferredPath)
 
@@ -121,7 +148,7 @@ function Find-PostgresBin {
         "C:\Program Files\PostgreSQL\17\bin",
         "C:\Program Files\PostgreSQL\16\bin",
         "C:\Program Files\PostgreSQL\15\bin",
-        "C:\Program Files\PostgreSQL\14\bin"
+        "C:\Program Files\PostgreSQL\16\bin"
     )
     foreach ($candidate in $candidates) {
         if (Test-Path (Join-Path $candidate "psql.exe")) {
@@ -288,29 +315,32 @@ function Ensure-Database {
     $roleName = Escape-SqlLiteral $DbUser
     $rolePassword = Escape-SqlLiteral $DbPassword
     $dbNameLiteral = Escape-SqlLiteral $DbName
+    $ownerRoleIdentifier = Quote-PgIdentifier $DbOwnerUser
+    $roleIdentifier = Quote-PgIdentifier $DbUser
+    $dbIdentifier = Quote-PgIdentifier $DbName
 
     $ownerRoleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$ownerRoleName';"
     if ($ownerRoleExists -eq "1") {
-        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE `"$DbOwnerUser`" WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
     } else {
-        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE `"$DbOwnerUser`" WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
     }
 
     $roleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$roleName';"
     if ($roleExists -eq "1") {
-        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE `"$DbUser`" WITH LOGIN PASSWORD '$rolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE $roleIdentifier WITH LOGIN PASSWORD '$rolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
     } else {
-        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE `"$DbUser`" WITH LOGIN PASSWORD '$rolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE $roleIdentifier WITH LOGIN PASSWORD '$rolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
     }
 
     $dbExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_database WHERE datname = '$dbNameLiteral';"
     if ($dbExists -ne "1") {
-        Invoke-Psql -PsqlExe $psql -Sql "CREATE DATABASE `"$DbName`" OWNER `"$DbOwnerUser`" ENCODING 'UTF8';" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE DATABASE $dbIdentifier OWNER $ownerRoleIdentifier ENCODING 'UTF8';" | Out-Null
     } else {
-        Invoke-Psql -PsqlExe $psql -Sql "ALTER DATABASE `"$DbName`" OWNER TO `"$DbOwnerUser`";" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER DATABASE $dbIdentifier OWNER TO $ownerRoleIdentifier;" | Out-Null
     }
 
-    Invoke-Psql -PsqlExe $psql -Database $DbName -Sql "ALTER SCHEMA public OWNER TO `"$DbOwnerUser`"; GRANT CONNECT ON DATABASE `"$DbName`" TO `"$DbUser`"; GRANT USAGE ON SCHEMA public TO `"$DbUser`";" | Out-Null
+    Invoke-Psql -PsqlExe $psql -Database $DbName -Sql "ALTER SCHEMA public OWNER TO $ownerRoleIdentifier; GRANT CONNECT ON DATABASE $dbIdentifier TO $roleIdentifier; GRANT USAGE ON SCHEMA public TO $roleIdentifier;" | Out-Null
 }
 
 function Test-ExistingApplicationUsers {
@@ -455,6 +485,10 @@ function Write-AppSettings {
             Email = $AdminEmail
             Password = $seedAdminPassword
         }
+        Ia = [ordered]@{
+            UseSystemProxy = $false
+            ProxyUrl = ""
+        }
         WatchdogSettings = [ordered]@{
             BaseUrl = "http://localhost:$WatchdogPort"
             SharedSecret = $WatchdogSecret
@@ -525,8 +559,13 @@ function Write-AppSettings {
         }
     }
 
-    Write-JsonFile -Value $apiConfig -Path (Join-Path $ApiPath "appsettings.Production.json")
-    Write-JsonFile -Value $watchdogConfig -Path (Join-Path $WatchdogPath "appsettings.Production.json")
+    $apiSettingsPath = Join-Path $ApiPath "appsettings.Production.json"
+    $watchdogSettingsPath = Join-Path $WatchdogPath "appsettings.Production.json"
+    Write-JsonFile -Value $apiConfig -Path $apiSettingsPath
+    Write-JsonFile -Value $watchdogConfig -Path $watchdogSettingsPath
+    Protect-SecretFile -Path $apiSettingsPath
+    Protect-SecretFile -Path $watchdogSettingsPath
+    Protect-SecretDirectory -Path $dataProtectionKeysPath
 }
 
 function Install-OrReplaceService {
@@ -680,7 +719,7 @@ function Write-RuntimeAndCredentials {
             "",
             "Guarda esto en un gestor de passwords y borra este archivo.",
             "Si nadie lo borra antes, el instalador intentara eliminarlo automaticamente en 24 horas.",
-            "Si dejas este archivo tirado en el servidor, la instalacion no esta segura."
+            "Borra este archivo tras el primer acceso. Si permanece en el servidor, la instalacion no es segura."
         )
     } else {
         $lines = @(
@@ -697,7 +736,7 @@ function Write-RuntimeAndCredentials {
             "",
             "Guarda esto en un gestor de passwords y borra este archivo.",
             "Si nadie lo borra antes, el instalador intentara eliminarlo automaticamente en 24 horas.",
-            "Si dejas este archivo tirado en el servidor, la instalacion no esta segura."
+            "Borra este archivo tras el primer acceso. Si permanece en el servidor, la instalacion no es segura."
         )
     }
     if ($ManagedPostgres) {
@@ -717,9 +756,9 @@ $packageRoot = Split-Path -Parent $PSScriptRoot
 $apiSource = Join-Path $packageRoot "api"
 $watchdogSource = Join-Path $packageRoot "watchdog"
 
-if (-not (Test-Path (Join-Path $apiSource "GestionCaja.API.exe")) -or
-    -not (Test-Path (Join-Path $watchdogSource "GestionCaja.Watchdog.exe"))) {
-    throw "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-$AppVersion-win-x64.zip. Ejecuta el instalador desde la carpeta descomprimida que contiene api\GestionCaja.API.exe, watchdog\GestionCaja.Watchdog.exe, scripts e install.cmd."
+if (-not (Test-Path (Join-Path $apiSource "AtlasBalance.API.exe")) -or
+    -not (Test-Path (Join-Path $watchdogSource "AtlasBalance.Watchdog.exe"))) {
+    throw "Esta carpeta no es el paquete instalable. Genera o descarga AtlasBalance-$AppVersion-win-x64.zip. Ejecuta el instalador desde la carpeta descomprimida que contiene api\AtlasBalance.API.exe, watchdog\AtlasBalance.Watchdog.exe, scripts e install.cmd."
 }
 
 if (-not (Test-IsAdmin)) {
@@ -787,6 +826,8 @@ Copy-Item -LiteralPath (Join-Path $packageRoot "Atlas Balance.cmd") -Destination
 Copy-Item -LiteralPath (Join-Path $packageRoot "scripts\Launch-AtlasBalance.ps1") -Destination (Join-Path $InstallPath "scripts\Launch-AtlasBalance.ps1") -Force
 
 $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
+Protect-SecretDirectory -Path (Join-Path $InstallPath "certs")
+Protect-SecretFile -Path $cert.Path
 Write-AppSettings `
     -ApiPath $apiPath `
     -WatchdogPath $watchdogPath `
@@ -796,8 +837,8 @@ Write-AppSettings `
     -JwtSecret $jwtSecret `
     -WatchdogSecret $watchdogSecret
 
-$apiExe = Join-Path $apiPath "GestionCaja.API.exe"
-$watchdogExe = Join-Path $watchdogPath "GestionCaja.Watchdog.exe"
+$apiExe = Join-Path $apiPath "AtlasBalance.API.exe"
+$watchdogExe = Join-Path $watchdogPath "AtlasBalance.Watchdog.exe"
 Install-OrReplaceService -Name $WatchdogServiceName -DisplayName "Atlas Balance - Watchdog" -Description "Backups y actualizaciones de Atlas Balance" -ExePath $watchdogExe
 Install-OrReplaceService -Name $ApiServiceName -DisplayName "Atlas Balance - API" -Description "API y frontend de Atlas Balance" -ExePath $apiExe
 

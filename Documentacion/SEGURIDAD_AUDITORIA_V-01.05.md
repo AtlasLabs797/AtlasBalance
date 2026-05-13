@@ -72,9 +72,9 @@ Se revisaron las incidencias documentadas de bugs y seguridad, dependencias npm/
 - `npm.cmd audit --audit-level=moderate`: 0 vulnerabilidades.
 - `npm.cmd run lint`: OK.
 - `npm.cmd run build`: OK.
-- `robocopy dist ..\backend\src\GestionCaja.API\wwwroot /MIR`: OK, codigo 1 por archivos copiados.
-- `dotnet test ".\Atlas Balance\backend\GestionCaja.sln" -c Release --no-build`: 107/107 OK.
-- `dotnet list ".\Atlas Balance\backend\GestionCaja.sln" package --vulnerable --include-transitive`: sin vulnerabilidades.
+- `robocopy dist ..\backend\src\AtlasBalance.API\wwwroot /MIR`: OK, codigo 1 por archivos copiados.
+- `dotnet test ".\Atlas Balance\backend\AtlasBalance.sln" -c Release --no-build`: 107/107 OK.
+- `dotnet list ".\Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`: sin vulnerabilidades.
 - `git diff --check` sobre archivos tocados: OK.
 - `wwwroot`: sin sourcemaps, plantillas Development ni `.env`.
 

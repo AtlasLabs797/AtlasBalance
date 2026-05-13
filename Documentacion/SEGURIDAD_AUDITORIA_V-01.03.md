@@ -72,12 +72,12 @@ Se corrigieron los hallazgos explotables que encontre en esta sesion: sesiones n
 
 ## Verificacion
 
-- `dotnet build '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-restore`: OK, 0 warnings, 0 errores.
-- `dotnet test '.\Atlas Balance\backend\GestionCaja.sln' -c Release --no-build`: 94/94 OK.
+- `dotnet build '.\Atlas Balance\backend\AtlasBalance.sln' -c Release --no-restore`: OK, 0 warnings, 0 errores.
+- `dotnet test '.\Atlas Balance\backend\AtlasBalance.sln' -c Release --no-build`: 94/94 OK.
 - `npm.cmd run lint`: OK.
 - `npm.cmd run build`: OK.
 - `npm.cmd audit --audit-level=moderate`: 0 vulnerabilidades.
-- `dotnet list '.\Atlas Balance\backend\GestionCaja.sln' package --vulnerable --include-transitive`: sin vulnerabilidades.
+- `dotnet list '.\Atlas Balance\backend\AtlasBalance.sln' package --vulnerable --include-transitive`: sin vulnerabilidades.
 - Parser PowerShell de `Instalar-AtlasBalance.ps1`: OK.
 
 ## Riesgos residuales

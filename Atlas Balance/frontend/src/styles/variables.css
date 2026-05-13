@@ -74,6 +74,7 @@
 
   --border-soft: rgba(23, 33, 52, 0.10);
   --border-strong: rgba(23, 33, 52, 0.18);
+  --border-medium: var(--border-strong);
   --border-focus: #285bd9;
 
   --text-primary: #172033;
@@ -102,6 +103,24 @@
   --chart-egresos: #c94a5a;
   --chart-saldo: #285bd9;
   --chart-grid: rgba(23, 33, 52, 0.10);
+  --chart-series-1: #3f7dbe;
+  --chart-series-2: #2f9f68;
+  --chart-series-3: #c5663d;
+  --chart-series-4: #8d62a8;
+  --chart-series-5: #9a751d;
+  --chart-series-6: #4f93d4;
+  --chart-series-7: #4aa584;
+  --chart-series-8: #d07652;
+  --chart-series-9: #a978b8;
+  --chart-series-10: #b98924;
+  --chart-series-11: #316ba7;
+  --chart-series-12: #267e5a;
+  --chart-series-13: #a85734;
+  --chart-series-14: #744c8a;
+  --chart-series-15: #806218;
+  --chart-series-other: #536174;
+  --entry-color: var(--accent-primary);
+  --series-color: var(--accent-primary);
 
   --row-flagged-bg: #fff2bd;
   --row-flagged-border: rgba(172, 118, 0, 0.42);
@@ -121,7 +140,7 @@
   --color-button-secondary-border: var(--border-strong);
   --color-button-secondary-text: var(--text-primary);
 
-  --color-bg-sidebar: rgba(255, 255, 255, 0.78);
+  --color-bg-sidebar: #fbfcfe;
   --color-sidebar-text: #445266;
   --color-sidebar-active-bg: var(--accent-primary-soft);
   --color-sidebar-active-text: #214cad;
@@ -198,13 +217,13 @@
   --topbar-height: 68px;
 
   --border-radius-sm: 8px;
-  --border-radius-md: 12px;
-  --border-radius-lg: 18px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
   --border-radius-full: 999px;
-  --radius-control: 12px;
-  --radius-card: 18px;
-  --radius-panel: 24px;
-  --radius-shell: 30px;
+  --radius-control: 8px;
+  --radius-card: 8px;
+  --radius-panel: 18px;
+  --radius-shell: 22px;
   --radius-pill: 999px;
 
   --control-height: 2.75rem;
@@ -258,6 +277,7 @@
 
   --border-soft: rgba(216, 226, 240, 0.10);
   --border-strong: rgba(216, 226, 240, 0.18);
+  --border-medium: var(--border-strong);
   --border-focus: #82a4ff;
 
   --text-primary: #f1f5f9;
@@ -286,11 +306,29 @@
   --chart-egresos: #ff8795;
   --chart-saldo: #9fb6ff;
   --chart-grid: rgba(216, 226, 240, 0.10);
+  --chart-series-1: #82b8f4;
+  --chart-series-2: #78d99c;
+  --chart-series-3: #ff9f78;
+  --chart-series-4: #d7a3e5;
+  --chart-series-5: #f0c96e;
+  --chart-series-6: #65a7df;
+  --chart-series-7: #5fc28f;
+  --chart-series-8: #ea8c69;
+  --chart-series-9: #c58cda;
+  --chart-series-10: #ddb857;
+  --chart-series-11: #9cc7ff;
+  --chart-series-12: #93e0b0;
+  --chart-series-13: #ffb290;
+  --chart-series-14: #e4b7ed;
+  --chart-series-15: #f6d98c;
+  --chart-series-other: #b7c2d2;
+  --entry-color: var(--accent-primary);
+  --series-color: var(--accent-primary);
 
   --row-flagged-bg: rgba(255, 196, 70, 0.18);
   --row-flagged-border: rgba(255, 213, 112, 0.42);
 
-  --color-bg-sidebar: rgba(27, 35, 48, 0.82);
+  --color-bg-sidebar: #1b2330;
   --color-sidebar-text: #c0cbda;
   --color-sidebar-active-bg: rgba(130, 164, 255, 0.16);
   --color-sidebar-active-text: #d5ddff;

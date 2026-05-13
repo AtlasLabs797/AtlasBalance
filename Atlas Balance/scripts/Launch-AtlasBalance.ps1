@@ -73,28 +73,23 @@ function Resolve-ManagedPostgresServiceName {
 function Start-DevelopmentMode {
     param([string]$RepoRoot)
 
-    $backendPath = Join-Path $RepoRoot "backend\src\GestionCaja.API"
+    $backendPath = Join-Path $RepoRoot "backend\src\AtlasBalance.API"
     $frontendPath = Join-Path $RepoRoot "frontend"
+    $startDevPath = Join-Path $RepoRoot "scripts\Start-Dev.ps1"
 
-    if (-not (Test-Path (Join-Path $backendPath "GestionCaja.API.csproj")) -or
-        -not (Test-Path (Join-Path $frontendPath "package.json"))) {
+    if (-not (Test-Path (Join-Path $backendPath "AtlasBalance.API.csproj")) -or
+        -not (Test-Path (Join-Path $frontendPath "package.json")) -or
+        -not (Test-Path $startDevPath)) {
         return $false
     }
 
-    Start-Process -FilePath "powershell.exe" -WorkingDirectory $backendPath -ArgumentList @(
-        "-NoExit",
-        "-ExecutionPolicy", "Bypass",
-        "-Command", "dotnet run"
-    ) | Out-Null
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $startDevPath -TimeoutSeconds 60
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
 
-    Start-Process -FilePath "powershell.exe" -WorkingDirectory $frontendPath -ArgumentList @(
-        "-NoExit",
-        "-ExecutionPolicy", "Bypass",
-        "-Command", "npm.cmd run dev"
-    ) | Out-Null
-
-    Start-Sleep -Seconds 5
     Start-Process "http://localhost:5173" | Out-Null
+
     return $true
 }
 

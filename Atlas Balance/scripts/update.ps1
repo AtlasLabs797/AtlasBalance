@@ -34,8 +34,8 @@ if (-not (Test-Path $updater)) {
     throw "No se encontro $updater."
 }
 
-$apiExe = Join-Path $packageRoot "api\GestionCaja.API.exe"
-$watchdogExe = Join-Path $packageRoot "watchdog\GestionCaja.Watchdog.exe"
+$apiExe = Join-Path $packageRoot "api\AtlasBalance.API.exe"
+$watchdogExe = Join-Path $packageRoot "watchdog\AtlasBalance.Watchdog.exe"
 if (-not (Test-Path $apiExe) -or -not (Test-Path $watchdogExe)) {
     throw "Esta carpeta no es el paquete de actualizacion. Usa -PackagePath con la carpeta descomprimida de AtlasBalance-V-XX-win-x64 o ejecuta update.cmd desde dentro del paquete."
 }

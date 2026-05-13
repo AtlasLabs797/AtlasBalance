@@ -28,7 +28,14 @@ export default function TitularDetailPage() {
 
   if (loading) return <PageSkeleton rows={3} />;
   if (error) return <p className="auth-error">{error}</p>;
-  if (!data) return <EmptyState title="Sin datos." />;
+  if (!data) {
+    return (
+      <EmptyState
+        title="No se pudo encontrar el titular."
+        subtitle="Vuelve al listado y comprueba que el titular sigue activo."
+      />
+    );
+  }
 
   return (
     <section className="page-placeholder">
@@ -39,7 +46,8 @@ export default function TitularDetailPage() {
         </div>
         <PeriodoSelector value={periodo} onChange={setPeriodo} />
       </header>
-      <table>
+      <div className="dashboard-table-wrap titular-detail-table-wrap">
+        <table className="titular-detail-table">
         <thead>
           <tr>
             <th>Cuenta</th>
@@ -51,7 +59,11 @@ export default function TitularDetailPage() {
           </tr>
         </thead>
         <tbody>
-          {data.cuentas.map((c) => (
+          {data.cuentas.length === 0 ? (
+            <tr>
+              <td colSpan={6}>Este titular no tiene cuentas visibles en el periodo seleccionado.</td>
+            </tr>
+          ) : data.cuentas.map((c) => (
             <tr key={c.cuenta_id}>
               <td>{c.cuenta_nombre}</td>
               <td>{c.divisa}</td>
@@ -68,7 +80,8 @@ export default function TitularDetailPage() {
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </section>
   );
 }

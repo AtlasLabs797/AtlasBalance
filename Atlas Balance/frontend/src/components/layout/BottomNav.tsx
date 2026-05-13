@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { IconMenu } from '@/components/Icons';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
 import { useAlertCount } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
 import { useUpdateStore } from '@/stores/updateStore';
 
@@ -13,12 +16,16 @@ const SECONDARY_GROUP_ORDER: NavigationGroup[] = ['operacion', 'control', 'siste
 export function BottomNav() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const sheetRef = useDialogFocus<HTMLElement>(menuOpen, {
+    onEscape: () => setMenuOpen(false),
+  });
   const usuario = useAuthStore((state) => state.usuario);
   const alertCount = useAlertCount();
   const exportacionesPendientes = useNotificacionesAdminStore((state) => state.exportacionesPendientes);
   const updateAvailable = useUpdateStore((state) => state.available);
+  const aiAvailable = useIaAvailabilityStore((state) => state.available);
 
-  const visibleNavItems = useMemo(() => getVisibleNavigationItems(usuario?.rol), [usuario?.rol]);
+  const visibleNavItems = useMemo(() => getVisibleNavigationItems(usuario?.rol, { aiAvailable }), [aiAvailable, usuario?.rol]);
   const primaryItems = useMemo(
     () => visibleNavItems.filter((item) => PRIMARY_ITEM_PATHS.includes(item.to)),
     [visibleNavItems]
@@ -67,7 +74,7 @@ export function BottomNav() {
 
   return (
     <>
-      <nav className="bottom-nav" aria-label="Navegacion inferior">
+      <nav className="bottom-nav" aria-label="Navegación inferior">
         {primaryItems.map((item) => (
           <NavLink
             key={item.to}
@@ -86,7 +93,7 @@ export function BottomNav() {
           onClick={() => setMenuOpen((current) => !current)}
         >
           <span className="bottom-nav-icon" aria-hidden="true"><IconMenu /></span>
-          <span>Mas</span>
+          <span>Más</span>
           {hiddenBadgeCount > 0 ? <span className="sidebar-alert-badge">{hiddenBadgeCount}</span> : null}
         </button>
       </nav>
@@ -94,26 +101,25 @@ export function BottomNav() {
       {menuOpen ? (
         <div className="bottom-nav-sheet-backdrop" onClick={() => setMenuOpen(false)}>
           <section
+            ref={sheetRef}
             id="bottom-nav-sheet"
             className="bottom-nav-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label="Menu de accesos"
+            aria-label="Menú de accesos"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="bottom-nav-sheet-header">
               <div>
-                <strong>Mas</strong>
+                <strong>Más</strong>
                 <p>Extractos, control y sistema.</p>
               </div>
-              <button
-                type="button"
+              <CloseIconButton
                 className="bottom-nav-sheet-close"
                 onClick={() => setMenuOpen(false)}
-                aria-label="Cerrar menu de accesos"
-              >
-                Cerrar
-              </button>
+                ariaLabel="Cerrar menú de accesos"
+              />
             </header>
 
             <div className="bottom-nav-sheet-sections">
@@ -143,7 +149,7 @@ export function BottomNav() {
                           <span>{item.label}</span>
                           {badge > 0 ? (
                             <span className={item.to === '/configuracion' ? 'sidebar-update-badge' : 'sidebar-alert-badge'}>
-                              {item.to === '/configuracion' ? 'Update' : badge}
+                              {item.to === '/configuracion' ? 'Nueva' : badge}
                             </span>
                           ) : null}
                         </NavLink>
