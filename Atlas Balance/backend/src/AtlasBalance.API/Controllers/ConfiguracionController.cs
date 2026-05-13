@@ -260,17 +260,29 @@ public sealed class ConfiguracionController : ControllerBase
         }
         catch (Exception ex)
         {
-            var safeTargetForLog = string.IsNullOrEmpty(target)
-                ? target
-                : new string(target
-                    .Replace("\r", " ")
-                    .Replace("\n", " ")
-                    .Where(c => !char.IsControl(c))
-                    .ToArray());
+            var safeTargetForLog = SanitizeForLog(target);
 
             _logger.LogError(ex, "Fallo al enviar email de prueba SMTP a {Target}", safeTargetForLog);
             return BadRequest(new { error = "No se pudo enviar el correo de prueba. Revisa la configuracion SMTP o avisa al administrador." });
         }
+    }
+
+    private static string SanitizeForLog(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "(empty)";
+        }
+
+        var sanitized = new string(value
+            .Replace("\r", " ")
+            .Replace("\n", " ")
+            .Replace("\t", " ")
+            .Where(c => !char.IsControl(c))
+            .ToArray())
+            .Trim();
+
+        return string.IsNullOrEmpty(sanitized) ? "(empty)" : sanitized;
     }
 
     private async Task<Dictionary<string, string>> LoadConfigMapAsync(CancellationToken cancellationToken)
