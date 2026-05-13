@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Constants;
@@ -259,7 +260,15 @@ public sealed class ConfiguracionController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Fallo al enviar email de prueba SMTP a {Target}", target);
+            var safeTargetForLog = string.IsNullOrEmpty(target)
+                ? target
+                : new string(target
+                    .Replace("\r", " ")
+                    .Replace("\n", " ")
+                    .Where(c => !char.IsControl(c))
+                    .ToArray());
+
+            _logger.LogError(ex, "Fallo al enviar email de prueba SMTP a {Target}", safeTargetForLog);
             return BadRequest(new { error = "No se pudo enviar el correo de prueba. Revisa la configuracion SMTP o avisa al administrador." });
         }
     }
