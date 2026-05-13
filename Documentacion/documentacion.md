@@ -212,7 +212,7 @@ Al pulsar `Actualizar ahora`, Atlas Balance:
 
 Si no puede verificar firma, crear backup previo o recuperar `/api/health`, no actualiza. Bien. Actualizar una app financiera sin backup o sin firma es una forma elegante de pedir problemas.
 
-La instalacion debe tener `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Sin clave publica, la actualizacion online falla cerrado.
+La instalacion debe tener `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Desde el paquete firmado `V-01.06`, el instalador escribe una clave publica por defecto si no se proporciona override. Sin clave publica valida, la actualizacion online falla cerrado.
 
 ### 1. Generar nuevo paquete
 

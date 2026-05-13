@@ -30,7 +30,23 @@ $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
 $GeneratedPostgresAdminPassword = ""
 $ExistingUsersDetected = $false
-$ReleaseSigningPublicKeyPem = if ([string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM)) { "" } else { $env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM -replace "\\n", "`n" }
+$DefaultReleaseSigningPublicKeyPem = @"
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA9E9flwTTxIneRB/uMEQM
+gd6m5b7Gt2Tg30Cb8SjPmMrQvmYch6gSuJB5dBZxPsXnGFKuXC2r7O5MH2R5/l7c
+eOzvlTJPghRJrYooXELc9VuX6v5/2OelLyPvEwGx0eUdRSRp/WY0mPfwIyCQx1Ll
+Ag9jsjqcj91d4ED35x0rnaCeyR8ZJZPZ80G3FyUcfkhsOUrALkbSggON02CgGRpq
+mD+VYimKqY4mzSQwDaCPOZPArUAL0Hih8rioWC8KPj+TgkFgLfAQOb3TCN1J30l1
+qUhSolrOKvR2g4UjA+J3LSX22TijHuiuuzu9Am+14lB7KkoUZApWO1hehNIUNpDa
+7Md0TZMunUFYYj440nN3i5bLkJ1qkNUxBBdApZPI06WtjM0fmzYGxcPzHU3NLy5/
+Az2vrpnYvOQ6zoiSK5u3SolelDW6dUBFex8C3/dtWi1mxnk1hqqCmF87dVHojMDV
+hPMSHwzb7DfEoaIMyxdBzNh4AWFjD6rpllZVekx7y77DqqwN5ZDGUkqncjP5hLtL
+UD13AQXqYo4RoVsS3qCqHTkT9vB2sRTyge5Eq+lSkTMIWlwSXteX7O3PPFz7FcVq
+IZu6ACHA6FKa7wcOLn6zV0UVLimyfL+MxGDOcHjnOmKRxNbGqNn/SlDalQmuq0gC
+NBu8fmjyq6XK4y/4Feh5OjUCAwEAAQ==
+-----END PUBLIC KEY-----
+"@
+$ReleaseSigningPublicKeyPem = if ([string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM)) { $DefaultReleaseSigningPublicKeyPem } else { $env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM -replace "\\n", "`n" }
 
 function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()

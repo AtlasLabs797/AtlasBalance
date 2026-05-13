@@ -1,5 +1,37 @@
 # Documentacion tecnica
 
+## 2026-05-13 - V-01.06 - CI locked restore y release firmado
+
+### Que cambio
+
+- `AtlasBalance.API.csproj` y `AtlasBalance.Watchdog.csproj` declaran `RuntimeIdentifiers=win-x64`.
+- `.github/workflows/ci.yml` restaura backend por proyectos concretos, ejecuta tests sobre `AtlasBalance.API.Tests.csproj` y audita paquetes por proyecto.
+- `Build-Release.ps1` deja de depender del restore de solucion para publicar runtime-specific; ahora restaura API y Watchdog por proyecto con `--locked-mode -r win-x64` y publica con `--no-restore`.
+- El script de release genera `.zip.sig` con RSA/SHA-256 mediante un firmador temporal .NET 8 cuando recibe `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- `Instalar-AtlasBalance.ps1` y `appsettings.Production.json.template` incluyen una clave publica de firma por defecto; `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM` sigue pudiendo sobrescribirla.
+- Tests backend de IA y tipos de cambio se ajustan a los mensajes saneados vigentes.
+
+### Por que
+
+GitHub Actions fallo en `dotnet restore --locked-mode` porque los lockfiles ya contenian dependencias para `win-x64`, pero los proyectos no declaraban ese RID. Eso no era un fallo de GitHub; era el repo contradiciendose a si mismo. De paso, publicar un ZIP sin `.sig` era inutil para el actualizador online: la app lo rechazaria y con razon.
+
+El restore de solucion tambien falla localmente sin error MSBuild concreto. Mantenerlo como gate principal seria mala ingenieria: CI ahora valida los tres proyectos reales y el script de release valida los dos publicables con RID.
+
+### Verificacion
+
+- `dotnet restore` por proyecto API/Watchdog/Test: OK.
+- Suite backend sin Docker/Testcontainers sobre `AtlasBalance.API.Tests.csproj`: OK, 223/223.
+- `Build-Release.ps1 -Version V-01.06`: OK con build frontend, restore locked, publish API/Watchdog y firma.
+- ZIP: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip`.
+- Firma: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip.sig`.
+- SHA256 ZIP: `95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1`.
+- Verificacion local de firma RSA/SHA-256: `SIGNATURE_OK`.
+
+### Pendiente real
+
+- La clave privada de firma debe vivir en un almacen seguro operativo o secreto de CI si se automatiza el release; no se versiona.
+- El E2E autenticado con PostgreSQL real/datos de volumen sigue siendo el gate para quitar la etiqueta RC/pre-release. Llamarlo final sin esa prueba seria maquillaje.
+
 ## 2026-05-12 - V-01.06 - Saneado de datos para entrega
 
 ### Que cambio

@@ -33,6 +33,58 @@ function Write-JsonFile {
     Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
 }
 
+function Invoke-ReleaseSigner {
+    param([string]$ZipPath, [string]$SignaturePath)
+
+    $signerRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("atlas-release-signer-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $signerRoot -Force | Out-Null
+    try {
+        $signerProject = Join-Path $signerRoot "AtlasReleaseSigner.csproj"
+        $signerProgram = Join-Path $signerRoot "Program.cs"
+        Set-Content -LiteralPath $signerProject -Encoding UTF8 -Value @'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+'@
+        Set-Content -LiteralPath $signerProgram -Encoding UTF8 -Value @'
+using System.Security.Cryptography;
+
+if (args.Length != 2)
+{
+    Console.Error.WriteLine("Usage: AtlasReleaseSigner <zipPath> <signaturePath>");
+    return 2;
+}
+
+var privateKeyPem = Environment.GetEnvironmentVariable("ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM");
+if (string.IsNullOrWhiteSpace(privateKeyPem))
+{
+    Console.Error.WriteLine("ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM is required.");
+    return 3;
+}
+
+using var rsa = RSA.Create();
+rsa.ImportFromPem(privateKeyPem.Replace("\\n", "\n"));
+var zipBytes = await File.ReadAllBytesAsync(args[0]);
+var signature = rsa.SignData(
+    zipBytes,
+    HashAlgorithmName.SHA256,
+    RSASignaturePadding.Pkcs1);
+await File.WriteAllBytesAsync(args[1], signature);
+return 0;
+'@
+
+        & dotnet run --project $signerProject --configuration Release -- $ZipPath $SignaturePath
+        if ($LASTEXITCODE -ne 0) { throw "Firma RSA del release fallo." }
+    } finally {
+        Remove-Item -LiteralPath $signerRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if (-not (Test-Path $apiProject) -or -not (Test-Path $watchdogProject)) {
     throw "No se encontraron los proyectos .NET desde $repoRoot."
 }
@@ -55,8 +107,11 @@ try {
     Pop-Location
 }
 
-& dotnet restore (Join-Path $repoRoot "backend\AtlasBalance.sln") --locked-mode
-if ($LASTEXITCODE -ne 0) { throw "dotnet restore --locked-mode fallo." }
+& dotnet restore $apiProject --locked-mode -r $Runtime
+if ($LASTEXITCODE -ne 0) { throw "dotnet restore API --locked-mode fallo." }
+
+& dotnet restore $watchdogProject --locked-mode -r $Runtime
+if ($LASTEXITCODE -ne 0) { throw "dotnet restore Watchdog --locked-mode fallo." }
 
 if (Test-Path -LiteralPath $apiWwwroot) {
     Remove-Item -LiteralPath $apiWwwroot -Recurse -Force -ErrorAction Stop
@@ -70,6 +125,7 @@ Copy-DirectoryContents -Source (Join-Path $frontendPath "dist") -Target $apiWwwr
 & dotnet publish $apiProject `
     -c $Configuration `
     -r $Runtime `
+    --no-restore `
     --self-contained true `
     -p:PublishSingleFile=false `
     -p:InformationalVersion=$Version `
@@ -79,6 +135,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish API fallo." }
 & dotnet publish $watchdogProject `
     -c $Configuration `
     -r $Runtime `
+    --no-restore `
     --self-contained true `
     -p:PublishSingleFile=false `
     -p:InformationalVersion=$Version `
@@ -141,20 +198,8 @@ Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -F
 $signaturePath = "$zipPath.sig"
 Remove-Item -LiteralPath $signaturePath -Force -ErrorAction SilentlyContinue
 if (-not [string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM)) {
-    $rsa = [System.Security.Cryptography.RSA]::Create()
-    try {
-        $privateKeyPem = $env:ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM -replace "\\n", "`n"
-        $rsa.ImportFromPem($privateKeyPem)
-        $zipBytes = [System.IO.File]::ReadAllBytes($zipPath)
-        $signature = $rsa.SignData(
-            $zipBytes,
-            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
-        [System.IO.File]::WriteAllBytes($signaturePath, $signature)
-        Write-Host "Firma generada: $signaturePath" -ForegroundColor Green
-    } finally {
-        $rsa.Dispose()
-    }
+    Invoke-ReleaseSigner -ZipPath $zipPath -SignaturePath $signaturePath
+    Write-Host "Firma generada: $signaturePath" -ForegroundColor Green
 } else {
     if (-not $AllowUnsignedLocal) {
         Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue

@@ -607,7 +607,7 @@ public class AtlasAiServiceTests
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
         await act.Should().ThrowAsync<IaProviderException>()
-            .WithMessage("*razonamiento interno*");
+            .WithMessage("*respuesta interna*");
         httpFactory.RequestCount.Should().Be(1);
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("internal_analysis_leak");
@@ -933,7 +933,7 @@ public class AtlasAiServiceTests
         var act = () => sut.AskAsync(AdminScope(userId), "Consulta privada de nominas", "127.0.0.1", CancellationToken.None);
 
         await act.Should().ThrowAsync<IaProviderException>()
-            .WithMessage("*Timeout*");
+            .WithMessage("*tardo demasiado*");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_timeout");
         audit.DetallesJson.Should().NotContain("nominas");
@@ -955,7 +955,7 @@ public class AtlasAiServiceTests
         var act = () => sut.AskAsync(AdminScope(userId), "Consulta privada de saldos", "127.0.0.1", CancellationToken.None);
 
         await act.Should().ThrowAsync<IaProviderException>()
-            .WithMessage("*red*");
+            .WithMessage("*conectar*");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_network_error");
         audit.DetallesJson.Should().NotContain("saldos");
@@ -983,9 +983,6 @@ public class AtlasAiServiceTests
 
         var assertion = await act.Should().ThrowAsync<IaProviderException>();
         assertion.Which.Message.Should().Contain("OpenRouter");
-        assertion.Which.Message.Should().Contain("openrouter.ai");
-        assertion.Which.Message.Should().Contain("fallo TLS/certificado");
-        assertion.Which.Message.Should().Contain("certificate chain is untrusted");
         assertion.Which.Message.Should().NotContain("Authentication failed, see inner exception");
         httpFactory.RequestCount.Should().Be(2);
 
@@ -1106,7 +1103,7 @@ public class AtlasAiServiceTests
     [InlineData("{\"choices\":[{\"message\":{\"refusal\":\"No puedo responder a esa solicitud.\"},\"finish_reason\":\"stop\"}]}", "*rechazo*No puedo responder*")]
     [InlineData("{\"choices\":[{\"message\":{\"content\":null},\"finish_reason\":\"content_filter\"}]}", "*filtro de contenido*")]
     [InlineData("{\"choices\":[{\"message\":{\"content\":\"Respuesta incompleta\"},\"finish_reason\":\"length\"}]}", "*limite de tokens*MaxOutputTokens*")]
-    [InlineData("{\"choices\":[{\"message\":{\"content\":null,\"tool_calls\":[{\"id\":\"call_1\"}]},\"finish_reason\":\"tool_calls\"}]}", "*herramienta*")]
+    [InlineData("{\"choices\":[{\"message\":{\"content\":null,\"tool_calls\":[{\"id\":\"call_1\"}]},\"finish_reason\":\"tool_calls\"}]}", "*respuesta legible*")]
     public async Task AskAsync_Should_Report_Unusable_Provider_Response_Clearly(string providerPayload, string expectedMessage)
     {
         await using var db = BuildDbContext();

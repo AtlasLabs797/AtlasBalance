@@ -2,14 +2,6 @@
 
 ## Abiertos
 
-### 2026-05-12 - V-01.06 - Publicacion final sin paquete firmado V-01.06
-
-- Contexto: `Atlas Balance/Atlas Balance Release` no contiene un artefacto `AtlasBalance-V-01.06-win-x64.zip` publicable y el entorno actual no tiene `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
-- Impacto: no se puede publicar un release online verificable. Generar un ZIP con `-AllowUnsignedLocal` serviria para pruebas locales, no para publicar.
-- Accion pendiente: ejecutar `scripts/Build-Release.ps1 -Version V-01.06` en un entorno con clave privada de firma y adjuntar ZIP + `.zip.sig` al release.
-- Nota 2026-05-13: se genero ZIP local unsigned `AtlasBalance-V-01.06-win-x64.zip` con SHA256 `443E6066E669EC3050161FC7D73B54A2CFBAEBEBCF5FCA83651594A1E86A6F43`; sigue sin ser publicable porque falta `.zip.sig`.
-- Estado: abierto. Bloquea publicacion final.
-
 ### 2026-05-10 - V-01.06 - Pendientes altos tras auditoria final
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
@@ -26,6 +18,22 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-05-13 - V-01.06 - Cerrado - GitHub Actions fallaba en restore locked
+
+- Contexto: PR #6 fallaba en `dotnet restore "./Atlas Balance/backend/AtlasBalance.sln" --locked-mode`.
+- Causa: lockfiles con target `win-x64` y proyectos API/Watchdog sin `RuntimeIdentifiers`; ademas, el restore de solucion es un gate opaco en este repo.
+- Solucion: declarar `RuntimeIdentifiers=win-x64` en API/Watchdog y cambiar CI a restore/test/audit por proyectos concretos.
+- Verificacion: restores por proyecto API/Watchdog/Test OK; suite backend sin Docker/Testcontainers 223/223 OK.
+- Estado: cerrado. La suite completa Docker/Testcontainers se valida en GitHub Actions tras el push.
+
+### 2026-05-13 - V-01.06 - Cerrado - Publicacion bloqueada por paquete sin firma
+
+- Contexto: `Atlas Balance/Atlas Balance Release` solo tenia un ZIP local sin `.zip.sig`; el actualizador online rechaza bien cualquier paquete sin firma detached.
+- Impacto: no se podia publicar un release online verificable. Subir ZIP sin firma habria roto el flujo de actualizacion de la propia app.
+- Solucion: generar el paquete con `Build-Release.ps1 -Version V-01.06` usando clave privada de firma en el entorno, producir `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`, y dejar la clave publica por defecto en instalador/plantilla productiva.
+- Verificacion: SHA256 del ZIP firmado `95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1`; firma RSA/SHA-256 verificada localmente como `SIGNATURE_OK`.
+- Estado: cerrado para el bloqueo de firma. Sigue abierto el E2E autenticado con PostgreSQL real/datos de volumen si se quiere llamar release final.
 
 ### 2026-05-12 - V-01.06 - Cerrado - Documentacion de publicacion apuntaba a V-01.05
 

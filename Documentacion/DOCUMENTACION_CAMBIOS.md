@@ -8,21 +8,34 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
-## 2026-05-13 - Preparacion de paquete y publicacion V-01.06
+## 2026-05-13 - Correccion CI y paquete firmado V-01.06
 
 **Version:** V-01.06
 
 **Trabajo realizado:**
 - Se usa subagentes de solo lectura para confirmar version, carpeta de release, estado Git, exclusiones y riesgos de secretos.
 - Se refuerzan `.gitignore` raiz y `Atlas Balance/.gitignore` para excluir artefactos locales de verificacion: `.codex-verify`, `.learnings`, `backend_log.txt` y `.codex-test-obj`.
-- Se genera el paquete local `AtlasBalance-V-01.06-win-x64.zip` en `Atlas Balance/Atlas Balance Release`.
-- El paquete queda como artefacto local no publicable porque no existe `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` y por tanto no se genera `AtlasBalance-V-01.06-win-x64.zip.sig`.
-- Se mantiene bloqueada la subida del asset a GitHub Release hasta generar ZIP firmado. Subirlo sin firma seria romper el actualizador online.
+- Se corrige el fallo de GitHub Actions en `dotnet restore --locked-mode`: los lockfiles de API y Watchdog ya contenian `win-x64`, pero los proyectos no declaraban `RuntimeIdentifiers`.
+- El workflow CI pasa de restore/test/audit sobre solucion a proyectos concretos; la solucion local falla de forma opaca en restore, mientras los proyectos publicables y tests restauran correctamente.
+- `Build-Release.ps1` restaura API y Watchdog por proyecto con `-r win-x64`, publica con `--no-restore` y firma el ZIP mediante un firmador temporal .NET 8 para evitar la limitacion de Windows PowerShell 5 con PEM.
+- El instalador y la plantilla productiva incluyen la clave publica de firma por defecto; la clave privada sigue fuera del repositorio.
+- Se actualizan aserciones backend que esperaban textos antiguos de IA y tipos de cambio.
+- Se genera paquete firmado publicable: `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig` en `Atlas Balance/Atlas Balance Release`.
 
 **Archivos tocados principales:**
 - `.gitignore`
 - `Atlas Balance/.gitignore`
+- `.github/workflows/ci.yml`
+- `Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/TiposCambioServiceTests.cs`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
 - `Documentacion/Versiones/v-01.06.md`
 - `Documentacion/REGISTRO_BUGS.md`
 
@@ -30,22 +43,31 @@ Regla de trabajo desde ahora:
 - `git status --short --branch`: rama `V-01.06`, worktree con cambios masivos versionables.
 - `git ls-files -o --exclude-standard`: usado para separar nuevos archivos versionables de basura local.
 - `rg` de secretos de alta confianza sobre rutas publicables: sin hallazgos.
-- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.06 -AllowUnsignedLocal`: OK fuera del sandbox.
-- `Get-FileHash -Algorithm SHA256 AtlasBalance-V-01.06-win-x64.zip`: `443E6066E669EC3050161FC7D73B54A2CFBAEBEBCF5FCA83651594A1E86A6F43`.
+- `gh pr view 6` y `inspect_pr_checks.py --repo "." --pr "6" --json`: CI fallaba en restore locked por RID `win-x64`.
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln" --locked-mode -v normal`: falla localmente sin errores MSBuild concretos; CI se cambia a restore por proyecto para eliminar esa dependencia fragil.
+- `dotnet restore` por proyecto API/Watchdog/Test: OK.
+- `dotnet test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -c Release --no-restore --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" -v minimal`: OK, 223/223.
+- `dotnet list <proyecto> package --vulnerable --include-transitive`: bloqueado localmente por conexion a `127.0.0.1:9`; se registra incidencia y se mantiene como gate de GitHub Actions.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.06`: OK fuera del sandbox con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` definido en el entorno.
+- Verificador temporal .NET 8 de firma RSA/SHA-256: `SIGNATURE_OK`.
+- `Get-FileHash -Algorithm SHA256 AtlasBalance-V-01.06-win-x64.zip`: `95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1`.
 
 **Resultado de verificacion:**
 - `npm ci`: OK, 0 vulnerabilidades reportadas.
 - `npm run build`: OK.
-- `dotnet restore --locked-mode`: OK.
-- `dotnet publish` API y Watchdog win-x64: OK; queda warning conocido `CS0618` de `PostgreSqlStorage`.
+- `dotnet restore --locked-mode` por proyecto: OK.
+- Suite backend sin Docker/Testcontainers: OK, 223/223.
+- Auditoria NuGet local: bloqueada por proxy/red local `127.0.0.1:9`; GitHub Actions la ejecuta en runner limpio.
+- `dotnet publish` API y Watchdog win-x64: OK.
 - ZIP generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip`.
-- Firma: ausente por falta de clave privada de release.
+- Firma generada: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip.sig`.
+- Firma verificada: OK.
 - `Atlas Balance/Atlas Balance Release/*` sigue ignorado por Git salvo `.gitkeep`.
 
 **Pendientes:**
-- Generar release publicable en un entorno con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
 - Subir a GitHub Release solo `AtlasBalance-V-01.06-win-x64.zip` junto con `AtlasBalance-V-01.06-win-x64.zip.sig`.
-- Mantenerlo como pre-release/RC si no se ejecuta el E2E autenticado con PostgreSQL real y datos de volumen.
+- Mantenerlo como pre-release/RC mientras no se ejecute el E2E autenticado con PostgreSQL real y datos de volumen.
+- Mover la clave privada de firma a un almacen seguro operativo o secreto de CI si se automatiza el release. No va en Git, punto.
 
 ## 2026-05-12 - Saneado de datos para entrega
 

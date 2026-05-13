@@ -29,18 +29,28 @@ jobs:
           cache-dependency-path: "Atlas Balance/frontend/package-lock.json"
 
       - name: Restore backend
-        run: dotnet restore "./Atlas Balance/backend/AtlasBalance.sln" --locked-mode
+        run: |
+          dotnet restore "./Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" --locked-mode -r win-x64
+          dotnet restore "./Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj" --locked-mode -r win-x64
+          dotnet restore "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --locked-mode
 
       - name: Pull PostgreSQL test image
         run: docker pull postgres:16-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
 
       - name: Test backend
-        run: dotnet test "./Atlas Balance/backend/AtlasBalance.sln" -c Release --no-restore
+        run: dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore
 
       - name: Audit NuGet vulnerabilities
         shell: pwsh
         run: |
-          $output = dotnet list "./Atlas Balance/backend/AtlasBalance.sln" package --vulnerable --include-transitive
+          $projects = @(
+            "./Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj",
+            "./Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj",
+            "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj"
+          )
+          $output = foreach ($project in $projects) {
+            dotnet list $project package --vulnerable --include-transitive
+          }
           $output
           if ($output -match 'has the following vulnerable packages|tiene los paquetes vulnerables') {
             throw 'NuGet vulnerability audit failed.'

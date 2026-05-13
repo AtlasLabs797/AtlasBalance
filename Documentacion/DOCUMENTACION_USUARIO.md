@@ -61,9 +61,16 @@ Paquete esperado para la version actual `V-01.06`:
 
 ```text
 AtlasBalance-V-01.06-win-x64.zip
+AtlasBalance-V-01.06-win-x64.zip.sig
 ```
 
-El SHA256 debe calcularse despues de generar el ZIP firmado. No reutilices hashes ni paquetes de `V-01.05` para publicar `V-01.06`.
+SHA256 del ZIP firmado generado el 2026-05-13:
+
+```text
+95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1
+```
+
+No reutilices hashes ni paquetes de `V-01.05` para publicar `V-01.06`.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
@@ -138,7 +145,7 @@ Tambien puedes actualizar desde la propia app:
 
 La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena.
 
-Para que la actualizacion online funcione, la instalacion debe tener configurada la clave publica de firma en `UpdateSecurity:ReleaseSigningPublicKeyPem` o en `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Sin esa clave, la app rechaza paquetes online. Es incomodo una vez; confiar en ZIPs sin firma seria peor.
+Para que la actualizacion online funcione, la instalacion debe tener configurada la clave publica de firma en `UpdateSecurity:ReleaseSigningPublicKeyPem` o en `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Desde el paquete firmado `V-01.06`, el instalador escribe una clave publica por defecto si no se proporciona override. Sin clave publica valida, la app rechaza paquetes online. Es incomodo una vez; confiar en ZIPs sin firma seria peor.
 
 ## Seguridad de PostgreSQL
 

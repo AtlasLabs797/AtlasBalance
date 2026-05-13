@@ -141,7 +141,7 @@ public class TiposCambioServiceTests
         var result = await sut.SincronizarTiposCambioAsync(CancellationToken.None);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("API key");
+        result.ErrorMessage.Should().Contain("clave API");
     }
 
     [Fact]

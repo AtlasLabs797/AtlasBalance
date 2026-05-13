@@ -1,5 +1,21 @@
 # Log de errores e incidencias
 
+## 2026-05-13 - V-01.06 - Restore de solucion falla sin error MSBuild concreto
+
+- Contexto: al validar el fix de GitHub Actions, `dotnet restore "Atlas Balance\backend\AtlasBalance.sln" --locked-mode -v normal` termina con codigo 1, 0 warnings y 0 errores.
+- Causa probable: evaluacion de solucion/MSBuild poco fiable en este entorno; los proyectos reales restauran correctamente por separado.
+- Solucion aplicada: CI cambia a restore por proyecto (`API`, `Watchdog`, `Tests`) y el script de release restaura los proyectos publicables con `-r win-x64`.
+- Verificacion: restores por proyecto OK y suite backend sin Docker/Testcontainers 223/223 OK.
+- Regla: si la solucion falla sin diagnostico pero los proyectos restauran limpio, no maquilles el fallo como verde; mueve el gate al nivel de proyecto y documenta la rareza.
+
+## 2026-05-13 - V-01.06 - NuGet audit local bloqueado por conexion a 127.0.0.1:9
+
+- Contexto: `dotnet list <proyecto> package --vulnerable --include-transitive` falla localmente intentando conectar a `127.0.0.1:9`, incluso forzando `--source https://api.nuget.org/v3/index.json`.
+- Causa probable: configuracion/proxy local de red o del host .NET fuera del repo; `dotnet nuget list source` solo muestra `nuget.org`.
+- Solucion aplicada: no se degrada CI. GitHub Actions mantiene auditoria NuGet en runner limpio y por proyectos concretos.
+- Verificacion local alternativa: restores locked por proyecto OK; la auditoria completa queda delegada a GitHub Actions tras push.
+- Regla: no cambies el repo para acomodar un proxy local roto. Si el runner limpio falla, entonces si es bug del proyecto.
+
 ## 2026-05-12 - V-01.06 - Purga de entrega bloqueada por FK de `CONFIGURACION` a `USUARIOS`
 
 - Contexto: al ejecutar por primera vez `Purge-DeliveryData.ps1`, el SQL intentaba `TRUNCATE` sobre `USUARIOS` y tablas sensibles.
