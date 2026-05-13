@@ -62,10 +62,13 @@ Regla de trabajo desde ahora:
 - ZIP generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip`.
 - Firma generada: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.06-win-x64.zip.sig`.
 - Firma verificada: OK.
+- GitHub Actions en rama/PR: CI y CodeQL OK para `a82639f`.
+- GitHub Actions del tag `V-01.06-win-x64`: CI OK.
+- Release publicado como pre-release: `https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-01.06-win-x64`.
+- Assets subidos: `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`.
 - `Atlas Balance/Atlas Balance Release/*` sigue ignorado por Git salvo `.gitkeep`.
 
 **Pendientes:**
-- Subir a GitHub Release solo `AtlasBalance-V-01.06-win-x64.zip` junto con `AtlasBalance-V-01.06-win-x64.zip.sig`.
 - Mantenerlo como pre-release/RC mientras no se ejecute el E2E autenticado con PostgreSQL real y datos de volumen.
 - Mover la clave privada de firma a un almacen seguro operativo o secreto de CI si se automatiza el release. No va en Git, punto.
 
