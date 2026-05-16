@@ -1,5 +1,25 @@
 # Documentacion tecnica
 
+## 2026-05-16 - V-01.07 - Apertura de version
+
+### Que cambio
+
+- Se crea la rama local `V-01.07`.
+- Runtime backend pasa a `1.7.0` / `V-01.07` en `Directory.Build.props`.
+- Runtime frontend pasa a `1.7.0` / `V-01.07` en `package.json` y `package-lock.json`.
+- `Atlas Balance/VERSION`, scripts de instalacion/release, seed de `app_version` y documentacion viva pasan a `V-01.07`.
+- Se crea `Documentacion/Versiones/v-01.07.md` y `version_actual.md` declara `V-01.07` como version activa.
+
+### Por que
+
+Trabajar una version nueva sin mover todas las fuentes runtime es una forma barata de fabricar builds que mienten. Peor: si el script de release siguiera por defecto en `V-01.06`, alguien acabaria publicando un paquete con nombre viejo y binarios nuevos.
+
+### Verificacion
+
+- Rama local `V-01.07` creada.
+- Barrido de fuentes canonicas confirma `V-01.07` / `1.7.0` en runtime y documentacion de version.
+- No se ha generado paquete release `V-01.07`; el SHA queda pendiente hasta firmar el ZIP.
+
 ## 2026-05-13 - V-01.06 - CI locked restore y release firmado
 
 ### Que cambio
@@ -2992,3 +3012,41 @@ La vista anterior era una tabla editable, pero no una hoja de calculo convincent
 - `npm.cmd run build`: OK.
 - `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`: OK.
 - Prueba visual/funcional Playwright con app real y APIs mockeadas en `/extractos`: OK; 120 filas, scroll horizontal/vertical, cabecera y primera columna sticky, foco de celda, filtros, panel de columnas y consola sin errores.
+
+## 2026-05-16 - V-01.07 - Auditoria correctiva de seguridad, estabilidad y simplificacion
+
+### Usuarios y continuidad administrativa
+
+`UsuariosController` ahora impide que el sistema quede sin administrador activo. La proteccion cubre desactivacion, cambio de rol fuera de `ADMIN`, eliminacion del ultimo admin y auto-democion/auto-desactivacion del admin autenticado.
+
+### Watchdog y procesos externos
+
+`WatchdogSettings:BaseUrl` se resuelve mediante validacion local obligatoria. El cliente solo puede llamar a `localhost`, loopback IPv4/IPv6 o host vacio. Esto evita que el secreto `X-Watchdog-Secret` pueda enviarse a un destino remoto por mala configuracion.
+
+`BackupService` y `WatchdogOperationsService` aplican timeout de 30 minutos a procesos externos (`pg_dump`, `pg_restore`, scripts de actualizacion) y matan el arbol de procesos si el comando se cuelga. La salida se recoge completa para mantener diagnostico util.
+
+`WatchdogController` valida cuerpos nulos y rutas invalidas antes de delegar en el servicio, devolviendo `400` en vez de errores no controlados.
+
+### Autenticacion y permisos frontend
+
+`AuthService.BuildAuthResultAsync` agrupa preferencias por cuenta en diccionario para evitar busquedas repetidas por cada permiso.
+
+El timeout de sesion del frontend separa actividad real de render visual: `lastActivityRef` se actualiza inmediatamente y el debounce solo reduce ruido de estado/UI. Las pantallas que consumen helpers estables del store de permisos se suscriben tambien a `permisos` para re-renderizar cuando cambia el estado.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Tests focalizados de usuarios/watchdog: 14/14 OK.
+- Suite backend sin Testcontainers: 229/229 OK.
+- `npm.cmd run build`: OK.
+- `frontend/dist` sincronizado con `backend/src/AtlasBalance.API/wwwroot` mediante copia no destructiva.
+- `npm.cmd audit --audit-level=critical`: 0 vulnerabilidades.
+- `dotnet list AtlasBalance.API.Tests.csproj package --vulnerable --include-transitive`: 0 vulnerabilidades.
+
+### Riesgos tecnicos pendientes
+
+- `backup_path`/`export_path` siguen dependiendo de configuracion admin; la allowlist de raices es deseable pero puede romper instalaciones existentes.
+- Los paquetes de actualizacion todavia necesitan limites de tamano y validacion de contenido antes de extraer.
+- Importacion conserva riesgos de fingerprint dependiente del indice de fila y transacciones no garantizadas con `finally`.
+- El calculo de saldo actual no esta completamente unificado entre dashboard/extractos/cuentas.

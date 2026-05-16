@@ -8,6 +8,136 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-16 - Apertura de version V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Creada la rama local `V-01.07`.
+- Actualizada la version activa del proyecto de `V-01.06` a `V-01.07`.
+- Actualizadas las fuentes runtime a `1.7.0` / `V-01.07`.
+- Actualizados scripts de release/instalacion, seed de `app_version` y documentacion viva que apunta al paquete actual.
+- Creado `Documentacion/Versiones/v-01.07.md` y cerrada `V-01.06` como base anterior.
+
+**Archivos tocados principales:**
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/install.ps1`
+- `Atlas Balance/README_RELEASE.md`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-01.06.md`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `git status --short --branch`
+- `Get-Content` sobre `CLAUDE.md`, `version_actual.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md` y archivos de version.
+- `git switch -c V-01.07`
+- Barridos `rg`/`Select-String` de `V-01.06`, `V-01.07`, `1.6.0`, `1.7.0` y paquetes `AtlasBalance-V-*`.
+
+**Resultado de verificacion:**
+- Rama activa: `V-01.07`.
+- Fuentes runtime y version actual apuntan a `V-01.07` / `1.7.0`.
+- No se ejecuto build ni se genero ZIP: es una apertura de version, no un release firmado.
+
+**Pendientes:**
+- Generar y firmar `AtlasBalance-V-01.07-win-x64.zip` cuando toque publicar.
+- Ejecutar validaciones de build/test cuando haya cambios funcionales o antes de release.
+
+## 2026-05-16 - Instalacion auditada de shadcn/ui y Tailwind CSS
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Se comprueba que `Skills/Diseno/shadcn-ui` ya existia y apuntaba al remoto correcto `https://github.com/shadcn-ui/ui.git`; no se crea duplicado.
+- Se clona `tailwindlabs/tailwindcss` en `Skills/Diseno/tailwindcss`.
+- Se instalan dependencias de ambos repos con `corepack pnpm install --ignore-scripts`.
+- Se auditan scripts, secretos, prompt injection, ejecucion de procesos y dependencias vulnerables.
+- Se registra `shadcn/ui` y `Tailwind CSS` en `Documentacion/SKILLS_LOCALES.md` como repos de referencia, no como skills canonicas autoejecutables.
+
+**Archivos tocados:**
+- `Skills/Diseno/shadcn-ui`
+- `Skills/Diseno/tailwindcss`
+- `Documentacion/SKILLS_LOCALES.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados:**
+- `git remote -v` y `git rev-parse HEAD` en `Skills/Diseno/shadcn-ui`.
+- `git clone https://github.com/tailwindlabs/tailwindcss.git .\Skills\Diseno\tailwindcss`.
+- `corepack pnpm install --ignore-scripts --reporter append-only` en ambos repos.
+- `corepack pnpm audit --json` en ambos repos.
+- `corepack pnpm run build` en ambos repos.
+- `corepack pnpm --filter=shadcn build` y `corepack pnpm --filter=shadcn typecheck`.
+- `corepack pnpm --filter=tailwindcss build` y `corepack pnpm --filter=tailwindcss lint`.
+- Barridos `rg` sobre secretos, prompt injection, lifecycle scripts, shell execution y HTML unsafe.
+
+**Resultado de verificacion:**
+- `shadcn-ui` ya instalado previamente, commit `0126502236750ce2d68b99517f14c6a307843a76`; sin duplicados detectados.
+- `tailwindcss` clonado en commit `36417cbd12e99ce77676bd1d4589e8f07f1853c1`.
+- Barridos de secretos reales: sin claves reales de alta confianza detectadas.
+- Barridos de prompt injection: sin instrucciones maliciosas tipo override/jailbreak detectadas.
+- `shadcn` package: build OK y typecheck OK.
+- `tailwindcss` package: build OK.
+- `shadcn-ui` audit completo: `1 critical`, `46 high`, `55 moderate`, `15 low`; principales modulos: `basic-ftp`, `cross-spawn`, `tar-fs`, `glob`, `axios`, `@modelcontextprotocol/sdk`, `rollup`, `hono`, `flatted`.
+- `tailwindcss` audit completo: `0 critical`, `10 high`, `10 moderate`, `1 low`; principales modulos: `glob`, `minimatch`, `rollup`, `picomatch`, `fast-uri`.
+
+**Bloqueos y pendientes:**
+- Build completo de `shadcn-ui` bloqueado porque `apps/v4` ejecuta `bun run ./scripts/build-registry.mts` y `bun` no esta instalado.
+- Build completo de `tailwindcss` bloqueado porque `@tailwindcss/oxide` requiere Rust/Cargo y esta maquina no tiene `cargo`, `rustup` ni toolchain Rust disponible.
+- `tailwindcss` lint filtrado falla por tipos dependientes de `@tailwindcss/oxide`, Bun y libs de entorno; no es verde mientras no se cierre el build Rust.
+- No ejecutar ni exponer apps/dev servers de estos repos hasta corregir vulnerabilidades SCA y prerequisitos. Meter Tailwind/shadcn en Atlas Balance por inercia seria una mala decision: el stack del producto ya decidio CSS variables propias.
+
+## 2026-05-16 - Instalacion auditada de 21st SDK
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Se clona `21st-dev/21st-sdk` en `Skills/Diseno/21st-sdk`.
+- Se instala el monorepo con `pnpm@9.15.4` mediante Corepack y `--ignore-scripts` para evitar lifecycle scripts arbitrarios.
+- Se genera `pnpm-lock.yaml`, ausente en el repo upstream, para dejar la instalacion reproducible localmente.
+- Se corrige el build de `@21st-sdk/react` agregando `@types/node` como `devDependency`; el paquete usaba `require` en `src/tools/tool-router.ts` y fallaba al generar tipos.
+- Se registra `21st SDK` en `Documentacion/SKILLS_LOCALES.md` como repo de referencia, no como skill canonica autoejecutable.
+
+**Archivos tocados:**
+- `Skills/Diseno/21st-sdk`
+- `Skills/Diseno/21st-sdk/packages/react/package.json`
+- `Skills/Diseno/21st-sdk/pnpm-lock.yaml`
+- `Documentacion/SKILLS_LOCALES.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados:**
+- `git clone https://github.com/21st-dev/21st-sdk.git .\Skills\Diseno\21st-sdk`
+- `corepack prepare pnpm@9.15.4 --activate`
+- `corepack pnpm install --ignore-scripts`
+- `corepack pnpm --filter @21st-sdk/react add -D @types/node --ignore-scripts`
+- `corepack pnpm run build`
+- `corepack pnpm run ts:check`
+- `corepack pnpm audit --json`
+- Barridos `rg` sobre secretos, prompt injection, lifecycle scripts, shell execution y HTML unsafe.
+
+**Resultado de verificacion:**
+- Commit clonado: `58916c745151e5883bc9d731ace509b37c9d1376`.
+- Build de paquetes SDK OK: `@21st-sdk/agent`, `@21st-sdk/cli`, `@21st-sdk/node`, `@21st-sdk/react`, `@21st-sdk/nextjs`.
+- `ts:check` de scope `packages/*` OK.
+- Barrido de prompt injection: sin instrucciones maliciosas tipo override/jailbreak detectadas.
+- Barrido de secretos reales: sin claves reales detectadas; solo placeholders `replace_me` en `.env.example`.
+- Barrido SCA completo: `pnpm audit` detecta `1 critical`, `19 high`, `31 moderate`, `7 low`, principalmente en `apps/agents-web` y dependencias transitivas como `form-data`, `next`, `tar`, `node-fetch`, `lodash` y `minimatch`.
+- No se ejecutaron `dev`, relay, proxy ni `apps/agents-web` porque requieren secretos, red/tuneles y procesos persistentes.
+
+**Pendientes:**
+- No desplegar ni exponer `apps/agents-web`, `apps/relay` o `apps/proxy` sin actualizar dependencias vulnerables y revisar configuracion de secretos.
+- Si se quiere usarlo en Atlas Balance, aislar solo los paquetes necesarios; meter el monorepo completo en runtime de producto seria una mala decision.
+
 ## 2026-05-13 - Correccion CI y paquete firmado V-01.06
 
 **Version:** V-01.06
@@ -13875,3 +14005,56 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 
 **Pendientes:**
 - El release sigue bloqueado hasta ejecutar y pasar los dos tests Testcontainers con Docker Desktop operativo.
+
+## 2026-05-16 - Auditoria correctiva V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se bloquea desactivar, degradar o eliminar al ultimo administrador activo.
+- Se bloquea que un administrador se quite a si mismo el acceso de administrador.
+- El cliente Watchdog ya no acepta `WatchdogSettings:BaseUrl` hacia hosts remotos; solo `localhost`, loopback IPv4/IPv6 o host vacio.
+- Watchdog rechaza cuerpos nulos y rutas invalidas en restauracion/actualizacion en vez de terminar en 500.
+- `pg_dump`, `pg_restore` y procesos de actualizacion del Watchdog tienen timeout defensivo de 30 minutos y matan el arbol de procesos si se cuelgan.
+- `AuthService` evita busquedas repetidas de preferencias por permiso y pasa a lookup por diccionario.
+- El timeout de sesion del frontend actualiza la actividad real inmediatamente; el debounce solo retrasa cambios visuales.
+- Las vistas que leen helpers de permisos se suscriben tambien a `permisos`, evitando permisos obsoletos tras cambios de estado.
+- Se agrega cobertura de regresion para usuarios/admin unico, WatchdogController y WatchdogClientService.
+- Se recompila frontend y se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/WatchdogClientService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Controllers/WatchdogController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogClientServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogControllerTests.cs`
+- `Atlas Balance/frontend/src/hooks/useSessionTimeout.ts`
+- `Atlas Balance/frontend/src/App.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Atlas Balance/frontend/src/pages/TitularesPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardTitularPage.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/pages/RevisionPage.tsx`
+
+**Verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~UsuariosControllerTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogControllerTests|FullyQualifiedName~WatchdogOperationsServiceTests"`: 14/14 OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"`: 229/229 OK.
+- `npm.cmd run build`: OK.
+- Copia no destructiva de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`: OK.
+- `npm.cmd audit --audit-level=critical`: 0 vulnerabilidades.
+- `dotnet list AtlasBalance.API.Tests.csproj package --vulnerable --include-transitive`: 0 vulnerabilidades.
+
+**Pendientes:**
+- Ejecutar suite completa con Docker/Testcontainers operativo antes de release.
+- Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
+- Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
+- Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.

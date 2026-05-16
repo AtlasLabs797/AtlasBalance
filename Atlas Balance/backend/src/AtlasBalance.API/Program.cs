@@ -116,8 +116,7 @@ builder.Services.AddHttpClient("exchange-rate-api", client =>
 builder.Services.AddHttpClient("watchdog-client", (sp, client) =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    var baseUrl = config["WatchdogSettings:BaseUrl"] ?? "http://localhost:5001";
-    client.BaseAddress = new Uri(baseUrl);
+    client.BaseAddress = ResolveWatchdogBaseUri(config["WatchdogSettings:BaseUrl"]);
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 var useAiSystemProxy = builder.Configuration.GetValue("Ia:UseSystemProxy", false);
@@ -446,6 +445,32 @@ static IWebProxy CreateAiProxy(string? proxyUrl)
     {
         Credentials = CredentialCache.DefaultCredentials
     };
+}
+
+static Uri ResolveWatchdogBaseUri(string? configuredBaseUrl)
+{
+    var rawBaseUrl = string.IsNullOrWhiteSpace(configuredBaseUrl)
+        ? "http://localhost:5001"
+        : configuredBaseUrl.Trim();
+
+    if (!Uri.TryCreate(rawBaseUrl, UriKind.Absolute, out var uri) ||
+        uri.Scheme is not ("http" or "https") ||
+        !IsLoopbackHost(uri.Host))
+    {
+        throw new InvalidOperationException("WatchdogSettings:BaseUrl debe apuntar a localhost/loopback.");
+    }
+
+    return uri;
+}
+
+static bool IsLoopbackHost(string host)
+{
+    if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    return IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address);
 }
 
 static DbContextOptions<AppDbContext> CreateDbContextOptions(string connectionString) =>

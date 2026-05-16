@@ -33,6 +33,7 @@ export default function DashboardTitularPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
+  usePermisosStore((state) => state.permisos);
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>(() => parsePeriodo(searchParams.get('periodo')));
   const [divisaPrincipal, setDivisaPrincipal] = useState(() => searchParams.get('divisa') ?? 'EUR');

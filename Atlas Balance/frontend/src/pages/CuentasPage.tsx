@@ -138,6 +138,7 @@ export default function CuentasPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
+  usePermisosStore((state) => state.permisos);
   const isAdmin = usuario?.rol === 'ADMIN';
   const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
 

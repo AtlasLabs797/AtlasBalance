@@ -117,6 +117,7 @@ export default function CuentaDetailPage() {
   const canAddInCuenta = usePermisosStore((state) => state.canAddInCuenta);
   const canImportInCuenta = usePermisosStore((state) => state.canImportInCuenta);
   const getColumnasEditables = usePermisosStore((state) => state.getColumnasEditables);
+  usePermisosStore((state) => state.permisos);
 
   const [summary, setSummary] = useState<CuentaResumenKpi | null>(null);
   const [rows, setRows] = useState<Extracto[]>([]);

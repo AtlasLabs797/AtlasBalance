@@ -560,9 +560,18 @@ public sealed class AuthService : IAuthService
         var preferencias = await _dbContext.PreferenciasUsuarioCuenta
             .Where(p => p.UsuarioId == usuario.Id)
             .ToListAsync(cancellationToken);
+        var preferenciasByCuentaId = preferencias
+            .Where(p => p.CuentaId.HasValue)
+            .GroupBy(p => p.CuentaId!.Value)
+            .ToDictionary(group => group.Key, group => group.First());
+        var preferenciaGlobal = preferencias.FirstOrDefault(p => !p.CuentaId.HasValue);
+
         var permisosResponse = permisos.Select(p =>
         {
-            var preferencia = preferencias.FirstOrDefault(pref => pref.CuentaId == p.CuentaId);
+            var preferencia = p.CuentaId.HasValue &&
+                preferenciasByCuentaId.TryGetValue(p.CuentaId.Value, out var cuentaPreferencia)
+                    ? cuentaPreferencia
+                    : preferenciaGlobal;
             return new PermisoUsuarioResponse
             {
                 Id = p.Id,

@@ -18,9 +18,9 @@ public sealed class WatchdogController : ControllerBase
     }
 
     [HttpPost("restaurar-backup")]
-    public async Task<IActionResult> RestaurarBackup([FromBody] RestaurarBackupRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> RestaurarBackup([FromBody] RestaurarBackupRequest? request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.BackupPath))
+        if (request is null || string.IsNullOrWhiteSpace(request.BackupPath))
         {
             return BadRequest(new { error = "backup_path es obligatorio" });
         }
@@ -35,15 +35,19 @@ public sealed class WatchdogController : ControllerBase
     }
 
     [HttpPost("actualizar-app")]
-    public async Task<IActionResult> ActualizarApp([FromBody] ActualizarAppRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> ActualizarApp([FromBody] ActualizarAppRequest? request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.SourcePath) || string.IsNullOrWhiteSpace(request.TargetPath))
+        if (request is null || string.IsNullOrWhiteSpace(request.SourcePath) || string.IsNullOrWhiteSpace(request.TargetPath))
         {
             return BadRequest(new { error = "source_path y target_path son obligatorios" });
         }
 
-        var sourcePath = Path.GetFullPath(request.SourcePath);
-        var targetPath = Path.GetFullPath(request.TargetPath);
+        if (!TryGetFullPath(request.SourcePath, out var sourcePath) ||
+            !TryGetFullPath(request.TargetPath, out var targetPath))
+        {
+            return BadRequest(new { error = "source_path o target_path no es valido" });
+        }
+
         if (!Directory.Exists(sourcePath))
         {
             return BadRequest(new { error = "source_path no existe" });
@@ -89,5 +93,19 @@ public sealed class WatchdogController : ControllerBase
         return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
             ? path
             : $"{path}{Path.DirectorySeparatorChar}";
+    }
+
+    private static bool TryGetFullPath(string rawPath, out string fullPath)
+    {
+        try
+        {
+            fullPath = Path.GetFullPath(rawPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            fullPath = string.Empty;
+            return false;
+        }
     }
 }

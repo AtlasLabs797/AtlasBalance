@@ -79,6 +79,7 @@ export default function TitularesPage() {
   const navigate = useNavigate();
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
+  usePermisosStore((state) => state.permisos);
   const isAdmin = usuario?.rol === 'ADMIN';
   const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
 

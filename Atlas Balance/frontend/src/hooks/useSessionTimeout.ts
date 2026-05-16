@@ -63,16 +63,23 @@ export const useSessionTimeout = (): SessionTimeoutState => {
     warningShownRef.current = false;
   }, [timeoutSeconds]);
 
-  // Debounced activity handler
   const handleActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    inactiveSecondsRef.current = 0;
+    logoutStartedRef.current = false;
+
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
     debounceTimerRef.current = setTimeout(() => {
-      resetTimeout();
+      setRemainingSeconds(timeoutSeconds);
+      setIsToastVisible(false);
+      setIsWarningVisible(false);
+      toastShownRef.current = false;
+      warningShownRef.current = false;
     }, ACTIVITY_DEBOUNCE_MS);
-  }, [resetTimeout]);
+  }, [timeoutSeconds]);
 
   // Keep the shell quiet: only update React state when warning surfaces change.
   useEffect(() => {

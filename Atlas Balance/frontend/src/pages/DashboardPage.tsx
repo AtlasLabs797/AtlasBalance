@@ -36,6 +36,7 @@ function parsePeriodo(value: string | null): PeriodoDashboard {
 export default function DashboardPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
+  usePermisosStore((state) => state.permisos);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>(() => parsePeriodo(searchParams.get('periodo')));

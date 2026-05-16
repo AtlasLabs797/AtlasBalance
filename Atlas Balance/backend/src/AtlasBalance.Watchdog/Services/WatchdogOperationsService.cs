@@ -12,6 +12,8 @@ public interface IWatchdogOperationsService
 
 public sealed class WatchdogOperationsService : IWatchdogOperationsService
 {
+    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(30);
+
     private static readonly HashSet<string> PreservedTopLevelDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "logs"
@@ -99,13 +101,12 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     {
         if (string.IsNullOrWhiteSpace(sourcePath) ||
             string.IsNullOrWhiteSpace(targetPath) ||
-            !Directory.Exists(sourcePath))
+            !TryGetFullPath(sourcePath, out var fullSourcePath) ||
+            !TryGetFullPath(targetPath, out var fullTargetPath) ||
+            !Directory.Exists(fullSourcePath))
         {
             return false;
         }
-
-        var fullSourcePath = Path.GetFullPath(sourcePath);
-        var fullTargetPath = Path.GetFullPath(targetPath);
 
         if (string.Equals(fullSourcePath, fullTargetPath, StringComparison.OrdinalIgnoreCase) ||
             PathsOverlap(fullSourcePath, fullTargetPath) ||
@@ -421,6 +422,20 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
     }
 
+    private static bool TryGetFullPath(string path, out string fullPath)
+    {
+        try
+        {
+            fullPath = Path.GetFullPath(path);
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            fullPath = string.Empty;
+            return false;
+        }
+    }
+
     private async Task<(bool Success, string? Error)> RunPgRestoreViaDockerAsync(
         string backupPath,
         string dbUser,
@@ -660,10 +675,24 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             }
 
             using var process = new Process { StartInfo = startInfo };
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(ProcessTimeout);
+            var processToken = timeoutCts.Token;
+
             process.Start();
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
+            try
+            {
+                await process.WaitForExitAsync(processToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcess(process);
+                return cancellationToken.IsCancellationRequested
+                    ? (false, "Proceso externo cancelado.")
+                    : (false, $"Proceso externo excedio el timeout de {ProcessTimeout.TotalMinutes:0} minutos.");
+            }
 
             var stdout = await outputTask;
             var stderr = await errorTask;
@@ -678,6 +707,21 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         catch (Exception ex)
         {
             return (false, Trim(ex.Message, 1500));
+        }
+    }
+
+    private static void TryKillProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup after timeout.
         }
     }
 }

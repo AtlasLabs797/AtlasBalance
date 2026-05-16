@@ -47,6 +47,34 @@ public class WatchdogClientServiceTests
         result.UpdatedAt.Should().Be(DateTime.Parse("2026-04-15T18:55:00Z").ToUniversalTime());
     }
 
+    [Fact]
+    public async Task SolicitarActualizacionAsync_Should_Reject_Non_Local_Watchdog_BaseAddress()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["WatchdogSettings:SharedSecret"] = "secret-test"
+            })
+            .Build();
+
+        var client = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted)))
+        {
+            BaseAddress = new Uri("https://example.com")
+        };
+
+        var service = new WatchdogClientService(
+            new StaticHttpClientFactory(client),
+            configuration,
+            NullLogger<WatchdogClientService>.Instance);
+
+        Func<Task> action = async () => await service.SolicitarActualizacionAsync(
+            "C:\\AtlasBalance\\updates\\v",
+            "C:\\AtlasBalance\\api",
+            CancellationToken.None);
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
+    }
+
     private sealed class StaticHttpClientFactory : IHttpClientFactory
     {
         private readonly HttpClient _client;

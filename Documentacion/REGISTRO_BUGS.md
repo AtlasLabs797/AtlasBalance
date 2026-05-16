@@ -715,3 +715,58 @@
 - Solucion: el 2026-05-12 se comprobo Docker fuera del sandbox con aprobacion y se ejecuto la suite completa con Testcontainers/PostgreSQL.
 - Verificacion: `dotnet test AtlasBalance.API.Tests.csproj`: 225/225 OK.
 - Estado: cerrado. El gate que sigue abierto para release final es el E2E autenticado con datos reales, no Docker/Testcontainers.
+
+### 2026-05-16 - V-01.07 - Cerrado - La gestion de usuarios podia dejar la app sin administrador activo
+
+- Contexto: `UsuariosController` permitia desactivar, degradar o eliminar al ultimo administrador activo.
+- Impacto: bloqueo operativo grave; la instancia podia quedarse sin ningun usuario con capacidad de administracion.
+- Solucion: validacion en actualizacion y eliminacion para exigir al menos otro admin activo; bloqueo adicional de auto-democion y auto-desactivacion admin.
+- Verificacion: tests de regresion en `UsuariosControllerTests` incluidos en suite focalizada 14/14 OK y suite backend sin Testcontainers 229/229 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Watchdog podia enviar su secreto a un BaseUrl remoto
+
+- Contexto: `WatchdogSettings:BaseUrl` era configurable y se usaba para llamadas con cabecera `X-Watchdog-Secret`.
+- Impacto: SSRF y exfiltracion de secreto si la configuracion apuntaba a un host remoto.
+- Solucion: validacion estricta de destino local en `Program` y `WatchdogClientService`.
+- Verificacion: test `SolicitarActualizacionAsync_Should_Reject_Non_Local_Watchdog_BaseAddress` y suite focalizada 14/14 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Watchdog devolvia 500 ante body nulo o rutas invalidas
+
+- Contexto: endpoints de restauracion y actualizacion asumian request valido y rutas parseables.
+- Impacto: errores 500 evitables y diagnostico pobre ante input invalido.
+- Solucion: validacion de body y `Path.GetFullPath` defensivo con respuesta `400`.
+- Verificacion: `WatchdogControllerTests` incluidos en suite focalizada 14/14 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Procesos externos sin timeout duro
+
+- Contexto: `pg_dump`, `pg_restore` y scripts de actualizacion esperaban con token externo o sin limite propio.
+- Impacto: una herramienta colgada podia dejar operaciones criticas esperando indefinidamente.
+- Solucion: timeout defensivo de 30 minutos, cancelacion enlazada y kill del arbol de procesos.
+- Verificacion: suite focalizada 14/14 OK y suite backend sin Testcontainers 229/229 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Timeout de sesion podia ignorar actividad reciente
+
+- Contexto: la actividad del usuario se debouncedaba antes de actualizar la referencia real usada por el timeout.
+- Impacto: una accion en los ultimos segundos de sesion podia no evitar el logout.
+- Solucion: actualizacion inmediata de `lastActivityRef` e inactividad real; debounce limitado a cambios visuales.
+- Verificacion: `npm.cmd run lint`, `npm.cmd exec tsc -- --noEmit` y `npm.cmd run build` OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Abierto - Paquetes de actualizacion sin limites explicitos de tamano/contenido
+
+- Contexto: el flujo de actualizacion valida rutas, pero no aplica limites de tamano ni manifiesto de contenido antes de extraer.
+- Impacto: riesgo de consumo de disco/tiempo o paquete inesperado si un admin carga un artefacto malicioso o corrupto.
+- Correccion recomendada: limite de tamano, validacion de extension, conteo de entradas, destino canonico y manifiesto esperado antes de aplicar.
+- Verificacion pendiente: tests con zip sobredimensionado, zip con traversal y zip valido.
+- Estado: abierto.
+
+### 2026-05-16 - V-01.07 - Abierto - Inconsistencias pendientes de importacion, saldo y configuracion
+
+- Contexto: la auditoria encontro riesgos que requieren una pasada focalizada: fingerprint de importacion dependiente del indice de fila, transacciones de importacion no garantizadas en `finally`, criterios distintos para saldo actual entre modulos, JSON nulo en configuracion y cooldown de alertas fallidas.
+- Impacto: duplicados fragiles, recursos abiertos, saldos diferentes segun pantalla, 500 evitables o alertas repetidas.
+- Correccion recomendada: tratar cada punto con test de regresion antes de tocar comportamiento financiero.
+- Estado: abierto.

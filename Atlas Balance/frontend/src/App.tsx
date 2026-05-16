@@ -35,6 +35,7 @@ const UsuariosPage           = lazy(() => import('@/pages/UsuariosPage'));
 function DashboardRoute({ children }: { children: JSX.Element }) {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
+  usePermisosStore((state) => state.permisos);
   const allowed = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
 
   return allowed ? children : <Navigate to="/extractos" replace />;

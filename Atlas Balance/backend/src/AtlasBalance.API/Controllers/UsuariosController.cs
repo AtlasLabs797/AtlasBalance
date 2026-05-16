@@ -492,6 +492,19 @@ public sealed class UsuariosController : ControllerBase
             return Conflict(new { error = "Ya existe un usuario con ese email" });
         }
 
+        var actorId = GetCurrentUserId();
+        var removesAdminAccess = usuario.Rol == RolUsuario.ADMIN &&
+            (!request.Activo || request.Rol != RolUsuario.ADMIN);
+        if (removesAdminAccess && !await HasAnotherActiveAdminAsync(usuario.Id, cancellationToken))
+        {
+            return BadRequest(new { error = "Debe quedar al menos un administrador activo." });
+        }
+
+        if (actorId == id && (!request.Activo || request.Rol != RolUsuario.ADMIN))
+        {
+            return BadRequest(new { error = "No puedes quitarte tu propio acceso de administrador." });
+        }
+
         var before = new
         {
             usuario.Email,
@@ -603,6 +616,11 @@ public sealed class UsuariosController : ControllerBase
         if (actorId == id)
         {
             return BadRequest(new { error = "No puedes eliminar tu propio usuario" });
+        }
+
+        if (usuario.Rol == RolUsuario.ADMIN && !await HasAnotherActiveAdminAsync(usuario.Id, cancellationToken))
+        {
+            return BadRequest(new { error = "Debe quedar al menos un administrador activo." });
         }
 
         var before = new
@@ -951,5 +969,17 @@ public sealed class UsuariosController : ControllerBase
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
         return Guid.TryParse(raw, out var userId) ? userId : null;
+    }
+
+    private Task<bool> HasAnotherActiveAdminAsync(Guid excludedUserId, CancellationToken cancellationToken)
+    {
+        return _dbContext.Usuarios
+            .IgnoreQueryFilters()
+            .AnyAsync(u =>
+                u.Id != excludedUserId &&
+                u.Rol == RolUsuario.ADMIN &&
+                u.Activo &&
+                u.DeletedAt == null,
+                cancellationToken);
     }
 }

@@ -1,5 +1,47 @@
 # Log de errores e incidencias
 
+## 2026-05-16 - V-01.06 - shadcn/ui y Tailwind CSS: instalacion auditada con builds completos bloqueados
+
+- Contexto: instalacion/auditoria de `shadcn-ui/ui` y `tailwindlabs/tailwindcss` en `Skills/Diseno`, comprobando que no hubiese duplicados.
+- Causas:
+  - `shadcn-ui` ya existia y apuntaba al remoto correcto; duplicarlo habria sido basura.
+  - Turbo vuelve a requerir un binario `pnpm`; se uso shim temporal local y se elimino despues.
+  - `shadcn-ui/apps/v4` necesita `bun` para construir registry.
+  - `tailwindcss/@tailwindcss/oxide` necesita Rust/Cargo; `cargo` y `rustup` no existen en esta maquina.
+- Solucion aplicada:
+  - No se clona `shadcn-ui` de nuevo.
+  - Se clona `tailwindcss` una sola vez.
+  - Instalacion con `corepack pnpm install --ignore-scripts`.
+  - Build/typecheck acotado de `shadcn`: OK.
+  - Build acotado de paquete `tailwindcss`: OK.
+- Verificacion:
+  - Sin secretos reales ni prompt injection obvia en barridos `rg`.
+  - `shadcn-ui` SCA rojo: `1 critical`, `46 high`, `55 moderate`, `15 low`.
+  - `tailwindcss` SCA rojo: `0 critical`, `10 high`, `10 moderate`, `1 low`.
+  - Build completo de `shadcn-ui`: bloqueado por ausencia de `bun`.
+  - Build completo de `tailwindcss`: bloqueado por ausencia de Rust/Cargo.
+- Regla: no confundas "repo instalado" con "repo desplegable". Si falta toolchain o la SCA esta roja, se documenta y no se vende como listo para produccion.
+
+## 2026-05-16 - V-01.06 - 21st SDK: instalacion segura y build bloqueado por `pnpm`/tipos Node
+
+- Contexto: instalacion de `21st-dev/21st-sdk` en `Skills/Diseno/21st-sdk` con auditoria de malware/prompt injection.
+- Causas:
+  - El repo upstream no trae `pnpm-lock.yaml`; la primera instalacion genero muchas dependencias y el intento inicial se corto por timeout/EPIPE.
+  - `corepack enable pnpm` intento escribir shim global en `C:\Program Files\nodejs\pnpm` y Windows devolvio `EPERM`.
+  - Turbo necesitaba encontrar `pnpm` como binario; se uso un shim temporal local solo para validar.
+  - `@21st-sdk/react` usaba `require` en `src/tools/tool-router.ts` pero no declaraba `@types/node`, rompiendo el build de declaraciones.
+- Solucion aplicada:
+  - Instalacion con `corepack pnpm install --ignore-scripts`.
+  - Segundo intento con timeout mayor y reporter menos ruidoso.
+  - Shim temporal local para que Turbo encontrase `pnpm`, eliminado al cerrar la verificacion.
+  - `corepack pnpm --filter @21st-sdk/react add -D @types/node --ignore-scripts`.
+- Verificacion:
+  - `corepack pnpm run build` OK para `packages/*`.
+  - `corepack pnpm run ts:check` OK para `packages/*`.
+  - Barridos `rg` sin prompt injection ni secretos reales; solo placeholders en `.env.example`.
+  - `pnpm audit` completo rojo: `1 critical`, `19 high`, `31 moderate`, `7 low`.
+- Regla: no ejecutes lifecycle scripts ni servicios `dev` de un monorepo de agentes antes de auditarlo. Y no confundas "SDK packages compilan" con "la plataforma completa es segura para desplegar".
+
 ## 2026-05-13 - V-01.06 - Restore de solucion falla sin error MSBuild concreto
 
 - Contexto: al validar el fix de GitHub Actions, `dotnet restore "Atlas Balance\backend\AtlasBalance.sln" --locked-mode -v normal` termina con codigo 1, 0 warnings y 0 errores.
@@ -1104,6 +1146,37 @@
 - Causa: logica de autorizacion local mas permisiva que `UserAccessService`.
 - Solucion aplicada: `GetAllowedAccountIds` y `CanViewTitular` ahora solo conceden alcance global con permisos de datos (`agregar`, `editar`, `eliminar`, `importar`), excluyendo `PuedeVerDashboard`.
 - Verificacion: test de regresion en `ExtractosControllerTests` + ejecucion de `ExtractosControllerTests` y `UserAccessServiceTests` (8/8 OK).
+
+## 2026-05-16 - V-01.07 - Auditoria correctiva: administracion, Watchdog y sesion
+
+- Contexto:
+  - Auditoria general sobre V-01.07 para corregir fallos de alto impacto sin cambiar funciones existentes.
+- Incidencias cerradas:
+  - `UsuariosController` permitia dejar la instancia sin administrador activo.
+  - `WatchdogSettings:BaseUrl` podia apuntar a host remoto y recibir `X-Watchdog-Secret`.
+  - `WatchdogController` devolvia 500 ante body nulo o rutas invalidas.
+  - Procesos externos de backup/restauracion/actualizacion no tenian timeout duro propio.
+  - `useSessionTimeout` podia no registrar a tiempo una actividad reciente.
+  - Varias pantallas frontend no se re-renderizaban al cambiar permisos si solo estaban suscritas a helpers estables.
+- Solucion aplicada:
+  - Validaciones de admin restante y auto-democion en usuarios.
+  - Validacion local/loopback para BaseUrl del Watchdog.
+  - Validacion de request/rutas en Watchdog.
+  - Timeout de 30 minutos y kill de arbol de procesos para procesos externos criticos.
+  - Actualizacion inmediata de actividad real en timeout de sesion.
+  - Suscripcion explicita a `permisos` en vistas afectadas.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Tests focalizados usuarios/watchdog: 14/14 OK.
+  - Suite backend sin Testcontainers: 229/229 OK.
+  - `npm.cmd run build`: OK.
+  - `npm.cmd audit --audit-level=critical`: 0 vulnerabilidades.
+  - `dotnet list AtlasBalance.API.Tests.csproj package --vulnerable --include-transitive`: 0 vulnerabilidades.
+- Pendientes:
+  - Ejecutar suite completa con Docker/Testcontainers antes de release.
+  - Limitar tamano/contenido de paquetes de actualizacion.
+  - Revisar en pasada separada importacion, saldo actual, configuracion nula y cooldown SMTP.
 
 ## 2026-04-24 - V-01.03 - Frontend mostraba dashboards de cuenta a perfiles dashboard-only globales
 

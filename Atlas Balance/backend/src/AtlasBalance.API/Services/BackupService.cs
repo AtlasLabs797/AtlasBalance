@@ -17,6 +17,8 @@ public interface IBackupService
 
 public sealed class BackupService : IBackupService
 {
+    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(30);
+
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly IAuditService _auditService;
@@ -242,10 +244,24 @@ public sealed class BackupService : IBackupService
             }
 
             using var process = new Process { StartInfo = startInfo };
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(ProcessTimeout);
+            var processToken = timeoutCts.Token;
+
             process.Start();
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            try
+            {
+                await process.WaitForExitAsync(processToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcess(process);
+                return cancellationToken.IsCancellationRequested
+                    ? (false, "Proceso externo cancelado.")
+                    : (false, $"Proceso externo excedio el timeout de {ProcessTimeout.TotalMinutes:0} minutos.");
+            }
 
             var stderr = await stderrTask;
             var stdout = await stdoutTask;
@@ -260,6 +276,21 @@ public sealed class BackupService : IBackupService
         catch (Exception ex)
         {
             return (false, Truncate(ex.Message, 1800));
+        }
+    }
+
+    private static void TryKillProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup after timeout.
         }
     }
 

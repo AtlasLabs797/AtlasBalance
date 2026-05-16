@@ -57,6 +57,7 @@ export default function ExtractosPage() {
   const canEditCuenta = usePermisosStore((s) => s.canEditCuenta);
   const canAddInCuenta = usePermisosStore((s) => s.canAddInCuenta);
   const getColumnasEditables = usePermisosStore((s) => s.getColumnasEditables);
+  usePermisosStore((s) => s.permisos);
 
   const cuentasOptions = useMemo(() => {
     const items: Array<{ id: string; nombre: string; titular_id: string; titular_nombre: string; divisa: string }> = [];

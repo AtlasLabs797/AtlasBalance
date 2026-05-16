@@ -27,6 +27,7 @@ export default function RevisionPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const canEditCuenta = usePermisosStore((state) => state.canEditCuenta);
+  usePermisosStore((state) => state.permisos);
 
   const load = async () => {
     setLoading(true);
