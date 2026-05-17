@@ -65,6 +65,11 @@ public sealed class ConfiguracionController : ControllerBase
             {
                 AppBaseUrl = GetValue(config, "app_base_url"),
                 AppUpdateCheckUrl = GetValue(config, "app_update_check_url", ConfigurationDefaults.UpdateCheckUrl),
+                AppUpdateAutoEnabled = ParseBool(GetValue(config, "app_update_auto_enabled"), fallback: false),
+                AppUpdateAutoHourUtc = Math.Clamp(ParseInt(GetValue(config, "app_update_auto_hour_utc"), 3), 0, 23),
+                AppUpdateAutoLastCheckedUtc = GetValue(config, "app_update_auto_last_checked_utc"),
+                AppUpdateAutoLastStartedUtc = GetValue(config, "app_update_auto_last_started_utc"),
+                AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
                 BackupPath = GetValue(config, "backup_path"),
                 ExportPath = GetValue(config, "export_path")
             },
@@ -114,6 +119,11 @@ public sealed class ConfiguracionController : ControllerBase
         if (!ConfigurationDefaults.TryNormalizeUpdateCheckUrl(request.General.AppUpdateCheckUrl, out var updateCheckUrl))
         {
             return BadRequest(new { error = "La URL de actualizaciones debe apuntar al repositorio oficial de Atlas Balance en GitHub por HTTPS." });
+        }
+
+        if (request.General.AppUpdateAutoHourUtc is < 0 or > 23)
+        {
+            return BadRequest(new { error = "La hora UTC de actualizacion automatica debe estar entre 0 y 23." });
         }
 
         if (!IsSafeAbsoluteDirectory(request.General.BackupPath))
@@ -171,6 +181,8 @@ public sealed class ConfiguracionController : ControllerBase
 
         Upsert(config, "app_base_url", request.General.AppBaseUrl.Trim(), userId, now);
         Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
+        Upsert(config, "app_update_auto_enabled", request.General.AppUpdateAutoEnabled ? "true" : "false", userId, now);
+        Upsert(config, "app_update_auto_hour_utc", request.General.AppUpdateAutoHourUtc.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "backup_path", request.General.BackupPath.Trim(), userId, now);
         Upsert(config, "export_path", request.General.ExportPath.Trim(), userId, now);
         var exchangeApiKey = request.Exchange?.ApiKey;

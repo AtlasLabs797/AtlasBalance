@@ -1020,7 +1020,15 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalizedQuestion, "recibo", "recibos", "factura", "facturas", "domiciliacion", "domiciliaciones", "cargo", "cargos"))
         {
-            await AppendCategoryAsync(builder, "RECIBOS/FACTURAS DETECTADOS", cuentasQuery, earliestContextDate, today, ReceiptTerms, cancellationToken);
+            await AppendCategoryAsync(
+                builder,
+                "RECIBOS/FACTURAS DETECTADOS",
+                cuentasQuery,
+                earliestContextDate,
+                today,
+                ReceiptTerms,
+                cancellationToken,
+                ReceiptExcludedTerms);
         }
 
         List<AiExtractoRow> relevant = maxContextRows <= 0
@@ -2423,6 +2431,12 @@ public sealed class AtlasAiService : IAtlasAiService
     [
         "recibo", "recibos", "factura", "facturas", "domiciliacion", "domiciliaciones",
         "adeudo", "adeudos", "cargo", "cargos", "suministro", "suministros"
+    ];
+
+    private static readonly string[] ReceiptExcludedTerms =
+    [
+        "tarjeta", "visa", "mastercard", "tpv", "datafono", "datáfono",
+        "leasing", "prestamo", "préstamo", "prestamos", "préstamos"
     ];
 
     private static bool IsBudgetWarning(decimal budget, decimal currentCost, int warningPercent)

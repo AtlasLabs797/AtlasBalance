@@ -23,6 +23,11 @@ public sealed class GeneralConfigResponse
 {
     public string AppBaseUrl { get; set; } = string.Empty;
     public string AppUpdateCheckUrl { get; set; } = string.Empty;
+    public bool AppUpdateAutoEnabled { get; set; }
+    public int AppUpdateAutoHourUtc { get; set; } = 3;
+    public string AppUpdateAutoLastCheckedUtc { get; set; } = string.Empty;
+    public string AppUpdateAutoLastStartedUtc { get; set; } = string.Empty;
+    public string AppUpdateAutoLastResult { get; set; } = string.Empty;
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
 }
@@ -63,6 +68,8 @@ public sealed class UpdateGeneralConfigRequest
 {
     public string AppBaseUrl { get; set; } = string.Empty;
     public string AppUpdateCheckUrl { get; set; } = string.Empty;
+    public bool AppUpdateAutoEnabled { get; set; }
+    public int AppUpdateAutoHourUtc { get; set; } = 3;
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
 }

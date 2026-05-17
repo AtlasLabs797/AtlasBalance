@@ -60,7 +60,17 @@ export default function ConfiguracionPage() {
 
   const [config, setConfig] = useState<ConfiguracionSistema>({
     smtp: { host: '', port: 587, user: '', password: '', from: '' },
-    general: { app_base_url: '', app_update_check_url: '', backup_path: '', export_path: '' },
+    general: {
+      app_base_url: '',
+      app_update_check_url: '',
+      app_update_auto_enabled: false,
+      app_update_auto_hour_utc: 3,
+      app_update_auto_last_checked_utc: '',
+      app_update_auto_last_started_utc: '',
+      app_update_auto_last_result: '',
+      backup_path: '',
+      export_path: '',
+    },
     exchange: { api_key: '', api_key_configurada: false },
     dashboard: { color_ingresos: '#43B430', color_egresos: '#FF4757', color_saldo: '#7B7B7B' },
     revision: { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
@@ -266,10 +276,10 @@ export default function ConfiguracionPage() {
     setError(null);
     setFeedback(null);
     try {
-      await saveConfig('URL de actualizaciones guardada.');
+      await saveConfig('Ajustes de actualizaciones guardados.');
       await checkUpdate(true);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar la URL de actualizaciones.'));
+      setError(extractErrorMessage(err, 'No se pudieron guardar los ajustes de actualizaciones.'));
     } finally {
       setBusy(false);
     }
@@ -953,16 +963,51 @@ export default function ConfiguracionPage() {
                 onChange={(e) => setConfig((p) => ({ ...p, general: { ...p.general, app_update_check_url: e.target.value } }))}
               />
             </label>
+            <label>
+              Hora UTC automática
+              <input
+                type="number"
+                min="0"
+                max="23"
+                value={config.general.app_update_auto_hour_utc}
+                onChange={(e) =>
+                  setConfig((p) => ({
+                    ...p,
+                    general: {
+                      ...p.general,
+                      app_update_auto_hour_utc: Math.max(0, Math.min(23, Number(e.target.value) || 0)),
+                    },
+                  }))
+                }
+              />
+            </label>
           </div>
+          <label className="config-check">
+            <input
+              type="checkbox"
+              checked={config.general.app_update_auto_enabled}
+              onChange={(e) =>
+                setConfig((p) => ({
+                  ...p,
+                  general: { ...p.general, app_update_auto_enabled: e.target.checked },
+                }))
+              }
+            />
+            Actualizar automáticamente desde GitHub
+          </label>
           <p className="import-muted">Usa el repositorio oficial por HTTPS. Atlas Balance consulta el último GitHub Release, descarga el ZIP win-x64 y lo prepara en la carpeta segura de actualizaciones.</p>
           <div className="config-status-grid">
             <article><h3>Versión actual</h3><p>{currentVersion ?? 'Sin dato'}</p></article>
             <article><h3>Versión disponible</h3><p>{availableVersion ?? 'Ninguna'}</p></article>
             <article><h3>Estado</h3><p className={updateAvailable ? 'config-badge config-badge--stale' : 'config-badge config-badge--ok'}>{updateAvailable ? 'Actualización disponible' : 'Actualizado'}</p></article>
+            <article><h3>Auto</h3><p className={config.general.app_update_auto_enabled ? 'config-badge config-badge--ok' : 'config-badge'}>{config.general.app_update_auto_enabled ? 'Activo' : 'Inactivo'}</p></article>
+            <article><h3>Última comprobación auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_checked_utc || null)}</p></article>
+            <article><h3>Último inicio auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_started_utc || null)}</p></article>
           </div>
+          {config.general.app_update_auto_last_result ? <p>{config.general.app_update_auto_last_result}</p> : null}
           {updateMessage ? <p>{updateMessage}</p> : null}
           <div className="import-actions">
-            <button type="submit" disabled={busy}>Guardar URL del repositorio</button>
+            <button type="submit" disabled={busy}>Guardar actualizaciones</button>
             <button type="button" onClick={() => void checkUpdate(true)} disabled={busy}>Verificar actualización</button>
             <button type="button" onClick={updateNow} disabled={!updateAvailable || busy}>Actualizar ahora</button>
           </div>

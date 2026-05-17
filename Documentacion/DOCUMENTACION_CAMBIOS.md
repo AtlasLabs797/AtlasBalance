@@ -8,6 +8,63 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-17 - Autoactualizacion segura desde GitHub Release
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se agrego `AutoUpdateJob` con ejecucion recurrente en Hangfire para comprobar GitHub Releases y pedir al Watchdog aplicar actualizaciones cuando el modo automatico esta activo.
+- `Configuracion > Sistema` permite activar/desactivar autoactualizacion, definir hora UTC y ver ultimo resultado.
+- `ActualizacionService` limita tamano del ZIP, tamano extraido, numero de entradas y tamano por entrada antes de extraer.
+- Se mantiene el requisito de repo oficial, digest SHA-256, firma `.zip.sig`, clave publica de release y aplicacion via Watchdog con backup/rollback/healthcheck.
+- Frontend build sincronizado con `backend/src/AtlasBalance.API/wwwroot`.
+- Durante la suite sin Docker se corrigio un falso positivo IA: `RECIBOS/FACTURAS DETECTADOS` ya no suma cargos de tarjeta/TPV/prestamos/leasing por el termino generico `cargo`.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Jobs/AutoUpdateJob.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AutoUpdateJobTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- Documentacion afectada en `Documentacion`.
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md` y skill local `cyber-neo` como referencia de seguridad.
+- Barridos `rg` sobre actualizacion, Watchdog, configuracion, scripts de release y tests.
+- Consulta oficial GitHub REST API para confirmar `digest` SHA-256 en release assets.
+- `git diff --check -- ...`
+- `where.exe dotnet`
+- `Test-Path .\.dotnet\dotnet.exe`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test .\AtlasBalance.API.Tests.csproj --filter "ActualizacionServiceTests|AutoUpdateJobTests|SeedDataTests|ConfiguracionControllerTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test .\AtlasBalance.API.Tests.csproj --filter "AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test .\AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- Sincronizacion finita `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot` con poda acotada de assets obsoletos.
+
+**Resultado de verificacion:**
+- Tests backend focalizados: 25/25 OK, con warning preexistente de overload obsoleto en `PostgreSqlStorage`.
+- Test IA focalizado tras corregir recibos/facturas: 1/1 OK.
+- Suite backend sin Testcontainers: 242/242 OK.
+- Frontend lint: OK.
+- TypeScript: OK.
+- Frontend build: OK.
+- `wwwroot`: `dist_files=65 wwwroot_files=65`.
+- `git diff --check`: OK, solo avisos CRLF esperados.
+
+**Pendientes:**
+- Ejecutar suite completa con Docker/Testcontainers antes de publicar release final.
+- Publicar un GitHub Release real con `AtlasBalance-*-win-x64.zip` y `.zip.sig`; sin eso el updater debe seguir rechazando la actualizacion.
+
 ## 2026-05-17 - IA lista: contexto, errores y formato de proveedor
 
 **Version:** V-01.07

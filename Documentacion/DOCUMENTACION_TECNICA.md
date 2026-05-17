@@ -1,5 +1,51 @@
 # Documentacion tecnica
 
+## 2026-05-17 - V-01.07 - Actualizacion automatica desde GitHub Release
+
+### Que cambio
+
+- Se anade `AutoUpdateJob`, registrado en Hangfire como `auto-update-github-release`, con ejecucion horaria y ventana diaria configurable por UTC.
+- La autoactualizacion queda gobernada por `CONFIGURACION`: `app_update_auto_enabled`, `app_update_auto_hour_utc`, `app_update_auto_last_checked_utc`, `app_update_auto_last_started_utc` y `app_update_auto_last_result`.
+- `Configuracion > Sistema` permite activar/desactivar el modo automatico, elegir hora UTC y ver ultima comprobacion/inicio automatico.
+- `ActualizacionService` mantiene el flujo seguro existente: repo oficial, GitHub Release, asset `AtlasBalance-*-win-x64.zip`, digest SHA-256, firma `.zip.sig`, extraccion en `UpdateSourceRoot` y aplicacion via Watchdog.
+- Se endurece la descarga/extraccion: ZIP maximo 300 MiB, contenido extraido maximo 1 GiB, entrada maxima 512 MiB y 10000 entradas maximas. Sigue rechazando rutas fuera de la raiz de extraccion.
+- El build frontend se sincronizo con `backend/src/AtlasBalance.API/wwwroot` mediante copia acotada y poda solo de assets obsoletos.
+
+### Por que
+
+La app ya podia actualizar manualmente desde GitHub Releases, pero eso no es "lo hace solo". Faltaba un job recurrente. Lo peligroso era activarlo sin freno: una tesoreria no debe reiniciarse sola en horario de trabajo porque alguien subio un release. Por eso el automatico existe, pero es opt-in.
+
+El pendiente de tamano/contenido de paquetes tambien era real. Firmar un ZIP no te protege de un paquete absurdamente grande o malformado. La firma dice quien lo publico; no dice que sea razonable tragarselo sin limites.
+
+### Verificacion
+
+- Tests backend focalizados con SDK local: `ActualizacionServiceTests|AutoUpdateJobTests|SeedDataTests|ConfiguracionControllerTests` -> 25/25 OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+- Sincronizacion `frontend/dist` -> `wwwroot`: `dist_files=65 wwwroot_files=65`.
+- `git diff --check` en archivos tocados: OK, solo avisos CRLF esperados.
+
+### Pendiente real
+
+- Ejecutar suite completa con Docker/Testcontainers antes de publicar release final.
+- Publicar GitHub Release con ZIP y `.zip.sig`; sin firma o sin clave publica valida, el updater seguira fallando cerrado.
+
+## 2026-05-17 - V-01.07 - IA: recibos/facturas no absorbe cargos de tarjeta
+
+### Que cambio
+
+- `RECIBOS/FACTURAS DETECTADOS` en `AtlasAiService` excluye conceptos de tarjeta/TPV/datáfono y prestamos/leasing cuando la coincidencia venia por terminos genericos como `cargo`.
+
+### Por que
+
+La suite no Docker destapo un fallo real: `Cargo tarjeta comercio` estaba inflando recibos/facturas de `35,00` a `80,00`. Un cargo de tarjeta no es automaticamente una factura. Meterlo en ese bloque ensucia el contexto IA y hace que el modelo parezca listo mientras suma basura.
+
+### Verificacion
+
+- Test focalizado `AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context`: OK.
+- Suite backend sin Testcontainers: 242/242 OK.
+
 ## 2026-05-17 - V-01.07 - IA: contexto financiero y errores de proveedor afinados
 
 ### Que cambio

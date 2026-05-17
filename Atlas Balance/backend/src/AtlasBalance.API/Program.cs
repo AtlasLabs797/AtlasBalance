@@ -204,6 +204,7 @@ builder.Services.AddScoped<LimpiezaAuditoriaJob>();
 builder.Services.AddScoped<BackupWeeklyJob>();
 builder.Services.AddScoped<ExportMensualJob>();
 builder.Services.AddScoped<PlazoFijoVencimientoJob>();
+builder.Services.AddScoped<AutoUpdateJob>();
 
 var app = builder.Build();
 
@@ -264,6 +265,11 @@ using (var scope = app.Services.CreateScope())
         "plazo-fijo-vencimientos",
         job => job.ExecuteAsync(),
         Cron.Daily());
+
+    recurringJobManager.AddOrUpdate<AutoUpdateJob>(
+        "auto-update-github-release",
+        job => job.ExecuteAsync(),
+        "17 * * * *");
 }
 
 app.UseExceptionHandler(errorApp =>

@@ -19,6 +19,22 @@
 
 ## Cerrados
 
+### 2026-05-17 - V-01.07 - Cerrado - Actualizacion desde repo sin modo automatico real
+
+- Contexto: el flujo de GitHub Release existia, pero dependia de que un admin pulsara `Actualizar ahora`. Para "que lo haga solo" faltaba un job recurrente.
+- Causa: no habia tarea Hangfire para comprobar releases ni estado de autoactualizacion en configuracion.
+- Solucion: `AutoUpdateJob` opt-in, claves `app_update_auto_*`, controles en `Configuracion > Sistema` y limites defensivos de paquete antes de extraer.
+- Verificacion: tests backend focalizados 25/25 OK; frontend lint, TypeScript y build OK; `wwwroot` sincronizado 65/65.
+- Estado: cerrado en codigo; pendiente suite completa Docker/Testcontainers antes de release final.
+
+### 2026-05-17 - V-01.07 - Cerrado - Recibos/facturas IA incluia cargos de tarjeta
+
+- Contexto: la suite backend sin Docker fallo porque el contexto IA de recibos/facturas sumaba `Cargo tarjeta comercio` junto a `Recibo luz factura`.
+- Causa: la categoria aceptaba `cargo` sin excluir tarjeta/TPV/datáfono.
+- Solucion: `ReceiptExcludedTerms` evita que cargos de tarjeta, prestamos o leasing inflen `RECIBOS/FACTURAS DETECTADOS`.
+- Verificacion: test focalizado OK y suite backend sin Testcontainers 242/242 OK.
+- Estado: cerrado.
+
 ### 2026-05-17 - V-01.07 - Cerrado - Contexto IA inflaba comisiones y seguros con falsos positivos
 
 - Contexto: las funciones IA podian recibir contexto contaminado aunque `RevisionService` ya hubiese corregido falsos positivos similares.

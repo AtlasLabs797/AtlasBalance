@@ -1,5 +1,31 @@
 # Log de errores e incidencias
 
+## 2026-05-17 - V-01.07 - Actualizacion online no era automatica y faltaban limites de paquete
+
+- Contexto: la app ya podia verificar y aplicar manualmente un GitHub Release, pero no habia ejecucion automatica real. Ademas, el pendiente de limitar tamano/contenido de paquetes seguia abierto.
+- Causas:
+  - No existia job recurrente que consultase GitHub Releases y pidiese al Watchdog iniciar la actualizacion.
+  - La descarga verificaba digest/firma y rutas de extraccion, pero no ponia limites explicitos de tamano, numero de entradas o tamano extraido.
+  - Activar esto sin interruptor hubiera reiniciado instalaciones productivas sin decision explicita del admin.
+- Solucion aplicada:
+  - Nuevo `AutoUpdateJob` con check diario opt-in desde hora UTC configurada.
+  - Nuevas claves `app_update_auto_*` en configuracion y controles en `Configuracion > Sistema`.
+  - Limites de ZIP descargado, contenido extraido, entrada individual y numero de entradas antes de extraer.
+  - El flujo sigue fallando cerrado si falta repo oficial, digest, firma, clave publica, backup o healthcheck.
+- Verificacion:
+  - Tests backend focalizados 25/25 OK.
+  - Frontend lint, TypeScript y build OK.
+  - `wwwroot` sincronizado 65/65.
+- Regla: autoactualizar no significa "traga cualquier ZIP y cruza los dedos". Si no hay firma, limites y rollback, no es comodidad; es una ruleta rusa con logo.
+
+## 2026-05-17 - V-01.07 - Contexto IA de recibos/facturas inflado por cargos de tarjeta
+
+- Contexto: al ejecutar la suite backend sin Testcontainers, `AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context` fallo porque `RECIBOS/FACTURAS DETECTADOS` sumaba `80,00` en vez de `35,00`.
+- Causa: `ReceiptTerms` incluia `cargo`; eso capturaba `Cargo tarjeta comercio`, aunque un cargo de tarjeta no es por si solo una factura o recibo.
+- Solucion aplicada: recibos/facturas excluye tarjeta/TPV/datáfono y prestamos/leasing cuando se detecta por terminos genericos.
+- Verificacion: test focalizado OK y suite backend sin Testcontainers 242/242 OK.
+- Regla: las categorias IA tienen que ser conservadoras. Si un termino generico mete basura, el total deja de ser informacion y pasa a ser ruido con decimales.
+
 ## 2026-05-17 - V-01.07 - Contexto IA contaminado por falsos positivos de comisiones/seguros
 
 - Contexto: al revisar las funciones IA, se detecto que `AtlasAiService` ya tenia defensas de proveedor, formato y permisos, pero seguia construyendo contexto financiero con reglas mas flojas que `RevisionService`.

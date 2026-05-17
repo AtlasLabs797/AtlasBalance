@@ -50,6 +50,16 @@ public sealed class SeedDataTests
             .Valor
             .Should()
             .Be(ConfigurationDefaults.UpdateCheckUrl);
+        db.Configuraciones
+            .Single(c => c.Clave == "app_update_auto_enabled")
+            .Valor
+            .Should()
+            .Be("false");
+        db.Configuraciones
+            .Single(c => c.Clave == "app_update_auto_hour_utc")
+            .Valor
+            .Should()
+            .Be("3");
     }
 
     [Fact]

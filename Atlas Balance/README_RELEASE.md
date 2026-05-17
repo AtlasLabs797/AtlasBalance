@@ -1,8 +1,8 @@
-# Atlas Balance V-01.06 - release Windows x64
+# Atlas Balance V-01.07 - release Windows x64
 
 Este paquete es autonomo para servidor Windows: el frontend ya esta compilado, el backend y Watchdog van publicados self-contained y la base de datos se prepara desde el instalador.
 
-El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.06-win-x64.zip`; dentro deben existir `api\AtlasBalance.API.exe` y `watchdog\AtlasBalance.Watchdog.exe`.
+El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.07-win-x64.zip`; dentro deben existir `api\AtlasBalance.API.exe` y `watchdog\AtlasBalance.Watchdog.exe`.
 
 ## Scripts de un clic
 
@@ -78,7 +78,7 @@ Desde la carpeta descomprimida de este paquete:
 Si la instalacion ya tiene los scripts nuevos, tambien puedes lanzar desde la carpeta instalada apuntando al paquete:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.06-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.07-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador crea backup previo, conserva configuracion, reemplaza API/Watchdog, actualiza scripts operativos instalados, actualiza `VERSION`/runtime y valida `/api/health` con `curl.exe -k`.
@@ -93,4 +93,8 @@ https://github.com/AtlasLabs797/AtlasBalance
 
 `Verificar actualizacion` consulta el ultimo GitHub Release. `Actualizar ahora` descarga el asset `AtlasBalance-*-win-x64.zip`, lo valida, lo prepara en `C:\AtlasBalance\updates` y pide al Watchdog aplicar la API nueva.
 
+Si marcas `Actualizar automaticamente desde GitHub`, la API revisa una vez al dia desde la hora UTC configurada y solicita al Watchdog la instalacion cuando detecta una version superior. Viene apagado por defecto para no reiniciar una instalacion productiva sin una decision explicita del admin.
+
 El Watchdog crea backup PostgreSQL previo, rollback de binarios y health check posterior. Si no puede crear backup o la API no responde despues de actualizar, revierte o rechaza la operacion.
+
+El ZIP online debe incluir digest SHA-256 del asset de GitHub y firma `.zip.sig`; ademas se rechazan paquetes demasiado grandes, con demasiadas entradas o con rutas fuera de la carpeta segura de extraccion.

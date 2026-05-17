@@ -145,7 +145,9 @@ Tambien puedes actualizar desde la propia app:
 4. Pulsa `Verificar actualizacion`.
 5. Si hay version nueva, pulsa `Actualizar ahora`.
 
-La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena.
+Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
+
+La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena.
 
 Para que la actualizacion online funcione, la instalacion debe tener configurada la clave publica de firma en `UpdateSecurity:ReleaseSigningPublicKeyPem` o en `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Desde el paquete firmado `V-01.06`, el instalador escribe una clave publica por defecto si no se proporciona override. Sin clave publica valida, la app rechaza paquetes online. Es incomodo una vez; confiar en ZIPs sin firma seria peor.
 
