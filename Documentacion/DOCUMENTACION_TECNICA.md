@@ -1,5 +1,57 @@
 # Documentacion tecnica
 
+## 2026-05-17 - V-01.07 - Revision bancaria afinada con ejemplos reales
+
+### Que cambio
+
+- `RevisionService` deja de usar `tarjeta` como termino directo de comision. Solo aparece si el concepto tambien trae una senal fuerte como `comision`.
+- La revision de seguros queda limitada a cargos negativos (`Monto < 0`), porque ingresos, abonos o anulaciones no son pagos de seguro a revisar.
+- La deteccion de seguros excluye nuevos falsos positivos observados en capturas: `seguros sociales`, `generalitat`, transferencias, anulaciones, devoluciones y reembolsos.
+- Se agregan pruebas de regresion con los conceptos reportados: transferencias a proveedores/personas, cuotas de Seguridad Social, prestamos/cuotas/leasing, cargos de tarjeta, Generalitat, Reale/Occident por transferencia y anulaciones de seguros.
+
+### Por que
+
+La regla anterior aun tenia dos puntos flojos: `tarjeta` convertia cargos normales de tarjeta en comisiones, y `generali` cazaba `Generalitat`. Si el usuario acaba descartando media pantalla a mano, el detector esta estorbando. La revision debe ser conservadora: mejor no mostrar un dudoso que llenar la lista de ruido.
+
+### Verificacion
+
+- `git diff --check` sobre `RevisionService.cs` y `RevisionServiceTests.cs`: OK, solo avisos CRLF esperados.
+- `where.exe dotnet`: no encuentra SDK/runtime .NET en esta maquina.
+
+### Pendiente real
+
+- Ejecutar `RevisionServiceTests` cuando haya SDK .NET disponible.
+
+## 2026-05-16 - V-01.07 - Importacion, revision y MFA
+
+### Que cambio
+
+- `ImportacionService` deja de rechazar un formato cuando una columna extra mapeada no aparece en los datos pegados. Esa celda se trata como blanco y no se persiste en `EXTRACTOS_COLUMNAS_EXTRA`.
+- Las columnas base siguen siendo obligatorias salvo los casos informativos ya soportados. Fecha, monto y saldo no pueden quedar realmente `NULL` porque el schema de `EXTRACTOS` no lo permite.
+- `RevisionService` elimina `transferencia`, `cuota` y `servicio` como terminos directos de comision. Una transferencia normal deja de salir como comision; una linea con `comision` sigue saliendo.
+- La deteccion de seguros excluye Seguridad Social, Seguro Social, TGSS y Tesoreria General para no mezclar impuestos/cotizaciones con polizas.
+- El recuerdo MFA pasa de 30 a 90 dias.
+- `Logout` deja de borrar la cookie `mfa_trusted`: cerrar sesion corta la sesion, no desconfia el dispositivo recordado.
+- `UsuariosController` anade `POST /api/usuarios/{id}/mfa/revocar`, que limpia secreto MFA, desactiva MFA, rota `security_stamp`, revoca refresh tokens activos y audita `MFA_REVOKED` sin guardar secretos.
+- `Reset-AdminPassword.ps1` tambien limpia MFA para recuperar un admin que haya perdido el Authenticator.
+- `UsuariosPage` muestra estado de Authenticator y permite revocarlo desde un modal de confirmacion.
+
+### Por que
+
+Rechazar una importacion porque una columna extra viene vacia es mala UX y mala semantica: una columna opcional vacia es blanco, no error. Lo de `transferencia` como comision era directamente una regla floja: transferencia no significa comision. Y MFA recordado sin revocacion era media solucion; si no se puede cortar, no es control de acceso, es decoracion.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+- `frontend/dist` copiado a `backend/src/AtlasBalance.API/wwwroot`; `index.html` coincide con `dist`.
+- Tests backend focalizados bloqueados: `dotnet` no existe en `PATH` ni fuera del sandbox en esta maquina.
+
+### Pendiente real
+
+- Ejecutar tests backend focalizados cuando haya SDK .NET disponible: `ImportacionServiceTests`, `RevisionServiceTests`, `AuthServiceTests`, `UsuariosControllerTests` y `AuthControllerTests`.
+
 ## 2026-05-16 - V-01.07 - Apertura de version
 
 ### Que cambio
@@ -1664,7 +1716,7 @@ La tarjeta estaba bien; la grafica no. Recharts estaba reservando demasiado espa
 
 - `AuthService.LoginAsync` acepta la cookie `mfa_trusted` y omite el reto MFA solo si el token firmado coincide con el usuario, su `security_stamp` y una expiracion futura.
 - `AuthService.VerifyMfaAsync` emite un token MFA recordado durante 90 dias tras verificar correctamente el codigo TOTP.
-- `AuthController` lee/escribe `mfa_trusted` como cookie `HttpOnly`, `SameSite=Strict`, `Secure` cuando aplica, y la elimina en logout.
+- `AuthController` lee/escribe `mfa_trusted` como cookie `HttpOnly`, `SameSite=Strict`, `Secure` cuando aplica. Desde `V-01.07`, logout no la elimina; la revocacion va por rotacion de `security_stamp` o reset MFA.
 - El enrolamiento inicial sigue generando secreto TOTP por usuario y ahora el frontend pinta un QR real desde `mfa_otp_auth_uri`.
 - Se agrega `qrcode` al frontend para generar el QR localmente sin servicios externos.
 - `backend/src/AtlasBalance.API/wwwroot` queda sincronizado con el build frontend actualizado.

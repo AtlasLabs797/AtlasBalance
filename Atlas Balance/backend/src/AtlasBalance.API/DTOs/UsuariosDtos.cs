@@ -21,6 +21,7 @@ public sealed class UsuarioListItemResponse
     public bool Activo { get; set; }
     public bool PrimerLogin { get; set; }
     public bool PuedeUsarIa { get; set; }
+    public bool MfaEnabled { get; set; }
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaUltimaLogin { get; set; }
     public DateTime? DeletedAt { get; set; }

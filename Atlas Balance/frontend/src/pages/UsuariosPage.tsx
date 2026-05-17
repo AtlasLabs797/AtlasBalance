@@ -16,6 +16,7 @@ interface UsuarioRow {
   activo: boolean;
   primer_login: boolean;
   puede_usar_ia: boolean;
+  mfa_enabled: boolean;
   deleted_at: string | null;
 }
 
@@ -47,9 +48,13 @@ export default function UsuariosPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
+  const [mfaCandidate, setMfaCandidate] = useState<DeleteCandidate | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const deleteDialogRef = useDialogFocus<HTMLDivElement>(Boolean(deleteCandidate), {
     onEscape: actionLoading ? undefined : () => setDeleteCandidate(null),
+  });
+  const mfaDialogRef = useDialogFocus<HTMLDivElement>(Boolean(mfaCandidate), {
+    onEscape: actionLoading ? undefined : () => setMfaCandidate(null),
   });
 
   const activeCount = useMemo(
@@ -121,6 +126,10 @@ export default function UsuariosPage() {
     setDeleteCandidate({ id: row.id, email: row.email });
   };
 
+  const confirmMfaRevoke = (row: UsuarioRow) => {
+    setMfaCandidate({ id: row.id, email: row.email });
+  };
+
   const softDelete = async () => {
     if (!deleteCandidate) {
       return;
@@ -149,6 +158,25 @@ export default function UsuariosPage() {
       await loadData();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo restaurar el usuario.'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const revokeMfa = async () => {
+    if (!mfaCandidate) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError(null);
+
+    try {
+      await api.post(`/usuarios/${mfaCandidate.id}/mfa/revocar`);
+      setMfaCandidate(null);
+      await loadData();
+    } catch (err) {
+      setError(extractErrorMessage(err, 'No se pudo revocar el Authenticator del usuario.'));
     } finally {
       setActionLoading(false);
     }
@@ -230,6 +258,7 @@ export default function UsuariosPage() {
                 <th>Estado</th>
                 <th>Cambio inicial</th>
                 <th>IA</th>
+                <th>Authenticator</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -246,6 +275,7 @@ export default function UsuariosPage() {
                   </td>
                   <td>{row.primer_login ? 'Pendiente' : 'Completado'}</td>
                   <td>{row.puede_usar_ia ? 'Sí' : 'No'}</td>
+                  <td>{row.mfa_enabled ? 'Activo' : 'Pendiente'}</td>
                   <td className="users-row-actions">
                     <button
                       type="button"
@@ -269,6 +299,15 @@ export default function UsuariosPage() {
                         disabled={actionLoading}
                       >
                         Restaurar
+                      </button>
+                    )}
+                    {!row.deleted_at && row.mfa_enabled && (
+                      <button
+                        type="button"
+                        onClick={() => confirmMfaRevoke(row)}
+                        disabled={actionLoading}
+                      >
+                        Revocar Authenticator
                       </button>
                     )}
                   </td>
@@ -346,6 +385,41 @@ export default function UsuariosPage() {
               </button>
               <button type="button" onClick={() => void softDelete()} disabled={actionLoading}>
                 {actionLoading ? 'Enviando...' : 'Enviar a papelera'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mfaCandidate && (
+        <div
+          className="modal-backdrop users-modal-backdrop"
+          onClick={() => setMfaCandidate(null)}
+        >
+          <div
+            ref={mfaDialogRef}
+            className="users-confirm-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mfa-user-title"
+            tabIndex={-1}
+          >
+            <h2 id="mfa-user-title">Revocar Authenticator</h2>
+            <p>
+              Vas a quitar el Authenticator de <strong>{mfaCandidate.email}</strong>.
+            </p>
+            <p>Se cerraran sus sesiones activas y tendra que configurar MFA de nuevo al entrar.</p>
+            <div className="users-form-actions">
+              <button
+                type="button"
+                onClick={() => setMfaCandidate(null)}
+                disabled={actionLoading}
+              >
+                Cancelar
+              </button>
+              <button type="button" onClick={() => void revokeMfa()} disabled={actionLoading}>
+                {actionLoading ? 'Revocando...' : 'Revocar Authenticator'}
               </button>
             </div>
           </div>

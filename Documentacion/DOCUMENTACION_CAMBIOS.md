@@ -8,6 +8,87 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-17 - Revision bancaria afinada con capturas reales
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Comisiones deja de considerar `tarjeta` como comision por si sola.
+- Seguros ahora solo devuelve cargos negativos.
+- Seguros excluye falsos positivos reportados: Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Se agregan pruebas de regresion con conceptos sacados de las capturas de comisiones y seguros.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RevisionServiceTests.cs`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md`.
+- Barridos `rg` y lectura de `RevisionService.cs` / `RevisionServiceTests.cs`.
+- `where.exe dotnet`
+- `git diff --check -- "Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs" "Atlas Balance/backend/tests/AtlasBalance.API.Tests/RevisionServiceTests.cs"`
+
+**Resultado de verificacion:**
+- Validacion de whitespace/diff: OK, solo avisos CRLF esperados.
+- Tests backend no ejecutados: `dotnet` no esta disponible en esta maquina.
+
+**Pendientes:**
+- Ejecutar `RevisionServiceTests` en entorno con SDK .NET.
+
+## 2026-05-16 - Importacion, revision y MFA
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Importacion permite columnas extra vacias o ausentes y las deja en blanco.
+- Revision afina comisiones quitando terminos demasiado amplios (`transferencia`, `cuota`, `servicio`).
+- Revision afina seguros excluyendo Seguridad Social, Seguro Social, TGSS y Tesoreria General.
+- MFA recordado pasa a 90 dias.
+- Logout conserva la cookie `mfa_trusted` para que recordar dispositivo sobreviva al cierre de sesion.
+- Administracion de usuarios incorpora revocacion de Authenticator.
+- Reset admin por script limpia MFA para recuperar accesos perdidos.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/UsuariosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AuditActions.cs`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/pages/UsuariosPage.tsx`
+- `Atlas Balance/scripts/Reset-AdminPassword.ps1`
+- Tests focalizados de importacion, revision, auth y usuarios.
+- Documentacion en `Documentacion`.
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md`.
+- Barridos `rg` sobre importacion, revision, MFA y usuarios.
+- `dotnet test ...` focalizado: bloqueado porque `dotnet` no esta disponible.
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `Copy-Item` de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
+- `Compare-Object` entre `dist/index.html` y `wwwroot/index.html`
+
+**Resultado de verificacion:**
+- Frontend lint: OK.
+- TypeScript: OK.
+- Build frontend: OK.
+- `wwwroot/index.html` coincide con `frontend/dist/index.html`.
+- Backend tests no ejecutados: `dotnet` no existe en `PATH` ni fuera del sandbox en esta maquina.
+
+**Pendientes:**
+- Ejecutar tests backend focalizados con SDK .NET disponible.
+- Ejecutar suite completa con Docker/Testcontainers antes de release.
+
 ## 2026-05-16 - Apertura de version V-01.07
 
 **Version:** V-01.07

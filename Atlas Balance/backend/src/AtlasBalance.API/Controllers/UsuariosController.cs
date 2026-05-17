@@ -89,6 +89,7 @@ public sealed class UsuariosController : ControllerBase
                 Activo = u.Activo,
                 PrimerLogin = u.PrimerLogin,
                 PuedeUsarIa = u.PuedeUsarIa,
+                MfaEnabled = u.MfaEnabled,
                 FechaCreacion = u.FechaCreacion,
                 FechaUltimaLogin = u.FechaUltimaLogin,
                 DeletedAt = u.DeletedAt
@@ -135,6 +136,7 @@ public sealed class UsuariosController : ControllerBase
                 Activo = usuario.Activo,
                 PrimerLogin = usuario.PrimerLogin,
                 PuedeUsarIa = usuario.PuedeUsarIa,
+                MfaEnabled = usuario.MfaEnabled,
                 FechaCreacion = usuario.FechaCreacion,
                 FechaUltimaLogin = usuario.FechaUltimaLogin,
                 DeletedAt = usuario.DeletedAt
@@ -685,6 +687,52 @@ public sealed class UsuariosController : ControllerBase
             JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }), cancellationToken);
 
         return Ok(new { message = "Usuario restaurado" });
+    }
+
+    [HttpPost("{id:guid}/mfa/revocar")]
+    public async Task<IActionResult> RevocarMfa(Guid id, CancellationToken cancellationToken)
+    {
+        var usuario = await _dbContext.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null)
+        {
+            return NotFound(new { error = "Usuario no encontrado" });
+        }
+
+        var before = new
+        {
+            usuario.MfaEnabled,
+            has_mfa_secret = !string.IsNullOrWhiteSpace(usuario.MfaSecret),
+            usuario.MfaEnabledAt,
+            usuario.MfaLastAcceptedStep
+        };
+
+        var revokedAt = DateTime.UtcNow;
+        usuario.MfaEnabled = false;
+        usuario.MfaSecret = null;
+        usuario.MfaEnabledAt = null;
+        usuario.MfaLastAcceptedStep = null;
+        var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, revokedAt, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var after = new
+        {
+            usuario.MfaEnabled,
+            has_mfa_secret = !string.IsNullOrWhiteSpace(usuario.MfaSecret),
+            usuario.MfaEnabledAt,
+            usuario.MfaLastAcceptedStep
+        };
+
+        await _auditService.LogAsync(
+            GetCurrentUserId(),
+            AuditActions.MfaRevoked,
+            "USUARIOS",
+            usuario.Id,
+            HttpContext,
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }),
+            cancellationToken);
+
+        return Ok(new { message = "Authenticator revocado. El usuario tendra que configurarlo de nuevo en el proximo acceso." });
     }
 
     private async Task<(bool Ok, string? Error)> ValidatePermisosAsync(IReadOnlyList<SavePermisoUsuarioRequest> permisos, CancellationToken cancellationToken)

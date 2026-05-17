@@ -47,7 +47,9 @@ Atlas Balance usa MFA con aplicaciones compatibles tipo Google Authenticator.
 
 La primera vez que entras, despues de email y contrasena, aparece un QR. Escanealo con Google Authenticator y escribe el codigo de 6 digitos. Si el QR no se puede escanear, usa la clave manual que aparece debajo.
 
-Despues de verificarlo, puedes marcar `Recordar este dispositivo durante 30 dias`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login. Se volvera a pedir tambien cuando pasen esos 30 dias, cierres sesion y borres cookies, cambie la seguridad del usuario o uses otro navegador/equipo.
+Despues de verificarlo, puedes marcar `Recordar este dispositivo durante 90 dias`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login. Se volvera a pedir tambien cuando pasen esos 90 dias, borres cookies, cambie la seguridad del usuario o uses otro navegador/equipo.
+
+Cerrar sesion ya no borra el dispositivo recordado. Cierra la sesion normal, pero no anula la confianza MFA del navegador. Si quieres cortar esa confianza, un administrador debe revocar el Authenticator del usuario desde `Usuarios`.
 
 ## Paquetes de instalacion
 
@@ -57,26 +59,26 @@ Los paquetes de release estan en:
 Atlas Balance/Atlas Balance Release
 ```
 
-Paquete esperado para la version actual `V-01.06`:
+Paquete esperado para la version actual `V-01.07`:
 
 ```text
-AtlasBalance-V-01.06-win-x64.zip
-AtlasBalance-V-01.06-win-x64.zip.sig
+AtlasBalance-V-01.07-win-x64.zip
+AtlasBalance-V-01.07-win-x64.zip.sig
 ```
 
-SHA256 del ZIP firmado generado el 2026-05-13:
+SHA256 del ZIP firmado de `V-01.07`:
 
 ```text
-95DCA977E145DE07BF41E5B6478AD856BF803E4938A0A98480ABB043F51781E1
+Pendiente hasta generar el paquete firmado de esta version.
 ```
 
-No reutilices hashes ni paquetes de `V-01.05` para publicar `V-01.06`.
+No reutilices hashes ni paquetes de `V-01.06` para publicar `V-01.07`.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
-No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-01.06-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
+No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-01.07-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
 
-Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.06-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
+Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.07-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
 ## Limpieza antes de publicar
 
@@ -126,7 +128,7 @@ Desde `V-01.05`, ese wrapper acepta `-InstallPath` directamente y crea backup an
 Si la instalacion ya tiene los scripts actualizados, tambien vale:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.06-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.07-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 La distribucion oficial de paquetes se publica como asset en GitHub Releases:
@@ -173,7 +175,7 @@ Cuando se importan, Atlas Balance usa la fecha de la ultima fila valida anterior
 
 Al confirmar, Atlas Balance respeta el orden del extracto pegado. La linea superior queda como la ultima del lote (`fila_numero` mas alto), sin reordenar por fecha durante la importacion.
 
-Los formatos de importacion permiten hasta 64 columnas extra y nombres de hasta 80 caracteres. Las columnas extra vacias no se guardan. Esto evita que un formato mal hecho convierta una importacion normal en basura multiplicada en base de datos.
+Los formatos de importacion permiten hasta 64 columnas extra y nombres de hasta 80 caracteres. Las columnas extra vacias no se guardan. Si el banco ni siquiera trae esa columna en alguna fila pegada, se deja en blanco y la fila puede importarse. Esto evita que un formato mal hecho convierta una importacion normal en basura multiplicada en base de datos.
 
 Si falla la carga de cuentas o formato durante la importacion, la pantalla muestra el error real y no lo disfraza como "sin cuentas". La confirmacion ignora dobles clics mientras ya hay una importacion en curso.
 
@@ -189,6 +191,8 @@ Indica fecha, monto y concepto opcional. Atlas Balance calcula el saldo nuevo de
 En `Usuarios`, el modal de alta/edicion incluye `Acceso a todas las cuentas`. Ese ajuste crea un permiso global para ver todas las cuentas sin conceder automaticamente edicion, eliminacion ni importacion.
 
 Para permisos manuales, marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
+
+La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar Authenticator`. Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
 
 ## Titulares, cuentas y plazos fijos
 
@@ -230,8 +234,8 @@ El aviso por email se envia cuando el saldo actual de la cuenta queda por debajo
 
 El menu lateral incluye `Revision` con dos apartados:
 
-- `Comisiones`: busca movimientos con conceptos de comision, cuota, mantenimiento, administracion, servicio, reclamacion, descubierto, tarjeta, transferencia o gastos bancarios.
-- `Seguros`: busca movimientos con conceptos de seguro, poliza, prima y aseguradoras habituales.
+- `Comisiones`: busca movimientos con conceptos de comision, mantenimiento, administracion, reclamacion, descubierto o gastos bancarios. `Tarjeta`, `cuota`, `leasing`, `prestamo`, `servicio` o `transferencia` por si solos no cuentan como comision.
+- `Seguros`: busca cargos negativos con conceptos de seguro, poliza, prima y aseguradoras habituales. Quedan fuera Seguridad Social, Seguro Social, Seguros Sociales, TGSS, Tesoreria General, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
 
 En comisiones puedes marcar una linea como `Devuelta`. En seguros puedes marcarla como `Correcto`. Si la deteccion automatica se equivoca, usa `No es comision` o `No es seguro`; la linea queda como `Descartada` y puedes recuperarla con `Restaurar`.
 

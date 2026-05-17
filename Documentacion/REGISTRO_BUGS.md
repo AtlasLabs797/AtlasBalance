@@ -19,6 +19,25 @@
 
 ## Cerrados
 
+### 2026-05-17 - V-01.07 - Cerrado - Revision seguia mostrando ruido de comisiones y seguros
+
+- Contexto: capturas reales mostraron falsos positivos en revision: transferencias, tarjetas, cuotas/leasing/prestamos, Seguridad Social/TGSS, Generalitat, transferencias a aseguradoras y anulaciones de seguros.
+- Causa: los terminos de deteccion seguian siendo demasiado amplios y la revision de seguros no filtraba por cargo negativo ni excluia transferencias/anulaciones.
+- Solucion: `tarjeta` deja de ser disparador directo de comision; seguros exige importe negativo y excluye Seguridad Social/TGSS plural, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Verificacion: pruebas de regresion agregadas con los conceptos reportados. Ejecucion pendiente porque `dotnet` no esta disponible en esta maquina.
+- Estado: cerrado en codigo; pendiente ejecutar `RevisionServiceTests` con SDK .NET.
+
+### 2026-05-16 - V-01.07 - Cerrado - Importacion, revision y Authenticator
+
+- Contexto: importacion rechazaba celdas extra vacias, revision marcaba transferencias como comisiones y casos de Seguridad Social como seguros, y MFA recordado no duraba lo esperado ni tenia revocacion administrativa.
+- Causa:
+  - Validacion demasiado estricta para columnas extra ausentes.
+  - Terminos de revision demasiado amplios.
+  - `Logout` borraba `mfa_trusted`; el recuerdo MFA era de 30 dias y no habia reset de Authenticator por usuario.
+- Solucion: columnas extra ausentes se dejan en blanco, revision elimina terminos flojos y excluye Seguridad Social/TGSS, MFA recordado pasa a 90 dias, logout conserva la cookie de confianza, usuarios permite revocar Authenticator y el reset admin limpia MFA.
+- Verificacion: frontend lint OK, TypeScript OK y build OK. Tests backend focalizados pendientes por ausencia de `dotnet`.
+- Estado: cerrado en codigo; pendiente ejecutar tests backend cuando el SDK .NET vuelva a estar disponible.
+
 ### 2026-05-13 - V-01.06 - Cerrado - GitHub Actions fallaba en restore locked
 
 - Contexto: PR #6 fallaba en `dotnet restore "./Atlas Balance/backend/AtlasBalance.sln" --locked-mode`.

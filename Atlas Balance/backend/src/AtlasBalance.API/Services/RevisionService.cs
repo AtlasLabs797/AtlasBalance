@@ -28,39 +28,41 @@ public sealed class RevisionService : IRevisionService
     private static readonly string[] ComisionTerms =
     [
         "comision",
-        "cuota",
+        "comisi\u00f3n",
         "mantenimiento",
         "administracion",
-        "servicio",
+        "administraci\u00f3n",
         "reclamacion",
+        "reclamaci\u00f3n",
         "descubierto",
-        "tarjeta",
-        "transferencia",
         "gastos bancarios"
     ];
 
     private static readonly string[] ComisionSearchTerms =
     [
         "comision",
+        "comisi\u00f3n",
         "comisión",
-        "cuota",
         "mantenimiento",
         "administracion",
+        "administraci\u00f3n",
         "administración",
-        "servicio",
         "reclamacion",
+        "reclamaci\u00f3n",
         "reclamación",
         "descubierto",
-        "tarjeta",
-        "transferencia",
         "gastos bancarios"
     ];
+
+    private static readonly string[] ComisionExcludedTerms = [];
+    private static readonly string[] ComisionExcludedSearchTerms = [];
 
     private static readonly string[] SeguroTerms =
     [
         "seguro",
         "aseguradora",
         "poliza",
+        "p\u00f3liza",
         "prima",
         "mapfre",
         "allianz",
@@ -77,6 +79,7 @@ public sealed class RevisionService : IRevisionService
         "seguro",
         "aseguradora",
         "poliza",
+        "p\u00f3liza",
         "póliza",
         "prima",
         "mapfre",
@@ -87,6 +90,53 @@ public sealed class RevisionService : IRevisionService
         "zurich",
         "mutua",
         "occidente"
+    ];
+
+    private static readonly string[] SeguroExcludedTerms =
+    [
+        "seguridad social",
+        "seguro social",
+        "seguros sociales",
+        "tgss",
+        "tesoreria general",
+        "tesoreria gral",
+        "social security",
+        "generalitat",
+        "generalidad",
+        "transferencia",
+        "transferencias",
+        "abono transferencia",
+        "transferencia recibida",
+        "transferencia realizada",
+        "anul",
+        "anulacion",
+        "devolucion",
+        "reembolso"
+    ];
+
+    private static readonly string[] SeguroExcludedSearchTerms =
+    [
+        "seguridad social",
+        "seguro social",
+        "seguros sociales",
+        "tgss",
+        "tesoreria general",
+        "tesorer\u00eda general",
+        "tesoreria gral",
+        "social security",
+        "generalitat",
+        "generalidad",
+        "transferencia",
+        "transferencias",
+        "abono transferencia",
+        "transferencia recibida",
+        "transferencia realizada",
+        "anul",
+        "anulacion",
+        "anulaci\u00f3n",
+        "devolucion",
+        "devoluci\u00f3n",
+        "reembolso"
     ];
 
     private readonly AppDbContext _dbContext;
@@ -148,6 +198,7 @@ public sealed class RevisionService : IRevisionService
         var page = NormalizePage(request.Page);
         var pageSize = NormalizePageSize(request.PageSize);
         var query = BuildRevisionBaseQuery(scope, TipoSeguro, SeguroSearchTerms)
+            .Where(x => x.Monto < 0m)
             .Select(x => new RevisionSeguroItemResponse
             {
                 ExtractoId = x.ExtractoId,
@@ -233,9 +284,9 @@ public sealed class RevisionService : IRevisionService
         };
     }
 
-    public static bool IsCommissionConcept(string? concept) => ContainsAnyTerm(concept, ComisionTerms);
+    public static bool IsCommissionConcept(string? concept) => MatchesAnyIncludedTerm(concept, ComisionTerms, ComisionExcludedTerms);
 
-    public static bool IsInsuranceConcept(string? concept) => ContainsAnyTerm(concept, SeguroTerms);
+    public static bool IsInsuranceConcept(string? concept) => MatchesAnyIncludedTerm(concept, SeguroTerms, SeguroExcludedTerms);
 
     private IQueryable<RevisionRawRow> BuildRevisionBaseQuery(UserAccessScope scope, string tipo, IReadOnlyList<string> terms)
     {
@@ -243,7 +294,7 @@ public sealed class RevisionService : IRevisionService
 
         return
             from e in _dbContext.Extractos.AsNoTracking()
-                .Where(BuildConceptPredicate(terms))
+                .Where(BuildConceptPredicate(terms, GetExcludedSearchTerms(tipo)))
             join c in cuentasQuery on e.CuentaId equals c.Id
             join t in _dbContext.Titulares.AsNoTracking() on c.TitularId equals t.Id
             join estado in _dbContext.RevisionExtractoEstados.AsNoTracking().Where(x => x.Tipo == tipo)
@@ -290,7 +341,7 @@ public sealed class RevisionService : IRevisionService
 
     private static int NormalizePageSize(int pageSize) => Math.Clamp(pageSize, 10, 200);
 
-    private static Expression<Func<Extracto, bool>> BuildConceptPredicate(IReadOnlyList<string> terms)
+    private static Expression<Func<Extracto, bool>> BuildConceptPredicate(IReadOnlyList<string> terms, IReadOnlyList<string> excludedTerms)
     {
         var extracto = Expression.Parameter(typeof(Extracto), "extracto");
         var concepto = Expression.Property(extracto, nameof(Extracto.Concepto));
@@ -307,10 +358,24 @@ public sealed class RevisionService : IRevisionService
         }
 
         anyTerm ??= Expression.Constant(false);
+        Expression? excluded = null;
+        foreach (var term in excludedTerms.Select(x => x.ToLowerInvariant()).Distinct(StringComparer.Ordinal))
+        {
+            var contains = Expression.Call(lower, containsMethod, Expression.Constant(term));
+            excluded = excluded is null ? contains : Expression.OrElse(excluded, contains);
+        }
+
+        var match = excluded is null
+            ? anyTerm
+            : Expression.AndAlso(anyTerm, Expression.Not(excluded));
+
         return Expression.Lambda<Func<Extracto, bool>>(
-            Expression.AndAlso(Expression.AndAlso(notNull, notEmpty), anyTerm),
+            Expression.AndAlso(Expression.AndAlso(notNull, notEmpty), match),
             extracto);
     }
+
+    private static IReadOnlyList<string> GetExcludedSearchTerms(string tipo) =>
+        tipo == TipoSeguro ? SeguroExcludedSearchTerms : ComisionExcludedSearchTerms;
 
     private static string NormalizeTipo(string value)
     {
@@ -357,7 +422,7 @@ public sealed class RevisionService : IRevisionService
         };
     }
 
-    private static bool ContainsAnyTerm(string? concept, IReadOnlyList<string> terms)
+    private static bool MatchesAnyIncludedTerm(string? concept, IReadOnlyList<string> includedTerms, IReadOnlyList<string> excludedTerms)
     {
         if (string.IsNullOrWhiteSpace(concept))
         {
@@ -365,7 +430,12 @@ public sealed class RevisionService : IRevisionService
         }
 
         var normalized = RemoveDiacritics(concept).ToLowerInvariant();
-        return terms.Any(term => normalized.Contains(term, StringComparison.OrdinalIgnoreCase));
+        if (excludedTerms.Any(term => normalized.Contains(term, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return includedTerms.Any(term => normalized.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string RemoveDiacritics(string value)

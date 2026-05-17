@@ -274,10 +274,45 @@ public class AuthServiceTests
         var trustedLogin = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, verified.TrustedMfaToken);
 
         verified.TrustedMfaToken.Should().NotBeNullOrWhiteSpace();
-        verified.TrustedMfaTokenExpiresAt.Should().BeAfter(DateTime.UtcNow.AddDays(29));
+        verified.TrustedMfaTokenExpiresAt.Should().BeAfter(DateTime.UtcNow.AddDays(89));
         trustedLogin.MfaRequired.Should().BeFalse();
         trustedLogin.AccessToken.Should().NotBeNullOrWhiteSpace();
         trustedLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Login_Should_Require_Mfa_When_Trusted_Mfa_Token_Was_Revoked_By_SecurityStamp_Rotation()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-revoked@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Revoked",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
+        var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, true, "127.0.0.1", CancellationToken.None);
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        UserSessionState.RotateSecurityStamp(persisted);
+        await db.SaveChangesAsync();
+
+        var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, verified.TrustedMfaToken);
+
+        result.MfaRequired.Should().BeTrue();
+        result.MfaSetupRequired.Should().BeFalse();
+        result.AccessToken.Should().BeNull();
+        result.RefreshToken.Should().BeNull();
     }
 
     [Fact]

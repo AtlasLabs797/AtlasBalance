@@ -258,7 +258,7 @@ export default function LoginPage() {
                 className="auth-checkbox"
                 {...register('rememberDevice')}
               />
-              <span>Recordar este dispositivo durante 30 días</span>
+              <span>Recordar este dispositivo durante 90 días</span>
             </label>
           </>
         )}

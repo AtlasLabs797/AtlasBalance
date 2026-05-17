@@ -63,7 +63,7 @@ public class RevisionServiceTests
                 Id = positiveCommissionId,
                 CuentaId = cuentaId,
                 Fecha = new DateOnly(2026, 5, 3),
-                Concepto = "Cuota tarjeta devuelta",
+                Concepto = "Comision tarjeta devuelta",
                 Monto = 1.20m,
                 Saldo = 100m,
                 FilaNumero = 3
@@ -189,6 +189,221 @@ public class RevisionServiceTests
             CancellationToken.None);
 
         todosTrasDescartar.Data.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetComisionesAsync_Should_Not_Treat_Plain_Transfers_As_Commissions()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var commissionId = Guid.NewGuid();
+
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "revision_comisiones_importe_minimo",
+            Valor = "0",
+            Tipo = "number",
+            Descripcion = "Importe minimo"
+        });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 5, 1),
+                Concepto = "Transferencia SEPA alquiler",
+                Monto = -500m,
+                Saldo = 500m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = commissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 5, 2),
+                Concepto = "Comision transferencia SEPA",
+                Monto = -2.50m,
+                Saldo = 497.50m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db));
+        var result = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
+
+        RevisionService.IsCommissionConcept("Transferencia SEPA alquiler").Should().BeFalse();
+        RevisionService.IsCommissionConcept("Comision transferencia SEPA").Should().BeTrue();
+        result.Data.Should().ContainSingle();
+        result.Data[0].ExtractoId.Should().Be(commissionId);
+    }
+
+    [Fact]
+    public async Task GetSegurosAsync_Should_Not_Treat_Social_Security_As_Insurance()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var seguroId = Guid.NewGuid();
+
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 5, 1),
+                Concepto = "Seguro Social autonomos",
+                Monto = -310m,
+                Saldo = 690m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 5, 2),
+                Concepto = "Seguridad Social autonomos",
+                Monto = -310m,
+                Saldo = 380m,
+                FilaNumero = 2
+            },
+            new Extracto
+            {
+                Id = seguroId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 5, 3),
+                Concepto = "Seguro MAPFRE hogar",
+                Monto = -180m,
+                Saldo = 200m,
+                FilaNumero = 3
+            });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db));
+        var result = await sut.GetSegurosAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
+
+        RevisionService.IsInsuranceConcept("Seguro Social autonomos").Should().BeFalse();
+        RevisionService.IsInsuranceConcept("Seguridad Social autonomos").Should().BeFalse();
+        RevisionService.IsInsuranceConcept("Seguro MAPFRE hogar").Should().BeTrue();
+        result.Data.Should().ContainSingle();
+        result.Data[0].ExtractoId.Should().Be(seguroId);
+    }
+
+    [Fact]
+    public async Task GetComisionesAsync_Should_Ignore_Reported_False_Positive_Concepts()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var commissionId = Guid.NewGuid();
+        var falsePositiveConcepts = new[]
+        {
+            "TRANSFERENCIA A PINTURAS SILVANO",
+            "ABONO TRANSFERENCIA DE FRANCISCO GUTIERREZ GALVEZ",
+            "TRANSFERENCIA REALE SEGUROS GENERALES, S.A.",
+            "TRANSFERENCIA ANDAMIOS OMEGA 2005 S.L.",
+            "TRANSFERENCIA TELEFONICA DE ESPANA, SAU",
+            "TRANSFERENCIAS",
+            "Cuota leasing 592500026",
+            "PRESTAMOS ADEUDO CUOTA N.8077279515 31/03/26",
+            "CUOTAS DE LA SEGURIDAD SOCIAL",
+            "ADEUDO DE CUOTA DE LA SEGURIDAD SOCIAL",
+            "TARJETA CREDITO DIDAC FERNANDEZ ROMERO",
+            "Adeudo mensual de tarjeta",
+            "TRANSFERENCIA DE SERVICIOS PROFESIONALES ON TRADING LOGISTIC VALLES, S.L",
+            "Transferencia recibida",
+            "Transferencia realizada"
+        };
+
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "revision_comisiones_importe_minimo",
+            Valor = "0",
+            Tipo = "number",
+            Descripcion = "Importe minimo"
+        });
+
+        for (var i = 0; i < falsePositiveConcepts.Length; i++)
+        {
+            db.Extractos.Add(new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 5, 1).AddDays(i),
+                Concepto = falsePositiveConcepts[i],
+                Monto = i % 2 == 0 ? -100m - i : 100m + i,
+                Saldo = 1_000m - i,
+                FilaNumero = i + 1
+            });
+        }
+
+        db.Extractos.Add(new Extracto
+        {
+            Id = commissionId,
+            CuentaId = cuentaId,
+            Fecha = new DateOnly(2026, 5, 20),
+            Concepto = "Comision mantenimiento cuenta",
+            Monto = -4.25m,
+            Saldo = 900m,
+            FilaNumero = falsePositiveConcepts.Length + 1
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db));
+        var result = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
+
+        falsePositiveConcepts.Should().OnlyContain(concept => !RevisionService.IsCommissionConcept(concept));
+        result.Data.Should().ContainSingle();
+        result.Data[0].ExtractoId.Should().Be(commissionId);
+    }
+
+    [Fact]
+    public async Task GetSegurosAsync_Should_Ignore_Reported_False_Positive_Concepts()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var seguroId = Guid.NewGuid();
+        var falsePositiveRows = new (string Concepto, decimal Monto)[]
+        {
+            ("SEGUROS SOCIALES TGSS. COTIZACION 005 R.E.AUTONOMOS", -299.57m),
+            ("TRANSFERENCIA Generalitat de Catalunya", 880.25m),
+            ("TRANSFERENCIA REALE SEGUROS GENERALES, S.A.", 11_042.84m),
+            ("ANUL.SEGUROS REALE SEGUROS GENERALES, S.A.", 460.94m),
+            ("TRANSFERENCIA OCCIDENT GCO, S.A.U. DE SEGUROS Y REASEG", 500m),
+            ("CUOTAS DE LA SEGURIDAD SOCIAL", -2_771.36m),
+            ("ADEUDO DE CUOTA DE LA SEGURIDAD SOCIAL", -315m),
+            ("Adeudo de cuota de la seguridad social", -302.60m)
+        };
+
+        for (var i = 0; i < falsePositiveRows.Length; i++)
+        {
+            db.Extractos.Add(new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 4, 1).AddDays(i),
+                Concepto = falsePositiveRows[i].Concepto,
+                Monto = falsePositiveRows[i].Monto,
+                Saldo = 1_000m - i,
+                FilaNumero = i + 1
+            });
+        }
+
+        db.Extractos.Add(new Extracto
+        {
+            Id = seguroId,
+            CuentaId = cuentaId,
+            Fecha = new DateOnly(2026, 4, 20),
+            Concepto = "Recibo poliza MAPFRE hogar",
+            Monto = -180m,
+            Saldo = 700m,
+            FilaNumero = falsePositiveRows.Length + 1
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db));
+        var result = await sut.GetSegurosAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
+
+        falsePositiveRows.Select(row => row.Concepto).Should().OnlyContain(concept => !RevisionService.IsInsuranceConcept(concept));
+        result.Data.Should().ContainSingle();
+        result.Data[0].ExtractoId.Should().Be(seguroId);
     }
 
     [Fact]

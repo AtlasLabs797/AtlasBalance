@@ -1,5 +1,43 @@
 # Log de errores e incidencias
 
+## 2026-05-17 - V-01.07 - Falsos positivos persistentes en revision de comisiones y seguros
+
+- Contexto: capturas reales mostraron que la revision seguia sacando ruido en `Comisiones` y `Seguros`: transferencias, cargos de tarjeta, cuotas/leasing/prestamos, Seguridad Social/TGSS, Generalitat, transferencias a aseguradoras y anulaciones de seguros.
+- Causas:
+  - `tarjeta` seguia siendo un termino directo de comision, aunque un cargo de tarjeta no es una comision bancaria.
+  - La deteccion de seguros aceptaba importes positivos y conceptos de transferencia/anulacion.
+  - `generali` como subcadena detectaba `Generalitat`.
+  - Faltaban exclusiones para `seguros sociales` plural y para anulaciones/devoluciones/reembolsos.
+- Solucion aplicada:
+  - Se elimina `tarjeta` como disparador directo de comision.
+  - Seguros se limita a cargos negativos.
+  - Seguros excluye `seguros sociales`, `generalitat`, transferencias, anulaciones, devoluciones y reembolsos.
+  - Se agregan pruebas con los conceptos reportados en las capturas para que no vuelvan a entrar.
+- Verificacion:
+  - `git diff --check` OK en los archivos tocados, con avisos CRLF normales.
+  - Tests backend no ejecutados porque `where.exe dotnet` no encuentra `dotnet` en esta maquina.
+- Regla: si una palabra tambien describe una operacion bancaria normal, no puede ser disparador unico de revision. Eso no es IA; es una red de pesca rota.
+
+## 2026-05-16 - V-01.07 - Importacion, revision y MFA corregidos
+
+- Contexto: se reportaron tres fallos: importacion bloqueada por celdas vacias, falsos positivos en filtros de comisiones/seguros y Authenticator recordado/revocable incompleto.
+- Causas:
+  - `ImportacionService` trataba una columna extra mapeada pero ausente en los datos pegados como error de formato, aunque una columna extra vacia debe quedar en blanco.
+  - `RevisionService` usaba terminos demasiado amplios: `transferencia`, `cuota` y `servicio` disparaban comisiones sin contexto suficiente.
+  - La deteccion de seguros no excluia casos de Seguridad Social/Seguro Social.
+  - El recuerdo MFA duraba 30 dias y `Logout` borraba `mfa_trusted`, anulando el recuerdo al cerrar sesion.
+  - No habia accion de administracion para resetear MFA de un usuario.
+- Solucion aplicada:
+  - Las columnas extra ausentes o vacias pasan a blanco y no se persisten.
+  - Revision elimina los terminos de comision demasiado amplios y excluye Seguridad Social, Seguro Social, TGSS y Tesoreria General en seguros.
+  - El recuerdo MFA pasa a 90 dias y logout conserva `mfa_trusted`.
+  - `POST /api/usuarios/{id}/mfa/revocar` limpia MFA, rota `security_stamp`, revoca refresh tokens activos y audita sin secretos.
+  - `Reset-AdminPassword.ps1` limpia MFA para recuperar admins sin Authenticator.
+- Verificacion:
+  - Frontend lint, TypeScript y build OK.
+  - Tests backend focalizados quedan pendientes porque `dotnet` no existe en esta maquina.
+- Regla: una casilla extra vacia no es un error; una transferencia no es una comision; y un "recordar dispositivo" que se borra al cerrar sesion es un placebo.
+
 ## 2026-05-16 - V-01.06 - shadcn/ui y Tailwind CSS: instalacion auditada con builds completos bloqueados
 
 - Contexto: instalacion/auditoria de `shadcn-ui/ui` y `tailwindlabs/tailwindcss` en `Skills/Diseno`, comprobando que no hubiese duplicados.

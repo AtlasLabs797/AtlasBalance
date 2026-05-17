@@ -133,7 +133,6 @@ public sealed class ImportacionService : IImportacionService
 
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
-        EnsureExtraColumnIndexesExist(rows, normalizedMap);
         var validationRows = ValidateRows(rows, normalizedMap);
 
         return new ImportacionValidarResponse
@@ -159,7 +158,6 @@ public sealed class ImportacionService : IImportacionService
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
-        EnsureExtraColumnIndexesExist(rows, normalizedMap);
         var validationRows = ValidateRows(rows, normalizedMap);
         var allowedRowSet = request.FilasAImportar?.ToHashSet() ?? validationRows.Where(r => r.Valida).Select(r => r.Indice).ToHashSet();
 
@@ -727,23 +725,6 @@ public sealed class ImportacionService : IImportacionService
         }
 
         return normalized;
-    }
-
-    private static void EnsureExtraColumnIndexesExist(IReadOnlyList<string[]> rows, MapeoColumnasRequest map)
-    {
-        if (map.ColumnasExtra.Count == 0)
-        {
-            return;
-        }
-
-        var maxColumnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Length);
-        foreach (var extra in map.ColumnasExtra)
-        {
-            if (extra.Indice >= maxColumnCount)
-            {
-                throw new ImportacionException($"La columna extra '{extra.Nombre}' no existe en los datos importados", StatusCodes.Status400BadRequest);
-            }
-        }
     }
 
     private static string NormalizeTipoMonto(string? raw)

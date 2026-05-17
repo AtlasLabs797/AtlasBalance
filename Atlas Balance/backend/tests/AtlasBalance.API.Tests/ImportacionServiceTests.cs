@@ -1374,6 +1374,73 @@ public class ImportacionServiceTests
         extra.Valor.Should().Be("REF-1");
     }
 
+    [Fact]
+    public async Task ValidarAsync_Should_Allow_Missing_Trailing_Extra_Columns_As_Blank()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tMovimiento\t1\t1",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3,
+                ColumnasExtra =
+                [
+                    new MapeoColumnaExtraRequest { Nombre = "Referencia opcional", Indice = 4 }
+                ]
+            }
+        };
+
+        var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        result.FilasOk.Should().Be(1);
+        result.FilasError.Should().Be(0);
+        result.Filas[0].Datos["extra:Referencia opcional"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_Should_Import_When_Trailing_Extra_Columns_Are_Missing()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var request = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tMovimiento\t1\t1",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3,
+                ColumnasExtra =
+                [
+                    new MapeoColumnaExtraRequest { Nombre = "Referencia opcional", Indice = 4 }
+                ]
+            }
+        };
+
+        var result = await service.ConfirmarAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            request,
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        result.FilasImportadas.Should().Be(1);
+        (await db.Extractos.ToListAsync()).Should().HaveCount(1);
+        (await db.ExtractosColumnasExtra.ToListAsync()).Should().BeEmpty();
+    }
+
     private static async Task<(Guid UserId, Guid CuentaId)> SeedImportableCuentaAsync(AppDbContext db)
     {
         var userId = Guid.NewGuid();
