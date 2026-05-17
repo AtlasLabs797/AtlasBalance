@@ -8,6 +8,50 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-17 - IA lista: contexto, errores y formato de proveedor
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Auditoria focalizada de `/api/ia/config`, `/api/ia/chat`, `AtlasAiService`, `AiChatPanel`, renderer de mensajes IA y allowlist de modelos.
+- Comisiones en contexto IA deja de usar terminos flojos (`cuota`, `servicio`, `tarjeta`, `transferencia`) como disparadores directos.
+- Seguros en contexto IA se limita a cargos negativos y excluye Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Los errores de red de OpenRouter/OpenAI devuelven diagnostico tecnico saneado al usuario sin exponer prompt, respuesta completa ni API key.
+- Regresiones nuevas cubren falsos positivos reales en contexto IA y el detalle seguro de TLS/certificado.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md`.
+- Barridos `rg` y lectura de `AtlasAiService.cs`, `IaController.cs`, `IaDtos.cs`, `AiChatPanel.tsx`, `AiMessageContent.tsx`, `errorMessage.ts`, `RevisionService.cs` y `AtlasAiServiceTests.cs`.
+- Consulta de documentacion oficial de OpenRouter para chat completions, `models`, `reasoning.exclude`, privacidad/routing y modelos publicados.
+- `where.exe dotnet`
+- `Test-Path "C:\Program Files\dotnet\dotnet.exe"`
+- `git diff --check -- "Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs" "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs"`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+
+**Resultado de verificacion:**
+- OpenRouter docs/modelos: parametros usados siguen vigentes y los slugs permitidos siguen publicados.
+- `git diff --check`: OK, solo avisos CRLF esperados.
+- Frontend lint: OK.
+- TypeScript: OK.
+- Frontend build: OK.
+- Tests backend IA: no ejecutados porque `dotnet` no existe en `PATH` ni en `C:\Program Files\dotnet\dotnet.exe`.
+
+**Pendientes:**
+- Ejecutar `AtlasAiServiceTests|ConfiguracionControllerTests` en entorno con SDK .NET.
+- Validar manualmente `/api/ia/chat` contra una instalacion con API key real solo si el operador autoriza usar credenciales y coste del proveedor.
+
 ## 2026-05-17 - Revision bancaria afinada con capturas reales
 
 **Version:** V-01.07

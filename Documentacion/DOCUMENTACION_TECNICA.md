@@ -1,5 +1,33 @@
 # Documentacion tecnica
 
+## 2026-05-17 - V-01.07 - IA: contexto financiero y errores de proveedor afinados
+
+### Que cambio
+
+- `AtlasAiService` deja de tratar `cuota`, `servicio`, `tarjeta` y `transferencia` como senales directas de comision en el contexto que se envia a IA.
+- La seccion `SEGUROS DETECTADOS` del contexto IA se limita a cargos negativos y excluye falsos positivos: Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Los errores de red del proveedor IA devuelven al usuario un diagnostico tecnico saneado (`fallo TLS/certificado`, proxy, DNS o conexion) en vez de quedarse en un mensaje generico. El prompt, la respuesta y las claves siguen sin exponerse.
+- `AtlasAiServiceTests` anade regresion con falsos positivos reales de tarjeta, cuota/leasing, transferencia a aseguradora, anulacion de seguro y Generalitat.
+
+### Por que
+
+La IA no estaba "alucinando" sola: el backend podia darle contexto contaminado. Si metes transferencias a aseguradoras o Generalitat dentro de `SEGUROS DETECTADOS`, el modelo puede responder con basura muy convincente. Eso es peor que fallar: parece analisis.
+
+El error de red generico tampoco ayudaba. Si hay TLS/proxy/DNS roto, el operador necesita una pista saneada para arreglar la salida a OpenRouter/OpenAI sin ver secretos.
+
+### Verificacion
+
+- Documentacion oficial de OpenRouter revisada: `models`, `reasoning.exclude` y controles de privacidad/routing siguen vigentes; los slugs de modelos permitidos siguen publicados en `/api/v1/models`.
+- `git diff --check` sobre `AtlasAiService.cs` y `AtlasAiServiceTests.cs`: OK, solo avisos CRLF esperados.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+- Backend tests no ejecutados: `dotnet` no existe en `PATH` ni en `C:\Program Files\dotnet\dotnet.exe` en esta maquina.
+
+### Pendiente real
+
+- Ejecutar `dotnet test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "AtlasAiServiceTests|ConfiguracionControllerTests" -p:UseAppHost=false --no-restore` en un entorno con SDK .NET.
+
 ## 2026-05-17 - V-01.07 - Revision bancaria afinada con ejemplos reales
 
 ### Que cambio

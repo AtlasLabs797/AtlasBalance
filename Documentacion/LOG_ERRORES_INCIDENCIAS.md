@@ -1,5 +1,24 @@
 # Log de errores e incidencias
 
+## 2026-05-17 - V-01.07 - Contexto IA contaminado por falsos positivos de comisiones/seguros
+
+- Contexto: al revisar las funciones IA, se detecto que `AtlasAiService` ya tenia defensas de proveedor, formato y permisos, pero seguia construyendo contexto financiero con reglas mas flojas que `RevisionService`.
+- Causas:
+  - El contexto IA seguia usando `cuota`, `servicio`, `tarjeta` y `transferencia` como senales directas de comision.
+  - La categoria `SEGUROS DETECTADOS` aceptaba importes positivos y no excluia Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones o reembolsos.
+  - El mensaje de error de red calculaba un diagnostico saneado, pero lo dejaba solo para auditoria y devolvia al usuario un mensaje demasiado generico.
+- Solucion aplicada:
+  - Comisiones IA queda alineado con la regla conservadora de revision: solo senales fuertes.
+  - Seguros IA se limita a cargos negativos y aplica exclusiones de falsos positivos.
+  - Errores de red de OpenRouter/OpenAI muestran diagnostico tecnico saneado sin prompt, respuesta ni claves.
+  - Regresiones en `AtlasAiServiceTests` cubren tarjeta, cuota/leasing, transferencia a aseguradora, anulacion de seguro y Generalitat.
+- Verificacion:
+  - Documentacion oficial de OpenRouter revisada para `models`, `reasoning.exclude`, privacidad/routing y slugs publicados.
+  - `git diff --check` OK en archivos IA tocados.
+  - Frontend lint, TypeScript y build OK.
+  - Tests backend no ejecutados porque no hay SDK .NET en esta maquina.
+- Regla: si el contexto que le das a la IA viene sucio, no culpes al modelo. Primero limpia la comida que le estas sirviendo.
+
 ## 2026-05-17 - V-01.07 - Falsos positivos persistentes en revision de comisiones y seguros
 
 - Contexto: capturas reales mostraron que la revision seguia sacando ruido en `Comisiones` y `Seguros`: transferencias, cargos de tarjeta, cuotas/leasing/prestamos, Seguridad Social/TGSS, Generalitat, transferencias a aseguradoras y anulaciones de seguros.

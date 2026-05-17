@@ -667,7 +667,7 @@ public class AtlasAiServiceTests
     public async Task AskAsync_Should_Build_Period_And_Category_Context()
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db);
+        var userId = await SeedAiUserAndConfigAsync(db, maxContextRows: 0);
         var titularId = Guid.NewGuid();
         var cuentaId = Guid.NewGuid();
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
@@ -723,6 +723,56 @@ public class AtlasAiServiceTests
                 Monto = 500m,
                 Saldo = 1273m,
                 FilaNumero = 5
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = today,
+                Concepto = "Cargo tarjeta comercio",
+                Monto = -45m,
+                Saldo = 1228m,
+                FilaNumero = 6
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = today,
+                Concepto = "Cuota leasing maquinaria",
+                Monto = -90m,
+                Saldo = 1138m,
+                FilaNumero = 7
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = today,
+                Concepto = "Transferencia REALE SEGUROS GENERALES, S.A.",
+                Monto = -500m,
+                Saldo = 638m,
+                FilaNumero = 8
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = today,
+                Concepto = "Anulacion seguro comercio",
+                Monto = -60m,
+                Saldo = 698m,
+                FilaNumero = 9
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = today,
+                Concepto = "Transferencia Generalitat de Catalunya",
+                Monto = -70m,
+                Saldo = 628m,
+                FilaNumero = 10
             });
         await db.SaveChangesAsync();
 
@@ -751,6 +801,8 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().Contain("total absoluto 100,00");
         httpFactory.LastPayload.Should().Contain("total absoluto 80,00");
         httpFactory.LastPayload.Should().Contain("total absoluto 35,00");
+        httpFactory.LastPayload.Should().NotContain("total absoluto 147,00");
+        httpFactory.LastPayload.Should().NotContain("total absoluto 730,00");
     }
 
     [Fact]
@@ -983,7 +1035,10 @@ public class AtlasAiServiceTests
 
         var assertion = await act.Should().ThrowAsync<IaProviderException>();
         assertion.Which.Message.Should().Contain("OpenRouter");
+        assertion.Which.Message.Should().Contain("fallo TLS/certificado");
+        assertion.Which.Message.Should().Contain("certificate chain is untrusted");
         assertion.Which.Message.Should().NotContain("Authentication failed, see inner exception");
+        assertion.Which.Message.Should().NotContain("test-key");
         httpFactory.RequestCount.Should().Be(2);
 
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);

@@ -249,6 +249,8 @@ El menu lateral incluye `IA` y la barra superior incluye un boton de IA para abr
 
 La IA responde usando contexto financiero real minimizado: saldos, agregados y movimientos relevantes cuando aplican. El chat IA requiere permiso explicito por usuario, interruptor global activo, proveedor/modelo configurados, limites de uso disponibles y presupuesto no agotado. Si no tiene datos suficientes, debe decirlo. Si falta configurar proveedor, modelo, API key o permisos, el chat muestra un error claro en vez de inventar.
 
+En consultas de comisiones y seguros, Atlas Balance filtra ruido antes de llamar al proveedor. Un cargo normal de tarjeta, una cuota/leasing, una transferencia, Seguridad Social/TGSS, Generalitat, anulaciones, devoluciones y reembolsos no deben inflar los totales de seguros o comisiones que recibe la IA.
+
 Algunas preguntas de ranking financiero se calculan directamente en Atlas Balance, sin mandar la consulta al proveedor. Por ejemplo, `Que cuentas han tenido mas gastos este trimestre?` devuelve un ranking por cuenta, titular y divisa calculado con los movimientos accesibles para tu usuario. En esas respuestas veras coste y tokens `0`.
 
 Las respuestas del chat se muestran como texto legible. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
@@ -256,6 +258,8 @@ Las respuestas del chat se muestran como texto legible. Si el proveedor devuelve
 Atlas Balance tambien filtra razonamiento interno del proveedor. No deberias ver textos como `We need to answer`, bloques `<think>`, notas de analisis ni placeholders tipo `[PERSON_NAME]`; si un dato no viene en el contexto accesible, la respuesta debe decir que no consta.
 
 Si el proveedor externo devuelve algo que Atlas Balance no puede usar, el error debe indicar una categoria tecnica corta, por ejemplo `invalid_json` o `unsupported_content`, en vez de repetir un mensaje generico de respuesta malformada.
+
+Si falla la conexion con OpenRouter u OpenAI, el chat puede mostrar un diagnostico tecnico saneado, como TLS/certificado, proxy, DNS o conexion rechazada. Ese detalle sirve para el administrador; no incluye prompt, respuesta completa ni API key.
 
 En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva. El selector de modelo queda discreto en la cabecera junto al proveedor y cambia el modelo solo para las siguientes consultas de esa conversacion; no modifica la configuracion global de la app.
 

@@ -19,6 +19,14 @@
 
 ## Cerrados
 
+### 2026-05-17 - V-01.07 - Cerrado - Contexto IA inflaba comisiones y seguros con falsos positivos
+
+- Contexto: las funciones IA podian recibir contexto contaminado aunque `RevisionService` ya hubiese corregido falsos positivos similares.
+- Causa: `AtlasAiService` mantenia terminos amplios para comisiones y no aplicaba restricciones/exclusiones equivalentes en seguros. Ademas, el diagnostico de red saneado se calculaba pero no se mostraba al usuario.
+- Solucion: comisiones IA deja de usar `cuota`, `servicio`, `tarjeta` y `transferencia` como disparadores directos; seguros IA exige cargos negativos y excluye Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos; errores de red muestran detalle tecnico saneado.
+- Verificacion: regresiones agregadas en `AtlasAiServiceTests`; frontend lint, TypeScript y build OK; tests backend pendientes por ausencia de SDK .NET local.
+- Estado: cerrado en codigo; pendiente ejecutar tests backend en entorno con .NET.
+
 ### 2026-05-17 - V-01.07 - Cerrado - Revision seguia mostrando ruido de comisiones y seguros
 
 - Contexto: capturas reales mostraron falsos positivos en revision: transferencias, tarjetas, cuotas/leasing/prestamos, Seguridad Social/TGSS, Generalitat, transferencias a aseguradoras y anulaciones de seguros.
