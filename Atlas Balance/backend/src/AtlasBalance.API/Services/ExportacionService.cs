@@ -259,8 +259,21 @@ public sealed class ExportacionService : IExportacionService
             return string.Empty;
         }
 
-        var first = input[0];
-        return first is '=' or '+' or '-' or '@' or '\t' or '\r' ? "'" + input : input;
+        var offset = 0;
+        var hasDangerousLeadingWhitespace = false;
+        while (offset < input.Length && char.IsWhiteSpace(input[offset]))
+        {
+            hasDangerousLeadingWhitespace |= input[offset] is '\t' or '\r' or '\n';
+            offset++;
+        }
+
+        if (offset == input.Length)
+        {
+            return input;
+        }
+
+        var first = input[offset];
+        return hasDangerousLeadingWhitespace || first is '=' or '+' or '-' or '@' ? "'" + input : input;
     }
 
     private static string Sanitize(string input)

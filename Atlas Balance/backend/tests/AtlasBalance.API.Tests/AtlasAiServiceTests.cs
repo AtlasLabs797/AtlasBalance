@@ -1356,9 +1356,9 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().NotContain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
         httpFactory.LastPayload.Should().NotContain("\"id\":\"auto-router\"");
         httpFactory.LastPayload.Should().NotContain("\"allowed_models\"");
-        httpFactory.LastPayload.Should().NotContain("\"provider\"");
-        httpFactory.LastPayload.Should().NotContain("\"zdr\"");
-        httpFactory.LastPayload.Should().NotContain("\"data_collection\"");
+        httpFactory.LastPayload.Should().Contain("\"provider\"");
+        httpFactory.LastPayload.Should().Contain("\"zdr\":true");
+        httpFactory.LastPayload.Should().Contain("\"data_collection\":\"deny\"");
         httpFactory.LastPayload.Should().Contain("\"stream\":false");
         httpFactory.LastRequestAcceptedJson.Should().BeTrue();
         httpFactory.LastOpenRouterTitle.Should().Be("Atlas Balance");
@@ -1367,7 +1367,7 @@ public class AtlasAiServiceTests
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsulta);
         audit.DetallesJson.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
         audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.OpenRouterDefaultModel}\"");
-        audit.DetallesJson.Should().Contain("\"zero_data_retention\":false");
+        audit.DetallesJson.Should().Contain("\"zero_data_retention\":true");
     }
 
     [Theory]
@@ -1392,15 +1392,16 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().Contain($"\"model\":\"{model}\"");
         httpFactory.LastPayload.Should().Contain($"\"only\":[\"{provider}\"]");
         httpFactory.LastPayload.Should().Contain("\"allow_fallbacks\":false");
+        httpFactory.LastPayload.Should().Contain("\"zdr\":true");
+        httpFactory.LastPayload.Should().Contain("\"data_collection\":\"deny\"");
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
-        httpFactory.LastPayload.Should().NotContain("\"zdr\"");
     }
 
     [Theory]
     [InlineData(AiConfiguration.OpenRouterDefaultModel)]
     [InlineData("z-ai/glm-4.5-air:free")]
     [InlineData("qwen/qwen3-coder:free")]
-    public async Task AskAsync_Should_Send_Unpinned_Free_OpenRouter_Model_Without_Zdr_Guard(string model)
+    public async Task AskAsync_Should_Send_Unpinned_Free_OpenRouter_Model_With_Privacy_Guard(string model)
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: model);
@@ -1417,9 +1418,9 @@ public class AtlasAiServiceTests
         result.Model.Should().Be(model);
         httpFactory.LastPayload.Should().Contain($"\"model\":\"{model}\"");
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
-        httpFactory.LastPayload.Should().NotContain("\"provider\"");
-        httpFactory.LastPayload.Should().NotContain("\"zdr\"");
-        httpFactory.LastPayload.Should().NotContain("\"data_collection\"");
+        httpFactory.LastPayload.Should().Contain("\"provider\"");
+        httpFactory.LastPayload.Should().Contain("\"zdr\":true");
+        httpFactory.LastPayload.Should().Contain("\"data_collection\":\"deny\"");
     }
 
     [Fact]

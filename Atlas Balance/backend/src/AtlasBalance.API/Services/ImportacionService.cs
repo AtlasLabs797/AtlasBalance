@@ -25,6 +25,7 @@ public sealed class ImportacionService : IImportacionService
     private const int MaxRows = 50_000;
     private const int MaxExtraColumns = 64;
     private const int MaxExtraColumnNameLength = 80;
+    private const int MaxImportedCellLength = 4096;
 
     private static readonly string[] DateFormats =
     [
@@ -845,6 +846,7 @@ public sealed class ImportacionService : IImportacionService
                 if (insideQuotes && i + 1 < line.Length && line[i + 1] == '"')
                 {
                     sb.Append('"');
+                    EnsureImportedCellLength(sb.Length);
                     i++;
                     continue;
                 }
@@ -861,10 +863,19 @@ public sealed class ImportacionService : IImportacionService
             }
 
             sb.Append(ch);
+            EnsureImportedCellLength(sb.Length);
         }
 
         values.Add(sb.ToString().Trim());
         return values;
+    }
+
+    private static void EnsureImportedCellLength(int length)
+    {
+        if (length > MaxImportedCellLength)
+        {
+            throw new ImportacionException($"Una celda importada supera el limite de {MaxImportedCellLength} caracteres", StatusCodes.Status413PayloadTooLarge);
+        }
     }
 
     private static List<FilaValidacionResponse> ValidateRows(IReadOnlyList<string[]> rows, MapeoColumnasRequest map)

@@ -214,6 +214,75 @@ public class ExportacionServiceTests
     }
 
     [Fact]
+    public async Task ExportarCuentaAsync_Should_Escape_Formula_Like_Text_After_Leading_Spaces()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-formula-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(exportDirectory);
+
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "export_path",
+            Valor = exportDirectory,
+            Tipo = "string",
+            Descripcion = "Ruta de exportaciones"
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular QA", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta QA", Divisa = "EUR", Activa = true });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 4, 15),
+                Concepto = "  =WEBSERVICE(\"https://example.test\")",
+                Monto = 100m,
+                Saldo = 100m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 4, 16),
+                Concepto = "\ttexto importado",
+                Monto = 25m,
+                Saldo = 125m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var service = new ExportacionService(db, new AuditService(db));
+
+        try
+        {
+            var exportacion = await service.ExportarCuentaAsync(cuentaId, TipoProceso.MANUAL, null, CancellationToken.None);
+
+            using var workbook = new XLWorkbook(exportacion.RutaArchivo!);
+            var worksheet = workbook.Worksheet("Extractos");
+            var cells = new[] { worksheet.Cell(2, 3), worksheet.Cell(3, 3) };
+            var formulaLikeCell = cells.Single(c => c.GetString().Contains("WEBSERVICE", StringComparison.Ordinal));
+            var tabCell = cells.Single(c => c.GetString().Contains("texto importado", StringComparison.Ordinal));
+
+            formulaLikeCell.HasFormula.Should().BeFalse();
+            (formulaLikeCell.GetString().StartsWith("'", StringComparison.Ordinal) || formulaLikeCell.Style.IncludeQuotePrefix)
+                .Should().BeTrue();
+            tabCell.HasFormula.Should().BeFalse();
+            (tabCell.GetString().StartsWith("'", StringComparison.Ordinal) || tabCell.Style.IncludeQuotePrefix)
+                .Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ExportarCuentaAsync_Should_Block_When_Row_Count_Exceeds_Configured_Limit()
     {
         await using var db = BuildDbContext();

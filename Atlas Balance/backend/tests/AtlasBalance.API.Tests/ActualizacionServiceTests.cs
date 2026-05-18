@@ -144,7 +144,7 @@ public sealed class ActualizacionServiceTests
     }
 
     [Fact]
-    public async Task IniciarActualizacionAsync_Should_Use_Configured_Target_And_Ignore_Request_Target()
+    public async Task IniciarActualizacionAsync_Should_Reject_Manual_SourcePath()
     {
         await using var db = BuildDbContext();
         var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
@@ -163,9 +163,8 @@ public sealed class ActualizacionServiceTests
 
         var accepted = await service.IniciarActualizacionAsync(sourcePath, requestTarget, CancellationToken.None);
 
-        accepted.Should().BeTrue();
-        watchdog.SourcePath.Should().Be(sourcePath);
-        watchdog.TargetPath.Should().Be(configuredTarget);
+        accepted.Should().BeFalse();
+        watchdog.Calls.Should().Be(0);
 
         Directory.Delete(root, recursive: true);
     }

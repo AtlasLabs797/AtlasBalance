@@ -8,6 +8,80 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-18 - Verificacion backend post-Codex Security con SDK local
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Instalado SDK .NET 8.0.419 en `C:\tmp\dotnet-sdk-8.0.419`, exacto para el `global.json` del repo.
+- Restaurada, compilada y probada la solucion backend.
+- Ajustado el test de exportacion XLSX para comprobar `quotePrefix` de ClosedXML cuando el apóstrofo de escape no se devuelve como caracter visible.
+- Actualizados artefactos de Codex Security en `C:\tmp\codex-security-scans\Atlas Balance Dev\18234b14_20260517T215739`.
+
+**Comandos ejecutados:**
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"`
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug`
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
+
+**Resultado de verificacion:**
+- Restore/build backend: OK.
+- Suite backend sin Docker/Testcontainers: 249/249 OK.
+- Suite backend completa: 249/251 OK; fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado.
+- NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+
+**Pendiente:**
+- Ejecutar las dos pruebas PostgreSQL/Testcontainers cuando Docker este disponible.
+
+---
+## 2026-05-17 - Revision Codex Security y hardening correctivo
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Revision Codex Security por fases con subagentes para auth/RLS, frontend, scripts/update, IA/export/import y supply chain.
+- Se corrigio fuga por soft-delete: cuentas/extractos de titulares eliminados ya no quedan visibles para no-admins ni integraciones.
+- La auditoria de celda de extractos eliminados devuelve `404` a no-admins.
+- La exportacion manual exige permiso operativo de cuenta y no solo lectura.
+- OpenRouter fuerza `provider.zdr=true` y `data_collection=deny` tambien en rutas gratis/auto.
+- La app rechaza `sourcePath` manual en actualizaciones: solo aplica assets oficiales descargados y firmados.
+- Backups/Watchdog dejan de caer a `pg_dump`, `pg_restore` o `docker` por PATH; se exige ruta absoluta o `DockerCliPath`.
+- El instalador deja de pasar SQL con passwords por argumento `psql -c` y lo envia por stdin.
+- Importacion limita celdas a 4096 caracteres; exportacion XLSX endurece escape de formulas con espacios iniciales.
+- Limpieza de lockfile frontend: eliminado `@fontsource-variable/geist` huerfano.
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.07.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md`, `Documentacion/SKILLS_LOCALES.md`.
+- Codex Security: threat model, discovery por subagentes, validacion estatica y cierre de hallazgos.
+- `npm.cmd install --package-lock-only --ignore-scripts`
+- `npm.cmd ls --package-lock-only --depth=0`
+- `npm.cmd audit --audit-level=moderate --json`
+- Parse AST de `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`.
+- `git diff --check`
+- Instalacion local de SDK .NET 8.0.419 en `C:\tmp\dotnet-sdk-8.0.419` mediante instalador oficial `dotnet-install.ps1`.
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"` con cache en `Atlas Balance\backend\.local-build`.
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug`
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
+
+**Resultado de verificacion:**
+- `npm audit`: 0 vulnerabilidades.
+- Lockfile: sin dependencia `extraneous`.
+- Script PowerShell: parse OK.
+- `git diff --check`: OK, solo avisos CRLF esperados.
+- Restore backend: OK.
+- Build backend Debug: OK, 0 errores.
+- Suite backend sin Docker/Testcontainers: 249/249 OK.
+- Suite backend completa: 249/251 OK; los 2 fallos son Testcontainers por Docker no disponible/configurado (`ExtractosConcurrencyTests` y `RowLevelSecurityTests`).
+- NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+
+**Pendientes:**
+- Ejecutar las 2 pruebas PostgreSQL/Testcontainers cuando Docker este disponible.
+- Si se quiere conservar actualizador offline por carpeta, hay que anadir verificacion criptografica real del ZIP/firma contra el contenido extraido. Admin ejecutando carpetas de origen desconocido sigue siendo una mala idea.
+
+---
 ## 2026-05-17 - Autoactualizacion segura desde GitHub Release
 
 **Version:** V-01.07

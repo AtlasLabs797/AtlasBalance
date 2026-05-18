@@ -1,5 +1,48 @@
 # Log de errores e incidencias
 
+## 2026-05-18 - V-01.07 - Verificacion backend post-Codex Security: Docker sigue siendo el unico bloqueo
+
+- Contexto: tras instalar SDK .NET 8.0.419 local en `C:\tmp\dotnet-sdk-8.0.419`, se ejecuto la validacion backend pendiente de la revision Codex Security.
+- Resultado:
+  - Restore/build backend OK.
+  - Suite backend sin Docker/Testcontainers 249/249 OK.
+  - Suite completa 249/251: fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests`.
+  - NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+- Causa del bloqueo restante: Docker/Testcontainers no esta disponible/configurado en esta maquina.
+- Regla: si queda un test de PostgreSQL real sin ejecutar, no se llama release final. Llamarlo verde seria humo con logs.
+
+## 2026-05-17 - V-01.07 - Revision Codex Security: soft-delete, update, IA y procesos externos
+
+- Contexto: se ejecuto revision de seguridad en profundidad con Codex Security y subagentes por dominios.
+- Hallazgos validados:
+  - Usuarios no-admin podian seguir viendo cuentas/extractos de un titular soft-deleted si conservaban permiso de cuenta.
+  - La auditoria de celda podia revelar valores de extractos soft-deleted por ID conocido.
+  - La app aceptaba `sourcePath` manual en actualizacion y delegaba en Watchdog sin pasar por digest/firma.
+  - `pg_dump`, `pg_restore` y `docker` podian resolverse por PATH si faltaba ruta configurada.
+  - OpenRouter gratis/auto no llevaba `zdr`/`data_collection=deny` aunque se enviaba contexto financiero.
+  - Exportacion manual permitia generar XLSX persistentes con permiso de lectura.
+  - Importacion no tenia limite por celda individual.
+- Solucion aplicada:
+  - Scopes de usuario, integracion y extractos exigen titular activo para no-admins.
+  - `GetAuditCelda` oculta extractos eliminados a no-admins.
+  - Exportacion manual exige `CanWriteCuentaAsync`.
+  - OpenRouter fuerza `provider.zdr=true` y `data_collection=deny`.
+  - `ActualizacionService` rechaza `sourcePath` manual y solo prepara assets oficiales firmados.
+  - Procesos externos usan rutas absolutas o fallan cerrado; se agrega `DockerCliPath`.
+  - `psql` del instalador recibe SQL por stdin para no exponer passwords en argumentos.
+  - Importacion limita celdas a 4096 caracteres y exportacion escapa formulas con espacios iniciales.
+- Verificacion:
+  - `npm audit` 0 vulnerabilidades.
+  - `npm ls --package-lock-only --depth=0` sin extraneous.
+  - Parse AST de instalador OK.
+  - `git diff --check` OK.
+  - SDK .NET 8.0.419 instalado localmente en `C:\tmp\dotnet-sdk-8.0.419`.
+  - Restore/build backend OK.
+  - Suite backend sin Docker/Testcontainers 249/249 OK.
+  - Suite backend completa 249/251: fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado.
+  - NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+- Regla: una app financiera no puede tratar "el admin ya sabra" como control de seguridad. Si el flujo puede reemplazar binarios o sacar contexto financiero, falla cerrado o no sirve.
+
 ## 2026-05-17 - V-01.07 - Actualizacion online no era automatica y faltaban limites de paquete
 
 - Contexto: la app ya podia verificar y aplicar manualmente un GitHub Release, pero no habia ejecucion automatica real. Ademas, el pendiente de limitar tamano/contenido de paquetes seguia abierto.

@@ -177,7 +177,7 @@ Cuando se importan, Atlas Balance usa la fecha de la ultima fila valida anterior
 
 Al confirmar, Atlas Balance respeta el orden del extracto pegado. La linea superior queda como la ultima del lote (`fila_numero` mas alto), sin reordenar por fecha durante la importacion.
 
-Los formatos de importacion permiten hasta 64 columnas extra y nombres de hasta 80 caracteres. Las columnas extra vacias no se guardan. Si el banco ni siquiera trae esa columna en alguna fila pegada, se deja en blanco y la fila puede importarse. Esto evita que un formato mal hecho convierta una importacion normal en basura multiplicada en base de datos.
+Los formatos de importacion permiten hasta 64 columnas extra y nombres de hasta 80 caracteres. Cada celda pegada puede tener como maximo 4096 caracteres. Las columnas extra vacias no se guardan. Si el banco ni siquiera trae esa columna en alguna fila pegada, se deja en blanco y la fila puede importarse. Esto evita que un formato mal hecho convierta una importacion normal en basura multiplicada en base de datos.
 
 Si falla la carga de cuentas o formato durante la importacion, la pantalla muestra el error real y no lo disfraza como "sin cuentas". La confirmacion ignora dobles clics mientras ya hay una importacion en curso.
 
@@ -271,7 +271,7 @@ En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir pro
 
 Para OpenRouter, puedes dejar `Auto (gratis permitido)`. Atlas Balance guarda `openrouter/auto`, pero no usa el Auto Router abierto de OpenRouter porque puede chocar con las restricciones de modelos de tu cuenta. En su lugar, usa fallback con un maximo de 3 modelos por consulta, que es el limite efectivo de OpenRouter: `Nemotron 3 Super (free)`, `Gemma 4 31B (free)` y `MiniMax M2.5 (free)`. Si quieres forzar otro modelo gratis permitido, el selector del chat y el de Configuracion tambien muestran `gpt-oss-120b (free)`, `GLM 4.5 Air (free)` y `Qwen3 Coder 480B A35B (free)`.
 
-Aviso serio: en esta version, esos modelos gratis no se tratan como endpoints ZDR. Atlas Balance envia contexto financiero minimizado, restringe Auto a esos modelos y no guarda prompts ni respuestas completas, pero el proveedor externo sigue viendo la consulta. Si necesitas Zero Data Retention de verdad, anade en OpenRouter un modelo ZDR permitido y no uses los modelos gratis para datos sensibles.
+Aviso serio: Atlas Balance envia a OpenRouter `zdr=true` y `data_collection=deny` en cada consulta. Si un modelo gratis no puede cumplir esa politica de privacidad, la consulta debe fallar. Eso es molesto, pero sacar finanzas a un proveedor con retencion seria peor.
 
 El chat interno usa una API key de servidor para llamar a OpenAI u OpenRouter.
 
@@ -325,7 +325,7 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 - Si la aplicacion arranca por primera vez con una base vacia, `SeedAdmin:Password` debe estar configurado y tener al menos 12 caracteres; ya no existe una password admin por defecto. Bien. Eso era una mala idea.
 - Las claves SMTP y de Exchange Rate API guardadas desde Configuracion se protegen automaticamente; las existentes en claro se migran al siguiente arranque.
 - No borres, muevas ni copies a otra maquina `%ProgramData%/AtlasBalance/keys` en produccion sin plan de rotacion: ahi vive el keyring protegido que permite leer secretos cifrados.
-- Las descargas de exportaciones solo sirven `.xlsx` generados dentro de la ruta `export_path`.
+- Generar exportaciones manuales exige permiso operativo sobre la cuenta; descargarlas exige lectura. Las descargas solo sirven `.xlsx` generados dentro de la ruta `export_path`.
 - `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
 - La URL de actualizaciones debe apuntar por HTTPS al repositorio oficial de Atlas Balance en GitHub.
 - Los scripts manuales de backup/restauracion piden la password en consola segura y no deben ejecutarse con passwords pegadas en comandos o documentos.

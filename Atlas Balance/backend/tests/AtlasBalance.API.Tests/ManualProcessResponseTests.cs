@@ -63,13 +63,13 @@ public class ManualProcessResponseTests
     }
 
     [Fact]
-    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Read_Cuenta()
+    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Write_Cuenta()
     {
         await using var db = BuildDbContext();
         var controller = new ExportacionesController(
             db,
             new FakeExportacionService(),
-            new FakeUserAccessService(canAccessCuenta: false));
+            new FakeUserAccessService(canWriteCuenta: false));
         controller.ControllerContext = BuildControllerContext();
 
         var result = await controller.Manual(
@@ -164,10 +164,12 @@ public class ManualProcessResponseTests
     private sealed class FakeUserAccessService : IUserAccessService
     {
         private readonly bool _canAccessCuenta;
+        private readonly bool _canWriteCuenta;
 
-        public FakeUserAccessService(bool canAccessCuenta = true)
+        public FakeUserAccessService(bool canAccessCuenta = true, bool canWriteCuenta = true)
         {
             _canAccessCuenta = canAccessCuenta;
+            _canWriteCuenta = canWriteCuenta;
         }
 
         public Task<UserAccessScope> GetScopeAsync(System.Security.Claims.ClaimsPrincipal user, CancellationToken cancellationToken)
@@ -203,7 +205,7 @@ public class ManualProcessResponseTests
 
         public Task<bool> CanWriteCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
         {
-            return Task.FromResult(true);
+            return Task.FromResult(_canWriteCuenta);
         }
 
         public Task<bool> CanEditCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)

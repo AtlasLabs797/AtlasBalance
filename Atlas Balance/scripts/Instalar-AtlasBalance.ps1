@@ -24,7 +24,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-01.06"
+$AppVersion = "V-01.07"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
@@ -295,12 +295,12 @@ function Invoke-Psql {
         )
 
         if ($Scalar) {
-            $args += @("-t", "-A", "-c", $Sql)
+            $args += @("-t", "-A")
         } else {
-            $args += @("-c", $Sql)
+            $args += @("-q")
         }
 
-        $output = & $PsqlExe @args 2>&1
+        $output = $Sql | & $PsqlExe @args 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "psql fallo: $output"
         }
@@ -511,6 +511,7 @@ function Write-AppSettings {
             PostgresBinPath = $PostgresBin
             StateFilePath = $stateFile
             DockerPostgresContainer = "atlas_balance_db"
+            DockerCliPath = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
             UpdateSourceRoot = $updateRoot
             UpdateTargetPath = $apiTarget
             RequireDatabaseBackupBeforeUpdate = $true
@@ -565,6 +566,7 @@ function Write-AppSettings {
             DbUser = $DbUser
             DbPassword = $DbPassword
             DockerPostgresContainer = "atlas_balance_db"
+            DockerCliPath = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
             UpdateSourceRoot = $updateRoot
             UpdateTargetPath = $apiTarget
         }

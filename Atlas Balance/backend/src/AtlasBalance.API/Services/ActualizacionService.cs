@@ -110,39 +110,37 @@ public sealed class ActualizacionService : IActualizacionService
 
     public async Task<bool> IniciarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
     {
-        var finalSourcePath = sourcePath;
+        if (!string.IsNullOrWhiteSpace(sourcePath))
+        {
+            _logger.LogWarning("No se puede iniciar actualizacion: sourcePath manual rechazado; la app solo instala assets descargados y firmados.");
+            return false;
+        }
+
+        string? finalSourcePath = null;
         var finalTargetPath = ResolveConfiguredUpdateTargetPath();
 
-        if (string.IsNullOrWhiteSpace(finalSourcePath))
+        var checkUrl = await _dbContext.Configuraciones
+            .Where(c => c.Clave == "app_update_check_url")
+            .Select(c => c.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        checkUrl = ResolveConfiguredUpdateUrl(checkUrl, _logger);
+
+        try
         {
-            var checkUrl = await _dbContext.Configuraciones
-                .Where(c => c.Clave == "app_update_check_url")
-                .Select(c => c.Valor)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            checkUrl = ResolveConfiguredUpdateUrl(checkUrl, _logger);
-
-            try
+            var response = await GetUpdateCheckBodyAsync(checkUrl, cancellationToken);
+            if (response.IsSuccessStatusCode)
             {
-                var response = await GetUpdateCheckBodyAsync(checkUrl, cancellationToken);
-                if (response.IsSuccessStatusCode)
+                var payload = ParseUpdatePayload(response.Body);
+                if (payload is not null && !string.IsNullOrWhiteSpace(payload.AssetDownloadUrl))
                 {
-                    var payload = ParseUpdatePayload(response.Body);
-                    if (payload is not null)
-                    {
-                        finalSourcePath ??= payload.SourcePath;
-                        if (string.IsNullOrWhiteSpace(finalSourcePath) &&
-                            !string.IsNullOrWhiteSpace(payload.AssetDownloadUrl))
-                        {
-                            finalSourcePath = await DownloadAndPreparePackageAsync(payload, cancellationToken);
-                        }
-                    }
+                    finalSourcePath = await DownloadAndPreparePackageAsync(payload, cancellationToken);
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "No se pudo resolver source/target path desde update_check_url");
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo resolver asset firmado desde update_check_url");
         }
 
         if (string.IsNullOrWhiteSpace(finalTargetPath))

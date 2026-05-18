@@ -196,6 +196,49 @@ public class ImportacionServiceTests
     }
 
     [Fact]
+    public async Task ValidarAsync_Should_Reject_Overlarge_Cell()
+    {
+        await using var db = BuildDbContext();
+
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Import", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Import", Divisa = "EUR", Activa = true };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuenta.Id,
+            TitularId = titular.Id,
+            PuedeImportar = true
+        });
+        await db.SaveChangesAsync();
+
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuenta.Id,
+            RawData = $"01/04/2026\t{new string('A', 4097)}\t1200,50\t3000,25",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3
+            }
+        };
+
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ImportacionException>()
+            .WithMessage("*4096 caracteres*");
+    }
+
+    [Fact]
     public async Task ValidarAsync_Should_Reject_Formatted_Import_For_PlazoFijo()
     {
         await using var db = BuildDbContext();

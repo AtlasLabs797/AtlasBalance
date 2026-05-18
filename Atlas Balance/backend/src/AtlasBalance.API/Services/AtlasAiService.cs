@@ -274,7 +274,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     runtime_model = selectedRuntimeModel,
                     http_client = providerCall.HttpClientName,
                     used_http_fallback = providerCall.UsedFallback,
-                    zero_data_retention = state.Provider == "OPENROUTER" && !AiConfiguration.IsOpenRouterFreeRoute(state.Model, selectedRuntimeModel),
+                    zero_data_retention = state.Provider == "OPENROUTER",
                     movimientos_analizados = context.MovimientosAnalizados,
                     pregunta_caracteres = prompt.Length,
                     contexto_caracteres = context.Texto.Length,
@@ -425,6 +425,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 request.Content = JsonContent.Create(new
                 {
                     models = AiConfiguration.OpenRouterAutoFallbackModels,
+                    provider = OpenRouterPrivacyProvider(),
                     reasoning = new
                     {
                         exclude = true
@@ -445,7 +446,9 @@ public sealed class AtlasAiService : IAtlasAiService
                     provider = new
                     {
                         only = new[] { pinnedProvider },
-                        allow_fallbacks = false
+                        allow_fallbacks = false,
+                        zdr = true,
+                        data_collection = "deny"
                     },
                     reasoning = new
                     {
@@ -460,6 +463,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     ? JsonContent.Create(new
                     {
                         model = runtimeModel,
+                        provider = OpenRouterPrivacyProvider(),
                         reasoning = new
                         {
                             exclude = true
@@ -498,6 +502,15 @@ public sealed class AtlasAiService : IAtlasAiService
             messages
         });
         return request;
+    }
+
+    private static object OpenRouterPrivacyProvider()
+    {
+        return new
+        {
+            zdr = true,
+            data_collection = "deny"
+        };
     }
 
     private async Task EnsureRequestLimitsAsync(Guid userId, IaGovernanceState state, DateTime now, string? ipAddress, CancellationToken cancellationToken)

@@ -1,5 +1,41 @@
 # Documentacion tecnica
 
+## 2026-05-18 - V-01.07 - Verificacion backend post-Codex Security con SDK local
+
+- Se instalo SDK .NET 8.0.419 en `C:\tmp\dotnet-sdk-8.0.419`, version exacta fijada por `global.json` con `rollForward=disable`.
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"`: OK usando `Atlas Balance\backend\.local-build` como home/cache local.
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`: OK, 0 errores.
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`: 249/249 OK.
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug`: 249/251 OK; fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` por Docker/Testcontainers no disponible/configurado.
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`: 0 paquetes vulnerables en API, Watchdog y tests.
+
+## 2026-05-17 - V-01.07 - Revision Codex Security en profundidad
+
+### Que cambio
+
+- Las lecturas no-admin de cuentas/extractos ahora heredan el soft-delete del titular padre: `UserAccessService`, `ExtractosController` e integraciones filtran cuentas cuyo `TITULARES.deleted_at` no sea nulo.
+- `GET /api/extractos/{id}/audit-celda` ya no devuelve auditoria de extractos soft-deleted a usuarios no-admin.
+- `POST /api/exportaciones/manual` vuelve a exigir permiso operativo de cuenta (`CanWriteCuentaAsync`) y no solo lectura.
+- OpenRouter envia `provider.zdr=true` y `data_collection=deny` en todas las rutas, incluidas `openrouter/auto`, modelos gratis y modelos gratis pineados. Si OpenRouter no puede servir un endpoint compatible, debe fallar cerrado.
+- La actualizacion desde la app rechaza `sourcePath` manual; solo instala assets descargados desde GitHub Release oficial tras digest SHA-256 y firma `.zip.sig`.
+- `BackupService` y Watchdog dejan de ejecutar `pg_dump`, `pg_restore` o `docker` por nombre sin ruta absoluta. `PostgresBinPath` debe apuntar al binario real y `DockerCliPath` queda documentado/configurable.
+- `Instalar-AtlasBalance.ps1` deja de pasar SQL con passwords por argumento `psql -c`; lo envia por stdin. El instalador de PostgreSQL via winget sigue requiriendo `--superpassword`, asi que ese tramo debe tratarse como ventana local sensible.
+- La importacion rechaza celdas individuales de mas de 4096 caracteres y la exportacion XLSX escapa textos tipo formula aunque empiecen con espacios.
+- `package-lock.json` se limpio de la dependencia raiz huerfana `@fontsource-variable/geist`.
+
+### Verificacion
+
+- `npm.cmd audit --audit-level=moderate --json`: 0 vulnerabilidades.
+- `npm.cmd ls --package-lock-only --depth=0`: sin dependencia `extraneous`.
+- Parse AST de `Instalar-AtlasBalance.ps1`: OK.
+- `git diff --check`: OK, solo avisos CRLF.
+- SDK .NET 8.0.419 instalado localmente en `C:\tmp\dotnet-sdk-8.0.419` para respetar `global.json` con `rollForward=disable`.
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"`: OK con cache en `Atlas Balance\backend\.local-build`.
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`: OK, 0 errores.
+- Suite backend sin Docker/Testcontainers: 249/249 OK.
+- Suite backend completa: 249/251 OK; fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado en esta maquina.
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`: 0 paquetes vulnerables en API, Watchdog y tests.
+
 ## 2026-05-17 - V-01.07 - Actualizacion automatica desde GitHub Release
 
 ### Que cambio
@@ -483,7 +519,7 @@ El informe UI no era cosmetica: habia modales que atrapaban mal el teclado, form
 - `AuthService` mantiene throttle por IP+email y anade contador por IP para password spraying.
 - `/api/health` queda reducido a `{ status = healthy }`.
 - `UserAccessService` separa lectura real (`PuedeVerCuentas`) de permisos operativos; `ExtractosController` aplica la misma regla en lecturas.
-- Exportacion manual/descarga exige lectura de cuenta; revision de estados exige `PuedeEditarLineas`.
+- Exportacion manual exige permiso operativo de cuenta (`CanWriteCuentaAsync`); descarga exige lectura de cuenta; revision de estados exige `PuedeEditarLineas`.
 - Nueva migracion `20260512110000_HardenReleaseSecurityPermissions`:
   - scopes RLS firmados `data`, `write`, `export`, `revision`;
   - lectura normal sin `PuedeImportar`/write;
@@ -831,7 +867,7 @@ El selector de modelo es util, pero hacerlo tan grande era mala jerarquia: compe
 - OpenRouter conserva `openrouter/auto` como opcion por defecto visible y guardada.
 - `AiConfiguration.OpenRouterModels` permite `openrouter/auto` mas estos seis slugs exactos: `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-31b-it:free`, `minimax/minimax-m2.5:free`, `openai/gpt-oss-120b:free`, `z-ai/glm-4.5-air:free` y `qwen/qwen3-coder:free`.
 - En ese intento, cuando el usuario usaba `Auto`, `AtlasAiService` enviaba `model=openrouter/auto` con `plugins.auto-router.allowed_models` limitado a esos seis modelos.
-- Los modelos exactos gratis siguen sin `provider.zdr=true`. Gemma, MiniMax y gpt-oss se pinchan a proveedores verificados; Nemotron, GLM y Qwen se envian sin pin artificial porque no hay proveedor exacto verificado en codigo.
+- Historico obsoleto: en ese intento los modelos gratis no llevaban `provider.zdr=true`. Desde el hardening V-01.07 todas las llamadas OpenRouter llevan `zdr=true` y `data_collection=deny`.
 - La respuesta del proveedor se parsea tambien para leer `model`; la auditoria y `IaChatResponse.Model` reflejan el modelo real usado cuando OpenRouter lo devuelve.
 - El selector frontend muestra `Auto (elige el mejor)` por defecto y los seis modelos manuales. `Detalles de IA` convierte el slug devuelto a etiqueta legible cuando esta en la lista.
 
@@ -1225,7 +1261,7 @@ El bloque anterior metía el texto de ayuda y el textarea dentro de un `label` i
 - Los estados se guardan en `REVISION_EXTRACTO_ESTADOS` con clave unica `(extracto_id, tipo)`.
 - La migracion `20260509160722_AddRevisionEstadosAiConfig` habilita y fuerza RLS; las politicas delegan en `atlas_security.can_read_extracto` y `atlas_security.can_write_extracto`.
 - `AtlasAiService` arma contexto financiero minimizado desde saldos, totales agregados y movimientos relevantes limitados. Conceptos y pregunta se tratan como datos no confiables para reducir prompt injection.
-- La IA soportada en esta version es OpenRouter via backend y OpenAI via backend con API key de servidor. En OpenRouter, las rutas no gratuitas pueden exigir `provider.zdr=true`; los modelos gratis permitidos no lo fuerzan porque OpenRouter no los publica como endpoints ZDR.
+- La IA soportada en esta version es OpenRouter via backend y OpenAI via backend con API key de servidor. En OpenRouter, todas las rutas envian `provider.zdr=true` y `data_collection=deny`; si un modelo gratis no tiene endpoint compatible, la llamada falla cerrado.
 - `/api/ia/chat` exige autenticacion, interruptor global activo, permiso `puede_usar_ia`, allowlist de modelo, limites configurables, presupuesto/tokens y auditoria de metadatos sin guardar prompts completos.
 - `ConfiguracionController` valida el modelo IA con allowlist tambien en backend.
 - `AlertaService` evita duplicados de saldo bajo usando `alerta_saldo_cooldown_horas` con rango efectivo 1-720 horas y no marca cooldown si el email no se envia.
@@ -2922,8 +2958,8 @@ La auditoria encontro deuda real, no cosmetica: un segundo sistema de estilos co
   - `openai/gpt-oss-120b:free` -> `open-inference/int8`.
   - `minimax/minimax-m2.5:free` -> `open-inference/int8`.
   - `google/gemma-4-31b-it:free` -> `google-ai-studio`.
-- Para los modelos gratis no se envia `provider.zdr=true`, porque la API publica `/api/v1/endpoints/zdr` de OpenRouter no lista esos endpoints gratis como ZDR. Forzarlo era la causa practica del 404 por `guardrail restrictions and data policy`.
-- La auditoria IA incluye `runtime_model`; para estos modelos registra `zero_data_retention=false`.
+- Para los modelos gratis tambien se envia `provider.zdr=true` y `data_collection=deny`. La prioridad es no sacar contexto financiero a proveedores con retencion; si eso rompe disponibilidad de un modelo gratis, se cambia el modelo, no la politica.
+- La auditoria IA incluye `runtime_model` y marca `zero_data_retention=true` cuando el proveedor es OpenRouter porque la request exige ZDR por contrato.
 - El mensaje de 404 por politica/guardrail explica que Atlas ya esta enviando los modelos de la allowlist y que, si persiste, hay que revisar `OpenRouter > Settings > Privacy` o anadir un modelo ZDR permitido.
 
 ### Por que
@@ -2957,7 +2993,7 @@ La cuenta de OpenRouter del usuario restringe modelos. Usar un default externo a
   - maximo aproximado de tokens de entrada y salida.
 - Los permisos se validan en base de datos en cada request, no solo por claim ni por React.
 - Los cambios de usuario siguen rotando `SecurityStamp` y revocando refresh tokens.
-- OpenRouter queda restringido por allowlist backend. En la configuracion actual se usan modelos gratis permitidos por la cuenta del usuario; no se marcan como ZDR y quedan auditados con `zero_data_retention=false`.
+- OpenRouter queda restringido por allowlist backend y por privacidad de request: `provider.zdr=true` y `data_collection=deny` en todas las llamadas. Los modelos gratis permitidos solo son aceptables si OpenRouter puede servirlos con esa politica.
 - `openrouter/auto` se conserva como valor guardado, pero la llamada Auto se materializa como `models` con maximo 3 candidatos gratis permitidos.
 - Las llamadas a OpenAI usan API key de servidor contra `https://api.openai.com/v1/chat/completions`.
 

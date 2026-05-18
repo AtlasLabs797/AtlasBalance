@@ -71,6 +71,71 @@ public class IntegrationAuthorizationServiceTests
     }
 
     [Fact]
+    public async Task ApplyCuentaScope_Should_Hide_Accounts_When_Titular_Is_SoftDeleted()
+    {
+        await using var db = BuildDbContext();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular eliminado",
+            Tipo = TipoTitular.EMPRESA,
+            DeletedAt = DateTime.UtcNow
+        });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, Nombre = "Cuenta filtrada", Divisa = "EUR", TitularId = titularId });
+        await db.SaveChangesAsync();
+
+        var scope = new IntegrationAccessScope
+        {
+            TokenId = Guid.NewGuid(),
+            HasPermissions = true,
+            HasGlobalAccess = true
+        };
+
+        var sut = new IntegrationAuthorizationService(db);
+        var result = await sut.ApplyCuentaScope(db.Cuentas.IgnoreQueryFilters(), scope).ToListAsync();
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ApplyTitularScope_Should_Not_Use_SoftDeleted_Account_Permission_As_Visibility_Bridge()
+    {
+        await using var db = BuildDbContext();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular activo",
+            Tipo = TipoTitular.EMPRESA
+        });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            Nombre = "Cuenta eliminada",
+            Divisa = "EUR",
+            TitularId = titularId,
+            DeletedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var scope = new IntegrationAccessScope
+        {
+            TokenId = Guid.NewGuid(),
+            HasPermissions = true,
+            HasGlobalAccess = false,
+            CuentaIds = [cuentaId]
+        };
+
+        var sut = new IntegrationAuthorizationService(db);
+        var result = await sut.ApplyTitularScope(db.Titulares.IgnoreQueryFilters(), scope).ToListAsync();
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetScopeAsync_Should_Filter_By_Access_Type()
     {
         await using var db = BuildDbContext();

@@ -515,6 +515,65 @@ public sealed class ExtractosControllerTests
     }
 
     [Fact]
+    public async Task GetAuditCelda_Should_Not_Return_Audit_For_Deleted_Extracto_To_NonAdmin()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.audit-soft-delete@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Audit",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Audit", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Audit", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            PuedeVerCuentas = true
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Eliminado",
+            Monto = 10m,
+            Saldo = 10m,
+            FilaNumero = 1,
+            DeletedAt = DateTime.UtcNow
+        });
+        db.Auditorias.Add(new Auditoria
+        {
+            Id = Guid.NewGuid(),
+            TipoAccion = "extracto_actualizado",
+            EntidadTipo = "EXTRACTOS",
+            EntidadId = extractoId,
+            ColumnaNombre = "concepto",
+            ValorAnterior = "Antes",
+            ValorNuevo = "Despues",
+            Timestamp = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.GetAuditCelda(extractoId, "concepto", ct: CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
     public async Task ToggleFlag_Should_Require_Flagged_EditPermission_When_Flag_Changes()
     {
         await using var db = BuildDbContext();

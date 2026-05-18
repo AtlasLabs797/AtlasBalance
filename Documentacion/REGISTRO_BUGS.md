@@ -19,6 +19,20 @@
 
 ## Cerrados
 
+### 2026-05-17 - V-01.07 - Cerrado - Revision Codex Security detecto fugas de soft-delete y controles locales flojos
+
+- Contexto: revision profunda con Codex Security y subagentes sobre backend, frontend, scripts, IA, exportaciones, importacion y supply chain.
+- Causa:
+  - Algunos controles de cuenta no heredaban `DeletedAt` del titular padre.
+  - `GetAuditCelda` cargaba extractos con `IgnoreQueryFilters()` y solo comprobaba visibilidad de cuenta.
+  - Exportacion manual usaba lectura de cuenta, no permiso operativo.
+  - Rutas gratis/auto de OpenRouter no enviaban controles de privacidad por request.
+  - Actualizacion desde la app aceptaba `sourcePath` manual bajo `UpdateSourceRoot`.
+  - Procesos externos podian caer a busqueda por PATH.
+- Solucion: filtros de titular activo en scopes de usuario/integracion/extractos, bloqueo de auditoria de extractos eliminados, exportacion manual con `CanWriteCuentaAsync`, privacidad OpenRouter obligatoria, rechazo de `sourcePath` manual, rutas absolutas para PostgreSQL/Docker, limite de celda importada y lockfile limpio.
+- Verificacion: `npm audit` 0 vulnerabilidades, NuGet vulnerable audit 0 paquetes vulnerables, lockfile sin `extraneous`, parse PowerShell OK, `git diff --check` OK, restore/build backend OK, suite backend sin Docker/Testcontainers 249/249 OK. Suite completa 249/251 con los 2 fallos esperados de Testcontainers por Docker no disponible/configurado.
+- Estado: cerrado en codigo; pendiente ejecutar solo las 2 pruebas PostgreSQL/Testcontainers cuando Docker este disponible.
+
 ### 2026-05-17 - V-01.07 - Cerrado - Actualizacion desde repo sin modo automatico real
 
 - Contexto: el flujo de GitHub Release existia, pero dependia de que un admin pulsara `Actualizar ahora`. Para "que lo haga solo" faltaba un job recurrente.
