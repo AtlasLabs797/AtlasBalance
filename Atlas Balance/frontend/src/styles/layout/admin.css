@@ -79,7 +79,12 @@
 }
 
 .config-feedback {
-  color: var(--color-text-success);
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--success-text) 24%, transparent);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  background: var(--success-bg);
+  color: var(--success-text);
   font-weight: var(--font-weight-medium);
 }
 
@@ -93,6 +98,11 @@
   gap: var(--space-3);
 }
 
+.config-tab-panel {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .config-card--general {
   gap: var(--space-4);
 }
@@ -101,10 +111,17 @@
   display: grid;
   gap: var(--space-1);
   max-width: 70ch;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .config-card-headline h2 {
   margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.12;
+  letter-spacing: 0;
 }
 
 .config-general-layout {
@@ -126,7 +143,12 @@
 
 .config-section-panel h3 {
   margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-primary);
   font-size: var(--font-size-md);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.2;
 }
 
 .config-field-grid {
@@ -229,6 +251,7 @@
 .config-status-grid article h3 {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+  letter-spacing: 0;
 }
 
 .config-status-grid article p {
@@ -263,6 +286,26 @@
 .config-manual-form label {
   display: grid;
   gap: var(--space-1);
+}
+
+.config-default-currency-section {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-primary);
+}
+
+.config-default-currency-section p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.config-default-currency-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .config-table-wrap {
@@ -359,7 +402,18 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
   gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
   margin-bottom: var(--space-3);
+}
+
+.config-modal-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.12;
+  letter-spacing: 0;
 }
 
 .trash-page {
@@ -387,12 +441,19 @@
   }
 
   .config-inline-button,
-  .config-general-actions button {
+  .config-general-actions button,
+  .config-default-currency-actions button {
     width: 100%;
   }
 
   .config-general-actions {
     justify-content: stretch;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1280px) {
+  .config-general-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -455,6 +516,52 @@
   gap: var(--space-3);
 }
 
+.backup-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1.4fr) repeat(3, minmax(10rem, 1fr));
+  gap: var(--space-3);
+}
+
+.backup-summary-card {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.backup-summary-card--primary {
+  border-color: color-mix(in srgb, var(--success-text) 24%, var(--border-soft));
+  background: color-mix(in srgb, var(--success-bg) 72%, var(--bg-surface) 28%);
+}
+
+.backup-summary-card span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.backup-summary-card strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.backup-file-path {
+  display: inline-block;
+  max-width: min(26rem, 38vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
 .exportaciones-toolbar {
   display: flex;
   gap: var(--space-3);
@@ -477,4 +584,14 @@
   padding: var(--space-4);
   display: grid;
   gap: var(--space-2);
+}
+
+@media (max-width: 900px) {
+  .backup-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-file-path {
+    max-width: 70vw;
+  }
 }

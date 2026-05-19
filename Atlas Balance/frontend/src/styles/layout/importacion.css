@@ -3,6 +3,11 @@
   gap: var(--space-4);
 }
 
+.import-header {
+  display: grid;
+  gap: var(--space-1);
+}
+
 .import-header p {
   color: var(--color-text-secondary);
 }
@@ -17,19 +22,25 @@
 }
 
 .import-steps li {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
   border: 1px solid var(--color-border-primary);
   border-radius: var(--border-radius-md);
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   text-align: center;
-  background: var(--color-bg-primary);
+  background: var(--surface-bg-sunken);
   color: var(--color-text-secondary);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
 }
 
 .import-steps li.active {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  font-weight: var(--font-weight-semibold);
   background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 .import-card {
@@ -52,6 +63,15 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+.import-card > h3 {
+  margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-heavy);
 }
 
 .import-map-grid {
@@ -154,8 +174,44 @@
 }
 
 .import-success {
-  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--success-text) 24%, transparent);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  background: var(--success-bg);
+  color: var(--success-text);
   font-weight: var(--font-weight-medium);
+}
+
+.import-validation-summary {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  background: color-mix(in srgb, var(--bg-surface) 78%, var(--surface-bg-sunken) 22%);
+}
+
+.import-validation-summary strong {
+  display: block;
+  color: var(--text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1;
+}
+
+.import-validation-summary div:nth-child(1) strong,
+.import-validation-summary div:nth-child(4) strong {
+  color: var(--success-text);
+}
+
+.import-validation-summary div:nth-child(2) strong {
+  color: var(--danger-text);
+}
+
+.import-validation-summary div:nth-child(3) strong {
+  color: var(--warning-text);
+}
+
+.import-validation-summary span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .import-modal-backdrop {

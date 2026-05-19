@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
@@ -50,10 +50,21 @@ export default function BackupsPage() {
 
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [overlayMessage, setOverlayMessage] = useState('No cierres esta ventana; al terminar volverás al inicio de sesión.');
+  const restoreOverlayRef = useRef<HTMLDivElement | null>(null);
 
   const logout = useAuthStore((state) => state.logout);
 
   const totalRowsText = useMemo(() => `${rows.length} copias en esta página`, [rows.length]);
+  const latestSuccessfulBackup = useMemo(
+    () => rows.find((row) => row.estado.toUpperCase() === 'SUCCESS') ?? null,
+    [rows],
+  );
+
+  useEffect(() => {
+    if (overlayVisible) {
+      restoreOverlayRef.current?.focus();
+    }
+  }, [overlayVisible]);
 
   const fetchRows = async () => {
     setLoading(true);
@@ -152,12 +163,37 @@ export default function BackupsPage() {
           <h1>Copias de seguridad</h1>
           <p className="dashboard-subtitle">Copias manuales y automáticas con retención de 6 semanas</p>
         </div>
-        <button type="button" onClick={createBackup} disabled={creating || loading}>
+        <button type="button" className="button-primary" onClick={createBackup} disabled={creating || loading}>
           {creating ? 'Creando copia...' : 'Crear copia manual'}
         </button>
       </header>
 
-      {error ? <p className="auth-error">{error}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
+
+      {!loading && page === 1 && latestSuccessfulBackup ? (
+        <section className="backup-summary-grid" aria-label="Resumen de la última copia correcta">
+          <article className="backup-summary-card backup-summary-card--primary">
+            <span>Última copia correcta</span>
+            <strong>{formatDateTime(latestSuccessfulBackup.fecha_creacion)}</strong>
+          </article>
+          <article className="backup-summary-card">
+            <span>Tamaño</span>
+            <strong>{formatBytes(latestSuccessfulBackup.tamanio_bytes)}</strong>
+          </article>
+          <article className="backup-summary-card">
+            <span>Tipo</span>
+            <strong>{formatTipoCopia(latestSuccessfulBackup.tipo)}</strong>
+          </article>
+          <article className="backup-summary-card">
+            <span>Iniciada por</span>
+            <strong>{latestSuccessfulBackup.iniciado_por_nombre ?? 'Sistema'}</strong>
+          </article>
+        </section>
+      ) : null}
+
+      {!loading && page === 1 && rows.length > 0 && !latestSuccessfulBackup ? (
+        <p className="config-note config-note--warning" role="status">No hay ninguna copia correcta en esta página.</p>
+      ) : null}
 
       <div className="users-table-card">
         {loading ? <p className="import-muted">Cargando copias de seguridad...</p> : null}
@@ -191,15 +227,17 @@ export default function BackupsPage() {
                       <td>{formatTipoCopia(row.tipo)}</td>
                       <td>{formatBytes(row.tamanio_bytes)}</td>
                       <td>{row.iniciado_por_nombre ?? 'Sistema'}</td>
-                      <td>{row.ruta_archivo}</td>
+                      <td><span className="backup-file-path" title={row.ruta_archivo}>{row.ruta_archivo}</span></td>
                       <td className="users-row-actions">
                         <button
                           type="button"
+                          className="button-danger"
                           onClick={() => {
                             setConfirmTarget(row);
                             setConfirmOpen(true);
                           }}
                           disabled={row.estado !== 'SUCCESS' || restoring}
+                          aria-label={`Restaurar copia del ${formatDateTime(row.fecha_creacion)}`}
                         >
                           Restaurar
                         </button>
@@ -264,9 +302,18 @@ export default function BackupsPage() {
 
       {overlayVisible ? (
         <div className="modal-backdrop">
-          <div className="loading-overlay">
-            <h2>Restaurando copia de seguridad</h2>
-            <p>{overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}</p>
+          <div
+            ref={restoreOverlayRef}
+            className="loading-overlay"
+            role="alertdialog"
+            aria-live="assertive"
+            aria-busy="true"
+            aria-labelledby="backup-restore-overlay-title"
+            aria-describedby="backup-restore-overlay-message"
+            tabIndex={-1}
+          >
+            <h2 id="backup-restore-overlay-title">Restaurando copia de seguridad</h2>
+            <p id="backup-restore-overlay-message">{overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}</p>
           </div>
         </div>
       ) : null}

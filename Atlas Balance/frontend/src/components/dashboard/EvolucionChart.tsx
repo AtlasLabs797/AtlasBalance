@@ -54,7 +54,7 @@ export function EvolucionChart({ points, divisa, colors, height = 320 }: Evoluci
   return (
     <div
       className="dashboard-chart-wrapper"
-      role="img"
+      role="group"
       aria-label={`Evolución de saldo, ingresos y egresos. Saldo final ${formatCurrency(lastPoint.saldo, divisa)}.`}
     >
       <div className="dashboard-chart-legend" aria-hidden="true">
@@ -111,6 +111,27 @@ export function EvolucionChart({ points, divisa, colors, height = 320 }: Evoluci
           />
         </LineChart>
       </ResponsiveContainer>
+      <table className="sr-only">
+        <caption>Datos de evolución por fecha</caption>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Ingresos</th>
+            <th>Egresos</th>
+            <th>Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {points.map((point) => (
+            <tr key={point.fecha}>
+              <td>{formatDate(point.fecha)}</td>
+              <td>{formatCurrency(point.ingresos, divisa)}</td>
+              <td>{formatCurrency(point.egresos, divisa)}</td>
+              <td>{formatCurrency(point.saldo, divisa)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

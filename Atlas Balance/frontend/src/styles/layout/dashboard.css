@@ -507,15 +507,27 @@
 
 .dashboard-card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
   margin-bottom: var(--space-4);
 }
 
-.dashboard-card-header h2 {
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: -0.01em;
+.dashboard-card-header > div {
+  min-width: 0;
+}
+
+.dashboard-card-header h2,
+.dashboard-card-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .dashboard-card-header--chart {
@@ -532,6 +544,7 @@
 .dashboard-card-meta {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
 }
 
 .dashboard-plazo-card {
@@ -556,6 +569,17 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-control);
   background: var(--bg-surface-soft);
+}
+
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning {
+  border-color: color-mix(in srgb, var(--warning-text) 32%, transparent);
+  background: var(--warning-bg);
+}
+
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning span,
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning small,
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning strong {
+  color: var(--warning-text);
 }
 
 .dashboard-plazo-metrics span {
@@ -871,6 +895,8 @@
 }
 
 .account-excel-table {
+  --account-select-col-width: 3.25rem;
+  --account-row-col-width: 5.5rem;
   min-width: max(100%, 94rem);
   width: 100%;
   border-collapse: separate;
@@ -974,7 +1000,34 @@
 .account-selection-cell,
 .account-row-header,
 .account-row-anchor-cell {
+  position: sticky;
+  left: 0;
   text-align: center;
+  box-shadow: 1px 0 0 var(--border-soft);
+}
+
+.account-selection-header,
+.account-row-header {
+  z-index: 4;
+  background: var(--bg-surface-soft);
+}
+
+.account-selection-cell,
+.account-row-anchor-cell {
+  background: var(--bg-surface);
+}
+
+.account-selection-cell {
+  z-index: 3;
+}
+
+.account-row-anchor-cell {
+  z-index: 2;
+}
+
+.account-excel-table--selectable .account-row-header,
+.account-excel-table--selectable .account-row-anchor-cell {
+  left: var(--account-select-col-width);
 }
 
 .account-row-header,
@@ -989,7 +1042,7 @@
 
 .account-selection-cell,
 .account-row-anchor-cell {
-  position: relative;
+  position: sticky;
   overflow: visible !important;
 }
 

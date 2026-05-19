@@ -264,7 +264,7 @@ export default function LoginPage() {
         )}
 
         {postUpdateMessage && <p className="auth-success">{postUpdateMessage}</p>}
-        {error && <p className="auth-error">{error}</p>}
+        {error && <p className="auth-error" role="alert">{error}</p>}
 
         <button
           type="submit"

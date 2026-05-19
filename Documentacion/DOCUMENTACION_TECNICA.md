@@ -1,5 +1,111 @@
 # Documentacion tecnica
 
+## 2026-05-19 - V-01.07 - Jerarquia visual y pesos de accion UI/UX
+
+### Que cambio
+
+- `system-coherence.css` normaliza jerarquia de headers de pagina y limita headers sticky a wrappers de tabla concretos, evitando que cualquier `th` de la app se vuelva fijo por accidente.
+- `users-table-card` reduce sombra para no competir con modales; modales y dialogs conservan `shadow-overlay`.
+- `dashboard.css` refuerza headers de cards y permite destacar plazos fijos cercanos con variante warning.
+- `entities.css` destaca saldos de cuenta, aplana paneles internos de evolucion/divisas y mejora titulares/cuentas con subtitulos de contexto.
+- `importacion.css` convierte el resumen de validacion en metricas legibles y diferencia botones primarios/secundarios.
+- `admin.css` convierte feedback de guardado en banner, agrega resumen visual de backups y mejora jerarquia de secciones de Configuracion.
+- Pantallas ajustadas: Cuentas, Titulares, Usuarios, Backups, Configuracion, Importacion, CuentaDetalle y Dashboard.
+
+### Verificacion
+
+- `npm.cmd run lint` -> OK.
+- `npm.cmd exec tsc -- --noEmit` -> OK.
+- `npm.cmd run build` -> OK.
+- `git diff --check` -> OK, con avisos CRLF esperados.
+
+### Limite real
+
+No se ejecuto QA visual autenticado ni E2E real. La app no debe marcarse como release final hasta validar flujos reales con backend/PostgreSQL, datos de volumen, Docker/Testcontainers y backup/restore.
+
+## 2026-05-19 - V-01.07 - Skills Curated pre-release e higiene de repositorio
+
+### Que cambio
+
+- `Skills Curated/` se anade al `.gitignore` raiz. Es tooling local de agente, no producto ni fuente versionable del release.
+- `.github/workflows/ci.yml` alinea el escaneo de secretos y excluye `Skills Curated/`, igual que `Otros/` y `Skills/`.
+- `.gitignore` raiz y `Atlas Balance/.gitignore` ignoran `*.cer`, `*.p12`, `*.jks`, `*.dump` y `backend/**/TestResults/`.
+
+### Por que
+
+Si una carpeta de skills curados o resultados de tests aparecen como pendientes, alguien puede terminar subiendo basura local por accidente. En una app financiera eso no es detalle cosmetico: es mala disciplina de release.
+
+### Verificacion
+
+- Secret scan local `cyber-neo`: 490 archivos escaneados, 0 hallazgos.
+- `npm.cmd audit --audit-level=moderate`: 0 vulnerabilidades.
+- `dotnet list '.\AtlasBalance.sln' package --vulnerable --include-transitive`: 0 paquetes vulnerables.
+- Backend sin Docker/Testcontainers: 254/254 OK.
+- Frontend lint, TypeScript y build: OK.
+- `git check-ignore` confirma exclusion de `Skills Curated/`, `TestResults/`, certificados/keystores y dumps.
+
+### Limite real
+
+Docker no esta instalado/disponible en esta maquina. La suite Testcontainers y el E2E visual/autenticado siguen siendo gates reales antes de publicar V-01.07 como release final.
+
+## 2026-05-19 - V-01.07 - Refinamiento UI/UX y accesibilidad pre-entrega
+
+### Que cambio
+
+- `AppSelect` sigue siendo nativo y ahora elimina el `background-image` global del `select`, evitando doble flecha visual.
+- `CuentaDetailPage` fija columnas de seleccion/fila en la tabla de movimientos y elimina tab stops de celdas contenedoras; el foco queda en controles reales.
+- `ExtractoTable` recibe `totalRows`, aclara que sus filtros operan sobre la pagina cargada y usa `role="table"` en vez de `role="grid"` porque no implementa navegacion de grid con flechas.
+- `ConfiguracionPage` completa el patron ARIA de tabs: `aria-controls`, `role="tabpanel"`, `tabIndex` activo y navegacion con flechas/Home/End.
+- `CreateTokenModal` muestra errores de validacion dentro del modal con `role="alert"` y elimina el `label` vacio usado como spacer.
+- `TokenList` modela metricas como `loading/error/ready`; ya no muestra ceros falsos cuando falla `/metricas`.
+- `BackupsPage` anuncia la restauracion como `alertdialog` con `aria-busy`, foco inicial y descripcion asociada.
+- `EvolucionChart` expone tabla `sr-only` con datos numericos para lectores de pantalla.
+- Se normalizaron `role="alert"` en errores visibles y `aria-label` contextual en botones repetidos de acciones.
+
+### Verificacion
+
+- `npm.cmd run lint` -> OK.
+- `npm.cmd exec tsc -- --noEmit` -> OK.
+- `npm.cmd run build` -> OK.
+- `git diff --check` -> OK, con avisos CRLF esperados en archivos .NET.
+
+### Limite real
+
+No se puede afirmar que todas las pantallas graficas esten visualmente perfectas sin ejecutar una sesion autenticada real en navegador contra backend y PostgreSQL. La revision actual cubre estaticamente UI/UX, accesibilidad, copy de estados y build; el gate visual/E2E sigue pendiente para release final.
+
+## 2026-05-19 - V-01.07 - Auditoria integral y hardening pre-release
+
+### Que cambio
+
+- `CuentasController.Resumen` y `IntegrationOpenClawController.Saldos` calculan saldo actual con `fila_numero DESC` y solo desempatan por fecha. Esto alinea resumen, OpenClaw, dashboard y alertas.
+- `ImportacionService` genera huellas `v2` por contenido normalizado y ordinal de duplicado dentro del lote. La fila origen ya no forma parte de la huella, por lo que una cabecera o fila extra no convierte movimientos iguales en "nuevos".
+- Las transacciones relacionales de importacion y movimientos de plazo fijo se limpian en `finally`; si falla `SaveChanges` o auditoria, no se depende del final del scope para liberar la transaccion.
+- `ConfiguracionController.Update` rechaza textos `null` en payloads parciales y `smtp/test` rechaza body nulo con `400`.
+- `AppSelect` deja el listbox custom y usa `<select>` nativo, reduciendo superficie ARIA fragil en filtros y formularios.
+- El modal de importacion en cuenta usa `useDialogFocus`, `Escape`, foco inicial/restauracion y descripcion asociada.
+- `EditableCell` mantiene visible el error de guardado hasta que el usuario reintenta y lo anuncia con `role="alert"`.
+- La validacion de importacion muestra estados textuales ("Valida", "Aviso importable", "Error bloqueante") y los mensajes async usan `role="alert"`/`role="status"`.
+- Los formularios de importacion/formatos asocian labels criticos a sus controles.
+- `TitularSaldoBarChart` expone resumen accesible y tabla alternativa oculta para lectores.
+- Requisitos documentales corregidos: PostgreSQL 16+ en `Atlas Balance/AGENTS.md` y `Documentacion/SPEC.md`.
+
+### Verificacion
+
+- Tests focalizados iniciales fallaron en rojo antes del fix: saldo actual por fecha y huella dependiente de indice reproducian el bug.
+- Tests focalizados despues del fix: `CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests` -> 52/52 OK.
+- `ConfiguracionControllerTests` -> 8/8 OK.
+- Suite backend sin Docker/Testcontainers -> 254/254 OK.
+- Suite backend completa -> 254/256 OK; fallan solo los dos tests que requieren Docker/Testcontainers (`ExtractosConcurrencyTests`, `RowLevelSecurityTests`).
+- `npm.cmd run lint` -> OK.
+- `npm.cmd exec tsc -- --noEmit` -> OK.
+- `npm.cmd run build` -> OK.
+- `npm audit --audit-level=moderate`: 0 vulnerabilidades en pase posterior con aprobacion.
+- `dotnet list package --vulnerable --include-transitive`: 0 paquetes vulnerables en pase posterior con aprobacion.
+
+### Criterio de release
+
+V-01.07 mejora, pero no queda "release final" para clientes. Faltan ZIP firmado, suite PostgreSQL/Testcontainers verde, E2E autenticado con datos reales y prueba backup/restore bajo RLS. Publicarlo como final sin eso seria teatro.
+
 ## 2026-05-18 - V-01.07 - Verificacion backend post-Codex Security con SDK local
 
 - Se instalo SDK .NET 8.0.419 en `C:\tmp\dotnet-sdk-8.0.419`, version exacta fijada por `global.json` con `rollForward=disable`.

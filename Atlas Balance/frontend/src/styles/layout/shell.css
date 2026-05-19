@@ -931,6 +931,19 @@
       transform var(--duration-instant) var(--ease-premium);
   }
 
+  .bottom-nav-sheet-link > span:nth-child(2) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bottom-nav-sheet-link .sidebar-alert-badge,
+  .bottom-nav-sheet-link .sidebar-update-badge {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+
   .bottom-nav-sheet-link:hover,
   .bottom-nav-sheet-link:focus-visible {
     text-decoration: none;

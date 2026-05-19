@@ -36,9 +36,43 @@
 .config-header,
 .auditoria-header,
 .backups-header,
-.exportaciones-header {
-  padding-bottom: var(--space-2);
+.exportaciones-header,
+.trash-header,
+.alertas-page > header {
+  padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-soft);
+}
+
+.dashboard-toolbar h1,
+.users-header h1,
+.extractos-header h1,
+.phase2-header h1,
+.import-header h1,
+.config-header h1,
+.auditoria-header h1,
+.backups-header h1,
+.exportaciones-header h1,
+.trash-header h1,
+.alertas-page > header h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.08;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.dashboard-toolbar > div:first-child,
+.users-header > div:first-child,
+.phase2-header > div:first-child,
+.config-header > div:first-child,
+.auditoria-header > div:first-child,
+.backups-header > div:first-child,
+.exportaciones-header > div:first-child,
+.trash-header > div:first-child,
+.alertas-page > header > div:first-child {
+  min-width: 0;
 }
 
 .dashboard-subtitle,
@@ -48,7 +82,8 @@
 .alertas-page > header p,
 .auditoria-header p,
 .backups-header p,
-.exportaciones-header p {
+.exportaciones-header p,
+.trash-header p {
   max-width: 72ch;
   color: var(--text-secondary);
   text-wrap: pretty;
@@ -68,8 +103,7 @@
 .config-card,
 .config-section-panel,
 .config-status-grid article,
-.config-divisa-card,
-.loading-overlay {
+.config-divisa-card {
   border-color: var(--surface-border);
   background: var(--surface-bg-raised);
   box-shadow: var(--shadow-card);
@@ -91,6 +125,10 @@
 .import-card,
 .alertas-card {
   overflow: clip;
+}
+
+.users-table-card {
+  box-shadow: var(--shadow-sm);
 }
 
 .dashboard-kpi,
@@ -284,7 +322,12 @@ label,
   font-weight: var(--font-weight-semibold);
 }
 
-th {
+.users-table-scroll th,
+.config-table-wrap th,
+.extracto-table-section th,
+.dashboard-table-wrap th,
+.import-preview-grid th,
+.import-validation-table-wrap th {
   position: sticky;
   top: 0;
   z-index: 1;

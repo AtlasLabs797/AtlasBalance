@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -107,6 +107,7 @@ function normalizeTipoMonto(mapeo: Partial<MapeoColumnas>): TipoMontoImportacion
 export default function FormatosImportacionPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const isAdmin = usuario?.rol === 'ADMIN';
+  const bancoInputId = useId();
 
   const [items, setItems] = useState<FormatoRow[]>([]);
   const [divisas, setDivisas] = useState<DivisaOption[]>([]);
@@ -452,7 +453,7 @@ export default function FormatosImportacionPage() {
         )}
       </div>
 
-      {error && <p className="auth-error">{error}</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
 
       <div className="phase2-grid">
         <div className="users-table-card">
@@ -526,6 +527,7 @@ export default function FormatosImportacionPage() {
                         {!item.deleted_at ? (
                           <button
                             type="button"
+                            className="button-danger"
                             onClick={() => setDeleteCandidate({ id: item.id, nombre: item.nombre })}
                             disabled={saving}
                             aria-label={`Eliminar formato ${item.nombre}`}
@@ -560,12 +562,11 @@ export default function FormatosImportacionPage() {
           >
             <h2>{editingId ? 'Editar Formato' : 'Nuevo Formato'}</h2>
 
-            <label>Banco</label>
-            <input value={form.banco_nombre} onChange={(e) => setForm((prev) => ({ ...prev, banco_nombre: e.target.value }))} />
+            <label htmlFor={bancoInputId}>Banco</label>
+            <input id={bancoInputId} value={form.banco_nombre} onChange={(e) => setForm((prev) => ({ ...prev, banco_nombre: e.target.value }))} />
 
-            <label>Divisa</label>
             <AppSelect
-              ariaLabel="Divisa"
+              label="Divisa"
               value={form.divisa}
               options={divisas.map((divisa) => ({
                 value: divisa.codigo,
@@ -574,9 +575,8 @@ export default function FormatosImportacionPage() {
               onChange={(next) => setForm((prev) => ({ ...prev, divisa: next }))}
             />
 
-            <label>Tipo de importe</label>
             <AppSelect
-              ariaLabel="Tipo de importe"
+              label="Tipo de importe"
               value={form.tipo_monto}
               options={[
                 { value: 'una_columna', label: 'Una columna: Importe firmado' },
@@ -603,6 +603,7 @@ export default function FormatosImportacionPage() {
                       ) : (
                         <input
                           type="text"
+                          aria-label={`Nombre de columna ${index}`}
                           placeholder="Nombre de columna"
                           value={col.nombre}
                           onChange={(e) => updateColumnName(index, e.target.value)}

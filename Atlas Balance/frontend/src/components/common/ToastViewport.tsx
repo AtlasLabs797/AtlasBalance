@@ -13,9 +13,10 @@ interface ToastItemProps {
 }
 
 function ToastItem({ id, type, message, onDismiss }: ToastItemProps) {
+  const toastTimeout = type === 'error' ? 9000 : TOAST_TIMEOUT_MS;
   const timeoutRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
-  const remainingRef = useRef(TOAST_TIMEOUT_MS);
+  const remainingRef = useRef(toastTimeout);
   const pausedByInteractionRef = useRef(false);
 
   const clearTimer = useCallback(() => {

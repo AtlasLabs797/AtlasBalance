@@ -8,6 +8,150 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-19 - Jerarquia visual y pesos de accion UI/UX V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se usaron skills UI/UX de Build Web Apps y skills locales de `Skills Curated`, con dos subagentes read-only para auditar jerarquia de pantallas y sistema visual.
+- Se reforzaron headers de pagina, titulos de cards, separadores de seccion en modales y formularios, y estados de exito/aviso para que la informacion importante no compita con ruido decorativo.
+- Tablas normales dejan de parecer modales: `users-table-card` baja peso visual y los headers sticky se limitan a wrappers de tabla concretos.
+- Acciones primarias y criticas quedan diferenciadas: crear cuenta/titular/backup/token y confirmar importacion usan peso primario; eliminar, revocar y restaurar backup quedan marcadas como peligro; actualizacion de app usa aviso.
+- Importacion muestra resumen de validacion por metricas visibles (validas, errores, avisos, seleccionadas) y CTA primaria clara para confirmar.
+- Backups muestra resumen de la ultima copia correcta visible en la pagina principal, trunca rutas largas y destaca restauracion como accion critica.
+- Cuenta detalle destaca `Saldo total` como KPI principal y dashboard avisa visualmente vencimientos de plazo fijo cercanos.
+- Permisos de usuarios separan mejor `Conceder lectura global`, `Añadir permiso` y permisos destructivos como eliminar movimientos.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `git diff --check`
+
+**Resultado de verificacion:**
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Frontend build: OK.
+- `git diff --check`: OK; solo avisos CRLF esperados en archivos ya tocados.
+
+**Pendiente:**
+- Sigue pendiente QA visual/E2E autenticado con datos reales antes de declarar la UI lista para clientes. Esta pasada mejora jerarquia estatica y build, no sustituye navegacion real por todas las pantallas.
+
+---
+## 2026-05-19 - Skills Curated pre-release y hardening de higiene Git V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se usaron, una por una, las skills locales relevantes de `Skills Curated`: `cyber-neo`, `systematic-debugging`, `codebase-inspection`, `test-driven-development`, `dogfood-web-qa`, `harden`, `polish` y `humanizalo`.
+- Se corrigio un riesgo de proceso: `Skills Curated/` aparecia como carpeta no ignorada aunque las reglas del proyecto dicen no subir `Skills/` ni tooling local.
+- Se amplio la proteccion de `.gitignore` para certificados/keystores/dumps (`*.cer`, `*.p12`, `*.jks`, `*.dump`) y resultados locales de .NET (`backend/**/TestResults/`).
+- El escaneo de secretos del CI ahora excluye `Skills Curated/`, igual que `Otros/` y `Skills/`.
+- Se reviso estaticamente UI/UX tras los cambios previos: no se detectaron botones sin `type`, `debugger`, `console.log`, `dangerouslySetInnerHTML`, `eval`, dialogs nativos inesperados ni handlers obvios de alto riesgo.
+
+**Archivos principales:**
+- `.gitignore`
+- `.github/workflows/ci.yml`
+- `Atlas Balance/.gitignore`
+
+**Comandos ejecutados:**
+- `python '.\Skills Curated\05_Security\cyber-neo\scripts\scan_secrets.py' '.\Atlas Balance'`
+- `npm.cmd audit --audit-level=moderate`
+- `dotnet list '.\AtlasBalance.sln' package --vulnerable --include-transitive`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `dotnet test '.\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj' --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests" -p:UseAppHost=false`
+- `npm.cmd run build`
+- `git check-ignore -v -- 'Skills Curated/README.md' 'Atlas Balance/backend/tests/AtlasBalance.API.Tests/TestResults/security-validation.trx' 'Atlas Balance/example.p12' 'Atlas Balance/example.jks' 'Atlas Balance/example.cer' 'Atlas Balance/example.dump'`
+
+**Resultado de verificacion:**
+- Secret scan local: 490 archivos escaneados, 0 hallazgos.
+- `npm audit --audit-level=moderate`: 0 vulnerabilidades.
+- NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Suite backend sin Docker/Testcontainers: 254/254 OK.
+- Frontend build: OK.
+- `git check-ignore`: confirma exclusion de `Skills Curated/`, `TestResults/`, certificados/keystores y dumps.
+
+**Pendiente:**
+- Docker no esta disponible en esta maquina (`docker` no existe en PATH ni en la ruta esperada de Docker Desktop), asi que la suite Testcontainers completa sigue bloqueando el release final.
+- No se ejecuto dogfood visual/E2E real: no habia sesion autenticada ni se deben levantar servidores Vite/HTTP largos desde `shell_command`.
+
+---
+## 2026-05-19 - Refinamiento UI/UX V-01.07 para entrega
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Revision UI/UX estatica con skills de frontend y skills locales de `Skills Curated`.
+- Se corrigio el doble indicador visual de `AppSelect` nativo.
+- La tabla de cuenta mantiene columnas de seleccion/fila fijadas en scroll horizontal y reduce tab stops artificiales.
+- Extractos deja clara la diferencia entre filtros de pagina actual y total del servidor; se rebaja semantica ARIA de `grid` a `table` hasta implementar navegacion de hoja real.
+- Configuracion completa el patron de tabs con `aria-controls`, `tabpanel`, roving `tabIndex` y navegacion por flechas/Home/End.
+- Los errores `auth-error` de pantallas y modales clave se anuncian con `role="alert"`; feedbacks criticos usan `role="status"` cuando corresponde.
+- El modal de creacion de token muestra validaciones dentro del propio modal, no detras del backdrop.
+- Las metricas de tokens ya no inventan ceros si falla la carga; muestran `Cargando` o `No disponible`.
+- Backups comunica el overlay de restauracion como `alertdialog` ocupado y mueve foco al estado critico.
+- `EvolucionChart` agrega tabla `sr-only` con fecha, ingresos, egresos y saldo.
+- Botones repetidos de usuarios, alertas, backups y papelera reciben labels accesibles con contexto.
+- Toasts de error permanecen mas tiempo antes de autocerrarse.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `git diff --check`
+
+**Resultado de verificacion:**
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Frontend build: OK.
+- `git diff --check`: OK; solo avisos CRLF esperados en archivos .NET ya tocados.
+
+**Pendiente:**
+- No se ejecuto validacion visual/E2E con navegador real porque las reglas del proyecto bloquean servidores Vite/HTTP largos desde `shell_command` y no hay un entorno autenticado ya levantado. Antes de entrega final sigue faltando E2E real con backend/PostgreSQL y datos de cliente de prueba.
+
+---
+## 2026-05-19 - Auditoria integral V-01.07 y correcciones de release blocker
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se usaron las skills locales de `Skills Curated` como checklist: rediseño/auditoria UI, dogfood QA, seguridad y arquitectura. La ruta pedida `Skills Curated Analizes` no existe; se uso la carpeta real `Skills Curated`.
+- Corregido el saldo actual inconsistente: resumen de cuenta y API OpenClaw ahora toman el ultimo movimiento por `fila_numero`, igual que dashboard/alertas.
+- Corregida la idempotencia de importacion: la huella deja de depender del indice de fila y usa contenido normalizado + ordinal de duplicado.
+- Las transacciones de importacion y plazo fijo garantizan `DisposeAsync` en `finally`.
+- Configuracion rechaza payloads con textos `null` y `smtp/test` rechaza body nulo con `400`, sin 500.
+- Frontend: `AppSelect` pasa a `<select>` nativo, el modal de importacion usa `useDialogFocus`, los errores de celda son persistentes y anunciados, la importacion muestra estados textuales, se asocian labels criticos de importacion/formatos y la grafica de saldos por titular tiene alternativa accesible.
+- Actualizados `Atlas Balance/AGENTS.md` y `Documentacion/SPEC.md` de PostgreSQL 14+ a PostgreSQL 16+.
+
+**Comandos ejecutados:**
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "ConfiguracionControllerTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `npm.cmd audit --audit-level=moderate`
+- `.\.dotnet\dotnet.exe list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
+
+**Resultado de verificacion:**
+- Tests de regresion focalizados backend: 52/52 OK.
+- `ConfiguracionControllerTests`: 8/8 OK.
+- Suite backend sin Docker/Testcontainers: 254/254 OK.
+- Suite backend completa: 254/256 OK; fallan `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado.
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Frontend build: OK.
+- `npm audit`: 0 vulnerabilidades en pase posterior con aprobacion.
+- NuGet vulnerable audit: 0 paquetes vulnerables en pase posterior con aprobacion.
+
+**Pendiente:**
+- No publicar como release final hasta tener Docker/Testcontainers verde, E2E autenticado con PostgreSQL real/datos de volumen, ZIP `V-01.07` firmado y prueba backup/restore real.
+
+---
 ## 2026-05-18 - Verificacion backend post-Codex Security con SDK local
 
 **Version:** V-01.07

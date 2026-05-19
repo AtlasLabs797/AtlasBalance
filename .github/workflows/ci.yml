@@ -73,7 +73,7 @@ jobs:
           )
           $files = (git -c core.quotepath=false ls-files -z) -split "`0" | Where-Object {
             $_ -and
-            $_ -notmatch '(^|/)(Otros|Skills)/' -and
+            $_ -notmatch '(^|/)(Otros|Skills|Skills Curated)/' -and
             $_ -notmatch '(^|/)(bin|obj|node_modules|dist)/'
           }
           $findings = @()

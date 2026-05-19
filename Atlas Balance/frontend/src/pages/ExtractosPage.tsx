@@ -38,6 +38,7 @@ export default function ExtractosPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(200);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cuentaFiltro, setCuentaFiltro] = useState<string>(() => searchParams.get('cuentaId') ?? '');
@@ -96,6 +97,7 @@ export default function ExtractosPage() {
     if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
       setRows([]);
       setTotalPages(1);
+      setTotalRows(0);
       setError('La fecha desde no puede ser posterior a la fecha hasta.');
       setLoading(false);
       return;
@@ -116,10 +118,12 @@ export default function ExtractosPage() {
       });
       setRows(data.data ?? []);
       setTotalPages(Math.max(1, data.total_pages ?? 1));
+      setTotalRows(data.total ?? data.data?.length ?? 0);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudieron cargar extractos'));
       setRows([]);
       setTotalPages(1);
+      setTotalRows(0);
     } finally {
       setLoading(false);
     }
@@ -358,7 +362,7 @@ export default function ExtractosPage() {
         </div>
       </header>
 
-      {error && <p className="auth-error">{error}</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
 
       {cuentasConAlta.length > 0 ? (
         <AddRowForm
@@ -379,6 +383,7 @@ export default function ExtractosPage() {
 
       <ExtractoTable
         rows={rows}
+        totalRows={totalRows}
         loading={loading}
         sortBy={sortBy}
         sortDir={sortDir}
@@ -394,7 +399,7 @@ export default function ExtractosPage() {
 
       <div className="users-pagination">
         <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Anterior</button>
-        <span>Página {page} / {totalPages}</span>
+        <span>Página {page} / {totalPages} · {totalRows.toLocaleString('es-ES')} movimientos</span>
         <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Siguiente</button>
         <PageSizeSelect
           value={pageSize}

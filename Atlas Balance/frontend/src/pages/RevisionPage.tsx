@@ -153,7 +153,7 @@ export default function RevisionPage() {
         </button>
       </div>
 
-      {error ? <p className="auth-error">{error}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
       {loading ? <PageSkeleton rows={5} variant="table" /> : tab === 'comisiones' ? (
         <ComisionesTable

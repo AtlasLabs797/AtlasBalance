@@ -27,7 +27,7 @@ export default function TitularDetailPage() {
   }, [id, periodo]);
 
   if (loading) return <PageSkeleton rows={3} />;
-  if (error) return <p className="auth-error">{error}</p>;
+  if (error) return <p className="auth-error" role="alert">{error}</p>;
   if (!data) {
     return (
       <EmptyState

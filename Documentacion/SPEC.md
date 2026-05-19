@@ -168,7 +168,7 @@ Arquitectura abierta: el admin puede añadir nuevas divisas desde la UI sin modi
 
 │  ┌──────────────────────────────────┐   │
 
-│  │  PostgreSQL 14+                   │   │
+│  │  PostgreSQL 16+                   │   │
 
 │  │  Puerto 5432 (solo localhost)     │   │
 
@@ -254,7 +254,7 @@ Arquitectura abierta: el admin puede añadir nuevas divisas desde la UI sin modi
 
 
 
-- PostgreSQL 14+
+- PostgreSQL 16+
 
 - Alojado en el mismo servidor, acceso solo local
 
@@ -3090,7 +3090,7 @@ Serilog.AspNetCore@7
 
 ```
 
-PostgreSQL 14+
+PostgreSQL 16+
 
 pgAdmin 4 (opcional, herramienta admin visual)
 
@@ -3180,7 +3180,7 @@ OpenClaw main agent       integración de lectura de datos financieros
 
 
 
-**1. PostgreSQL 14+**
+**1. PostgreSQL 16+**
 
 ```
 

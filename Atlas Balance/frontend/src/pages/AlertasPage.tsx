@@ -320,7 +320,7 @@ export default function AlertasPage() {
         </p>
       </header>
 
-      {error ? <p className="auth-error">{error}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
       {feedback ? <p className="config-feedback">{feedback}</p> : null}
 
       <article className="alertas-card">
@@ -336,7 +336,7 @@ export default function AlertasPage() {
           </button>
         </div>
 
-        {activeError ? <p className="auth-error">{activeError}</p> : null}
+        {activeError ? <p className="auth-error" role="alert">{activeError}</p> : null}
 
         {!activeError && activeLoading && alertasActivas.length === 0 ? (
           <p className="import-muted">Cargando alertas activas...</p>
@@ -600,10 +600,10 @@ export default function AlertasPage() {
                         <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
                         <td>
                           <div className="users-row-actions">
-                            <button type="button" onClick={() => editTipoAlert(item)}>
+                            <button type="button" onClick={() => editTipoAlert(item)} aria-label={`Editar alerta por tipo ${item.tipo_titular}`}>
                               Editar
                             </button>
-                            <button type="button" onClick={() => setDeleteTarget(item)} disabled={saving}>
+                            <button type="button" className="button-danger" onClick={() => setDeleteTarget(item)} disabled={saving} aria-label={`Eliminar alerta por tipo ${item.tipo_titular}`}>
                               Eliminar alerta
                             </button>
                           </div>
@@ -651,10 +651,10 @@ export default function AlertasPage() {
                         <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
                         <td>
                           <div className="users-row-actions">
-                            <button type="button" onClick={() => editCuentaAlert(item)}>
+                            <button type="button" onClick={() => editCuentaAlert(item)} aria-label={`Editar alerta de cuenta ${item.cuenta_nombre ?? 'sin nombre'}`}>
                               Editar
                             </button>
-                            <button type="button" onClick={() => setDeleteTarget(item)} disabled={saving}>
+                            <button type="button" className="button-danger" onClick={() => setDeleteTarget(item)} disabled={saving} aria-label={`Eliminar alerta de cuenta ${item.cuenta_nombre ?? 'sin nombre'}`}>
                               Eliminar alerta
                             </button>
                           </div>

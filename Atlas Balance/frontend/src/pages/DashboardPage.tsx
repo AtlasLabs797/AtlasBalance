@@ -301,7 +301,7 @@ export default function DashboardPage() {
                   </SignedAmount>
                 </strong>
               </div>
-              <div>
+              <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
                 <span>Próximo vencimiento</span>
                 <strong>
                   {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
@@ -338,7 +338,7 @@ export default function DashboardPage() {
                 </SignedAmount>
               </strong>
             </div>
-            <div>
+            <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
               <span>Próximo vencimiento</span>
               <strong>
                 {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null

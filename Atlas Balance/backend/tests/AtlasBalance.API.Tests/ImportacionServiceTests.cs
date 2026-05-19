@@ -1187,6 +1187,47 @@ public class ImportacionServiceTests
     }
 
     [Fact]
+    public async Task ConfirmarAsync_Should_Deduplicate_Reimport_When_Source_Row_Indices_Shift()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var firstRequest = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = string.Join('\n', [
+                "01/04/2026\tVenta 1\t1200,50\t3000,25",
+                "02/04/2026\tPago proveedor\t-200,25\t2800,00"
+            ]),
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+        var shiftedRequest = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = string.Join('\n', [
+                "Fecha\tConcepto\tMonto\tSaldo",
+                "01/04/2026\tVenta 1\t1200,50\t3000,25",
+                "02/04/2026\tPago proveedor\t-200,25\t2800,00"
+            ]),
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+
+        var first = await service.ConfirmarAsync(userId, RolUsuario.EMPLEADO.ToString(), firstRequest, new DefaultHttpContext(), CancellationToken.None);
+        var second = await service.ConfirmarAsync(userId, RolUsuario.EMPLEADO.ToString(), shiftedRequest, new DefaultHttpContext(), CancellationToken.None);
+
+        first.FilasImportadas.Should().Be(2);
+        second.FilasImportadas.Should().Be(0);
+        second.FilasDuplicadas.Should().Be(2);
+        second.FilasConError.Should().Be(1);
+
+        var extractos = await db.Extractos.OrderBy(e => e.FilaNumero).ToListAsync();
+        extractos.Should().HaveCount(2);
+        extractos.Select(e => e.ImportacionFingerprint).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public async Task ConfirmarAsync_Should_Preserve_Pasted_Order_When_Viewing_FilaNumero_Descending()
     {
         await using var db = BuildDbContext();

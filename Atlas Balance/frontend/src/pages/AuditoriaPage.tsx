@@ -269,7 +269,7 @@ export default function AuditoriaPage() {
             </button>
           </div>
 
-          {error ? <p className="auth-error">{error}</p> : null}
+          {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
           <div className="users-table-card auditoria-table-card">
             {loading ? <p className="import-muted">Cargando auditoría...</p> : null}

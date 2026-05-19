@@ -102,6 +102,65 @@ public sealed class CuentasControllerTests
     }
 
     [Fact]
+    public async Task Resumen_Should_Use_Highest_FilaNumero_As_CurrentSaldo()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.cuenta.actual@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Cuenta Actual",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Actual", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Actual",
+            Divisa = "EUR",
+            Activa = true
+        });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 5, 10),
+                Concepto = "Movimiento con fecha posterior",
+                Monto = 20m,
+                Saldo = 20m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 4, 30),
+                Concepto = "Movimiento importado ultimo",
+                Monto = 80m,
+                Saldo = 100m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId);
+
+        var result = await controller.Resumen(cuentaId, "1m", CancellationToken.None);
+
+        var summary = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<CuentaResumenResponse>().Subject;
+        summary.SaldoActual.Should().Be(100m);
+    }
+
+    [Fact]
     public async Task Resumen_Should_Expose_PlazoFijo_Metadata()
     {
         await using var db = BuildDbContext();

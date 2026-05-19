@@ -1,5 +1,5 @@
 ﻿import { AxiosError } from 'axios';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
@@ -21,9 +21,6 @@ import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
 
 const EFFECTIVO_MARKER = '\u2022 Efectivo';
 const EMPTY_MARKER = '\u2014';
-const VALID_MARKER = '\u2713';
-const INVALID_MARKER = '\u2717';
-const WARNING_MARKER = '!';
 const PLAZO_FIJO_MARKER = '\u2022 Plazo fijo';
 const DEFAULT_RETURN_TO = '/dashboard';
 const PREVIEW_ROW_LIMIT = 3;
@@ -32,6 +29,7 @@ const VALIDATION_PAGE_SIZE = 200;
 
 type ImportStep = 1 | 2;
 type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
+type ImportValidationRow = ImportValidationResult['filas'][number];
 
 function getTodayInputValue(): string {
   const now = new Date();
@@ -45,6 +43,18 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
   }
 
   return extractErrorMessage(error, fallback);
+}
+
+function getValidationStatusLabel(row: ImportValidationRow): string {
+  if (!row.valida) {
+    return 'Error bloqueante';
+  }
+
+  if (row.advertencias.length > 0) {
+    return 'Aviso importable';
+  }
+
+  return 'Valida';
 }
 
 function normalizeReturnTo(value: string | null): string {
@@ -140,6 +150,7 @@ export default function ImportacionPage() {
   const isEmbedded = searchParams.get('embedded') === '1';
   const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
   const usuario = useAuthStore((state) => state.usuario);
+  const rawDataId = useId();
   const [step, setStep] = useState<ImportStep>(1);
   const [contexto, setContexto] = useState<ImportCuentaContexto[]>([]);
   const [loadingContext, setLoadingContext] = useState(true);
@@ -509,10 +520,10 @@ export default function ImportacionPage() {
         <li className={step === 2 ? 'active' : ''}>2. Validar y confirmar</li>
       </ol>
 
-      {error && <p className="auth-error">{error}</p>}
-      {success && <p className="import-success">{success}</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      {success && <p className="import-success" role="status">{success}</p>}
       {autoCloseOnSuccess && importAlreadyConfirmed && !isEmbedded && (
-        <p className="import-muted">Importación confirmada. Esta pestaña se cerrará automáticamente.</p>
+        <p className="import-muted" role="status">Importación confirmada. Esta pestaña se cerrará automáticamente.</p>
       )}
       {autoCloseOnSuccess && importAlreadyConfirmed && !isEmbedded && closeAttempted && (
         <p className="import-muted">
@@ -583,6 +594,7 @@ export default function ImportacionPage() {
                 <div className="import-actions">
                   <button
                     type="button"
+                    className="button-primary"
                     disabled={!canSubmitPlazoFijo || submitting}
                     onClick={() => void submitPlazoFijoMovimiento()}
                   >
@@ -592,7 +604,7 @@ export default function ImportacionPage() {
               </>
             ) : (
               <>
-            <p className={selectedMapeo ? 'import-muted' : 'auth-error'}>
+            <p className={selectedMapeo ? 'import-muted' : 'auth-error'} role={selectedMapeo ? 'status' : 'alert'}>
               {selectedMapeo
                 ? `Formato automatico aplicado: ${selectedMapeo.tipo_monto === 'tres_columnas' ? 'ingreso/egreso + monto de control' : selectedMapeo.tipo_monto === 'dos_columnas' ? 'ingreso/egreso separados' : 'monto firmado'} (${selectedMapeo.columnas_extra.length} columnas extra).`
                 : 'Esta cuenta no tiene formato de importación activo. Asígnalo en la ficha de cuenta antes de importar.'}
@@ -612,8 +624,9 @@ export default function ImportacionPage() {
               }}
             />
 
-            <label>Datos (pegar desde Excel/CSV)</label>
+            <label htmlFor={rawDataId}>Datos (pegar desde Excel/CSV)</label>
             <textarea
+              id={rawDataId}
               rows={10}
               value={rawData}
               onChange={(e) => {
@@ -654,7 +667,7 @@ export default function ImportacionPage() {
             </div>
 
             <div className="import-actions">
-              <button type="button" disabled={!canValidate || submitting} onClick={() => void validateImport()}>
+              <button type="button" className="button-primary" disabled={!canValidate || submitting} onClick={() => void validateImport()}>
                 {submitting ? 'Validando...' : 'Validar datos'}
               </button>
             </div>
@@ -666,15 +679,27 @@ export default function ImportacionPage() {
         {step === 2 && validacion && (
           <>
             <h3>Validar y confirmar</h3>
-            <p>
-              {validacion.filas_ok} filas validas, {validacion.filas_error} con errores,{' '}
-              {validationWarningsCount} con avisos. Separador:{' '}
-              {validacion.separador_detectado}.
+            <div className="import-result-box import-validation-summary" role="status">
+              <div>
+                <strong>{validacion.filas_ok}</strong>
+                <span>Filas validas</span>
+              </div>
+              <div>
+                <strong>{validacion.filas_error}</strong>
+                <span>Errores bloqueantes</span>
+              </div>
+              <div>
+                <strong>{validationWarningsCount}</strong>
+                <span>Avisos</span>
+              </div>
+              <div>
+                <strong>{selectedValidRowsCount}</strong>
+                <span>Seleccionadas</span>
+              </div>
+            </div>
+            <p className="import-muted">
+              Cuenta: {selectedCuenta ? `${selectedCuenta.titular_nombre} / ${selectedCuenta.nombre}` : EMPTY_MARKER}. Separador: {validacion.separador_detectado}.
             </p>
-            <ul className="import-summary">
-              <li>Cuenta: {selectedCuenta ? `${selectedCuenta.titular_nombre} / ${selectedCuenta.nombre}` : EMPTY_MARKER}</li>
-              <li>Filas seleccionadas para importar: {selectedValidRowsCount}</li>
-            </ul>
 
             <div className="import-validation-table-wrap">
               <table className="import-validation-table">
@@ -721,7 +746,7 @@ export default function ImportacionPage() {
                         ) : EMPTY_MARKER}
                       </td>
                       <td>{row.indice}</td>
-                      <td>{row.valida ? (row.advertencias.length > 0 ? WARNING_MARKER : VALID_MARKER) : INVALID_MARKER}</td>
+                      <td>{getValidationStatusLabel(row)}</td>
                       <td>{row.datos.fecha ?? ''}</td>
                       <td>{row.datos.concepto ?? ''}</td>
                       {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <td>{row.datos.ingreso ?? ''}</td>}
@@ -787,9 +812,10 @@ export default function ImportacionPage() {
             <div className="import-actions">
               {!importAlreadyConfirmed && (
                 <>
-                  <button type="button" onClick={() => setStep(1)}>Atras</button>
+                  <button type="button" className="button-secondary" onClick={() => setStep(1)}>Atras</button>
                   <button
                     type="button"
+                    className="button-primary"
                     onClick={() => void confirmImport()}
                     disabled={submitting || selectedValidRowsCount === 0}
                   >
@@ -797,7 +823,7 @@ export default function ImportacionPage() {
                   </button>
                 </>
               )}
-              <button type="button" onClick={startNextImport}>Nueva importación</button>
+              <button type="button" className="button-secondary" onClick={startNextImport}>Nueva importación</button>
             </div>
           </>
         )}

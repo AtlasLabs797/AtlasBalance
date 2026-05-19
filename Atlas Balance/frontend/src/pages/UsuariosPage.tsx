@@ -237,7 +237,7 @@ export default function UsuariosPage() {
         </label>
       </div>
 
-      {error && <p className="auth-error">{error}</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
 
       <div className="users-table-card">
         {loading ? (
@@ -281,14 +281,17 @@ export default function UsuariosPage() {
                       type="button"
                       onClick={() => openEditModal(row.id)}
                       disabled={actionLoading}
+                      aria-label={`Editar usuario ${row.email}`}
                     >
                       Editar
                     </button>
                     {!row.deleted_at ? (
                       <button
                         type="button"
+                        className="button-danger"
                         onClick={() => confirmDelete(row)}
                         disabled={actionLoading}
+                        aria-label={`Eliminar usuario ${row.email}`}
                       >
                         Eliminar
                       </button>
@@ -297,6 +300,7 @@ export default function UsuariosPage() {
                         type="button"
                         onClick={() => void restore(row.id)}
                         disabled={actionLoading}
+                        aria-label={`Restaurar usuario ${row.email}`}
                       >
                         Restaurar
                       </button>
@@ -304,8 +308,10 @@ export default function UsuariosPage() {
                     {!row.deleted_at && row.mfa_enabled && (
                       <button
                         type="button"
+                        className="button-danger"
                         onClick={() => confirmMfaRevoke(row)}
                         disabled={actionLoading}
+                        aria-label={`Revocar Authenticator de ${row.email}`}
                       >
                         Revocar Authenticator
                       </button>
@@ -383,7 +389,7 @@ export default function UsuariosPage() {
               >
                 Cancelar
               </button>
-              <button type="button" onClick={() => void softDelete()} disabled={actionLoading}>
+              <button type="button" className="button-danger" onClick={() => void softDelete()} disabled={actionLoading}>
                 {actionLoading ? 'Enviando...' : 'Enviar a papelera'}
               </button>
             </div>
@@ -418,7 +424,7 @@ export default function UsuariosPage() {
               >
                 Cancelar
               </button>
-              <button type="button" onClick={() => void revokeMfa()} disabled={actionLoading}>
+              <button type="button" className="button-danger" onClick={() => void revokeMfa()} disabled={actionLoading}>
                 {actionLoading ? 'Revocando...' : 'Revocar Authenticator'}
               </button>
             </div>

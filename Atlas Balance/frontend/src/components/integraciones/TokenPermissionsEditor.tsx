@@ -73,7 +73,7 @@ export function TokenPermissionsEditor({ permisos, onChange, catalogos }: TokenP
               onChange(next);
             }}
           />
-          <button type="button" onClick={() => removePermiso(index)}>
+          <button type="button" onClick={() => removePermiso(index)} aria-label={`Quitar permiso ${index + 1}`}>
             Quitar
           </button>
         </div>

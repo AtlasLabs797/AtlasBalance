@@ -6,8 +6,9 @@
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
 - Pendientes:
+  - Ejecutar suite completa V-01.07 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
   - Hacer E2E autenticado contra PostgreSQL real con datos de volumen antes de release.
-  - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en la auditoria UI del 2026-05-12; los casos de overflow y estados feos recibieron hardening el 2026-05-12. El pase `adapt` del 2026-05-12 cubrio responsive/touch/overflow estatico en desktop/tablet/mobile, pero falta sesion real con datos de volumen.
+  - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en auditorias UI previas; el 2026-05-19 se reforzaron select nativo, modal de importacion, errores persistentes de celda, estados de importacion, tabs de Configuracion, tablas de cuenta/extractos, token modal/metricas, backups y alternativas accesibles de graficas. Falta sesion real con datos de volumen.
 - Estado: abierto. Bloquea recomendar release final.
 
 ### 2026-04-20 - V-01.02 - Estado Git local no fiable
@@ -18,6 +19,37 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-05-19 - V-01.07 - Cerrado - Jerarquia visual plana y acciones criticas poco diferenciadas
+
+- Contexto: revision adicional UI/UX sobre jerarquia de ventanas, informacion importante, botones, checks, tablas y menus.
+- Causa: demasiadas superficies compartian sombra/fondo y demasiadas acciones usaban el boton secundario por defecto.
+- Solucion: headers y secciones mas claros, tablas con menos peso que modales, botones primarios/danger/warning en flujos criticos, resumen de validacion de importacion, resumen de backup y resaltado de saldo/vencimientos.
+- Verificacion: frontend lint OK, TypeScript OK, build OK, `git diff --check` OK.
+- Estado: cerrado en codigo; sigue abierto el gate general de QA visual/E2E real antes de release final.
+
+### 2026-05-19 - V-01.07 - Cerrado - Skills Curated y artefactos locales aparecian como versionables
+
+- Contexto: el pase pre-release con skills locales dejo claro que `Skills Curated/` y `TestResults/` podian aparecer en `git status`.
+- Causa: los `.gitignore` cubrian `Skills/` y algunos artefactos, pero no la carpeta real `Skills Curated/`, resultados .NET ni varias extensiones sensibles de certificados/keystores/dumps.
+- Impacto: riesgo de subir tooling local, resultados de test o artefactos sensibles al repositorio.
+- Solucion: `.gitignore` raiz y `Atlas Balance/.gitignore` amplian exclusiones; el CI de secretos excluye tambien `Skills Curated/`.
+- Verificacion: `git check-ignore` confirma `Skills Curated/`, `TestResults/`, `*.p12`, `*.jks`, `*.cer` y `*.dump`; secret scan local 0 hallazgos.
+- Estado: cerrado.
+
+### 2026-05-19 - V-01.07 - Cerrado - Refinamiento UI/UX pre-entrega detecto semantica y estados engañosos
+
+- Contexto: revision UI/UX de pantallas, tablas, botones, checks, menus, modales y estados con skills de frontend y skills locales.
+- Causa:
+  - Extractos parecia filtrar globalmente aunque solo filtraba la pagina cargada.
+  - Tokens mostraba metricas en cero si fallaba la carga.
+  - Crear token mostraba validaciones fuera del modal.
+  - Configuracion tenia tabs ARIA incompletas.
+  - Varias pantallas mostraban errores sin anuncio accesible.
+  - Cuenta detalle tenia demasiados tab stops y perdia contexto horizontal.
+- Solucion: copy/contadores de Extractos por pagina y total, tabla ARIA honesta, metricas `loading/error/ready`, errores locales de modal, tabs ARIA completas, `role="alert"`, labels contextuales, columnas fijas, overlay de backup accesible y tabla `sr-only` en evolucion.
+- Verificacion: frontend lint OK, TypeScript OK, build OK, `git diff --check` OK.
+- Estado: cerrado en codigo; pendiente visual/E2E real como gate abierto de release final.
 
 ### 2026-05-17 - V-01.07 - Cerrado - Revision Codex Security detecto fugas de soft-delete y controles locales flojos
 
@@ -813,17 +845,18 @@
 - Verificacion: `npm.cmd run lint`, `npm.cmd exec tsc -- --noEmit` y `npm.cmd run build` OK.
 - Estado: cerrado.
 
-### 2026-05-16 - V-01.07 - Abierto - Paquetes de actualizacion sin limites explicitos de tamano/contenido
+### 2026-05-16 - V-01.07 - Cerrado - Paquetes de actualizacion sin limites explicitos de tamano/contenido
 
 - Contexto: el flujo de actualizacion valida rutas, pero no aplica limites de tamano ni manifiesto de contenido antes de extraer.
 - Impacto: riesgo de consumo de disco/tiempo o paquete inesperado si un admin carga un artefacto malicioso o corrupto.
-- Correccion recomendada: limite de tamano, validacion de extension, conteo de entradas, destino canonico y manifiesto esperado antes de aplicar.
-- Verificacion pendiente: tests con zip sobredimensionado, zip con traversal y zip valido.
-- Estado: abierto.
+- Solucion: `ActualizacionService` limita ZIP descargado, contenido extraido, entrada individual y numero de entradas antes de aplicar assets oficiales firmados.
+- Verificacion: `ActualizacionServiceTests|AutoUpdateJobTests|SeedDataTests|ConfiguracionControllerTests` 25/25 OK el 2026-05-17; suite backend sin Docker 254/254 OK el 2026-05-19.
+- Estado: cerrado.
 
-### 2026-05-16 - V-01.07 - Abierto - Inconsistencias pendientes de importacion, saldo y configuracion
+### 2026-05-16 - V-01.07 - Cerrado - Inconsistencias pendientes de importacion, saldo y configuracion
 
 - Contexto: la auditoria encontro riesgos que requieren una pasada focalizada: fingerprint de importacion dependiente del indice de fila, transacciones de importacion no garantizadas en `finally`, criterios distintos para saldo actual entre modulos, JSON nulo en configuracion y cooldown de alertas fallidas.
 - Impacto: duplicados fragiles, recursos abiertos, saldos diferentes segun pantalla, 500 evitables o alertas repetidas.
-- Correccion recomendada: tratar cada punto con test de regresion antes de tocar comportamiento financiero.
-- Estado: abierto.
+- Solucion: huella de importacion estable por contenido con ordinal de duplicado, `finally` para transacciones de importacion/plazo fijo, saldo actual por `fila_numero` en resumen de cuenta y OpenClaw, rechazo controlado de JSON nulo en configuracion. Cooldown SMTP ya estaba correcto y se mantuvo.
+- Verificacion: tests nuevos fallaron en rojo antes del fix; despues `CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests` 52/52 OK, `ConfiguracionControllerTests` 8/8 OK y suite backend sin Docker/Testcontainers 254/254 OK.
+- Estado: cerrado.

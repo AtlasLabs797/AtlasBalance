@@ -157,6 +157,69 @@ public sealed class IntegrationOpenClawControllerTests
     }
 
     [Fact]
+    public async Task Saldos_Should_Use_Highest_FilaNumero_As_CurrentSaldo()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Empresa", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuenta.Id,
+                Fecha = new DateOnly(2026, 5, 10),
+                Concepto = "Movimiento con fecha posterior",
+                Monto = 20m,
+                Saldo = 20m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuenta.Id,
+                Fecha = new DateOnly(2026, 4, 30),
+                Concepto = "Movimiento importado ultimo",
+                Monto = 80m,
+                Saldo = 100m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.Saldos("full", null, null, CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(okResult.Value));
+        var cuentaJson = document.RootElement
+            .GetProperty("Datos")
+            .GetProperty("cuentas")
+            .EnumerateArray()
+            .Single();
+        cuentaJson.GetProperty("saldo_actual").GetDecimal().Should().Be(100m);
+    }
+
+    [Fact]
     public async Task Auditoria_Should_Not_Return_Values_For_SoftDeleted_Extractos()
     {
         await using var db = BuildDbContext();

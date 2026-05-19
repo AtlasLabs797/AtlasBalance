@@ -106,6 +106,11 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "Faltan datos obligatorios de configuracion." });
         }
 
+        if (HasNullTextFields(request))
+        {
+            return BadRequest(new { error = "Los campos de texto de configuracion no pueden ser null." });
+        }
+
         if (request.Smtp.Port <= 0 || request.Smtp.Port > 65535)
         {
             return BadRequest(new { error = "Puerto SMTP inválido." });
@@ -245,6 +250,11 @@ public sealed class ConfiguracionController : ControllerBase
     [HttpPost("smtp/test")]
     public async Task<IActionResult> SendTestEmail([FromBody] SendTestEmailRequest request, CancellationToken cancellationToken)
     {
+        if (request is null)
+        {
+            return BadRequest(new { error = "La solicitud esta incompleta o no tiene el formato esperado." });
+        }
+
         var config = await LoadConfigMapAsync(cancellationToken);
         var target = request.To?.Trim();
         if (string.IsNullOrWhiteSpace(target))
@@ -532,6 +542,35 @@ public sealed class ConfiguracionController : ControllerBase
                char.IsLetter(value[0]) &&
                value[1] == ':' &&
                (value[2] == '\\' || value[2] == '/');
+    }
+
+    private static bool HasNullTextFields(UpdateConfiguracionRequest request)
+    {
+        if (request.Smtp.Host is null ||
+            request.Smtp.User is null ||
+            request.Smtp.Password is null ||
+            request.Smtp.From is null ||
+            request.General.AppBaseUrl is null ||
+            request.General.AppUpdateCheckUrl is null ||
+            request.General.BackupPath is null ||
+            request.General.ExportPath is null ||
+            request.Dashboard.ColorIngresos is null ||
+            request.Dashboard.ColorEgresos is null ||
+            request.Dashboard.ColorSaldo is null)
+        {
+            return true;
+        }
+
+        if (request.Exchange is not null && request.Exchange.ApiKey is null)
+        {
+            return true;
+        }
+
+        return request.Ia is not null &&
+               (request.Ia.Provider is null ||
+                request.Ia.Model is null ||
+                request.Ia.OpenRouterApiKey is null ||
+                request.Ia.OpenAiApiKey is null);
     }
 
     private static Dictionary<string, string> RedactSensitiveConfig(IReadOnlyDictionary<string, string> source)

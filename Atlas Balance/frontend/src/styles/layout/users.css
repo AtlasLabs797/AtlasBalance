@@ -56,6 +56,15 @@
 
 .users-summary-card strong {
   font-size: var(--font-size-2xl);
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1;
+}
+
+.users-summary-card span {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
 }
 
 .users-filters {
@@ -239,6 +248,13 @@
   color: var(--color-text-secondary);
 }
 
+.users-modal-header h2 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
 .users-modal-close {
   justify-self: end;
 }
@@ -252,6 +268,21 @@
 .users-modal-section {
   display: grid;
   gap: var(--space-3);
+}
+
+.users-modal-section + .users-modal-section {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-soft);
+}
+
+.users-modal-section > h3 {
+  margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-heavy);
+  line-height: 1.2;
 }
 
 .users-notifications-section {
@@ -325,6 +356,19 @@
   border: 1px solid var(--color-border-primary);
   border-radius: var(--border-radius-md);
   background: var(--color-bg-primary);
+}
+
+.users-check-row label:has(input:checked),
+.users-check-grid label:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--border-soft));
+  background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface));
+  color: var(--text-primary);
+}
+
+.users-check-grid label.users-check-danger:has(input:checked) {
+  border-color: color-mix(in srgb, var(--danger-text) 28%, transparent);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .users-check-row-item {

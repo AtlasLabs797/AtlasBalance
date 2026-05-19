@@ -11,6 +11,7 @@ backend/**/bin/
 backend/**/obj/
 backend/.codex-build/
 backend/**/.codex-test-obj/
+backend/**/TestResults/
 frontend/node_modules/
 frontend/dist/
 
@@ -31,9 +32,11 @@ scripts/seed-demo-data*.sql
 *.pem
 *.key
 *.crt
+*.cer
 *.pfx
 *.p12
 *.jks
+*.dump
 
 # Local credential stores
 .npmrc

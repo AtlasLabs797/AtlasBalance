@@ -200,7 +200,7 @@ export default function PapeleraPage() {
         ))}
       </div>
 
-      {error ? <p className="auth-error">{error}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
       {message ? <p className="config-feedback">{message}</p> : null}
 
       <div className="users-table-card">
@@ -236,6 +236,7 @@ export default function PapeleraPage() {
                         type="button"
                         onClick={() => void restore(row.id)}
                         disabled={restoringId === row.id}
+                        aria-label={`Restaurar ${row.titulo}`}
                       >
                         {restoringId === row.id ? 'Restaurando...' : 'Restaurar'}
                       </button>

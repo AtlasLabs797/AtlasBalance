@@ -11,6 +11,7 @@ import { formatCurrency, formatDate, getAmountTone } from '@/utils/formatters';
 
 interface ExtractoTableProps {
   rows: Extracto[];
+  totalRows: number;
   loading: boolean;
   sortBy: string;
   sortDir: 'asc' | 'desc';
@@ -31,6 +32,7 @@ const DEFAULT_SELECTED_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona un
 
 export default function ExtractoTable({
   rows,
+  totalRows,
   loading,
   sortBy,
   sortDir,
@@ -107,12 +109,12 @@ export default function ExtractoTable({
   return (
     <section
       className={`extracto-table-section extracto-table-section--${density}`}
-      aria-label="Extractos en formato hoja de calculo"
+      aria-label="Extractos de la página actual en formato tabla editable"
     >
       <div className="extracto-table-toolbar">
         <div>
-          <strong>{filteredRows.length.toLocaleString('es-ES')} filas</strong>
-          <span>{activeColumns.length} columnas visibles</span>
+          <strong>{filteredRows.length.toLocaleString('es-ES')} de {rows.length.toLocaleString('es-ES')} filas en esta página</strong>
+          <span>{totalRows.toLocaleString('es-ES')} movimientos totales · {activeColumns.length} columnas visibles</span>
         </div>
         <div className="extracto-table-actions">
           <button
@@ -175,7 +177,7 @@ export default function ExtractoTable({
         ref={parentRef}
         className="extracto-table-viewport"
         style={sheetRootStyle}
-        role="grid"
+        role="table"
         aria-rowcount={filteredRows.length + 1}
         aria-colcount={activeColumns.length}
       >
@@ -197,7 +199,7 @@ export default function ExtractoTable({
               {showFilters ? (
                 <input
                   aria-label={`Filtrar por ${getColumnLabel(column)}`}
-                  placeholder="filtrar"
+                  placeholder="filtrar página actual"
                   value={filters[column] ?? ''}
                   onChange={(e) => setFilters((prev) => ({ ...prev, [column]: e.target.value }))}
                 />
@@ -214,8 +216,8 @@ export default function ExtractoTable({
           ) : filteredRows.length === 0 ? (
             <div className="extracto-empty">
               <EmptyState
-                title="No hay movimientos con estos filtros"
-                subtitle="Ajusta los filtros o importa movimientos para llenar esta vista."
+                title="No hay movimientos en esta página con estos filtros"
+                subtitle="Ajusta los filtros de columna o cambia de página para revisar más movimientos."
               />
             </div>
           ) : (
@@ -242,8 +244,7 @@ export default function ExtractoTable({
                       <div
                         key={`${row.id}-${column}`}
                         className={`cell ${getColumnClassName(column)}`}
-                        role="gridcell"
-                        tabIndex={ACTION_COLUMNS.has(column) ? -1 : 0}
+                        role="cell"
                         onClick={() => {
                           if (!ACTION_COLUMNS.has(column)) {
                             setSelectedCell({
@@ -349,6 +350,7 @@ function renderCell({
           value={note}
           placeholder="Nota de alerta"
           disabled={!canEdit}
+          aria-label={`Nota de alerta para fila ${row.fila_numero}`}
           onChange={(e) => onNoteChange(e.target.value)}
           onBlur={() => {
             if (canEdit && row.flagged) {

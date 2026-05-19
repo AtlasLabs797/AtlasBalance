@@ -21,7 +21,7 @@ Aplicacion web on-premise para gestion de tesoreria multi-banco, multi-titular, 
 **Stack:**
 - Backend: ASP.NET Core 8 (C#) -> Windows Service, HTTPS (Kestrel)
 - Frontend: React 18 + TypeScript + Vite 5 -> servido como estaticos por el backend
-- BD: PostgreSQL 14+ (Docker en desarrollo, local en produccion)
+- BD: PostgreSQL 16+ (Docker en desarrollo, local en produccion)
 - ORM: Entity Framework Core 8 + Npgsql
 - State: Zustand 4
 - Charts: Recharts 2
@@ -136,7 +136,7 @@ Guardar toda la documentacion en `Documentacion`.
 
 ### Base de Datos
 
-- PostgreSQL 14+
+- PostgreSQL 16+
 - Nombres de tablas en MAYUSCULAS_SNAKE_CASE
 - Nombres de columnas en minusculas_snake_case
 - ENUMs definidos como tipos PostgreSQL

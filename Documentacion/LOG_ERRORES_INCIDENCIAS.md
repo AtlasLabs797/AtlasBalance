@@ -1,5 +1,95 @@
 # Log de errores e incidencias
 
+## 2026-05-19 - V-01.07 - UI/UX: jerarquia visual plana y acciones criticas sin peso suficiente
+
+- Contexto: revision adicional pedida sobre jerarquia de ventanas, informacion importante, botones, checks, tablas y menus.
+- Hallazgos confirmados:
+  - Tablas, cards y modales compartian demasiado tratamiento visual.
+  - Acciones primarias, secundarias y destructivas competian con el mismo peso.
+  - Importacion resumia validacion como texto plano.
+  - Backups obligaba a leer la tabla para encontrar la ultima copia correcta.
+  - Permisos globales/destructivos en Usuarios no resaltaban lo suficiente.
+- Solucion aplicada:
+  - Jerarquia de headers/cards/secciones reforzada.
+  - `users-table-card` baja sombra y headers sticky quedan scopeados.
+  - Botones primarios/danger/warning aplicados a flujos criticos.
+  - Resumen de importacion y backups convertido en bloques de metricas.
+  - Saldo total de cuenta y vencimientos cercanos de plazo fijo resaltan visualmente.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - Build OK.
+  - `git diff --check` OK con avisos CRLF conocidos.
+- Bloqueo: sigue sin existir pase visual/E2E autenticado real; no llamar "listo para clientes" sin eso.
+
+## 2026-05-19 - V-01.07 - Higiene Git: Skills Curated y artefactos locales no debian quedar versionables
+
+- Contexto: al usar los skills locales pre-release aparecio `Skills Curated/` como carpeta no ignorada, y los resultados locales de .NET bajo `TestResults/` quedaban visibles como basura pendiente.
+- Hallazgo confirmado:
+  - La regla del proyecto ya dice no subir `Skills/`, pero no cubria la carpeta real `Skills Curated/`.
+  - Certificados/keystores/dumps adicionales (`*.cer`, `*.p12`, `*.jks`, `*.dump`) no estaban cubiertos de forma consistente entre los dos `.gitignore`.
+  - `backend/**/TestResults/` no estaba ignorado y podia ensuciar el diff tras ejecutar tests.
+- Solucion aplicada:
+  - `.gitignore` raiz ignora `Skills Curated/`, certificados/keystores/dumps y `Atlas Balance/backend/**/TestResults/`.
+  - `Atlas Balance/.gitignore` ignora certificados/keystores/dumps y `backend/**/TestResults/`.
+  - El escaneo de secretos del CI excluye `Skills Curated/` junto a `Otros/` y `Skills/`.
+- Verificacion:
+  - `git check-ignore` confirma las exclusiones nuevas.
+  - Secret scan local: 0 hallazgos.
+  - `npm audit` y NuGet vulnerable audit: 0 vulnerabilidades.
+- Regla: tooling local de agente y artefactos de test no son producto. Si aparecen en `git status`, hay que corregir el ignore antes de hablar de release.
+
+## 2026-05-19 - V-01.07 - UI/UX: problemas de entrega corregidos y limite visual pendiente
+
+- Contexto: revision UI/UX estatica con skills de frontend y skills locales sobre pantallas, tablas, botones, checks, menus, modales y estados.
+- Hallazgos confirmados:
+  - Extractos filtraba solo la pagina actual pero el copy podia leerse como filtro global.
+  - `TokenList` mostraba ceros falsos si fallaba la carga de metricas.
+  - El modal de crear token mandaba validaciones al estado global de Configuracion, detras del backdrop.
+  - Configuracion usaba semantica de tabs incompleta.
+  - Varias pantallas mostraban errores sin `role="alert"`.
+  - La tabla de cuenta tenia tab stops excesivos y perdia contexto en scroll horizontal.
+  - Backups no anunciaba correctamente el overlay critico de restauracion.
+- Solucion aplicada:
+  - Copy y conteo de Extractos por pagina/total, `role="table"` y placeholder explicito.
+  - Estado `loading/error/ready` para metricas de tokens.
+  - Errores locales dentro del modal de token.
+  - Tabs ARIA completas en Configuracion.
+  - Alertas accesibles, labels contextuales y tabla accesible para EvolucionChart.
+  - Columnas fijas y foco mas razonable en detalle de cuenta.
+  - Overlay de restauracion como `alertdialog` con foco.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - Build OK.
+  - `git diff --check` OK, con avisos CRLF ya conocidos.
+- Bloqueo: no se ejecuto QA visual/E2E real porque no se debe levantar Vite/HTTP de larga duracion desde `shell_command` y no habia sesion autenticada ya disponible. Regla: no llamar "listo para clientes" a la UI sin ese pase visual real.
+
+## 2026-05-19 - V-01.07 - Auditoria integral: bugs reales corregidos, release final sigue bloqueado
+
+- Contexto: revision amplia con skills locales de `Skills Curated` y subagentes sobre backend, seguridad, UI/UX, arquitectura y gates de release.
+- Hallazgos confirmados:
+  - Resumen de cuenta y OpenClaw calculaban saldo actual por fecha, no por `fila_numero`, generando saldos distintos entre modulos.
+  - La huella de importacion incluia indice de fila, por lo que reimportar el mismo extracto con una cabecera podia duplicar movimientos.
+  - Las transacciones de importacion/plazo fijo no garantizaban `DisposeAsync` en errores intermedios.
+  - Configuracion podia caer en 500 con textos `null` o body nulo en `smtp/test`.
+  - UI tenia select custom fragil, error de celda efimero, modal de importacion sin foco controlado y estados de importacion demasiado dependientes de simbolo/color.
+- Solucion aplicada:
+  - Saldo actual por `fila_numero DESC`.
+  - Huella de importacion por contenido normalizado + ordinal de duplicado.
+  - `finally` para limpiar transacciones.
+  - Validacion `400` para textos nulos/body nulo.
+  - Select nativo, focus trap, errores persistentes/anunciados y grafica con alternativa accesible.
+- Verificacion:
+  - Tests focalizados backend 52/52 OK.
+  - `ConfiguracionControllerTests` 8/8 OK.
+  - Suite backend sin Docker/Testcontainers 254/254 OK.
+  - Suite completa 254/256: fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` por Docker/Testcontainers no disponible/configurado.
+  - Frontend lint, TypeScript y build OK.
+  - `npm audit` ejecutado despues con aprobacion: 0 vulnerabilidades.
+  - NuGet vulnerable audit ejecutado despues con aprobacion: 0 paquetes vulnerables.
+- Regla: no llamar final a V-01.07 hasta ejecutar Docker/Testcontainers, E2E autenticado real, ZIP firmado y backup/restore real. Decir "listo para clientes" sin eso seria humo.
+
 ## 2026-05-18 - V-01.07 - Verificacion backend post-Codex Security: Docker sigue siendo el unico bloqueo
 
 - Contexto: tras instalar SDK .NET 8.0.419 local en `C:\tmp\dotnet-sdk-8.0.419`, se ejecuto la validacion backend pendiente de la revision Codex Security.

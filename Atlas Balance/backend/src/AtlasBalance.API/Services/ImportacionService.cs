@@ -188,13 +188,15 @@ public sealed class ImportacionService : IImportacionService
 
         var isRelational = _dbContext.Database.IsRelational();
         IDbContextTransaction? tx = null;
-        if (isRelational)
+        try
         {
-            tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var lockBytes = cuenta.Id.ToByteArray();
-            var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
-            await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
-        }
+            if (isRelational)
+            {
+                tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                var lockBytes = cuenta.Id.ToByteArray();
+                var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
+                await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
+            }
 
         var maxFila = await _dbContext.Extractos
             .IgnoreQueryFilters()
@@ -207,9 +209,10 @@ public sealed class ImportacionService : IImportacionService
             .OrderByDescending(row => row.Indice)
             .ToList();
 
-        var loteHash = BuildImportBatchHash(cuenta.Id, selectedValidRows);
+        var fingerprintsByIndex = BuildImportFingerprints(cuenta.Id, selectedValidRows);
+        var loteHash = BuildImportBatchHash(selectedValidRows, fingerprintsByIndex);
         var rowCandidates = selectedValidRowsForFilaNumbering
-            .Select(row => new ImportRowCandidate(row, BuildImportFingerprint(cuenta.Id, row)))
+            .Select(row => new ImportRowCandidate(row, fingerprintsByIndex[row.Indice]))
             .ToList();
 
         var candidateFingerprints = rowCandidates
@@ -240,7 +243,6 @@ public sealed class ImportacionService : IImportacionService
             if (tx is not null)
             {
                 await tx.CommitAsync(cancellationToken);
-                await tx.DisposeAsync();
             }
 
             return new ImportacionConfirmarResponse
@@ -352,7 +354,6 @@ public sealed class ImportacionService : IImportacionService
         if (tx is not null)
         {
             await tx.CommitAsync(cancellationToken);
-            await tx.DisposeAsync();
         }
 
         return new ImportacionConfirmarResponse
@@ -370,6 +371,14 @@ public sealed class ImportacionService : IImportacionService
                 })
                 .ToList()
         };
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
     }
 
     public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
@@ -396,13 +405,15 @@ public sealed class ImportacionService : IImportacionService
 
         var isRelational = _dbContext.Database.IsRelational();
         IDbContextTransaction? tx = null;
-        if (isRelational)
+        try
         {
-            tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var lockBytes = cuenta.Id.ToByteArray();
-            var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
-            await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
-        }
+            if (isRelational)
+            {
+                tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                var lockBytes = cuenta.Id.ToByteArray();
+                var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
+                await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
+            }
 
         var latest = await _dbContext.Extractos
             .IgnoreQueryFilters()
@@ -462,7 +473,6 @@ public sealed class ImportacionService : IImportacionService
         if (tx is not null)
         {
             await tx.CommitAsync(cancellationToken);
-            await tx.DisposeAsync();
         }
 
         return new ImportacionPlazoFijoMovimientoResponse
@@ -473,6 +483,14 @@ public sealed class ImportacionService : IImportacionService
             SaldoAnterior = Decimal.Round(saldoAnterior, 2),
             SaldoActual = Decimal.Round(saldoActual, 2)
         };
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
     }
 
     private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, bool requireImportPermission, CancellationToken cancellationToken)
@@ -523,21 +541,41 @@ public sealed class ImportacionService : IImportacionService
                string.Equals(postgresException.ConstraintName, "ix_extractos_cuenta_id_importacion_fingerprint", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildImportBatchHash(Guid cuentaId, IEnumerable<FilaValidacionResponse> rows)
+    private static Dictionary<int, string> BuildImportFingerprints(Guid cuentaId, IEnumerable<FilaValidacionResponse> rows)
+    {
+        var result = new Dictionary<int, string>();
+        var occurrenceByContent = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var row in rows.OrderBy(row => row.Indice))
+        {
+            var contentFingerprint = BuildImportContentFingerprint(cuentaId, row);
+            occurrenceByContent.TryGetValue(contentFingerprint, out var occurrence);
+            occurrence += 1;
+            occurrenceByContent[contentFingerprint] = occurrence;
+            result[row.Indice] = BuildImportFingerprint(cuentaId, contentFingerprint, occurrence);
+        }
+
+        return result;
+    }
+
+    private static string BuildImportBatchHash(IEnumerable<FilaValidacionResponse> rows, IReadOnlyDictionary<int, string> fingerprintsByIndex)
     {
         var canonicalRows = rows
             .OrderBy(row => row.Indice)
-            .Select(row => BuildImportFingerprint(cuentaId, row));
+            .Select(row => fingerprintsByIndex[row.Indice]);
         return Sha256Hex(string.Join('\n', canonicalRows));
     }
 
-    private static string BuildImportFingerprint(Guid cuentaId, FilaValidacionResponse row)
+    private static string BuildImportFingerprint(Guid cuentaId, string contentFingerprint, int occurrence)
+    {
+        return Sha256Hex($"v2|{cuentaId:N}|{contentFingerprint}|{occurrence.ToString(CultureInfo.InvariantCulture)}");
+    }
+
+    private static string BuildImportContentFingerprint(Guid cuentaId, FilaValidacionResponse row)
     {
         var builder = new StringBuilder();
-        builder.Append("v1|");
+        builder.Append("content-v1|");
         builder.Append(cuentaId.ToString("N"));
-        builder.Append('|');
-        builder.Append(row.Indice.ToString(CultureInfo.InvariantCulture));
         builder.Append('|');
         builder.Append(NormalizeDateForFingerprint(row.Datos.GetValueOrDefault("fecha")));
         builder.Append('|');

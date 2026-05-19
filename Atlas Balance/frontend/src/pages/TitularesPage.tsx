@@ -323,8 +323,11 @@ export default function TitularesPage() {
   return (
     <section className="phase2-page titulares-page">
       <header className="phase2-header">
-        <h1>Titulares</h1>
-        {isAdmin && <button type="button" onClick={openCreateModal}>Nuevo Titular</button>}
+        <div>
+          <h1>Titulares</h1>
+          <p className="dashboard-subtitle">Personas y empresas que agrupan cuentas, saldos y permisos.</p>
+        </div>
+        {isAdmin && <button type="button" className="button-primary" onClick={openCreateModal}>Nuevo Titular</button>}
       </header>
 
       {canSeeDashboard ? (
@@ -340,7 +343,7 @@ export default function TitularesPage() {
             </div>
           </header>
 
-          {dashboardError ? <p className="auth-error">{dashboardError}</p> : null}
+          {dashboardError ? <p className="auth-error" role="alert">{dashboardError}</p> : null}
           {dashboardLoading ? <p className="import-muted">Cargando dashboard de titulares...</p> : null}
 
           {!dashboardLoading && !dashboardError && principal ? (
@@ -460,7 +463,7 @@ export default function TitularesPage() {
         )}
       </div>
 
-      {error && <p className="auth-error">{error}</p>}
+      {error && <p className="auth-error" role="alert">{error}</p>}
 
       <div className="phase2-grid">
         <div className="phase2-cards">
@@ -517,6 +520,7 @@ export default function TitularesPage() {
                   {isAdmin && !item.deleted_at ? (
                     <button
                       type="button"
+                      className="button-danger"
                       onClick={() => setDeleteCandidate({ id: item.id, nombre: item.nombre })}
                       disabled={saving}
                       aria-label={`Eliminar titular ${item.nombre}`}
@@ -570,7 +574,7 @@ export default function TitularesPage() {
                 void save();
               }}
             >
-              {formError ? <p className="auth-error">{formError}</p> : null}
+              {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
 
               <section className="users-modal-section">
                 <h3>Datos del titular</h3>
