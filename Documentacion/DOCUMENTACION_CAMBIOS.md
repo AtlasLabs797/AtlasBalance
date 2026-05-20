@@ -8,6 +8,32 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-20 - Fix updater ZIP con entrada raiz V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se corrigio `TryExtractPackageSafely` en `ActualizacionService` para aceptar entradas de directorio raiz (`./`) dentro de ZIP validos.
+- Se introdujo una condicion explicita `isRootDirectoryEntry` que permite solo la igualdad exacta con `packageRoot` normalizado para entradas de directorio.
+- Se mantuvo intacta la defensa contra path traversal para archivos/directorios fuera del arbol permitido.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `timeout 180s dotnet test 'Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj' --filter "FullyQualifiedName~Actualizacion"`
+
+**Resultado de verificacion:**
+- El comando de test no pudo ejecutarse: `dotnet` no esta instalado en este entorno (`No such file or directory`).
+- Validacion funcional pendiente en un entorno con SDK .NET disponible.
+
+**Pendiente:**
+- Ejecutar tests focalizados de actualizacion y, idealmente, agregar/regresar un caso automatizado con entrada ZIP `./`.
+
+---
 ## 2026-05-20 - Reintento de release package V-01.07
 
 **Version:** V-01.07

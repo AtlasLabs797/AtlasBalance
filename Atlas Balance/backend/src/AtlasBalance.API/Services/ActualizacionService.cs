@@ -627,6 +627,7 @@ public sealed class ActualizacionService : IActualizacionService
     {
         Directory.CreateDirectory(packageRoot);
         var rootFullPath = Path.GetFullPath(packageRoot + Path.DirectorySeparatorChar);
+        var normalizedRootFullPath = Path.TrimEndingDirectorySeparator(rootFullPath);
 
         using var archive = ZipFile.OpenRead(zipPath);
         var entryCount = 0;
@@ -657,7 +658,14 @@ public sealed class ActualizacionService : IActualizacionService
             var destinationFullPath = Path.GetFullPath(Path.Combine(packageRoot, entry.FullName));
             var isDirectoryEntry = entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\');
 
-            if (!destinationFullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase))
+            var isRootDirectoryEntry = isDirectoryEntry &&
+                string.Equals(
+                    Path.TrimEndingDirectorySeparator(destinationFullPath),
+                    normalizedRootFullPath,
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (!isRootDirectoryEntry &&
+                !destinationFullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase))
             {
                 Directory.Delete(packageRoot, recursive: true);
                 return false;
