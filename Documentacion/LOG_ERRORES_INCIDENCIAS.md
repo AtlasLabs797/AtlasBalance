@@ -1400,3 +1400,17 @@
 - Causa: `permisosStore.canViewCuenta` trataba cualquier fila global (`cuenta_id/titular_id null`) como acceso de cuenta, sin distinguir si era solo `PuedeVerDashboard`.
 - Solucion aplicada: `canViewCuenta`, `canAddInCuenta`, `canEditCuenta`, `canDeleteInCuenta`, `canImportInCuenta`, `getColumnasVisibles` y `getColumnasEditables` pasan a ignorar filas globales `dashboard-only`; solo cuentan filas scopeadas de cuenta/titular o filas globales con acceso global de datos. `CuentasPage` muestra `Sin acceso` en vez de CTA operativos y `CuentaDetailPage` redirige al dashboard si recibe `403`.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR` OK.
+
+## 2026-05-20 - V-01.07 - Auditoria de seguridad adicional sin nuevos hallazgos explotables
+
+- Contexto: se solicito comprobar si habia otros problemas o vulnerabilidades de seguridad y corregir todo lo encontrado.
+- Verificaciones ejecutadas:
+  - `npm audit --audit-level=low` en frontend (bloqueado por `403 Forbidden` del endpoint de advisories en este entorno).
+  - `dotnet list package --vulnerable --include-transitive` en tests backend (bloqueado por ausencia de `dotnet` en el entorno actual).
+  - Barridos estaticos con `rg` sobre patrones de riesgo (`Path.Combine`, `IgnoreQueryFilters`, `AllowAnonymous`, `ProcessStartInfo`, secretos/tokens hardcodeados).
+- Hallazgo confirmado y accion:
+  - No se detectaron nuevas vulnerabilidades explotables en codigo versionado durante esta pasada.
+  - No aplica parche funcional porque no hubo vulnerabilidad nueva reproducible en esta sesion.
+- Estado:
+  - Release sigue condicionado a ejecutar auditorias de dependencias en un entorno con acceso valido al endpoint de advisories NPM y SDK .NET instalado.
+- Regla: no inventar fixes para "parecer productivo"; si no hay vulnerabilidad reproducible, se documenta el limite y se cierra con trazabilidad.

@@ -14536,3 +14536,15 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 - Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
 - Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
 - Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.
+
+## 2026-05-20 - V-01.07
+
+- **Trabajo realizado:** auditoria de seguridad adicional solicitada para buscar nuevas vulnerabilidades y corregirlas si existian.
+- **Archivos tocados:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`, `Documentacion/DOCUMENTACION_CAMBIOS.md`.
+- **Comandos ejecutados:**
+  - `timeout 120s npm audit --audit-level=low` (frontend)
+  - `timeout 120s dotnet list package --vulnerable --include-transitive` (backend tests)
+  - `rg "Path\.Combine\(|IgnoreQueryFilters\(|\[AllowAnonymous\]|ProcessStartInfo|sourcePath|X-Watchdog-Secret|Random\(" backend/src/AtlasBalance.API -g '*.cs'`
+  - `rg -n "(password\s*=|api[_-]?key|secret\s*=|token\s*=)" 'Atlas Balance/backend/src' -g '*.cs'`
+- **Resultado de verificacion:** sin nuevas vulnerabilidades explotables en codigo; auditorias automatizadas de dependencias bloqueadas por limitaciones del entorno (403 en endpoint NPM advisories y SDK .NET ausente).
+- **Pendientes:** repetir `npm audit` y `dotnet list package --vulnerable` en entorno con conectividad/SDK operativo para cerrar el gate de dependencias.
