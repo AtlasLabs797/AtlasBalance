@@ -14536,3 +14536,22 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 - Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
 - Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
 - Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.
+
+## 2026-05-20 - V-01.07 - Analisis de seguridad y hardening de logout
+
+- **Version:** V-01.07
+- **Trabajo realizado:**
+  - Auditoria estatica de seguridad sobre autenticacion, middleware CSRF, pipeline de `Program.cs` y servicios de actualizacion.
+  - Endurecimiento de `POST /api/auth/logout` para requerir usuario autenticado (`[Authorize]`) y eliminar superficie anonima innecesaria.
+- **Archivos tocados:**
+  - `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+  - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  - `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- **Comandos ejecutados:**
+  - `rg --files -g 'AGENTS.md' -g 'CLAUDE.md'`
+  - `rg -n "\[AllowAnonymous\]" backend/src/AtlasBalance.API/Controllers`
+  - `timeout 180s dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --filter FullyQualifiedName~AuthControllerTests`
+- **Resultado de verificacion:**
+  - Tests de `AuthController` OK.
+- **Pendientes:**
+  - Mantener validacion de seguridad dinamica/E2E autenticada para confirmar flujos de sesion en entorno integrado.

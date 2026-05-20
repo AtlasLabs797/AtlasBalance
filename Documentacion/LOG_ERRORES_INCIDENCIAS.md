@@ -1400,3 +1400,14 @@
 - Causa: `permisosStore.canViewCuenta` trataba cualquier fila global (`cuenta_id/titular_id null`) como acceso de cuenta, sin distinguir si era solo `PuedeVerDashboard`.
 - Solucion aplicada: `canViewCuenta`, `canAddInCuenta`, `canEditCuenta`, `canDeleteInCuenta`, `canImportInCuenta`, `getColumnasVisibles` y `getColumnasEditables` pasan a ignorar filas globales `dashboard-only`; solo cuentan filas scopeadas de cuenta/titular o filas globales con acceso global de datos. `CuentasPage` muestra `Sin acceso` en vez de CTA operativos y `CuentaDetailPage` redirige al dashboard si recibe `403`.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR` OK.
+
+## 2026-05-20 - V-01.07 - Endurecimiento de cierre de sesion
+
+- Contexto: revision de seguridad backend enfocada en superficie de autenticacion y control de sesiones.
+- Hallazgo confirmado:
+  - `POST /api/auth/logout` estaba marcado como `AllowAnonymous`; aunque ya tenia barreras por cookies `SameSite=Strict` + CSRF, mantenia una superficie innecesaria para intentos anonimos y ruido de auditoria.
+- Solucion aplicada:
+  - `AuthController` ahora exige `Authorize` en `logout` para que el cierre de sesion sea una accion autenticada.
+- Verificacion:
+  - Compilacion y tests focalizados de `AuthController` en verde.
+- Regla: endpoints que alteran estado de sesion deben requerir identidad autenticada salvo justificacion tecnica explicita y documentada.
