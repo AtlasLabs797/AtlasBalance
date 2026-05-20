@@ -19,7 +19,7 @@ public interface IAuthService
 {
     Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null);
     Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken);
-    Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken);
+    Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null);
     Task<Guid?> LogoutAsync(string? refreshToken, CancellationToken cancellationToken);
     Task<AuthResult> GetCurrentAsync(Guid userId, CancellationToken cancellationToken);
     Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, CancellationToken cancellationToken);
@@ -369,7 +369,7 @@ public sealed class AuthService : IAuthService
         return result;
     }
 
-    public async Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken)
+    public async Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null)
     {
         if (string.IsNullOrWhiteSpace(refreshToken))
         {
@@ -423,6 +423,11 @@ public sealed class AuthService : IAuthService
             }
 
             UserSessionState.EnsureSecurityStamp(usuario);
+
+            if (RequiresMfa(usuario) && !IsTrustedMfaTokenValid(usuario, trustedMfaToken, now))
+            {
+                throw new AuthException("Se requiere MFA para renovar la sesión", StatusCodes.Status401Unauthorized);
+            }
 
             var replacement = GenerateRefreshToken();
             var replacementHash = ComputeSha256(replacement);

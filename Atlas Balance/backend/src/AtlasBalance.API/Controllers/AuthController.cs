@@ -57,7 +57,8 @@ public sealed class AuthController : ControllerBase
         try
         {
             var refreshToken = Request.Cookies["refresh_token"];
-            var result = await _authService.RefreshTokenAsync(refreshToken ?? string.Empty, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+            var trustedMfaToken = Request.Cookies["mfa_trusted"];
+            var result = await _authService.RefreshTokenAsync(refreshToken ?? string.Empty, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken, trustedMfaToken);
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
         catch (AuthException ex)

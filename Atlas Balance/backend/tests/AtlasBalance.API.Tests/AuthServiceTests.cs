@@ -379,6 +379,39 @@ public class AuthServiceTests
         result.RefreshToken.Should().NotBeNullOrWhiteSpace();
     }
 
+
+    [Fact]
+    public async Task RefreshToken_Should_Reject_When_Mfa_Is_Required_And_Trusted_Token_Is_Missing()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "refresh-mfa-required@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Refresh Mfa Required",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            MfaEnabled = true,
+            MfaSecret = "TESTMFASECRET123",
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sutWithoutMfaRequirement = new AuthService(db, BuildConfig(), new AuditService(db));
+        var login = await sutWithoutMfaRequirement.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+
+        var sutWithMfaRequirement = new AuthService(db, BuildMfaConfig(), new AuditService(db));
+
+        Func<Task> refreshWithoutTrustedMfa = () => sutWithMfaRequirement.RefreshTokenAsync(login.RefreshToken!, "127.0.0.1", CancellationToken.None);
+        var exception = await refreshWithoutTrustedMfa.Should().ThrowAsync<AuthException>();
+
+        exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        exception.Which.Message.Should().Be("Se requiere MFA para renovar la sesión");
+    }
+
     [Fact]
     public async Task RefreshToken_Should_Reject_Locked_User()
     {

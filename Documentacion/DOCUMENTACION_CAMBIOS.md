@@ -14536,3 +14536,31 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 - Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
 - Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
 - Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.
+
+
+## 2026-05-20 - Cierre bypass MFA en refresh token
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se cerro el bypass detectado en refresh: ahora la renovacion exige MFA cuando la politica web lo requiere.
+- `AuthController` propaga `mfa_trusted` desde cookies al flujo de `RefreshTokenAsync`.
+- `AuthService.RefreshTokenAsync` valida `RequiresMfa(usuario)` + `IsTrustedMfaTokenValid(...)` antes de rotar refresh o emitir access token.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-01.07.md`
+
+**Comandos ejecutados:**
+- `rg -n "RefreshTokenAsync|mfa_trusted|RequiresMfa|IsTrustedMfaTokenValid" "Atlas Balance/backend/src/AtlasBalance.API"`
+- `dotnet test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --filter "AuthServiceTests|AuthControllerTests"`
+
+**Resultado de verificacion:**
+- Revision estatica del flujo login/refresh/MFA: OK.
+- `dotnet test ... --filter "AuthServiceTests|AuthControllerTests"`: no ejecutado en este entorno (`dotnet: command not found`).
+
+**Pendientes:**
+- Ejecutar `AuthServiceTests` y `AuthControllerTests` en una maquina con SDK .NET instalado para cerrar validacion automatizada del fix.
+

@@ -48,7 +48,7 @@ public sealed class AuthControllerTests
         public Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken) =>
+        public Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null) =>
             throw new NotSupportedException();
 
         public Task<Guid?> LogoutAsync(string? refreshToken, CancellationToken cancellationToken) =>
