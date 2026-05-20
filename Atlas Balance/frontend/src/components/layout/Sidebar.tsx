@@ -41,15 +41,15 @@ export function Sidebar() {
 
   const getBadge = (to: string) => {
     if (to === '/alertas' && alertCount > 0) {
-      return <span className="sidebar-alert-badge">{alertCount}</span>;
+      return <span className="sidebar-alert-badge" aria-hidden="true">{alertCount}</span>;
     }
 
     if (to === '/exportaciones' && usuario?.rol === 'ADMIN' && exportacionesPendientes > 0) {
-      return <span className="sidebar-alert-badge">{exportacionesPendientes}</span>;
+      return <span className="sidebar-alert-badge" aria-hidden="true">{exportacionesPendientes}</span>;
     }
 
     if (to === '/configuracion' && updateAvailable) {
-      return <span className="sidebar-update-badge">!</span>;
+      return <span className="sidebar-update-badge" aria-hidden="true">!</span>;
     }
 
     return null;

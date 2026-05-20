@@ -427,7 +427,7 @@ export default function UsuarioModal({
               void save();
             }}
           >
-            {error && <p className="auth-error">{error}</p>}
+            {error && <p className="auth-error" role="alert">{error}</p>}
 
             <section className="users-modal-section">
               <h3>Identidad</h3>
@@ -558,10 +558,15 @@ export default function UsuarioModal({
                   <p>Usa acceso global para leer todas las cuentas sin regalar edición.</p>
                 </div>
                 <div className="users-section-actions">
-                  <button type="button" onClick={grantAllAccounts}>
-                    Acceso a todas las cuentas
+                  <button
+                    type="button"
+                    className="button-warning"
+                    onClick={grantAllAccounts}
+                    aria-label="Conceder lectura global a todas las cuentas"
+                  >
+                    Conceder lectura global
                   </button>
-                  <button type="button" onClick={addPermiso}>
+                  <button type="button" className="button-primary" onClick={addPermiso}>
                     Añadir permiso
                   </button>
                 </div>
@@ -583,7 +588,7 @@ export default function UsuarioModal({
                         </div>
                         <button
                           type="button"
-                          className="remove-permiso"
+                          className="remove-permiso button-danger"
                           onClick={() => removePermiso(permiso.key)}
                         >
                           Quitar
@@ -651,7 +656,7 @@ export default function UsuarioModal({
                       </div>
 
                       <div className="users-check-grid">
-                        <label>
+                        <label className="users-check-danger">
                           <input
                             type="checkbox"
                             className="users-check-input"
@@ -737,10 +742,10 @@ export default function UsuarioModal({
             </section>
 
             <div className="users-form-actions users-form-actions--sticky">
-              <button type="button" onClick={closeModal} disabled={submitting}>
+              <button type="button" className="button-secondary" onClick={closeModal} disabled={submitting}>
                 Cancelar
               </button>
-              <button type="submit" disabled={submitting}>
+              <button type="submit" className="button-primary" disabled={submitting}>
                 {submitting ? 'Guardando...' : editingId ? 'Guardar cambios' : 'Crear usuario'}
               </button>
             </div>

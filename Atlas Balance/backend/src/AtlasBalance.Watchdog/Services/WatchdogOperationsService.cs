@@ -12,6 +12,8 @@ public interface IWatchdogOperationsService
 
 public sealed class WatchdogOperationsService : IWatchdogOperationsService
 {
+    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(30);
+
     private static readonly HashSet<string> PreservedTopLevelDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "logs"
@@ -99,13 +101,12 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     {
         if (string.IsNullOrWhiteSpace(sourcePath) ||
             string.IsNullOrWhiteSpace(targetPath) ||
-            !Directory.Exists(sourcePath))
+            !TryGetFullPath(sourcePath, out var fullSourcePath) ||
+            !TryGetFullPath(targetPath, out var fullTargetPath) ||
+            !Directory.Exists(fullSourcePath))
         {
             return false;
         }
-
-        var fullSourcePath = Path.GetFullPath(sourcePath);
-        var fullTargetPath = Path.GetFullPath(targetPath);
 
         if (string.Equals(fullSourcePath, fullTargetPath, StringComparison.OrdinalIgnoreCase) ||
             PathsOverlap(fullSourcePath, fullTargetPath) ||
@@ -182,9 +183,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
     private async Task<(bool Success, string? Error)> RunPgRestoreAsync(string backupPath, CancellationToken cancellationToken)
     {
-        var pgBinPath = _configuration["WatchdogSettings:PostgresBinPath"];
-        var restoreCandidate = string.IsNullOrWhiteSpace(pgBinPath) ? string.Empty : Path.Combine(pgBinPath, "pg_restore.exe");
-        var executable = File.Exists(restoreCandidate) ? restoreCandidate : "pg_restore";
+        var executable = ResolveConfiguredExecutable(_configuration["WatchdogSettings:PostgresBinPath"], "pg_restore.exe");
 
         var dbHost = _configuration["WatchdogSettings:DbHost"] ?? "localhost";
         var dbPort = int.TryParse(_configuration["WatchdogSettings:DbPort"], out var parsedPort) ? parsedPort : 5432;
@@ -207,13 +206,21 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             "-v",
             backupPath
         };
-        var localResult = await RunProcessAsync(executable, localArgs, dbPassword, cancellationToken);
-        if (localResult.Success)
+        if (!string.IsNullOrWhiteSpace(executable))
         {
-            return (true, null);
+            var localResult = await RunProcessAsync(executable, localArgs, dbPassword, cancellationToken);
+            if (localResult.Success)
+            {
+                return (true, null);
+            }
+
+            _logger.LogWarning("pg_restore local fallo: {Error}. Se intentara fallback docker.", localResult.ErrorMessage);
+        }
+        else
+        {
+            _logger.LogWarning("pg_restore local omitido: WatchdogSettings:PostgresBinPath no apunta a pg_restore.exe absoluto.");
         }
 
-        _logger.LogWarning("pg_restore local fallo: {Error}. Se intentara fallback docker.", localResult.ErrorMessage);
         return await RunPgRestoreViaDockerAsync(backupPath, dbUser, dbName, cancellationToken);
     }
 
@@ -421,27 +428,47 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
     }
 
+    private static bool TryGetFullPath(string path, out string fullPath)
+    {
+        try
+        {
+            fullPath = Path.GetFullPath(path);
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            fullPath = string.Empty;
+            return false;
+        }
+    }
+
     private async Task<(bool Success, string? Error)> RunPgRestoreViaDockerAsync(
         string backupPath,
         string dbUser,
         string dbName,
         CancellationToken cancellationToken)
     {
+        var dockerExe = ResolveDockerExecutable();
+        if (string.IsNullOrWhiteSpace(dockerExe))
+        {
+            return (false, "Docker fallback no configurado con ruta absoluta.");
+        }
+
         var container = _configuration["WatchdogSettings:DockerPostgresContainer"] ?? "atlas_balance_db";
         var containerFile = $"/tmp/{Guid.NewGuid():N}.dump";
 
-        var cpIn = await RunProcessAsync("docker", ["cp", backupPath, $"{container}:{containerFile}"], null, cancellationToken);
+        var cpIn = await RunProcessAsync(dockerExe, ["cp", backupPath, $"{container}:{containerFile}"], null, cancellationToken);
         if (!cpIn.Success)
         {
             return (false, $"Fallback docker copy-in fallo: {cpIn.ErrorMessage}");
         }
 
         var restore = await RunProcessAsync(
-            "docker",
+            dockerExe,
             ["exec", container, "pg_restore", "-U", dbUser, "-d", dbName, "--clean", "--if-exists", "-v", containerFile],
             null,
             cancellationToken);
-        await RunProcessAsync("docker", ["exec", container, "rm", "-f", containerFile], null, cancellationToken);
+        await RunProcessAsync(dockerExe, ["exec", container, "rm", "-f", containerFile], null, cancellationToken);
         return restore.Success
             ? (true, null)
             : (false, $"Fallback docker restore fallo: {restore.ErrorMessage}");
@@ -489,9 +516,12 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         Directory.CreateDirectory(backupRoot);
         var backupPath = Path.Combine(backupRoot, $"pre_update_watchdog_{DateTime.UtcNow:yyyyMMdd_HHmmss}.dump");
 
-        var pgBinPath = _configuration["WatchdogSettings:PostgresBinPath"];
-        var dumpCandidate = string.IsNullOrWhiteSpace(pgBinPath) ? string.Empty : Path.Combine(pgBinPath, "pg_dump.exe");
-        var executable = File.Exists(dumpCandidate) ? dumpCandidate : "pg_dump";
+        var executable = ResolveConfiguredExecutable(_configuration["WatchdogSettings:PostgresBinPath"], "pg_dump.exe");
+        if (string.IsNullOrWhiteSpace(executable))
+        {
+            return (false, "WatchdogSettings:PostgresBinPath no apunta a pg_dump.exe absoluto; no se actualiza sin backup previo.");
+        }
+
         var dbHost = _configuration["WatchdogSettings:DbHost"] ?? "localhost";
         var dbPort = int.TryParse(_configuration["WatchdogSettings:DbPort"], out var parsedPort) ? parsedPort : 5432;
         var dbName = _configuration["WatchdogSettings:DbName"] ?? "atlas_balance";
@@ -624,6 +654,53 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
     }
 
+    private static string? ResolveConfiguredExecutable(string? directory, string executableName)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !IsExplicitlyRooted(directory))
+        {
+            return null;
+        }
+
+        try
+        {
+            var candidate = Path.GetFullPath(Path.Combine(directory.Trim(), executableName));
+            return File.Exists(candidate) ? candidate : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    private string? ResolveDockerExecutable()
+    {
+        var configured = _configuration["WatchdogSettings:DockerCliPath"];
+        if (!string.IsNullOrWhiteSpace(configured) && IsExplicitlyRooted(configured))
+        {
+            try
+            {
+                var fullConfigured = Path.GetFullPath(configured.Trim());
+                if (File.Exists(fullConfigured))
+                {
+                    return fullConfigured;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return null;
+            }
+        }
+
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        if (string.IsNullOrWhiteSpace(programFiles))
+        {
+            return null;
+        }
+
+        var docker = Path.Combine(programFiles, "Docker", "Docker", "resources", "bin", "docker.exe");
+        return File.Exists(docker) ? docker : null;
+    }
+
     private static bool IsExplicitlyRooted(string path)
     {
         return Path.IsPathRooted(path) ||
@@ -660,10 +737,24 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             }
 
             using var process = new Process { StartInfo = startInfo };
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(ProcessTimeout);
+            var processToken = timeoutCts.Token;
+
             process.Start();
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
+            try
+            {
+                await process.WaitForExitAsync(processToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcess(process);
+                return cancellationToken.IsCancellationRequested
+                    ? (false, "Proceso externo cancelado.")
+                    : (false, $"Proceso externo excedio el timeout de {ProcessTimeout.TotalMinutes:0} minutos.");
+            }
 
             var stdout = await outputTask;
             var stderr = await errorTask;
@@ -678,6 +769,21 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         catch (Exception ex)
         {
             return (false, Trim(ex.Message, 1500));
+        }
+    }
+
+    private static void TryKillProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup after timeout.
         }
     }
 }

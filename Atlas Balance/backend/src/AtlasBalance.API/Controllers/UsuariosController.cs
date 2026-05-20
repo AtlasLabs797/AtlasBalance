@@ -89,6 +89,7 @@ public sealed class UsuariosController : ControllerBase
                 Activo = u.Activo,
                 PrimerLogin = u.PrimerLogin,
                 PuedeUsarIa = u.PuedeUsarIa,
+                MfaEnabled = u.MfaEnabled,
                 FechaCreacion = u.FechaCreacion,
                 FechaUltimaLogin = u.FechaUltimaLogin,
                 DeletedAt = u.DeletedAt
@@ -135,6 +136,7 @@ public sealed class UsuariosController : ControllerBase
                 Activo = usuario.Activo,
                 PrimerLogin = usuario.PrimerLogin,
                 PuedeUsarIa = usuario.PuedeUsarIa,
+                MfaEnabled = usuario.MfaEnabled,
                 FechaCreacion = usuario.FechaCreacion,
                 FechaUltimaLogin = usuario.FechaUltimaLogin,
                 DeletedAt = usuario.DeletedAt
@@ -492,6 +494,19 @@ public sealed class UsuariosController : ControllerBase
             return Conflict(new { error = "Ya existe un usuario con ese email" });
         }
 
+        var actorId = GetCurrentUserId();
+        var removesAdminAccess = usuario.Rol == RolUsuario.ADMIN &&
+            (!request.Activo || request.Rol != RolUsuario.ADMIN);
+        if (removesAdminAccess && !await HasAnotherActiveAdminAsync(usuario.Id, cancellationToken))
+        {
+            return BadRequest(new { error = "Debe quedar al menos un administrador activo." });
+        }
+
+        if (actorId == id && (!request.Activo || request.Rol != RolUsuario.ADMIN))
+        {
+            return BadRequest(new { error = "No puedes quitarte tu propio acceso de administrador." });
+        }
+
         var before = new
         {
             usuario.Email,
@@ -605,6 +620,11 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = "No puedes eliminar tu propio usuario" });
         }
 
+        if (usuario.Rol == RolUsuario.ADMIN && !await HasAnotherActiveAdminAsync(usuario.Id, cancellationToken))
+        {
+            return BadRequest(new { error = "Debe quedar al menos un administrador activo." });
+        }
+
         var before = new
         {
             usuario.Activo,
@@ -667,6 +687,52 @@ public sealed class UsuariosController : ControllerBase
             JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }), cancellationToken);
 
         return Ok(new { message = "Usuario restaurado" });
+    }
+
+    [HttpPost("{id:guid}/mfa/revocar")]
+    public async Task<IActionResult> RevocarMfa(Guid id, CancellationToken cancellationToken)
+    {
+        var usuario = await _dbContext.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null)
+        {
+            return NotFound(new { error = "Usuario no encontrado" });
+        }
+
+        var before = new
+        {
+            usuario.MfaEnabled,
+            has_mfa_secret = !string.IsNullOrWhiteSpace(usuario.MfaSecret),
+            usuario.MfaEnabledAt,
+            usuario.MfaLastAcceptedStep
+        };
+
+        var revokedAt = DateTime.UtcNow;
+        usuario.MfaEnabled = false;
+        usuario.MfaSecret = null;
+        usuario.MfaEnabledAt = null;
+        usuario.MfaLastAcceptedStep = null;
+        var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, revokedAt, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var after = new
+        {
+            usuario.MfaEnabled,
+            has_mfa_secret = !string.IsNullOrWhiteSpace(usuario.MfaSecret),
+            usuario.MfaEnabledAt,
+            usuario.MfaLastAcceptedStep
+        };
+
+        await _auditService.LogAsync(
+            GetCurrentUserId(),
+            AuditActions.MfaRevoked,
+            "USUARIOS",
+            usuario.Id,
+            HttpContext,
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }),
+            cancellationToken);
+
+        return Ok(new { message = "Authenticator revocado. El usuario tendra que configurarlo de nuevo en el proximo acceso." });
     }
 
     private async Task<(bool Ok, string? Error)> ValidatePermisosAsync(IReadOnlyList<SavePermisoUsuarioRequest> permisos, CancellationToken cancellationToken)
@@ -951,5 +1017,17 @@ public sealed class UsuariosController : ControllerBase
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
         return Guid.TryParse(raw, out var userId) ? userId : null;
+    }
+
+    private Task<bool> HasAnotherActiveAdminAsync(Guid excludedUserId, CancellationToken cancellationToken)
+    {
+        return _dbContext.Usuarios
+            .IgnoreQueryFilters()
+            .AnyAsync(u =>
+                u.Id != excludedUserId &&
+                u.Rol == RolUsuario.ADMIN &&
+                u.Activo &&
+                u.DeletedAt == null,
+                cancellationToken);
     }
 }

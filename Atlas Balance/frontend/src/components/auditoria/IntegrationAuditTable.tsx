@@ -74,7 +74,7 @@ export function IntegrationAuditTable() {
           }}
         />
       </div>
-      {error ? <p className="auth-error">{error}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
       <div className="users-table-card auditoria-table-card">
         {loading ? <p>Cargando auditoría de integraciones...</p> : null}
         {!loading && rows.length === 0 ? (

@@ -138,6 +138,7 @@ export default function CuentasPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
+  usePermisosStore((state) => state.permisos);
   const isAdmin = usuario?.rol === 'ADMIN';
   const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
 
@@ -157,6 +158,7 @@ export default function CuentasPage() {
   const debouncedSearch = useDebouncedValue(search);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [auxError, setAuxError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>('1m');
@@ -208,8 +210,10 @@ export default function CuentasPage() {
     () => new Map(saldosCuentaRows.map((row) => [row.cuenta_id, { saldo: row.saldo_actual, divisa: row.divisa }])),
     [saldosCuentaRows],
   );
+  const accountCatalogsReady = titulares.length > 0 && divisas.length > 0 && !auxError;
 
   const loadAuxData = async () => {
+    setAuxError(null);
     try {
       const [titularesRes, divisasRes] = await Promise.all([
         api.get<PaginatedResponse<Titular>>('/titulares', { params: { page: 1, pageSize: 500, sortBy: 'nombre', sortDir: 'asc' } }),
@@ -234,8 +238,8 @@ export default function CuentasPage() {
           divisa: divisasRes.data[0]?.codigo ?? prev.divisa,
         }));
       }
-    } catch {
-      // silent auxiliary load errors, main list has visible error handling
+    } catch (err) {
+      setAuxError(extractErrorMessage(err, 'No se pudieron cargar titulares, divisas o formatos. Revisa la conexión antes de crear o editar cuentas.'));
     }
   };
 
@@ -347,6 +351,11 @@ export default function CuentasPage() {
   };
 
   const openCreateModal = () => {
+    if (!accountCatalogsReady) {
+      setError(auxError ?? 'Carga titulares y divisas antes de crear una cuenta.');
+      return;
+    }
+
     resetForm();
     setFormError(null);
     setIsFormModalOpen(true);
@@ -392,6 +401,11 @@ export default function CuentasPage() {
   }, [form.banco_nombre, form.divisa, form.formato_id, form.iban, form.numero_cuenta, form.tipo_cuenta, formatosDisponibles]);
 
   const startEdit = async (id: string) => {
+    if (!accountCatalogsReady) {
+      setError(auxError ?? 'Carga titulares y divisas antes de editar una cuenta.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setFormError(null);
@@ -518,8 +532,15 @@ export default function CuentasPage() {
   return (
     <section className="phase2-page cuentas-page">
       <header className="phase2-header">
-        <h1>Cuentas</h1>
-        {isAdmin && <button type="button" onClick={openCreateModal}>Nueva Cuenta</button>}
+        <div>
+          <h1>Cuentas</h1>
+          <p className="dashboard-subtitle">Saldos, bancos y plazos fijos por titular.</p>
+        </div>
+        {isAdmin && (
+          <button type="button" className="button-primary" onClick={openCreateModal} disabled={!accountCatalogsReady || saving}>
+            Nueva Cuenta
+          </button>
+        )}
       </header>
 
       {canSeeDashboard ? (
@@ -535,7 +556,7 @@ export default function CuentasPage() {
             </div>
           </header>
 
-          {dashboardError ? <p className="auth-error">{dashboardError}</p> : null}
+          {dashboardError ? <p className="auth-error" role="alert">{dashboardError}</p> : null}
           {dashboardLoading ? <p className="import-muted">Cargando dashboard de cuentas...</p> : null}
 
           {!dashboardLoading && !dashboardError && principal ? (
@@ -710,7 +731,8 @@ export default function CuentasPage() {
         )}
       </div>
 
-      {error && <p className="auth-error">{error}</p>}
+      {auxError ? <p className="auth-error" role="alert">{auxError}</p> : null}
+      {error && <p className="auth-error" role="alert">{error}</p>}
 
       <div className="phase2-grid">
         <div className="phase2-cards">
@@ -791,14 +813,15 @@ export default function CuentasPage() {
                       <span className="dashboard-open-link dashboard-open-link--disabled">Sin acceso</span>
                     ) : null}
                   {isAdmin ? (
-                    <button type="button" onClick={() => startEdit(item.id)} disabled={saving} aria-label={`Editar cuenta ${item.nombre}`}>Editar</button>
+                    <button type="button" onClick={() => startEdit(item.id)} disabled={saving || !accountCatalogsReady} aria-label={`Editar cuenta ${item.nombre}`}>Editar</button>
                   ) : null}
                   {isAdmin && item.tipo_cuenta === 'PLAZO_FIJO' ? (
-                    <button type="button" onClick={() => void startRenew(item.id)} disabled={saving} aria-label={`Renovar plazo fijo ${item.nombre}`}>Renovar</button>
+                    <button type="button" onClick={() => void startRenew(item.id)} disabled={saving || !accountCatalogsReady} aria-label={`Renovar plazo fijo ${item.nombre}`}>Renovar</button>
                   ) : null}
                     {isAdmin && !item.deleted_at ? (
                       <button
                         type="button"
+                        className="button-danger"
                         onClick={() => setDeleteCandidate({ id: item.id, nombre: item.nombre })}
                         disabled={saving}
                         aria-label={`Eliminar cuenta ${item.nombre}`}
@@ -853,7 +876,7 @@ export default function CuentasPage() {
                 void save();
               }}
             >
-              {formError ? <p className="auth-error">{formError}</p> : null}
+              {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
 
               <section className="users-modal-section">
                 <h3>Datos base</h3>

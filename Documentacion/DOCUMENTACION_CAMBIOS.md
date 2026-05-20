@@ -8,6 +8,581 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-20 - Preflight de secretos y publicacion GitHub V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se lanzo una revision pre-push con dos subagentes read-only: uno para secretos publicables y otro para readiness de release/package/GitHub.
+- Se comprobo que la rama local actual es `V-01.07`, con remoto `origin` apuntando a `https://github.com/AtlasLabs797/AtlasBalance.git`.
+- Se verifico que no hay archivos versionables pendientes ni archivos ignorados que sigan trackeados.
+- Se revisaron configuraciones sensibles versionables: `appsettings.json`, plantillas `appsettings.*.json.template`, `.env.example`, `docker-compose.yml`, `.gitignore`, workflow CI y scripts de release.
+- Se intento subir la rama `V-01.07` a GitHub por `git push -u origin V-01.07`.
+
+**Comandos ejecutados:**
+- `git status -sb`
+- `git status --porcelain=v1 -uall`
+- `git remote -v`
+- `git branch --show-current`
+- `git ls-files`
+- `git ls-files -ci --exclude-standard`
+- `git grep -nI -E -e "<patrones de secretos de alta confianza>" -- . ":(exclude)Atlas Balance/frontend/package-lock.json"`
+- `git check-ignore -v -- <rutas sensibles de prueba>`
+- `gh --version`
+- `gh auth status`
+- `git ls-remote origin refs/heads/main`
+- `git push -u origin V-01.07`
+- `git -c credential.helper= -c core.askPass= push -u origin V-01.07`
+
+**Resultado de verificacion:**
+- Secret scan de alta confianza: OK, 0 claves reales detectadas en archivos publicables.
+- Los valores sensibles versionables son placeholders o campos vacios; no se detectaron passwords, tokens, claves privadas, certificados privados ni dumps listos para subir.
+- `Otros/`, `Skills/`, `Skills Curated/`, paquetes de `Atlas Balance/Atlas Balance Release`, `.env`, appsettings locales, certificados/keys, dependencias y outputs de build estan ignorados.
+- La rama local `V-01.07` esta 6 commits por delante de `origin/main`; `origin/main` remoto apunta a `2a8ccdd82977e9f4fdd093af461aa3f10f38efb1`.
+
+**Bloqueado:**
+- `git push` con sandbox fallo por red bloqueada.
+- `git push` con red elevada quedo esperando credenciales; el intento no interactivo confirmo `Invalid username or token`.
+- `gh` no esta instalado, por lo que no hay CLI autenticada para publicar release assets.
+- `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` no existe en el entorno; el paquete publicable firmado no se puede generar. Usar `-AllowUnsignedLocal` generaria un ZIP local no publicable y no debe subirse.
+
+**Pendiente:**
+- Configurar autenticacion GitHub valida para `git push` o instalar/autenticar `gh`.
+- Cargar `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` antes de ejecutar `Atlas Balance/scripts/Build-Release.ps1` sin `-AllowUnsignedLocal`.
+- Publicar el ZIP y `.sig` como assets de GitHub Release, no como archivos Git.
+- Mantener pendientes los gates ya documentados de Docker/Testcontainers, E2E autenticado real y backup/restore real antes de llamar final al release.
+
+---
+## 2026-05-19 - Jerarquia visual y pesos de accion UI/UX V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se usaron skills UI/UX de Build Web Apps y skills locales de `Skills Curated`, con dos subagentes read-only para auditar jerarquia de pantallas y sistema visual.
+- Se reforzaron headers de pagina, titulos de cards, separadores de seccion en modales y formularios, y estados de exito/aviso para que la informacion importante no compita con ruido decorativo.
+- Tablas normales dejan de parecer modales: `users-table-card` baja peso visual y los headers sticky se limitan a wrappers de tabla concretos.
+- Acciones primarias y criticas quedan diferenciadas: crear cuenta/titular/backup/token y confirmar importacion usan peso primario; eliminar, revocar y restaurar backup quedan marcadas como peligro; actualizacion de app usa aviso.
+- Importacion muestra resumen de validacion por metricas visibles (validas, errores, avisos, seleccionadas) y CTA primaria clara para confirmar.
+- Backups muestra resumen de la ultima copia correcta visible en la pagina principal, trunca rutas largas y destaca restauracion como accion critica.
+- Cuenta detalle destaca `Saldo total` como KPI principal y dashboard avisa visualmente vencimientos de plazo fijo cercanos.
+- Permisos de usuarios separan mejor `Conceder lectura global`, `Añadir permiso` y permisos destructivos como eliminar movimientos.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `git diff --check`
+
+**Resultado de verificacion:**
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Frontend build: OK.
+- `git diff --check`: OK; solo avisos CRLF esperados en archivos ya tocados.
+
+**Pendiente:**
+- Sigue pendiente QA visual/E2E autenticado con datos reales antes de declarar la UI lista para clientes. Esta pasada mejora jerarquia estatica y build, no sustituye navegacion real por todas las pantallas.
+
+---
+## 2026-05-19 - Skills Curated pre-release y hardening de higiene Git V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se usaron, una por una, las skills locales relevantes de `Skills Curated`: `cyber-neo`, `systematic-debugging`, `codebase-inspection`, `test-driven-development`, `dogfood-web-qa`, `harden`, `polish` y `humanizalo`.
+- Se corrigio un riesgo de proceso: `Skills Curated/` aparecia como carpeta no ignorada aunque las reglas del proyecto dicen no subir `Skills/` ni tooling local.
+- Se amplio la proteccion de `.gitignore` para certificados/keystores/dumps (`*.cer`, `*.p12`, `*.jks`, `*.dump`) y resultados locales de .NET (`backend/**/TestResults/`).
+- El escaneo de secretos del CI ahora excluye `Skills Curated/`, igual que `Otros/` y `Skills/`.
+- Se reviso estaticamente UI/UX tras los cambios previos: no se detectaron botones sin `type`, `debugger`, `console.log`, `dangerouslySetInnerHTML`, `eval`, dialogs nativos inesperados ni handlers obvios de alto riesgo.
+
+**Archivos principales:**
+- `.gitignore`
+- `.github/workflows/ci.yml`
+- `Atlas Balance/.gitignore`
+
+**Comandos ejecutados:**
+- `python '.\Skills Curated\05_Security\cyber-neo\scripts\scan_secrets.py' '.\Atlas Balance'`
+- `npm.cmd audit --audit-level=moderate`
+- `dotnet list '.\AtlasBalance.sln' package --vulnerable --include-transitive`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `dotnet test '.\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj' --no-restore --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests" -p:UseAppHost=false`
+- `npm.cmd run build`
+- `git check-ignore -v -- 'Skills Curated/README.md' 'Atlas Balance/backend/tests/AtlasBalance.API.Tests/TestResults/security-validation.trx' 'Atlas Balance/example.p12' 'Atlas Balance/example.jks' 'Atlas Balance/example.cer' 'Atlas Balance/example.dump'`
+
+**Resultado de verificacion:**
+- Secret scan local: 490 archivos escaneados, 0 hallazgos.
+- `npm audit --audit-level=moderate`: 0 vulnerabilidades.
+- NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Suite backend sin Docker/Testcontainers: 254/254 OK.
+- Frontend build: OK.
+- `git check-ignore`: confirma exclusion de `Skills Curated/`, `TestResults/`, certificados/keystores y dumps.
+
+**Pendiente:**
+- Docker no esta disponible en esta maquina (`docker` no existe en PATH ni en la ruta esperada de Docker Desktop), asi que la suite Testcontainers completa sigue bloqueando el release final.
+- No se ejecuto dogfood visual/E2E real: no habia sesion autenticada ni se deben levantar servidores Vite/HTTP largos desde `shell_command`.
+
+---
+## 2026-05-19 - Refinamiento UI/UX V-01.07 para entrega
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Revision UI/UX estatica con skills de frontend y skills locales de `Skills Curated`.
+- Se corrigio el doble indicador visual de `AppSelect` nativo.
+- La tabla de cuenta mantiene columnas de seleccion/fila fijadas en scroll horizontal y reduce tab stops artificiales.
+- Extractos deja clara la diferencia entre filtros de pagina actual y total del servidor; se rebaja semantica ARIA de `grid` a `table` hasta implementar navegacion de hoja real.
+- Configuracion completa el patron de tabs con `aria-controls`, `tabpanel`, roving `tabIndex` y navegacion por flechas/Home/End.
+- Los errores `auth-error` de pantallas y modales clave se anuncian con `role="alert"`; feedbacks criticos usan `role="status"` cuando corresponde.
+- El modal de creacion de token muestra validaciones dentro del propio modal, no detras del backdrop.
+- Las metricas de tokens ya no inventan ceros si falla la carga; muestran `Cargando` o `No disponible`.
+- Backups comunica el overlay de restauracion como `alertdialog` ocupado y mueve foco al estado critico.
+- `EvolucionChart` agrega tabla `sr-only` con fecha, ingresos, egresos y saldo.
+- Botones repetidos de usuarios, alertas, backups y papelera reciben labels accesibles con contexto.
+- Toasts de error permanecen mas tiempo antes de autocerrarse.
+
+**Comandos ejecutados:**
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `git diff --check`
+
+**Resultado de verificacion:**
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Frontend build: OK.
+- `git diff --check`: OK; solo avisos CRLF esperados en archivos .NET ya tocados.
+
+**Pendiente:**
+- No se ejecuto validacion visual/E2E con navegador real porque las reglas del proyecto bloquean servidores Vite/HTTP largos desde `shell_command` y no hay un entorno autenticado ya levantado. Antes de entrega final sigue faltando E2E real con backend/PostgreSQL y datos de cliente de prueba.
+
+---
+## 2026-05-19 - Auditoria integral V-01.07 y correcciones de release blocker
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se usaron las skills locales de `Skills Curated` como checklist: rediseño/auditoria UI, dogfood QA, seguridad y arquitectura. La ruta pedida `Skills Curated Analizes` no existe; se uso la carpeta real `Skills Curated`.
+- Corregido el saldo actual inconsistente: resumen de cuenta y API OpenClaw ahora toman el ultimo movimiento por `fila_numero`, igual que dashboard/alertas.
+- Corregida la idempotencia de importacion: la huella deja de depender del indice de fila y usa contenido normalizado + ordinal de duplicado.
+- Las transacciones de importacion y plazo fijo garantizan `DisposeAsync` en `finally`.
+- Configuracion rechaza payloads con textos `null` y `smtp/test` rechaza body nulo con `400`, sin 500.
+- Frontend: `AppSelect` pasa a `<select>` nativo, el modal de importacion usa `useDialogFocus`, los errores de celda son persistentes y anunciados, la importacion muestra estados textuales, se asocian labels criticos de importacion/formatos y la grafica de saldos por titular tiene alternativa accesible.
+- Actualizados `Atlas Balance/AGENTS.md` y `Documentacion/SPEC.md` de PostgreSQL 14+ a PostgreSQL 16+.
+
+**Comandos ejecutados:**
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "ConfiguracionControllerTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `.\.dotnet\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `npm.cmd audit --audit-level=moderate`
+- `.\.dotnet\dotnet.exe list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
+
+**Resultado de verificacion:**
+- Tests de regresion focalizados backend: 52/52 OK.
+- `ConfiguracionControllerTests`: 8/8 OK.
+- Suite backend sin Docker/Testcontainers: 254/254 OK.
+- Suite backend completa: 254/256 OK; fallan `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado.
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Frontend build: OK.
+- `npm audit`: 0 vulnerabilidades en pase posterior con aprobacion.
+- NuGet vulnerable audit: 0 paquetes vulnerables en pase posterior con aprobacion.
+
+**Pendiente:**
+- No publicar como release final hasta tener Docker/Testcontainers verde, E2E autenticado con PostgreSQL real/datos de volumen, ZIP `V-01.07` firmado y prueba backup/restore real.
+
+---
+## 2026-05-18 - Verificacion backend post-Codex Security con SDK local
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Instalado SDK .NET 8.0.419 en `C:\tmp\dotnet-sdk-8.0.419`, exacto para el `global.json` del repo.
+- Restaurada, compilada y probada la solucion backend.
+- Ajustado el test de exportacion XLSX para comprobar `quotePrefix` de ClosedXML cuando el apóstrofo de escape no se devuelve como caracter visible.
+- Actualizados artefactos de Codex Security en `C:\tmp\codex-security-scans\Atlas Balance Dev\18234b14_20260517T215739`.
+
+**Comandos ejecutados:**
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"`
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug`
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
+
+**Resultado de verificacion:**
+- Restore/build backend: OK.
+- Suite backend sin Docker/Testcontainers: 249/249 OK.
+- Suite backend completa: 249/251 OK; fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado.
+- NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+
+**Pendiente:**
+- Ejecutar las dos pruebas PostgreSQL/Testcontainers cuando Docker este disponible.
+
+---
+## 2026-05-17 - Revision Codex Security y hardening correctivo
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Revision Codex Security por fases con subagentes para auth/RLS, frontend, scripts/update, IA/export/import y supply chain.
+- Se corrigio fuga por soft-delete: cuentas/extractos de titulares eliminados ya no quedan visibles para no-admins ni integraciones.
+- La auditoria de celda de extractos eliminados devuelve `404` a no-admins.
+- La exportacion manual exige permiso operativo de cuenta y no solo lectura.
+- OpenRouter fuerza `provider.zdr=true` y `data_collection=deny` tambien en rutas gratis/auto.
+- La app rechaza `sourcePath` manual en actualizaciones: solo aplica assets oficiales descargados y firmados.
+- Backups/Watchdog dejan de caer a `pg_dump`, `pg_restore` o `docker` por PATH; se exige ruta absoluta o `DockerCliPath`.
+- El instalador deja de pasar SQL con passwords por argumento `psql -c` y lo envia por stdin.
+- Importacion limita celdas a 4096 caracteres; exportacion XLSX endurece escape de formulas con espacios iniciales.
+- Limpieza de lockfile frontend: eliminado `@fontsource-variable/geist` huerfano.
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.07.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md`, `Documentacion/SKILLS_LOCALES.md`.
+- Codex Security: threat model, discovery por subagentes, validacion estatica y cierre de hallazgos.
+- `npm.cmd install --package-lock-only --ignore-scripts`
+- `npm.cmd ls --package-lock-only --depth=0`
+- `npm.cmd audit --audit-level=moderate --json`
+- Parse AST de `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`.
+- `git diff --check`
+- Instalacion local de SDK .NET 8.0.419 en `C:\tmp\dotnet-sdk-8.0.419` mediante instalador oficial `dotnet-install.ps1`.
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"` con cache en `Atlas Balance\backend\.local-build`.
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug`
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`
+
+**Resultado de verificacion:**
+- `npm audit`: 0 vulnerabilidades.
+- Lockfile: sin dependencia `extraneous`.
+- Script PowerShell: parse OK.
+- `git diff --check`: OK, solo avisos CRLF esperados.
+- Restore backend: OK.
+- Build backend Debug: OK, 0 errores.
+- Suite backend sin Docker/Testcontainers: 249/249 OK.
+- Suite backend completa: 249/251 OK; los 2 fallos son Testcontainers por Docker no disponible/configurado (`ExtractosConcurrencyTests` y `RowLevelSecurityTests`).
+- NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+
+**Pendientes:**
+- Ejecutar las 2 pruebas PostgreSQL/Testcontainers cuando Docker este disponible.
+- Si se quiere conservar actualizador offline por carpeta, hay que anadir verificacion criptografica real del ZIP/firma contra el contenido extraido. Admin ejecutando carpetas de origen desconocido sigue siendo una mala idea.
+
+---
+## 2026-05-17 - Autoactualizacion segura desde GitHub Release
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se agrego `AutoUpdateJob` con ejecucion recurrente en Hangfire para comprobar GitHub Releases y pedir al Watchdog aplicar actualizaciones cuando el modo automatico esta activo.
+- `Configuracion > Sistema` permite activar/desactivar autoactualizacion, definir hora UTC y ver ultimo resultado.
+- `ActualizacionService` limita tamano del ZIP, tamano extraido, numero de entradas y tamano por entrada antes de extraer.
+- Se mantiene el requisito de repo oficial, digest SHA-256, firma `.zip.sig`, clave publica de release y aplicacion via Watchdog con backup/rollback/healthcheck.
+- Frontend build sincronizado con `backend/src/AtlasBalance.API/wwwroot`.
+- Durante la suite sin Docker se corrigio un falso positivo IA: `RECIBOS/FACTURAS DETECTADOS` ya no suma cargos de tarjeta/TPV/prestamos/leasing por el termino generico `cargo`.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Jobs/AutoUpdateJob.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AutoUpdateJobTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot`
+- Documentacion afectada en `Documentacion`.
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md` y skill local `cyber-neo` como referencia de seguridad.
+- Barridos `rg` sobre actualizacion, Watchdog, configuracion, scripts de release y tests.
+- Consulta oficial GitHub REST API para confirmar `digest` SHA-256 en release assets.
+- `git diff --check -- ...`
+- `where.exe dotnet`
+- `Test-Path .\.dotnet\dotnet.exe`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test .\AtlasBalance.API.Tests.csproj --filter "ActualizacionServiceTests|AutoUpdateJobTests|SeedDataTests|ConfiguracionControllerTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test .\AtlasBalance.API.Tests.csproj --filter "AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test .\AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" -p:UseAppHost=false --no-restore --verbosity minimal`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- Sincronizacion finita `frontend/dist` -> `backend/src/AtlasBalance.API/wwwroot` con poda acotada de assets obsoletos.
+
+**Resultado de verificacion:**
+- Tests backend focalizados: 25/25 OK, con warning preexistente de overload obsoleto en `PostgreSqlStorage`.
+- Test IA focalizado tras corregir recibos/facturas: 1/1 OK.
+- Suite backend sin Testcontainers: 242/242 OK.
+- Frontend lint: OK.
+- TypeScript: OK.
+- Frontend build: OK.
+- `wwwroot`: `dist_files=65 wwwroot_files=65`.
+- `git diff --check`: OK, solo avisos CRLF esperados.
+
+**Pendientes:**
+- Ejecutar suite completa con Docker/Testcontainers antes de publicar release final.
+- Publicar un GitHub Release real con `AtlasBalance-*-win-x64.zip` y `.zip.sig`; sin eso el updater debe seguir rechazando la actualizacion.
+
+## 2026-05-17 - IA lista: contexto, errores y formato de proveedor
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Auditoria focalizada de `/api/ia/config`, `/api/ia/chat`, `AtlasAiService`, `AiChatPanel`, renderer de mensajes IA y allowlist de modelos.
+- Comisiones en contexto IA deja de usar terminos flojos (`cuota`, `servicio`, `tarjeta`, `transferencia`) como disparadores directos.
+- Seguros en contexto IA se limita a cargos negativos y excluye Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Los errores de red de OpenRouter/OpenAI devuelven diagnostico tecnico saneado al usuario sin exponer prompt, respuesta completa ni API key.
+- Regresiones nuevas cubren falsos positivos reales en contexto IA y el detalle seguro de TLS/certificado.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md`.
+- Barridos `rg` y lectura de `AtlasAiService.cs`, `IaController.cs`, `IaDtos.cs`, `AiChatPanel.tsx`, `AiMessageContent.tsx`, `errorMessage.ts`, `RevisionService.cs` y `AtlasAiServiceTests.cs`.
+- Consulta de documentacion oficial de OpenRouter para chat completions, `models`, `reasoning.exclude`, privacidad/routing y modelos publicados.
+- `where.exe dotnet`
+- `Test-Path "C:\Program Files\dotnet\dotnet.exe"`
+- `git diff --check -- "Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs" "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs"`
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+
+**Resultado de verificacion:**
+- OpenRouter docs/modelos: parametros usados siguen vigentes y los slugs permitidos siguen publicados.
+- `git diff --check`: OK, solo avisos CRLF esperados.
+- Frontend lint: OK.
+- TypeScript: OK.
+- Frontend build: OK.
+- Tests backend IA: no ejecutados porque `dotnet` no existe en `PATH` ni en `C:\Program Files\dotnet\dotnet.exe`.
+
+**Pendientes:**
+- Ejecutar `AtlasAiServiceTests|ConfiguracionControllerTests` en entorno con SDK .NET.
+- Validar manualmente `/api/ia/chat` contra una instalacion con API key real solo si el operador autoriza usar credenciales y coste del proveedor.
+
+## 2026-05-17 - Revision bancaria afinada con capturas reales
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Comisiones deja de considerar `tarjeta` como comision por si sola.
+- Seguros ahora solo devuelve cargos negativos.
+- Seguros excluye falsos positivos reportados: Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Se agregan pruebas de regresion con conceptos sacados de las capturas de comisiones y seguros.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RevisionServiceTests.cs`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md`.
+- Barridos `rg` y lectura de `RevisionService.cs` / `RevisionServiceTests.cs`.
+- `where.exe dotnet`
+- `git diff --check -- "Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs" "Atlas Balance/backend/tests/AtlasBalance.API.Tests/RevisionServiceTests.cs"`
+
+**Resultado de verificacion:**
+- Validacion de whitespace/diff: OK, solo avisos CRLF esperados.
+- Tests backend no ejecutados: `dotnet` no esta disponible en esta maquina.
+
+**Pendientes:**
+- Ejecutar `RevisionServiceTests` en entorno con SDK .NET.
+
+## 2026-05-16 - Importacion, revision y MFA
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Importacion permite columnas extra vacias o ausentes y las deja en blanco.
+- Revision afina comisiones quitando terminos demasiado amplios (`transferencia`, `cuota`, `servicio`).
+- Revision afina seguros excluyendo Seguridad Social, Seguro Social, TGSS y Tesoreria General.
+- MFA recordado pasa a 90 dias.
+- Logout conserva la cookie `mfa_trusted` para que recordar dispositivo sobreviva al cierre de sesion.
+- Administracion de usuarios incorpora revocacion de Authenticator.
+- Reset admin por script limpia MFA para recuperar accesos perdidos.
+
+**Archivos tocados principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/RevisionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/UsuariosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AuditActions.cs`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/pages/UsuariosPage.tsx`
+- `Atlas Balance/scripts/Reset-AdminPassword.ps1`
+- Tests focalizados de importacion, revision, auth y usuarios.
+- Documentacion en `Documentacion`.
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-01.07.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md`.
+- Barridos `rg` sobre importacion, revision, MFA y usuarios.
+- `dotnet test ...` focalizado: bloqueado porque `dotnet` no esta disponible.
+- `npm.cmd run lint`
+- `npm.cmd exec tsc -- --noEmit`
+- `npm.cmd run build`
+- `Copy-Item` de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`
+- `Compare-Object` entre `dist/index.html` y `wwwroot/index.html`
+
+**Resultado de verificacion:**
+- Frontend lint: OK.
+- TypeScript: OK.
+- Build frontend: OK.
+- `wwwroot/index.html` coincide con `frontend/dist/index.html`.
+- Backend tests no ejecutados: `dotnet` no existe en `PATH` ni fuera del sandbox en esta maquina.
+
+**Pendientes:**
+- Ejecutar tests backend focalizados con SDK .NET disponible.
+- Ejecutar suite completa con Docker/Testcontainers antes de release.
+
+## 2026-05-16 - Apertura de version V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Creada la rama local `V-01.07`.
+- Actualizada la version activa del proyecto de `V-01.06` a `V-01.07`.
+- Actualizadas las fuentes runtime a `1.7.0` / `V-01.07`.
+- Actualizados scripts de release/instalacion, seed de `app_version` y documentacion viva que apunta al paquete actual.
+- Creado `Documentacion/Versiones/v-01.07.md` y cerrada `V-01.06` como base anterior.
+
+**Archivos tocados principales:**
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/install.ps1`
+- `Atlas Balance/README_RELEASE.md`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-01.06.md`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `git status --short --branch`
+- `Get-Content` sobre `CLAUDE.md`, `version_actual.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md` y archivos de version.
+- `git switch -c V-01.07`
+- Barridos `rg`/`Select-String` de `V-01.06`, `V-01.07`, `1.6.0`, `1.7.0` y paquetes `AtlasBalance-V-*`.
+
+**Resultado de verificacion:**
+- Rama activa: `V-01.07`.
+- Fuentes runtime y version actual apuntan a `V-01.07` / `1.7.0`.
+- No se ejecuto build ni se genero ZIP: es una apertura de version, no un release firmado.
+
+**Pendientes:**
+- Generar y firmar `AtlasBalance-V-01.07-win-x64.zip` cuando toque publicar.
+- Ejecutar validaciones de build/test cuando haya cambios funcionales o antes de release.
+
+## 2026-05-16 - Instalacion auditada de shadcn/ui y Tailwind CSS
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Se comprueba que `Skills/Diseno/shadcn-ui` ya existia y apuntaba al remoto correcto `https://github.com/shadcn-ui/ui.git`; no se crea duplicado.
+- Se clona `tailwindlabs/tailwindcss` en `Skills/Diseno/tailwindcss`.
+- Se instalan dependencias de ambos repos con `corepack pnpm install --ignore-scripts`.
+- Se auditan scripts, secretos, prompt injection, ejecucion de procesos y dependencias vulnerables.
+- Se registra `shadcn/ui` y `Tailwind CSS` en `Documentacion/SKILLS_LOCALES.md` como repos de referencia, no como skills canonicas autoejecutables.
+
+**Archivos tocados:**
+- `Skills/Diseno/shadcn-ui`
+- `Skills/Diseno/tailwindcss`
+- `Documentacion/SKILLS_LOCALES.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados:**
+- `git remote -v` y `git rev-parse HEAD` en `Skills/Diseno/shadcn-ui`.
+- `git clone https://github.com/tailwindlabs/tailwindcss.git .\Skills\Diseno\tailwindcss`.
+- `corepack pnpm install --ignore-scripts --reporter append-only` en ambos repos.
+- `corepack pnpm audit --json` en ambos repos.
+- `corepack pnpm run build` en ambos repos.
+- `corepack pnpm --filter=shadcn build` y `corepack pnpm --filter=shadcn typecheck`.
+- `corepack pnpm --filter=tailwindcss build` y `corepack pnpm --filter=tailwindcss lint`.
+- Barridos `rg` sobre secretos, prompt injection, lifecycle scripts, shell execution y HTML unsafe.
+
+**Resultado de verificacion:**
+- `shadcn-ui` ya instalado previamente, commit `0126502236750ce2d68b99517f14c6a307843a76`; sin duplicados detectados.
+- `tailwindcss` clonado en commit `36417cbd12e99ce77676bd1d4589e8f07f1853c1`.
+- Barridos de secretos reales: sin claves reales de alta confianza detectadas.
+- Barridos de prompt injection: sin instrucciones maliciosas tipo override/jailbreak detectadas.
+- `shadcn` package: build OK y typecheck OK.
+- `tailwindcss` package: build OK.
+- `shadcn-ui` audit completo: `1 critical`, `46 high`, `55 moderate`, `15 low`; principales modulos: `basic-ftp`, `cross-spawn`, `tar-fs`, `glob`, `axios`, `@modelcontextprotocol/sdk`, `rollup`, `hono`, `flatted`.
+- `tailwindcss` audit completo: `0 critical`, `10 high`, `10 moderate`, `1 low`; principales modulos: `glob`, `minimatch`, `rollup`, `picomatch`, `fast-uri`.
+
+**Bloqueos y pendientes:**
+- Build completo de `shadcn-ui` bloqueado porque `apps/v4` ejecuta `bun run ./scripts/build-registry.mts` y `bun` no esta instalado.
+- Build completo de `tailwindcss` bloqueado porque `@tailwindcss/oxide` requiere Rust/Cargo y esta maquina no tiene `cargo`, `rustup` ni toolchain Rust disponible.
+- `tailwindcss` lint filtrado falla por tipos dependientes de `@tailwindcss/oxide`, Bun y libs de entorno; no es verde mientras no se cierre el build Rust.
+- No ejecutar ni exponer apps/dev servers de estos repos hasta corregir vulnerabilidades SCA y prerequisitos. Meter Tailwind/shadcn en Atlas Balance por inercia seria una mala decision: el stack del producto ya decidio CSS variables propias.
+
+## 2026-05-16 - Instalacion auditada de 21st SDK
+
+**Version:** V-01.06
+
+**Trabajo realizado:**
+- Se clona `21st-dev/21st-sdk` en `Skills/Diseno/21st-sdk`.
+- Se instala el monorepo con `pnpm@9.15.4` mediante Corepack y `--ignore-scripts` para evitar lifecycle scripts arbitrarios.
+- Se genera `pnpm-lock.yaml`, ausente en el repo upstream, para dejar la instalacion reproducible localmente.
+- Se corrige el build de `@21st-sdk/react` agregando `@types/node` como `devDependency`; el paquete usaba `require` en `src/tools/tool-router.ts` y fallaba al generar tipos.
+- Se registra `21st SDK` en `Documentacion/SKILLS_LOCALES.md` como repo de referencia, no como skill canonica autoejecutable.
+
+**Archivos tocados:**
+- `Skills/Diseno/21st-sdk`
+- `Skills/Diseno/21st-sdk/packages/react/package.json`
+- `Skills/Diseno/21st-sdk/pnpm-lock.yaml`
+- `Documentacion/SKILLS_LOCALES.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados:**
+- `git clone https://github.com/21st-dev/21st-sdk.git .\Skills\Diseno\21st-sdk`
+- `corepack prepare pnpm@9.15.4 --activate`
+- `corepack pnpm install --ignore-scripts`
+- `corepack pnpm --filter @21st-sdk/react add -D @types/node --ignore-scripts`
+- `corepack pnpm run build`
+- `corepack pnpm run ts:check`
+- `corepack pnpm audit --json`
+- Barridos `rg` sobre secretos, prompt injection, lifecycle scripts, shell execution y HTML unsafe.
+
+**Resultado de verificacion:**
+- Commit clonado: `58916c745151e5883bc9d731ace509b37c9d1376`.
+- Build de paquetes SDK OK: `@21st-sdk/agent`, `@21st-sdk/cli`, `@21st-sdk/node`, `@21st-sdk/react`, `@21st-sdk/nextjs`.
+- `ts:check` de scope `packages/*` OK.
+- Barrido de prompt injection: sin instrucciones maliciosas tipo override/jailbreak detectadas.
+- Barrido de secretos reales: sin claves reales detectadas; solo placeholders `replace_me` en `.env.example`.
+- Barrido SCA completo: `pnpm audit` detecta `1 critical`, `19 high`, `31 moderate`, `7 low`, principalmente en `apps/agents-web` y dependencias transitivas como `form-data`, `next`, `tar`, `node-fetch`, `lodash` y `minimatch`.
+- No se ejecutaron `dev`, relay, proxy ni `apps/agents-web` porque requieren secretos, red/tuneles y procesos persistentes.
+
+**Pendientes:**
+- No desplegar ni exponer `apps/agents-web`, `apps/relay` o `apps/proxy` sin actualizar dependencias vulnerables y revisar configuracion de secretos.
+- Si se quiere usarlo en Atlas Balance, aislar solo los paquetes necesarios; meter el monorepo completo en runtime de producto seria una mala decision.
+
 ## 2026-05-13 - Correccion CI y paquete firmado V-01.06
 
 **Version:** V-01.06
@@ -13875,3 +14450,56 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 
 **Pendientes:**
 - El release sigue bloqueado hasta ejecutar y pasar los dos tests Testcontainers con Docker Desktop operativo.
+
+## 2026-05-16 - Auditoria correctiva V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se bloquea desactivar, degradar o eliminar al ultimo administrador activo.
+- Se bloquea que un administrador se quite a si mismo el acceso de administrador.
+- El cliente Watchdog ya no acepta `WatchdogSettings:BaseUrl` hacia hosts remotos; solo `localhost`, loopback IPv4/IPv6 o host vacio.
+- Watchdog rechaza cuerpos nulos y rutas invalidas en restauracion/actualizacion en vez de terminar en 500.
+- `pg_dump`, `pg_restore` y procesos de actualizacion del Watchdog tienen timeout defensivo de 30 minutos y matan el arbol de procesos si se cuelgan.
+- `AuthService` evita busquedas repetidas de preferencias por permiso y pasa a lookup por diccionario.
+- El timeout de sesion del frontend actualiza la actividad real inmediatamente; el debounce solo retrasa cambios visuales.
+- Las vistas que leen helpers de permisos se suscriben tambien a `permisos`, evitando permisos obsoletos tras cambios de estado.
+- Se agrega cobertura de regresion para usuarios/admin unico, WatchdogController y WatchdogClientService.
+- Se recompila frontend y se sincroniza `frontend/dist` con `backend/src/AtlasBalance.API/wwwroot`.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/WatchdogClientService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Controllers/WatchdogController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogClientServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogControllerTests.cs`
+- `Atlas Balance/frontend/src/hooks/useSessionTimeout.ts`
+- `Atlas Balance/frontend/src/App.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Atlas Balance/frontend/src/pages/TitularesPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardTitularPage.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/pages/RevisionPage.tsx`
+
+**Verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~UsuariosControllerTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogControllerTests|FullyQualifiedName~WatchdogOperationsServiceTests"`: 14/14 OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"`: 229/229 OK.
+- `npm.cmd run build`: OK.
+- Copia no destructiva de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`: OK.
+- `npm.cmd audit --audit-level=critical`: 0 vulnerabilidades.
+- `dotnet list AtlasBalance.API.Tests.csproj package --vulnerable --include-transitive`: 0 vulnerabilidades.
+
+**Pendientes:**
+- Ejecutar suite completa con Docker/Testcontainers operativo antes de release.
+- Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
+- Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
+- Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.

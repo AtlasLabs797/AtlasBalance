@@ -6,8 +6,9 @@
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
 - Pendientes:
+  - Ejecutar suite completa V-01.07 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
   - Hacer E2E autenticado contra PostgreSQL real con datos de volumen antes de release.
-  - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en la auditoria UI del 2026-05-12; los casos de overflow y estados feos recibieron hardening el 2026-05-12. El pase `adapt` del 2026-05-12 cubrio responsive/touch/overflow estatico en desktop/tablet/mobile, pero falta sesion real con datos de volumen.
+  - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en auditorias UI previas; el 2026-05-19 se reforzaron select nativo, modal de importacion, errores persistentes de celda, estados de importacion, tabs de Configuracion, tablas de cuenta/extractos, token modal/metricas, backups y alternativas accesibles de graficas. Falta sesion real con datos de volumen.
 - Estado: abierto. Bloquea recomendar release final.
 
 ### 2026-04-20 - V-01.02 - Estado Git local no fiable
@@ -18,6 +19,94 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-05-19 - V-01.07 - Cerrado - Jerarquia visual plana y acciones criticas poco diferenciadas
+
+- Contexto: revision adicional UI/UX sobre jerarquia de ventanas, informacion importante, botones, checks, tablas y menus.
+- Causa: demasiadas superficies compartian sombra/fondo y demasiadas acciones usaban el boton secundario por defecto.
+- Solucion: headers y secciones mas claros, tablas con menos peso que modales, botones primarios/danger/warning en flujos criticos, resumen de validacion de importacion, resumen de backup y resaltado de saldo/vencimientos.
+- Verificacion: frontend lint OK, TypeScript OK, build OK, `git diff --check` OK.
+- Estado: cerrado en codigo; sigue abierto el gate general de QA visual/E2E real antes de release final.
+
+### 2026-05-19 - V-01.07 - Cerrado - Skills Curated y artefactos locales aparecian como versionables
+
+- Contexto: el pase pre-release con skills locales dejo claro que `Skills Curated/` y `TestResults/` podian aparecer en `git status`.
+- Causa: los `.gitignore` cubrian `Skills/` y algunos artefactos, pero no la carpeta real `Skills Curated/`, resultados .NET ni varias extensiones sensibles de certificados/keystores/dumps.
+- Impacto: riesgo de subir tooling local, resultados de test o artefactos sensibles al repositorio.
+- Solucion: `.gitignore` raiz y `Atlas Balance/.gitignore` amplian exclusiones; el CI de secretos excluye tambien `Skills Curated/`.
+- Verificacion: `git check-ignore` confirma `Skills Curated/`, `TestResults/`, `*.p12`, `*.jks`, `*.cer` y `*.dump`; secret scan local 0 hallazgos.
+- Estado: cerrado.
+
+### 2026-05-19 - V-01.07 - Cerrado - Refinamiento UI/UX pre-entrega detecto semantica y estados engañosos
+
+- Contexto: revision UI/UX de pantallas, tablas, botones, checks, menus, modales y estados con skills de frontend y skills locales.
+- Causa:
+  - Extractos parecia filtrar globalmente aunque solo filtraba la pagina cargada.
+  - Tokens mostraba metricas en cero si fallaba la carga.
+  - Crear token mostraba validaciones fuera del modal.
+  - Configuracion tenia tabs ARIA incompletas.
+  - Varias pantallas mostraban errores sin anuncio accesible.
+  - Cuenta detalle tenia demasiados tab stops y perdia contexto horizontal.
+- Solucion: copy/contadores de Extractos por pagina y total, tabla ARIA honesta, metricas `loading/error/ready`, errores locales de modal, tabs ARIA completas, `role="alert"`, labels contextuales, columnas fijas, overlay de backup accesible y tabla `sr-only` en evolucion.
+- Verificacion: frontend lint OK, TypeScript OK, build OK, `git diff --check` OK.
+- Estado: cerrado en codigo; pendiente visual/E2E real como gate abierto de release final.
+
+### 2026-05-17 - V-01.07 - Cerrado - Revision Codex Security detecto fugas de soft-delete y controles locales flojos
+
+- Contexto: revision profunda con Codex Security y subagentes sobre backend, frontend, scripts, IA, exportaciones, importacion y supply chain.
+- Causa:
+  - Algunos controles de cuenta no heredaban `DeletedAt` del titular padre.
+  - `GetAuditCelda` cargaba extractos con `IgnoreQueryFilters()` y solo comprobaba visibilidad de cuenta.
+  - Exportacion manual usaba lectura de cuenta, no permiso operativo.
+  - Rutas gratis/auto de OpenRouter no enviaban controles de privacidad por request.
+  - Actualizacion desde la app aceptaba `sourcePath` manual bajo `UpdateSourceRoot`.
+  - Procesos externos podian caer a busqueda por PATH.
+- Solucion: filtros de titular activo en scopes de usuario/integracion/extractos, bloqueo de auditoria de extractos eliminados, exportacion manual con `CanWriteCuentaAsync`, privacidad OpenRouter obligatoria, rechazo de `sourcePath` manual, rutas absolutas para PostgreSQL/Docker, limite de celda importada y lockfile limpio.
+- Verificacion: `npm audit` 0 vulnerabilidades, NuGet vulnerable audit 0 paquetes vulnerables, lockfile sin `extraneous`, parse PowerShell OK, `git diff --check` OK, restore/build backend OK, suite backend sin Docker/Testcontainers 249/249 OK. Suite completa 249/251 con los 2 fallos esperados de Testcontainers por Docker no disponible/configurado.
+- Estado: cerrado en codigo; pendiente ejecutar solo las 2 pruebas PostgreSQL/Testcontainers cuando Docker este disponible.
+
+### 2026-05-17 - V-01.07 - Cerrado - Actualizacion desde repo sin modo automatico real
+
+- Contexto: el flujo de GitHub Release existia, pero dependia de que un admin pulsara `Actualizar ahora`. Para "que lo haga solo" faltaba un job recurrente.
+- Causa: no habia tarea Hangfire para comprobar releases ni estado de autoactualizacion en configuracion.
+- Solucion: `AutoUpdateJob` opt-in, claves `app_update_auto_*`, controles en `Configuracion > Sistema` y limites defensivos de paquete antes de extraer.
+- Verificacion: tests backend focalizados 25/25 OK; frontend lint, TypeScript y build OK; `wwwroot` sincronizado 65/65.
+- Estado: cerrado en codigo; pendiente suite completa Docker/Testcontainers antes de release final.
+
+### 2026-05-17 - V-01.07 - Cerrado - Recibos/facturas IA incluia cargos de tarjeta
+
+- Contexto: la suite backend sin Docker fallo porque el contexto IA de recibos/facturas sumaba `Cargo tarjeta comercio` junto a `Recibo luz factura`.
+- Causa: la categoria aceptaba `cargo` sin excluir tarjeta/TPV/datáfono.
+- Solucion: `ReceiptExcludedTerms` evita que cargos de tarjeta, prestamos o leasing inflen `RECIBOS/FACTURAS DETECTADOS`.
+- Verificacion: test focalizado OK y suite backend sin Testcontainers 242/242 OK.
+- Estado: cerrado.
+
+### 2026-05-17 - V-01.07 - Cerrado - Contexto IA inflaba comisiones y seguros con falsos positivos
+
+- Contexto: las funciones IA podian recibir contexto contaminado aunque `RevisionService` ya hubiese corregido falsos positivos similares.
+- Causa: `AtlasAiService` mantenia terminos amplios para comisiones y no aplicaba restricciones/exclusiones equivalentes en seguros. Ademas, el diagnostico de red saneado se calculaba pero no se mostraba al usuario.
+- Solucion: comisiones IA deja de usar `cuota`, `servicio`, `tarjeta` y `transferencia` como disparadores directos; seguros IA exige cargos negativos y excluye Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos; errores de red muestran detalle tecnico saneado.
+- Verificacion: regresiones agregadas en `AtlasAiServiceTests`; frontend lint, TypeScript y build OK; tests backend pendientes por ausencia de SDK .NET local.
+- Estado: cerrado en codigo; pendiente ejecutar tests backend en entorno con .NET.
+
+### 2026-05-17 - V-01.07 - Cerrado - Revision seguia mostrando ruido de comisiones y seguros
+
+- Contexto: capturas reales mostraron falsos positivos en revision: transferencias, tarjetas, cuotas/leasing/prestamos, Seguridad Social/TGSS, Generalitat, transferencias a aseguradoras y anulaciones de seguros.
+- Causa: los terminos de deteccion seguian siendo demasiado amplios y la revision de seguros no filtraba por cargo negativo ni excluia transferencias/anulaciones.
+- Solucion: `tarjeta` deja de ser disparador directo de comision; seguros exige importe negativo y excluye Seguridad Social/TGSS plural, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Verificacion: pruebas de regresion agregadas con los conceptos reportados. Ejecucion pendiente porque `dotnet` no esta disponible en esta maquina.
+- Estado: cerrado en codigo; pendiente ejecutar `RevisionServiceTests` con SDK .NET.
+
+### 2026-05-16 - V-01.07 - Cerrado - Importacion, revision y Authenticator
+
+- Contexto: importacion rechazaba celdas extra vacias, revision marcaba transferencias como comisiones y casos de Seguridad Social como seguros, y MFA recordado no duraba lo esperado ni tenia revocacion administrativa.
+- Causa:
+  - Validacion demasiado estricta para columnas extra ausentes.
+  - Terminos de revision demasiado amplios.
+  - `Logout` borraba `mfa_trusted`; el recuerdo MFA era de 30 dias y no habia reset de Authenticator por usuario.
+- Solucion: columnas extra ausentes se dejan en blanco, revision elimina terminos flojos y excluye Seguridad Social/TGSS, MFA recordado pasa a 90 dias, logout conserva la cookie de confianza, usuarios permite revocar Authenticator y el reset admin limpia MFA.
+- Verificacion: frontend lint OK, TypeScript OK y build OK. Tests backend focalizados pendientes por ausencia de `dotnet`.
+- Estado: cerrado en codigo; pendiente ejecutar tests backend cuando el SDK .NET vuelva a estar disponible.
 
 ### 2026-05-13 - V-01.06 - Cerrado - GitHub Actions fallaba en restore locked
 
@@ -715,3 +804,59 @@
 - Solucion: el 2026-05-12 se comprobo Docker fuera del sandbox con aprobacion y se ejecuto la suite completa con Testcontainers/PostgreSQL.
 - Verificacion: `dotnet test AtlasBalance.API.Tests.csproj`: 225/225 OK.
 - Estado: cerrado. El gate que sigue abierto para release final es el E2E autenticado con datos reales, no Docker/Testcontainers.
+
+### 2026-05-16 - V-01.07 - Cerrado - La gestion de usuarios podia dejar la app sin administrador activo
+
+- Contexto: `UsuariosController` permitia desactivar, degradar o eliminar al ultimo administrador activo.
+- Impacto: bloqueo operativo grave; la instancia podia quedarse sin ningun usuario con capacidad de administracion.
+- Solucion: validacion en actualizacion y eliminacion para exigir al menos otro admin activo; bloqueo adicional de auto-democion y auto-desactivacion admin.
+- Verificacion: tests de regresion en `UsuariosControllerTests` incluidos en suite focalizada 14/14 OK y suite backend sin Testcontainers 229/229 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Watchdog podia enviar su secreto a un BaseUrl remoto
+
+- Contexto: `WatchdogSettings:BaseUrl` era configurable y se usaba para llamadas con cabecera `X-Watchdog-Secret`.
+- Impacto: SSRF y exfiltracion de secreto si la configuracion apuntaba a un host remoto.
+- Solucion: validacion estricta de destino local en `Program` y `WatchdogClientService`.
+- Verificacion: test `SolicitarActualizacionAsync_Should_Reject_Non_Local_Watchdog_BaseAddress` y suite focalizada 14/14 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Watchdog devolvia 500 ante body nulo o rutas invalidas
+
+- Contexto: endpoints de restauracion y actualizacion asumian request valido y rutas parseables.
+- Impacto: errores 500 evitables y diagnostico pobre ante input invalido.
+- Solucion: validacion de body y `Path.GetFullPath` defensivo con respuesta `400`.
+- Verificacion: `WatchdogControllerTests` incluidos en suite focalizada 14/14 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Procesos externos sin timeout duro
+
+- Contexto: `pg_dump`, `pg_restore` y scripts de actualizacion esperaban con token externo o sin limite propio.
+- Impacto: una herramienta colgada podia dejar operaciones criticas esperando indefinidamente.
+- Solucion: timeout defensivo de 30 minutos, cancelacion enlazada y kill del arbol de procesos.
+- Verificacion: suite focalizada 14/14 OK y suite backend sin Testcontainers 229/229 OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Timeout de sesion podia ignorar actividad reciente
+
+- Contexto: la actividad del usuario se debouncedaba antes de actualizar la referencia real usada por el timeout.
+- Impacto: una accion en los ultimos segundos de sesion podia no evitar el logout.
+- Solucion: actualizacion inmediata de `lastActivityRef` e inactividad real; debounce limitado a cambios visuales.
+- Verificacion: `npm.cmd run lint`, `npm.cmd exec tsc -- --noEmit` y `npm.cmd run build` OK.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Paquetes de actualizacion sin limites explicitos de tamano/contenido
+
+- Contexto: el flujo de actualizacion valida rutas, pero no aplica limites de tamano ni manifiesto de contenido antes de extraer.
+- Impacto: riesgo de consumo de disco/tiempo o paquete inesperado si un admin carga un artefacto malicioso o corrupto.
+- Solucion: `ActualizacionService` limita ZIP descargado, contenido extraido, entrada individual y numero de entradas antes de aplicar assets oficiales firmados.
+- Verificacion: `ActualizacionServiceTests|AutoUpdateJobTests|SeedDataTests|ConfiguracionControllerTests` 25/25 OK el 2026-05-17; suite backend sin Docker 254/254 OK el 2026-05-19.
+- Estado: cerrado.
+
+### 2026-05-16 - V-01.07 - Cerrado - Inconsistencias pendientes de importacion, saldo y configuracion
+
+- Contexto: la auditoria encontro riesgos que requieren una pasada focalizada: fingerprint de importacion dependiente del indice de fila, transacciones de importacion no garantizadas en `finally`, criterios distintos para saldo actual entre modulos, JSON nulo en configuracion y cooldown de alertas fallidas.
+- Impacto: duplicados fragiles, recursos abiertos, saldos diferentes segun pantalla, 500 evitables o alertas repetidas.
+- Solucion: huella de importacion estable por contenido con ordinal de duplicado, `finally` para transacciones de importacion/plazo fijo, saldo actual por `fila_numero` en resumen de cuenta y OpenClaw, rechazo controlado de JSON nulo en configuracion. Cooldown SMTP ya estaba correcto y se mantuvo.
+- Verificacion: tests nuevos fallaron en rojo antes del fix; despues `CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests` 52/52 OK, `ConfiguracionControllerTests` 8/8 OK y suite backend sin Docker/Testcontainers 254/254 OK.
+- Estado: cerrado.

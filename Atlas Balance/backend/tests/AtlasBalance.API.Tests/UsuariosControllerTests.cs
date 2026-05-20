@@ -196,6 +196,125 @@ public class UsuariosControllerTests
         (await db.Auditorias.AnyAsync(x => x.EntidadId == user.Id && x.TipoAccion == AuditActions.CambioPermisos)).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task RevocarMfa_Should_Clear_Authenticator_And_Revoke_Target_User_Sessions()
+    {
+        await using var db = BuildDbContext();
+        var audit = new AuditService(db);
+        var controller = new UsuariosController(db, audit);
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa.target@atlasbalance.local",
+            NombreCompleto = "Mfa Target",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!", workFactor: 12),
+            Rol = RolUsuario.EMPLEADO,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow,
+            SecurityStamp = "old-stamp",
+            MfaEnabled = true,
+            MfaSecret = TotpService.GenerateSecret(),
+            MfaEnabledAt = DateTime.UtcNow.AddDays(-1),
+            MfaLastAcceptedStep = 123
+        };
+        db.Usuarios.Add(user);
+        db.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = user.Id,
+            TokenHash = "mfa-token-hash",
+            ExpiraEn = DateTime.UtcNow.AddDays(1),
+            CreadoEn = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await controller.RevocarMfa(user.Id, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        persisted.MfaEnabled.Should().BeFalse();
+        persisted.MfaSecret.Should().BeNull();
+        persisted.MfaEnabledAt.Should().BeNull();
+        persisted.MfaLastAcceptedStep.Should().BeNull();
+        persisted.SecurityStamp.Should().NotBe("old-stamp");
+        (await db.RefreshTokens.SingleAsync(x => x.UsuarioId == user.Id)).RevocadoEn.Should().NotBeNull();
+        (await db.Auditorias.AnyAsync(x => x.EntidadId == user.Id && x.TipoAccion == AuditActions.MfaRevoked)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Actualizar_Should_Reject_Deactivating_Only_Active_Admin()
+    {
+        await using var db = BuildDbContext();
+        var controller = new UsuariosController(db, new AuditService(db));
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+        var admin = CreateUser(RolUsuario.ADMIN, activo: true);
+        db.Usuarios.Add(admin);
+        await db.SaveChangesAsync();
+
+        var request = new UpdateUsuarioRequest
+        {
+            Email = admin.Email,
+            NombreCompleto = admin.NombreCompleto,
+            Rol = RolUsuario.ADMIN,
+            Activo = false,
+            PrimerLogin = false,
+            Emails = new[] { admin.Email },
+            Permisos = Array.Empty<SavePermisoUsuarioRequest>()
+        };
+
+        var result = await controller.Actualizar(admin.Id, request, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Usuarios.SingleAsync(x => x.Id == admin.Id)).Activo.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Actualizar_Should_Reject_Self_Demotion_From_Admin()
+    {
+        await using var db = BuildDbContext();
+        var actor = CreateUser(RolUsuario.ADMIN, activo: true);
+        var otherAdmin = CreateUser(RolUsuario.ADMIN, activo: true);
+        db.Usuarios.AddRange(actor, otherAdmin);
+        await db.SaveChangesAsync();
+
+        var controller = new UsuariosController(db, new AuditService(db));
+        controller.ControllerContext = BuildControllerContext(actor.Id);
+        var request = new UpdateUsuarioRequest
+        {
+            Email = actor.Email,
+            NombreCompleto = actor.NombreCompleto,
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false,
+            Emails = new[] { actor.Email },
+            Permisos = Array.Empty<SavePermisoUsuarioRequest>()
+        };
+
+        var result = await controller.Actualizar(actor.Id, request, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Usuarios.SingleAsync(x => x.Id == actor.Id)).Rol.Should().Be(RolUsuario.ADMIN);
+    }
+
+    [Fact]
+    public async Task Eliminar_Should_Reject_Deleting_Only_Active_Admin()
+    {
+        await using var db = BuildDbContext();
+        var controller = new UsuariosController(db, new AuditService(db));
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+        var admin = CreateUser(RolUsuario.ADMIN, activo: true);
+        db.Usuarios.Add(admin);
+        await db.SaveChangesAsync();
+
+        var result = await controller.Eliminar(admin.Id, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Usuarios.SingleAsync(x => x.Id == admin.Id)).DeletedAt.Should().BeNull();
+    }
+
     private static ControllerContext BuildControllerContext(Guid adminId)
     {
         var identity = new ClaimsIdentity(new[]
@@ -210,6 +329,22 @@ public class UsuariosControllerTests
             {
                 User = new ClaimsPrincipal(identity)
             }
+        };
+    }
+
+    private static Usuario CreateUser(RolUsuario rol, bool activo)
+    {
+        var id = Guid.NewGuid();
+        return new Usuario
+        {
+            Id = id,
+            Email = $"{id:N}@atlasbalance.local",
+            NombreCompleto = $"User {id:N}",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            Rol = rol,
+            Activo = activo,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
         };
     }
 }

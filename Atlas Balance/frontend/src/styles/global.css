@@ -528,6 +528,7 @@ th {
 .button-primary,
 .button-secondary,
 .button-tertiary,
+.button-warning,
 .button-danger,
 .button-icon {
   display: inline-flex;
@@ -592,6 +593,19 @@ th {
 
 .button-tertiary:hover {
   background: var(--accent-primary-soft);
+  text-decoration: none;
+}
+
+.button-warning {
+  background: var(--warning-bg);
+  border-color: color-mix(in srgb, var(--warning-text) 32%, transparent);
+  color: var(--warning-text);
+}
+
+.button-warning:hover {
+  background: color-mix(in srgb, var(--warning-bg) 72%, var(--warning-text) 28%);
+  border-color: var(--warning-text);
+  color: var(--warning-text);
   text-decoration: none;
 }
 
@@ -697,6 +711,30 @@ th {
   opacity: 0.78;
   flex: 0 0 auto;
   transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.app-select-native-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.app-select-native {
+  display: block;
+  appearance: none;
+  background-image: none;
+  padding-right: calc(var(--space-3) * 2 + 0.9rem);
+}
+
+.app-select-chevron--native {
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  transform: translateY(-62%) rotate(45deg);
+  pointer-events: none;
+}
+
+.app-select-native:focus-visible + .app-select-chevron--native {
+  opacity: 1;
 }
 
 .app-select-popover {

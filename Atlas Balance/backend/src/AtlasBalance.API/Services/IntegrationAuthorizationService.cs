@@ -57,6 +57,8 @@ public sealed class IntegrationAuthorizationService : IIntegrationAuthorizationS
 
     public IQueryable<Titular> ApplyTitularScope(IQueryable<Titular> query, IntegrationAccessScope scope)
     {
+        query = query.Where(t => t.DeletedAt == null);
+
         if (!scope.HasPermissions)
         {
             return query.Where(_ => false);
@@ -69,11 +71,13 @@ public sealed class IntegrationAuthorizationService : IIntegrationAuthorizationS
 
         return query.Where(t =>
             scope.TitularIds.Contains(t.Id) ||
-            _dbContext.Cuentas.Any(c => c.TitularId == t.Id && scope.CuentaIds.Contains(c.Id)));
+            _dbContext.Cuentas.Any(c => c.TitularId == t.Id && c.DeletedAt == null && scope.CuentaIds.Contains(c.Id)));
     }
 
     public IQueryable<Cuenta> ApplyCuentaScope(IQueryable<Cuenta> query, IntegrationAccessScope scope)
     {
+        query = ApplyActiveTitularCuentaScope(query);
+
         if (!scope.HasPermissions)
         {
             return query.Where(_ => false);
@@ -89,6 +93,10 @@ public sealed class IntegrationAuthorizationService : IIntegrationAuthorizationS
 
     public IQueryable<Extracto> ApplyExtractoScope(IQueryable<Extracto> query, IntegrationAccessScope scope)
     {
+        query = query.Where(e =>
+            e.DeletedAt == null &&
+            ApplyActiveTitularCuentaScope(_dbContext.Cuentas).Any(c => c.Id == e.CuentaId));
+
         if (!scope.HasPermissions)
         {
             return query.Where(_ => false);
@@ -101,6 +109,13 @@ public sealed class IntegrationAuthorizationService : IIntegrationAuthorizationS
 
         return query.Where(e =>
             scope.CuentaIds.Contains(e.CuentaId) ||
-            _dbContext.Cuentas.Any(c => c.Id == e.CuentaId && scope.TitularIds.Contains(c.TitularId)));
+            ApplyActiveTitularCuentaScope(_dbContext.Cuentas).Any(c => c.Id == e.CuentaId && scope.TitularIds.Contains(c.TitularId)));
+    }
+
+    private IQueryable<Cuenta> ApplyActiveTitularCuentaScope(IQueryable<Cuenta> query)
+    {
+        return query.Where(c =>
+            c.DeletedAt == null &&
+            _dbContext.Titulares.Any(t => t.Id == c.TitularId && t.DeletedAt == null));
     }
 }

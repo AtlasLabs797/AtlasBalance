@@ -18,6 +18,11 @@ public interface IActualizacionService
 
 public sealed class ActualizacionService : IActualizacionService
 {
+    private const long MaxUpdatePackageBytes = 300L * 1024L * 1024L;
+    private const long MaxExtractedPackageBytes = 1024L * 1024L * 1024L;
+    private const long MaxArchiveEntryBytes = 512L * 1024L * 1024L;
+    private const int MaxArchiveEntries = 10000;
+
     private readonly AppDbContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IWatchdogClientService _watchdogClientService;
@@ -105,39 +110,37 @@ public sealed class ActualizacionService : IActualizacionService
 
     public async Task<bool> IniciarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
     {
-        var finalSourcePath = sourcePath;
+        if (!string.IsNullOrWhiteSpace(sourcePath))
+        {
+            _logger.LogWarning("No se puede iniciar actualizacion: sourcePath manual rechazado; la app solo instala assets descargados y firmados.");
+            return false;
+        }
+
+        string? finalSourcePath = null;
         var finalTargetPath = ResolveConfiguredUpdateTargetPath();
 
-        if (string.IsNullOrWhiteSpace(finalSourcePath))
+        var checkUrl = await _dbContext.Configuraciones
+            .Where(c => c.Clave == "app_update_check_url")
+            .Select(c => c.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        checkUrl = ResolveConfiguredUpdateUrl(checkUrl, _logger);
+
+        try
         {
-            var checkUrl = await _dbContext.Configuraciones
-                .Where(c => c.Clave == "app_update_check_url")
-                .Select(c => c.Valor)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            checkUrl = ResolveConfiguredUpdateUrl(checkUrl, _logger);
-
-            try
+            var response = await GetUpdateCheckBodyAsync(checkUrl, cancellationToken);
+            if (response.IsSuccessStatusCode)
             {
-                var response = await GetUpdateCheckBodyAsync(checkUrl, cancellationToken);
-                if (response.IsSuccessStatusCode)
+                var payload = ParseUpdatePayload(response.Body);
+                if (payload is not null && !string.IsNullOrWhiteSpace(payload.AssetDownloadUrl))
                 {
-                    var payload = ParseUpdatePayload(response.Body);
-                    if (payload is not null)
-                    {
-                        finalSourcePath ??= payload.SourcePath;
-                        if (string.IsNullOrWhiteSpace(finalSourcePath) &&
-                            !string.IsNullOrWhiteSpace(payload.AssetDownloadUrl))
-                        {
-                            finalSourcePath = await DownloadAndPreparePackageAsync(payload, cancellationToken);
-                        }
-                    }
+                    finalSourcePath = await DownloadAndPreparePackageAsync(payload, cancellationToken);
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "No se pudo resolver source/target path desde update_check_url");
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo resolver asset firmado desde update_check_url");
         }
 
         if (string.IsNullOrWhiteSpace(finalTargetPath))
@@ -286,10 +289,24 @@ public sealed class ActualizacionService : IActualizacionService
             return null;
         }
 
+        if (response.Content.Headers.ContentLength is > MaxUpdatePackageBytes)
+        {
+            _logger.LogWarning("Asset de actualizacion rechazado por tamano declarado superior al limite.");
+            return null;
+        }
+
         await using (var output = File.Create(zipPath))
         await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
         {
             await input.CopyToAsync(output, cancellationToken);
+        }
+
+        var downloadedSize = new FileInfo(zipPath).Length;
+        if (downloadedSize is 0 || downloadedSize > MaxUpdatePackageBytes)
+        {
+            _logger.LogWarning("Asset de actualizacion rechazado por tamano descargado invalido.");
+            TryDeleteFile(zipPath);
+            return null;
         }
 
         if (!VerifyAssetDigest(zipPath, payload.AssetDigest))
@@ -313,7 +330,7 @@ public sealed class ActualizacionService : IActualizacionService
 
         if (!TryExtractPackageSafely(zipPath, packageRoot))
         {
-            _logger.LogWarning("Asset de actualizacion rechazado por entradas fuera de la raiz prevista.");
+            _logger.LogWarning("Asset de actualizacion rechazado por tamano, cantidad de entradas o rutas invalidas.");
             return null;
         }
         var resolvedPackageRoot = ResolveExtractedPackageRoot(packageRoot);
@@ -616,11 +633,29 @@ public sealed class ActualizacionService : IActualizacionService
         }
 
         using var archive = ZipFile.OpenRead(zipPath);
+        var entryCount = 0;
+        var totalUncompressedBytes = 0L;
         foreach (var entry in archive.Entries)
         {
             if (string.IsNullOrEmpty(entry.FullName))
             {
                 continue;
+            }
+
+            entryCount++;
+            if (entryCount > MaxArchiveEntries ||
+                entry.Length < 0 ||
+                entry.Length > MaxArchiveEntryBytes)
+            {
+                Directory.Delete(packageRoot, recursive: true);
+                return false;
+            }
+
+            totalUncompressedBytes += entry.Length;
+            if (totalUncompressedBytes > MaxExtractedPackageBytes)
+            {
+                Directory.Delete(packageRoot, recursive: true);
+                return false;
             }
 
             var destinationFullPath = Path.GetFullPath(Path.Combine(packageRoot, entry.FullName));

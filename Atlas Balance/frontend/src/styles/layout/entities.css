@@ -68,7 +68,14 @@
 .phase2-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.phase2-header > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .phase2-filters {
@@ -150,6 +157,9 @@
 
 .titular-card-title h3 {
   min-width: 0;
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-heavy);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -339,6 +349,10 @@
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: start;
+  padding: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface));
 }
 
 .cuenta-card-notes {
@@ -361,6 +375,10 @@
   font-weight: var(--font-weight-heavy);
   line-height: 1.2;
   white-space: nowrap;
+}
+
+.cuentas-page .cuenta-card-balance .signed-amount {
+  font-size: var(--font-size-base);
 }
 
 .cuenta-card .phase2-row-actions {
@@ -699,11 +717,18 @@
 }
 
 .titulares-evolucion-card {
-  padding: var(--space-3);
+  border-color: var(--border-soft);
+  background: color-mix(in srgb, var(--surface-bg-sunken) 70%, var(--bg-surface) 30%);
+  box-shadow: none;
+  padding: var(--space-4);
 }
 
 .titulares-divisa-banners {
   display: grid;
+}
+
+.titulares-divisa-banners .dashboard-card {
+  box-shadow: none;
 }
 
 .extra-col-row {

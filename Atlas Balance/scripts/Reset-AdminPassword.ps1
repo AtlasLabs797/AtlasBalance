@@ -221,7 +221,11 @@ updated_user AS (
         failed_login_attempts = 0,
         locked_until = NULL,
         security_stamp = :'security_stamp',
-        password_changed_at = now()
+        password_changed_at = now(),
+        mfa_enabled = FALSE,
+        mfa_secret = NULL,
+        mfa_enabled_at = NULL,
+        mfa_last_accepted_step = NULL
     FROM target_user
     WHERE u.id = target_user.id
     RETURNING u.id
@@ -273,7 +277,7 @@ if ($parts.Count -lt 2 -or [int]$parts[0] -lt 1) {
 }
 
 Write-Host "Password admin reseteada para $AdminEmail." -ForegroundColor Green
-Write-Host "Login bloqueado limpiado, primer_login activado y refresh tokens revocados: $($parts[1])." -ForegroundColor Green
+    Write-Host "Login bloqueado limpiado, primer_login activado, Authenticator revocado y refresh tokens revocados: $($parts[1])." -ForegroundColor Green
 if ($passwordWasGenerated) {
     $credentialsDir = Join-Path $InstallPath "config"
     $credentialsFile = Join-Path $credentialsDir "RESET_ADMIN_CREDENTIALS_ONCE.txt"

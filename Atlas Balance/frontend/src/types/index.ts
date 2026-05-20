@@ -276,6 +276,11 @@ export interface ConfiguracionSistema {
   general: {
     app_base_url: string;
     app_update_check_url: string;
+    app_update_auto_enabled: boolean;
+    app_update_auto_hour_utc: number;
+    app_update_auto_last_checked_utc: string;
+    app_update_auto_last_started_utc: string;
+    app_update_auto_last_result: string;
     backup_path: string;
     export_path: string;
   };
@@ -336,6 +341,8 @@ export interface SaveConfiguracionSistemaRequest {
   general: {
     app_base_url: string;
     app_update_check_url: string;
+    app_update_auto_enabled: boolean;
+    app_update_auto_hour_utc: number;
     backup_path: string;
     export_path: string;
   };

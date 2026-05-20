@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
 using AtlasBalance.API.DTOs;
 
@@ -38,6 +39,7 @@ public sealed class WatchdogClientService : IWatchdogClientService
         }
 
         var http = _httpClientFactory.CreateClient("watchdog-client");
+        EnsureLocalWatchdogBaseAddress(http.BaseAddress);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/watchdog/restaurar-backup");
         request.Headers.Add("X-Watchdog-Secret", secret);
         request.Content = JsonContent.Create(new
@@ -65,6 +67,7 @@ public sealed class WatchdogClientService : IWatchdogClientService
         }
 
         var http = _httpClientFactory.CreateClient("watchdog-client");
+        EnsureLocalWatchdogBaseAddress(http.BaseAddress);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/watchdog/actualizar-app");
         request.Headers.Add("X-Watchdog-Secret", secret);
         request.Content = JsonContent.Create(new
@@ -107,6 +110,7 @@ public sealed class WatchdogClientService : IWatchdogClientService
         {
             var secret = _configuration["WatchdogSettings:SharedSecret"];
             var http = _httpClientFactory.CreateClient("watchdog-client");
+            EnsureLocalWatchdogBaseAddress(http.BaseAddress);
             using var request = new HttpRequestMessage(HttpMethod.Get, "/watchdog/estado");
             if (!string.IsNullOrWhiteSpace(secret))
             {
@@ -136,5 +140,25 @@ public sealed class WatchdogClientService : IWatchdogClientService
             Mensaje = "Sin actividad",
             UpdatedAt = DateTime.UtcNow
         };
+    }
+
+    private static void EnsureLocalWatchdogBaseAddress(Uri? baseAddress)
+    {
+        if (baseAddress is null ||
+            baseAddress.Scheme is not ("http" or "https") ||
+            !IsLoopbackHost(baseAddress.Host))
+        {
+            throw new InvalidOperationException("Watchdog client rejected a non-local BaseAddress.");
+        }
+    }
+
+    private static bool IsLoopbackHost(string host)
+    {
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address);
     }
 }

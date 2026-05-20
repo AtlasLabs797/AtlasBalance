@@ -274,7 +274,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     runtime_model = selectedRuntimeModel,
                     http_client = providerCall.HttpClientName,
                     used_http_fallback = providerCall.UsedFallback,
-                    zero_data_retention = state.Provider == "OPENROUTER" && !AiConfiguration.IsOpenRouterFreeRoute(state.Model, selectedRuntimeModel),
+                    zero_data_retention = state.Provider == "OPENROUTER",
                     movimientos_analizados = context.MovimientosAnalizados,
                     pregunta_caracteres = prompt.Length,
                     contexto_caracteres = context.Texto.Length,
@@ -425,6 +425,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 request.Content = JsonContent.Create(new
                 {
                     models = AiConfiguration.OpenRouterAutoFallbackModels,
+                    provider = OpenRouterPrivacyProvider(),
                     reasoning = new
                     {
                         exclude = true
@@ -445,7 +446,9 @@ public sealed class AtlasAiService : IAtlasAiService
                     provider = new
                     {
                         only = new[] { pinnedProvider },
-                        allow_fallbacks = false
+                        allow_fallbacks = false,
+                        zdr = true,
+                        data_collection = "deny"
                     },
                     reasoning = new
                     {
@@ -460,6 +463,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     ? JsonContent.Create(new
                     {
                         model = runtimeModel,
+                        provider = OpenRouterPrivacyProvider(),
                         reasoning = new
                         {
                             exclude = true
@@ -498,6 +502,15 @@ public sealed class AtlasAiService : IAtlasAiService
             messages
         });
         return request;
+    }
+
+    private static object OpenRouterPrivacyProvider()
+    {
+        return new
+        {
+            zdr = true,
+            data_collection = "deny"
+        };
     }
 
     private async Task EnsureRequestLimitsAsync(Guid userId, IaGovernanceState state, DateTime now, string? ipAddress, CancellationToken cancellationToken)
@@ -996,7 +1009,16 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalizedQuestion, "seguro", "seguros", "poliza", "prima", "aseguradora"))
         {
-            await AppendCategoryAsync(builder, "SEGUROS DETECTADOS", cuentasQuery, earliestContextDate, today, InsuranceTerms, cancellationToken);
+            await AppendCategoryAsync(
+                builder,
+                "SEGUROS DETECTADOS",
+                cuentasQuery,
+                earliestContextDate,
+                today,
+                InsuranceTerms,
+                cancellationToken,
+                InsuranceExcludedTerms,
+                onlyNegative: true);
         }
 
         if (ContainsAny(normalizedQuestion, "nomina", "nominas", "salario", "sueldo"))
@@ -1011,7 +1033,15 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalizedQuestion, "recibo", "recibos", "factura", "facturas", "domiciliacion", "domiciliaciones", "cargo", "cargos"))
         {
-            await AppendCategoryAsync(builder, "RECIBOS/FACTURAS DETECTADOS", cuentasQuery, earliestContextDate, today, ReceiptTerms, cancellationToken);
+            await AppendCategoryAsync(
+                builder,
+                "RECIBOS/FACTURAS DETECTADOS",
+                cuentasQuery,
+                earliestContextDate,
+                today,
+                ReceiptTerms,
+                cancellationToken,
+                ReceiptExcludedTerms);
         }
 
         List<AiExtractoRow> relevant = maxContextRows <= 0
@@ -1088,12 +1118,15 @@ public sealed class AtlasAiService : IAtlasAiService
         DateOnly fromDate,
         DateOnly to,
         IReadOnlyCollection<string> terms,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? excludedTerms = null,
+        bool onlyNegative = false)
     {
+        var conceptPredicate = BuildConceptPredicate(terms, excludedTerms ?? []);
         var rows = await (
-            from e in _dbContext.Extractos.AsNoTracking().Where(BuildConceptPredicate(terms))
+            from e in _dbContext.Extractos.AsNoTracking().Where(conceptPredicate)
             join c in cuentasQuery on e.CuentaId equals c.Id
-            where e.Fecha >= fromDate && e.Fecha <= to
+            where e.Fecha >= fromDate && e.Fecha <= to && (!onlyNegative || e.Monto < 0m)
             group e by c.Divisa
             into g
             select new
@@ -1119,7 +1152,9 @@ public sealed class AtlasAiService : IAtlasAiService
         }
     }
 
-    private static Expression<Func<Models.Extracto, bool>> BuildConceptPredicate(IReadOnlyCollection<string> terms)
+    private static Expression<Func<Models.Extracto, bool>> BuildConceptPredicate(
+        IReadOnlyCollection<string> terms,
+        IReadOnlyCollection<string>? excludedTerms = null)
     {
         if (terms.Count == 0)
         {
@@ -1137,6 +1172,22 @@ public sealed class AtlasAiService : IAtlasAiService
             var value = term.ToLowerInvariant();
             var contains = Expression.Call(lowerConcept, nameof(string.Contains), Type.EmptyTypes, Expression.Constant(value));
             body = Expression.OrElse(body, contains);
+        }
+
+        Expression? excluded = null;
+        if (excludedTerms is not null)
+        {
+            foreach (var term in excludedTerms.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var value = term.ToLowerInvariant();
+                var contains = Expression.Call(lowerConcept, nameof(string.Contains), Type.EmptyTypes, Expression.Constant(value));
+                excluded = excluded is null ? contains : Expression.OrElse(excluded, contains);
+            }
+        }
+
+        if (excluded is not null)
+        {
+            body = Expression.AndAlso(body, Expression.Not(excluded));
         }
 
         return Expression.Lambda<Func<Models.Extracto, bool>>(body, parameter);
@@ -1595,7 +1646,7 @@ public sealed class AtlasAiService : IAtlasAiService
         var detail = string.Equals(primaryDetail, fallbackDetail, StringComparison.OrdinalIgnoreCase)
             ? primaryDetail
             : $"principal: {primaryDetail}; fallback: {fallbackDetail}";
-        return $"No se pudo conectar con {ProviderDisplayName(state)}. Reintenta en unos segundos o prueba otro modelo.";
+        return $"No se pudo conectar con {ProviderDisplayName(state)}. Detalle tecnico: {detail}. Reintenta en unos segundos o prueba otro modelo.";
     }
 
     private static string ShortTransportMessage(Exception exception)
@@ -2356,8 +2407,8 @@ public sealed class AtlasAiService : IAtlasAiService
 
     private static readonly string[] CommissionTerms =
     [
-        "comision", "comisión", "cuota", "mantenimiento", "administracion", "administración",
-        "servicio", "reclamacion", "reclamación", "descubierto", "tarjeta", "transferencia",
+        "comision", "comisión", "mantenimiento", "administracion", "administración",
+        "reclamacion", "reclamación", "descubierto",
         "gastos bancarios"
     ];
 
@@ -2365,6 +2416,16 @@ public sealed class AtlasAiService : IAtlasAiService
     [
         "seguro", "aseguradora", "poliza", "póliza", "prima", "mapfre", "allianz", "axa",
         "catalana occidente", "generali", "zurich", "mutua", "occidente"
+    ];
+
+    private static readonly string[] InsuranceExcludedTerms =
+    [
+        "seguridad social", "seguro social", "seguros sociales", "tgss",
+        "tesoreria general", "tesorería general", "tesoreria gral", "tesorería gral",
+        "social security", "generalitat", "generalidad",
+        "transferencia", "transferencias", "abono transferencia",
+        "transferencia recibida", "transferencia realizada",
+        "anul", "anulacion", "anulación", "devolucion", "devolución", "reembolso"
     ];
 
     private static readonly string[] PayrollTerms =
@@ -2383,6 +2444,12 @@ public sealed class AtlasAiService : IAtlasAiService
     [
         "recibo", "recibos", "factura", "facturas", "domiciliacion", "domiciliaciones",
         "adeudo", "adeudos", "cargo", "cargos", "suministro", "suministros"
+    ];
+
+    private static readonly string[] ReceiptExcludedTerms =
+    [
+        "tarjeta", "visa", "mastercard", "tpv", "datafono", "datáfono",
+        "leasing", "prestamo", "préstamo", "prestamos", "préstamos"
     ];
 
     private static bool IsBudgetWarning(decimal budget, decimal currentCost, int warningPercent)

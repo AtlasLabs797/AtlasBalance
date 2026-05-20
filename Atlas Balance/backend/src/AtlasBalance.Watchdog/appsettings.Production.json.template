@@ -11,6 +11,7 @@
     "DbUser": "atlas_balance_app",
     "DbPassword": "CAMBIAR_PASSWORD_POSTGRES_AQUI",
     "DockerPostgresContainer": "atlas_balance_db",
+    "DockerCliPath": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
     "UpdateSourceRoot": "C:\\AtlasBalance\\updates",
     "UpdateTargetPath": "C:\\AtlasBalance\\api",
     "RequireDatabaseBackupBeforeUpdate": true,

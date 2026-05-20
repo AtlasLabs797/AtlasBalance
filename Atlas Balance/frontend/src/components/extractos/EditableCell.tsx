@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 interface EditableCellProps {
   value: string;
@@ -13,6 +13,7 @@ export default function EditableCell({ value, editable, onSave, displayValue, di
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
+  const feedbackId = useId();
   const savingRef = useRef(false);
 
   useEffect(() => {
@@ -20,7 +21,7 @@ export default function EditableCell({ value, editable, onSave, displayValue, di
   }, [value]);
 
   useEffect(() => {
-    if (saveState === 'idle') {
+    if (saveState !== 'saved') {
       return undefined;
     }
 
@@ -60,6 +61,8 @@ export default function EditableCell({ value, editable, onSave, displayValue, di
         autoFocus
         disabled={saving}
         value={draft}
+        aria-invalid={saveState === 'error'}
+        aria-describedby={saveState === 'error' ? feedbackId : undefined}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => void commit()}
         onKeyDown={(e) => {
@@ -82,21 +85,33 @@ export default function EditableCell({ value, editable, onSave, displayValue, di
       <button
         type="button"
         className={['cell-edit-button', displayClassName].filter(Boolean).join(' ')}
-        onClick={() => setIsEditing(true)}
-        onDoubleClick={() => setIsEditing(true)}
+        onClick={() => {
+          setSaveState('idle');
+          setIsEditing(true);
+        }}
+        onDoubleClick={() => {
+          setSaveState('idle');
+          setIsEditing(true);
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === 'F2') {
             event.preventDefault();
+            setSaveState('idle');
             setIsEditing(true);
           }
         }}
+        aria-describedby={saveState === 'error' ? feedbackId : undefined}
         aria-label={`Editar celda ${value || 'sin valor'}`}
       >
         {displayValue || value || '-'}
       </button>
-      {saving ? <small className="cell-save-state">Guardando</small> : null}
-      {saveState === 'saved' ? <small className="cell-save-state cell-save-state--ok">Guardado</small> : null}
-      {saveState === 'error' ? <small className="cell-save-state cell-save-state--error">No guardado</small> : null}
+      {saving ? <small className="cell-save-state" role="status">Guardando</small> : null}
+      {saveState === 'saved' ? <small className="cell-save-state cell-save-state--ok" role="status">Guardado</small> : null}
+      {saveState === 'error' ? (
+        <small id={feedbackId} className="cell-save-state cell-save-state--error" role="alert">
+          No guardado. Revisa el dato e inténtalo otra vez.
+        </small>
+      ) : null}
     </span>
   );
 }

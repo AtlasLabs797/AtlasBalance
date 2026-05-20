@@ -102,7 +102,6 @@ public sealed class AuthController : ControllerBase
         DeleteCookie("access_token");
         DeleteCookie("refresh_token");
         DeleteCookie("csrf_token");
-        DeleteCookie("mfa_trusted");
 
         var actorUserId = TryGetUserId(out var authenticatedUserId)
             ? authenticatedUserId

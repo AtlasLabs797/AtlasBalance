@@ -65,6 +65,11 @@ public sealed class ConfiguracionController : ControllerBase
             {
                 AppBaseUrl = GetValue(config, "app_base_url"),
                 AppUpdateCheckUrl = GetValue(config, "app_update_check_url", ConfigurationDefaults.UpdateCheckUrl),
+                AppUpdateAutoEnabled = ParseBool(GetValue(config, "app_update_auto_enabled"), fallback: false),
+                AppUpdateAutoHourUtc = Math.Clamp(ParseInt(GetValue(config, "app_update_auto_hour_utc"), 3), 0, 23),
+                AppUpdateAutoLastCheckedUtc = GetValue(config, "app_update_auto_last_checked_utc"),
+                AppUpdateAutoLastStartedUtc = GetValue(config, "app_update_auto_last_started_utc"),
+                AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
                 BackupPath = GetValue(config, "backup_path"),
                 ExportPath = GetValue(config, "export_path")
             },
@@ -101,6 +106,11 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "Faltan datos obligatorios de configuracion." });
         }
 
+        if (HasNullTextFields(request))
+        {
+            return BadRequest(new { error = "Los campos de texto de configuracion no pueden ser null." });
+        }
+
         if (request.Smtp.Port <= 0 || request.Smtp.Port > 65535)
         {
             return BadRequest(new { error = "Puerto SMTP inválido." });
@@ -114,6 +124,11 @@ public sealed class ConfiguracionController : ControllerBase
         if (!ConfigurationDefaults.TryNormalizeUpdateCheckUrl(request.General.AppUpdateCheckUrl, out var updateCheckUrl))
         {
             return BadRequest(new { error = "La URL de actualizaciones debe apuntar al repositorio oficial de Atlas Balance en GitHub por HTTPS." });
+        }
+
+        if (request.General.AppUpdateAutoHourUtc is < 0 or > 23)
+        {
+            return BadRequest(new { error = "La hora UTC de actualizacion automatica debe estar entre 0 y 23." });
         }
 
         if (!IsSafeAbsoluteDirectory(request.General.BackupPath))
@@ -171,6 +186,8 @@ public sealed class ConfiguracionController : ControllerBase
 
         Upsert(config, "app_base_url", request.General.AppBaseUrl.Trim(), userId, now);
         Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
+        Upsert(config, "app_update_auto_enabled", request.General.AppUpdateAutoEnabled ? "true" : "false", userId, now);
+        Upsert(config, "app_update_auto_hour_utc", request.General.AppUpdateAutoHourUtc.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "backup_path", request.General.BackupPath.Trim(), userId, now);
         Upsert(config, "export_path", request.General.ExportPath.Trim(), userId, now);
         var exchangeApiKey = request.Exchange?.ApiKey;
@@ -233,6 +250,11 @@ public sealed class ConfiguracionController : ControllerBase
     [HttpPost("smtp/test")]
     public async Task<IActionResult> SendTestEmail([FromBody] SendTestEmailRequest request, CancellationToken cancellationToken)
     {
+        if (request is null)
+        {
+            return BadRequest(new { error = "La solicitud esta incompleta o no tiene el formato esperado." });
+        }
+
         var config = await LoadConfigMapAsync(cancellationToken);
         var target = request.To?.Trim();
         if (string.IsNullOrWhiteSpace(target))
@@ -520,6 +542,35 @@ public sealed class ConfiguracionController : ControllerBase
                char.IsLetter(value[0]) &&
                value[1] == ':' &&
                (value[2] == '\\' || value[2] == '/');
+    }
+
+    private static bool HasNullTextFields(UpdateConfiguracionRequest request)
+    {
+        if (request.Smtp.Host is null ||
+            request.Smtp.User is null ||
+            request.Smtp.Password is null ||
+            request.Smtp.From is null ||
+            request.General.AppBaseUrl is null ||
+            request.General.AppUpdateCheckUrl is null ||
+            request.General.BackupPath is null ||
+            request.General.ExportPath is null ||
+            request.Dashboard.ColorIngresos is null ||
+            request.Dashboard.ColorEgresos is null ||
+            request.Dashboard.ColorSaldo is null)
+        {
+            return true;
+        }
+
+        if (request.Exchange is not null && request.Exchange.ApiKey is null)
+        {
+            return true;
+        }
+
+        return request.Ia is not null &&
+               (request.Ia.Provider is null ||
+                request.Ia.Model is null ||
+                request.Ia.OpenRouterApiKey is null ||
+                request.Ia.OpenAiApiKey is null);
     }
 
     private static Dictionary<string, string> RedactSensitiveConfig(IReadOnlyDictionary<string, string> source)

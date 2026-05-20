@@ -237,8 +237,8 @@ public sealed class CuentasController : ControllerBase
 
         var latest = await _dbContext.Extractos
             .Where(e => e.CuentaId == id)
-            .OrderByDescending(e => e.Fecha)
-            .ThenByDescending(e => e.FilaNumero)
+            .OrderByDescending(e => e.FilaNumero)
+            .ThenByDescending(e => e.Fecha)
             .Select(e => new { e.Fecha, e.Saldo })
             .FirstOrDefaultAsync(cancellationToken);
         var periodEnd = latest?.Fecha ?? DateOnly.FromDateTime(DateTime.UtcNow.Date);

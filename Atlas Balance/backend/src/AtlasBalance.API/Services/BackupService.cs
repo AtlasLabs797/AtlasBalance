@@ -17,6 +17,8 @@ public interface IBackupService
 
 public sealed class BackupService : IBackupService
 {
+    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(30);
+
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly IAuditService _auditService;
@@ -166,9 +168,13 @@ public sealed class BackupService : IBackupService
             ?? throw new InvalidOperationException("DefaultConnection no configurado");
         var conn = ParsePostgresConnection(connectionString);
 
-        var pgBinPath = _configuration["WatchdogSettings:PostgresBinPath"];
-        var pgDumpCandidate = string.IsNullOrWhiteSpace(pgBinPath) ? string.Empty : Path.Combine(pgBinPath, "pg_dump.exe");
-        var executable = File.Exists(pgDumpCandidate) ? pgDumpCandidate : "pg_dump";
+        var executable = ResolveConfiguredExecutable(_configuration["WatchdogSettings:PostgresBinPath"], "pg_dump.exe");
+        if (string.IsNullOrWhiteSpace(executable))
+        {
+            _logger.LogWarning("pg_dump local omitido: WatchdogSettings:PostgresBinPath no apunta a pg_dump.exe absoluto.");
+            return await RunPgDumpViaDockerAsync(backupPath, conn, cancellationToken);
+        }
+
         var localArgs = new List<string>
         {
             "-h", conn.Host,
@@ -195,11 +201,17 @@ public sealed class BackupService : IBackupService
         (string Host, int Port, string Database, string User, string Password) conn,
         CancellationToken cancellationToken)
     {
+        var dockerExe = ResolveDockerExecutable();
+        if (string.IsNullOrWhiteSpace(dockerExe))
+        {
+            return (false, "Docker fallback no configurado con ruta absoluta.");
+        }
+
         var container = _configuration["WatchdogSettings:DockerPostgresContainer"] ?? "atlas_balance_db";
         var containerFile = $"/tmp/{Guid.NewGuid():N}.dump";
 
         var dumpResult = await RunProcessAsync(
-            "docker",
+            dockerExe,
             ["exec", container, "pg_dump", "-U", conn.User, "-d", conn.Database, "-F", "c", "-b", "-v", "-f", containerFile],
             null,
             cancellationToken);
@@ -208,8 +220,8 @@ public sealed class BackupService : IBackupService
             return (false, $"Fallback docker dump falló: {dumpResult.ErrorMessage}");
         }
 
-        var cpResult = await RunProcessAsync("docker", ["cp", $"{container}:{containerFile}", backupPath], null, cancellationToken);
-        await RunProcessAsync("docker", ["exec", container, "rm", "-f", containerFile], null, cancellationToken);
+        var cpResult = await RunProcessAsync(dockerExe, ["cp", $"{container}:{containerFile}", backupPath], null, cancellationToken);
+        await RunProcessAsync(dockerExe, ["exec", container, "rm", "-f", containerFile], null, cancellationToken);
         return cpResult.Success
             ? (true, null)
             : (false, $"Fallback docker copy falló: {cpResult.ErrorMessage}");
@@ -242,10 +254,24 @@ public sealed class BackupService : IBackupService
             }
 
             using var process = new Process { StartInfo = startInfo };
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(ProcessTimeout);
+            var processToken = timeoutCts.Token;
+
             process.Start();
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            try
+            {
+                await process.WaitForExitAsync(processToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcess(process);
+                return cancellationToken.IsCancellationRequested
+                    ? (false, "Proceso externo cancelado.")
+                    : (false, $"Proceso externo excedio el timeout de {ProcessTimeout.TotalMinutes:0} minutos.");
+            }
 
             var stderr = await stderrTask;
             var stdout = await stdoutTask;
@@ -260,6 +286,21 @@ public sealed class BackupService : IBackupService
         catch (Exception ex)
         {
             return (false, Truncate(ex.Message, 1800));
+        }
+    }
+
+    private static void TryKillProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup after timeout.
         }
     }
 
@@ -285,6 +326,55 @@ public sealed class BackupService : IBackupService
     private static string Truncate(string value, int maxLength)
     {
         return value.Length <= maxLength ? value : value[..maxLength];
+    }
+
+    private static string? ResolveConfiguredExecutable(string? directory, string executableName)
+    {
+        if (string.IsNullOrWhiteSpace(directory) ||
+            (!Path.IsPathRooted(directory) && !LooksLikeWindowsRootedPath(directory)))
+        {
+            return null;
+        }
+
+        try
+        {
+            var candidate = Path.GetFullPath(Path.Combine(directory.Trim(), executableName));
+            return File.Exists(candidate) ? candidate : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    private string? ResolveDockerExecutable()
+    {
+        var configured = _configuration["WatchdogSettings:DockerCliPath"];
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            (Path.IsPathRooted(configured) || LooksLikeWindowsRootedPath(configured)))
+        {
+            try
+            {
+                var fullConfigured = Path.GetFullPath(configured.Trim());
+                if (File.Exists(fullConfigured))
+                {
+                    return fullConfigured;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return null;
+            }
+        }
+
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        if (string.IsNullOrWhiteSpace(programFiles))
+        {
+            return null;
+        }
+
+        var docker = Path.Combine(programFiles, "Docker", "Docker", "resources", "bin", "docker.exe");
+        return File.Exists(docker) ? docker : null;
     }
 
     private static string ResolveSafeDirectory(string rawPath, string configKey)

@@ -421,6 +421,7 @@ public sealed class ExtractosController : ControllerBase
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         var ex = await _db.Extractos.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
+        if (ex.DeletedAt.HasValue && !actor.IsAdmin) return NotFound(new { error = "Extracto no encontrado" });
         if (!await CanView(actor, ex.CuentaId, ct)) return Forbid();
 
         var q = _db.Auditorias.Where(a => a.EntidadTipo == "EXTRACTOS" && a.EntidadId == id);
@@ -673,19 +674,22 @@ public sealed class ExtractosController : ControllerBase
 
     private async Task<HashSet<Guid>> GetAllowedAccountIds(Actor actor, CancellationToken ct)
     {
-        if (actor.IsAdmin) return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
+        var visibleAccounts = QueryVisibleAccounts(actor);
+        if (actor.IsAdmin) return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
         var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
         if (!perms.Any()) return [];
         if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
         {
-            return [.. await _db.Cuentas.Select(c => c.Id).ToListAsync(ct)];
+            return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
         }
 
         var accountPerms = perms.Where(GrantsAccountAccess).ToList();
         var ids = accountPerms.Where(p => p.CuentaId.HasValue).Select(p => p.CuentaId!.Value).ToHashSet();
         var titularIds = accountPerms.Where(p => p.TitularId.HasValue).Select(p => p.TitularId!.Value).ToList();
-        if (titularIds.Any()) ids.UnionWith(await _db.Cuentas.Where(c => titularIds.Contains(c.TitularId)).Select(c => c.Id).ToListAsync(ct));
-        return ids;
+        return [.. await visibleAccounts
+            .Where(c => ids.Contains(c.Id) || titularIds.Contains(c.TitularId))
+            .Select(c => c.Id)
+            .ToListAsync(ct)];
     }
 
     private async Task<bool> CanView(Actor actor, Guid cuentaId, CancellationToken ct) => (await GetAllowedAccountIds(actor, ct)).Contains(cuentaId);
@@ -699,6 +703,12 @@ public sealed class ExtractosController : ControllerBase
 
         var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
         if (!perms.Any())
+        {
+            return false;
+        }
+
+        var titularActivo = await _db.Titulares.AnyAsync(t => t.Id == titularId && t.DeletedAt == null, ct);
+        if (!titularActivo)
         {
             return false;
         }
@@ -720,7 +730,7 @@ public sealed class ExtractosController : ControllerBase
             .ToList();
 
         return permittedCuentaIds.Count > 0 &&
-               await _db.Cuentas.AnyAsync(c => c.TitularId == titularId && permittedCuentaIds.Contains(c.Id), ct);
+               await QueryVisibleAccounts(actor).AnyAsync(c => c.TitularId == titularId && permittedCuentaIds.Contains(c.Id), ct);
     }
 
     private static bool GrantsAccountAccess(PermisoUsuario permiso) =>
@@ -729,6 +739,7 @@ public sealed class ExtractosController : ControllerBase
     private async Task<Perm> GetPermission(Actor actor, Cuenta cuenta, CancellationToken ct)
     {
         if (actor.IsAdmin) return new Perm { CanAdd = true, CanEdit = true, CanDelete = true, EditableCols = null };
+        if (!await _db.Titulares.AnyAsync(t => t.Id == cuenta.TitularId && t.DeletedAt == null, ct)) return new Perm();
         var rows = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).Where(p => p.CuentaId == null || p.CuentaId == cuenta.Id).Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId).ToListAsync(ct);
         if (!rows.Any()) return new Perm();
         var prefRows = await _db.PreferenciasUsuarioCuenta
@@ -743,6 +754,14 @@ public sealed class ExtractosController : ControllerBase
             foreach (var x in parsed.Where(x => x is not null)) foreach (var c in x!) cols.Add(c);
         }
         return new Perm { CanAdd = rows.Any(r => r.PuedeAgregarLineas), CanEdit = rows.Any(r => r.PuedeEditarLineas), CanDelete = rows.Any(r => r.PuedeEliminarLineas), EditableCols = cols };
+    }
+
+    private IQueryable<Cuenta> QueryVisibleAccounts(Actor actor)
+    {
+        var query = _db.Cuentas.AsQueryable();
+        return actor.IsAdmin
+            ? query
+            : query.Where(c => c.DeletedAt == null && _db.Titulares.Any(t => t.Id == c.TitularId && t.DeletedAt == null));
     }
 
     private static void EnsureEditable(Perm p, string col)

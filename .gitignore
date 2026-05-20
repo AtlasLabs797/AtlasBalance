@@ -1,6 +1,7 @@
 # Project buckets excluded from GitHub
 Otros/
 Skills/
+Skills Curated/
 
 # Release packages are distributed through GitHub Releases, not Git history
 /Atlas Balance/Atlas Balance Release/*
@@ -10,8 +11,10 @@ Skills/
 Atlas Balance/backend/**/bin/
 Atlas Balance/backend/**/obj/
 Atlas Balance/backend/.codex-build/
+Atlas Balance/backend/.local-build/
 Atlas Balance/backend/**/*.user
 Atlas Balance/backend/**/.vs/
+Atlas Balance/backend/**/TestResults/
 Atlas Balance/backend/**/appsettings.Production.json
 Atlas Balance/backend/**/appsettings.Development.json
 Atlas Balance/backend/**/.dataprotection-keys/
@@ -61,6 +64,11 @@ Atlas Balance/backend/**/.codex-test-obj/
 Atlas Balance/frontend/.env.*
 *.env.local
 
+# Local portable development runtimes
+.dotnet/
+.dotnet-install.ps1
+tools/
+
 # Local API smoke artifacts with credentials/cookies
 Atlas Balance/backend/src/AtlasBalance.API/phase*.json
 Atlas Balance/backend/src/AtlasBalance.API/phase*.cookies.txt
@@ -74,7 +82,11 @@ Atlas Balance/Atlas Balance/
 *.pem
 *.key
 *.crt
+*.cer
 *.pfx
+*.p12
+*.jks
+*.dump
 
 # Docker
 pgdata/

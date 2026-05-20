@@ -1,5 +1,263 @@
 # Log de errores e incidencias
 
+## 2026-05-19 - V-01.07 - UI/UX: jerarquia visual plana y acciones criticas sin peso suficiente
+
+- Contexto: revision adicional pedida sobre jerarquia de ventanas, informacion importante, botones, checks, tablas y menus.
+- Hallazgos confirmados:
+  - Tablas, cards y modales compartian demasiado tratamiento visual.
+  - Acciones primarias, secundarias y destructivas competian con el mismo peso.
+  - Importacion resumia validacion como texto plano.
+  - Backups obligaba a leer la tabla para encontrar la ultima copia correcta.
+  - Permisos globales/destructivos en Usuarios no resaltaban lo suficiente.
+- Solucion aplicada:
+  - Jerarquia de headers/cards/secciones reforzada.
+  - `users-table-card` baja sombra y headers sticky quedan scopeados.
+  - Botones primarios/danger/warning aplicados a flujos criticos.
+  - Resumen de importacion y backups convertido en bloques de metricas.
+  - Saldo total de cuenta y vencimientos cercanos de plazo fijo resaltan visualmente.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - Build OK.
+  - `git diff --check` OK con avisos CRLF conocidos.
+- Bloqueo: sigue sin existir pase visual/E2E autenticado real; no llamar "listo para clientes" sin eso.
+
+## 2026-05-19 - V-01.07 - Higiene Git: Skills Curated y artefactos locales no debian quedar versionables
+
+- Contexto: al usar los skills locales pre-release aparecio `Skills Curated/` como carpeta no ignorada, y los resultados locales de .NET bajo `TestResults/` quedaban visibles como basura pendiente.
+- Hallazgo confirmado:
+  - La regla del proyecto ya dice no subir `Skills/`, pero no cubria la carpeta real `Skills Curated/`.
+  - Certificados/keystores/dumps adicionales (`*.cer`, `*.p12`, `*.jks`, `*.dump`) no estaban cubiertos de forma consistente entre los dos `.gitignore`.
+  - `backend/**/TestResults/` no estaba ignorado y podia ensuciar el diff tras ejecutar tests.
+- Solucion aplicada:
+  - `.gitignore` raiz ignora `Skills Curated/`, certificados/keystores/dumps y `Atlas Balance/backend/**/TestResults/`.
+  - `Atlas Balance/.gitignore` ignora certificados/keystores/dumps y `backend/**/TestResults/`.
+  - El escaneo de secretos del CI excluye `Skills Curated/` junto a `Otros/` y `Skills/`.
+- Verificacion:
+  - `git check-ignore` confirma las exclusiones nuevas.
+  - Secret scan local: 0 hallazgos.
+  - `npm audit` y NuGet vulnerable audit: 0 vulnerabilidades.
+- Regla: tooling local de agente y artefactos de test no son producto. Si aparecen en `git status`, hay que corregir el ignore antes de hablar de release.
+
+## 2026-05-19 - V-01.07 - UI/UX: problemas de entrega corregidos y limite visual pendiente
+
+- Contexto: revision UI/UX estatica con skills de frontend y skills locales sobre pantallas, tablas, botones, checks, menus, modales y estados.
+- Hallazgos confirmados:
+  - Extractos filtraba solo la pagina actual pero el copy podia leerse como filtro global.
+  - `TokenList` mostraba ceros falsos si fallaba la carga de metricas.
+  - El modal de crear token mandaba validaciones al estado global de Configuracion, detras del backdrop.
+  - Configuracion usaba semantica de tabs incompleta.
+  - Varias pantallas mostraban errores sin `role="alert"`.
+  - La tabla de cuenta tenia tab stops excesivos y perdia contexto en scroll horizontal.
+  - Backups no anunciaba correctamente el overlay critico de restauracion.
+- Solucion aplicada:
+  - Copy y conteo de Extractos por pagina/total, `role="table"` y placeholder explicito.
+  - Estado `loading/error/ready` para metricas de tokens.
+  - Errores locales dentro del modal de token.
+  - Tabs ARIA completas en Configuracion.
+  - Alertas accesibles, labels contextuales y tabla accesible para EvolucionChart.
+  - Columnas fijas y foco mas razonable en detalle de cuenta.
+  - Overlay de restauracion como `alertdialog` con foco.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - Build OK.
+  - `git diff --check` OK, con avisos CRLF ya conocidos.
+- Bloqueo: no se ejecuto QA visual/E2E real porque no se debe levantar Vite/HTTP de larga duracion desde `shell_command` y no habia sesion autenticada ya disponible. Regla: no llamar "listo para clientes" a la UI sin ese pase visual real.
+
+## 2026-05-19 - V-01.07 - Auditoria integral: bugs reales corregidos, release final sigue bloqueado
+
+- Contexto: revision amplia con skills locales de `Skills Curated` y subagentes sobre backend, seguridad, UI/UX, arquitectura y gates de release.
+- Hallazgos confirmados:
+  - Resumen de cuenta y OpenClaw calculaban saldo actual por fecha, no por `fila_numero`, generando saldos distintos entre modulos.
+  - La huella de importacion incluia indice de fila, por lo que reimportar el mismo extracto con una cabecera podia duplicar movimientos.
+  - Las transacciones de importacion/plazo fijo no garantizaban `DisposeAsync` en errores intermedios.
+  - Configuracion podia caer en 500 con textos `null` o body nulo en `smtp/test`.
+  - UI tenia select custom fragil, error de celda efimero, modal de importacion sin foco controlado y estados de importacion demasiado dependientes de simbolo/color.
+- Solucion aplicada:
+  - Saldo actual por `fila_numero DESC`.
+  - Huella de importacion por contenido normalizado + ordinal de duplicado.
+  - `finally` para limpiar transacciones.
+  - Validacion `400` para textos nulos/body nulo.
+  - Select nativo, focus trap, errores persistentes/anunciados y grafica con alternativa accesible.
+- Verificacion:
+  - Tests focalizados backend 52/52 OK.
+  - `ConfiguracionControllerTests` 8/8 OK.
+  - Suite backend sin Docker/Testcontainers 254/254 OK.
+  - Suite completa 254/256: fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` por Docker/Testcontainers no disponible/configurado.
+  - Frontend lint, TypeScript y build OK.
+  - `npm audit` ejecutado despues con aprobacion: 0 vulnerabilidades.
+  - NuGet vulnerable audit ejecutado despues con aprobacion: 0 paquetes vulnerables.
+- Regla: no llamar final a V-01.07 hasta ejecutar Docker/Testcontainers, E2E autenticado real, ZIP firmado y backup/restore real. Decir "listo para clientes" sin eso seria humo.
+
+## 2026-05-18 - V-01.07 - Verificacion backend post-Codex Security: Docker sigue siendo el unico bloqueo
+
+- Contexto: tras instalar SDK .NET 8.0.419 local en `C:\tmp\dotnet-sdk-8.0.419`, se ejecuto la validacion backend pendiente de la revision Codex Security.
+- Resultado:
+  - Restore/build backend OK.
+  - Suite backend sin Docker/Testcontainers 249/249 OK.
+  - Suite completa 249/251: fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests`.
+  - NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+- Causa del bloqueo restante: Docker/Testcontainers no esta disponible/configurado en esta maquina.
+- Regla: si queda un test de PostgreSQL real sin ejecutar, no se llama release final. Llamarlo verde seria humo con logs.
+
+## 2026-05-17 - V-01.07 - Revision Codex Security: soft-delete, update, IA y procesos externos
+
+- Contexto: se ejecuto revision de seguridad en profundidad con Codex Security y subagentes por dominios.
+- Hallazgos validados:
+  - Usuarios no-admin podian seguir viendo cuentas/extractos de un titular soft-deleted si conservaban permiso de cuenta.
+  - La auditoria de celda podia revelar valores de extractos soft-deleted por ID conocido.
+  - La app aceptaba `sourcePath` manual en actualizacion y delegaba en Watchdog sin pasar por digest/firma.
+  - `pg_dump`, `pg_restore` y `docker` podian resolverse por PATH si faltaba ruta configurada.
+  - OpenRouter gratis/auto no llevaba `zdr`/`data_collection=deny` aunque se enviaba contexto financiero.
+  - Exportacion manual permitia generar XLSX persistentes con permiso de lectura.
+  - Importacion no tenia limite por celda individual.
+- Solucion aplicada:
+  - Scopes de usuario, integracion y extractos exigen titular activo para no-admins.
+  - `GetAuditCelda` oculta extractos eliminados a no-admins.
+  - Exportacion manual exige `CanWriteCuentaAsync`.
+  - OpenRouter fuerza `provider.zdr=true` y `data_collection=deny`.
+  - `ActualizacionService` rechaza `sourcePath` manual y solo prepara assets oficiales firmados.
+  - Procesos externos usan rutas absolutas o fallan cerrado; se agrega `DockerCliPath`.
+  - `psql` del instalador recibe SQL por stdin para no exponer passwords en argumentos.
+  - Importacion limita celdas a 4096 caracteres y exportacion escapa formulas con espacios iniciales.
+- Verificacion:
+  - `npm audit` 0 vulnerabilidades.
+  - `npm ls --package-lock-only --depth=0` sin extraneous.
+  - Parse AST de instalador OK.
+  - `git diff --check` OK.
+  - SDK .NET 8.0.419 instalado localmente en `C:\tmp\dotnet-sdk-8.0.419`.
+  - Restore/build backend OK.
+  - Suite backend sin Docker/Testcontainers 249/249 OK.
+  - Suite backend completa 249/251: fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado.
+  - NuGet vulnerable audit: 0 paquetes vulnerables en API, Watchdog y tests.
+- Regla: una app financiera no puede tratar "el admin ya sabra" como control de seguridad. Si el flujo puede reemplazar binarios o sacar contexto financiero, falla cerrado o no sirve.
+
+## 2026-05-17 - V-01.07 - Actualizacion online no era automatica y faltaban limites de paquete
+
+- Contexto: la app ya podia verificar y aplicar manualmente un GitHub Release, pero no habia ejecucion automatica real. Ademas, el pendiente de limitar tamano/contenido de paquetes seguia abierto.
+- Causas:
+  - No existia job recurrente que consultase GitHub Releases y pidiese al Watchdog iniciar la actualizacion.
+  - La descarga verificaba digest/firma y rutas de extraccion, pero no ponia limites explicitos de tamano, numero de entradas o tamano extraido.
+  - Activar esto sin interruptor hubiera reiniciado instalaciones productivas sin decision explicita del admin.
+- Solucion aplicada:
+  - Nuevo `AutoUpdateJob` con check diario opt-in desde hora UTC configurada.
+  - Nuevas claves `app_update_auto_*` en configuracion y controles en `Configuracion > Sistema`.
+  - Limites de ZIP descargado, contenido extraido, entrada individual y numero de entradas antes de extraer.
+  - El flujo sigue fallando cerrado si falta repo oficial, digest, firma, clave publica, backup o healthcheck.
+- Verificacion:
+  - Tests backend focalizados 25/25 OK.
+  - Frontend lint, TypeScript y build OK.
+  - `wwwroot` sincronizado 65/65.
+- Regla: autoactualizar no significa "traga cualquier ZIP y cruza los dedos". Si no hay firma, limites y rollback, no es comodidad; es una ruleta rusa con logo.
+
+## 2026-05-17 - V-01.07 - Contexto IA de recibos/facturas inflado por cargos de tarjeta
+
+- Contexto: al ejecutar la suite backend sin Testcontainers, `AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context` fallo porque `RECIBOS/FACTURAS DETECTADOS` sumaba `80,00` en vez de `35,00`.
+- Causa: `ReceiptTerms` incluia `cargo`; eso capturaba `Cargo tarjeta comercio`, aunque un cargo de tarjeta no es por si solo una factura o recibo.
+- Solucion aplicada: recibos/facturas excluye tarjeta/TPV/datáfono y prestamos/leasing cuando se detecta por terminos genericos.
+- Verificacion: test focalizado OK y suite backend sin Testcontainers 242/242 OK.
+- Regla: las categorias IA tienen que ser conservadoras. Si un termino generico mete basura, el total deja de ser informacion y pasa a ser ruido con decimales.
+
+## 2026-05-17 - V-01.07 - Contexto IA contaminado por falsos positivos de comisiones/seguros
+
+- Contexto: al revisar las funciones IA, se detecto que `AtlasAiService` ya tenia defensas de proveedor, formato y permisos, pero seguia construyendo contexto financiero con reglas mas flojas que `RevisionService`.
+- Causas:
+  - El contexto IA seguia usando `cuota`, `servicio`, `tarjeta` y `transferencia` como senales directas de comision.
+  - La categoria `SEGUROS DETECTADOS` aceptaba importes positivos y no excluia Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones o reembolsos.
+  - El mensaje de error de red calculaba un diagnostico saneado, pero lo dejaba solo para auditoria y devolvia al usuario un mensaje demasiado generico.
+- Solucion aplicada:
+  - Comisiones IA queda alineado con la regla conservadora de revision: solo senales fuertes.
+  - Seguros IA se limita a cargos negativos y aplica exclusiones de falsos positivos.
+  - Errores de red de OpenRouter/OpenAI muestran diagnostico tecnico saneado sin prompt, respuesta ni claves.
+  - Regresiones en `AtlasAiServiceTests` cubren tarjeta, cuota/leasing, transferencia a aseguradora, anulacion de seguro y Generalitat.
+- Verificacion:
+  - Documentacion oficial de OpenRouter revisada para `models`, `reasoning.exclude`, privacidad/routing y slugs publicados.
+  - `git diff --check` OK en archivos IA tocados.
+  - Frontend lint, TypeScript y build OK.
+  - Tests backend no ejecutados porque no hay SDK .NET en esta maquina.
+- Regla: si el contexto que le das a la IA viene sucio, no culpes al modelo. Primero limpia la comida que le estas sirviendo.
+
+## 2026-05-17 - V-01.07 - Falsos positivos persistentes en revision de comisiones y seguros
+
+- Contexto: capturas reales mostraron que la revision seguia sacando ruido en `Comisiones` y `Seguros`: transferencias, cargos de tarjeta, cuotas/leasing/prestamos, Seguridad Social/TGSS, Generalitat, transferencias a aseguradoras y anulaciones de seguros.
+- Causas:
+  - `tarjeta` seguia siendo un termino directo de comision, aunque un cargo de tarjeta no es una comision bancaria.
+  - La deteccion de seguros aceptaba importes positivos y conceptos de transferencia/anulacion.
+  - `generali` como subcadena detectaba `Generalitat`.
+  - Faltaban exclusiones para `seguros sociales` plural y para anulaciones/devoluciones/reembolsos.
+- Solucion aplicada:
+  - Se elimina `tarjeta` como disparador directo de comision.
+  - Seguros se limita a cargos negativos.
+  - Seguros excluye `seguros sociales`, `generalitat`, transferencias, anulaciones, devoluciones y reembolsos.
+  - Se agregan pruebas con los conceptos reportados en las capturas para que no vuelvan a entrar.
+- Verificacion:
+  - `git diff --check` OK en los archivos tocados, con avisos CRLF normales.
+  - Tests backend no ejecutados porque `where.exe dotnet` no encuentra `dotnet` en esta maquina.
+- Regla: si una palabra tambien describe una operacion bancaria normal, no puede ser disparador unico de revision. Eso no es IA; es una red de pesca rota.
+
+## 2026-05-16 - V-01.07 - Importacion, revision y MFA corregidos
+
+- Contexto: se reportaron tres fallos: importacion bloqueada por celdas vacias, falsos positivos en filtros de comisiones/seguros y Authenticator recordado/revocable incompleto.
+- Causas:
+  - `ImportacionService` trataba una columna extra mapeada pero ausente en los datos pegados como error de formato, aunque una columna extra vacia debe quedar en blanco.
+  - `RevisionService` usaba terminos demasiado amplios: `transferencia`, `cuota` y `servicio` disparaban comisiones sin contexto suficiente.
+  - La deteccion de seguros no excluia casos de Seguridad Social/Seguro Social.
+  - El recuerdo MFA duraba 30 dias y `Logout` borraba `mfa_trusted`, anulando el recuerdo al cerrar sesion.
+  - No habia accion de administracion para resetear MFA de un usuario.
+- Solucion aplicada:
+  - Las columnas extra ausentes o vacias pasan a blanco y no se persisten.
+  - Revision elimina los terminos de comision demasiado amplios y excluye Seguridad Social, Seguro Social, TGSS y Tesoreria General en seguros.
+  - El recuerdo MFA pasa a 90 dias y logout conserva `mfa_trusted`.
+  - `POST /api/usuarios/{id}/mfa/revocar` limpia MFA, rota `security_stamp`, revoca refresh tokens activos y audita sin secretos.
+  - `Reset-AdminPassword.ps1` limpia MFA para recuperar admins sin Authenticator.
+- Verificacion:
+  - Frontend lint, TypeScript y build OK.
+  - Tests backend focalizados quedan pendientes porque `dotnet` no existe en esta maquina.
+- Regla: una casilla extra vacia no es un error; una transferencia no es una comision; y un "recordar dispositivo" que se borra al cerrar sesion es un placebo.
+
+## 2026-05-16 - V-01.06 - shadcn/ui y Tailwind CSS: instalacion auditada con builds completos bloqueados
+
+- Contexto: instalacion/auditoria de `shadcn-ui/ui` y `tailwindlabs/tailwindcss` en `Skills/Diseno`, comprobando que no hubiese duplicados.
+- Causas:
+  - `shadcn-ui` ya existia y apuntaba al remoto correcto; duplicarlo habria sido basura.
+  - Turbo vuelve a requerir un binario `pnpm`; se uso shim temporal local y se elimino despues.
+  - `shadcn-ui/apps/v4` necesita `bun` para construir registry.
+  - `tailwindcss/@tailwindcss/oxide` necesita Rust/Cargo; `cargo` y `rustup` no existen en esta maquina.
+- Solucion aplicada:
+  - No se clona `shadcn-ui` de nuevo.
+  - Se clona `tailwindcss` una sola vez.
+  - Instalacion con `corepack pnpm install --ignore-scripts`.
+  - Build/typecheck acotado de `shadcn`: OK.
+  - Build acotado de paquete `tailwindcss`: OK.
+- Verificacion:
+  - Sin secretos reales ni prompt injection obvia en barridos `rg`.
+  - `shadcn-ui` SCA rojo: `1 critical`, `46 high`, `55 moderate`, `15 low`.
+  - `tailwindcss` SCA rojo: `0 critical`, `10 high`, `10 moderate`, `1 low`.
+  - Build completo de `shadcn-ui`: bloqueado por ausencia de `bun`.
+  - Build completo de `tailwindcss`: bloqueado por ausencia de Rust/Cargo.
+- Regla: no confundas "repo instalado" con "repo desplegable". Si falta toolchain o la SCA esta roja, se documenta y no se vende como listo para produccion.
+
+## 2026-05-16 - V-01.06 - 21st SDK: instalacion segura y build bloqueado por `pnpm`/tipos Node
+
+- Contexto: instalacion de `21st-dev/21st-sdk` en `Skills/Diseno/21st-sdk` con auditoria de malware/prompt injection.
+- Causas:
+  - El repo upstream no trae `pnpm-lock.yaml`; la primera instalacion genero muchas dependencias y el intento inicial se corto por timeout/EPIPE.
+  - `corepack enable pnpm` intento escribir shim global en `C:\Program Files\nodejs\pnpm` y Windows devolvio `EPERM`.
+  - Turbo necesitaba encontrar `pnpm` como binario; se uso un shim temporal local solo para validar.
+  - `@21st-sdk/react` usaba `require` en `src/tools/tool-router.ts` pero no declaraba `@types/node`, rompiendo el build de declaraciones.
+- Solucion aplicada:
+  - Instalacion con `corepack pnpm install --ignore-scripts`.
+  - Segundo intento con timeout mayor y reporter menos ruidoso.
+  - Shim temporal local para que Turbo encontrase `pnpm`, eliminado al cerrar la verificacion.
+  - `corepack pnpm --filter @21st-sdk/react add -D @types/node --ignore-scripts`.
+- Verificacion:
+  - `corepack pnpm run build` OK para `packages/*`.
+  - `corepack pnpm run ts:check` OK para `packages/*`.
+  - Barridos `rg` sin prompt injection ni secretos reales; solo placeholders en `.env.example`.
+  - `pnpm audit` completo rojo: `1 critical`, `19 high`, `31 moderate`, `7 low`.
+- Regla: no ejecutes lifecycle scripts ni servicios `dev` de un monorepo de agentes antes de auditarlo. Y no confundas "SDK packages compilan" con "la plataforma completa es segura para desplegar".
+
 ## 2026-05-13 - V-01.06 - Restore de solucion falla sin error MSBuild concreto
 
 - Contexto: al validar el fix de GitHub Actions, `dotnet restore "Atlas Balance\backend\AtlasBalance.sln" --locked-mode -v normal` termina con codigo 1, 0 warnings y 0 errores.
@@ -1104,6 +1362,37 @@
 - Causa: logica de autorizacion local mas permisiva que `UserAccessService`.
 - Solucion aplicada: `GetAllowedAccountIds` y `CanViewTitular` ahora solo conceden alcance global con permisos de datos (`agregar`, `editar`, `eliminar`, `importar`), excluyendo `PuedeVerDashboard`.
 - Verificacion: test de regresion en `ExtractosControllerTests` + ejecucion de `ExtractosControllerTests` y `UserAccessServiceTests` (8/8 OK).
+
+## 2026-05-16 - V-01.07 - Auditoria correctiva: administracion, Watchdog y sesion
+
+- Contexto:
+  - Auditoria general sobre V-01.07 para corregir fallos de alto impacto sin cambiar funciones existentes.
+- Incidencias cerradas:
+  - `UsuariosController` permitia dejar la instancia sin administrador activo.
+  - `WatchdogSettings:BaseUrl` podia apuntar a host remoto y recibir `X-Watchdog-Secret`.
+  - `WatchdogController` devolvia 500 ante body nulo o rutas invalidas.
+  - Procesos externos de backup/restauracion/actualizacion no tenian timeout duro propio.
+  - `useSessionTimeout` podia no registrar a tiempo una actividad reciente.
+  - Varias pantallas frontend no se re-renderizaban al cambiar permisos si solo estaban suscritas a helpers estables.
+- Solucion aplicada:
+  - Validaciones de admin restante y auto-democion en usuarios.
+  - Validacion local/loopback para BaseUrl del Watchdog.
+  - Validacion de request/rutas en Watchdog.
+  - Timeout de 30 minutos y kill de arbol de procesos para procesos externos criticos.
+  - Actualizacion inmediata de actividad real en timeout de sesion.
+  - Suscripcion explicita a `permisos` en vistas afectadas.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Tests focalizados usuarios/watchdog: 14/14 OK.
+  - Suite backend sin Testcontainers: 229/229 OK.
+  - `npm.cmd run build`: OK.
+  - `npm.cmd audit --audit-level=critical`: 0 vulnerabilidades.
+  - `dotnet list AtlasBalance.API.Tests.csproj package --vulnerable --include-transitive`: 0 vulnerabilidades.
+- Pendientes:
+  - Ejecutar suite completa con Docker/Testcontainers antes de release.
+  - Limitar tamano/contenido de paquetes de actualizacion.
+  - Revisar en pasada separada importacion, saldo actual, configuracion nula y cooldown SMTP.
 
 ## 2026-04-24 - V-01.03 - Frontend mostraba dashboards de cuenta a perfiles dashboard-only globales
 

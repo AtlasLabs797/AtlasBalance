@@ -222,4 +222,75 @@ public class UserAccessServiceTests
         scope.HasPermissions.Should().BeTrue();
         scope.HasGlobalAccess.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task ApplyCuentaScope_Should_Hide_Accounts_When_Titular_Is_SoftDeleted_For_NonAdmin()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular eliminado",
+            Tipo = TipoTitular.EMPRESA,
+            DeletedAt = DateTime.UtcNow
+        });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta filtrada", Divisa = "EUR" });
+        await db.SaveChangesAsync();
+
+        var scope = new UserAccessScope
+        {
+            UserId = userId,
+            HasPermissions = true,
+            HasGlobalAccess = true
+        };
+
+        var service = new UserAccessService(db);
+
+        var cuentas = await service.ApplyCuentaScope(db.Cuentas.IgnoreQueryFilters(), scope).ToListAsync();
+
+        cuentas.Should().BeEmpty();
+        (await service.CanAccessCuentaAsync(cuentaId, scope, CancellationToken.None)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ApplyTitularScope_Should_Not_Use_SoftDeleted_Account_Permission_As_Visibility_Bridge()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular activo",
+            Tipo = TipoTitular.EMPRESA
+        });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta eliminada",
+            Divisa = "EUR",
+            DeletedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var scope = new UserAccessScope
+        {
+            UserId = userId,
+            HasPermissions = true,
+            HasGlobalAccess = false,
+            CuentaIds = [cuentaId]
+        };
+
+        var service = new UserAccessService(db);
+
+        var titulares = await service.ApplyTitularScope(db.Titulares.IgnoreQueryFilters(), scope).ToListAsync();
+
+        titulares.Should().BeEmpty();
+        (await service.CanAccessTitularAsync(titularId, scope, CancellationToken.None)).Should().BeFalse();
+    }
 }

@@ -876,8 +876,8 @@ public sealed class IntegrationOpenClawController : ControllerBase
             .Where(x => cuentaIds.Contains(x.CuentaId))
             .GroupBy(x => x.CuentaId)
             .Select(g => g
-                .OrderByDescending(x => x.Fecha)
-                .ThenByDescending(x => x.FilaNumero)
+                .OrderByDescending(x => x.FilaNumero)
+                .ThenByDescending(x => x.Fecha)
                 .Select(x => new LatestExtractInfo
                 {
                     CuentaId = x.CuentaId,

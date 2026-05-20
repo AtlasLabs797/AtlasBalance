@@ -25,6 +25,9 @@ Antes de aplicar una skill:
 |---|---|---|---|
 | Catalogo de diseno | `Skills/Diseno/design.md` | Hay duda sobre que skill de diseno elegir. | Usalo como indice rapido. Luego carga la skill concreta, no todo el paquete. |
 | emil-design-eng | `Skills/Diseno/emilkowalski-skill/skills/emil-design-eng/SKILL.md` | Hay que mejorar microinteracciones, transiciones, tacto de componentes, estados o detalles invisibles de calidad. | Aplica su filosofia de detalles compuestos. Ideal para componentes concretos, no para redisenar toda la app. |
+| 21st SDK | `Skills/Diseno/21st-sdk` | Referencia externa para SDK de agentes, runtime y componentes de chat/agent UI de 21st.dev. | No es una skill local canonica de Atlas Balance ni debe cargarse automaticamente. Usarlo solo como repo de referencia o SDK aislado; no ejecutar servicios `dev`, relay/proxy ni apps web sin revisar secretos, dependencias y superficie de red. |
+| shadcn/ui | `Skills/Diseno/shadcn-ui` | Referencia externa de componentes, CLI y patrones de registry shadcn/ui. | No introducir shadcn/ui en Atlas Balance sin decision tecnica explicita; el proyecto usa React/Vite con CSS variables propias. Usarlo como referencia aislada. El build completo requiere `bun` para `apps/v4`; el paquete `shadcn` si compila localmente. |
+| Tailwind CSS | `Skills/Diseno/tailwindcss` | Referencia externa del motor y tooling Tailwind. | No introducir Tailwind en Atlas Balance sin decision tecnica explicita. Usarlo como referencia aislada; el paquete `tailwindcss` compila, pero el build completo requiere Rust/Cargo para `@tailwindcss/oxide` y esta maquina no lo tiene instalado. |
 
 ## Diseno: Impeccable
 

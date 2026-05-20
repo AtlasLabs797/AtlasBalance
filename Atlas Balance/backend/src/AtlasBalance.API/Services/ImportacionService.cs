@@ -25,6 +25,7 @@ public sealed class ImportacionService : IImportacionService
     private const int MaxRows = 50_000;
     private const int MaxExtraColumns = 64;
     private const int MaxExtraColumnNameLength = 80;
+    private const int MaxImportedCellLength = 4096;
 
     private static readonly string[] DateFormats =
     [
@@ -133,7 +134,6 @@ public sealed class ImportacionService : IImportacionService
 
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
-        EnsureExtraColumnIndexesExist(rows, normalizedMap);
         var validationRows = ValidateRows(rows, normalizedMap);
 
         return new ImportacionValidarResponse
@@ -159,7 +159,6 @@ public sealed class ImportacionService : IImportacionService
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
-        EnsureExtraColumnIndexesExist(rows, normalizedMap);
         var validationRows = ValidateRows(rows, normalizedMap);
         var allowedRowSet = request.FilasAImportar?.ToHashSet() ?? validationRows.Where(r => r.Valida).Select(r => r.Indice).ToHashSet();
 
@@ -189,13 +188,15 @@ public sealed class ImportacionService : IImportacionService
 
         var isRelational = _dbContext.Database.IsRelational();
         IDbContextTransaction? tx = null;
-        if (isRelational)
+        try
         {
-            tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var lockBytes = cuenta.Id.ToByteArray();
-            var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
-            await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
-        }
+            if (isRelational)
+            {
+                tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                var lockBytes = cuenta.Id.ToByteArray();
+                var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
+                await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
+            }
 
         var maxFila = await _dbContext.Extractos
             .IgnoreQueryFilters()
@@ -208,9 +209,10 @@ public sealed class ImportacionService : IImportacionService
             .OrderByDescending(row => row.Indice)
             .ToList();
 
-        var loteHash = BuildImportBatchHash(cuenta.Id, selectedValidRows);
+        var fingerprintsByIndex = BuildImportFingerprints(cuenta.Id, selectedValidRows);
+        var loteHash = BuildImportBatchHash(selectedValidRows, fingerprintsByIndex);
         var rowCandidates = selectedValidRowsForFilaNumbering
-            .Select(row => new ImportRowCandidate(row, BuildImportFingerprint(cuenta.Id, row)))
+            .Select(row => new ImportRowCandidate(row, fingerprintsByIndex[row.Indice]))
             .ToList();
 
         var candidateFingerprints = rowCandidates
@@ -241,7 +243,6 @@ public sealed class ImportacionService : IImportacionService
             if (tx is not null)
             {
                 await tx.CommitAsync(cancellationToken);
-                await tx.DisposeAsync();
             }
 
             return new ImportacionConfirmarResponse
@@ -353,7 +354,6 @@ public sealed class ImportacionService : IImportacionService
         if (tx is not null)
         {
             await tx.CommitAsync(cancellationToken);
-            await tx.DisposeAsync();
         }
 
         return new ImportacionConfirmarResponse
@@ -371,6 +371,14 @@ public sealed class ImportacionService : IImportacionService
                 })
                 .ToList()
         };
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
     }
 
     public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
@@ -397,13 +405,15 @@ public sealed class ImportacionService : IImportacionService
 
         var isRelational = _dbContext.Database.IsRelational();
         IDbContextTransaction? tx = null;
-        if (isRelational)
+        try
         {
-            tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var lockBytes = cuenta.Id.ToByteArray();
-            var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
-            await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
-        }
+            if (isRelational)
+            {
+                tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                var lockBytes = cuenta.Id.ToByteArray();
+                var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
+                await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
+            }
 
         var latest = await _dbContext.Extractos
             .IgnoreQueryFilters()
@@ -463,7 +473,6 @@ public sealed class ImportacionService : IImportacionService
         if (tx is not null)
         {
             await tx.CommitAsync(cancellationToken);
-            await tx.DisposeAsync();
         }
 
         return new ImportacionPlazoFijoMovimientoResponse
@@ -474,6 +483,14 @@ public sealed class ImportacionService : IImportacionService
             SaldoAnterior = Decimal.Round(saldoAnterior, 2),
             SaldoActual = Decimal.Round(saldoActual, 2)
         };
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
     }
 
     private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, bool requireImportPermission, CancellationToken cancellationToken)
@@ -524,21 +541,41 @@ public sealed class ImportacionService : IImportacionService
                string.Equals(postgresException.ConstraintName, "ix_extractos_cuenta_id_importacion_fingerprint", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildImportBatchHash(Guid cuentaId, IEnumerable<FilaValidacionResponse> rows)
+    private static Dictionary<int, string> BuildImportFingerprints(Guid cuentaId, IEnumerable<FilaValidacionResponse> rows)
+    {
+        var result = new Dictionary<int, string>();
+        var occurrenceByContent = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var row in rows.OrderBy(row => row.Indice))
+        {
+            var contentFingerprint = BuildImportContentFingerprint(cuentaId, row);
+            occurrenceByContent.TryGetValue(contentFingerprint, out var occurrence);
+            occurrence += 1;
+            occurrenceByContent[contentFingerprint] = occurrence;
+            result[row.Indice] = BuildImportFingerprint(cuentaId, contentFingerprint, occurrence);
+        }
+
+        return result;
+    }
+
+    private static string BuildImportBatchHash(IEnumerable<FilaValidacionResponse> rows, IReadOnlyDictionary<int, string> fingerprintsByIndex)
     {
         var canonicalRows = rows
             .OrderBy(row => row.Indice)
-            .Select(row => BuildImportFingerprint(cuentaId, row));
+            .Select(row => fingerprintsByIndex[row.Indice]);
         return Sha256Hex(string.Join('\n', canonicalRows));
     }
 
-    private static string BuildImportFingerprint(Guid cuentaId, FilaValidacionResponse row)
+    private static string BuildImportFingerprint(Guid cuentaId, string contentFingerprint, int occurrence)
+    {
+        return Sha256Hex($"v2|{cuentaId:N}|{contentFingerprint}|{occurrence.ToString(CultureInfo.InvariantCulture)}");
+    }
+
+    private static string BuildImportContentFingerprint(Guid cuentaId, FilaValidacionResponse row)
     {
         var builder = new StringBuilder();
-        builder.Append("v1|");
+        builder.Append("content-v1|");
         builder.Append(cuentaId.ToString("N"));
-        builder.Append('|');
-        builder.Append(row.Indice.ToString(CultureInfo.InvariantCulture));
         builder.Append('|');
         builder.Append(NormalizeDateForFingerprint(row.Datos.GetValueOrDefault("fecha")));
         builder.Append('|');
@@ -729,23 +766,6 @@ public sealed class ImportacionService : IImportacionService
         return normalized;
     }
 
-    private static void EnsureExtraColumnIndexesExist(IReadOnlyList<string[]> rows, MapeoColumnasRequest map)
-    {
-        if (map.ColumnasExtra.Count == 0)
-        {
-            return;
-        }
-
-        var maxColumnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Length);
-        foreach (var extra in map.ColumnasExtra)
-        {
-            if (extra.Indice >= maxColumnCount)
-            {
-                throw new ImportacionException($"La columna extra '{extra.Nombre}' no existe en los datos importados", StatusCodes.Status400BadRequest);
-            }
-        }
-    }
-
     private static string NormalizeTipoMonto(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -864,6 +884,7 @@ public sealed class ImportacionService : IImportacionService
                 if (insideQuotes && i + 1 < line.Length && line[i + 1] == '"')
                 {
                     sb.Append('"');
+                    EnsureImportedCellLength(sb.Length);
                     i++;
                     continue;
                 }
@@ -880,10 +901,19 @@ public sealed class ImportacionService : IImportacionService
             }
 
             sb.Append(ch);
+            EnsureImportedCellLength(sb.Length);
         }
 
         values.Add(sb.ToString().Trim());
         return values;
+    }
+
+    private static void EnsureImportedCellLength(int length)
+    {
+        if (length > MaxImportedCellLength)
+        {
+            throw new ImportacionException($"Una celda importada supera el limite de {MaxImportedCellLength} caracteres", StatusCodes.Status413PayloadTooLarge);
+        }
     }
 
     private static List<FilaValidacionResponse> ValidateRows(IReadOnlyList<string[]> rows, MapeoColumnasRequest map)

@@ -258,13 +258,13 @@ export default function LoginPage() {
                 className="auth-checkbox"
                 {...register('rememberDevice')}
               />
-              <span>Recordar este dispositivo durante 30 días</span>
+              <span>Recordar este dispositivo durante 90 días</span>
             </label>
           </>
         )}
 
         {postUpdateMessage && <p className="auth-success">{postUpdateMessage}</p>}
-        {error && <p className="auth-error">{error}</p>}
+        {error && <p className="auth-error" role="alert">{error}</p>}
 
         <button
           type="submit"

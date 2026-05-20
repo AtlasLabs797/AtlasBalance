@@ -1,5 +1,6 @@
 ﻿import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Bot, Coins, KeyRound, Mail, ServerCog } from 'lucide-react';
+import type { KeyboardEvent } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import api from '@/services/api';
@@ -60,7 +61,17 @@ export default function ConfiguracionPage() {
 
   const [config, setConfig] = useState<ConfiguracionSistema>({
     smtp: { host: '', port: 587, user: '', password: '', from: '' },
-    general: { app_base_url: '', app_update_check_url: '', backup_path: '', export_path: '' },
+    general: {
+      app_base_url: '',
+      app_update_check_url: '',
+      app_update_auto_enabled: false,
+      app_update_auto_hour_utc: 3,
+      app_update_auto_last_checked_utc: '',
+      app_update_auto_last_started_utc: '',
+      app_update_auto_last_result: '',
+      backup_path: '',
+      export_path: '',
+    },
     exchange: { api_key: '', api_key_configurada: false },
     dashboard: { color_ingresos: '#43B430', color_egresos: '#FF4757', color_saldo: '#7B7B7B' },
     revision: { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
@@ -266,10 +277,10 @@ export default function ConfiguracionPage() {
     setError(null);
     setFeedback(null);
     try {
-      await saveConfig('URL de actualizaciones guardada.');
+      await saveConfig('Ajustes de actualizaciones guardados.');
       await checkUpdate(true);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar la URL de actualizaciones.'));
+      setError(extractErrorMessage(err, 'No se pudieron guardar los ajustes de actualizaciones.'));
     } finally {
       setBusy(false);
     }
@@ -469,6 +480,34 @@ export default function ConfiguracionPage() {
     }
   };
 
+  const focusConfigTab = (nextTab: TabKey) => {
+    window.setTimeout(() => document.getElementById(`config-tab-${nextTab}`)?.focus(), 0);
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, key: TabKey) => {
+    const currentIndex = tabs.findIndex((item) => item.key === key);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const moveTo = (nextIndex: number) => {
+      const nextTab = tabs[(nextIndex + tabs.length) % tabs.length].key;
+      event.preventDefault();
+      setTab(nextTab);
+      focusConfigTab(nextTab);
+    };
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      moveTo(currentIndex + 1);
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      moveTo(currentIndex - 1);
+    } else if (event.key === 'Home') {
+      moveTo(0);
+    } else if (event.key === 'End') {
+      moveTo(tabs.length - 1);
+    }
+  };
+
   if (loading) return <PageSkeleton rows={5} />;
 
   const selectedAiProvider = normalizeAiProvider(config.ia.provider);
@@ -486,7 +525,18 @@ export default function ConfiguracionPage() {
 
       <div className="config-tabs config-tabs--settings" role="tablist" aria-label="Secciones de configuración">
         {tabs.map(({ key, label, Icon }) => (
-          <button key={key} type="button" className={tab === key ? 'config-tab config-tab--active' : 'config-tab'} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
+          <button
+            key={key}
+            id={`config-tab-${key}`}
+            type="button"
+            className={tab === key ? 'config-tab config-tab--active' : 'config-tab'}
+            role="tab"
+            aria-selected={tab === key}
+            aria-controls={`config-panel-${key}`}
+            tabIndex={tab === key ? 0 : -1}
+            onClick={() => setTab(key)}
+            onKeyDown={(event) => handleTabKeyDown(event, key)}
+          >
             <span className="config-tab-icon" aria-hidden="true">
               <Icon size={18} strokeWidth={1.9} />
             </span>
@@ -495,11 +545,17 @@ export default function ConfiguracionPage() {
         ))}
       </div>
 
-      {error ? <p className="auth-error">{error}</p> : null}
-      {feedback ? <p className="config-feedback">{feedback}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
+      {feedback ? <p className="config-feedback" role="status">{feedback}</p> : null}
 
       {tab === 'general' && (
-        <form className="config-card config-card--general" onSubmit={handleSaveConfig}>
+        <form
+          id="config-panel-general"
+          className="config-card config-card--general"
+          role="tabpanel"
+          aria-labelledby="config-tab-general"
+          onSubmit={handleSaveConfig}
+        >
           <header className="config-card-headline">
             <h2>General y SMTP</h2>
             <p className="config-subtitle">Configura rutas, servidor de correo y estilo de dashboard en una sola vista clara.</p>
@@ -608,7 +664,13 @@ export default function ConfiguracionPage() {
       )}
 
       {tab === 'revision-ia' && (
-        <form className="config-card config-card--general" onSubmit={handleSaveConfig}>
+        <form
+          id="config-panel-revision-ia"
+          className="config-card config-card--general"
+          role="tabpanel"
+          aria-labelledby="config-tab-revision-ia"
+          onSubmit={handleSaveConfig}
+        >
           <header className="config-card-headline">
             <h2>Revisión e IA</h2>
             <p className="config-subtitle">Umbrales operativos, antiduplicados de alertas y proveedor de IA financiera.</p>
@@ -785,7 +847,12 @@ export default function ConfiguracionPage() {
       )}
 
       {tab === 'divisas' && (
-        <>
+        <div
+          id="config-panel-divisas"
+          className="config-tab-panel"
+          role="tabpanel"
+          aria-labelledby="config-tab-divisas"
+        >
           <section className="config-card">
             <h2>Sincronización</h2>
             <div className="config-status-grid">
@@ -793,15 +860,15 @@ export default function ConfiguracionPage() {
               <article><h3>Estado</h3><p className={isStale ? 'config-badge config-badge--stale' : 'config-badge config-badge--ok'}>{isStale ? 'Desactualizado' : 'Actualizado'}</p></article>
               <article><h3>Total tasas</h3><p>{tipos.length}</p></article>
             </div>
-            {!exchangeApiConfigured ? <p className="auth-error">Configura la clave API en la pestaña General para habilitar la sincronización.</p> : null}
+            {!exchangeApiConfigured ? <p className="auth-error" role="alert">Configura la clave API en la pestaña General para habilitar la sincronización.</p> : null}
             <div className="import-actions"><button type="button" onClick={() => void syncRates()} disabled={busy || !exchangeApiConfigured}>Sincronizar ahora</button></div>
 
-            <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--color-border-primary)' }}>
-              <h3 style={{ marginBottom: 'var(--space-2)' }}>Divisa por defecto</h3>
-              <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-2)' }}>
+            <div className="config-default-currency-section">
+              <h3>Divisa por defecto</h3>
+              <p>
                 Selecciona la divisa base que se usará para las conversiones y sincronizaciones
               </p>
-              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+              <div className="config-default-currency-actions">
                 <AppSelect
                   className="config-inline-select"
                   label="Divisa base"
@@ -937,11 +1004,17 @@ export default function ConfiguracionPage() {
               </div>
             )}
           </section>
-        </>
+        </div>
       )}
 
       {tab === 'sistema' && (
-        <form className="config-card" onSubmit={handleSaveSystemConfig}>
+        <form
+          id="config-panel-sistema"
+          className="config-card"
+          role="tabpanel"
+          aria-labelledby="config-tab-sistema"
+          onSubmit={handleSaveSystemConfig}
+        >
           <h2>Sistema y actualización</h2>
           <div className="config-grid-3">
             <label>
@@ -953,28 +1026,68 @@ export default function ConfiguracionPage() {
                 onChange={(e) => setConfig((p) => ({ ...p, general: { ...p.general, app_update_check_url: e.target.value } }))}
               />
             </label>
+            <label>
+              Hora UTC automática
+              <input
+                type="number"
+                min="0"
+                max="23"
+                value={config.general.app_update_auto_hour_utc}
+                onChange={(e) =>
+                  setConfig((p) => ({
+                    ...p,
+                    general: {
+                      ...p.general,
+                      app_update_auto_hour_utc: Math.max(0, Math.min(23, Number(e.target.value) || 0)),
+                    },
+                  }))
+                }
+              />
+            </label>
           </div>
+          <label className="config-check">
+            <input
+              type="checkbox"
+              checked={config.general.app_update_auto_enabled}
+              onChange={(e) =>
+                setConfig((p) => ({
+                  ...p,
+                  general: { ...p.general, app_update_auto_enabled: e.target.checked },
+                }))
+              }
+            />
+            Actualizar automáticamente desde GitHub
+          </label>
           <p className="import-muted">Usa el repositorio oficial por HTTPS. Atlas Balance consulta el último GitHub Release, descarga el ZIP win-x64 y lo prepara en la carpeta segura de actualizaciones.</p>
           <div className="config-status-grid">
             <article><h3>Versión actual</h3><p>{currentVersion ?? 'Sin dato'}</p></article>
             <article><h3>Versión disponible</h3><p>{availableVersion ?? 'Ninguna'}</p></article>
             <article><h3>Estado</h3><p className={updateAvailable ? 'config-badge config-badge--stale' : 'config-badge config-badge--ok'}>{updateAvailable ? 'Actualización disponible' : 'Actualizado'}</p></article>
+            <article><h3>Auto</h3><p className={config.general.app_update_auto_enabled ? 'config-badge config-badge--ok' : 'config-badge'}>{config.general.app_update_auto_enabled ? 'Activo' : 'Inactivo'}</p></article>
+            <article><h3>Última comprobación auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_checked_utc || null)}</p></article>
+            <article><h3>Último inicio auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_started_utc || null)}</p></article>
           </div>
-          {updateMessage ? <p>{updateMessage}</p> : null}
+          {config.general.app_update_auto_last_result ? <p className="config-note">{config.general.app_update_auto_last_result}</p> : null}
+          {updateMessage ? <p className="config-note" role="status">{updateMessage}</p> : null}
           <div className="import-actions">
-            <button type="submit" disabled={busy}>Guardar URL del repositorio</button>
-            <button type="button" onClick={() => void checkUpdate(true)} disabled={busy}>Verificar actualización</button>
-            <button type="button" onClick={updateNow} disabled={!updateAvailable || busy}>Actualizar ahora</button>
+            <button type="submit" className="button-primary" disabled={busy}>Guardar actualizaciones</button>
+            <button type="button" className="button-secondary" onClick={() => void checkUpdate(true)} disabled={busy}>Verificar actualización</button>
+            <button type="button" className="button-warning" onClick={updateNow} disabled={!updateAvailable || busy}>Actualizar ahora</button>
           </div>
         </form>
       )}
 
       {tab === 'integraciones' && (
-        <>
+        <div
+          id="config-panel-integraciones"
+          className="config-tab-panel"
+          role="tabpanel"
+          aria-labelledby="config-tab-integraciones"
+        >
           <section className="config-card">
             <h2>Tokens OpenClaw</h2>
             <div className="import-actions">
-              <button type="button" onClick={() => setShowCreateTokenModal(true)} disabled={busy}>Crear token</button>
+              <button type="button" className="button-primary" onClick={() => setShowCreateTokenModal(true)} disabled={busy}>Crear token</button>
             </div>
           </section>
 
@@ -982,7 +1095,7 @@ export default function ConfiguracionPage() {
             <h2>Tokens existentes</h2>
             <TokenList tokens={tokens} busy={busy} onRevocar={revokeToken} onEliminar={deleteToken} />
           </section>
-        </>
+        </div>
       )}
 
       <CreateTokenModal

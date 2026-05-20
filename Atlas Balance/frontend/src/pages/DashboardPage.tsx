@@ -36,6 +36,7 @@ function parsePeriodo(value: string | null): PeriodoDashboard {
 export default function DashboardPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
+  usePermisosStore((state) => state.permisos);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>(() => parsePeriodo(searchParams.get('periodo')));
@@ -300,7 +301,7 @@ export default function DashboardPage() {
                   </SignedAmount>
                 </strong>
               </div>
-              <div>
+              <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
                 <span>Próximo vencimiento</span>
                 <strong>
                   {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
@@ -337,7 +338,7 @@ export default function DashboardPage() {
                 </SignedAmount>
               </strong>
             </div>
-            <div>
+            <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
               <span>Próximo vencimiento</span>
               <strong>
                 {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null

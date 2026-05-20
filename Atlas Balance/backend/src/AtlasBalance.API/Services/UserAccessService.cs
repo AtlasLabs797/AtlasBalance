@@ -111,6 +111,8 @@ public sealed class UserAccessService : IUserAccessService
             return query;
         }
 
+        query = query.Where(t => t.DeletedAt == null);
+
         if (!scope.HasPermissions)
         {
             return query.Where(_ => false);
@@ -123,7 +125,7 @@ public sealed class UserAccessService : IUserAccessService
 
         return query.Where(t =>
             scope.TitularIds.Contains(t.Id) ||
-            _dbContext.Cuentas.Any(c => c.TitularId == t.Id && scope.CuentaIds.Contains(c.Id)));
+            _dbContext.Cuentas.Any(c => c.TitularId == t.Id && c.DeletedAt == null && scope.CuentaIds.Contains(c.Id)));
     }
 
     public IQueryable<Cuenta> ApplyCuentaScope(IQueryable<Cuenta> query, UserAccessScope scope)
@@ -132,6 +134,8 @@ public sealed class UserAccessService : IUserAccessService
         {
             return query;
         }
+
+        query = ApplyActiveTitularCuentaScope(query);
 
         if (!scope.HasPermissions)
         {
@@ -146,24 +150,32 @@ public sealed class UserAccessService : IUserAccessService
         return query.Where(c => scope.CuentaIds.Contains(c.Id) || scope.TitularIds.Contains(c.TitularId));
     }
 
-    public Task<bool> CanAccessTitularAsync(Guid titularId, UserAccessScope scope, CancellationToken cancellationToken)
+    public async Task<bool> CanAccessTitularAsync(Guid titularId, UserAccessScope scope, CancellationToken cancellationToken)
     {
         if (scope.IsAdmin)
         {
-            return Task.FromResult(true);
+            return true;
         }
 
         if (!scope.HasPermissions)
         {
-            return Task.FromResult(false);
+            return false;
+        }
+
+        var titularActivo = await _dbContext.Titulares
+            .AsNoTracking()
+            .AnyAsync(t => t.Id == titularId && t.DeletedAt == null, cancellationToken);
+        if (!titularActivo)
+        {
+            return false;
         }
 
         if (scope.HasGlobalAccess || scope.TitularIds.Contains(titularId))
         {
-            return Task.FromResult(true);
+            return true;
         }
 
-        return _dbContext.Cuentas.AnyAsync(
+        return await ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()).AnyAsync(
             c => c.TitularId == titularId && scope.CuentaIds.Contains(c.Id),
             cancellationToken);
     }
@@ -180,13 +192,13 @@ public sealed class UserAccessService : IUserAccessService
             return false;
         }
 
-        if (scope.HasGlobalAccess || scope.CuentaIds.Contains(cuentaId))
-        {
-            return true;
-        }
-
-        return await _dbContext.Cuentas
-            .AnyAsync(c => c.Id == cuentaId && scope.TitularIds.Contains(c.TitularId), cancellationToken);
+        return await ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking())
+            .AnyAsync(c =>
+                c.Id == cuentaId &&
+                (scope.HasGlobalAccess ||
+                 scope.CuentaIds.Contains(c.Id) ||
+                 scope.TitularIds.Contains(c.TitularId)),
+                cancellationToken);
     }
 
     public async Task<bool> CanWriteCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
@@ -203,7 +215,7 @@ public sealed class UserAccessService : IUserAccessService
 
         return await (
                 from permiso in _dbContext.PermisosUsuario.AsNoTracking()
-                join cuenta in _dbContext.Cuentas.AsNoTracking() on cuentaId equals cuenta.Id
+                join cuenta in ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()) on cuentaId equals cuenta.Id
                 where permiso.UsuarioId == scope.UserId &&
                       (permiso.PuedeAgregarLineas || permiso.PuedeEditarLineas || permiso.PuedeEliminarLineas || permiso.PuedeImportar) &&
                       ((permiso.CuentaId == null && permiso.TitularId == null) ||
@@ -227,7 +239,7 @@ public sealed class UserAccessService : IUserAccessService
 
         return await (
                 from permiso in _dbContext.PermisosUsuario.AsNoTracking()
-                join cuenta in _dbContext.Cuentas.AsNoTracking() on cuentaId equals cuenta.Id
+                join cuenta in ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()) on cuentaId equals cuenta.Id
                 where permiso.UsuarioId == scope.UserId &&
                       permiso.PuedeEditarLineas &&
                       ((permiso.CuentaId == null && permiso.TitularId == null) ||
@@ -235,6 +247,13 @@ public sealed class UserAccessService : IUserAccessService
                        permiso.TitularId == cuenta.TitularId)
                 select permiso.Id)
             .AnyAsync(cancellationToken);
+    }
+
+    private IQueryable<Cuenta> ApplyActiveTitularCuentaScope(IQueryable<Cuenta> query)
+    {
+        return query.Where(c =>
+            c.DeletedAt == null &&
+            _dbContext.Titulares.Any(t => t.Id == c.TitularId && t.DeletedAt == null));
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, out Guid userId)

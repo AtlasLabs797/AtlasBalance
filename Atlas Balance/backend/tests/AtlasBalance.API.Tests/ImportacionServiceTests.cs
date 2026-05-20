@@ -196,6 +196,49 @@ public class ImportacionServiceTests
     }
 
     [Fact]
+    public async Task ValidarAsync_Should_Reject_Overlarge_Cell()
+    {
+        await using var db = BuildDbContext();
+
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Import", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Import", Divisa = "EUR", Activa = true };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuenta.Id,
+            TitularId = titular.Id,
+            PuedeImportar = true
+        });
+        await db.SaveChangesAsync();
+
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuenta.Id,
+            RawData = $"01/04/2026\t{new string('A', 4097)}\t1200,50\t3000,25",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3
+            }
+        };
+
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ImportacionException>()
+            .WithMessage("*4096 caracteres*");
+    }
+
+    [Fact]
     public async Task ValidarAsync_Should_Reject_Formatted_Import_For_PlazoFijo()
     {
         await using var db = BuildDbContext();
@@ -1144,6 +1187,47 @@ public class ImportacionServiceTests
     }
 
     [Fact]
+    public async Task ConfirmarAsync_Should_Deduplicate_Reimport_When_Source_Row_Indices_Shift()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var firstRequest = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = string.Join('\n', [
+                "01/04/2026\tVenta 1\t1200,50\t3000,25",
+                "02/04/2026\tPago proveedor\t-200,25\t2800,00"
+            ]),
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+        var shiftedRequest = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = string.Join('\n', [
+                "Fecha\tConcepto\tMonto\tSaldo",
+                "01/04/2026\tVenta 1\t1200,50\t3000,25",
+                "02/04/2026\tPago proveedor\t-200,25\t2800,00"
+            ]),
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+
+        var first = await service.ConfirmarAsync(userId, RolUsuario.EMPLEADO.ToString(), firstRequest, new DefaultHttpContext(), CancellationToken.None);
+        var second = await service.ConfirmarAsync(userId, RolUsuario.EMPLEADO.ToString(), shiftedRequest, new DefaultHttpContext(), CancellationToken.None);
+
+        first.FilasImportadas.Should().Be(2);
+        second.FilasImportadas.Should().Be(0);
+        second.FilasDuplicadas.Should().Be(2);
+        second.FilasConError.Should().Be(1);
+
+        var extractos = await db.Extractos.OrderBy(e => e.FilaNumero).ToListAsync();
+        extractos.Should().HaveCount(2);
+        extractos.Select(e => e.ImportacionFingerprint).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public async Task ConfirmarAsync_Should_Preserve_Pasted_Order_When_Viewing_FilaNumero_Descending()
     {
         await using var db = BuildDbContext();
@@ -1372,6 +1456,73 @@ public class ImportacionServiceTests
         var extra = await db.ExtractosColumnasExtra.SingleAsync();
         extra.NombreColumna.Should().Be("Referencia");
         extra.Valor.Should().Be("REF-1");
+    }
+
+    [Fact]
+    public async Task ValidarAsync_Should_Allow_Missing_Trailing_Extra_Columns_As_Blank()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tMovimiento\t1\t1",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3,
+                ColumnasExtra =
+                [
+                    new MapeoColumnaExtraRequest { Nombre = "Referencia opcional", Indice = 4 }
+                ]
+            }
+        };
+
+        var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        result.FilasOk.Should().Be(1);
+        result.FilasError.Should().Be(0);
+        result.Filas[0].Datos["extra:Referencia opcional"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_Should_Import_When_Trailing_Extra_Columns_Are_Missing()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+        var request = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tMovimiento\t1\t1",
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest
+            {
+                Fecha = 0,
+                Concepto = 1,
+                Monto = 2,
+                Saldo = 3,
+                ColumnasExtra =
+                [
+                    new MapeoColumnaExtraRequest { Nombre = "Referencia opcional", Indice = 4 }
+                ]
+            }
+        };
+
+        var result = await service.ConfirmarAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            request,
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        result.FilasImportadas.Should().Be(1);
+        (await db.Extractos.ToListAsync()).Should().HaveCount(1);
+        (await db.ExtractosColumnasExtra.ToListAsync()).Should().BeEmpty();
     }
 
     private static async Task<(Guid UserId, Guid CuentaId)> SeedImportableCuentaAsync(AppDbContext db)

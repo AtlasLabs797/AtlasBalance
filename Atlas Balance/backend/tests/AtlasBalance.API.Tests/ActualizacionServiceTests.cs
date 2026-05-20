@@ -144,7 +144,7 @@ public sealed class ActualizacionServiceTests
     }
 
     [Fact]
-    public async Task IniciarActualizacionAsync_Should_Use_Configured_Target_And_Ignore_Request_Target()
+    public async Task IniciarActualizacionAsync_Should_Reject_Manual_SourcePath()
     {
         await using var db = BuildDbContext();
         var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
@@ -163,9 +163,8 @@ public sealed class ActualizacionServiceTests
 
         var accepted = await service.IniciarActualizacionAsync(sourcePath, requestTarget, CancellationToken.None);
 
-        accepted.Should().BeTrue();
-        watchdog.SourcePath.Should().Be(sourcePath);
-        watchdog.TargetPath.Should().Be(configuredTarget);
+        accepted.Should().BeFalse();
+        watchdog.Calls.Should().Be(0);
 
         Directory.Delete(root, recursive: true);
     }
@@ -389,6 +388,74 @@ public sealed class ActualizacionServiceTests
             watchdog: watchdog,
             updateSourceRoot: updateRoot,
             updateTargetPath: configuredTarget);
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeFalse();
+        watchdog.Calls.Should().Be(0);
+
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task IniciarActualizacionAsync_Should_Reject_Downloaded_Asset_When_Content_Length_Is_Too_Large()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00");
+        var digest = Sha256Digest(zipBytes);
+        using var signingKey = RSA.Create(2048);
+        var watchdog = new RecordingWatchdogClientService();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri == new Uri("https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "tag_name": "V-99.00-win-x64",
+                      "assets": [
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip",
+                          "digest": "__DIGEST__"
+                        },
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip.sig",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip.sig"
+                        }
+                      ]
+                    }
+                    """.Replace("__DIGEST__", digest, StringComparison.Ordinal))
+                };
+            }
+
+            var content = new ByteArrayContent([1]);
+            content.Headers.ContentLength = 301L * 1024L * 1024L;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = content
+            };
+        });
+        var service = BuildService(
+            db,
+            handler,
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem());
 
         var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
 

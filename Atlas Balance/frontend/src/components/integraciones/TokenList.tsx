@@ -5,6 +5,11 @@ import api from '@/services/api';
 import type { IntegrationTokenListItem, IntegrationTokenMetrics } from '@/types';
 import { formatDateTime, formatNumber } from '@/utils/formatters';
 
+type TokenMetricState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; data: IntegrationTokenMetrics };
+
 const tokenEstadoLabels: Record<string, string> = {
   activo: 'Activo',
   revocado: 'Revocado',
@@ -22,7 +27,7 @@ interface TokenListProps {
 }
 
 export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProps) {
-  const [metrics, setMetrics] = useState<Record<string, IntegrationTokenMetrics>>({});
+  const [metrics, setMetrics] = useState<Record<string, TokenMetricState>>({});
   const [confirmTarget, setConfirmTarget] = useState<{ token: IntegrationTokenListItem; action: 'revocar' | 'eliminar' } | null>(null);
 
   useEffect(() => {
@@ -33,13 +38,15 @@ export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProp
         return;
       }
 
+      setMetrics(Object.fromEntries(tokens.map((token) => [token.id, { status: 'loading' } satisfies TokenMetricState])));
+
       const entries = await Promise.all(
         tokens.map(async (token) => {
           try {
             const { data } = await api.get<IntegrationTokenMetrics>(`/integraciones/tokens/${token.id}/metricas`);
-            return [token.id, data] as const;
+            return [token.id, { status: 'ready', data } satisfies TokenMetricState] as const;
           } catch {
-            return [token.id, { total_requests: 0, porcentaje_exito: 0, tiempo_promedio_ms: 0 }] as const;
+            return [token.id, { status: 'error' } satisfies TokenMetricState] as const;
           }
         })
       );
@@ -84,7 +91,8 @@ export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProp
         </thead>
         <tbody>
           {tokens.map((token) => {
-            const m = metrics[token.id] ?? { total_requests: 0, porcentaje_exito: 0, tiempo_promedio_ms: 0 };
+            const metricState: TokenMetricState = metrics[token.id] ?? { status: 'loading' };
+            const metricsUnavailable = metricState.status === 'error';
             return (
               <tr key={token.id}>
                 <td>
@@ -94,12 +102,13 @@ export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProp
                 <td>{formatTokenEstado(token.estado)}</td>
                 <td>{formatDateTime(token.fecha_creacion)}</td>
                 <td>{token.fecha_ultima_uso ? formatDateTime(token.fecha_ultima_uso) : 'Sin uso'}</td>
-                <td>{m.total_requests}</td>
-                <td>{formatNumber(m.porcentaje_exito)}%</td>
-                <td>{formatNumber(m.tiempo_promedio_ms)}</td>
+                <td>{metricState.status === 'ready' ? metricState.data.total_requests : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
+                <td>{metricState.status === 'ready' ? `${formatNumber(metricState.data.porcentaje_exito)}%` : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
+                <td>{metricState.status === 'ready' ? formatNumber(metricState.data.tiempo_promedio_ms) : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td className="users-row-actions">
                   <button
                     type="button"
+                    className="button-danger"
                     onClick={() => setConfirmTarget({ token, action: 'revocar' })}
                     disabled={busy || token.estado === 'revocado'}
                     aria-label={`Revocar token ${token.nombre}`}
@@ -108,6 +117,7 @@ export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProp
                   </button>
                   <button
                     type="button"
+                    className="button-danger"
                     onClick={() => setConfirmTarget({ token, action: 'eliminar' })}
                     disabled={busy}
                     aria-label={`Eliminar token ${token.nombre}`}

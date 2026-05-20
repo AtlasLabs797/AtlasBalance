@@ -256,6 +256,48 @@ public sealed class ConfiguracionControllerTests
         (await db.Auditorias.AnyAsync()).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Update_Should_Reject_Null_Text_Fields()
+    {
+        await using var db = BuildDbContext();
+        var controller = BuildController(db);
+
+        var result = await controller.Update(new UpdateConfiguracionRequest
+        {
+            Smtp = new UpdateSmtpConfigRequest
+            {
+                Host = null!,
+                Port = 587,
+                User = "user",
+                Password = "",
+                From = "noreply@test.local"
+            },
+            General = new UpdateGeneralConfigRequest
+            {
+                AppBaseUrl = "https://app.local",
+                AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
+                BackupPath = "C:\\backups",
+                ExportPath = "C:\\exports"
+            },
+            Dashboard = new UpdateDashboardConfigRequest()
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Auditorias.AnyAsync()).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SendTestEmail_Should_Reject_Null_Request()
+    {
+        await using var db = BuildDbContext();
+        var controller = BuildController(db);
+
+        var result = await controller.SendTestEmail(null!, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Auditorias.AnyAsync()).Should().BeFalse();
+    }
+
     private static ConfiguracionController BuildController(AppDbContext db)
     {
         var userId = Guid.NewGuid();

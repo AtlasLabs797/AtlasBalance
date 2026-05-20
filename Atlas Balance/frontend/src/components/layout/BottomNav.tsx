@@ -48,6 +48,22 @@ export function BottomNav() {
     [secondaryItems]
   );
 
+  const getBadgeLabel = (to: string) => {
+    if (to === '/alertas' && alertCount > 0) {
+      return `, ${alertCount} alertas activas`;
+    }
+
+    if (to === '/exportaciones' && usuario?.rol === 'ADMIN' && exportacionesPendientes > 0) {
+      return `, ${exportacionesPendientes} exportaciones pendientes`;
+    }
+
+    if (to === '/configuracion' && updateAvailable) {
+      return ', actualización disponible';
+    }
+
+    return '';
+  };
+
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
@@ -79,6 +95,7 @@ export function BottomNav() {
           <NavLink
             key={item.to}
             to={item.to}
+            aria-label={item.label}
             className={({ isActive }) => (isActive ? 'bottom-nav-link bottom-nav-link--active' : 'bottom-nav-link')}
           >
             <span className="bottom-nav-icon">{item.icon}</span>
@@ -90,11 +107,12 @@ export function BottomNav() {
           className={secondaryActive || menuOpen ? 'bottom-nav-link bottom-nav-link--active' : 'bottom-nav-link'}
           aria-expanded={menuOpen}
           aria-controls="bottom-nav-sheet"
+          aria-label={`Más opciones${hiddenBadgeCount > 0 ? `, ${hiddenBadgeCount} avisos pendientes` : ''}`}
           onClick={() => setMenuOpen((current) => !current)}
         >
           <span className="bottom-nav-icon" aria-hidden="true"><IconMenu /></span>
           <span>Más</span>
-          {hiddenBadgeCount > 0 ? <span className="sidebar-alert-badge">{hiddenBadgeCount}</span> : null}
+          {hiddenBadgeCount > 0 ? <span className="sidebar-alert-badge" aria-hidden="true">{hiddenBadgeCount}</span> : null}
         </button>
       </nav>
 
@@ -141,6 +159,7 @@ export function BottomNav() {
                         <NavLink
                           key={item.to}
                           to={item.to}
+                          aria-label={`${item.label}${getBadgeLabel(item.to)}`}
                           className={({ isActive }) =>
                             isActive ? 'bottom-nav-sheet-link bottom-nav-sheet-link--active' : 'bottom-nav-sheet-link'
                           }
@@ -148,7 +167,7 @@ export function BottomNav() {
                           <span className="bottom-nav-sheet-icon">{item.icon}</span>
                           <span>{item.label}</span>
                           {badge > 0 ? (
-                            <span className={item.to === '/configuracion' ? 'sidebar-update-badge' : 'sidebar-alert-badge'}>
+                            <span className={item.to === '/configuracion' ? 'sidebar-update-badge' : 'sidebar-alert-badge'} aria-hidden="true">
                               {item.to === '/configuracion' ? 'Nueva' : badge}
                             </span>
                           ) : null}

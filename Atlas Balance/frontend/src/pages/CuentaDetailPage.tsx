@@ -13,6 +13,7 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import EditableCell from '@/components/extractos/EditableCell';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermisosStore } from '@/stores/permisosStore';
@@ -117,6 +118,7 @@ export default function CuentaDetailPage() {
   const canAddInCuenta = usePermisosStore((state) => state.canAddInCuenta);
   const canImportInCuenta = usePermisosStore((state) => state.canImportInCuenta);
   const getColumnasEditables = usePermisosStore((state) => state.getColumnasEditables);
+  usePermisosStore((state) => state.permisos);
 
   const [summary, setSummary] = useState<CuentaResumenKpi | null>(null);
   const [rows, setRows] = useState<Extracto[]>([]);
@@ -149,6 +151,10 @@ export default function CuentaDetailPage() {
   const hasBankName = Boolean(summary?.banco_nombre?.trim());
   const hasIban = Boolean(summary?.iban?.trim());
   const bankLabel = hasBankName ? summary?.banco_nombre?.trim() : summary?.tipo_cuenta === 'EFECTIVO' ? 'Efectivo' : 'Sin banco';
+  const closeImportModal = useCallback(() => setIsImportModalOpen(false), []);
+  const importDialogRef = useDialogFocus<HTMLDivElement>(isImportModalOpen, {
+    onEscape: closeImportModal,
+  });
 
   const canEditCell = useCallback(
     (column: string) => {
@@ -282,21 +288,6 @@ export default function CuentaDetailPage() {
     window.addEventListener('message', handleImportCompleted);
     return () => window.removeEventListener('message', handleImportCompleted);
   }, [allowedDashboard, id, loadCuentaData]);
-
-  useEffect(() => {
-    if (!isImportModalOpen) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsImportModalOpen(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isImportModalOpen]);
 
   const extraColumns = useMemo(
     () => [...new Set(rows.flatMap((row) => Object.keys(row.columnas_extra ?? {})))],
@@ -667,7 +658,7 @@ export default function CuentaDetailPage() {
   }
 
   if (loading) return <PageSkeleton rows={4} />;
-  if (error) return <p className="auth-error">{error}</p>;
+  if (error) return <p className="auth-error" role="alert">{error}</p>;
   if (!summary) {
     return (
       <EmptyState
@@ -751,6 +742,7 @@ export default function CuentaDetailPage() {
         <KpiCard
           title="Saldo total"
           value={<SignedAmount value={summary.saldo_actual}>{formatCurrency(summary.saldo_actual, summary.divisa)}</SignedAmount>}
+          featured
         />
         <KpiCard
           title="Ingresos período"
@@ -890,7 +882,7 @@ export default function CuentaDetailPage() {
             <output>{selectedCell.value || '-'}</output>
           </div>
           <div className="dashboard-table-wrap account-excel-wrap">
-            <table className="account-excel-table">
+            <table className={canSelectRows ? 'account-excel-table account-excel-table--selectable' : 'account-excel-table'}>
               <colgroup>
                 {canSelectRows ? <col className="account-col-select" /> : null}
                 <col className="account-col-row" />
@@ -954,7 +946,6 @@ export default function CuentaDetailPage() {
                       ) : null}
                       <td
                         className="account-cell-fixed account-row-anchor-cell"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
                         onFocus={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
                       >
@@ -986,7 +977,6 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-date account-cell-fixed"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 2, 'Fecha', row.fecha ? formatDate(row.fecha) : '')}
                         onFocus={() => selectAccountCell(row, 2, 'Fecha', row.fecha ? formatDate(row.fecha) : '')}
                       >
@@ -999,7 +989,6 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-text"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 3, 'Concepto', row.concepto ?? '')}
                         onFocus={() => selectAccountCell(row, 3, 'Concepto', row.concepto ?? '')}
                       >
@@ -1011,7 +1000,6 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-text"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 4, 'Comentarios', row.comentarios ?? '')}
                         onFocus={() => selectAccountCell(row, 4, 'Comentarios', row.comentarios ?? '')}
                       >
@@ -1023,7 +1011,6 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
                         onFocus={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
                       >
@@ -1033,7 +1020,6 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
                         onFocus={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
                       >
@@ -1043,7 +1029,6 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 7, 'Monto', formatCurrency(row.monto, summary.divisa))}
                         onFocus={() => selectAccountCell(row, 7, 'Monto', formatCurrency(row.monto, summary.divisa))}
                       >
@@ -1057,7 +1042,6 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
-                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 8, 'Saldo', formatCurrency(row.saldo, summary.divisa))}
                         onFocus={() => selectAccountCell(row, 8, 'Saldo', formatCurrency(row.saldo, summary.divisa))}
                       >
@@ -1073,7 +1057,6 @@ export default function CuentaDetailPage() {
                         <td
                           key={`${row.id}-${column}`}
                           className="account-cell-text"
-                          tabIndex={0}
                           onClick={() => selectAccountCell(row, 9 + extraIndex, column, row.columnas_extra?.[column] ?? '')}
                           onFocus={() => selectAccountCell(row, 9 + extraIndex, column, row.columnas_extra?.[column] ?? '')}
                         >
@@ -1172,22 +1155,25 @@ export default function CuentaDetailPage() {
       </section>
 
       {isImportModalOpen && (
-        <div className="modal-backdrop import-modal-backdrop" role="presentation" onClick={() => setIsImportModalOpen(false)}>
+        <div className="modal-backdrop import-modal-backdrop" role="presentation" onClick={closeImportModal}>
           <div
+            ref={importDialogRef}
             className="import-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="import-modal-title"
+            aria-describedby="import-modal-description"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="import-modal-header">
               <div>
                 <h2 id="import-modal-title">Importar movimientos</h2>
-                <p className="import-muted">Cuenta: {summary.cuenta_nombre}</p>
+                <p id="import-modal-description" className="import-muted">Cuenta: {summary.cuenta_nombre}</p>
               </div>
               <CloseIconButton
                 className="import-modal-close"
-                onClick={() => setIsImportModalOpen(false)}
+                onClick={closeImportModal}
                 ariaLabel="Cerrar modal de importación"
               />
             </header>
@@ -1196,6 +1182,7 @@ export default function CuentaDetailPage() {
                 title={`Importación cuenta ${summary.cuenta_nombre}`}
                 src={importUrl}
                 className="import-modal-frame"
+                tabIndex={0}
               />
             </div>
           </div>

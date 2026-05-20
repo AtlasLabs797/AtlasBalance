@@ -1,5 +1,293 @@
 # Documentacion tecnica
 
+## 2026-05-19 - V-01.07 - Jerarquia visual y pesos de accion UI/UX
+
+### Que cambio
+
+- `system-coherence.css` normaliza jerarquia de headers de pagina y limita headers sticky a wrappers de tabla concretos, evitando que cualquier `th` de la app se vuelva fijo por accidente.
+- `users-table-card` reduce sombra para no competir con modales; modales y dialogs conservan `shadow-overlay`.
+- `dashboard.css` refuerza headers de cards y permite destacar plazos fijos cercanos con variante warning.
+- `entities.css` destaca saldos de cuenta, aplana paneles internos de evolucion/divisas y mejora titulares/cuentas con subtitulos de contexto.
+- `importacion.css` convierte el resumen de validacion en metricas legibles y diferencia botones primarios/secundarios.
+- `admin.css` convierte feedback de guardado en banner, agrega resumen visual de backups y mejora jerarquia de secciones de Configuracion.
+- Pantallas ajustadas: Cuentas, Titulares, Usuarios, Backups, Configuracion, Importacion, CuentaDetalle y Dashboard.
+
+### Verificacion
+
+- `npm.cmd run lint` -> OK.
+- `npm.cmd exec tsc -- --noEmit` -> OK.
+- `npm.cmd run build` -> OK.
+- `git diff --check` -> OK, con avisos CRLF esperados.
+
+### Limite real
+
+No se ejecuto QA visual autenticado ni E2E real. La app no debe marcarse como release final hasta validar flujos reales con backend/PostgreSQL, datos de volumen, Docker/Testcontainers y backup/restore.
+
+## 2026-05-19 - V-01.07 - Skills Curated pre-release e higiene de repositorio
+
+### Que cambio
+
+- `Skills Curated/` se anade al `.gitignore` raiz. Es tooling local de agente, no producto ni fuente versionable del release.
+- `.github/workflows/ci.yml` alinea el escaneo de secretos y excluye `Skills Curated/`, igual que `Otros/` y `Skills/`.
+- `.gitignore` raiz y `Atlas Balance/.gitignore` ignoran `*.cer`, `*.p12`, `*.jks`, `*.dump` y `backend/**/TestResults/`.
+
+### Por que
+
+Si una carpeta de skills curados o resultados de tests aparecen como pendientes, alguien puede terminar subiendo basura local por accidente. En una app financiera eso no es detalle cosmetico: es mala disciplina de release.
+
+### Verificacion
+
+- Secret scan local `cyber-neo`: 490 archivos escaneados, 0 hallazgos.
+- `npm.cmd audit --audit-level=moderate`: 0 vulnerabilidades.
+- `dotnet list '.\AtlasBalance.sln' package --vulnerable --include-transitive`: 0 paquetes vulnerables.
+- Backend sin Docker/Testcontainers: 254/254 OK.
+- Frontend lint, TypeScript y build: OK.
+- `git check-ignore` confirma exclusion de `Skills Curated/`, `TestResults/`, certificados/keystores y dumps.
+
+### Limite real
+
+Docker no esta instalado/disponible en esta maquina. La suite Testcontainers y el E2E visual/autenticado siguen siendo gates reales antes de publicar V-01.07 como release final.
+
+## 2026-05-19 - V-01.07 - Refinamiento UI/UX y accesibilidad pre-entrega
+
+### Que cambio
+
+- `AppSelect` sigue siendo nativo y ahora elimina el `background-image` global del `select`, evitando doble flecha visual.
+- `CuentaDetailPage` fija columnas de seleccion/fila en la tabla de movimientos y elimina tab stops de celdas contenedoras; el foco queda en controles reales.
+- `ExtractoTable` recibe `totalRows`, aclara que sus filtros operan sobre la pagina cargada y usa `role="table"` en vez de `role="grid"` porque no implementa navegacion de grid con flechas.
+- `ConfiguracionPage` completa el patron ARIA de tabs: `aria-controls`, `role="tabpanel"`, `tabIndex` activo y navegacion con flechas/Home/End.
+- `CreateTokenModal` muestra errores de validacion dentro del modal con `role="alert"` y elimina el `label` vacio usado como spacer.
+- `TokenList` modela metricas como `loading/error/ready`; ya no muestra ceros falsos cuando falla `/metricas`.
+- `BackupsPage` anuncia la restauracion como `alertdialog` con `aria-busy`, foco inicial y descripcion asociada.
+- `EvolucionChart` expone tabla `sr-only` con datos numericos para lectores de pantalla.
+- Se normalizaron `role="alert"` en errores visibles y `aria-label` contextual en botones repetidos de acciones.
+
+### Verificacion
+
+- `npm.cmd run lint` -> OK.
+- `npm.cmd exec tsc -- --noEmit` -> OK.
+- `npm.cmd run build` -> OK.
+- `git diff --check` -> OK, con avisos CRLF esperados en archivos .NET.
+
+### Limite real
+
+No se puede afirmar que todas las pantallas graficas esten visualmente perfectas sin ejecutar una sesion autenticada real en navegador contra backend y PostgreSQL. La revision actual cubre estaticamente UI/UX, accesibilidad, copy de estados y build; el gate visual/E2E sigue pendiente para release final.
+
+## 2026-05-19 - V-01.07 - Auditoria integral y hardening pre-release
+
+### Que cambio
+
+- `CuentasController.Resumen` y `IntegrationOpenClawController.Saldos` calculan saldo actual con `fila_numero DESC` y solo desempatan por fecha. Esto alinea resumen, OpenClaw, dashboard y alertas.
+- `ImportacionService` genera huellas `v2` por contenido normalizado y ordinal de duplicado dentro del lote. La fila origen ya no forma parte de la huella, por lo que una cabecera o fila extra no convierte movimientos iguales en "nuevos".
+- Las transacciones relacionales de importacion y movimientos de plazo fijo se limpian en `finally`; si falla `SaveChanges` o auditoria, no se depende del final del scope para liberar la transaccion.
+- `ConfiguracionController.Update` rechaza textos `null` en payloads parciales y `smtp/test` rechaza body nulo con `400`.
+- `AppSelect` deja el listbox custom y usa `<select>` nativo, reduciendo superficie ARIA fragil en filtros y formularios.
+- El modal de importacion en cuenta usa `useDialogFocus`, `Escape`, foco inicial/restauracion y descripcion asociada.
+- `EditableCell` mantiene visible el error de guardado hasta que el usuario reintenta y lo anuncia con `role="alert"`.
+- La validacion de importacion muestra estados textuales ("Valida", "Aviso importable", "Error bloqueante") y los mensajes async usan `role="alert"`/`role="status"`.
+- Los formularios de importacion/formatos asocian labels criticos a sus controles.
+- `TitularSaldoBarChart` expone resumen accesible y tabla alternativa oculta para lectores.
+- Requisitos documentales corregidos: PostgreSQL 16+ en `Atlas Balance/AGENTS.md` y `Documentacion/SPEC.md`.
+
+### Verificacion
+
+- Tests focalizados iniciales fallaron en rojo antes del fix: saldo actual por fecha y huella dependiente de indice reproducian el bug.
+- Tests focalizados despues del fix: `CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests` -> 52/52 OK.
+- `ConfiguracionControllerTests` -> 8/8 OK.
+- Suite backend sin Docker/Testcontainers -> 254/254 OK.
+- Suite backend completa -> 254/256 OK; fallan solo los dos tests que requieren Docker/Testcontainers (`ExtractosConcurrencyTests`, `RowLevelSecurityTests`).
+- `npm.cmd run lint` -> OK.
+- `npm.cmd exec tsc -- --noEmit` -> OK.
+- `npm.cmd run build` -> OK.
+- `npm audit --audit-level=moderate`: 0 vulnerabilidades en pase posterior con aprobacion.
+- `dotnet list package --vulnerable --include-transitive`: 0 paquetes vulnerables en pase posterior con aprobacion.
+
+### Criterio de release
+
+V-01.07 mejora, pero no queda "release final" para clientes. Faltan ZIP firmado, suite PostgreSQL/Testcontainers verde, E2E autenticado con datos reales y prueba backup/restore bajo RLS. Publicarlo como final sin eso seria teatro.
+
+## 2026-05-18 - V-01.07 - Verificacion backend post-Codex Security con SDK local
+
+- Se instalo SDK .NET 8.0.419 en `C:\tmp\dotnet-sdk-8.0.419`, version exacta fijada por `global.json` con `rollForward=disable`.
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"`: OK usando `Atlas Balance\backend\.local-build` como home/cache local.
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`: OK, 0 errores.
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests"`: 249/249 OK.
+- `dotnet test "Atlas Balance\backend\AtlasBalance.sln" --no-build --configuration Debug`: 249/251 OK; fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` por Docker/Testcontainers no disponible/configurado.
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`: 0 paquetes vulnerables en API, Watchdog y tests.
+
+## 2026-05-17 - V-01.07 - Revision Codex Security en profundidad
+
+### Que cambio
+
+- Las lecturas no-admin de cuentas/extractos ahora heredan el soft-delete del titular padre: `UserAccessService`, `ExtractosController` e integraciones filtran cuentas cuyo `TITULARES.deleted_at` no sea nulo.
+- `GET /api/extractos/{id}/audit-celda` ya no devuelve auditoria de extractos soft-deleted a usuarios no-admin.
+- `POST /api/exportaciones/manual` vuelve a exigir permiso operativo de cuenta (`CanWriteCuentaAsync`) y no solo lectura.
+- OpenRouter envia `provider.zdr=true` y `data_collection=deny` en todas las rutas, incluidas `openrouter/auto`, modelos gratis y modelos gratis pineados. Si OpenRouter no puede servir un endpoint compatible, debe fallar cerrado.
+- La actualizacion desde la app rechaza `sourcePath` manual; solo instala assets descargados desde GitHub Release oficial tras digest SHA-256 y firma `.zip.sig`.
+- `BackupService` y Watchdog dejan de ejecutar `pg_dump`, `pg_restore` o `docker` por nombre sin ruta absoluta. `PostgresBinPath` debe apuntar al binario real y `DockerCliPath` queda documentado/configurable.
+- `Instalar-AtlasBalance.ps1` deja de pasar SQL con passwords por argumento `psql -c`; lo envia por stdin. El instalador de PostgreSQL via winget sigue requiriendo `--superpassword`, asi que ese tramo debe tratarse como ventana local sensible.
+- La importacion rechaza celdas individuales de mas de 4096 caracteres y la exportacion XLSX escapa textos tipo formula aunque empiecen con espacios.
+- `package-lock.json` se limpio de la dependencia raiz huerfana `@fontsource-variable/geist`.
+
+### Verificacion
+
+- `npm.cmd audit --audit-level=moderate --json`: 0 vulnerabilidades.
+- `npm.cmd ls --package-lock-only --depth=0`: sin dependencia `extraneous`.
+- Parse AST de `Instalar-AtlasBalance.ps1`: OK.
+- `git diff --check`: OK, solo avisos CRLF.
+- SDK .NET 8.0.419 instalado localmente en `C:\tmp\dotnet-sdk-8.0.419` para respetar `global.json` con `rollForward=disable`.
+- `dotnet restore "Atlas Balance\backend\AtlasBalance.sln"`: OK con cache en `Atlas Balance\backend\.local-build`.
+- `dotnet build "Atlas Balance\backend\AtlasBalance.sln" --no-restore --configuration Debug`: OK, 0 errores.
+- Suite backend sin Docker/Testcontainers: 249/249 OK.
+- Suite backend completa: 249/251 OK; fallan solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests` porque Docker/Testcontainers no esta disponible/configurado en esta maquina.
+- `dotnet list "Atlas Balance\backend\AtlasBalance.sln" package --vulnerable --include-transitive`: 0 paquetes vulnerables en API, Watchdog y tests.
+
+## 2026-05-17 - V-01.07 - Actualizacion automatica desde GitHub Release
+
+### Que cambio
+
+- Se anade `AutoUpdateJob`, registrado en Hangfire como `auto-update-github-release`, con ejecucion horaria y ventana diaria configurable por UTC.
+- La autoactualizacion queda gobernada por `CONFIGURACION`: `app_update_auto_enabled`, `app_update_auto_hour_utc`, `app_update_auto_last_checked_utc`, `app_update_auto_last_started_utc` y `app_update_auto_last_result`.
+- `Configuracion > Sistema` permite activar/desactivar el modo automatico, elegir hora UTC y ver ultima comprobacion/inicio automatico.
+- `ActualizacionService` mantiene el flujo seguro existente: repo oficial, GitHub Release, asset `AtlasBalance-*-win-x64.zip`, digest SHA-256, firma `.zip.sig`, extraccion en `UpdateSourceRoot` y aplicacion via Watchdog.
+- Se endurece la descarga/extraccion: ZIP maximo 300 MiB, contenido extraido maximo 1 GiB, entrada maxima 512 MiB y 10000 entradas maximas. Sigue rechazando rutas fuera de la raiz de extraccion.
+- El build frontend se sincronizo con `backend/src/AtlasBalance.API/wwwroot` mediante copia acotada y poda solo de assets obsoletos.
+
+### Por que
+
+La app ya podia actualizar manualmente desde GitHub Releases, pero eso no es "lo hace solo". Faltaba un job recurrente. Lo peligroso era activarlo sin freno: una tesoreria no debe reiniciarse sola en horario de trabajo porque alguien subio un release. Por eso el automatico existe, pero es opt-in.
+
+El pendiente de tamano/contenido de paquetes tambien era real. Firmar un ZIP no te protege de un paquete absurdamente grande o malformado. La firma dice quien lo publico; no dice que sea razonable tragarselo sin limites.
+
+### Verificacion
+
+- Tests backend focalizados con SDK local: `ActualizacionServiceTests|AutoUpdateJobTests|SeedDataTests|ConfiguracionControllerTests` -> 25/25 OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+- Sincronizacion `frontend/dist` -> `wwwroot`: `dist_files=65 wwwroot_files=65`.
+- `git diff --check` en archivos tocados: OK, solo avisos CRLF esperados.
+
+### Pendiente real
+
+- Ejecutar suite completa con Docker/Testcontainers antes de publicar release final.
+- Publicar GitHub Release con ZIP y `.zip.sig`; sin firma o sin clave publica valida, el updater seguira fallando cerrado.
+
+## 2026-05-17 - V-01.07 - IA: recibos/facturas no absorbe cargos de tarjeta
+
+### Que cambio
+
+- `RECIBOS/FACTURAS DETECTADOS` en `AtlasAiService` excluye conceptos de tarjeta/TPV/datáfono y prestamos/leasing cuando la coincidencia venia por terminos genericos como `cargo`.
+
+### Por que
+
+La suite no Docker destapo un fallo real: `Cargo tarjeta comercio` estaba inflando recibos/facturas de `35,00` a `80,00`. Un cargo de tarjeta no es automaticamente una factura. Meterlo en ese bloque ensucia el contexto IA y hace que el modelo parezca listo mientras suma basura.
+
+### Verificacion
+
+- Test focalizado `AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context`: OK.
+- Suite backend sin Testcontainers: 242/242 OK.
+
+## 2026-05-17 - V-01.07 - IA: contexto financiero y errores de proveedor afinados
+
+### Que cambio
+
+- `AtlasAiService` deja de tratar `cuota`, `servicio`, `tarjeta` y `transferencia` como senales directas de comision en el contexto que se envia a IA.
+- La seccion `SEGUROS DETECTADOS` del contexto IA se limita a cargos negativos y excluye falsos positivos: Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
+- Los errores de red del proveedor IA devuelven al usuario un diagnostico tecnico saneado (`fallo TLS/certificado`, proxy, DNS o conexion) en vez de quedarse en un mensaje generico. El prompt, la respuesta y las claves siguen sin exponerse.
+- `AtlasAiServiceTests` anade regresion con falsos positivos reales de tarjeta, cuota/leasing, transferencia a aseguradora, anulacion de seguro y Generalitat.
+
+### Por que
+
+La IA no estaba "alucinando" sola: el backend podia darle contexto contaminado. Si metes transferencias a aseguradoras o Generalitat dentro de `SEGUROS DETECTADOS`, el modelo puede responder con basura muy convincente. Eso es peor que fallar: parece analisis.
+
+El error de red generico tampoco ayudaba. Si hay TLS/proxy/DNS roto, el operador necesita una pista saneada para arreglar la salida a OpenRouter/OpenAI sin ver secretos.
+
+### Verificacion
+
+- Documentacion oficial de OpenRouter revisada: `models`, `reasoning.exclude` y controles de privacidad/routing siguen vigentes; los slugs de modelos permitidos siguen publicados en `/api/v1/models`.
+- `git diff --check` sobre `AtlasAiService.cs` y `AtlasAiServiceTests.cs`: OK, solo avisos CRLF esperados.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+- Backend tests no ejecutados: `dotnet` no existe en `PATH` ni en `C:\Program Files\dotnet\dotnet.exe` en esta maquina.
+
+### Pendiente real
+
+- Ejecutar `dotnet test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "AtlasAiServiceTests|ConfiguracionControllerTests" -p:UseAppHost=false --no-restore` en un entorno con SDK .NET.
+
+## 2026-05-17 - V-01.07 - Revision bancaria afinada con ejemplos reales
+
+### Que cambio
+
+- `RevisionService` deja de usar `tarjeta` como termino directo de comision. Solo aparece si el concepto tambien trae una senal fuerte como `comision`.
+- La revision de seguros queda limitada a cargos negativos (`Monto < 0`), porque ingresos, abonos o anulaciones no son pagos de seguro a revisar.
+- La deteccion de seguros excluye nuevos falsos positivos observados en capturas: `seguros sociales`, `generalitat`, transferencias, anulaciones, devoluciones y reembolsos.
+- Se agregan pruebas de regresion con los conceptos reportados: transferencias a proveedores/personas, cuotas de Seguridad Social, prestamos/cuotas/leasing, cargos de tarjeta, Generalitat, Reale/Occident por transferencia y anulaciones de seguros.
+
+### Por que
+
+La regla anterior aun tenia dos puntos flojos: `tarjeta` convertia cargos normales de tarjeta en comisiones, y `generali` cazaba `Generalitat`. Si el usuario acaba descartando media pantalla a mano, el detector esta estorbando. La revision debe ser conservadora: mejor no mostrar un dudoso que llenar la lista de ruido.
+
+### Verificacion
+
+- `git diff --check` sobre `RevisionService.cs` y `RevisionServiceTests.cs`: OK, solo avisos CRLF esperados.
+- `where.exe dotnet`: no encuentra SDK/runtime .NET en esta maquina.
+
+### Pendiente real
+
+- Ejecutar `RevisionServiceTests` cuando haya SDK .NET disponible.
+
+## 2026-05-16 - V-01.07 - Importacion, revision y MFA
+
+### Que cambio
+
+- `ImportacionService` deja de rechazar un formato cuando una columna extra mapeada no aparece en los datos pegados. Esa celda se trata como blanco y no se persiste en `EXTRACTOS_COLUMNAS_EXTRA`.
+- Las columnas base siguen siendo obligatorias salvo los casos informativos ya soportados. Fecha, monto y saldo no pueden quedar realmente `NULL` porque el schema de `EXTRACTOS` no lo permite.
+- `RevisionService` elimina `transferencia`, `cuota` y `servicio` como terminos directos de comision. Una transferencia normal deja de salir como comision; una linea con `comision` sigue saliendo.
+- La deteccion de seguros excluye Seguridad Social, Seguro Social, TGSS y Tesoreria General para no mezclar impuestos/cotizaciones con polizas.
+- El recuerdo MFA pasa de 30 a 90 dias.
+- `Logout` deja de borrar la cookie `mfa_trusted`: cerrar sesion corta la sesion, no desconfia el dispositivo recordado.
+- `UsuariosController` anade `POST /api/usuarios/{id}/mfa/revocar`, que limpia secreto MFA, desactiva MFA, rota `security_stamp`, revoca refresh tokens activos y audita `MFA_REVOKED` sin guardar secretos.
+- `Reset-AdminPassword.ps1` tambien limpia MFA para recuperar un admin que haya perdido el Authenticator.
+- `UsuariosPage` muestra estado de Authenticator y permite revocarlo desde un modal de confirmacion.
+
+### Por que
+
+Rechazar una importacion porque una columna extra viene vacia es mala UX y mala semantica: una columna opcional vacia es blanco, no error. Lo de `transferencia` como comision era directamente una regla floja: transferencia no significa comision. Y MFA recordado sin revocacion era media solucion; si no se puede cortar, no es control de acceso, es decoracion.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+- `frontend/dist` copiado a `backend/src/AtlasBalance.API/wwwroot`; `index.html` coincide con `dist`.
+- Tests backend focalizados bloqueados: `dotnet` no existe en `PATH` ni fuera del sandbox en esta maquina.
+
+### Pendiente real
+
+- Ejecutar tests backend focalizados cuando haya SDK .NET disponible: `ImportacionServiceTests`, `RevisionServiceTests`, `AuthServiceTests`, `UsuariosControllerTests` y `AuthControllerTests`.
+
+## 2026-05-16 - V-01.07 - Apertura de version
+
+### Que cambio
+
+- Se crea la rama local `V-01.07`.
+- Runtime backend pasa a `1.7.0` / `V-01.07` en `Directory.Build.props`.
+- Runtime frontend pasa a `1.7.0` / `V-01.07` en `package.json` y `package-lock.json`.
+- `Atlas Balance/VERSION`, scripts de instalacion/release, seed de `app_version` y documentacion viva pasan a `V-01.07`.
+- Se crea `Documentacion/Versiones/v-01.07.md` y `version_actual.md` declara `V-01.07` como version activa.
+
+### Por que
+
+Trabajar una version nueva sin mover todas las fuentes runtime es una forma barata de fabricar builds que mienten. Peor: si el script de release siguiera por defecto en `V-01.06`, alguien acabaria publicando un paquete con nombre viejo y binarios nuevos.
+
+### Verificacion
+
+- Rama local `V-01.07` creada.
+- Barrido de fuentes canonicas confirma `V-01.07` / `1.7.0` en runtime y documentacion de version.
+- No se ha generado paquete release `V-01.07`; el SHA queda pendiente hasta firmar el ZIP.
+
 ## 2026-05-13 - V-01.06 - CI locked restore y release firmado
 
 ### Que cambio
@@ -337,7 +625,7 @@ El informe UI no era cosmetica: habia modales que atrapaban mal el teclado, form
 - `AuthService` mantiene throttle por IP+email y anade contador por IP para password spraying.
 - `/api/health` queda reducido a `{ status = healthy }`.
 - `UserAccessService` separa lectura real (`PuedeVerCuentas`) de permisos operativos; `ExtractosController` aplica la misma regla en lecturas.
-- Exportacion manual/descarga exige lectura de cuenta; revision de estados exige `PuedeEditarLineas`.
+- Exportacion manual exige permiso operativo de cuenta (`CanWriteCuentaAsync`); descarga exige lectura de cuenta; revision de estados exige `PuedeEditarLineas`.
 - Nueva migracion `20260512110000_HardenReleaseSecurityPermissions`:
   - scopes RLS firmados `data`, `write`, `export`, `revision`;
   - lectura normal sin `PuedeImportar`/write;
@@ -685,7 +973,7 @@ El selector de modelo es util, pero hacerlo tan grande era mala jerarquia: compe
 - OpenRouter conserva `openrouter/auto` como opcion por defecto visible y guardada.
 - `AiConfiguration.OpenRouterModels` permite `openrouter/auto` mas estos seis slugs exactos: `nvidia/nemotron-3-super-120b-a12b:free`, `google/gemma-4-31b-it:free`, `minimax/minimax-m2.5:free`, `openai/gpt-oss-120b:free`, `z-ai/glm-4.5-air:free` y `qwen/qwen3-coder:free`.
 - En ese intento, cuando el usuario usaba `Auto`, `AtlasAiService` enviaba `model=openrouter/auto` con `plugins.auto-router.allowed_models` limitado a esos seis modelos.
-- Los modelos exactos gratis siguen sin `provider.zdr=true`. Gemma, MiniMax y gpt-oss se pinchan a proveedores verificados; Nemotron, GLM y Qwen se envian sin pin artificial porque no hay proveedor exacto verificado en codigo.
+- Historico obsoleto: en ese intento los modelos gratis no llevaban `provider.zdr=true`. Desde el hardening V-01.07 todas las llamadas OpenRouter llevan `zdr=true` y `data_collection=deny`.
 - La respuesta del proveedor se parsea tambien para leer `model`; la auditoria y `IaChatResponse.Model` reflejan el modelo real usado cuando OpenRouter lo devuelve.
 - El selector frontend muestra `Auto (elige el mejor)` por defecto y los seis modelos manuales. `Detalles de IA` convierte el slug devuelto a etiqueta legible cuando esta en la lista.
 
@@ -1079,7 +1367,7 @@ El bloque anterior metía el texto de ayuda y el textarea dentro de un `label` i
 - Los estados se guardan en `REVISION_EXTRACTO_ESTADOS` con clave unica `(extracto_id, tipo)`.
 - La migracion `20260509160722_AddRevisionEstadosAiConfig` habilita y fuerza RLS; las politicas delegan en `atlas_security.can_read_extracto` y `atlas_security.can_write_extracto`.
 - `AtlasAiService` arma contexto financiero minimizado desde saldos, totales agregados y movimientos relevantes limitados. Conceptos y pregunta se tratan como datos no confiables para reducir prompt injection.
-- La IA soportada en esta version es OpenRouter via backend y OpenAI via backend con API key de servidor. En OpenRouter, las rutas no gratuitas pueden exigir `provider.zdr=true`; los modelos gratis permitidos no lo fuerzan porque OpenRouter no los publica como endpoints ZDR.
+- La IA soportada en esta version es OpenRouter via backend y OpenAI via backend con API key de servidor. En OpenRouter, todas las rutas envian `provider.zdr=true` y `data_collection=deny`; si un modelo gratis no tiene endpoint compatible, la llamada falla cerrado.
 - `/api/ia/chat` exige autenticacion, interruptor global activo, permiso `puede_usar_ia`, allowlist de modelo, limites configurables, presupuesto/tokens y auditoria de metadatos sin guardar prompts completos.
 - `ConfiguracionController` valida el modelo IA con allowlist tambien en backend.
 - `AlertaService` evita duplicados de saldo bajo usando `alerta_saldo_cooldown_horas` con rango efectivo 1-720 horas y no marca cooldown si el email no se envia.
@@ -1644,7 +1932,7 @@ La tarjeta estaba bien; la grafica no. Recharts estaba reservando demasiado espa
 
 - `AuthService.LoginAsync` acepta la cookie `mfa_trusted` y omite el reto MFA solo si el token firmado coincide con el usuario, su `security_stamp` y una expiracion futura.
 - `AuthService.VerifyMfaAsync` emite un token MFA recordado durante 90 dias tras verificar correctamente el codigo TOTP.
-- `AuthController` lee/escribe `mfa_trusted` como cookie `HttpOnly`, `SameSite=Strict`, `Secure` cuando aplica, y la elimina en logout.
+- `AuthController` lee/escribe `mfa_trusted` como cookie `HttpOnly`, `SameSite=Strict`, `Secure` cuando aplica. Desde `V-01.07`, logout no la elimina; la revocacion va por rotacion de `security_stamp` o reset MFA.
 - El enrolamiento inicial sigue generando secreto TOTP por usuario y ahora el frontend pinta un QR real desde `mfa_otp_auth_uri`.
 - Se agrega `qrcode` al frontend para generar el QR localmente sin servicios externos.
 - `backend/src/AtlasBalance.API/wwwroot` queda sincronizado con el build frontend actualizado.
@@ -2776,8 +3064,8 @@ La auditoria encontro deuda real, no cosmetica: un segundo sistema de estilos co
   - `openai/gpt-oss-120b:free` -> `open-inference/int8`.
   - `minimax/minimax-m2.5:free` -> `open-inference/int8`.
   - `google/gemma-4-31b-it:free` -> `google-ai-studio`.
-- Para los modelos gratis no se envia `provider.zdr=true`, porque la API publica `/api/v1/endpoints/zdr` de OpenRouter no lista esos endpoints gratis como ZDR. Forzarlo era la causa practica del 404 por `guardrail restrictions and data policy`.
-- La auditoria IA incluye `runtime_model`; para estos modelos registra `zero_data_retention=false`.
+- Para los modelos gratis tambien se envia `provider.zdr=true` y `data_collection=deny`. La prioridad es no sacar contexto financiero a proveedores con retencion; si eso rompe disponibilidad de un modelo gratis, se cambia el modelo, no la politica.
+- La auditoria IA incluye `runtime_model` y marca `zero_data_retention=true` cuando el proveedor es OpenRouter porque la request exige ZDR por contrato.
 - El mensaje de 404 por politica/guardrail explica que Atlas ya esta enviando los modelos de la allowlist y que, si persiste, hay que revisar `OpenRouter > Settings > Privacy` o anadir un modelo ZDR permitido.
 
 ### Por que
@@ -2811,7 +3099,7 @@ La cuenta de OpenRouter del usuario restringe modelos. Usar un default externo a
   - maximo aproximado de tokens de entrada y salida.
 - Los permisos se validan en base de datos en cada request, no solo por claim ni por React.
 - Los cambios de usuario siguen rotando `SecurityStamp` y revocando refresh tokens.
-- OpenRouter queda restringido por allowlist backend. En la configuracion actual se usan modelos gratis permitidos por la cuenta del usuario; no se marcan como ZDR y quedan auditados con `zero_data_retention=false`.
+- OpenRouter queda restringido por allowlist backend y por privacidad de request: `provider.zdr=true` y `data_collection=deny` en todas las llamadas. Los modelos gratis permitidos solo son aceptables si OpenRouter puede servirlos con esa politica.
 - `openrouter/auto` se conserva como valor guardado, pero la llamada Auto se materializa como `models` con maximo 3 candidatos gratis permitidos.
 - Las llamadas a OpenAI usan API key de servidor contra `https://api.openai.com/v1/chat/completions`.
 
@@ -2992,3 +3280,41 @@ La vista anterior era una tabla editable, pero no una hoja de calculo convincent
 - `npm.cmd run build`: OK.
 - `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR`: OK.
 - Prueba visual/funcional Playwright con app real y APIs mockeadas en `/extractos`: OK; 120 filas, scroll horizontal/vertical, cabecera y primera columna sticky, foco de celda, filtros, panel de columnas y consola sin errores.
+
+## 2026-05-16 - V-01.07 - Auditoria correctiva de seguridad, estabilidad y simplificacion
+
+### Usuarios y continuidad administrativa
+
+`UsuariosController` ahora impide que el sistema quede sin administrador activo. La proteccion cubre desactivacion, cambio de rol fuera de `ADMIN`, eliminacion del ultimo admin y auto-democion/auto-desactivacion del admin autenticado.
+
+### Watchdog y procesos externos
+
+`WatchdogSettings:BaseUrl` se resuelve mediante validacion local obligatoria. El cliente solo puede llamar a `localhost`, loopback IPv4/IPv6 o host vacio. Esto evita que el secreto `X-Watchdog-Secret` pueda enviarse a un destino remoto por mala configuracion.
+
+`BackupService` y `WatchdogOperationsService` aplican timeout de 30 minutos a procesos externos (`pg_dump`, `pg_restore`, scripts de actualizacion) y matan el arbol de procesos si el comando se cuelga. La salida se recoge completa para mantener diagnostico util.
+
+`WatchdogController` valida cuerpos nulos y rutas invalidas antes de delegar en el servicio, devolviendo `400` en vez de errores no controlados.
+
+### Autenticacion y permisos frontend
+
+`AuthService.BuildAuthResultAsync` agrupa preferencias por cuenta en diccionario para evitar busquedas repetidas por cada permiso.
+
+El timeout de sesion del frontend separa actividad real de render visual: `lastActivityRef` se actualiza inmediatamente y el debounce solo reduce ruido de estado/UI. Las pantallas que consumen helpers estables del store de permisos se suscriben tambien a `permisos` para re-renderizar cuando cambia el estado.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Tests focalizados de usuarios/watchdog: 14/14 OK.
+- Suite backend sin Testcontainers: 229/229 OK.
+- `npm.cmd run build`: OK.
+- `frontend/dist` sincronizado con `backend/src/AtlasBalance.API/wwwroot` mediante copia no destructiva.
+- `npm.cmd audit --audit-level=critical`: 0 vulnerabilidades.
+- `dotnet list AtlasBalance.API.Tests.csproj package --vulnerable --include-transitive`: 0 vulnerabilidades.
+
+### Riesgos tecnicos pendientes
+
+- `backup_path`/`export_path` siguen dependiendo de configuracion admin; la allowlist de raices es deseable pero puede romper instalaciones existentes.
+- Los paquetes de actualizacion todavia necesitan limites de tamano y validacion de contenido antes de extraer.
+- Importacion conserva riesgos de fingerprint dependiente del indice de fila y transacciones no garantizadas con `finally`.
+- El calculo de saldo actual no esta completamente unificado entre dashboard/extractos/cuentas.

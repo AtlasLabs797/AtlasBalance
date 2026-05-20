@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useId, useState } from 'react';
 import api from '@/services/api';
 import type { CreateIntegrationTokenResponse } from '@/types';
 import { TokenPermissionsEditor, type TokenPermisoDraft } from '@/components/integraciones/TokenPermissionsEditor';
@@ -26,8 +26,16 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   const [tokenLectura, setTokenLectura] = useState(true);
   const [tokenEscritura, setTokenEscritura] = useState(false);
   const [tokenPermisos, setTokenPermisos] = useState<TokenPermisoDraft[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
+  const formErrorId = useId();
+
+  const closeModal = () => {
+    setFormError(null);
+    onClose();
+  };
+
   const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    onEscape: busy || submitting ? undefined : onClose,
+    onEscape: busy || submitting ? undefined : closeModal,
   });
 
   if (!open) {
@@ -36,34 +44,36 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    setFormError(null);
+    onError(null);
+
     if (!tokenNombre.trim()) {
-      onError('Escribe un nombre para el token.');
+      setFormError('Escribe un nombre para el token.');
       return;
     }
 
     if (!tokenLectura && !tokenEscritura) {
-      onError('Activa al menos lectura o escritura para el token.');
+      setFormError('Activa al menos lectura o escritura para el token.');
       return;
     }
 
     if (tokenPermisos.length === 0) {
-      onError('Añade al menos un permiso de alcance para el token.');
+      setFormError('Añade al menos un permiso de alcance para el token.');
       return;
     }
 
     if (!tokenLectura && tokenPermisos.some((permiso) => permiso.acceso_tipo === 'lectura')) {
-      onError('El token no permite lectura, pero has definido alcances de lectura.');
+      setFormError('El token no permite lectura, pero has definido alcances de lectura.');
       return;
     }
 
     if (!tokenEscritura && tokenPermisos.some((permiso) => permiso.acceso_tipo === 'escritura')) {
-      onError('El token no permite escritura, pero has definido alcances de escritura.');
+      setFormError('El token no permite escritura, pero has definido alcances de escritura.');
       return;
     }
 
     try {
       setSubmitting(true);
-      onError(null);
       const { data } = await api.post<CreateIntegrationTokenResponse>('/integraciones/tokens', {
         nombre: tokenNombre.trim(),
         descripcion: tokenDescripcion.trim() || null,
@@ -76,23 +86,24 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
       setTokenLectura(true);
       setTokenEscritura(false);
       setTokenPermisos([]);
-      onClose();
+      closeModal();
       onCreated(data.token_plano);
     } catch (err) {
-      onError(extractErrorMessage(err, 'No se pudo crear token.'));
+      setFormError(extractErrorMessage(err, 'No se pudo crear token.'));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="config-modal-backdrop" role="presentation" onClick={busy || submitting ? undefined : onClose}>
+    <div className="config-modal-backdrop" role="presentation" onClick={busy || submitting ? undefined : closeModal}>
       <div
         ref={dialogRef}
         className="config-modal-card"
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-token-modal-title"
+        aria-describedby={formError ? formErrorId : undefined}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
@@ -100,6 +111,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
           <h3 id="create-token-modal-title">Crear token OpenClaw</h3>
         </header>
         <form onSubmit={submit}>
+          {formError ? <p id={formErrorId} className="auth-error" role="alert">{formError}</p> : null}
           <div className="config-grid-3">
             <label>
               Nombre
@@ -109,7 +121,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
               Descripción
               <input value={tokenDescripcion} onChange={(event) => setTokenDescripcion(event.target.value)} />
             </label>
-            <label />
+            <span aria-hidden="true" />
           </div>
           <div className="users-check-row">
             <label><input type="checkbox" checked={tokenLectura} onChange={(event) => setTokenLectura(event.target.checked)} /> Lectura</label>
@@ -117,8 +129,8 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
           </div>
           <TokenPermissionsEditor permisos={tokenPermisos} onChange={setTokenPermisos} catalogos={catalogos} />
           <div className="import-actions">
-            <button type="button" onClick={onClose} disabled={busy || submitting}>Cancelar</button>
-            <button type="submit" disabled={busy || submitting}>{submitting ? 'Creando...' : 'Crear token'}</button>
+            <button type="button" className="button-secondary" onClick={closeModal} disabled={busy || submitting}>Cancelar</button>
+            <button type="submit" className="button-primary" disabled={busy || submitting}>{submitting ? 'Creando...' : 'Crear token'}</button>
           </div>
         </form>
       </div>

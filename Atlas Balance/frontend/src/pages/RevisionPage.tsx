@@ -27,6 +27,7 @@ export default function RevisionPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const canEditCuenta = usePermisosStore((state) => state.canEditCuenta);
+  usePermisosStore((state) => state.permisos);
 
   const load = async () => {
     setLoading(true);
@@ -152,7 +153,7 @@ export default function RevisionPage() {
         </button>
       </div>
 
-      {error ? <p className="auth-error">{error}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
       {loading ? <PageSkeleton rows={5} variant="table" /> : tab === 'comisiones' ? (
         <ComisionesTable
