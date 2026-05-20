@@ -14536,3 +14536,29 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 - Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
 - Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
 - Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.
+
+## 2026-05-20 - Verificacion de riesgos de seguridad (V-01.07)
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se revisaron los riesgos listados (auth/sesion, autorizacion por alcance, OpenClaw, CSRF, backups/exports, Watchdog y actualizaciones) contra implementacion actual.
+- Se verifico que el dashboard de Hangfire sigue expuesto solo en Development.
+- Se verifico que `app_update_check_url` se normaliza y restringe a `github.com/AtlasLabs797/AtlasBalance` o `api.github.com/repos/AtlasLabs797/AtlasBalance/*` (no URL arbitraria).
+- Se verifico que `sourcePath` manual para actualizacion sigue rechazado y que la actualizacion pasa por descarga/validacion previa.
+- Se verifico que el cliente de Watchdog sigue enviando `X-Watchdog-Secret` y que los endpoints criticos permanecen protegidos por rol admin.
+- No se detectaron regresiones nuevas en los puntos revisados; no se aplicaron cambios de codigo funcional.
+
+**Archivos revisados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/ConfigurationDefaults.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/WatchdogClientService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/*.cs`
+
+**Verificacion:**
+- `timeout 120s dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~Security|FullyQualifiedName~Csrf|FullyQualifiedName~Integration" -p:UseAppHost=false`: bloqueado (no existe `dotnet` en este entorno).
+- `timeout 120s npm run -s lint`: OK.
+
+**Pendientes:**
+- Ejecutar la bateria backend de seguridad en una maquina con SDK .NET disponible.
