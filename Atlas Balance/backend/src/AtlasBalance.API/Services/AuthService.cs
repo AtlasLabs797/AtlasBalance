@@ -72,7 +72,7 @@ public sealed class AuthService : IAuthService
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
         var now = DateTime.UtcNow;
-        if (IsLoginThrottled(normalizedEmail, ipAddress))
+        if (IsLoginThrottled(normalizedEmail, ipAddress, includeClientScope: false))
         {
             await _auditService.LogAsync(
                 null,
@@ -90,7 +90,7 @@ public sealed class AuthService : IAuthService
 
         if (usuario is null)
         {
-            var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
+            var throttled = RecordLoginFailure(normalizedEmail, ipAddress, includeClientScope: false);
             await _auditService.LogAsync(
                 null,
                 AuditActions.LoginFailed,
@@ -109,7 +109,7 @@ public sealed class AuthService : IAuthService
 
         if (usuario.LockedUntil.HasValue && usuario.LockedUntil.Value > now)
         {
-            var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
+            var throttled = RecordLoginFailure(normalizedEmail, ipAddress, includeClientScope: false);
             await _auditService.LogAsync(
                 usuario.Id,
                 AuditActions.AccountLocked,
@@ -128,7 +128,7 @@ public sealed class AuthService : IAuthService
 
         if (!BCrypt.Net.BCrypt.Verify(password, usuario.PasswordHash))
         {
-            var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
+            var throttled = RecordLoginFailure(normalizedEmail, ipAddress, includeClientScope: true);
             usuario.FailedLoginAttempts += 1;
             var lockTriggered = false;
             if (usuario.FailedLoginAttempts >= MaxFailedLoginAttempts)
@@ -749,37 +749,51 @@ public sealed class AuthService : IAuthService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private bool IsLoginThrottled(string normalizedEmail, string? ipAddress)
+    private bool IsLoginThrottled(string normalizedEmail, string? ipAddress, bool includeClientScope)
     {
         var emailKey = BuildLoginFailureCacheKey(normalizedEmail, ipAddress);
         var clientKey = BuildLoginClientFailureCacheKey(ipAddress);
         lock (LoginRateLimitLock)
         {
-            return (_cache.TryGetValue<int>(emailKey, out var emailCount) &&
-                    emailCount >= MaxLoginFailuresPerClientAndEmail) ||
-                   (_cache.TryGetValue<int>(clientKey, out var clientCount) &&
-                    clientCount >= MaxLoginFailuresPerClient);
+            var emailThrottled = _cache.TryGetValue<int>(emailKey, out var emailCount) &&
+                                 emailCount >= MaxLoginFailuresPerClientAndEmail;
+            if (!includeClientScope)
+            {
+                return emailThrottled;
+            }
+
+            var clientThrottled = _cache.TryGetValue<int>(clientKey, out var clientCount) &&
+                                  clientCount >= MaxLoginFailuresPerClient;
+            return emailThrottled || clientThrottled;
         }
     }
 
-    private bool RecordLoginFailure(string normalizedEmail, string? ipAddress)
+    private bool RecordLoginFailure(string normalizedEmail, string? ipAddress, bool includeClientScope)
     {
         var emailKey = BuildLoginFailureCacheKey(normalizedEmail, ipAddress);
         var clientKey = BuildLoginClientFailureCacheKey(ipAddress);
         lock (LoginRateLimitLock)
         {
             var emailCount = _cache.Get<int>(emailKey) + 1;
-            var clientCount = _cache.Get<int>(clientKey) + 1;
+            var clientCount = _cache.Get<int>(clientKey);
             _cache.Set(emailKey, emailCount, LoginFailureWindow);
-            _cache.Set(clientKey, clientCount, LoginFailureWindow);
-            return emailCount >= MaxLoginFailuresPerClientAndEmail ||
-                   clientCount >= MaxLoginFailuresPerClient;
+
+            if (includeClientScope)
+            {
+                clientCount += 1;
+                _cache.Set(clientKey, clientCount, LoginFailureWindow);
+            }
+
+            var emailThrottled = emailCount >= MaxLoginFailuresPerClientAndEmail;
+            var clientThrottled = includeClientScope && clientCount >= MaxLoginFailuresPerClient;
+            return emailThrottled || clientThrottled;
         }
     }
 
     private void ClearLoginFailures(string normalizedEmail, string? ipAddress)
     {
         _cache.Remove(BuildLoginFailureCacheKey(normalizedEmail, ipAddress));
+        _cache.Remove(BuildLoginClientFailureCacheKey(ipAddress));
     }
 
     private static string BuildLoginFailureCacheKey(string normalizedEmail, string? ipAddress)

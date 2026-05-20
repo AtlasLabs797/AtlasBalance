@@ -7,6 +7,7 @@ using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
@@ -26,6 +27,39 @@ builder.Host.UseSerilog((context, config) => config
     .WriteTo.File("logs/atlas-balance-.log", rollingInterval: RollingInterval.Day));
 
 builder.Services.AddHttpContextAccessor();
+
+var trustedProxyNetworks = builder.Configuration.GetSection("Security:ForwardedHeaders:KnownNetworks").Get<string[]>() ?? Array.Empty<string>();
+var trustedProxyProxies = builder.Configuration.GetSection("Security:ForwardedHeaders:KnownProxies").Get<string[]>() ?? Array.Empty<string>();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+
+    foreach (var networkEntry in trustedProxyNetworks)
+    {
+        if (string.IsNullOrWhiteSpace(networkEntry))
+        {
+            continue;
+        }
+
+        var parts = networkEntry.Split('/', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length == 2 && IPAddress.TryParse(parts[0], out var prefix) && int.TryParse(parts[1], out var prefixLength))
+        {
+            options.KnownNetworks.Add(new IPNetwork(prefix, prefixLength));
+        }
+    }
+
+    foreach (var proxyEntry in trustedProxyProxies)
+    {
+        if (IPAddress.TryParse(proxyEntry, out var proxyAddress))
+        {
+            options.KnownProxies.Add(proxyAddress);
+        }
+    }
+});
 builder.Services.AddScoped<RlsDbCommandInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options
@@ -335,6 +369,8 @@ if (app.Environment.IsDevelopment())
 {
     app.UseCors();
 }
+
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {

@@ -14536,3 +14536,13 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 - Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
 - Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
 - Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.
+
+## 2026-05-20 - V-01.07 - Hardening de login contra DoS por IP compartida
+
+- Se corrigio el throttle de login para que el pre-check inicial bloquee solo por combinacion email+cliente y no por contador global de IP.
+- Los intentos con usuario inexistente ya no incrementan el contador global por cliente; ese contador ahora solo sube en fallos de cuentas existentes (password incorrecta/cuenta bloqueada).
+- Un login valido ahora limpia tanto el contador email+cliente como el contador global por cliente para evitar lockout residual.
+- Se agrego soporte proxy-aware con `UseForwardedHeaders` y listas de `KnownNetworks`/`KnownProxies` via configuracion para que `RemoteIpAddress` refleje correctamente al cliente cuando hay proxy de confianza.
+- Archivos tocados: `AuthService.cs`, `Program.cs`.
+- Verificacion ejecutada: `git diff --check` y revision estatica de flujo de autenticacion/rate-limit.
+- Pendiente: correr suite backend .NET en entorno con SDK disponible para validar regresiones automatizadas.

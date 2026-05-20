@@ -1400,3 +1400,21 @@
 - Causa: `permisosStore.canViewCuenta` trataba cualquier fila global (`cuenta_id/titular_id null`) como acceso de cuenta, sin distinguir si era solo `PuedeVerDashboard`.
 - Solucion aplicada: `canViewCuenta`, `canAddInCuenta`, `canEditCuenta`, `canDeleteInCuenta`, `canImportInCuenta`, `getColumnasVisibles` y `getColumnasEditables` pasan a ignorar filas globales `dashboard-only`; solo cuentan filas scopeadas de cuenta/titular o filas globales con acceso global de datos. `CuentasPage` muestra `Sin acceso` en vez de CTA operativos y `CuentaDetailPage` redirige al dashboard si recibe `403`.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR` OK.
+
+## 2026-05-20 - V-01.07 - Login throttle por cliente permitia DoS no autenticado en IP compartida
+
+- Contexto: el throttle global por IP (`MaxLoginFailuresPerClient=20`) se evaluaba antes de validar credenciales, permitiendo bloquear logins validos de otros usuarios tras 20 fallos no autenticados desde la misma IP observada.
+- Causa:
+  - El pre-check de `IsLoginThrottled` incluia el contador global de cliente.
+  - `RecordLoginFailure` subia siempre el contador global incluso para usuarios inexistentes.
+  - `ClearLoginFailures` solo limpiaba email+cliente y dejaba vivo el contador global.
+  - No habia procesamiento de forwarded headers para topologias con proxy de confianza.
+- Solucion aplicada:
+  - Pre-check inicial limitado a email+cliente (sin bloqueo global por IP antes de autenticar).
+  - Contador global incrementa solo en fallos de cuentas existentes.
+  - Login valido limpia tambien el contador global del cliente.
+  - `Program.cs` habilita `UseForwardedHeaders` con `KnownNetworks`/`KnownProxies` configurables.
+- Verificacion:
+  - `git diff --check` OK.
+  - Validacion estatica del flujo de login y throttle en `AuthService`/`Program`.
+- Nota: pruebas .NET automatizadas pendientes en maquina con SDK disponible.
