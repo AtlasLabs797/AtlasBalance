@@ -274,7 +274,7 @@ public class AuthServiceTests
         var trustedLogin = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, verified.TrustedMfaToken);
 
         verified.TrustedMfaToken.Should().NotBeNullOrWhiteSpace();
-        verified.TrustedMfaTokenExpiresAt.Should().BeAfter(DateTime.UtcNow.AddDays(89));
+        verified.TrustedMfaTokenExpiresAt.Should().BeAfter(DateTime.UtcNow.AddDays(61));
         trustedLogin.MfaRequired.Should().BeFalse();
         trustedLogin.AccessToken.Should().NotBeNullOrWhiteSpace();
         trustedLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();

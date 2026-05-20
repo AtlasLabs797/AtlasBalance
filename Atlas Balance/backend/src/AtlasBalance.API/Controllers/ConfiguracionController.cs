@@ -71,7 +71,9 @@ public sealed class ConfiguracionController : ControllerBase
                 AppUpdateAutoLastStartedUtc = GetValue(config, "app_update_auto_last_started_utc"),
                 AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
                 BackupPath = GetValue(config, "backup_path"),
-                ExportPath = GetValue(config, "export_path")
+                ExportPath = GetValue(config, "export_path"),
+                MfaRememberDeviceEnabled = ParseBool(GetValue(config, "mfa_remember_device_enabled"), fallback: false),
+                MfaRememberDays = Math.Clamp(ParseInt(GetValue(config, "mfa_remember_days"), 62), 1, 180)
             },
             Exchange = new ExchangeRateConfigResponse
             {
@@ -190,6 +192,8 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "app_update_auto_hour_utc", request.General.AppUpdateAutoHourUtc.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "backup_path", request.General.BackupPath.Trim(), userId, now);
         Upsert(config, "export_path", request.General.ExportPath.Trim(), userId, now);
+        Upsert(config, "mfa_remember_device_enabled", request.General.MfaRememberDeviceEnabled ? "true" : "false", userId, now);
+        Upsert(config, "mfa_remember_days", Math.Clamp(request.General.MfaRememberDays, 1, 180).ToString(CultureInfo.InvariantCulture), userId, now);
         var exchangeApiKey = request.Exchange?.ApiKey;
         if (!string.IsNullOrWhiteSpace(exchangeApiKey))
         {

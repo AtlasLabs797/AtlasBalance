@@ -30,6 +30,8 @@ public sealed class GeneralConfigResponse
     public string AppUpdateAutoLastResult { get; set; } = string.Empty;
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
+    public bool MfaRememberDeviceEnabled { get; set; }
+    public int MfaRememberDays { get; set; } = 62;
 }
 
 public sealed class DashboardConfigResponse
@@ -72,6 +74,8 @@ public sealed class UpdateGeneralConfigRequest
     public int AppUpdateAutoHourUtc { get; set; } = 3;
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
+    public bool MfaRememberDeviceEnabled { get; set; }
+    public int MfaRememberDays { get; set; } = 62;
 }
 
 public sealed class UpdateExchangeRateConfigRequest

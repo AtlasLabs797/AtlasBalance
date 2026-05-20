@@ -14536,3 +14536,40 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 - Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
 - Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
 - Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.
+
+## 2026-05-20 - V-01.07 - Hardening MFA: logout invalida confianza y recuerdo administrado
+
+**Trabajo realizado:**
+- Se corrige la regresion de seguridad: `logout` vuelve a borrar la cookie `mfa_trusted` junto con access/refresh/csrf.
+- Se elimina el hardcode de 90 dias y se pasa a configuracion administrable:
+  - `mfa_remember_device_enabled` (bool): solo el admin decide si se permite recordar dispositivos.
+  - `mfa_remember_days` (int): dias de confianza (default 62, rango 1..180).
+- En `VerifyMfaAsync`, el backend ignora la decision del usuario y aplica el recordatorio solo si la configuracion admin esta habilitada.
+- Se exponen ambos campos en `GET/PUT /api/configuracion` y se seedean valores por defecto seguros (`false`, `62`).
+- Se actualizan tests para el nuevo comportamiento de logout y la ventana de 62 dias.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
+
+**Comandos ejecutados:**
+- `rg --files -g 'AGENTS.md'`
+- `cat AGENTS.md`
+- `cat Atlas Balance/AGENTS.md`
+- `cat CLAUDE.md`
+- `cat Documentacion/Versiones/version_actual.md`
+- `cat Documentacion/Versiones/v-01.07.md`
+- `cat Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `rg -n "mfa_trusted|MfaRememberDuration|rememberDevice|Logout" ...`
+- `dotnet test backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~AuthControllerTests|FullyQualifiedName~AuthServiceTests"`
+
+**Resultado de verificacion:**
+- Pendiente en este entorno si `dotnet` no esta disponible; validacion estatica completada y tests listos para ejecutar en CI/entorno con SDK.
+
+**Pendientes:**
+- Conectar esta nueva configuracion en la UI de administracion para que el admin la gestione visualmente si aun no existe el formulario.

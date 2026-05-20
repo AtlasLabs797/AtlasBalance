@@ -116,6 +116,8 @@ public static class SeedData
             ["backup_retention_weeks"] = ("6", "int", "Semanas de retencion de backups"),
             ["backup_path"] = ("C:/AtlasBalance/backups", "string", "Ruta de almacenamiento de backups"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
+            ["mfa_remember_device_enabled"] = ("false", "bool", "Permite recordar dispositivos para omitir MFA en logins futuros"),
+            ["mfa_remember_days"] = ("62", "int", "Dias de confianza de dispositivo recordado para MFA"),
             ["app_version"] = ("V-01.07", "string", "Version instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["app_update_auto_enabled"] = ("false", "bool", "Aplicar automaticamente releases firmados de GitHub"),

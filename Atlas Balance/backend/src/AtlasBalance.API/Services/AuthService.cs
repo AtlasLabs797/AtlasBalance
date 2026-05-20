@@ -40,7 +40,7 @@ public sealed class AuthService : IAuthService
     private static readonly TimeSpan LoginFailureWindow = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MfaChallengeDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MfaFailureWindow = TimeSpan.FromMinutes(15);
-    private static readonly TimeSpan MfaRememberDuration = TimeSpan.FromDays(90);
+    private const int DefaultMfaRememberDays = 62;
     private static readonly IMemoryCache FallbackMemoryCache = new MemoryCache(new MemoryCacheOptions());
 
     private readonly AppDbContext _dbContext;
@@ -360,9 +360,10 @@ public sealed class AuthService : IAuthService
 
         RemoveMfaChallenge(challengeId);
         var result = await BuildAuthResultAsync(usuario, tokens.AccessToken, tokens.RefreshToken, cancellationToken);
-        if (rememberDevice)
+        var mfaRememberSettings = await GetMfaRememberSettingsAsync(cancellationToken);
+        if (mfaRememberSettings.Enabled)
         {
-            result.TrustedMfaTokenExpiresAt = now.Add(MfaRememberDuration);
+            result.TrustedMfaTokenExpiresAt = now.AddDays(mfaRememberSettings.Days);
             result.TrustedMfaToken = GenerateTrustedMfaToken(usuario, result.TrustedMfaTokenExpiresAt.Value);
         }
 
@@ -552,6 +553,25 @@ public sealed class AuthService : IAuthService
         return await BuildAuthResultAsync(usuario, accessToken, newRefreshToken, cancellationToken);
     }
 
+
+    private async Task<(bool Enabled, int Days)> GetMfaRememberSettingsAsync(CancellationToken cancellationToken)
+    {
+        var config = await _dbContext.Configuraciones
+            .Where(c => c.Clave == "mfa_remember_device_enabled" || c.Clave == "mfa_remember_days")
+            .ToDictionaryAsync(c => c.Clave, c => c.Valor, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        var enabled = config.TryGetValue("mfa_remember_device_enabled", out var rawEnabled)
+            ? bool.TryParse(rawEnabled, out var parsed) && parsed
+            : false;
+
+        var days = DefaultMfaRememberDays;
+        if (config.TryGetValue("mfa_remember_days", out var rawDays) && int.TryParse(rawDays, out var parsedDays))
+        {
+            days = Math.Clamp(parsedDays, 1, 180);
+        }
+
+        return (enabled, days);
+    }
     private async Task<AuthResult> BuildAuthResultAsync(Usuario usuario, string? accessToken, string? refreshToken, CancellationToken cancellationToken)
     {
         var permisos = await _dbContext.PermisosUsuario
