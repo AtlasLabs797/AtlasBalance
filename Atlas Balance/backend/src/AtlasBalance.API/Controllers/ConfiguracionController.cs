@@ -70,6 +70,8 @@ public sealed class ConfiguracionController : ControllerBase
                 AppUpdateAutoLastCheckedUtc = GetValue(config, "app_update_auto_last_checked_utc"),
                 AppUpdateAutoLastStartedUtc = GetValue(config, "app_update_auto_last_started_utc"),
                 AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
+                MfaRememberDeviceEnabled = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey), fallback: false),
+                MfaRememberDeviceDays = SecurityConfigurationDefaults.MfaRememberDeviceDays,
                 BackupPath = GetValue(config, "backup_path"),
                 ExportPath = GetValue(config, "export_path")
             },
@@ -188,6 +190,7 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
         Upsert(config, "app_update_auto_enabled", request.General.AppUpdateAutoEnabled ? "true" : "false", userId, now);
         Upsert(config, "app_update_auto_hour_utc", request.General.AppUpdateAutoHourUtc.ToString(CultureInfo.InvariantCulture), userId, now);
+        Upsert(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, request.General.MfaRememberDeviceEnabled ? "true" : "false", userId, now);
         Upsert(config, "backup_path", request.General.BackupPath.Trim(), userId, now);
         Upsert(config, "export_path", request.General.ExportPath.Trim(), userId, now);
         var exchangeApiKey = request.Exchange?.ApiKey;

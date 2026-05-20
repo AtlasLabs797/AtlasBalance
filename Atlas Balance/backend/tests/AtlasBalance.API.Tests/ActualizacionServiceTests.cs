@@ -276,6 +276,84 @@ public sealed class ActualizacionServiceTests
         Directory.Delete(root, recursive: true);
     }
 
+    [Theory]
+    [InlineData(".")]
+    [InlineData("./")]
+    public async Task IniciarActualizacionAsync_Should_Accept_Downloaded_Asset_With_Root_Directory_Entry(string rootDirectoryEntry)
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00", rootDirectoryEntry: rootDirectoryEntry);
+        using var signingKey = RSA.Create(2048);
+        var signature = SignZipBytes(zipBytes, signingKey);
+        var watchdog = new RecordingWatchdogClientService();
+        var service = BuildService(
+            db,
+            BuildSignedReleaseHandler(zipBytes, signature),
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem());
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeTrue();
+        watchdog.Calls.Should().Be(1);
+        watchdog.SourcePath.Should().NotBeNull();
+        File.Exists(Path.Combine(watchdog.SourcePath!, "AtlasBalance.API.exe")).Should().BeTrue();
+
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task IniciarActualizacionAsync_Should_Reject_Downloaded_Asset_With_Path_Traversal_Entry()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        var escapedPath = Path.Combine(updateRoot, "evil.txt");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00", pathTraversalEntry: "../evil.txt");
+        using var signingKey = RSA.Create(2048);
+        var signature = SignZipBytes(zipBytes, signingKey);
+        var watchdog = new RecordingWatchdogClientService();
+        var service = BuildService(
+            db,
+            BuildSignedReleaseHandler(zipBytes, signature),
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem());
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeFalse();
+        watchdog.Calls.Should().Be(0);
+        File.Exists(escapedPath).Should().BeFalse();
+
+        Directory.Delete(root, recursive: true);
+    }
+
     [Fact]
     public async Task IniciarActualizacionAsync_Should_Reject_Downloaded_Asset_When_Signature_Is_Missing()
     {
@@ -465,6 +543,75 @@ public sealed class ActualizacionServiceTests
         Directory.Delete(root, recursive: true);
     }
 
+    [Fact]
+    public async Task IniciarActualizacionAsync_Should_Reject_Downloaded_Asset_When_Stream_Exceeds_Configured_Limit()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00");
+        var digest = Sha256Digest(zipBytes);
+        using var signingKey = RSA.Create(2048);
+        var watchdog = new RecordingWatchdogClientService();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri == new Uri("https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "tag_name": "V-99.00-win-x64",
+                      "assets": [
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip",
+                          "digest": "__DIGEST__"
+                        },
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip.sig",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip.sig"
+                        }
+                      ]
+                    }
+                    """.Replace("__DIGEST__", digest, StringComparison.Ordinal))
+                };
+            }
+
+            request.RequestUri.Should().Be(new Uri("https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip"));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new UnknownLengthByteArrayContent(zipBytes)
+            };
+        });
+        var service = BuildService(
+            db,
+            handler,
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem(),
+            maxUpdatePackageBytes: 16);
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeFalse();
+        watchdog.Calls.Should().Be(0);
+        Directory.GetFiles(updateRoot, "*.zip").Should().BeEmpty();
+
+        Directory.Delete(root, recursive: true);
+    }
+
     private static ActualizacionService BuildService(
         AppDbContext db,
         HttpMessageHandler handler,
@@ -472,7 +619,8 @@ public sealed class ActualizacionServiceTests
         IWatchdogClientService? watchdog = null,
         string? updateSourceRoot = null,
         string? updateTargetPath = "C:/AtlasBalance/app",
-        string? releaseSigningPublicKeyPem = null)
+        string? releaseSigningPublicKeyPem = null,
+        long? maxUpdatePackageBytes = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -481,7 +629,8 @@ public sealed class ActualizacionServiceTests
                 ["WatchdogSettings:UpdateSourceRoot"] = updateSourceRoot ?? "C:/AtlasBalance/updates",
                 ["WatchdogSettings:UpdateTargetPath"] = updateTargetPath,
                 ["GitHubSettings:UpdateToken"] = githubUpdateToken,
-                ["UpdateSecurity:ReleaseSigningPublicKeyPem"] = releaseSigningPublicKeyPem
+                ["UpdateSecurity:ReleaseSigningPublicKeyPem"] = releaseSigningPublicKeyPem,
+                ["UpdateSecurity:MaxUpdatePackageBytes"] = maxUpdatePackageBytes?.ToString()
             })
             .Build();
 
@@ -491,6 +640,51 @@ public sealed class ActualizacionServiceTests
             watchdog ?? new FakeWatchdogClientService(),
             NullLogger<ActualizacionService>.Instance,
             configuration);
+    }
+
+    private static StubHttpMessageHandler BuildSignedReleaseHandler(byte[] zipBytes, byte[] signature)
+    {
+        var digest = Sha256Digest(zipBytes);
+        return new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri == new Uri("https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                    {
+                      "tag_name": "V-99.00-win-x64",
+                      "name": "Release V-99.00",
+                      "assets": [
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip",
+                          "digest": "__DIGEST__"
+                        },
+                        {
+                          "name": "AtlasBalance-V-99.00-win-x64.zip.sig",
+                          "browser_download_url": "https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip.sig"
+                        }
+                      ]
+                    }
+                    """.Replace("__DIGEST__", digest, StringComparison.Ordinal))
+                };
+            }
+
+            if (request.RequestUri == new Uri("https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip.sig"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(signature)
+                };
+            }
+
+            request.RequestUri.Should().Be(new Uri("https://github.com/AtlasLabs797/AtlasBalance/releases/download/V-99.00-win-x64/AtlasBalance-V-99.00-win-x64.zip"));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(zipBytes)
+            };
+        });
     }
 
     private sealed class StaticHttpClientFactory : IHttpClientFactory
@@ -520,6 +714,32 @@ public sealed class ActualizacionServiceTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(_handler(request));
+        }
+    }
+
+    private sealed class UnknownLengthByteArrayContent : HttpContent
+    {
+        private readonly byte[] _bytes;
+
+        public UnknownLengthByteArrayContent(byte[] bytes)
+        {
+            _bytes = bytes;
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            return stream.WriteAsync(_bytes, 0, _bytes.Length);
+        }
+
+        protected override Task<Stream> CreateContentReadStreamAsync()
+        {
+            return Task.FromResult<Stream>(new MemoryStream(_bytes, writable: false));
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 
@@ -556,11 +776,21 @@ public sealed class ActualizacionServiceTests
             => Task.FromResult(new WatchdogStateResponse());
     }
 
-    private static byte[] CreateReleaseZipBytes(string version)
+    private static byte[] CreateReleaseZipBytes(string version, string? rootDirectoryEntry = null, string? pathTraversalEntry = null)
     {
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
+            if (!string.IsNullOrWhiteSpace(rootDirectoryEntry))
+            {
+                archive.CreateEntry(rootDirectoryEntry);
+            }
+
+            if (!string.IsNullOrWhiteSpace(pathTraversalEntry))
+            {
+                AddZipEntry(archive, pathTraversalEntry, "evil");
+            }
+
             AddZipEntry(archive, "VERSION", version);
             AddZipEntry(archive, "api/AtlasBalance.API.exe", "api");
             AddZipEntry(archive, "watchdog/AtlasBalance.Watchdog.exe", "watchdog");

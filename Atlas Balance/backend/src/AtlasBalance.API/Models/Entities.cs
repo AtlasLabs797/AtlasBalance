@@ -45,6 +45,7 @@ public class RefreshToken
     public string TokenHash { get; set; } = string.Empty;
     public DateTime ExpiraEn { get; set; }
     public DateTime CreadoEn { get; set; } = DateTime.UtcNow;
+    public DateTime? MfaVerifiedAt { get; set; }
     public DateTime? RevocadoEn { get; set; }
     public string? ReemplazadoPor { get; set; }
     public System.Net.IPAddress? IpAddress { get; set; }

@@ -1,8 +1,8 @@
-# Atlas Balance V-01.07 - release Windows x64
+# Atlas Balance V-01.09 - release Windows x64
 
 Este paquete es autonomo para servidor Windows: el frontend ya esta compilado, el backend y Watchdog van publicados self-contained y la base de datos se prepara desde el instalador.
 
-El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.07-win-x64.zip`; dentro deben existir `api\AtlasBalance.API.exe` y `watchdog\AtlasBalance.Watchdog.exe`.
+El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-01.09-win-x64.zip`; dentro deben existir `api\AtlasBalance.API.exe` y `watchdog\AtlasBalance.Watchdog.exe`.
 
 ## Scripts de un clic
 
@@ -78,7 +78,7 @@ Desde la carpeta descomprimida de este paquete:
 Si la instalacion ya tiene los scripts nuevos, tambien puedes lanzar desde la carpeta instalada apuntando al paquete:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.07-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.09-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador crea backup previo, conserva configuracion, reemplaza API/Watchdog, actualiza scripts operativos instalados, actualiza `VERSION`/runtime y valida `/api/health` con `curl.exe -k`.

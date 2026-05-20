@@ -1,14 +1,16 @@
 # Atlas Balance - instalacion y actualizaciones
 
-Version actual del paquete: `V-01.07`.
+Version actual del paquete: `V-01.09`.
 
-No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-01.07-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-01.09-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+
+Si la API queda detras de proxy inverso, configura `ForwardedHeaders:KnownProxies` o `ForwardedHeaders:KnownNetworks` en `appsettings.Production.json`. Sin eso, auditoria y limites por cliente pueden ver solo la IP del proxy; confiar todos los `X-Forwarded-For` seria igual de malo, porque el cliente podria falsearlos.
 
 ## Que queda preparado
 
-La version `V-01.07` deja el proyecto listo para generar un paquete instalable de Windows:
+La version `V-01.09` deja el proyecto listo para generar un paquete instalable de Windows:
 
-- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.07-win-x64.zip`.
+- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`.
 - `install.cmd`: instalador de un clic.
 - `update.cmd`: actualizador de un clic.
 - `uninstall.cmd`: desinstalador de un clic.
@@ -46,9 +48,9 @@ En la maquina de desarrollo, desde la carpeta `Atlas Balance`:
 Salida esperada:
 
 ```text
-Atlas Balance Release\AtlasBalance-V-01.07-win-x64\
-Atlas Balance Release\AtlasBalance-V-01.07-win-x64.zip
-Atlas Balance Release\AtlasBalance-V-01.07-win-x64.zip.sig
+Atlas Balance Release\AtlasBalance-V-01.09-win-x64\
+Atlas Balance Release\AtlasBalance-V-01.09-win-x64.zip
+Atlas Balance Release\AtlasBalance-V-01.09-win-x64.zip.sig
 ```
 
 Si quieres que la actualizacion online desde la app acepte el paquete, ejecuta `Build-Release.ps1` con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` disponible en el entorno. La clave privada no va en el repo ni en documentacion.
@@ -69,11 +71,11 @@ Tras purgar, el primer arranque solo crea el admin inicial si `SeedAdmin:Passwor
 
 ### 2. Copiar al servidor
 
-1. Copia `AtlasBalance-V-01.07-win-x64.zip` al servidor.
+1. Copia `AtlasBalance-V-01.09-win-x64.zip` al servidor.
 2. Descomprime el ZIP, por ejemplo en:
 
 ```text
-C:\Temp\AtlasBalance-V-01.07-win-x64
+C:\Temp\AtlasBalance-V-01.09-win-x64
 ```
 
 ### 3. Ejecutar instalador
@@ -222,7 +224,7 @@ La instalacion debe tener `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_R
 En desarrollo, cuando haya una version nueva:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version V-01.07
+.\scripts\Build-Release.ps1 -Version V-01.09
 ```
 
 ### 2. Copiar al servidor
@@ -231,7 +233,7 @@ En desarrollo, cuando haya una version nueva:
 2. Descomprime en una carpeta temporal, por ejemplo:
 
 ```text
-C:\Temp\AtlasBalance-V-01.07-win-x64
+C:\Temp\AtlasBalance-V-01.09-win-x64
 ```
 
 ### 3. Ejecutar actualizador
@@ -251,7 +253,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Actualizar-At
 Si ya estas trabajando desde una instalacion que tiene los scripts nuevos y quieres apuntar a un paquete descargado/descomprimido:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.07-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.09-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador hace esto:
@@ -314,7 +316,7 @@ Datos de PostgreSQL
 
 Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exactamente como se pierden configuraciones y luego todo el mundo mira al techo.
 
-## Notas de seguridad V-01.07
+## Notas de seguridad V-01.09
 
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
@@ -350,7 +352,7 @@ Start-Service AtlasBalance.API
 
 La version visible del backend se toma de `AssemblyInformationalVersion`.
 
-Para `V-01.07` queda fijado en:
+Para `V-01.09` queda fijado en:
 
 ```text
 Atlas Balance/Directory.Build.props

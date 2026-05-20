@@ -359,7 +359,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 null,
                 cancellationToken,
                 ex.ToAuditDetails());
-            throw new IaProviderException(BuildProviderNetworkMessage(state, ex));
+            throw new IaProviderException(BuildProviderNetworkMessage(state));
         }
         catch (HttpRequestException)
         {
@@ -1639,24 +1639,15 @@ public sealed class AtlasAiService : IAtlasAiService
                providerError.Contains("3", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildProviderNetworkMessage(IaGovernanceState state, ProviderNetworkException exception)
+    private static string BuildProviderNetworkMessage(IaGovernanceState state)
     {
-        var primaryDetail = ShortTransportMessage(exception.PrimaryException);
-        var fallbackDetail = ShortTransportMessage(exception.FallbackException);
-        var detail = string.Equals(primaryDetail, fallbackDetail, StringComparison.OrdinalIgnoreCase)
-            ? primaryDetail
-            : $"principal: {primaryDetail}; fallback: {fallbackDetail}";
-        return $"No se pudo conectar con {ProviderDisplayName(state)}. Detalle tecnico: {detail}. Reintenta en unos segundos o prueba otro modelo.";
+        return $"No se pudo conectar con {ProviderDisplayName(state)}. Reintenta en unos segundos o avisa a un administrador si persiste.";
     }
 
-    private static string ShortTransportMessage(Exception exception)
+    private static string TransportDiagnosticCode(Exception exception)
     {
-        var messages = TransportExceptionMessages(exception).ToArray();
-        var rootMessage = messages.LastOrDefault() ?? exception.Message;
-        var combined = string.Join(" | ", messages);
-        var message = BuildTransportDiagnostic(combined, rootMessage);
-        message = SanitizeDiagnosticMessage(message);
-        return message.Length <= 220 ? message : message[..220];
+        var combinedMessages = string.Join(" | ", TransportExceptionMessages(exception));
+        return BuildTransportDiagnosticCode(combinedMessages);
     }
 
     private static IEnumerable<string> TransportExceptionMessages(Exception exception)
@@ -1675,7 +1666,7 @@ public sealed class AtlasAiService : IAtlasAiService
         }
     }
 
-    private static string BuildTransportDiagnostic(string combinedMessages, string rootMessage)
+    private static string BuildTransportDiagnosticCode(string combinedMessages)
     {
         if (ContainsAny(
                 combinedMessages,
@@ -1686,51 +1677,27 @@ public sealed class AtlasAiService : IAtlasAiService
                 "RemoteCertificate",
                 "UntrustedRoot"))
         {
-            var detail = IsOpaqueTransportMessage(rootMessage)
-                ? "handshake TLS rechazado sin detalle profundo de Windows/.NET"
-                : rootMessage;
-            return $"fallo TLS/certificado: {detail}";
+            return "tls_certificate";
         }
 
         if (combinedMessages.Contains("127.0.0.1:9", StringComparison.OrdinalIgnoreCase) ||
-            combinedMessages.Contains("localhost:9", StringComparison.OrdinalIgnoreCase))
+            combinedMessages.Contains("localhost:9", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessages.Contains("proxy", StringComparison.OrdinalIgnoreCase))
         {
-            return $"proxy local invalido 127.0.0.1:9: {rootMessage}";
+            return "proxy_unavailable";
         }
 
         if (ContainsAny(combinedMessages, "Name or service not known", "No such host", "nodename nor servname", "host desconocido"))
         {
-            return $"fallo DNS: {rootMessage}";
+            return "dns_resolution_failed";
         }
 
         if (ContainsAny(combinedMessages, "connection refused", "No se puede establecer una conexion", "actively refused"))
         {
-            return $"conexion rechazada: {rootMessage}";
+            return "connection_refused";
         }
 
-        return rootMessage;
-    }
-
-    private static bool IsOpaqueTransportMessage(string message) =>
-        message.Contains("see inner exception", StringComparison.OrdinalIgnoreCase) ||
-        message.Contains("Authentication failed", StringComparison.OrdinalIgnoreCase);
-
-    private static string SanitizeDiagnosticMessage(string value)
-    {
-        var sanitized = value.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        sanitized = Regex.Replace(
-            sanitized,
-            @"(?i)(https?|socks4a?|socks5)://([^/\s:@]+):([^@\s/]+)@",
-            "$1://REDACTED:REDACTED@",
-            RegexOptions.CultureInvariant,
-            TimeSpan.FromMilliseconds(100));
-        sanitized = Regex.Replace(
-            sanitized,
-            @"(?i)(api[_\s-]?key|token|secret|authorization|bearer)\s*[:=]?\s*['""]?[^,'""\s]+",
-            "$1 REDACTED",
-            RegexOptions.CultureInvariant,
-            TimeSpan.FromMilliseconds(100));
-        return sanitized;
+        return "network_error";
     }
 
     private static string? ExtractProviderErrorSummary(string payload)
@@ -2647,8 +2614,8 @@ public sealed class AtlasAiService : IAtlasAiService
         {
             primary_http_client = PrimaryClientName,
             fallback_http_client = FallbackClientName,
-            primary_error = ShortTransportMessage(PrimaryException),
-            fallback_error = ShortTransportMessage(FallbackException)
+            primary_error = TransportDiagnosticCode(PrimaryException),
+            fallback_error = TransportDiagnosticCode(FallbackException)
         };
     }
 

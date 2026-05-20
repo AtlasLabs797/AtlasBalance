@@ -497,7 +497,9 @@ public sealed class ImportacionService : IImportacionService
     {
         var cuenta = await _dbContext.Cuentas
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == cuentaId && c.Activa, cancellationToken);
+            .Where(c => c.Id == cuentaId && c.Activa)
+            .Where(c => _dbContext.Titulares.Any(t => t.Id == c.TitularId && t.DeletedAt == null))
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (cuenta is null)
         {

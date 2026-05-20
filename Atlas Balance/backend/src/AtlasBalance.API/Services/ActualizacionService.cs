@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -289,20 +290,22 @@ public sealed class ActualizacionService : IActualizacionService
             return null;
         }
 
-        if (response.Content.Headers.ContentLength is > MaxUpdatePackageBytes)
+        var maxUpdatePackageBytes = ResolveMaxUpdatePackageBytes();
+        if (response.Content.Headers.ContentLength is long contentLength && contentLength > maxUpdatePackageBytes)
         {
             _logger.LogWarning("Asset de actualizacion rechazado por tamano declarado superior al limite.");
             return null;
         }
 
-        await using (var output = File.Create(zipPath))
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
+        if (!await CopyContentToFileWithLimitAsync(response.Content, zipPath, maxUpdatePackageBytes, cancellationToken))
         {
-            await input.CopyToAsync(output, cancellationToken);
+            _logger.LogWarning("Asset de actualizacion rechazado por tamano descargado invalido.");
+            TryDeleteFile(zipPath);
+            return null;
         }
 
         var downloadedSize = new FileInfo(zipPath).Length;
-        if (downloadedSize is 0 || downloadedSize > MaxUpdatePackageBytes)
+        if (downloadedSize is 0 || downloadedSize > maxUpdatePackageBytes)
         {
             _logger.LogWarning("Asset de actualizacion rechazado por tamano descargado invalido.");
             TryDeleteFile(zipPath);
@@ -365,6 +368,17 @@ public sealed class ActualizacionService : IActualizacionService
     {
         var configured = _configuration["WatchdogSettings:UpdateTargetPath"];
         return string.IsNullOrWhiteSpace(configured) ? null : configured.Trim();
+    }
+
+    private long ResolveMaxUpdatePackageBytes()
+    {
+        var configured = _configuration["UpdateSecurity:MaxUpdatePackageBytes"];
+        if (long.TryParse(configured, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0)
+        {
+            return Math.Min(value, MaxUpdatePackageBytes);
+        }
+
+        return MaxUpdatePackageBytes;
     }
 
     private static bool IsAllowedSourcePath(string? sourcePath, string? sourceRoot)
@@ -626,7 +640,8 @@ public sealed class ActualizacionService : IActualizacionService
     private static bool TryExtractPackageSafely(string zipPath, string packageRoot)
     {
         Directory.CreateDirectory(packageRoot);
-        var rootFullPath = Path.GetFullPath(packageRoot + Path.DirectorySeparatorChar);
+        var rootFullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(packageRoot));
+        var rootFullPathWithSeparator = EnsureTrailingSeparator(rootFullPath);
 
         using var archive = ZipFile.OpenRead(zipPath);
         var entryCount = 0;
@@ -656,8 +671,21 @@ public sealed class ActualizacionService : IActualizacionService
 
             var destinationFullPath = Path.GetFullPath(Path.Combine(packageRoot, entry.FullName));
             var isDirectoryEntry = entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\');
+            var destinationNormalized = Path.TrimEndingDirectorySeparator(destinationFullPath);
 
-            if (!destinationFullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(destinationNormalized, rootFullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!IsCurrentDirectoryEntry(entry.FullName, isDirectoryEntry, entry.Length))
+                {
+                    Directory.Delete(packageRoot, recursive: true);
+                    return false;
+                }
+
+                Directory.CreateDirectory(rootFullPath);
+                continue;
+            }
+
+            if (!destinationFullPath.StartsWith(rootFullPathWithSeparator, StringComparison.OrdinalIgnoreCase))
             {
                 Directory.Delete(packageRoot, recursive: true);
                 return false;
@@ -679,6 +707,38 @@ public sealed class ActualizacionService : IActualizacionService
         }
 
         return true;
+    }
+
+    private static bool IsCurrentDirectoryEntry(string entryName, bool isDirectoryEntry, long entryLength)
+    {
+        var normalizedName = entryName.Replace('\\', '/').TrimEnd('/');
+        return string.Equals(normalizedName, ".", StringComparison.Ordinal) &&
+               (isDirectoryEntry || entryLength == 0);
+    }
+
+    private static async Task<bool> CopyContentToFileWithLimitAsync(HttpContent content, string destinationPath, long maxBytes, CancellationToken cancellationToken)
+    {
+        await using var output = File.Create(destinationPath);
+        await using var input = await content.ReadAsStreamAsync(cancellationToken);
+        var buffer = new byte[81920];
+        long total = 0;
+
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (read == 0)
+            {
+                return total > 0;
+            }
+
+            total += read;
+            if (total > maxBytes)
+            {
+                return false;
+            }
+
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        }
     }
 
     private static void TryDeleteFile(string path)

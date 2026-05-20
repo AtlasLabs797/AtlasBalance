@@ -1186,6 +1186,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("inet")
                         .HasColumnName("ip_address");
 
+                    b.Property<DateTime?>("MfaVerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("mfa_verified_at");
+
                     b.Property<string>("ReemplazadoPor")
                         .HasColumnType("text")
                         .HasColumnName("reemplazado_por");

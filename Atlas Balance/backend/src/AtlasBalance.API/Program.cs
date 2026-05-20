@@ -7,11 +7,14 @@ using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Serilog;
+using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -88,6 +91,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddMemoryCache();
+ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("AtlasBalance");
 if (!builder.Environment.IsDevelopment())
@@ -272,6 +276,8 @@ using (var scope = app.Services.CreateScope())
         "17 * * * *");
 }
 
+app.UseForwardedHeaders();
+
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
@@ -413,6 +419,59 @@ static string ResolveRlsContextSecret(IConfiguration configuration, string jwtSe
 {
     var configured = configuration["Security:RlsContextSecret"];
     return string.IsNullOrWhiteSpace(configured) ? jwtSecret : configured;
+}
+
+static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)
+{
+    services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = 1;
+
+        foreach (var rawProxy in configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? Array.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(rawProxy))
+            {
+                continue;
+            }
+
+            if (!IPAddress.TryParse(rawProxy.Trim(), out var proxyAddress))
+            {
+                throw new InvalidOperationException($"ForwardedHeaders:KnownProxies contiene una IP invalida: {rawProxy}");
+            }
+
+            options.KnownProxies.Add(proxyAddress);
+        }
+
+        foreach (var rawNetwork in configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? Array.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(rawNetwork))
+            {
+                continue;
+            }
+
+            var parts = rawNetwork.Trim().Split('/', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2 ||
+                !IPAddress.TryParse(parts[0], out var prefix) ||
+                !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var prefixLength) ||
+                !IsValidPrefixLength(prefix, prefixLength))
+            {
+                throw new InvalidOperationException($"ForwardedHeaders:KnownNetworks contiene una red CIDR invalida: {rawNetwork}");
+            }
+
+            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLength));
+        }
+    });
+}
+
+static bool IsValidPrefixLength(IPAddress prefix, int prefixLength)
+{
+    return prefix.AddressFamily switch
+    {
+        AddressFamily.InterNetwork => prefixLength is >= 0 and <= 32,
+        AddressFamily.InterNetworkV6 => prefixLength is >= 0 and <= 128,
+        _ => false
+    };
 }
 
 static SocketsHttpHandler CreateAiHttpHandler(bool useProxy, string? proxyUrl)

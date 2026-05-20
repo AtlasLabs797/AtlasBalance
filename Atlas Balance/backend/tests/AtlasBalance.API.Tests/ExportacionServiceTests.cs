@@ -126,6 +126,58 @@ public class ExportacionServiceTests
     }
 
     [Fact]
+    public async Task ExportarCuentaAsync_Should_Reject_Cuenta_When_Titular_Is_SoftDeleted()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-deleted-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(exportDirectory);
+
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "export_path",
+            Valor = exportDirectory,
+            Tipo = "string",
+            Descripcion = "Ruta de exportaciones"
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular eliminado",
+            Tipo = TipoTitular.EMPRESA,
+            DeletedAt = DateTime.UtcNow
+        });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta eliminada",
+            Divisa = "EUR",
+            Activa = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = new ExportacionService(db, new AuditService(db));
+
+        try
+        {
+            var act = () => service.ExportarCuentaAsync(cuentaId, TipoProceso.MANUAL, null, CancellationToken.None);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*Cuenta no encontrada o inactiva*");
+            Directory.GetFiles(exportDirectory, "*.xlsx").Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ExportarCuentaAsync_Should_Preserve_Imported_Row_Order_And_European_Formats()
     {
         await using var db = BuildDbContext();
@@ -350,6 +402,94 @@ public class ExportacionServiceTests
             exportacion.TamanioBytes.Should().BeNull();
             Directory.GetFiles(exportDirectory, "*.xlsx").Should().BeEmpty();
             (await db.Auditorias.SingleAsync()).TipoAccion.Should().Be(AtlasBalance.API.Constants.AuditActions.ExportacionBloqueada);
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExportarMensualAsync_Should_Skip_Cuentas_With_SoftDeleted_Titular()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-monthly-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(exportDirectory);
+
+        var activeTitularId = Guid.NewGuid();
+        var deletedTitularId = Guid.NewGuid();
+        var activeCuentaId = Guid.NewGuid();
+        var deletedCuentaId = Guid.NewGuid();
+
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "export_path",
+            Valor = exportDirectory,
+            Tipo = "string",
+            Descripcion = "Ruta de exportaciones"
+        });
+        db.Titulares.AddRange(
+            new Titular { Id = activeTitularId, Nombre = "Titular activo", Tipo = TipoTitular.EMPRESA },
+            new Titular
+            {
+                Id = deletedTitularId,
+                Nombre = "Titular eliminado",
+                Tipo = TipoTitular.EMPRESA,
+                DeletedAt = DateTime.UtcNow
+            });
+        db.Cuentas.AddRange(
+            new Cuenta
+            {
+                Id = activeCuentaId,
+                TitularId = activeTitularId,
+                Nombre = "Cuenta activa",
+                Divisa = "EUR",
+                Activa = true
+            },
+            new Cuenta
+            {
+                Id = deletedCuentaId,
+                TitularId = deletedTitularId,
+                Nombre = "Cuenta eliminada",
+                Divisa = "EUR",
+                Activa = true
+            });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = activeCuentaId,
+                Fecha = new DateOnly(2026, 4, 15),
+                Concepto = "Cobro activo",
+                Monto = 100m,
+                Saldo = 100m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = deletedCuentaId,
+                Fecha = new DateOnly(2026, 4, 15),
+                Concepto = "Cobro eliminado",
+                Monto = 200m,
+                Saldo = 200m,
+                FilaNumero = 1
+            });
+        await db.SaveChangesAsync();
+
+        var service = new ExportacionService(db, new AuditService(db));
+
+        try
+        {
+            var success = await service.ExportarMensualAsync(CancellationToken.None);
+
+            success.Should().Be(1);
+            db.Exportaciones.Should().ContainSingle(e => e.CuentaId == activeCuentaId && e.Estado == EstadoProceso.SUCCESS);
+            db.Exportaciones.Should().NotContain(e => e.CuentaId == deletedCuentaId);
+            Directory.GetFiles(exportDirectory, "*.xlsx").Should().ContainSingle();
         }
         finally
         {

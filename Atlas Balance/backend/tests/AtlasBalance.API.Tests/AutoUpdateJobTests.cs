@@ -26,7 +26,7 @@ public sealed class AutoUpdateJobTests
         {
             AvailableResponse = new VersionDisponibleResponse
             {
-                VersionActual = "V-01.07",
+                VersionActual = "V-01.09",
                 VersionDisponible = "V-99.00",
                 ActualizacionDisponible = true,
                 Mensaje = "Actualizacion disponible"
@@ -125,13 +125,13 @@ public sealed class AutoUpdateJobTests
         public bool StartAccepted { get; init; }
         public VersionDisponibleResponse AvailableResponse { get; init; } = new()
         {
-            VersionActual = "V-01.07",
+            VersionActual = "V-01.09",
             ActualizacionDisponible = false,
             Mensaje = "Sin actualizacion disponible."
         };
 
         public Task<VersionActualResponse> GetVersionActualAsync(CancellationToken cancellationToken)
-            => Task.FromResult(new VersionActualResponse { VersionActual = "V-01.07" });
+            => Task.FromResult(new VersionActualResponse { VersionActual = "V-01.09" });
 
         public Task<VersionDisponibleResponse> CheckVersionDisponibleAsync(CancellationToken cancellationToken)
         {

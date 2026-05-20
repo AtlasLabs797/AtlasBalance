@@ -6,7 +6,7 @@
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
 - Pendientes:
-  - Ejecutar suite completa V-01.07 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
+  - Ejecutar suite completa V-01.09 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
   - Hacer E2E autenticado contra PostgreSQL real con datos de volumen antes de release.
   - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en auditorias UI previas; el 2026-05-19 se reforzaron select nativo, modal de importacion, errores persistentes de celda, estados de importacion, tabs de Configuracion, tablas de cuenta/extractos, token modal/metricas, backups y alternativas accesibles de graficas. Falta sesion real con datos de volumen.
 - Estado: abierto. Bloquea recomendar release final.
@@ -19,6 +19,69 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-05-20 - V-01.09 - Cerrado - Importacion/exportacion aceptaban cuentas de titulares soft-deleted
+
+- Contexto: la revision del threat model encontro que algunos servicios no heredaban el soft-delete del titular padre.
+- Causa: `ImportacionService` y `ExportacionService` filtraban por cuenta activa, pero no por titular activo, en rutas que aceptan `cuentaId` directo.
+- Impacto: posible acceso/operacion sobre datos financieros fuera de la superficie logica visible si se conocia el ID de la cuenta.
+- Solucion: importacion, exportacion manual y exportacion mensual exigen titular activo.
+- Verificacion: regresiones focalizadas de importacion/exportacion incluidas en bloque de 63/63 tests OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Descarga de actualizacion rechazaba tamano tarde si faltaba Content-Length
+
+- Contexto: la ruta de actualizacion ya limitaba paquetes por tamano declarado y por tamano final, pero no cortaba durante streaming cuando el servidor no declaraba `Content-Length`.
+- Causa: `CopyToAsync` escribia todo el contenido antes de comprobar `FileInfo.Length`.
+- Impacto: consumo evitable de disco/IO en una ruta admin. Severidad media/baja por las validaciones existentes de repo/asset/firma, pero seguia siendo una defensa floja.
+- Solucion: copia con limite de bytes durante el stream y config opcional `UpdateSecurity:MaxUpdatePackageBytes` para bajar el limite por entorno.
+- Verificacion: regresion de asset sin longitud declarada incluida en bloque de 63/63 tests OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Errores de red IA exponian diagnosticos internos
+
+- Contexto: hallazgo `AI provider network errors leak internal diagnostics`.
+- Causa: el mensaje de red del proveedor IA incluia detalles derivados de excepciones de transporte y `IaController` los devolvia en el JSON 502.
+- Impacto: usuarios con IA podian ver topologia interna si fallaba TLS, proxy, DNS o conexion.
+- Solucion: mensaje publico generico; auditoria con codigos seguros de transporte; regresion con hostname/proxy/certificado ficticios.
+- Verificacion: test focalizado 1/1 OK, `AtlasAiServiceTests` 62/62 OK y `git diff --check` OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Refresh tokens legacy saltan MFA obligatorio
+
+- Contexto: el analisis de seguridad reporto que `RefreshTokenAsync` seguia renovando sesiones aunque el login ya exigia MFA.
+- Causa: `REFRESH_TOKENS` no guardaba ninguna garantia de MFA completado; el refresh validaba token/usuario y rotaba sin mirar el nuevo requisito.
+- Impacto: un refresh token emitido antes de activar MFA podia mantener acceso web sin completar el segundo factor.
+- Solucion: nueva columna `mfa_verified_at`, emision marcada tras MFA o login con `mfa_trusted`, rechazo y revocacion de tokens sin garantia cuando MFA es obligatorio.
+- Verificacion: reproduccion previa fallida del exploit, `AuthServiceTests` 18/18 OK y suite backend sin Docker/Testcontainers 261/261 OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Logout conservaba cookie MFA recordada
+
+- Contexto: el analisis de seguridad marco que `POST /api/auth/logout` dejaba viva `mfa_trusted` y que el dispositivo recordado duraba 90 dias.
+- Causa: en V-01.07 se priorizo comodidad y se trato logout como cierre de sesion, no como cierre de confianza MFA del navegador.
+- Impacto: en un equipo compartido o perfil de navegador comprometido, alguien con la contrasena podia saltarse TOTP desde ese navegador durante una ventana larga.
+- Solucion: logout vuelve a borrar `mfa_trusted`, el recuerdo MFA queda en 62 dias y la opcion pasa a depender de `CONFIGURACION.mfa_remember_device_enabled`, desactivada por defecto.
+- Verificacion: test focalizado de logout 1/1 OK, regresiones de politica admin/MFA recordado OK, suite Auth 32/32 OK y typecheck frontend OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Entradas ZIP raiz rompian actualizaciones
+
+- Contexto: algunos ZIP de actualizacion pueden incluir entradas raiz inocuas (`.` / `./`) antes de los archivos reales.
+- Causa: el guard de extraccion comparaba contra el root con separador final y rechazaba destinos que normalizaban exactamente al root.
+- Impacto: disponibilidad/compatibilidad; el paquete firmado podia rechazarse aunque no hubiera Zip Slip.
+- Solucion: aceptar solo marcadores raiz equivalentes a `.` y mantener prefijo estricto con separador para rutas hijas.
+- Verificacion: reproduccion previa fallida, `ActualizacionServiceTests` 13/13 OK y bloque actualizacion/watchdog 20/20 OK; traversal `../evil.txt` sigue rechazado.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Throttle de login por IP compartida permitia DoS no autenticado
+
+- Contexto: hallazgo Codex Security sobre `/api/auth/login`.
+- Causa: el contador cliente/IP de 20 fallos se evaluaba antes de validar credenciales y no se limpiaba en login correcto.
+- Impacto: un atacante no autenticado podia lanzar 20 intentos invalidos desde una IP/NAT/proxy compartido y provocar 429 a usuarios legitimos de esa misma IP durante la ventana de 15 minutos.
+- Solucion: el precheck temprano usa solo email+cliente; el contador cliente/IP queda para intentos invalidos despues de resolver usuario/password; el login correcto limpia ambos contadores; `ForwardedHeaders` queda habilitado con proxies/redes conocidas configurables.
+- Verificacion: regresiones nuevas en `AuthServiceTests`; suite enfocada `AuthServiceTests` 20/20 OK; suite backend sin Docker/Testcontainers 267/267 OK; `git diff --check` OK.
+- Estado: cerrado en codigo; pendiente suite completa y E2E autenticado como gates generales de release.
 
 ### 2026-05-19 - V-01.07 - Cerrado - Jerarquia visual plana y acciones criticas poco diferenciadas
 

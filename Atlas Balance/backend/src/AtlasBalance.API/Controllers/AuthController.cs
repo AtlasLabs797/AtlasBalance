@@ -102,6 +102,7 @@ public sealed class AuthController : ControllerBase
         DeleteCookie("access_token");
         DeleteCookie("refresh_token");
         DeleteCookie("csrf_token");
+        DeleteCookie("mfa_trusted");
 
         var actorUserId = TryGetUserId(out var authenticatedUserId)
             ? authenticatedUserId
@@ -178,6 +179,11 @@ public sealed class AuthController : ControllerBase
 
     private object AttachCookiesAndBuildAuthResponse(AuthResult result)
     {
+        if (result.ClearTrustedMfaToken)
+        {
+            DeleteCookie("mfa_trusted");
+        }
+
         if (result.MfaRequired)
         {
             return new AuthResponse
@@ -186,7 +192,9 @@ public sealed class AuthController : ControllerBase
                 MfaSetupRequired = result.MfaSetupRequired,
                 MfaChallengeId = result.MfaChallengeId,
                 MfaSecret = result.MfaSecret,
-                MfaOtpAuthUri = result.MfaOtpAuthUri
+                MfaOtpAuthUri = result.MfaOtpAuthUri,
+                MfaRememberDeviceAllowed = result.MfaRememberDeviceAllowed,
+                MfaRememberDeviceDays = result.MfaRememberDeviceDays
             };
         }
 

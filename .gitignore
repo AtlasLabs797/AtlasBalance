@@ -12,6 +12,7 @@ Atlas Balance/backend/**/bin/
 Atlas Balance/backend/**/obj/
 Atlas Balance/backend/.codex-build/
 Atlas Balance/backend/.local-build/
+Atlas Balance/backend/**/.local-build/
 Atlas Balance/backend/**/*.user
 Atlas Balance/backend/**/.vs/
 Atlas Balance/backend/**/TestResults/

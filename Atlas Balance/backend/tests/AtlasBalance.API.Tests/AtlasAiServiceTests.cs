@@ -1014,15 +1014,15 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
-    public async Task AskAsync_Should_Unwrap_Nested_Tls_Authentication_Error_In_User_Message_And_Audit()
+    public async Task AskAsync_Should_Hide_Provider_Network_Diagnostics_From_User_Message_And_Audit()
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db);
         var tlsException = new HttpRequestException(
-            "The SSL connection could not be established, see inner exception.",
+            "The SSL connection could not be established for https://api.internal.local:8443 via http://user:password@corp-proxy.local:8080, see inner exception.",
             new AuthenticationException(
-                "Authentication failed, see inner exception.",
-                new InvalidOperationException("The remote certificate is invalid because the certificate chain is untrusted.")));
+                "Authentication failed for certificate CN=corp-mitm.local issued by CN=Internal CA, see inner exception.",
+                new InvalidOperationException("The remote certificate is invalid because the certificate chain is untrusted for host api.internal.local:8443.")));
         var httpFactory = new CapturingHttpClientFactory(exception: tlsException);
         var sut = new AtlasAiService(
             db,
@@ -1035,17 +1035,28 @@ public class AtlasAiServiceTests
 
         var assertion = await act.Should().ThrowAsync<IaProviderException>();
         assertion.Which.Message.Should().Contain("OpenRouter");
-        assertion.Which.Message.Should().Contain("fallo TLS/certificado");
-        assertion.Which.Message.Should().Contain("certificate chain is untrusted");
-        assertion.Which.Message.Should().NotContain("Authentication failed, see inner exception");
+        assertion.Which.Message.Should().Contain("No se pudo conectar");
+        assertion.Which.Message.Should().NotContain("Detalle tecnico");
+        assertion.Which.Message.Should().NotContain("api.internal.local");
+        assertion.Which.Message.Should().NotContain("corp-proxy");
+        assertion.Which.Message.Should().NotContain("corp-mitm");
+        assertion.Which.Message.Should().NotContain("8443");
+        assertion.Which.Message.Should().NotContain("Internal CA");
+        assertion.Which.Message.Should().NotContain("certificate chain is untrusted");
+        assertion.Which.Message.Should().NotContain("Authentication failed");
         assertion.Which.Message.Should().NotContain("test-key");
         httpFactory.RequestCount.Should().Be(2);
 
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_network_error");
-        audit.DetallesJson.Should().Contain("fallo TLS/certificado");
-        audit.DetallesJson.Should().Contain("certificate chain is untrusted");
-        audit.DetallesJson.Should().NotContain("Authentication failed, see inner exception");
+        audit.DetallesJson.Should().Contain("tls_certificate");
+        audit.DetallesJson.Should().NotContain("api.internal.local");
+        audit.DetallesJson.Should().NotContain("corp-proxy");
+        audit.DetallesJson.Should().NotContain("corp-mitm");
+        audit.DetallesJson.Should().NotContain("8443");
+        audit.DetallesJson.Should().NotContain("Internal CA");
+        audit.DetallesJson.Should().NotContain("certificate chain is untrusted");
+        audit.DetallesJson.Should().NotContain("Authentication failed");
         audit.DetallesJson.Should().NotContain("Consulta privada");
         audit.DetallesJson.Should().NotContain("test-key");
     }

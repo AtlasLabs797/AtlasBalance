@@ -4,6 +4,19 @@
 
 La aplicacion esta en la carpeta `Atlas Balance`.
 
+## Proxy inverso y login
+
+Si Atlas Balance se publica detras de IIS, Nginx, HAProxy u otro proxy inverso, configura en `appsettings.Production.json` las IPs o redes de proxy confiables:
+
+```json
+"ForwardedHeaders": {
+  "KnownProxies": ["127.0.0.1"],
+  "KnownNetworks": []
+}
+```
+
+Usa `KnownProxies` para IPs concretas y `KnownNetworks` para rangos CIDR, por ejemplo `10.0.0.0/24`. No confies `X-Forwarded-For` desde cualquier cliente: eso es dejar que cualquiera escriba su propia matricula.
+
 ## Navegacion y dashboard
 
 Desde `V-01.05`, el menu se organiza en tres bloques:
@@ -47,9 +60,9 @@ Atlas Balance usa MFA con aplicaciones compatibles tipo Google Authenticator.
 
 La primera vez que entras, despues de email y contrasena, aparece un QR. Escanealo con Google Authenticator y escribe el codigo de 6 digitos. Si el QR no se puede escanear, usa la clave manual que aparece debajo.
 
-Despues de verificarlo, puedes marcar `Recordar este dispositivo durante 90 dias`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login. Se volvera a pedir tambien cuando pasen esos 90 dias, borres cookies, cambie la seguridad del usuario o uses otro navegador/equipo.
+Despues de verificarlo, la casilla `Recordar este dispositivo durante 62 dias` solo aparece si un administrador la ha permitido en `Configuracion > General y SMTP > Autenticacion`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login. Se volvera a pedir tambien cuando pasen esos 62 dias, cierres sesion, borres cookies, cambie la seguridad del usuario o uses otro navegador/equipo.
 
-Cerrar sesion ya no borra el dispositivo recordado. Cierra la sesion normal, pero no anula la confianza MFA del navegador. Si quieres cortar esa confianza, un administrador debe revocar el Authenticator del usuario desde `Usuarios`.
+Cerrar sesion borra tambien la confianza MFA guardada en ese navegador. Si ya tenias una sesion abierta antes de que MFA fuera obligatorio, Atlas Balance puede pedirte iniciar sesion de nuevo y completar MFA; eso es intencionado para cortar sesiones antiguas sin garantia MFA. Si necesitas cortar todos los dispositivos recordados de un usuario, un administrador puede revocar el Authenticator desde `Usuarios`.
 
 ## Paquetes de instalacion
 
@@ -59,26 +72,26 @@ Los paquetes de release estan en:
 Atlas Balance/Atlas Balance Release
 ```
 
-Paquete esperado para la version actual `V-01.07`:
+Paquete esperado para la version actual `V-01.09`:
 
 ```text
-AtlasBalance-V-01.07-win-x64.zip
-AtlasBalance-V-01.07-win-x64.zip.sig
+AtlasBalance-V-01.09-win-x64.zip
+AtlasBalance-V-01.09-win-x64.zip.sig
 ```
 
-SHA256 del ZIP firmado de `V-01.07`:
+SHA256 del ZIP firmado de `V-01.09`:
 
 ```text
 Pendiente hasta generar el paquete firmado de esta version.
 ```
 
-No reutilices hashes ni paquetes de `V-01.06` para publicar `V-01.07`.
+No reutilices hashes ni paquetes de `V-01.07` para publicar `V-01.09`.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
-No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-01.07-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
+No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-01.09-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
 
-Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.07-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
+Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.09-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
 ## Limpieza antes de publicar
 
@@ -128,7 +141,7 @@ Desde `V-01.05`, ese wrapper acepta `-InstallPath` directamente y crea backup an
 Si la instalacion ya tiene los scripts actualizados, tambien vale:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.07-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.09-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 La distribucion oficial de paquetes se publica como asset en GitHub Releases:
@@ -148,6 +161,8 @@ Tambien puedes actualizar desde la propia app:
 Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
 
 La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena.
+
+El limite maximo de descarga del paquete es 300 MB. Si una instalacion necesita un limite mas bajo, configura `UpdateSecurity:MaxUpdatePackageBytes`; no sirve para subir el maximo por encima de 300 MB. Si el servidor no declara tamano, Atlas Balance corta igualmente la descarga al superar el limite.
 
 Para que la actualizacion online funcione, la instalacion debe tener configurada la clave publica de firma en `UpdateSecurity:ReleaseSigningPublicKeyPem` o en `ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM`. Desde el paquete firmado `V-01.06`, el instalador escribe una clave publica por defecto si no se proporciona override. Sin clave publica valida, la app rechaza paquetes online. Es incomodo una vez; confiar en ZIPs sin firma seria peor.
 
@@ -261,7 +276,7 @@ Atlas Balance tambien filtra razonamiento interno del proveedor. No deberias ver
 
 Si el proveedor externo devuelve algo que Atlas Balance no puede usar, el error debe indicar una categoria tecnica corta, por ejemplo `invalid_json` o `unsupported_content`, en vez de repetir un mensaje generico de respuesta malformada.
 
-Si falla la conexion con OpenRouter u OpenAI, el chat puede mostrar un diagnostico tecnico saneado, como TLS/certificado, proxy, DNS o conexion rechazada. Ese detalle sirve para el administrador; no incluye prompt, respuesta completa ni API key.
+Si falla la conexion con OpenRouter u OpenAI, el chat muestra un error generico. El administrador puede revisar la auditoria, donde solo queda una categoria tecnica segura como `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`; no se muestran hostnames internos, proxy, puertos, certificados, prompt, respuesta completa ni API key.
 
 En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva. El selector de modelo queda discreto en la cabecera junto al proveedor y cambia el modelo solo para las siguientes consultas de esa conversacion; no modifica la configuracion global de la app.
 

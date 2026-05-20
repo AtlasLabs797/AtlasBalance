@@ -14,7 +14,7 @@ namespace AtlasBalance.API.Tests;
 public sealed class AuthControllerTests
 {
     [Fact]
-    public async Task Logout_Should_Not_Delete_Trusted_Mfa_Cookie()
+    public async Task Logout_Should_Delete_Trusted_Mfa_Cookie()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -37,7 +37,7 @@ public sealed class AuthControllerTests
         setCookie.Should().Contain("access_token=");
         setCookie.Should().Contain("refresh_token=");
         setCookie.Should().Contain("csrf_token=");
-        setCookie.Should().NotContain("mfa_trusted");
+        setCookie.Should().Contain("mfa_trusted=");
     }
 
     private sealed class LogoutOnlyAuthService : IAuthService

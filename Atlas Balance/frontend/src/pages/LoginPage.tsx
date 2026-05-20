@@ -20,6 +20,8 @@ interface MfaChallenge {
   setupRequired: boolean;
   secret: string | null;
   otpAuthUri: string | null;
+  rememberDeviceAllowed: boolean;
+  rememberDeviceDays: number;
 }
 
 function normalizeReturnTo(value: string | null): string | null {
@@ -38,7 +40,7 @@ export default function LoginPage() {
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
-  const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus } = useForm<LoginForm>();
+  const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>();
   const [error, setError] = useState<string | null>(null);
   const [postUpdateMessage, setPostUpdateMessage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -122,7 +124,7 @@ export default function LoginPage() {
         const { data } = await api.post<LoginResponse>('/auth/mfa/verify', {
           challenge_id: mfaChallenge.id,
           code: values.mfaCode,
-          remember_device: values.rememberDevice === true,
+          remember_device: mfaChallenge.rememberDeviceAllowed && values.rememberDevice === true,
         });
         await completeLogin(data);
         return;
@@ -138,7 +140,10 @@ export default function LoginPage() {
           setupRequired: !!data.mfa_setup_required,
           secret: data.mfa_secret ?? null,
           otpAuthUri: data.mfa_otp_auth_uri ?? null,
+          rememberDeviceAllowed: !!data.mfa_remember_device_allowed,
+          rememberDeviceDays: data.mfa_remember_device_days ?? 62,
         });
+        setValue('rememberDevice', false);
         return;
       }
 
@@ -252,14 +257,16 @@ export default function LoginPage() {
               {errors.mfaCode && <p id="mfa-code-error" className="auth-error" role="alert">{errors.mfaCode.message}</p>}
             </div>
 
-            <label className="auth-checkbox-row">
-              <input
-                type="checkbox"
-                className="auth-checkbox"
-                {...register('rememberDevice')}
-              />
-              <span>Recordar este dispositivo durante 90 días</span>
-            </label>
+            {mfaChallenge.rememberDeviceAllowed && (
+              <label className="auth-checkbox-row">
+                <input
+                  type="checkbox"
+                  className="auth-checkbox"
+                  {...register('rememberDevice')}
+                />
+                <span>Recordar este dispositivo durante {mfaChallenge.rememberDeviceDays} días</span>
+              </label>
+            )}
           </>
         )}
 
