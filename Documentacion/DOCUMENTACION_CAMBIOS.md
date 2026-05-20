@@ -8,6 +8,51 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-20 - Preflight de secretos y publicacion GitHub V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se lanzo una revision pre-push con dos subagentes read-only: uno para secretos publicables y otro para readiness de release/package/GitHub.
+- Se comprobo que la rama local actual es `V-01.07`, con remoto `origin` apuntando a `https://github.com/AtlasLabs797/AtlasBalance.git`.
+- Se verifico que no hay archivos versionables pendientes ni archivos ignorados que sigan trackeados.
+- Se revisaron configuraciones sensibles versionables: `appsettings.json`, plantillas `appsettings.*.json.template`, `.env.example`, `docker-compose.yml`, `.gitignore`, workflow CI y scripts de release.
+- Se intento subir la rama `V-01.07` a GitHub por `git push -u origin V-01.07`.
+
+**Comandos ejecutados:**
+- `git status -sb`
+- `git status --porcelain=v1 -uall`
+- `git remote -v`
+- `git branch --show-current`
+- `git ls-files`
+- `git ls-files -ci --exclude-standard`
+- `git grep -nI -E -e "<patrones de secretos de alta confianza>" -- . ":(exclude)Atlas Balance/frontend/package-lock.json"`
+- `git check-ignore -v -- <rutas sensibles de prueba>`
+- `gh --version`
+- `gh auth status`
+- `git ls-remote origin refs/heads/main`
+- `git push -u origin V-01.07`
+- `git -c credential.helper= -c core.askPass= push -u origin V-01.07`
+
+**Resultado de verificacion:**
+- Secret scan de alta confianza: OK, 0 claves reales detectadas en archivos publicables.
+- Los valores sensibles versionables son placeholders o campos vacios; no se detectaron passwords, tokens, claves privadas, certificados privados ni dumps listos para subir.
+- `Otros/`, `Skills/`, `Skills Curated/`, paquetes de `Atlas Balance/Atlas Balance Release`, `.env`, appsettings locales, certificados/keys, dependencias y outputs de build estan ignorados.
+- La rama local `V-01.07` esta 6 commits por delante de `origin/main`; `origin/main` remoto apunta a `2a8ccdd82977e9f4fdd093af461aa3f10f38efb1`.
+
+**Bloqueado:**
+- `git push` con sandbox fallo por red bloqueada.
+- `git push` con red elevada quedo esperando credenciales; el intento no interactivo confirmo `Invalid username or token`.
+- `gh` no esta instalado, por lo que no hay CLI autenticada para publicar release assets.
+- `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` no existe en el entorno; el paquete publicable firmado no se puede generar. Usar `-AllowUnsignedLocal` generaria un ZIP local no publicable y no debe subirse.
+
+**Pendiente:**
+- Configurar autenticacion GitHub valida para `git push` o instalar/autenticar `gh`.
+- Cargar `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` antes de ejecutar `Atlas Balance/scripts/Build-Release.ps1` sin `-AllowUnsignedLocal`.
+- Publicar el ZIP y `.sig` como assets de GitHub Release, no como archivos Git.
+- Mantener pendientes los gates ya documentados de Docker/Testcontainers, E2E autenticado real y backup/restore real antes de llamar final al release.
+
+---
 ## 2026-05-19 - Jerarquia visual y pesos de accion UI/UX V-01.07
 
 **Version:** V-01.07
