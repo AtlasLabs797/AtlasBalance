@@ -93,7 +93,7 @@ public sealed class AuthController : ControllerBase
 
 
     [HttpPost("logout")]
-    [AllowAnonymous]
+    [Authorize]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
         var refreshToken = Request.Cookies["refresh_token"];
