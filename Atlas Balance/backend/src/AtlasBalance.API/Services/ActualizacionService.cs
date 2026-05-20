@@ -626,11 +626,7 @@ public sealed class ActualizacionService : IActualizacionService
     private static bool TryExtractPackageSafely(string zipPath, string packageRoot)
     {
         Directory.CreateDirectory(packageRoot);
-        var rootFullPath = Path.GetFullPath(packageRoot);
-        if (!rootFullPath.EndsWith(Path.DirectorySeparatorChar))
-        {
-            rootFullPath += Path.DirectorySeparatorChar;
-        }
+        var rootFullPath = Path.GetFullPath(packageRoot + Path.DirectorySeparatorChar);
 
         using var archive = ZipFile.OpenRead(zipPath);
         var entryCount = 0;
@@ -661,8 +657,7 @@ public sealed class ActualizacionService : IActualizacionService
             var destinationFullPath = Path.GetFullPath(Path.Combine(packageRoot, entry.FullName));
             var isDirectoryEntry = entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\');
 
-            if (!destinationFullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(destinationFullPath + Path.DirectorySeparatorChar, rootFullPath, StringComparison.OrdinalIgnoreCase))
+            if (!destinationFullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase))
             {
                 Directory.Delete(packageRoot, recursive: true);
                 return false;
