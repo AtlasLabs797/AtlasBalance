@@ -321,6 +321,7 @@ Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exac
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
 - PostgreSQL aplica Row Level Security con politicas por usuario, integracion, admin y operaciones internas. El contexto va firmado; el rol runtime de la app no debe tener `BYPASSRLS` ni ser owner de las tablas.
+- MFA web es obligatorio cuando `Security:RequireMfaForWebUsers=true`. El recuerdo de dispositivo dura 62 dias, solo aparece si un administrador activa `mfa_remember_device_enabled`, y `logout` borra `mfa_trusted`.
 - `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
 - La URL de actualizaciones queda limitada al repo oficial de Atlas Balance en GitHub por HTTPS y el paquete online debe venir firmado con `.zip.sig`.
 - `config\INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial con ACL limitada a Administrators/SYSTEM y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.

@@ -74,9 +74,11 @@
   - `LoginAsync` ignora y limpia `mfa_trusted` cuando esa politica admin esta apagada.
   - Tests de logout, expiracion, politica admin desactivada y caso legitimo recordado actualizados.
 - Verificacion:
-  - `Logout_Should_Delete_Trusted_Mfa_Cookie`: OK.
-  - `Login_Should_Not_Require_Mfa_Again_When_Trusted_Mfa_Cookie_Is_Valid`: OK.
-- Suite Auth final: 32/32 OK tras el cierre de garantia MFA en refresh tokens.
+  - Suite focalizada `AuthServiceTests|AuthControllerTests|ConfiguracionControllerTests`: 29/29 OK.
+  - Frontend `npm.cmd run lint`: OK.
+  - Frontend `npm.cmd run build`: OK.
+  - Intento de sincronizar `frontend/dist` en `backend/src/AtlasBalance.API/wwwroot`: bloqueado por `Access denied`; no insistir en esta via dentro de esta maquina.
+- Nota: la mitigacion backend queda activa aunque un frontend viejo envie `remember_device=true`: si la politica admin esta apagada no se emite `mfa_trusted`, y logout siempre borra la cookie. La publicacion debe regenerar `wwwroot` para exponer la nueva UI admin.
 - Regla: logout debe limpiar artefactos de autenticacion del navegador. Si se quiere "confiar este dispositivo" mas tiempo, debe sobrevivir a expiracion de sesion, no a un logout explicito.
 
 ## 2026-05-20 - V-01.09 - Actualizador rechazaba entradas ZIP raiz inocuas

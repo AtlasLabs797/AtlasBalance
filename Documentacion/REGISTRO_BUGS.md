@@ -62,7 +62,7 @@
 - Causa: en V-01.07 se priorizo comodidad y se trato logout como cierre de sesion, no como cierre de confianza MFA del navegador.
 - Impacto: en un equipo compartido o perfil de navegador comprometido, alguien con la contrasena podia saltarse TOTP desde ese navegador durante una ventana larga.
 - Solucion: logout vuelve a borrar `mfa_trusted`, el recuerdo MFA queda en 62 dias y la opcion pasa a depender de `CONFIGURACION.mfa_remember_device_enabled`, desactivada por defecto.
-- Verificacion: test focalizado de logout 1/1 OK, regresiones de politica admin/MFA recordado OK, suite Auth 32/32 OK y typecheck frontend OK.
+- Verificacion: suite focalizada Auth/Configuracion 29/29 OK, frontend lint OK y build OK. La sincronizacion local de `wwwroot` quedo bloqueada por `Access denied`, asi que el paquete de release debe regenerar assets antes de publicar.
 - Estado: cerrado.
 
 ### 2026-05-20 - V-01.09 - Cerrado - Entradas ZIP raiz rompian actualizaciones

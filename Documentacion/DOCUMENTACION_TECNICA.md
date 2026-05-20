@@ -89,11 +89,11 @@ Un logout explicito debe cortar todos los artefactos de autenticacion del navega
 
 ### Verificacion
 
-- Test focalizado de logout: 1/1 OK.
-- Test focalizado de MFA recordado: 1/1 OK.
-- Suite Auth amplia: 32/32 OK.
-- TypeScript frontend: OK.
+- Suite focalizada `AuthServiceTests|AuthControllerTests|ConfiguracionControllerTests`: 29/29 OK.
+- Frontend lint: OK.
+- Frontend build (`tsc && vite build`): OK.
 - Barrido estatico confirma `DeleteCookie("mfa_trusted")` en logout y `SecurityConfigurationDefaults.MfaRememberDeviceDays = 62`.
+- La sincronizacion local de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot` fallo por `Access denied`; `Build-Release.ps1` debe regenerar `wwwroot` en un entorno con permisos antes de publicar.
 
 ### Limite real
 

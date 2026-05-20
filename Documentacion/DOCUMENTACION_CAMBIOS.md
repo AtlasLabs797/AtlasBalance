@@ -88,24 +88,23 @@ Regla de trabajo desde ahora:
 
 **Comandos ejecutados:**
 - `rg -n "mfa_trusted|MfaRememberDuration|rememberDevice|TrustedMfa|Logout\\(" "Atlas Balance/backend"`
-- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName~Auth --no-restore -p:UseAppHost=false`
-- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName=AtlasBalance.API.Tests.AuthControllerTests.Logout_Should_Delete_Trusted_Mfa_Cookie --no-restore -p:UseAppHost=false`
-- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName=AtlasBalance.API.Tests.AuthServiceTests.Login_Should_Not_Require_Mfa_Again_When_Trusted_Mfa_Cookie_Is_Valid --no-restore -p:UseAppHost=false`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~AuthControllerTests|FullyQualifiedName~ConfiguracionControllerTests" --verbosity minimal`
 - `rg -n "mfa_trusted" "Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs"`
 - `rg -n --fixed-strings -e 'MfaRememberDuration' -e 'Logout_Should_Delete_Trusted_Mfa_Cookie' -e 'AddDays(61)' -e 'AddDays(63)' "Atlas Balance/backend/src/AtlasBalance.API" "Atlas Balance/backend/tests/AtlasBalance.API.Tests"`
-- `npm.cmd exec tsc -- --noEmit`
-- `git diff --check`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Sincronizacion controlada de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`: bloqueada por `Access denied` en assets, fuentes, logos e `index.html`.
 
 **Resultado de verificacion:**
-- Regresion exacta de logout: 1/1 OK.
-- Regresion exacta de MFA recordado: 1/1 OK.
-- Suite amplia `FullyQualifiedName~Auth`: 32/32 OK en la pasada final.
-- TypeScript frontend: OK.
-- `git diff --check`: OK, solo avisos CRLF esperados.
-- Verificacion estatica: `AuthController` borra `mfa_trusted` en logout y el default `MfaRememberDeviceDays` queda en 62 dias.
+- Suite focalizada Auth/Configuracion: 29/29 OK.
+- Frontend lint: OK.
+- Frontend build (`tsc && vite build`): OK.
+- Verificacion estatica: `AuthController` borra `mfa_trusted` en logout, el default `MfaRememberDeviceDays` queda en 62 dias y el codigo fuente no conserva texto activo de "90 dias".
+- `wwwroot` local no quedo alineado por permisos; el release debe regenerarlo con `Build-Release.ps1` o desbloquear ACL antes de publicar.
 
 **Pendientes:**
 - Ejecutar suite backend completa sin Docker y, despues, Testcontainers con Docker operativo antes de release.
+- Regenerar/sincronizar `backend/src/AtlasBalance.API/wwwroot` en un entorno con permisos de escritura; el intento local quedo bloqueado por ACL.
 
 ---
 ## 2026-05-20 - V-01.09 - Cierre de bypass MFA en refresh token

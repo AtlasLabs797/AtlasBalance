@@ -281,7 +281,6 @@ public sealed class ConfiguracionControllerTests
             {
                 AppBaseUrl = "https://app.local",
                 AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
-                MfaRememberDeviceEnabled = true,
                 BackupPath = "C:\\backups",
                 ExportPath = "C:\\exports"
             },
