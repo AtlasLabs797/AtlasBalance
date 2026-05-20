@@ -1,5 +1,13 @@
 # Log de errores e incidencias
 
+## 2026-05-20 - V-01.07 - Updater rechazaba ZIP validos con entrada raiz './'
+
+- Contexto: reporte externo indico que paquetes de actualizacion con entrada de directorio raiz (`./`) quedaban rechazados tras el hardening de extraccion ZIP.
+- Causa raiz: el guard de ruta exigia `StartsWith(rootFullPath)` antes de tratar entradas de directorio; al normalizar `./`, la ruta quedaba igual a la raiz sin separador final y fallaba la validacion.
+- Solucion aplicada: se agrega una excepcion controlada para `isDirectoryEntry` cuando `destinationFullPath` (sin separador final) coincide exactamente con `packageRoot` normalizado.
+- Seguridad: se mantiene el bloqueo de Zip Slip para cualquier otra ruta fuera de `packageRoot`.
+- Verificacion: test focalizado no ejecutable en este entorno por ausencia de `dotnet`.
+
 ## 2026-05-19 - V-01.07 - UI/UX: jerarquia visual plana y acciones criticas sin peso suficiente
 
 - Contexto: revision adicional pedida sobre jerarquia de ventanas, informacion importante, botones, checks, tablas y menus.
