@@ -8,6 +8,39 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-20 - Reintento de release package V-01.07
+
+**Version:** V-01.07
+
+**Trabajo realizado:**
+- Se reintento generar el paquete Windows x64 para `V-01.07` tras haber subido la rama y creado el PR.
+- Se comprobo que no existia paquete previo en `Atlas Balance/Atlas Balance Release`, salvo `.gitkeep` y una carpeta parcial generada por el intento.
+- Se verifico que `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` no existe en los scopes `Process`, `User` ni `Machine`.
+- Se cerraron procesos `node.exe` antiguos que bloqueaban el binario nativo de Rolldown.
+
+**Comandos ejecutados:**
+- `Get-ChildItem 'Atlas Balance/Atlas Balance Release'`
+- `[Environment]::GetEnvironmentVariable('ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM', <scope>)`
+- `Get-Process node`
+- `Stop-Process -Force`
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File './scripts/Build-Release.ps1' -Version V-01.07 -Runtime win-x64 -Configuration Release`
+
+**Resultado de verificacion:**
+- `npm ci` paso tras cerrar los procesos Node antiguos.
+- `npm run build` fallo al preparar `frontend/dist/assets` por `EPERM`.
+- No se genero ZIP publicable ni `.sig`.
+
+**Bloqueado:**
+- El build de frontend queda bloqueado por `EPERM` sobre `frontend/dist/assets`, incidencia ya alineada con los atascos conocidos Vite/Rolldown/Windows.
+- Aunque ese bloqueo se resolviera, el release publicable seguiria bloqueado porque falta `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- No se sube ZIP sin firma: eso romperia el contrato de actualizacion segura y seria una mala decision.
+
+**Pendiente:**
+- Liberar o limpiar `frontend/dist/assets` fuera del bloqueo de Windows, o construir con una salida alternativa validada.
+- Cargar la clave privada de firma en el entorno antes de ejecutar `Build-Release.ps1`.
+- Instalar/autenticar `gh` o usar una via API con token para crear el GitHub Release y subir `AtlasBalance-V-01.07-win-x64.zip` + `.zip.sig`.
+
+---
 ## 2026-05-20 - Preflight de secretos y publicacion GitHub V-01.07
 
 **Version:** V-01.07
