@@ -180,21 +180,21 @@ public sealed class ExportacionesController : ControllerBase
             return Forbid();
         }
 
-        if (string.IsNullOrWhiteSpace(exportacion.RutaArchivo) || !System.IO.File.Exists(exportacion.RutaArchivo))
-        {
-            return NotFound(new { error = "Archivo de exportación no encontrado" });
-        }
-
-        var exportRoot = await _dbContext.Configuraciones
+        var configuredExportRoot = await _dbContext.Configuraciones
             .AsNoTracking()
             .Where(c => c.Clave == "export_path")
             .Select(c => c.Valor)
             .FirstOrDefaultAsync(cancellationToken) ?? @"C:\atlas-balance\exports";
 
-        if (!IsAllowedExportFile(exportacion.RutaArchivo, exportRoot))
+        if (string.IsNullOrWhiteSpace(exportacion.RutaArchivo) || !IsAllowedExportFile(exportacion.RutaArchivo, configuredExportRoot))
         {
             _logger.LogWarning("Exportacion {ExportacionId} bloqueada por ruta no permitida", id);
             return NotFound(new { error = "Archivo de exportacion no encontrado" });
+        }
+
+        if (string.IsNullOrWhiteSpace(exportacion.RutaArchivo) || !System.IO.File.Exists(exportacion.RutaArchivo))
+        {
+            return NotFound(new { error = "Archivo de exportación no encontrado" });
         }
 
         var stream = new FileStream(exportacion.RutaArchivo, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -213,6 +213,11 @@ public sealed class ExportacionesController : ControllerBase
 
     private static bool IsAllowedExportFile(string filePath, string exportRoot)
     {
+        if (!IsExplicitlyRooted(filePath))
+        {
+            return false;
+        }
+
         if (!string.Equals(Path.GetExtension(filePath), ".xlsx", StringComparison.OrdinalIgnoreCase))
         {
             return false;

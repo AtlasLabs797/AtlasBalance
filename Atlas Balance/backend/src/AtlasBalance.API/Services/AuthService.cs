@@ -22,7 +22,7 @@ public interface IAuthService
     Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken);
     Task<Guid?> LogoutAsync(string? refreshToken, CancellationToken cancellationToken);
     Task<AuthResult> GetCurrentAsync(Guid userId, CancellationToken cancellationToken);
-    Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, CancellationToken cancellationToken);
+    Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken);
 }
 
 public sealed class AuthService : IAuthService
@@ -530,7 +530,7 @@ public sealed class AuthService : IAuthService
         return await BuildAuthResultAsync(usuario, accessToken: null, refreshToken: null, cancellationToken);
     }
 
-    public async Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, CancellationToken cancellationToken)
+    public async Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(passwordActual))
         {
@@ -554,6 +554,16 @@ public sealed class AuthService : IAuthService
         }
 
         var now = DateTime.UtcNow;
+        DateTime? currentSessionMfaVerifiedAt = null;
+        if (RequiresMfa(usuario) && usuario.MfaEnabled)
+        {
+            currentSessionMfaVerifiedAt = await ResolveCurrentSessionMfaVerifiedAtAsync(userId, currentRefreshToken, now, cancellationToken);
+            if (currentSessionMfaVerifiedAt is null)
+            {
+                throw new AuthException("Se requiere MFA para cambiar la contraseña", StatusCodes.Status401Unauthorized);
+            }
+        }
+
         usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(passwordNueva, workFactor: 12);
         usuario.PrimerLogin = false;
         UserSessionState.RotateAfterPasswordChange(usuario, now);
@@ -568,7 +578,6 @@ public sealed class AuthService : IAuthService
 
         var accessToken = GenerateAccessToken(usuario);
         var newRefreshToken = GenerateRefreshToken();
-        DateTime? mfaVerifiedAt = RequiresMfa(usuario) && usuario.MfaEnabled ? now : null;
         _dbContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
@@ -576,7 +585,7 @@ public sealed class AuthService : IAuthService
             TokenHash = ComputeSha256(newRefreshToken),
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
-            MfaVerifiedAt = mfaVerifiedAt,
+            MfaVerifiedAt = currentSessionMfaVerifiedAt,
             IpAddress = ParseIpAddress(ipAddress)
         });
 
@@ -591,6 +600,21 @@ public sealed class AuthService : IAuthService
             cancellationToken: cancellationToken);
 
         return await BuildAuthResultAsync(usuario, accessToken, newRefreshToken, cancellationToken);
+    }
+
+    private async Task<DateTime?> ResolveCurrentSessionMfaVerifiedAtAsync(Guid userId, string? refreshToken, DateTime now, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return null;
+        }
+
+        var refreshHash = ComputeSha256(refreshToken);
+        return await _dbContext.RefreshTokens
+            .AsNoTracking()
+            .Where(rt => rt.UsuarioId == userId && rt.TokenHash == refreshHash && rt.RevocadoEn == null && rt.ExpiraEn > now)
+            .Select(rt => rt.MfaVerifiedAt)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<AuthResult> BuildAuthResultAsync(Usuario usuario, string? accessToken, string? refreshToken, CancellationToken cancellationToken)

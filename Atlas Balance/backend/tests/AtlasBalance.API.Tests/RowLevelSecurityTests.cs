@@ -38,8 +38,11 @@ public sealed class RowLevelSecurityTests
         var titularBloqueadoId = Guid.NewGuid();
         var cuentaPermitidaId = Guid.NewGuid();
         var cuentaBloqueadaId = Guid.NewGuid();
+        var cuentaEliminadaId = Guid.NewGuid();
         var extractoPermitidoId = Guid.NewGuid();
         var extractoBloqueadoId = Guid.NewGuid();
+        var extractoEliminadoId = Guid.NewGuid();
+        var extractoCuentaEliminadaId = Guid.NewGuid();
         var integrationTokenId = Guid.NewGuid();
 
         await using (var db = new AppDbContext(migrationOptions))
@@ -110,6 +113,15 @@ public sealed class RowLevelSecurityTests
                     Nombre = "Cuenta bloqueada",
                     Divisa = "EUR",
                     Activa = true
+                },
+                new Cuenta
+                {
+                    Id = cuentaEliminadaId,
+                    TitularId = titularPermitidoId,
+                    Nombre = "Cuenta eliminada",
+                    Divisa = "EUR",
+                    Activa = true,
+                    DeletedAt = DateTime.UtcNow
                 });
 
             db.Extractos.AddRange(
@@ -132,6 +144,27 @@ public sealed class RowLevelSecurityTests
                     Monto = 20,
                     Saldo = 20,
                     FilaNumero = 1
+                },
+                new Extracto
+                {
+                    Id = extractoEliminadoId,
+                    CuentaId = cuentaPermitidaId,
+                    Fecha = new DateOnly(2026, 5, 1),
+                    Concepto = "Extracto eliminado",
+                    Monto = 30,
+                    Saldo = 30,
+                    FilaNumero = 2,
+                    DeletedAt = DateTime.UtcNow
+                },
+                new Extracto
+                {
+                    Id = extractoCuentaEliminadaId,
+                    CuentaId = cuentaEliminadaId,
+                    Fecha = new DateOnly(2026, 5, 1),
+                    Concepto = "Extracto cuenta eliminada",
+                    Monto = 40,
+                    Saldo = 40,
+                    FilaNumero = 1
                 });
 
             db.PermisosUsuario.AddRange(
@@ -140,6 +173,13 @@ public sealed class RowLevelSecurityTests
                     Id = Guid.NewGuid(),
                     UsuarioId = readerId,
                     CuentaId = cuentaPermitidaId,
+                    PuedeVerCuentas = true
+                },
+                new PermisoUsuario
+                {
+                    Id = Guid.NewGuid(),
+                    UsuarioId = readerId,
+                    CuentaId = cuentaEliminadaId,
                     PuedeVerCuentas = true
                 },
                 new PermisoUsuario
@@ -165,6 +205,13 @@ public sealed class RowLevelSecurityTests
                 Id = Guid.NewGuid(),
                 TokenId = integrationTokenId,
                 CuentaId = cuentaBloqueadaId,
+                AccesoTipo = "lectura"
+            });
+            db.IntegrationPermissions.Add(new IntegrationPermission
+            {
+                Id = Guid.NewGuid(),
+                TokenId = integrationTokenId,
+                CuentaId = cuentaEliminadaId,
                 AccesoTipo = "lectura"
             });
 
@@ -240,18 +287,18 @@ public sealed class RowLevelSecurityTests
         runtimeOwnedTables.Should().Be(0);
 
         await SetRlsContextAsync(connection, "anonymous", null, null, isAdmin: false, isSystem: false, "anonymous");
-        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(0);
-        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(0);
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(0);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(0);
 
         await SetUnsignedRlsContextAsync(connection, "user", readerId, null, isAdmin: false, isSystem: false, "data");
-        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(0);
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(0);
         await SetUnsignedRlsContextAsync(connection, "system", null, null, isAdmin: true, isSystem: true, "system");
-        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(0);
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(0);
 
         await SetRlsContextAsync(connection, "user", readerId, null, isAdmin: false, isSystem: false, "data");
-        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(1);
         (await CountByIdsAsync(connection, "TITULARES", titularPermitidoId, titularBloqueadoId)).Should().Be(1);
-        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(1);
 
         var deniedInsert = async () => await InsertExtractoAsync(connection, cuentaPermitidaId);
         await deniedInsert.Should().ThrowAsync<PostgresException>()
@@ -275,12 +322,12 @@ public sealed class RowLevelSecurityTests
         await InsertExportacionAsync(connection, cuentaPermitidaId);
 
         await SetRlsContextAsync(connection, "integration", null, integrationTokenId, isAdmin: false, isSystem: false, "integration");
-        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(1);
-        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(1);
 
         await SetRlsContextAsync(connection, "user", adminId, null, isAdmin: true, isSystem: false, "data");
-        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(2);
-        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(2);
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(3);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(4);
     }
 
     private async Task<(string MigrationConnectionString, string RuntimeConnectionString)> CreateRoleConnectionStringsAsync()

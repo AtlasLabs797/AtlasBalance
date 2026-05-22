@@ -20,6 +20,24 @@
 
 ## Cerrados
 
+### 2026-05-22 - V-01.09 - Cerrado - Cambio de contrasena emitia garantia MFA falsa
+
+- Contexto: revision del threat model con subagentes.
+- Causa: `ChangePasswordAsync` marcaba el refresh token nuevo como MFA-verificado por el estado del usuario, no por la sesion actual.
+- Impacto: una sesion pre-MFA todavia valida podia transformarse en sesion post-MFA despues de cambiar contrasena.
+- Solucion: `CambiarPassword` pasa el refresh token actual; `AuthService` exige `mfa_verified_at` existente cuando MFA es obligatorio y lo preserva en la nueva sesion.
+- Verificacion: regresiones de sesion pre-MFA y sesion verificada; bloque auth/controladores 27/27 OK; suite backend sin Docker/Testcontainers 269/269 OK.
+- Estado: cerrado.
+
+### 2026-05-22 - V-01.09 - Cerrado - RLS y ficheros necesitaban hardening de backstop
+
+- Contexto: revision del threat model y hallazgos de subagentes.
+- Causa: RLS no filtraba soft-delete como ultima barrera y algunas rutas de export/backup validaban raiz despues de tocar disco.
+- Impacto: mayor riesgo de exposicion por futuros SQL crudos/`IgnoreQueryFilters()` y de operaciones sobre rutas persistidas fuera de raices permitidas si DB/config se corrompen.
+- Solucion: migracion RLS `20260522103000_HardenRlsSoftDeleteBackstop`, validacion previa de rutas de exportaciones/backups y retencion que omite rutas fuera de raiz.
+- Verificacion: suite backend no-Docker 269/269 OK; test RLS con PostgreSQL real bloqueado por Docker/Testcontainers no disponible.
+- Estado: cerrado en codigo; validacion PostgreSQL real sigue como gate abierto de release.
+
 ### 2026-05-20 - V-01.09 - Cerrado - Importacion/exportacion aceptaban cuentas de titulares soft-deleted
 
 - Contexto: la revision del threat model encontro que algunos servicios no heredaban el soft-delete del titular padre.

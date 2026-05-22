@@ -363,6 +363,85 @@ public class AuthServiceTests
     }
 
     [Fact]
+    public async Task ChangePassword_Should_Reject_PreMfa_Session_When_Mfa_Is_Required()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-change-pre-session@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Change Pre Session",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            MfaEnabled = true,
+            MfaSecret = TotpService.GenerateSecret(),
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
+
+        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        Func<Task> changePassword = () => mfaSut.ChangePasswordAsync(
+            user.Id,
+            "OldPass123!Ab",
+            "NewPass12345!",
+            "127.0.0.1",
+            preMfaLogin.RefreshToken,
+            CancellationToken.None);
+
+        var exception = await changePassword.Should().ThrowAsync<AuthException>();
+        exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        BCrypt.Net.BCrypt.Verify("OldPass123!Ab", persisted.PasswordHash).Should().BeTrue();
+        BCrypt.Net.BCrypt.Verify("NewPass12345!", persisted.PasswordHash).Should().BeFalse();
+        (await db.RefreshTokens.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ChangePassword_Should_Preserve_Mfa_Assurance_For_Verified_Session()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-change-verified@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Change Verified",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var login = await sut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
+        var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
+        var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, false, "127.0.0.1", CancellationToken.None);
+        var verifiedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(verified.RefreshToken!))).ToLowerInvariant();
+        var verifiedToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == verifiedHash);
+        var verifiedAt = verifiedToken.MfaVerifiedAt;
+
+        var changed = await sut.ChangePasswordAsync(user.Id, "OldPass123!Ab", "NewPass12345!", "127.0.0.1", verified.RefreshToken, CancellationToken.None);
+        var changedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(changed.RefreshToken!))).ToLowerInvariant();
+        var replacementToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == changedHash);
+
+        verifiedAt.Should().NotBeNull();
+        verifiedToken.RevocadoEn.Should().NotBeNull();
+        replacementToken.MfaVerifiedAt.Should().Be(verifiedAt);
+        replacementToken.RevocadoEn.Should().BeNull();
+        changed.AccessToken.Should().NotBeNullOrWhiteSpace();
+        changed.RefreshToken.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task VerifyMfa_Should_Lock_User_Across_New_Challenges_After_Repeated_Failures()
     {
         await using var db = BuildDbContext();
@@ -591,7 +670,7 @@ public class AuthServiceTests
 
         var sut = new AuthService(db, BuildConfig(), new AuditService(db));
         var originalStamp = user.SecurityStamp;
-        var result = await sut.ChangePasswordAsync(user.Id, "OldPass123!Ab", "NewPass12345!", "127.0.0.1", CancellationToken.None);
+        var result = await sut.ChangePasswordAsync(user.Id, "OldPass123!Ab", "NewPass12345!", "127.0.0.1", null, CancellationToken.None);
 
         var persisted = await db.Usuarios.FirstAsync(x => x.Id == user.Id);
         BCrypt.Net.BCrypt.Verify("NewPass12345!", persisted.PasswordHash).Should().BeTrue();
@@ -653,7 +732,7 @@ public class AuthServiceTests
         var login = await sut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
         var previousHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(login.RefreshToken!))).ToLowerInvariant();
 
-        var changed = await sut.ChangePasswordAsync(user.Id, "OldPass123!Ab", "NewPass12345!", "127.0.0.1", CancellationToken.None);
+        var changed = await sut.ChangePasswordAsync(user.Id, "OldPass123!Ab", "NewPass12345!", "127.0.0.1", login.RefreshToken, CancellationToken.None);
         var newHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(changed.RefreshToken!))).ToLowerInvariant();
 
         var previousToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == previousHash);

@@ -126,6 +126,18 @@ public sealed class BackupsController : ControllerBase
             return NotFound(new { error = "Copia de seguridad no encontrada." });
         }
 
+        var backupRoot = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Where(c => c.Clave == "backup_path")
+            .Select(c => c.Valor)
+            .FirstOrDefaultAsync(cancellationToken) ?? @"C:\atlas-balance\backups";
+
+        if (string.IsNullOrWhiteSpace(backup.RutaArchivo) || !IsAllowedBackupFile(backup.RutaArchivo, backupRoot))
+        {
+            _logger.LogWarning("Restauracion de backup {BackupId} bloqueada por ruta no permitida", id);
+            return BadRequest(new { error = "La ruta de la copia de seguridad no es valida." });
+        }
+
         if (!System.IO.File.Exists(backup.RutaArchivo))
         {
             return BadRequest(new { error = "El archivo de la copia de seguridad no existe en disco." });
@@ -148,5 +160,50 @@ public sealed class BackupsController : ControllerBase
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
         return Guid.TryParse(raw, out var userId) ? userId : null;
+    }
+
+    private static bool IsAllowedBackupFile(string filePath, string backupRoot)
+    {
+        if (!IsExplicitlyRooted(filePath))
+        {
+            return false;
+        }
+
+        if (!string.Equals(Path.GetExtension(filePath), ".dump", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!IsExplicitlyRooted(backupRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullFilePath = Path.GetFullPath(filePath);
+            var fullRoot = EnsureTrailingSeparator(Path.GetFullPath(backupRoot));
+            return fullFilePath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string EnsureTrailingSeparator(string path)
+    {
+        return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
+            ? path
+            : $"{path}{Path.DirectorySeparatorChar}";
+    }
+
+    private static bool IsExplicitlyRooted(string path)
+    {
+        return Path.IsPathRooted(path) ||
+               (path.Length >= 3 &&
+                char.IsLetter(path[0]) &&
+                path[1] == ':' &&
+                (path[2] == '\\' || path[2] == '/'));
     }
 }

@@ -8,6 +8,48 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-22 - V-01.09 - Verificacion threat model con subagentes y hardening adicional
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se reviso el threat model de Atlas Balance con cinco subagentes por superficie: autenticacion/sesion, autorizacion/aislamiento, OpenClaw, ficheros/admin/watchdog y frontend/configuracion.
+- Se confirmo que la mayoria de controles revisados ya estaban cerrados: scopes de usuario, OpenClaw, CSRF, cookies HttpOnly, headers, update URL oficial, saneado de exportaciones y ausencia de sinks HTML crudos en frontend.
+- Se corrigio un fallo real en cambio de contrasena: una sesion pre-MFA podia recibir un nuevo refresh token marcado como MFA-verificado si `RequireMfaForWebUsers` se activaba despues.
+- `ChangePasswordAsync` exige ahora que la cookie `refresh_token` actual exista, este activa y tenga `mfa_verified_at` antes de emitir una nueva sesion cuando MFA es obligatorio.
+- Se endurecio RLS como backstop: filas soft-deleted de titulares, cuentas, plazos, extractos y exportaciones quedan fuera para usuario/integracion; los helpers por cuenta/extracto exigen cuenta y titular activos para datos dependientes.
+- Se endurecieron descargas/restauraciones y retencion: exportaciones/backups validan extension, ruta absoluta y raiz permitida antes de tocar disco o pedir al Watchdog que restaure.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260522103000_HardenRlsSoftDeleteBackstop.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/BackupsController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, version activa, `v-01.09.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Lectura de `codex-security:security-scan` y `Skills Curated/05_Security/cyber-neo/SKILL.md`.
+- Barridos `rg` sobre auth, CSRF, OpenClaw, Watchdog, RLS, XSS, secretos, imports/exports y rutas de fichero.
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~AuthControllerTests|FullyQualifiedName~ManualProcessResponseTests" -p:UseAppHost=false`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorization|FullyQualifiedName~OpenClaw|FullyQualifiedName~ExportacionServiceTests|FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~Watchdog" -p:UseAppHost=false`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" -p:UseAppHost=false`
+- Intento de `RowLevelSecurityTests`: bloqueado por Docker/Testcontainers no disponible/configurado.
+
+**Resultado de verificacion:**
+- Auth/controladores afectados: 27/27 OK.
+- Autorizacion, integracion, import/export, actualizacion y watchdog no-Docker: 88/88 OK.
+- Suite backend no-Docker amplia: 269/269 OK.
+- `RowLevelSecurityTests`: no ejecutado; Testcontainers falla antes de arrancar por Docker no disponible/configurado.
+
+**Pendientes:**
+- Ejecutar `RowLevelSecurityTests` y `ExtractosConcurrencyTests` con Docker operativo.
+- Mantener E2E autenticado real como gate de release.
+
+---
 ## 2026-05-20 - V-01.09 - Revision threat model y cierre de soft-delete en importacion/exportacion
 
 **Version:** V-01.09

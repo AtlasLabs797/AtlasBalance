@@ -1,5 +1,34 @@
 # Log de errores e incidencias
 
+## 2026-05-22 - V-01.09 - Cambio de contrasena podia convertir sesion pre-MFA en post-MFA
+
+- Contexto: verificacion del threat model con subagentes sobre autenticacion, autorizacion, OpenClaw, ficheros/admin/watchdog y frontend/configuracion.
+- Hallazgo confirmado:
+  - `RefreshTokenAsync` ya rechazaba refresh tokens sin `mfa_verified_at` cuando MFA era obligatorio.
+  - `ChangePasswordAsync`, en cambio, emitia un refresh token nuevo con `MfaVerifiedAt = now` si el usuario tenia MFA activo, aunque la sesion actual no hubiera completado MFA.
+- Riesgo: si MFA se activaba despues de emitir una sesion, un access token todavia valido podia llamar a cambio de contrasena y recibir una nueva sesion con garantia MFA falsa.
+- Solucion aplicada:
+  - `CambiarPassword` pasa la cookie `refresh_token` actual.
+  - `ChangePasswordAsync` exige que ese refresh token este activo y tenga `mfa_verified_at` para usuarios con MFA obligatorio.
+  - El refresh nuevo preserva la garantia existente; no crea una garantia falsa.
+  - Regresiones cubren rechazo de sesion pre-MFA y preservacion de sesion MFA verificada.
+- Verificacion: bloque auth/controladores afectados 27/27 OK; suite backend sin Docker/Testcontainers 269/269 OK.
+- Regla: la garantia MFA pertenece a la sesion, no al perfil del usuario. Confundir eso es una forma elegante de abrir un bypass.
+
+## 2026-05-22 - V-01.09 - RLS y rutas de backup/export necesitaban backstops mas duros
+
+- Contexto: los subagentes confirmaron que la autorizacion normal estaba cerrada, pero RLS no era un backstop suficiente frente a soft-delete; tambien habia validaciones de fichero despues de `File.Exists`.
+- Hallazgos:
+  - Las politicas RLS dependian demasiado de query filters/controladores para ocultar filas soft-deleted.
+  - Exportaciones y backups tocaban disco antes de validar raiz permitida.
+  - Retencion de backups podia intentar borrar una ruta persistida en DB sin comprobar que siguiera bajo `backup_path`.
+- Solucion aplicada:
+  - Migracion RLS de hardening para filtrar soft-delete en lectura usuario/integracion y en helpers de cuenta/extracto/exportacion.
+  - Descarga de exportaciones y restauracion de backups validan extension, ruta absoluta y raiz configurada antes de `File.Exists`.
+  - Retencion omite y registra backups cuya ruta no cae bajo la raiz permitida.
+- Verificacion: suite backend sin Docker/Testcontainers 269/269 OK; `RowLevelSecurityTests` no pudo ejecutarse porque Docker/Testcontainers no esta disponible/configurado.
+- Regla: si una ruta sale de DB, tratala como hostil hasta que demuestre que vive bajo la raiz permitida. La DB no es agua bendita.
+
 ## 2026-05-20 - V-01.09 - Importacion/exportacion no heredaban soft-delete del titular
 
 - Contexto: revision del threat model de seguridad recibido para comprobar si `V-01.09` cubria autenticacion, autorizacion, OpenClaw, imports/exports, Watchdog y actualizaciones.

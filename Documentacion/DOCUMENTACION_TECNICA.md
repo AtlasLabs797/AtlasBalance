@@ -1,5 +1,30 @@
 # Documentacion tecnica
 
+## 2026-05-22 - V-01.09 - Threat model: MFA en cambio de password, RLS y rutas de ficheros
+
+### Que cambio
+
+- `AuthController.CambiarPassword` pasa la cookie `refresh_token` actual a `AuthService.ChangePasswordAsync`.
+- `ChangePasswordAsync` ya no inventa `mfa_verified_at` al emitir el refresh token nuevo. Si MFA es obligatorio y el usuario tiene MFA activo, solo preserva la garantia de una sesion actual ya verificada.
+- Si la sesion actual no tiene refresh token activo con `mfa_verified_at`, el cambio de contrasena responde `401` y no rota password ni tokens.
+- Nueva migracion `20260522103000_HardenRlsSoftDeleteBackstop`: RLS filtra soft-delete para usuario/integracion en titulares, cuentas, plazos, extractos y exportaciones, y los helpers por cuenta/extracto exigen cuenta y titular activos para datos dependientes.
+- `ExportacionesController.Descargar`, `BackupsController.Restaurar` y `BackupService.ApplyRetentionAsync` validan ruta absoluta, extension esperada y raiz configurada antes de tocar disco.
+
+### Por que
+
+El bug de MFA era sutil y peligroso: el cambio de password marcaba el nuevo refresh como MFA-verificado por mirar el estado del usuario, no la garantia de la sesion. Eso podia convertir una sesion pre-MFA en sesion post-MFA. RLS y rutas de ficheros recibieron hardening porque son backstops: no deben depender de que todos los futuros controladores recuerden los mismos filtros.
+
+### Verificacion
+
+- `AuthServiceTests|AuthControllerTests|ManualProcessResponseTests`: 27/27 OK.
+- Bloque autorizacion/integracion/import-export/update/watchdog: 88/88 OK.
+- Suite backend sin Docker/Testcontainers: 269/269 OK.
+- `RowLevelSecurityTests` compila, pero no se ejecuto porque Testcontainers falla antes de crear PostgreSQL: Docker no esta disponible/configurado en esta maquina.
+
+### Limite real
+
+RLS con PostgreSQL real sigue siendo gate de release. Compilar la migracion no prueba las politicas con el motor; sin Docker, vender esto como "validado completo" seria hacerse trampas.
+
 ## 2026-05-20 - V-01.09 - Threat model: soft-delete heredado en importacion/exportacion
 
 ### Que cambio

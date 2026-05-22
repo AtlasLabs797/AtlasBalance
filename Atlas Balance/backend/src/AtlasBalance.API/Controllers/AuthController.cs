@@ -168,6 +168,7 @@ public sealed class AuthController : ControllerBase
                 request.PasswordActual,
                 request.PasswordNueva,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Request.Cookies["refresh_token"],
                 cancellationToken);
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }

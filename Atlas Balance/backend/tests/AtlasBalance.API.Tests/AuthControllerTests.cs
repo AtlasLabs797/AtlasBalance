@@ -57,7 +57,7 @@ public sealed class AuthControllerTests
         public Task<AuthResult> GetCurrentAsync(Guid userId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, CancellationToken cancellationToken) =>
+        public Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 
