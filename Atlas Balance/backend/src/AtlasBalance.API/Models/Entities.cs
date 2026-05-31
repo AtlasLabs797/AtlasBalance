@@ -43,6 +43,7 @@ public class RefreshToken
     public Guid Id { get; set; }
     public Guid UsuarioId { get; set; }
     public string TokenHash { get; set; } = string.Empty;
+    public string SecurityStamp { get; set; } = string.Empty;
     public DateTime ExpiraEn { get; set; }
     public DateTime CreadoEn { get; set; } = DateTime.UtcNow;
     public DateTime? MfaVerifiedAt { get; set; }

@@ -450,6 +450,18 @@ public sealed class AuthService : IAuthService
 
             UserSessionState.EnsureSecurityStamp(usuario);
 
+            if (!HasMatchingSecurityStamp(storedToken.SecurityStamp, usuario.SecurityStamp))
+            {
+                storedToken.RevocadoEn = now;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                if (tx is not null)
+                {
+                    await tx.CommitAsync(cancellationToken);
+                }
+
+                throw new AuthException("Refresh token inválido o expirado", StatusCodes.Status401Unauthorized);
+            }
+
             if (RequiresMfa(usuario) && storedToken.MfaVerifiedAt is null)
             {
                 storedToken.RevocadoEn = now;
@@ -473,6 +485,7 @@ public sealed class AuthService : IAuthService
                 Id = Guid.NewGuid(),
                 UsuarioId = usuario.Id,
                 TokenHash = replacementHash,
+                SecurityStamp = usuario.SecurityStamp,
                 ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
                 CreadoEn = now,
                 MfaVerifiedAt = storedToken.MfaVerifiedAt,
@@ -555,9 +568,9 @@ public sealed class AuthService : IAuthService
 
         var now = DateTime.UtcNow;
         DateTime? currentSessionMfaVerifiedAt = null;
-        if (RequiresMfa(usuario) && usuario.MfaEnabled)
+        if (RequiresMfa(usuario))
         {
-            currentSessionMfaVerifiedAt = await ResolveCurrentSessionMfaVerifiedAtAsync(userId, currentRefreshToken, now, cancellationToken);
+            currentSessionMfaVerifiedAt = await ResolveCurrentSessionMfaVerifiedAtAsync(userId, currentRefreshToken, usuario.SecurityStamp, now, cancellationToken);
             if (currentSessionMfaVerifiedAt is null)
             {
                 throw new AuthException("Se requiere MFA para cambiar la contraseña", StatusCodes.Status401Unauthorized);
@@ -583,6 +596,7 @@ public sealed class AuthService : IAuthService
             Id = Guid.NewGuid(),
             UsuarioId = usuario.Id,
             TokenHash = ComputeSha256(newRefreshToken),
+            SecurityStamp = usuario.SecurityStamp,
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
             MfaVerifiedAt = currentSessionMfaVerifiedAt,
@@ -602,7 +616,7 @@ public sealed class AuthService : IAuthService
         return await BuildAuthResultAsync(usuario, accessToken, newRefreshToken, cancellationToken);
     }
 
-    private async Task<DateTime?> ResolveCurrentSessionMfaVerifiedAtAsync(Guid userId, string? refreshToken, DateTime now, CancellationToken cancellationToken)
+    private async Task<DateTime?> ResolveCurrentSessionMfaVerifiedAtAsync(Guid userId, string? refreshToken, string securityStamp, DateTime now, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(refreshToken))
         {
@@ -613,6 +627,7 @@ public sealed class AuthService : IAuthService
         return await _dbContext.RefreshTokens
             .AsNoTracking()
             .Where(rt => rt.UsuarioId == userId && rt.TokenHash == refreshHash && rt.RevocadoEn == null && rt.ExpiraEn > now)
+            .Where(rt => rt.SecurityStamp == securityStamp)
             .Select(rt => rt.MfaVerifiedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -690,6 +705,7 @@ public sealed class AuthService : IAuthService
             Id = Guid.NewGuid(),
             UsuarioId = usuario.Id,
             TokenHash = ComputeSha256(refreshToken),
+            SecurityStamp = usuario.SecurityStamp,
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
             MfaVerifiedAt = mfaVerifiedAt,
@@ -924,6 +940,19 @@ public sealed class AuthService : IAuthService
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static bool HasMatchingSecurityStamp(string tokenStamp, string userStamp)
+    {
+        if (string.IsNullOrWhiteSpace(tokenStamp) || string.IsNullOrWhiteSpace(userStamp))
+        {
+            return false;
+        }
+
+        var tokenBytes = Encoding.UTF8.GetBytes(tokenStamp);
+        var userBytes = Encoding.UTF8.GetBytes(userStamp);
+        return tokenBytes.Length == userBytes.Length &&
+               CryptographicOperations.FixedTimeEquals(tokenBytes, userBytes);
     }
 
     private async Task AcquireRefreshTokenLockAsync(string refreshHash, CancellationToken cancellationToken)

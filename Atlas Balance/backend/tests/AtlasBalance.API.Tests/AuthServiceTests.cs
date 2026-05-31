@@ -404,6 +404,46 @@ public class AuthServiceTests
     }
 
     [Fact]
+    public async Task ChangePassword_Should_Reject_PreMfa_Setup_Session_When_Mfa_Is_Required()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-change-setup-session@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Change Setup Session",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            MfaEnabled = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
+
+        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        Func<Task> changePassword = () => mfaSut.ChangePasswordAsync(
+            user.Id,
+            "OldPass123!Ab",
+            "NewPass12345!",
+            "127.0.0.1",
+            preMfaLogin.RefreshToken,
+            CancellationToken.None);
+
+        var exception = await changePassword.Should().ThrowAsync<AuthException>();
+        exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        BCrypt.Net.BCrypt.Verify("OldPass123!Ab", persisted.PasswordHash).Should().BeTrue();
+        BCrypt.Net.BCrypt.Verify("NewPass12345!", persisted.PasswordHash).Should().BeFalse();
+        (await db.RefreshTokens.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task ChangePassword_Should_Preserve_Mfa_Assurance_For_Verified_Session()
     {
         await using var db = BuildDbContext();
@@ -740,6 +780,46 @@ public class AuthServiceTests
 
         var newToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == newHash);
         newToken.RevocadoEn.Should().BeNull();
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        newToken.SecurityStamp.Should().Be(persisted.SecurityStamp);
+    }
+
+    [Fact]
+    public async Task RefreshToken_Should_Reject_Token_From_Previous_SecurityStamp()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "refresh-stamp@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Refresh Stamp User",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var refreshHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(login.RefreshToken!))).ToLowerInvariant();
+        var storedToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == refreshHash);
+        var tokenStamp = storedToken.SecurityStamp;
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        UserSessionState.RotateSecurityStamp(persisted);
+        await db.SaveChangesAsync();
+
+        Func<Task> refresh = () => sut.RefreshTokenAsync(login.RefreshToken!, "127.0.0.1", CancellationToken.None);
+        var exception = await refresh.Should().ThrowAsync<AuthException>();
+
+        exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        var revokedToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == refreshHash);
+        revokedToken.SecurityStamp.Should().Be(tokenStamp);
+        revokedToken.RevocadoEn.Should().NotBeNull();
+        (await db.RefreshTokens.CountAsync()).Should().Be(1);
     }
 
     [Fact]

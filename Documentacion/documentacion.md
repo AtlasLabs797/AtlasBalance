@@ -272,7 +272,7 @@ El actualizador hace esto:
 9. La API aplica migraciones EF Core automaticamente al arrancar.
 10. Verifica `/api/health` con `curl.exe -k`.
 
-Si el health check falla, no sigas tocando a ciegas. Revisa servicios y logs. La copia rollback de binarios queda indicada en consola.
+Si el health check falla, el actualizador restaura automaticamente los binarios anteriores desde `C:\AtlasBalance\backups\app_before_update_*`, vuelve a apuntar los servicios a esos binarios y falla con mensaje claro. Revisa servicios y logs antes de otro intento; repetir a ciegas es como reiniciar el incendio.
 
 ## Desinstalar completamente
 
@@ -330,6 +330,8 @@ Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exac
 - `config\INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial con ACL limitada a Administrators/SYSTEM y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.
 
 ## Recuperacion si una actualizacion falla
+
+Desde `V-01.09`, el script de actualizacion intenta esta recuperacion automaticamente cuando falla el health check post-update. Usa estos pasos solo si el rollback automatico tambien falla o si estas reparando una instalacion antigua.
 
 1. Para servicios:
 

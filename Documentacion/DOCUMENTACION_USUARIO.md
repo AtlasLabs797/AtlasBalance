@@ -249,6 +249,8 @@ La prioridad es cuenta > tipo de titular > global.
 
 El aviso por email se envia cuando el saldo actual de la cuenta queda por debajo del umbral de la alerta aplicable. Para no bombardear, Atlas Balance respeta la ventana antiduplicados configurada en `Configuracion > Revision e IA`. Si no hay destinatarios validos o falla SMTP, no se marca como enviado y se reintentara en la siguiente evaluacion.
 
+Las importaciones de extractos y los movimientos manuales de plazo fijo tambien evaluan estas alertas al terminar. Antes solo lo hacian algunas ediciones manuales; eso era demasiado facil de olvidar.
+
 ## Revision bancaria
 
 El menu lateral incluye `Revision` con dos apartados:
@@ -270,7 +272,7 @@ La IA responde usando contexto financiero real minimizado: saldos, agregados y m
 
 En consultas de comisiones y seguros, Atlas Balance filtra ruido antes de llamar al proveedor. Un cargo normal de tarjeta, una cuota/leasing, una transferencia, Seguridad Social/TGSS, Generalitat, anulaciones, devoluciones y reembolsos no deben inflar los totales de seguros o comisiones que recibe la IA.
 
-Algunas preguntas de ranking financiero se calculan directamente en Atlas Balance, sin mandar la consulta al proveedor. Por ejemplo, `Que cuentas han tenido mas gastos este trimestre?` devuelve un ranking por cuenta, titular y divisa calculado con los movimientos accesibles para tu usuario. En esas respuestas veras coste y tokens `0`.
+Algunas preguntas de ranking financiero se calculan directamente en Atlas Balance, sin mandar la consulta al proveedor. Por ejemplo, `Que cuentas han tenido mas gastos este trimestre?` devuelve ranking por cuenta; `Que titulares han tenido mas gastos este trimestre?` agrupa por titular y divisa. En esas respuestas veras coste y tokens `0`.
 
 Las respuestas del chat se muestran como texto legible. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
 

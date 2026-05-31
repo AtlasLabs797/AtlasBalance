@@ -29,6 +29,60 @@
 
 ## Cerrados
 
+### 2026-06-01 - V-01.09 - Cerrado - Refresh tokens no quedaban ligados a rotaciones de seguridad
+
+- Contexto: auditoria profunda de autenticacion.
+- Causa: `REFRESH_TOKENS` no guardaba el `security_stamp` vigente al emitirse.
+- Impacto: tokens emitidos antes de reset/password/MFA/revocacion podian seguir rotando si no se borraban por otra via.
+- Solucion: columna `security_stamp`, backfill por migracion y comparacion constant-time contra el usuario actual en refresh.
+- Verificacion: regresiones AuthService incluidas en bloque focalizado 136/136 OK.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Tipos de cambio faltantes se convertian como 1:1
+
+- Contexto: auditoria de integridad de dashboards/OpenClaw.
+- Causa: `TiposCambioService.ConvertAsync` devolvia `amount` si no encontraba tasa.
+- Impacto: cifras financieras falsas sin aviso.
+- Solucion: lanzar `TipoCambioMissingException` y responder `409` con mensaje claro.
+- Verificacion: `TiposCambioServiceTests` en bloque focalizado 136/136 OK.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Importacion podia duplicar filas si cambiaban columnas extra
+
+- Contexto: auditoria de idempotencia de importacion.
+- Causa: la huella de contenido mezclaba identidad financiera con columnas auxiliares `extra:*`.
+- Impacto: reimportar el mismo movimiento con una referencia auxiliar corregida podia insertarlo dos veces.
+- Solucion: fingerprint por cuenta, fecha, monto, saldo y concepto; las columnas extra siguen guardandose pero no definen identidad.
+- Verificacion: regresion `ConfirmarAsync_Should_Deduplicate_When_Only_Extra_Columns_Change`.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Alertas de saldo bajo no se evaluaban tras importacion/plazo fijo
+
+- Contexto: auditoria funcional de alertas.
+- Causa: `ImportacionService` persistia saldos nuevos sin llamar a `IAlertaService`.
+- Impacto: una cuenta podia quedar bajo umbral sin email hasta otra edicion manual.
+- Solucion: evaluar alerta tras commit de importacion y de movimiento de plazo fijo.
+- Verificacion: regresiones con `RecordingAlertaService`.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Ranking IA por titular agrupaba realmente por cuenta
+
+- Contexto: auditoria de respuestas deterministas IA.
+- Causa: el detector aceptaba `titular`, pero la query agrupaba siempre por cuenta/titular/divisa.
+- Impacto: respuesta semanticamente falsa para preguntas por titulares.
+- Solucion: nueva dimension de ranking; si el prompt pide titulares, agrega por titular/divisa.
+- Verificacion: regresion `AskAsync_Should_Group_Deterministic_Ranking_By_Titular_When_Requested`.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Actualizador externo avisaba rollback pero no restauraba
+
+- Contexto: auditoria de release/update.
+- Causa: `Actualizar-AtlasBalance.ps1` creaba copia rollback, pero si fallaba `/api/health` solo lanzaba excepcion.
+- Impacto: instalacion con binarios nuevos fallidos y rollback manual en el peor momento.
+- Solucion: restauracion automatica de `api`, `watchdog`, `VERSION` y runtime antes de fallar.
+- Verificacion: parser PowerShell OK; validacion real Windows queda pendiente.
+- Estado: cerrado en script; pendiente prueba Windows real.
+
 ### 2026-05-22 - V-01.09 - Cerrado - Actualizacion online solo reemplazaba API/frontend
 
 - Contexto: verificacion de la promesa "solo pulsar actualizar" para subir de version desde GitHub Release sin pasos intermedios.

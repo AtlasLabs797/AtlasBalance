@@ -8,6 +8,60 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-01 - V-01.09 - Auditoria profunda de seguridad, bugs y release gate
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se corrigio la vinculacion de refresh tokens al `security_stamp` del usuario para invalidar sesiones tras reset/password/MFA/revocacion.
+- Se endurecio cambio de password para exigir sesion con MFA real cuando la politica MFA aplica.
+- Se agrego hardening RLS para `REVISION_EXTRACTO_ESTADOS` y lecturas de integracion.
+- Se elimino el fallback silencioso 1:1 en tipos de cambio sin tasa.
+- Se corrigio deduplicacion de importacion para que columnas extra cambiantes no creen duplicados.
+- Se disparan alertas de saldo bajo despues de confirmar importaciones y movimientos de plazo fijo.
+- La IA agrupa rankings por titular cuando la pregunta pide titulares.
+- Se reforzaron scripts de release/update y se agrego workflow manual de GitHub Release latest.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/TiposCambioService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260601090000_AddRefreshTokenSecurityStamp.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260601091000_HardenRlsIntegrationReadBackstop.cs`
+- Tests backend de auth, RLS, tipos de cambio, importacion e IA.
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/RELEASE.gitignore`
+- `.github/workflows/release.yml`
+- Documentacion bajo `Documentacion/`.
+
+**Comandos ejecutados:**
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~TiposCambioServiceTests|FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~AtlasAiServiceTests|FullyQualifiedName~AuthServiceTests"`
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet build AtlasBalance.API.csproj -c Release --no-restore -p:UseAppHost=false`
+- Parser PowerShell de `Build-Release.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Escaneo local de secretos de alta confianza.
+
+**Resultado de verificacion:**
+- Tests focalizados: 136/136 OK.
+- Suite backend sin Docker/Testcontainers: 276/276 OK.
+- Backend Release build: OK, con warning obsoleto preexistente de Hangfire/PostgreSQL.
+- Frontend lint/build: OK.
+- Scripts PowerShell parse: OK.
+- Secret scan: OK.
+
+**Pendientes:**
+- No se genero paquete release publicable: falta `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- No se hizo push/publicacion GitHub: no hay `gh` ni token local.
+- No se ejecutaron `RowLevelSecurityTests` ni `ExtractosConcurrencyTests`: Docker daemon no esta disponible.
+
+---
 ## 2026-05-22 - V-01.09 - Implementacion de actualizacion one-click completa
 
 **Version:** V-01.09

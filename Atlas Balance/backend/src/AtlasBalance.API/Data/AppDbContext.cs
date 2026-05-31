@@ -77,6 +77,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.UsuarioId);
             entity.HasIndex(e => e.TokenHash).IsUnique();
             entity.HasIndex(e => e.ExpiraEn);
+            entity.Property(e => e.SecurityStamp).HasMaxLength(128);
             entity.Property(e => e.IpAddress).HasColumnType("inet");
             entity.HasQueryFilter(e => e.Usuario != null && e.Usuario.DeletedAt == null);
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);

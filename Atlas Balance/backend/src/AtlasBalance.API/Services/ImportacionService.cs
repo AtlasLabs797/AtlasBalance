@@ -39,11 +39,13 @@ public sealed class ImportacionService : IImportacionService
 
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
+    private readonly IAlertaService? _alertaService;
 
-    public ImportacionService(AppDbContext dbContext, IAuditService auditService)
+    public ImportacionService(AppDbContext dbContext, IAuditService auditService, IAlertaService? alertaService = null)
     {
         _dbContext = dbContext;
         _auditService = auditService;
+        _alertaService = alertaService;
     }
 
     public async Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, CancellationToken cancellationToken)
@@ -356,6 +358,8 @@ public sealed class ImportacionService : IImportacionService
             await tx.CommitAsync(cancellationToken);
         }
 
+        await EvaluateSaldoAlertAsync(cuenta.Id, usuarioId, cancellationToken);
+
         return new ImportacionConfirmarResponse
         {
             FilasProcesadas = validationRows.Count,
@@ -475,6 +479,8 @@ public sealed class ImportacionService : IImportacionService
             await tx.CommitAsync(cancellationToken);
         }
 
+        await EvaluateSaldoAlertAsync(cuenta.Id, usuarioId, cancellationToken);
+
         return new ImportacionPlazoFijoMovimientoResponse
         {
             ExtractoId = extracto.Id,
@@ -587,17 +593,12 @@ public sealed class ImportacionService : IImportacionService
         builder.Append('|');
         builder.Append(NormalizeTextForFingerprint(row.Datos.GetValueOrDefault("concepto")));
 
-        foreach (var pair in row.Datos
-                     .Where(x => x.Key.StartsWith("extra:", StringComparison.OrdinalIgnoreCase))
-                     .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            builder.Append('|');
-            builder.Append(pair.Key.ToLowerInvariant());
-            builder.Append('=');
-            builder.Append(NormalizeTextForFingerprint(pair.Value));
-        }
-
         return Sha256Hex(builder.ToString());
+    }
+
+    private Task EvaluateSaldoAlertAsync(Guid cuentaId, Guid actorUserId, CancellationToken cancellationToken)
+    {
+        return _alertaService?.EvaluateSaldoPostAsync(cuentaId, actorUserId, cancellationToken) ?? Task.CompletedTask;
     }
 
     private static string NormalizeDateForFingerprint(string? raw)

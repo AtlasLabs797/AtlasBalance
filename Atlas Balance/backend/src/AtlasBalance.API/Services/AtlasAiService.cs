@@ -635,20 +635,36 @@ public sealed class AtlasAiService : IAtlasAiService
             })
             .ToListAsync(cancellationToken);
 
-        var rows = rawRows
-            .Select(x => new FinancialRankingRow(
-                x.Titular,
-                x.Cuenta,
-                x.Divisa,
-                x.Ingresos,
-                x.Gastos,
-                x.Neto,
-                intent.Metric switch
-                {
-                    FinancialRankingMetric.Expenses => x.MovimientosGasto,
-                    FinancialRankingMetric.Income => x.MovimientosIngreso,
-                    _ => x.MovimientosTotal
-                }))
+        var rows = (intent.Dimension == FinancialRankingDimension.Titular
+                ? rawRows
+                    .GroupBy(x => new { x.Titular, x.Divisa })
+                    .Select(g => new FinancialRankingRow(
+                        g.Key.Titular,
+                        string.Empty,
+                        g.Key.Divisa,
+                        g.Sum(x => x.Ingresos),
+                        g.Sum(x => x.Gastos),
+                        g.Sum(x => x.Neto),
+                        intent.Metric switch
+                        {
+                            FinancialRankingMetric.Expenses => g.Sum(x => x.MovimientosGasto),
+                            FinancialRankingMetric.Income => g.Sum(x => x.MovimientosIngreso),
+                            _ => g.Sum(x => x.MovimientosTotal)
+                        }))
+                : rawRows
+                    .Select(x => new FinancialRankingRow(
+                        x.Titular,
+                        x.Cuenta,
+                        x.Divisa,
+                        x.Ingresos,
+                        x.Gastos,
+                        x.Neto,
+                        intent.Metric switch
+                        {
+                            FinancialRankingMetric.Expenses => x.MovimientosGasto,
+                            FinancialRankingMetric.Income => x.MovimientosIngreso,
+                            _ => x.MovimientosTotal
+                        })))
             .Where(x => MetricValue(x, intent.Metric) != 0m)
             .ToList();
 
@@ -679,7 +695,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 model = state.Model,
                 runtime_model = ProviderRuntimeModel(state),
                 deterministic = true,
-                deterministic_kind = "account_ranking",
+                deterministic_kind = intent.Dimension == FinancialRankingDimension.Titular ? "titular_ranking" : "account_ranking",
                 metric = intent.Metric.ToString().ToLowerInvariant(),
                 period_start = intent.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 period_end = intent.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -787,7 +803,10 @@ public sealed class AtlasAiService : IAtlasAiService
             return false;
         }
 
-        intent = new FinancialRankingIntent(metric, from, to, periodLabel, ExtractRankingLimit(normalized));
+        var dimension = ContainsAny(normalized, "titular", "titulares")
+            ? FinancialRankingDimension.Titular
+            : FinancialRankingDimension.Cuenta;
+        intent = new FinancialRankingIntent(metric, dimension, from, to, periodLabel, ExtractRankingLimit(normalized));
         return true;
     }
 
@@ -811,7 +830,7 @@ public sealed class AtlasAiService : IAtlasAiService
         {
             builder.Append("No hay ");
             builder.Append(metricLabel);
-            builder.Append(" por cuenta en ");
+            builder.Append(intent.Dimension == FinancialRankingDimension.Titular ? " por titular en " : " por cuenta en ");
             builder.Append(intent.PeriodLabel);
             builder.Append(" (");
             builder.Append(intent.From.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture));
@@ -821,7 +840,7 @@ public sealed class AtlasAiService : IAtlasAiService
             return builder.ToString();
         }
 
-        builder.Append("Cuentas con mas ");
+        builder.Append(intent.Dimension == FinancialRankingDimension.Titular ? "Titulares con mas " : "Cuentas con mas ");
         builder.Append(metricLabel);
         builder.Append(" en ");
         builder.Append(intent.PeriodLabel);
@@ -843,9 +862,16 @@ public sealed class AtlasAiService : IAtlasAiService
             {
                 builder.Append(index.ToString(CultureInfo.InvariantCulture));
                 builder.Append(". ");
-                builder.Append(SanitizeContextText(row.Cuenta));
-                builder.Append(" | ");
-                builder.Append(SanitizeContextText(row.Titular));
+                if (intent.Dimension == FinancialRankingDimension.Titular)
+                {
+                    builder.Append(SanitizeContextText(row.Titular));
+                }
+                else
+                {
+                    builder.Append(SanitizeContextText(row.Cuenta));
+                    builder.Append(" | ");
+                    builder.Append(SanitizeContextText(row.Titular));
+                }
                 builder.Append(": ");
                 builder.Append(metricLabel);
                 builder.Append(' ');
@@ -2505,8 +2531,15 @@ public sealed class AtlasAiService : IAtlasAiService
         Net
     }
 
+    private enum FinancialRankingDimension
+    {
+        Cuenta,
+        Titular
+    }
+
     private sealed record FinancialRankingIntent(
         FinancialRankingMetric Metric,
+        FinancialRankingDimension Dimension,
         DateOnly From,
         DateOnly To,
         string PeriodLabel,

@@ -291,6 +291,14 @@ app.UseExceptionHandler(errorApp =>
             logger.LogError(feature.Error, "Unhandled API exception on {Path}", context.Request.Path.Value);
         }
 
+        if (feature?.Error is TipoCambioMissingException missingRate)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            context.Response.ContentType = "application/json; charset=utf-8";
+            await context.Response.WriteAsJsonAsync(new { error = missingRate.Message });
+            return;
+        }
+
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         context.Response.ContentType = "application/json; charset=utf-8";
         await context.Response.WriteAsJsonAsync(new { error = "Error interno del servidor." });

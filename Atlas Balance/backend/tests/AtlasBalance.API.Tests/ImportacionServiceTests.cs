@@ -103,7 +103,8 @@ public class ImportacionServiceTests
             Separador = "tab",
             Mapeo = DefaultMapeo()
         };
-        var service = new ImportacionService(db, new AuditService(db));
+        var alertas = new RecordingAlertaService();
+        var service = new ImportacionService(db, new AuditService(db), alertas);
 
         var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
@@ -277,7 +278,8 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var alertas = new RecordingAlertaService();
+        var service = new ImportacionService(db, new AuditService(db), alertas);
 
         var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
@@ -351,7 +353,8 @@ public class ImportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var alertas = new RecordingAlertaService();
+        var service = new ImportacionService(db, new AuditService(db), alertas);
 
         var result = await service.RegistrarMovimientoPlazoFijoAsync(
             userId,
@@ -376,6 +379,7 @@ public class ImportacionServiceTests
         imported.Saldo.Should().Be(850m);
         imported.FilaNumero.Should().Be(2);
         imported.Concepto.Should().Be("Retirada parcial");
+        alertas.EvaluatedCuentaIds.Should().Equal(cuenta.Id);
     }
 
     [Fact]
@@ -1275,6 +1279,60 @@ public class ImportacionServiceTests
     }
 
     [Fact]
+    public async Task ConfirmarAsync_Should_Deduplicate_When_Only_Extra_Columns_Change()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var alertas = new RecordingAlertaService();
+        var service = new ImportacionService(db, new AuditService(db), alertas);
+        var map = DefaultMapeo();
+        map.ColumnasExtra = [new MapeoColumnaExtraRequest { Nombre = "referencia", Indice = 4 }];
+        var firstRequest = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tVenta 1\t1200,50\t3000,25\tA-1",
+            Separador = "tab",
+            Mapeo = map
+        };
+        var changedExtraRequest = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tVenta 1\t1200,50\t3000,25\tA-1-corregida",
+            Separador = "tab",
+            Mapeo = map
+        };
+
+        var first = await service.ConfirmarAsync(userId, RolUsuario.EMPLEADO.ToString(), firstRequest, new DefaultHttpContext(), CancellationToken.None);
+        var second = await service.ConfirmarAsync(userId, RolUsuario.EMPLEADO.ToString(), changedExtraRequest, new DefaultHttpContext(), CancellationToken.None);
+
+        first.FilasImportadas.Should().Be(1);
+        second.FilasImportadas.Should().Be(0);
+        second.FilasDuplicadas.Should().Be(1);
+        (await db.Extractos.CountAsync()).Should().Be(1);
+        alertas.EvaluatedCuentaIds.Should().Equal(cuentaId);
+    }
+
+    [Fact]
+    public async Task ConfirmarAsync_Should_Evaluate_Saldo_Alert_After_Import()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var alertas = new RecordingAlertaService();
+        var service = new ImportacionService(db, new AuditService(db), alertas);
+        var request = new ImportacionConfirmarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "01/04/2026\tVenta 1\t1200,50\t3000,25",
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+
+        await service.ConfirmarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, new DefaultHttpContext(), CancellationToken.None);
+
+        alertas.EvaluatedCuentaIds.Should().Equal(cuentaId);
+    }
+
+    [Fact]
     public async Task ConfirmarAsync_Should_Preserve_Pasted_Order_When_Viewing_FilaNumero_Descending()
     {
         await using var db = BuildDbContext();
@@ -1598,4 +1656,18 @@ public class ImportacionServiceTests
             Monto = 2,
             Saldo = 3
         };
+
+    private sealed class RecordingAlertaService : IAlertaService
+    {
+        public List<Guid> EvaluatedCuentaIds { get; } = [];
+
+        public Task EvaluateSaldoPostAsync(Guid cuentaId, Guid? actorUserId, CancellationToken cancellationToken)
+        {
+            EvaluatedCuentaIds.Add(cuentaId);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<AlertaActivaItemResponse>>([]);
+    }
 }

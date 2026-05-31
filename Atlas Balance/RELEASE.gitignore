@@ -13,3 +13,6 @@ postgres-data/
 postgresql/
 api/appsettings.Production.json
 watchdog/appsettings.Production.json
+config/*CREDENTIALS_ONCE.txt
+config/INSTALL_CREDENTIALS_ONCE.txt
+config/RESET_ADMIN_CREDENTIALS_ONCE.txt

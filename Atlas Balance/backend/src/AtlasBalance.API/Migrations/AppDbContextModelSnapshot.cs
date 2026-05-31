@@ -1198,6 +1198,12 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revocado_en");
 
+                    b.Property<string>("SecurityStamp")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("security_stamp");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasColumnType("text")

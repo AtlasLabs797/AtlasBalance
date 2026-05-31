@@ -525,6 +525,49 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
+    public async Task AskAsync_Should_Group_Deterministic_Ranking_By_Titular_When_Requested()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var titularAtlasId = Guid.NewGuid();
+        var titularUsaId = Guid.NewGuid();
+        var cuentaOperativaId = Guid.NewGuid();
+        var cuentaImpuestosId = Guid.NewGuid();
+        var cuentaDolaresId = Guid.NewGuid();
+
+        db.Titulares.AddRange(
+            new Titular { Id = titularAtlasId, Nombre = "Atlas Labs", Tipo = TipoTitular.EMPRESA },
+            new Titular { Id = titularUsaId, Nombre = "Atlas USA", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaOperativaId, TitularId = titularAtlasId, Nombre = "Cuenta Operativa", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaImpuestosId, TitularId = titularAtlasId, Nombre = "Cuenta Impuestos", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaDolaresId, TitularId = titularUsaId, Nombre = "Cuenta Dolares", Divisa = "USD", Activa = true });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaOperativaId, Fecha = today, Concepto = "Pago proveedor", Monto = -1200m, Saldo = 8800m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaImpuestosId, Fecha = today, Concepto = "Pago impuesto", Monto = -800m, Saldo = 1200m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaDolaresId, Fecha = today, Concepto = "Pago internacional", Monto = -2000m, Saldo = 4000m, FilaNumero = 1 });
+        await db.SaveChangesAsync();
+
+        var httpFactory = new CapturingHttpClientFactory();
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db),
+            new AuditService(db));
+
+        var result = await sut.AskAsync(AdminScope(userId), "Que titulares han tenido mas gastos este trimestre?", "127.0.0.1", CancellationToken.None);
+
+        httpFactory.RequestCount.Should().Be(0);
+        result.Respuesta.Should().Contain("Titulares con mas gastos en el trimestre actual");
+        result.Respuesta.Should().Contain("Atlas Labs: gastos 2.000,00 EUR (2 movimientos)");
+        result.Respuesta.Should().Contain("Atlas USA: gastos 2.000,00 USD (1 movimiento)");
+        result.Respuesta.Should().NotContain("Cuenta Operativa | Atlas Labs");
+        result.MovimientosAnalizados.Should().Be(3);
+    }
+
+    [Fact]
     public async Task AskAsync_Should_Return_Clear_Message_When_Deterministic_Ranking_Has_No_Expenses()
     {
         await using var db = BuildDbContext();

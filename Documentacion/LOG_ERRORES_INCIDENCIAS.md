@@ -1,5 +1,28 @@
 # Log de errores e incidencias
 
+## 2026-06-01 - V-01.09 - Auditoria profunda encontro falsos verdes de seguridad y datos
+
+- Contexto: revision en profundidad previa a release con foco en seguridad, bugs y publicacion.
+- Hallazgos confirmados:
+  - Refresh tokens no estaban ligados al `security_stamp`; una rotacion de seguridad podia dejar tokens viejos vivos hasta su vencimiento.
+  - Cambio de password exigia MFA solo si `MfaEnabled=true`, dejando una ventana para usuarios con setup MFA pendiente.
+  - Integraciones con permiso `escritura` podian pasar backstops RLS de lectura.
+  - Conversion de divisas sin tasa devolvia el importe original, maquillando el error como 1:1.
+  - Huella de importacion incluia columnas extra no financieras, permitiendo duplicados al cambiar una referencia auxiliar.
+  - Importaciones y movimientos de plazo fijo no reactivaban alertas de saldo bajo.
+  - Ranking IA por titular respondia con filas de cuenta.
+  - Actualizador externo no restauraba binarios automaticamente tras health check fallido.
+- Solucion aplicada:
+  - `security_stamp` en `REFRESH_TOKENS`, validacion de stamp en refresh y MFA obligatorio por politica en cambio de password.
+  - Migracion RLS de endurecimiento para lectura de integracion y revision.
+  - `TipoCambioMissingException` con respuesta HTTP 409.
+  - Fingerprint de importacion limitado a identidad financiera estable.
+  - Evaluacion de `IAlertaService` tras persistir importaciones/plazo fijo.
+  - Agrupacion IA por titular/divisa cuando el prompt pide titulares.
+  - Rollback automatico de binarios en `Actualizar-AtlasBalance.ps1`.
+- Verificacion: tests focalizados 136/136 OK; suite backend sin Docker/Testcontainers 276/276 OK; backend Release build OK; frontend lint/build OK; secret scan OK.
+- Bloqueos: Docker/Testcontainers no disponible, falta clave privada de firma de release y falta autenticacion GitHub local.
+
 ## 2026-05-22 - V-01.09 - Actualizacion online solo aplicaba API/frontend
 
 - Contexto: se pidio que el boton `Actualizar ahora` actualizase toda la aplicacion desde GitHub `latest`, sin pasos intermedios ni intervencion humana.

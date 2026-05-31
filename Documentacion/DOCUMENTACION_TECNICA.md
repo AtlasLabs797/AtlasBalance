@@ -1,5 +1,36 @@
 # Documentacion tecnica
 
+## 2026-06-01 - V-01.09 - Auditoria profunda: seguridad, bugs y release gate
+
+### Que cambio
+
+- `RefreshToken` incorpora `security_stamp` y la migracion `20260601090000_AddRefreshTokenSecurityStamp` backfillea tokens existentes desde `USUARIOS.security_stamp`.
+- `AuthService.RefreshTokenAsync` revoca tokens cuyo stamp no coincide con el usuario actual; `ChangePasswordAsync` exige garantia MFA de sesion para todo usuario sujeto a MFA.
+- La migracion `20260601091000_HardenRlsIntegrationReadBackstop` reasegura `REVISION_EXTRACTO_ESTADOS` con RLS/FORCE y limita lecturas de integracion a permisos `lectura`.
+- `TiposCambioService.ConvertAsync` deja de caer a 1:1 cuando falta tasa. Lanza `TipoCambioMissingException`; el handler global devuelve `409` con error claro.
+- `ImportacionService` reevalua alertas de saldo bajo tras confirmacion de importacion y tras movimiento de plazo fijo. La huella de importacion se queda en identidad financiera estable: cuenta, fecha, monto, saldo y concepto.
+- `AtlasAiService` distingue ranking por cuenta vs titular. Si el prompt pide titulares, agrupa por titular/divisa y no por cuenta.
+- `Build-Release.ps1` resuelve `.dotnet\dotnet.exe` local antes que PATH. `Actualizar-AtlasBalance.ps1` backfillea claves no secretas faltantes y restaura binarios anteriores si falla el health check post-update.
+- `.github/workflows/release.yml` crea un gate manual de release: verify completo, firma obligatoria y publicacion/actualizacion de GitHub Release como latest.
+
+### Por que
+
+La version tenia varios falsos verdes: refresh tokens que sobrevivian a revocaciones de seguridad, importaciones que no disparaban alertas, conversiones sin tasa convertidas en 1:1, y un actualizador que avisaba de rollback pero no lo ejecutaba. En tesoreria, el dato falso es peor que el error visible.
+
+### Verificacion
+
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "TiposCambioServiceTests|ImportacionServiceTests|AtlasAiServiceTests|AuthServiceTests"`: 136/136 OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"`: 276/276 OK.
+- `dotnet build AtlasBalance.API.csproj -c Release --no-restore -p:UseAppHost=false`: OK, 1 warning obsoleto preexistente de Hangfire/PostgreSQL.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Parser PowerShell para `Build-Release.ps1` y `Actualizar-AtlasBalance.ps1`: OK.
+- Secret scan de alta confianza sobre archivos versionables: OK.
+
+### Limite real
+
+No hay paquete publicable ni GitHub latest nuevo en esta maquina: falta `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`, falta `gh`/token local y Docker/Testcontainers sigue sin daemon operativo para validar RLS/concurrencia con PostgreSQL real. Publicar sin esos tres gates seria humo caro.
+
 ## 2026-05-22 - V-01.09 - Actualizacion one-click de paquete completo
 
 ### Que cambio
