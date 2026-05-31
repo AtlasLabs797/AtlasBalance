@@ -193,6 +193,8 @@ Regla de oro: los datos viven en PostgreSQL, no en la carpeta `api`. Una actuali
 
 ### Actualizacion automatica desde la app
 
+Estado `V-01.09`: el codigo ya prepara el boton para aplicar el paquete completo desde GitHub `latest`: API, Watchdog, scripts, wrappers, `VERSION` y runtime. Falta publicar `V-01.09-win-x64` firmado como `latest`; hoy GitHub sigue apuntando a `V-01.06-win-x64`. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
+
 En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
 
 ```text
@@ -211,9 +213,10 @@ Al pulsar `Actualizar ahora`, Atlas Balance:
 4. Lo extrae dentro de `C:\AtlasBalance\updates`.
 5. Crea backup PostgreSQL previo.
 6. Crea rollback de binarios.
-7. Reemplaza la API conservando configuracion.
-8. Arranca de nuevo y aplica migraciones al iniciar.
-9. Comprueba `/api/health`; si no responde, revierte binarios.
+7. Reemplaza API y Watchdog conservando configuracion.
+8. Copia scripts, wrappers `.cmd`, `VERSION` y `atlas-balance.runtime.json`.
+9. Arranca de nuevo y aplica migraciones al iniciar.
+10. Comprueba `/api/health`; si no responde, revierte binarios.
 
 Si no puede verificar firma, crear backup previo o recuperar `/api/health`, no actualiza. Bien. Actualizar una app financiera sin backup o sin firma es una forma elegante de pedir problemas.
 

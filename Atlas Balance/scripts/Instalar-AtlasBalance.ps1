@@ -513,6 +513,7 @@ function Write-AppSettings {
             DockerPostgresContainer = "atlas_balance_db"
             DockerCliPath = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
             UpdateSourceRoot = $updateRoot
+            UpdateInstallPath = $InstallPath
             UpdateTargetPath = $apiTarget
             RequireDatabaseBackupBeforeUpdate = $true
             RequireHealthCheckAfterUpdate = $true
@@ -568,6 +569,7 @@ function Write-AppSettings {
             DockerPostgresContainer = "atlas_balance_db"
             DockerCliPath = "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
             UpdateSourceRoot = $updateRoot
+            UpdateInstallPath = $InstallPath
             UpdateTargetPath = $apiTarget
         }
         Serilog = [ordered]@{

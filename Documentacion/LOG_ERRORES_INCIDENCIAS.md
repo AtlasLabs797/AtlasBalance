@@ -1,5 +1,22 @@
 # Log de errores e incidencias
 
+## 2026-05-22 - V-01.09 - Actualizacion online solo aplicaba API/frontend
+
+- Contexto: se pidio que el boton `Actualizar ahora` actualizase toda la aplicacion desde GitHub `latest`, sin pasos intermedios ni intervencion humana.
+- Hallazgo confirmado:
+  - `ActualizacionService` descargaba y validaba el ZIP completo, pero devolvia `resolvedPackageRoot\api`.
+  - Watchdog sincronizaba `sourcePath -> targetPath`, y `targetPath` era `C:\AtlasBalance\api`.
+  - Resultado: API/frontend podian quedar en version nueva, mientras Watchdog, scripts, wrappers y metadatos raiz seguian viejos.
+- Solucion aplicada:
+  - API pasa al Watchdog la raiz del paquete completo validado.
+  - API/Watchdog derivan `InstallPath` desde `UpdateInstallPath` o desde el legacy `UpdateTargetPath=...\api`.
+  - Watchdog valida paquete completo y aplica API, Watchdog, scripts, wrappers, `VERSION` y runtime.
+  - En servicio Windows real, Watchdog lanza un helper PowerShell que ejecuta el actualizador del paquete para poder reemplazar tambien su propia carpeta.
+  - La UI espera durante reinicios temporales de API en vez de declarar fallo al primer corte de red.
+- Verificacion: update/watchdog 26/26 OK; frontend lint/build OK; suite backend sin Docker/Testcontainers 270/270 OK.
+- Bloqueos: GitHub latest sigue siendo `V-01.06-win-x64`; tests PostgreSQL/Testcontainers bloqueados porque Docker no esta disponible; falta prueba real en Windows instalacion reemplazando Watchdog vivo.
+- Regla: si actualizas solo `api`, no has actualizado la app. Has creado una instalacion partida con una etiqueta bonita.
+
 ## 2026-05-22 - V-01.09 - Cambio de contrasena podia convertir sesion pre-MFA en post-MFA
 
 - Contexto: verificacion del threat model con subagentes sobre autenticacion, autorizacion, OpenClaw, ficheros/admin/watchdog y frontend/configuracion.

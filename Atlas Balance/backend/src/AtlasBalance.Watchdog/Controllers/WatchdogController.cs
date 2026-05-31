@@ -58,11 +58,6 @@ public sealed class WatchdogController : ControllerBase
             return BadRequest(new { error = "source_path y target_path no pueden ser iguales" });
         }
 
-        if (PathsOverlap(sourcePath, targetPath))
-        {
-            return BadRequest(new { error = "source_path y target_path no pueden estar anidados" });
-        }
-
         var accepted = await _operationsService.StartUpdateAsync(sourcePath, targetPath, cancellationToken);
         if (!accepted)
         {
@@ -77,22 +72,6 @@ public sealed class WatchdogController : ControllerBase
     {
         var state = await _stateStore.GetAsync(cancellationToken);
         return Ok(state);
-    }
-
-    private static bool PathsOverlap(string sourcePath, string targetPath)
-    {
-        var sourceWithSeparator = EnsureTrailingSeparator(sourcePath);
-        var targetWithSeparator = EnsureTrailingSeparator(targetPath);
-
-        return sourceWithSeparator.StartsWith(targetWithSeparator, StringComparison.OrdinalIgnoreCase) ||
-               targetWithSeparator.StartsWith(sourceWithSeparator, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string EnsureTrailingSeparator(string path)
-    {
-        return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
-            ? path
-            : $"{path}{Path.DirectorySeparatorChar}";
     }
 
     private static bool TryGetFullPath(string rawPath, out string fullPath)

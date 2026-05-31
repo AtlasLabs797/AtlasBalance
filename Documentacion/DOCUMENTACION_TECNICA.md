@@ -1,5 +1,59 @@
 # Documentacion tecnica
 
+## 2026-05-22 - V-01.09 - Actualizacion one-click de paquete completo
+
+### Que cambio
+
+- `ActualizacionService` sigue consultando GitHub `releases/latest`, pero ahora entrega al Watchdog la raiz del paquete extraido, no `api`.
+- Si la configuracion antigua solo tiene `WatchdogSettings:UpdateTargetPath=C:\AtlasBalance\api`, API y Watchdog derivan el `InstallPath` como `C:\AtlasBalance`. Las instalaciones nuevas escriben tambien `UpdateInstallPath`.
+- `WatchdogOperationsService` valida que el origen sea un paquete completo firmado y extraido bajo `UpdateSourceRoot`: `VERSION`, `api/AtlasBalance.API.exe`, `watchdog/AtlasBalance.Watchdog.exe` y `scripts/Actualizar-AtlasBalance.ps1`.
+- En modo normal de servicio Windows, Watchdog lanza un helper PowerShell no interactivo, resolviendo el PowerShell de sistema cuando existe, y ejecuta el mismo `scripts/Actualizar-AtlasBalance.ps1` del paquete. Asi puede reemplazar tambien su propia carpeta `watchdog` sin copiar encima de binarios vivos.
+- En modo test/no-servicio, Watchdog aplica el paquete completo inline: `api`, `watchdog`, scripts, wrappers `.cmd`, `VERSION` y `atlas-balance.runtime.json`.
+- `ConfiguracionPage.updateNow` ya no trata una caida temporal de la API como fallo inmediato; durante la ventana de update sigue esperando hasta que la API vuelva y el estado del Watchdog sea `SUCCESS` o `FAILED`, y conserva el mensaje real de `FAILED` sin pisarlo con un timeout generico.
+
+### Por que
+
+El flujo anterior validaba bien el ZIP, pero aplicaba solo `api`. Eso dejaba Watchdog, scripts y metadatos de instalacion atrasados. Una actualizacion de producto que solo cambia media instalacion es una trampa elegante: parece verde hasta que necesitas el script nuevo o el Watchdog nuevo.
+
+### Verificacion
+
+- Bloque focalizado update/watchdog: 26/26 OK.
+- Frontend lint: OK.
+- Frontend build: OK.
+- Suite backend sin Docker/Testcontainers: 270/270 OK.
+- GitHub `releases/latest` verificado por API: sigue en `V-01.06-win-x64` con `AtlasBalance-V-01.06-win-x64.zip` y `.zip.sig`.
+
+### Limite real
+
+El codigo ya apunta a `latest` y el boton queda preparado para actualizar paquete completo en instalaciones que ejecuten este codigo. Pero GitHub todavia no publica `V-01.09-win-x64` como latest. Ademas, una instalacion antigua cuyo Watchdog aun tenga el flujo parcial no puede actualizarse a si misma de forma completa con codigo que todavia no tiene; ese primer salto puede requerir `update.cmd` manual o una estrategia de bootstrap separada.
+
+## 2026-05-22 - V-01.09 - Verificacion de actualizacion one-click desde GitHub
+
+Nota: esta seccion documenta el diagnostico previo al fix. El estado actual esta en la seccion inmediatamente anterior: el codigo ya aplica paquete completo, con los limites pendientes de publicacion `latest`, bootstrap desde Watchdog antiguo y validacion Windows real.
+
+### Que se comprobo
+
+- Se reviso el flujo `Configuracion > Sistema > Actualizar ahora`: `SistemaController`, `ActualizacionService`, `WatchdogClientService`, `WatchdogOperationsService`, `AutoUpdateJob` y la UI de `ConfiguracionPage`.
+- Se consulto la API real de GitHub para `AtlasLabs797/AtlasBalance/releases/latest`.
+- Se ejecuto el bloque focalizado de tests de actualizacion/watchdog.
+
+### Resultado
+
+No cumple la promesa "solo dar a actualizar y que funcione" para una actualizacion completa de version.
+
+La parte de seguridad del paquete esta razonablemente cerrada: repo oficial por HTTPS, asset `win-x64`, digest SHA-256, firma `.zip.sig`, limites de tamano/contenido y defensa Zip Slip. El problema es operativo: la actualizacion online descarga un paquete completo, pero `ActualizacionService` entrega al Watchdog solo la carpeta `api` y el target configurado es `C:\AtlasBalance\api`. Eso actualiza API/frontend, pero no actualiza Watchdog, scripts instalados, wrappers, `VERSION` raiz ni `atlas-balance.runtime.json`.
+
+Ademas, el release real publicado como `latest` en GitHub es `V-01.06-win-x64`, no `V-01.09-win-x64`. Mientras no exista un release firmado `V-01.09` publicado como latest, ninguna instalacion puede actualizar online a `V-01.09` desde GitHub.
+
+### Verificacion
+
+- `https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest` -> `tag_name: V-01.06-win-x64`, assets `AtlasBalance-V-01.06-win-x64.zip` y `.zip.sig`.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~AutoUpdateJobTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogOperationsServiceTests" --no-restore` -> 23/23 OK.
+
+### Bloqueo
+
+Este bloqueo quedo superado en codigo por la implementacion de paquete completo descrita arriba. Siguen vivos los bloqueos externos: publicar `V-01.09-win-x64` firmado como `latest`, validar el helper en una instalacion Windows real y definir bootstrap para Watchdog antiguos.
+
 ## 2026-05-22 - V-01.09 - Threat model: MFA en cambio de password, RLS y rutas de ficheros
 
 ### Que cambio

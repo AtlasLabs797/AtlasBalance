@@ -13,37 +13,42 @@ public sealed class WatchdogOperationsServiceTests
     public async Task StartUpdateAsync_Should_Replace_Target_And_Remove_Stale_Files()
     {
         var root = CreateTempDirectory();
-        var sourcePath = Path.Combine(root, "source");
-        var targetPath = Path.Combine(root, "target");
-        Directory.CreateDirectory(sourcePath);
-        Directory.CreateDirectory(targetPath);
+        var updateRoot = Path.Combine(root, "updates");
+        var packagePath = Path.Combine(updateRoot, "V-99.00-win-x64");
+        var installPath = Path.Combine(root, "install");
+        CreateReleasePackage(packagePath, "V-99.00");
+        Directory.CreateDirectory(installPath);
 
-        var sourceFile = Path.Combine(sourcePath, "app.dll");
-        var nestedSourceDirectory = Path.Combine(sourcePath, "wwwroot");
-        Directory.CreateDirectory(nestedSourceDirectory);
-        await File.WriteAllTextAsync(sourceFile, "new-binary");
-        await File.WriteAllTextAsync(Path.Combine(nestedSourceDirectory, "index.html"), "<html>fresh</html>");
-
-        var staleFile = Path.Combine(targetPath, "old.dll");
-        var preservedConfig = Path.Combine(targetPath, "appsettings.Production.json");
-        var preservedLog = Path.Combine(targetPath, "logs", "historic.log");
+        var staleFile = Path.Combine(installPath, "api", "old.dll");
+        var preservedConfig = Path.Combine(installPath, "api", "appsettings.Production.json");
+        var preservedLog = Path.Combine(installPath, "api", "logs", "historic.log");
         Directory.CreateDirectory(Path.GetDirectoryName(preservedLog)!);
         await File.WriteAllTextAsync(staleFile, "stale");
         await File.WriteAllTextAsync(preservedConfig, "{ \"existing\": true }");
         await File.WriteAllTextAsync(preservedLog, "keep");
+        await File.WriteAllTextAsync(Path.Combine(installPath, "VERSION"), "V-01.09");
+        await File.WriteAllTextAsync(Path.Combine(installPath, "atlas-balance.runtime.json"), """{"Version":"V-01.09"}""");
 
         var stateStore = new FakeWatchdogStateStore();
-        var service = CreateService(stateStore, root, targetPath);
+        var service = CreateService(stateStore, updateRoot, installPath);
 
-        var accepted = await service.StartUpdateAsync(sourcePath, targetPath, CancellationToken.None);
+        var accepted = await service.StartUpdateAsync(packagePath, installPath, CancellationToken.None);
         var finalState = await stateStore.WaitForCompletionAsync();
-        var updatedBinary = await File.ReadAllTextAsync(Path.Combine(targetPath, "app.dll"));
+        var updatedApi = await File.ReadAllTextAsync(Path.Combine(installPath, "api", "AtlasBalance.API.exe"));
+        var updatedWatchdog = await File.ReadAllTextAsync(Path.Combine(installPath, "watchdog", "AtlasBalance.Watchdog.exe"));
+        var updatedVersion = await File.ReadAllTextAsync(Path.Combine(installPath, "VERSION"));
+        var updatedRuntime = await File.ReadAllTextAsync(Path.Combine(installPath, "atlas-balance.runtime.json"));
 
         accepted.Should().BeTrue();
         finalState.Estado.Should().Be("SUCCESS");
-        File.Exists(sourceFile).Should().BeTrue();
-        updatedBinary.Should().Be("new-binary");
-        File.Exists(Path.Combine(targetPath, "wwwroot", "index.html")).Should().BeTrue();
+        updatedApi.Should().Be("api-new");
+        updatedWatchdog.Should().Be("watchdog-new");
+        updatedVersion.Trim().Should().Be("V-99.00");
+        updatedRuntime.Should().Contain("\"Version\": \"V-99.00\"");
+        updatedRuntime.Should().Contain("\"PreviousVersion\": \"V-01.09\"");
+        File.Exists(Path.Combine(installPath, "scripts", "Actualizar-AtlasBalance.ps1")).Should().BeTrue();
+        File.Exists(Path.Combine(installPath, "update.cmd")).Should().BeTrue();
+        Directory.Exists(packagePath).Should().BeTrue();
         File.Exists(staleFile).Should().BeFalse();
         File.Exists(preservedConfig).Should().BeTrue();
         File.Exists(preservedLog).Should().BeTrue();
@@ -52,17 +57,16 @@ public sealed class WatchdogOperationsServiceTests
     }
 
     [Fact]
-    public async Task StartUpdateAsync_Should_Reject_Overlapping_Source_And_Target()
+    public async Task StartUpdateAsync_Should_Reject_Equal_Source_And_Target()
     {
         var root = CreateTempDirectory();
-        var sourcePath = Path.Combine(root, "source");
-        var targetPath = Path.Combine(sourcePath, "nested-target");
+        var sourcePath = Path.Combine(root, "install");
         Directory.CreateDirectory(sourcePath);
 
         var stateStore = new FakeWatchdogStateStore();
-        var service = CreateService(stateStore, root, targetPath);
+        var service = CreateService(stateStore, root, sourcePath);
 
-        var accepted = await service.StartUpdateAsync(sourcePath, targetPath, CancellationToken.None);
+        var accepted = await service.StartUpdateAsync(sourcePath, sourcePath, CancellationToken.None);
 
         accepted.Should().BeFalse();
 
@@ -77,7 +81,7 @@ public sealed class WatchdogOperationsServiceTests
         var sourcePath = Path.Combine(root, "outside-source");
         var targetPath = Path.Combine(root, "target");
         Directory.CreateDirectory(allowedRoot);
-        Directory.CreateDirectory(sourcePath);
+        CreateReleasePackage(sourcePath, "V-99.00");
 
         var stateStore = new FakeWatchdogStateStore();
         var service = CreateService(stateStore, allowedRoot, targetPath);
@@ -142,6 +146,18 @@ public sealed class WatchdogOperationsServiceTests
         var path = Path.Combine(Path.GetTempPath(), $"atlas-balance-watchdog-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static void CreateReleasePackage(string packagePath, string version)
+    {
+        Directory.CreateDirectory(Path.Combine(packagePath, "api"));
+        Directory.CreateDirectory(Path.Combine(packagePath, "watchdog"));
+        Directory.CreateDirectory(Path.Combine(packagePath, "scripts"));
+        File.WriteAllText(Path.Combine(packagePath, "VERSION"), version);
+        File.WriteAllText(Path.Combine(packagePath, "api", "AtlasBalance.API.exe"), "api-new");
+        File.WriteAllText(Path.Combine(packagePath, "watchdog", "AtlasBalance.Watchdog.exe"), "watchdog-new");
+        File.WriteAllText(Path.Combine(packagePath, "scripts", "Actualizar-AtlasBalance.ps1"), "script-new");
+        File.WriteAllText(Path.Combine(packagePath, "update.cmd"), "update-cmd");
     }
 
     private sealed class FakeWatchdogStateStore : IWatchdogStateStore

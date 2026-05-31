@@ -2,6 +2,15 @@
 
 ## Abiertos
 
+### 2026-05-22 - V-01.09 - Publicacion latest y bootstrap desde Watchdog antiguo pendientes
+
+- Contexto: tras implementar el update online de paquete completo, quedan dos bloqueos fuera del codigo nuevo.
+- Pendientes:
+  - GitHub `releases/latest` apunta hoy a `V-01.06-win-x64`, no a `V-01.09-win-x64`; mientras no se publique `V-01.09` firmado, no hay destino online real para esta version.
+  - Una instalacion que todavia ejecuta un Watchdog anterior al fix no puede usar ese Watchdog viejo para actualizarse de forma completa; puede requerir un primer `update.cmd` manual o una ruta puente.
+  - Falta validacion real en Windows instalacion reemplazando el Watchdog vivo mediante el helper externo.
+- Estado: abierto. Bloquea vender el upgrade desde cualquier version antigua como 100% one-click.
+
 ### 2026-05-10 - V-01.06 - Pendientes altos tras auditoria final
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
@@ -19,6 +28,15 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-05-22 - V-01.09 - Cerrado - Actualizacion online solo reemplazaba API/frontend
+
+- Contexto: verificacion de la promesa "solo pulsar actualizar" para subir de version desde GitHub Release sin pasos intermedios.
+- Causa: `ActualizacionService.DownloadAndPreparePackageAsync` validaba el ZIP completo, pero devolvia `...\api`; Watchdog sincronizaba ese origen contra `C:\AtlasBalance\api`.
+- Impacto: API/frontend podian quedar en version nueva mientras Watchdog, scripts, wrappers, `VERSION` raiz y runtime seguian viejos.
+- Solucion: API pasa la raiz del paquete completo; Watchdog valida paquete completo y aplica API, Watchdog, scripts, wrappers, `VERSION` y runtime. En Windows servicio lanza helper PowerShell para ejecutar el actualizador del paquete y poder reemplazar su propia carpeta.
+- Verificacion: update/watchdog focalizado 26/26 OK; frontend lint/build OK; backend sin Docker/Testcontainers 270/270 OK.
+- Estado: cerrado en codigo; la publicacion de `latest` y el bootstrap desde Watchdog antiguo quedan como pendientes abiertos separados.
 
 ### 2026-05-22 - V-01.09 - Cerrado - Cambio de contrasena emitia garantia MFA falsa
 

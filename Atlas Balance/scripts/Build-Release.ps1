@@ -187,7 +187,8 @@ if (Test-Path $userDocumentation) {
 $manifest = [ordered]@{
     version = $Version
     message = "Atlas Balance $Version"
-    source_path = "C:\AtlasBalance\updates\$Version\api"
+    source_path = "C:\AtlasBalance\updates\$Version"
+    target_path = "C:\AtlasBalance"
 }
 Write-JsonFile -Value $manifest -Path (Join-Path $packageRoot "version.json")
 

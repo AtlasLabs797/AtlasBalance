@@ -93,6 +93,8 @@ No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquet
 
 Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.09-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
+Nota dura de `V-01.09`: el codigo ya prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Pero hoy GitHub `latest` sigue apuntando a `V-01.06-win-x64`, asi que aun no hay paquete `V-01.09` real al que actualizar online. Una instalacion que todavia tenga un Watchdog anterior a este cambio puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
+
 ## Limpieza antes de publicar
 
 Antes de publicar o entregar una base local, ejecuta la purga de entrega desde la carpeta `Atlas Balance`:
@@ -160,7 +162,7 @@ Tambien puedes actualizar desde la propia app:
 
 Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
 
-La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena.
+La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena. En `V-01.09`, esa ruta ya apunta al paquete completo, pero depende de que `latest` publique el paquete firmado correcto y de que la instalacion tenga el Watchdog compatible.
 
 El limite maximo de descarga del paquete es 300 MB. Si una instalacion necesita un limite mas bajo, configura `UpdateSecurity:MaxUpdatePackageBytes`; no sirve para subir el maximo por encima de 300 MB. Si el servidor no declara tamano, Atlas Balance corta igualmente la descarga al superar el limite.
 

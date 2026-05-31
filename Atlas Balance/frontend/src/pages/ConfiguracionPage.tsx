@@ -320,25 +320,31 @@ export default function ConfiguracionPage() {
       await api.post('/sistema/actualizar', {});
       const timeoutAt = Date.now() + 10 * 60 * 1000;
       while (Date.now() < timeoutAt) {
-        const { data } = await api.get<WatchdogState>('/sistema/estado');
-        const state = (data.estado ?? '').toUpperCase();
-        if (state === 'SUCCESS') {
-          sessionStorage.setItem('atlas_balance_update_message', 'Aplicación actualizada correctamente.');
-          try {
-            await api.post('/auth/logout');
-          } catch {
-            // Si el watchdog ya reinicio la API, al menos limpiamos el estado local.
+        try {
+          const { data } = await api.get<WatchdogState>('/sistema/estado');
+          const state = (data.estado ?? '').toUpperCase();
+          if (state === 'SUCCESS') {
+            sessionStorage.setItem('atlas_balance_update_message', 'Aplicación actualizada correctamente.');
+            try {
+              await api.post('/auth/logout');
+            } catch {
+              // Si el watchdog ya reinicio la API, al menos limpiamos el estado local.
+            }
+            logout();
+            window.location.href = '/login';
+            return;
           }
-          logout();
-          window.location.href = '/login';
-          return;
-        }
-        if (state === 'FAILED') {
-          setError(data.mensaje || 'La actualización falló.');
-          break;
+          if (state === 'FAILED') {
+            setError(data.mensaje || 'La actualización falló.');
+            return;
+          }
+        } catch {
+          // Durante una actualizacion real la API se detiene y vuelve a arrancar.
+          // No es fallo final mientras el timeout del watchdog siga abierto.
         }
         await new Promise((resolve) => setTimeout(resolve, 2500));
       }
+      setError('La actualización no confirmó el resultado dentro del tiempo esperado.');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo actualizar.'));
     } finally {

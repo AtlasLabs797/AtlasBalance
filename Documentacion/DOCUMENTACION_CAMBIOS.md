@@ -8,6 +8,91 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-05-22 - V-01.09 - Implementacion de actualizacion one-click completa
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se implemento el flujo para que el boton `Actualizar ahora` aplique el paquete completo, no solo `api`.
+- `ActualizacionService` descarga, valida y extrae el GitHub Release firmado como antes, pero ahora pasa al Watchdog la raiz del paquete extraido.
+- API y Watchdog derivan `C:\AtlasBalance` desde configuraciones legacy con `UpdateTargetPath=C:\AtlasBalance\api`, y las instalaciones nuevas escriben `UpdateInstallPath`.
+- Watchdog valida paquete completo y, cuando se esta ejecutando desde la instalacion real, lanza un helper PowerShell no interactivo que reutiliza `scripts\Actualizar-AtlasBalance.ps1`; asi puede actualizar tambien Watchdog, scripts, wrappers, `VERSION` y runtime sin copiar encima de su propio proceso vivo. El helper resuelve el PowerShell de sistema cuando existe.
+- El modo inline queda cubierto por tests para aplicar paquete completo en rutas temporales.
+- La UI de Configuracion tolera caidas temporales de la API mientras reinicia y espera el estado final del Watchdog hasta timeout; si Watchdog devuelve `FAILED`, conserva ese error y no lo pisa con un timeout generico.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings*.json*`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Controllers/WatchdogController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings*.json*`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- Documentacion bajo `Documentacion/`
+
+**Comandos ejecutados:**
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~AutoUpdateJobTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogOperationsServiceTests|FullyQualifiedName~WatchdogControllerTests" --no-restore -p:UseAppHost=false`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" --no-restore -p:UseAppHost=false`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~RowLevelSecurityTests|FullyQualifiedName~ExtractosConcurrencyTests" --no-restore -p:UseAppHost=false`
+- Consulta de solo lectura a `https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest`.
+
+**Resultado de verificacion:**
+- Update/watchdog focalizado: 26/26 OK.
+- Frontend lint/build: OK.
+- Suite backend sin Docker/Testcontainers: 270/270 OK.
+- Tests Docker/Testcontainers: 0/2 OK; fallan antes de arrancar porque Docker no esta disponible/configurado.
+- GitHub latest real: `V-01.06-win-x64`, assets `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`.
+
+**Pendientes:**
+- Publicar `V-01.09-win-x64` firmado como GitHub Release/latest cuando el resto de gates este listo.
+- Ejecutar Docker/Testcontainers con Docker operativo.
+- Validar en una instalacion Windows real el helper externo reemplazando Watchdog vivo. Los tests cubren el motor inline y el contrato; no pueden simular que Windows pare el propio servicio Watchdog y deje vivo el helper.
+- Para instalaciones antiguas con Watchdog anterior al fix, planificar bootstrap: un primer `update.cmd` manual o una ruta puente. Pretender que el Watchdog viejo actualice su propio codigo nuevo seria pedirle que se arregle antes de tener el arreglo.
+
+---
+## 2026-05-22 - V-01.09 - Verificacion de actualizacion one-click desde GitHub
+
+Nota: esta entrada conserva el diagnostico previo. Quedo superado por la implementacion de actualizacion one-click completa registrada arriba; permanecen como pendientes la publicacion `latest`, Docker/Testcontainers, validacion Windows real y bootstrap desde Watchdog antiguo.
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se reviso si la version actual permite actualizar desde GitHub Release sin pasos intermedios ni intervencion humana aparte de pulsar `Actualizar ahora`.
+- Se inspecciono el flujo completo: `SistemaController`, `ActualizacionService`, `WatchdogClientService`, `WatchdogOperationsService`, `AutoUpdateJob` y `ConfiguracionPage`.
+- Se consulto GitHub `releases/latest` del repo oficial: el ultimo release publicado sigue siendo `V-01.06-win-x64`, con ZIP y `.zip.sig`; no hay `V-01.09-win-x64` publicado como latest.
+- Se confirmo un bloqueo de producto: el flujo online valida el ZIP completo, pero pasa al Watchdog solo la carpeta `api`, por lo que no actualiza Watchdog, scripts instalados, wrappers ni metadatos raiz de instalacion.
+- Se registro bug abierto y se corrigio la documentacion para no prometer una actualizacion online completa.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, `version_actual.md`, `v-01.09.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Busquedas `rg` sobre actualizacion, GitHub Release, Watchdog, scripts y documentacion.
+- Consulta de solo lectura a `https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest`.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~AutoUpdateJobTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogOperationsServiceTests" --no-restore`
+
+**Resultado de verificacion:**
+- GitHub latest real: `V-01.06-win-x64`, assets `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`.
+- Tests focalizados de actualizacion/watchdog: 23/23 OK.
+- Resultado de producto: bloqueado para prometer one-click completo en `V-01.09`.
+
+**Pendientes:**
+- Publicar `V-01.09-win-x64` firmado como GitHub Release cuando el release este listo.
+- Redisenar el update online para actualizar instalacion completa o documentar formalmente que solo actualiza API/frontend.
+- Hacer que el polling de UI tolere reinicios temporales de API durante una actualizacion real.
+
+---
 ## 2026-05-22 - V-01.09 - Verificacion threat model con subagentes y hardening adicional
 
 **Version:** V-01.09

@@ -268,10 +268,49 @@ public sealed class ActualizacionServiceTests
         accepted.Should().BeTrue();
         watchdog.Calls.Should().Be(1);
         watchdog.SourcePath.Should().NotBeNull();
-        watchdog.SourcePath!.Replace('\\', '/').Should().EndWith("/api");
+        watchdog.SourcePath!.Replace('\\', '/').Should().EndWith("/V-99.00-win-x64");
         watchdog.SourcePath.Should().StartWith(updateRoot);
-        File.Exists(Path.Combine(watchdog.SourcePath, "AtlasBalance.API.exe")).Should().BeTrue();
+        File.Exists(Path.Combine(watchdog.SourcePath, "api", "AtlasBalance.API.exe")).Should().BeTrue();
+        File.Exists(Path.Combine(watchdog.SourcePath, "watchdog", "AtlasBalance.Watchdog.exe")).Should().BeTrue();
+        File.Exists(Path.Combine(watchdog.SourcePath, "scripts", "Actualizar-AtlasBalance.ps1")).Should().BeTrue();
         watchdog.TargetPath.Should().Be(configuredTarget);
+
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
+    public async Task IniciarActualizacionAsync_Should_Derive_Install_Root_From_Legacy_Api_Target()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-update-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var installRoot = Path.Combine(root, "install");
+        var legacyApiTarget = Path.Combine(installRoot, "api");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00");
+        using var signingKey = RSA.Create(2048);
+        var signature = SignZipBytes(zipBytes, signingKey);
+        var watchdog = new RecordingWatchdogClientService();
+        var service = BuildService(
+            db,
+            BuildSignedReleaseHandler(zipBytes, signature),
+            watchdog: watchdog,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: legacyApiTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem());
+
+        var accepted = await service.IniciarActualizacionAsync(null, null, CancellationToken.None);
+
+        accepted.Should().BeTrue();
+        watchdog.TargetPath.Should().Be(installRoot);
 
         Directory.Delete(root, recursive: true);
     }
@@ -311,7 +350,8 @@ public sealed class ActualizacionServiceTests
         accepted.Should().BeTrue();
         watchdog.Calls.Should().Be(1);
         watchdog.SourcePath.Should().NotBeNull();
-        File.Exists(Path.Combine(watchdog.SourcePath!, "AtlasBalance.API.exe")).Should().BeTrue();
+        File.Exists(Path.Combine(watchdog.SourcePath!, "api", "AtlasBalance.API.exe")).Should().BeTrue();
+        File.Exists(Path.Combine(watchdog.SourcePath!, "scripts", "Actualizar-AtlasBalance.ps1")).Should().BeTrue();
 
         Directory.Delete(root, recursive: true);
     }
@@ -794,6 +834,7 @@ public sealed class ActualizacionServiceTests
             AddZipEntry(archive, "VERSION", version);
             AddZipEntry(archive, "api/AtlasBalance.API.exe", "api");
             AddZipEntry(archive, "watchdog/AtlasBalance.Watchdog.exe", "watchdog");
+            AddZipEntry(archive, "scripts/Actualizar-AtlasBalance.ps1", "update");
         }
 
         return stream.ToArray();

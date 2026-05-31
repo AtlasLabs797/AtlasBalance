@@ -12,6 +12,7 @@
     "DbPassword": "<password-local-postgres>",
     "DockerPostgresContainer": "atlas_balance_db",
     "UpdateSourceRoot": "C:\\<ruta-local>\\updates",
+    "UpdateInstallPath": "C:\\<ruta-local>",
     "UpdateTargetPath": "C:\\<ruta-local>\\api",
     "RequireDatabaseBackupBeforeUpdate": true,
     "RequireHealthCheckAfterUpdate": true,

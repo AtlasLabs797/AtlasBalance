@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
 using System.ServiceProcess;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using AtlasBalance.Watchdog.Models;
 
 namespace AtlasBalance.Watchdog.Services;
@@ -18,6 +20,31 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     {
         "logs"
     };
+
+    private static readonly string[] PackageScriptFiles =
+    [
+        "Actualizar-AtlasBalance.ps1",
+        "Instalar-AtlasBalance.ps1",
+        "Launch-AtlasBalance.ps1",
+        "Reset-AdminPassword.ps1",
+        "install-cert-client.ps1",
+        "install.ps1",
+        "start.ps1",
+        "uninstall-services.ps1",
+        "uninstall.ps1",
+        "update.ps1"
+    ];
+
+    private static readonly string[] PackageRootFiles =
+    [
+        "Atlas Balance.cmd",
+        "Actualizar Atlas Balance.cmd",
+        "Instalar Atlas Balance.cmd",
+        "install.cmd",
+        "start.cmd",
+        "uninstall.cmd",
+        "update.cmd"
+    ];
 
     private readonly IConfiguration _configuration;
     private readonly IWatchdogStateStore _stateStore;
@@ -109,9 +136,9 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
 
         if (string.Equals(fullSourcePath, fullTargetPath, StringComparison.OrdinalIgnoreCase) ||
-            PathsOverlap(fullSourcePath, fullTargetPath) ||
             !IsAllowedUpdateSourcePath(fullSourcePath) ||
-            !IsAllowedUpdateTargetPath(fullTargetPath))
+            !IsAllowedUpdateInstallPath(fullTargetPath) ||
+            !IsValidReleasePackage(fullSourcePath))
         {
             return false;
         }
@@ -130,8 +157,18 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             var finalState = CreateState("FAILED", "UPDATE_APP", "Operacion interrumpida");
             string? rollbackPath = null;
             var apiStartedInOperation = false;
+            var externalUpdater = ShouldUseExternalPackageUpdater(fullTargetPath);
             try
             {
+                if (externalUpdater)
+                {
+                    var updateResult = await RunPackageUpdateViaHelperAsync(fullSourcePath, fullTargetPath, CancellationToken.None);
+                    finalState = updateResult.Success
+                        ? CreateState("SUCCESS", "UPDATE_APP", "Actualizacion completada")
+                        : CreateState("FAILED", "UPDATE_APP", "Actualizacion externa fallo. Revise los logs protegidos del servidor.");
+                    return;
+                }
+
                 if (RequireDatabaseBackupBeforeUpdate())
                 {
                     var backupResult = await CreateDatabaseBackupAsync(CancellationToken.None);
@@ -143,8 +180,8 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 }
 
                 await StopApiServiceSafeAsync(CancellationToken.None);
-                rollbackPath = CreateRollbackCopy(fullTargetPath);
-                SyncDirectory(fullSourcePath, fullTargetPath);
+                rollbackPath = CreatePackageRollbackCopy(fullTargetPath);
+                ApplyReleasePackage(fullSourcePath, fullTargetPath);
                 await StartApiServiceSafeAsync(CancellationToken.None);
                 apiStartedInOperation = true;
 
@@ -153,7 +190,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 {
                     finalState = CreateState("FAILED", "UPDATE_APP", "Health check fallo tras actualizar; rollback de binarios aplicado.");
                     await StopApiServiceSafeAsync(CancellationToken.None);
-                    TryRestoreRollback(rollbackPath, fullTargetPath);
+                    TryRestorePackageRollback(rollbackPath, fullTargetPath);
                     await StartApiServiceSafeAsync(CancellationToken.None);
                     return;
                 }
@@ -163,12 +200,12 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Update operation failed");
-                TryRestoreRollback(rollbackPath, fullTargetPath);
+                TryRestorePackageRollback(rollbackPath, fullTargetPath);
                 finalState = CreateState("FAILED", "UPDATE_APP", "Error inesperado en actualizacion. Revise los logs protegidos del servidor.");
             }
             finally
             {
-                if (!apiStartedInOperation)
+                if (!apiStartedInOperation && !externalUpdater)
                 {
                     await StartApiServiceSafeAsync(CancellationToken.None);
                 }
@@ -374,10 +411,41 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         return IsPathWithinRoot(sourcePath, sourceRoot);
     }
 
-    private bool IsAllowedUpdateTargetPath(string targetPath)
+    private bool IsAllowedUpdateInstallPath(string targetPath)
     {
-        var configuredTarget = _configuration["WatchdogSettings:UpdateTargetPath"] ?? @"C:\AtlasBalance\api";
+        var configuredTarget = ResolveConfiguredUpdateInstallPath();
         return PathsEqual(targetPath, configuredTarget);
+    }
+
+    private string ResolveConfiguredUpdateInstallPath()
+    {
+        var installPath = _configuration["WatchdogSettings:UpdateInstallPath"];
+        if (!string.IsNullOrWhiteSpace(installPath))
+        {
+            return installPath.Trim();
+        }
+
+        var configuredTarget = _configuration["WatchdogSettings:UpdateTargetPath"] ?? @"C:\AtlasBalance\api";
+        return TryDeriveInstallPathFromLegacyTarget(configuredTarget.Trim());
+    }
+
+    private static string TryDeriveInstallPathFromLegacyTarget(string configuredTarget)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(configuredTarget);
+            var leaf = Path.GetFileName(Path.TrimEndingDirectorySeparator(fullPath));
+            if (leaf.Equals("api", StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(fullPath)) ?? configuredTarget;
+            }
+        }
+        catch
+        {
+            return configuredTarget;
+        }
+
+        return configuredTarget;
     }
 
     private static bool IsPathWithinRoot(string path, string root)
@@ -538,15 +606,227 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             : (false, $"pg_dump fallo antes de actualizar: {result.ErrorMessage}");
     }
 
-    private string CreateRollbackCopy(string targetPath)
+    private string CreatePackageRollbackCopy(string installPath)
     {
         var backupRoot = _configuration["WatchdogSettings:BackupPath"] ??
-                         Path.Combine(Path.GetDirectoryName(targetPath) ?? targetPath, "backups");
+                         Path.Combine(installPath, "backups");
         Directory.CreateDirectory(backupRoot);
         var rollbackPath = Path.Combine(backupRoot, $"app_before_watchdog_update_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
-        CopyDirectory(targetPath, rollbackPath);
+
+        CopyDirectoryIfExists(Path.Combine(installPath, "api"), Path.Combine(rollbackPath, "api"));
+        CopyDirectoryIfExists(Path.Combine(installPath, "watchdog"), Path.Combine(rollbackPath, "watchdog"));
+        CopyDirectoryIfExists(Path.Combine(installPath, "scripts"), Path.Combine(rollbackPath, "scripts"));
+        CopyFileIfExists(Path.Combine(installPath, "VERSION"), Path.Combine(rollbackPath, "VERSION"));
+        CopyFileIfExists(Path.Combine(installPath, "atlas-balance.runtime.json"), Path.Combine(rollbackPath, "atlas-balance.runtime.json"));
+        foreach (var file in PackageRootFiles)
+        {
+            CopyFileIfExists(Path.Combine(installPath, file), Path.Combine(rollbackPath, file));
+        }
+
         return rollbackPath;
     }
+
+    private static void ApplyReleasePackage(string packageRoot, string installPath)
+    {
+        SyncDirectory(Path.Combine(packageRoot, "api"), Path.Combine(installPath, "api"));
+        SyncDirectory(Path.Combine(packageRoot, "watchdog"), Path.Combine(installPath, "watchdog"));
+
+        var packageScripts = Path.Combine(packageRoot, "scripts");
+        var installScripts = Path.Combine(installPath, "scripts");
+        Directory.CreateDirectory(installScripts);
+        foreach (var script in PackageScriptFiles)
+        {
+            CopyFileIfExists(Path.Combine(packageScripts, script), Path.Combine(installScripts, script));
+        }
+
+        foreach (var file in PackageRootFiles)
+        {
+            CopyFileIfExists(Path.Combine(packageRoot, file), Path.Combine(installPath, file));
+        }
+
+        var newVersion = ReadPackageVersion(packageRoot);
+        var previousVersion = ReadInstalledVersion(installPath);
+        WriteInstalledVersionMetadata(installPath, newVersion, previousVersion);
+    }
+
+    private static string ReadPackageVersion(string packageRoot)
+    {
+        var versionPath = Path.Combine(packageRoot, "VERSION");
+        return File.Exists(versionPath)
+            ? File.ReadAllText(versionPath).Trim()
+            : "desconocida";
+    }
+
+    private static string ReadInstalledVersion(string installPath)
+    {
+        var runtimePath = Path.Combine(installPath, "atlas-balance.runtime.json");
+        if (File.Exists(runtimePath))
+        {
+            try
+            {
+                var runtime = JsonNode.Parse(File.ReadAllText(runtimePath)) as JsonObject;
+                var version = runtime?["Version"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(version))
+                {
+                    return version;
+                }
+            }
+            catch
+            {
+                // Fall back to VERSION below.
+            }
+        }
+
+        var versionPath = Path.Combine(installPath, "VERSION");
+        return File.Exists(versionPath)
+            ? File.ReadAllText(versionPath).Trim()
+            : "desconocida";
+    }
+
+    private static void WriteInstalledVersionMetadata(string installPath, string newVersion, string previousVersion)
+    {
+        File.WriteAllText(Path.Combine(installPath, "VERSION"), newVersion);
+
+        var runtimePath = Path.Combine(installPath, "atlas-balance.runtime.json");
+        JsonObject runtime;
+        if (File.Exists(runtimePath))
+        {
+            try
+            {
+                runtime = JsonNode.Parse(File.ReadAllText(runtimePath)) as JsonObject ?? new JsonObject();
+            }
+            catch
+            {
+                runtime = new JsonObject();
+            }
+        }
+        else
+        {
+            runtime = new JsonObject();
+        }
+
+        runtime["Version"] = newVersion;
+        runtime["PreviousVersion"] = previousVersion;
+        runtime["UpdatedAt"] = DateTime.UtcNow.ToString("O");
+
+        var json = runtime.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(runtimePath, json);
+    }
+
+    private bool ShouldUseExternalPackageUpdater(string installPath)
+    {
+        var configured = _configuration["WatchdogSettings:UseExternalPackageUpdater"];
+        if (bool.TryParse(configured, out var parsed))
+        {
+            return parsed;
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        var watchdogInstallPath = Path.Combine(installPath, "watchdog");
+        return IsPathWithinRoot(AppContext.BaseDirectory, watchdogInstallPath);
+    }
+
+    private async Task<(bool Success, string? Error)> RunPackageUpdateViaHelperAsync(
+        string packageRoot,
+        string installPath,
+        CancellationToken cancellationToken)
+    {
+        var updaterScript = Path.Combine(packageRoot, "scripts", "Actualizar-AtlasBalance.ps1");
+        if (!File.Exists(updaterScript))
+        {
+            return (false, "El paquete no incluye scripts\\Actualizar-AtlasBalance.ps1.");
+        }
+
+        var sourceRoot = _configuration["WatchdogSettings:UpdateSourceRoot"] ?? Path.Combine(installPath, "updates");
+        if (!IsExplicitlyRooted(sourceRoot))
+        {
+            return (false, "WatchdogSettings:UpdateSourceRoot no es absoluto.");
+        }
+
+        var helperPath = Path.Combine(sourceRoot, $"run-online-update-{Guid.NewGuid():N}.ps1");
+        Directory.CreateDirectory(sourceRoot);
+        File.WriteAllText(helperPath, BuildOnlineUpdateHelperScript());
+
+        var stateFilePath = _configuration["WatchdogSettings:StateFilePath"] ??
+                            Path.Combine(installPath, "watchdog-state.json");
+
+        return await RunProcessAsync(
+            ResolvePowerShellExecutable(),
+            [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                helperPath,
+                "-UpdaterScript",
+                updaterScript,
+                "-InstallPath",
+                installPath,
+                "-StateFilePath",
+                stateFilePath
+            ],
+            null,
+            cancellationToken);
+    }
+
+    private static string ResolvePowerShellExecutable()
+    {
+        var systemDirectory = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        if (!string.IsNullOrWhiteSpace(systemDirectory))
+        {
+            var windowsPowerShell = Path.Combine(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+            if (File.Exists(windowsPowerShell))
+            {
+                return windowsPowerShell;
+            }
+        }
+
+        return "powershell.exe";
+    }
+
+    private static string BuildOnlineUpdateHelperScript() =>
+        """
+        param(
+            [Parameter(Mandatory = $true)][string]$UpdaterScript,
+            [Parameter(Mandatory = $true)][string]$InstallPath,
+            [Parameter(Mandatory = $true)][string]$StateFilePath
+        )
+
+        $ErrorActionPreference = "Stop"
+
+        function Write-AtlasUpdateState {
+            param(
+                [string]$Estado,
+                [string]$Mensaje
+            )
+
+            $directory = Split-Path -Parent $StateFilePath
+            if (-not [string]::IsNullOrWhiteSpace($directory)) {
+                New-Item -ItemType Directory -Path $directory -Force | Out-Null
+            }
+
+            [ordered]@{
+                Estado = $Estado
+                Operacion = "UPDATE_APP"
+                Mensaje = $Mensaje
+                UpdatedAt = (Get-Date).ToUniversalTime().ToString("o")
+            } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $StateFilePath -Encoding UTF8
+        }
+
+        try {
+            Write-AtlasUpdateState -Estado "RUNNING" -Mensaje "Actualizacion en progreso"
+            & $UpdaterScript -InstallPath $InstallPath
+            Write-AtlasUpdateState -Estado "SUCCESS" -Mensaje "Actualizacion completada"
+        } catch {
+            Write-AtlasUpdateState -Estado "FAILED" -Mensaje "Error inesperado en actualizacion. Revise los logs protegidos del servidor."
+            Write-Error $_
+            exit 1
+        }
+        """;
 
     private bool RequireDatabaseBackupBeforeUpdate()
     {
@@ -605,7 +885,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         return false;
     }
 
-    private void TryRestoreRollback(string? rollbackPath, string targetPath)
+    private void TryRestorePackageRollback(string? rollbackPath, string installPath)
     {
         if (string.IsNullOrWhiteSpace(rollbackPath) || !Directory.Exists(rollbackPath))
         {
@@ -614,7 +894,16 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         try
         {
-            SyncDirectory(rollbackPath, targetPath);
+            RestoreDirectoryIfExists(Path.Combine(rollbackPath, "api"), Path.Combine(installPath, "api"));
+            RestoreDirectoryIfExists(Path.Combine(rollbackPath, "watchdog"), Path.Combine(installPath, "watchdog"));
+            RestoreDirectoryIfExists(Path.Combine(rollbackPath, "scripts"), Path.Combine(installPath, "scripts"));
+            CopyFileIfExists(Path.Combine(rollbackPath, "VERSION"), Path.Combine(installPath, "VERSION"));
+            CopyFileIfExists(Path.Combine(rollbackPath, "atlas-balance.runtime.json"), Path.Combine(installPath, "atlas-balance.runtime.json"));
+            foreach (var file in PackageRootFiles)
+            {
+                CopyFileIfExists(Path.Combine(rollbackPath, file), Path.Combine(installPath, file));
+            }
+
             _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPath}", rollbackPath);
         }
         catch (Exception rollbackEx)
@@ -652,6 +941,46 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(file, destination, overwrite: true);
         }
+    }
+
+    private static void CopyDirectoryIfExists(string sourcePath, string targetPath)
+    {
+        if (Directory.Exists(sourcePath))
+        {
+            CopyDirectory(sourcePath, targetPath);
+        }
+    }
+
+    private static void RestoreDirectoryIfExists(string sourcePath, string targetPath)
+    {
+        if (Directory.Exists(sourcePath))
+        {
+            SyncDirectory(sourcePath, targetPath);
+        }
+    }
+
+    private static void CopyFileIfExists(string sourcePath, string targetPath)
+    {
+        if (!File.Exists(sourcePath))
+        {
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(targetPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.Copy(sourcePath, targetPath, overwrite: true);
+    }
+
+    private static bool IsValidReleasePackage(string packageRoot)
+    {
+        return File.Exists(Path.Combine(packageRoot, "VERSION")) &&
+               File.Exists(Path.Combine(packageRoot, "api", "AtlasBalance.API.exe")) &&
+               File.Exists(Path.Combine(packageRoot, "watchdog", "AtlasBalance.Watchdog.exe")) &&
+               File.Exists(Path.Combine(packageRoot, "scripts", "Actualizar-AtlasBalance.ps1"));
     }
 
     private static string? ResolveConfiguredExecutable(string? directory, string executableName)

@@ -118,7 +118,7 @@ public sealed class ActualizacionService : IActualizacionService
         }
 
         string? finalSourcePath = null;
-        var finalTargetPath = ResolveConfiguredUpdateTargetPath();
+        var finalTargetPath = ResolveConfiguredUpdateInstallPath();
 
         var checkUrl = await _dbContext.Configuraciones
             .Where(c => c.Clave == "app_update_check_url")
@@ -146,7 +146,7 @@ public sealed class ActualizacionService : IActualizacionService
 
         if (string.IsNullOrWhiteSpace(finalTargetPath))
         {
-            _logger.LogWarning("No se puede iniciar actualizacion: WatchdogSettings:UpdateTargetPath no configurado");
+            _logger.LogWarning("No se puede iniciar actualizacion: ruta de instalacion no configurada");
             return false;
         }
 
@@ -343,7 +343,7 @@ public sealed class ActualizacionService : IActualizacionService
             return null;
         }
 
-        return Path.Combine(resolvedPackageRoot, "api");
+        return resolvedPackageRoot;
     }
 
     private static bool IsGitHubApiEndpoint(Uri endpoint)
@@ -364,10 +364,40 @@ public sealed class ActualizacionService : IActualizacionService
         return string.IsNullOrWhiteSpace(configured) ? null : configured.Trim();
     }
 
-    private string? ResolveConfiguredUpdateTargetPath()
+    private string? ResolveConfiguredUpdateInstallPath()
     {
+        var installPath = _configuration["WatchdogSettings:UpdateInstallPath"];
+        if (!string.IsNullOrWhiteSpace(installPath))
+        {
+            return installPath.Trim();
+        }
+
         var configured = _configuration["WatchdogSettings:UpdateTargetPath"];
-        return string.IsNullOrWhiteSpace(configured) ? null : configured.Trim();
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return null;
+        }
+
+        return TryDeriveInstallPathFromLegacyTarget(configured.Trim());
+    }
+
+    private static string TryDeriveInstallPathFromLegacyTarget(string configuredTarget)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(configuredTarget);
+            var leaf = Path.GetFileName(Path.TrimEndingDirectorySeparator(fullPath));
+            if (leaf.Equals("api", StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(fullPath)) ?? configuredTarget;
+            }
+        }
+        catch
+        {
+            return configuredTarget;
+        }
+
+        return configuredTarget;
     }
 
     private long ResolveMaxUpdatePackageBytes()
@@ -810,7 +840,8 @@ public sealed class ActualizacionService : IActualizacionService
     {
         return File.Exists(Path.Combine(packageRoot, "VERSION")) &&
                File.Exists(Path.Combine(packageRoot, "api", "AtlasBalance.API.exe")) &&
-               File.Exists(Path.Combine(packageRoot, "watchdog", "AtlasBalance.Watchdog.exe"));
+               File.Exists(Path.Combine(packageRoot, "watchdog", "AtlasBalance.Watchdog.exe")) &&
+               File.Exists(Path.Combine(packageRoot, "scripts", "Actualizar-AtlasBalance.ps1"));
     }
 
     private static void EnsurePathWithinRoot(string path, string root)
