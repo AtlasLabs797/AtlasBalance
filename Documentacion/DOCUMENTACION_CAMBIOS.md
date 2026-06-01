@@ -8,6 +8,52 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-01 - V-01.09 - Rotacion de clave de firma de release
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se busco la clave privada historica de firma en repo, entorno y rutas locales razonables sin encontrarla.
+- Se genero un par RSA 4096 nuevo para firmar releases.
+- Se actualizo la clave publica embebida en instalador y plantilla productiva.
+- La privada se dejo fuera de Git en `tmp-release-signing-key/atlas-release-private.pem` para cargarla como secret de GitHub Actions.
+- `Build-Release.ps1` ahora compila el frontend en una carpeta temporal bajo `Atlas Balance Release`, evitando depender de borrar `frontend/dist` cuando Windows lo deja bloqueado.
+- El paquete copia esos assets al `api/wwwroot` publicado despues de `dotnet publish`; ya no borra ni escribe `backend/src/AtlasBalance.API/wwwroot` durante el release.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+- `Documentacion/documentacion.md`
+
+**Comandos ejecutados:**
+- Busqueda local de marcadores PEM privados y `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- Comprobacion de variables `Process`, `User` y `Machine`.
+- Generacion RSA 4096 con SDK local `.dotnet`.
+- Intento de release firmado: `npm ci` OK fuera del sandbox, build bloqueado por `frontend/dist` y luego por `backend/src/AtlasBalance.API/wwwroot` con `Access denied`; se cambio estrategia para no usar esas carpetas fuente.
+- Build firmado final: `Build-Release.ps1 -Version V-01.09 -Runtime win-x64` OK.
+
+**Resultado de verificacion:**
+- Clave privada historica no encontrada.
+- Nueva clave publica SHA-256: `1762B5DFD784A0947EC0F191D38BC28D3AC7ED6EA7BA63902CEB31C0616242B4`.
+- Parser PowerShell de `Build-Release.ps1`: OK tras cambiar a dist temporal y `api/wwwroot` publicado.
+- ZIP generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`.
+- Firma generada: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip.sig`.
+- SHA-256 ZIP: `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
+- SHA-256 firma: `C0AEF6FF1E2B5D79644CC5D934046691AFD4B95CC11571B74232E8E1D97DA5A4`.
+- Verificacion local de firma RSA/SHA-256 con clave publica nueva: `SIGNATURE_OK`.
+
+**Pendientes:**
+- Copiar la privada local a GitHub Secret `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- Ejecutar el workflow `Release`.
+- Guardar la privada en gestor de secretos. Si se pierde otra vez, habra que rotar otra vez. Divertido no es.
+
+---
 ## 2026-06-01 - V-01.09 - Auditoria profunda de seguridad, bugs y release gate
 
 **Version:** V-01.09

@@ -29,6 +29,16 @@
 
 ## Cerrados
 
+### 2026-06-01 - V-01.09 - Cerrado - Clave privada de firma de release perdida/no disponible
+
+- Contexto: se necesitaba publicar `V-01.09` como release latest firmado.
+- Causa: no habia `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en entorno, repo ni rutas locales razonables.
+- Impacto: no se podia generar `.zip.sig`; publicar unsigned romperia el actualizador online y seria una mala practica seria.
+- Solucion: rotar clave de firma con nuevo par RSA 4096, actualizar la publica en instalador/plantilla y hacer que `Build-Release.ps1` no dependa de `frontend/dist` ni del `wwwroot` fuente bloqueable.
+- Verificacion: `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local `SIGNATURE_OK`; SHA-256 ZIP `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
+- Pendiente operativo: cargar la nueva privada en GitHub Secret y guardar copia segura fuera del repo.
+- Estado: cerrado en codigo; falta configurar secret y ejecutar release.
+
 ### 2026-06-01 - V-01.09 - Cerrado - Refresh tokens no quedaban ligados a rotaciones de seguridad
 
 - Contexto: auditoria profunda de autenticacion.
