@@ -1,5 +1,20 @@
 # Documentacion tecnica
 
+## 2026-06-01 - V-01.09 - Backup de update compatible con V-01.06
+
+### Que cambio
+
+- `Actualizar-AtlasBalance.ps1` resuelve la conexion de backup con prioridad:
+  1. `ConnectionStrings:MigrationConnection`.
+  2. `WatchdogSettings.DbOwnerUser`/`DbOwnerPassword` del `watchdog/appsettings.Production.json`.
+  3. `ConnectionStrings:DefaultConnection` solo como ultimo recurso.
+- El fallback owner reutiliza `DbHost`, `DbPort` y `DbName` de Watchdog si existen; si faltan, toma host/puerto/base desde `DefaultConnection`.
+- Si solo queda `DefaultConnection` y `pg_dump` falla, el mensaje explica que RLS puede bloquear el backup completo y que faltan credenciales owner/migracion.
+
+### Por que
+
+Instalaciones `V-01.06` pueden no tener `MigrationConnection` en la API, pero si tienen credenciales owner en Watchdog. Usar el usuario runtime para `pg_dump` contra tablas con RLS/FORCE RLS puede fallar antes de actualizar, como ocurrio con `AUDITORIAS`. La solucion correcta es usar credencial owner para backup, no saltarse el backup.
+
 ## 2026-06-01 - V-01.09 - Rotacion de clave de firma de releases
 
 ### Que cambio
@@ -21,8 +36,8 @@ La clave privada anterior no esta en el repo ni en el entorno local. Eso es buen
 
 - ZIP: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`
 - Firma: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip.sig`
-- SHA-256 ZIP: `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`
-- SHA-256 firma: `C0AEF6FF1E2B5D79644CC5D934046691AFD4B95CC11571B74232E8E1D97DA5A4`
+- SHA-256 ZIP: `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`
+- SHA-256 firma: `19F9AE0197A7BB7F20E2DE0EBE87A9108B3E6D59922970466132DC2A27DC729E`
 - Verificacion local: `SIGNATURE_OK`
 
 ### Implicacion operativa

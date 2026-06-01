@@ -90,6 +90,65 @@ function Parse-ConnectionString {
     }
 }
 
+function Get-ConfigValue {
+    param([object]$Object, [string]$Name)
+
+    if ($null -eq $Object) {
+        return $null
+    }
+
+    $property = $Object.PSObject.Properties[$Name]
+    if ($property) {
+        return $property.Value
+    }
+
+    return $null
+}
+
+function Resolve-BackupConnection {
+    param(
+        [object]$ApiConfig,
+        [object]$WatchdogConfig
+    )
+
+    $connectionStrings = Get-ConfigValue -Object $ApiConfig -Name "ConnectionStrings"
+    $migrationConnection = Get-ConfigValue -Object $connectionStrings -Name "MigrationConnection"
+    if (-not [string]::IsNullOrWhiteSpace([string]$migrationConnection)) {
+        $connection = Parse-ConnectionString -ConnectionString ([string]$migrationConnection)
+        $connection["Source"] = "MigrationConnection"
+        return $connection
+    }
+
+    $defaultConnectionRaw = Get-ConfigValue -Object $connectionStrings -Name "DefaultConnection"
+    if ([string]::IsNullOrWhiteSpace([string]$defaultConnectionRaw)) {
+        throw "appsettings.Production.json no contiene ConnectionStrings:DefaultConnection."
+    }
+
+    $defaultConnection = Parse-ConnectionString -ConnectionString ([string]$defaultConnectionRaw)
+    $watchdogSettings = Get-ConfigValue -Object $WatchdogConfig -Name "WatchdogSettings"
+    $ownerUser = Get-ConfigValue -Object $watchdogSettings -Name "DbOwnerUser"
+    $ownerPassword = Get-ConfigValue -Object $watchdogSettings -Name "DbOwnerPassword"
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$ownerUser) -and
+        -not [string]::IsNullOrWhiteSpace([string]$ownerPassword)) {
+        $dbHost = Get-ConfigValue -Object $watchdogSettings -Name "DbHost"
+        $dbPort = Get-ConfigValue -Object $watchdogSettings -Name "DbPort"
+        $dbName = Get-ConfigValue -Object $watchdogSettings -Name "DbName"
+
+        return [ordered]@{
+            Host = if ([string]::IsNullOrWhiteSpace([string]$dbHost)) { $defaultConnection.Host } else { [string]$dbHost }
+            Port = if ([string]::IsNullOrWhiteSpace([string]$dbPort)) { $defaultConnection.Port } else { [string]$dbPort }
+            Database = if ([string]::IsNullOrWhiteSpace([string]$dbName)) { $defaultConnection.Database } else { [string]$dbName }
+            Username = [string]$ownerUser
+            Password = [string]$ownerPassword
+            Source = "WatchdogSettings.DbOwnerUser"
+        }
+    }
+
+    $defaultConnection["Source"] = "DefaultConnection"
+    return $defaultConnection
+}
+
 function Find-PostgresDump {
     param([string]$ConfiguredBinPath)
 
@@ -194,7 +253,7 @@ function Backup-Database {
         [string]$Version
     )
 
-    $connection = Parse-ConnectionString -ConnectionString $ApiConfig.ConnectionStrings.DefaultConnection
+    $connection = Resolve-BackupConnection -ApiConfig $ApiConfig -WatchdogConfig $WatchdogConfig
     $pgDump = Find-PostgresDump -ConfiguredBinPath $WatchdogConfig.WatchdogSettings.PostgresBinPath
     if ([string]::IsNullOrWhiteSpace($pgDump)) {
         throw "No se encontro pg_dump.exe. No actualizo sin backup."
@@ -219,7 +278,11 @@ function Backup-Database {
             $connection.Database
 
         if ($LASTEXITCODE -ne 0) {
-            throw "pg_dump devolvio codigo $LASTEXITCODE"
+            if ($connection.Source -eq "DefaultConnection") {
+                throw "pg_dump devolvio codigo $LASTEXITCODE. No hay MigrationConnection ni credenciales owner en WatchdogSettings; el usuario runtime puede quedar bloqueado por RLS y no sirve para un backup completo."
+            }
+
+            throw "pg_dump devolvio codigo $LASTEXITCODE usando $($connection.Source)"
         }
     } finally {
         $env:PGPASSWORD = $previousPassword

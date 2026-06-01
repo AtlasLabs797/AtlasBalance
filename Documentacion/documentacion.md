@@ -272,6 +272,8 @@ El actualizador hace esto:
 9. La API aplica migraciones EF Core automaticamente al arrancar.
 10. Verifica `/api/health` con `curl.exe -k`.
 
+En instalaciones antiguas que no tengan `ConnectionStrings:MigrationConnection`, el actualizador usa las credenciales owner de `watchdog\appsettings.Production.json` para el backup previo. Usar el usuario runtime de la app contra tablas con RLS puede bloquear `pg_dump`; saltarse el backup seria peor.
+
 Si el health check falla, el actualizador restaura automaticamente los binarios anteriores desde `C:\AtlasBalance\backups\app_before_update_*`, vuelve a apuntar los servicios a esos binarios y falla con mensaje claro. Revisa servicios y logs antes de otro intento; repetir a ciegas es como reiniciar el incendio.
 
 ## Desinstalar completamente

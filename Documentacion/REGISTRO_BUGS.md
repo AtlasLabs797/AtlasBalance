@@ -28,13 +28,22 @@
 
 ## Cerrados
 
+### 2026-06-01 - V-01.09 - Cerrado - Update V-01.06 sin MigrationConnection fallaba en pg_dump por RLS
+
+- Contexto: una instalacion `V-01.06` intento actualizar a `V-01.09`; el backup pre-update fallo en `AUDITORIAS` por RLS/FORCE RLS.
+- Causa: `Actualizar-AtlasBalance.ps1` usaba solo `DefaultConnection` para `pg_dump`, pero instalaciones antiguas pueden no tener `MigrationConnection` en API.
+- Impacto: no se podia actualizar aunque la app estuviera sana; por suerte el fallo ocurria antes de tocar binarios.
+- Solucion: resolver conexion de backup con prioridad `MigrationConnection`, credenciales owner de Watchdog y ultimo fallback a `DefaultConnection` con error claro.
+- Verificacion: parser PowerShell OK; paquete `V-01.09-win-x64` regenerado, firmado, verificado como `SIGNATURE_OK` y republicado en GitHub Release `latest`.
+- Estado: cerrado en codigo y publicacion.
+
 ### 2026-06-01 - V-01.09 - Cerrado - Clave privada de firma de release perdida/no disponible
 
 - Contexto: se necesitaba publicar `V-01.09` como release latest firmado.
 - Causa: no habia `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en entorno, repo ni rutas locales razonables.
 - Impacto: no se podia generar `.zip.sig`; publicar unsigned romperia el actualizador online y seria una mala practica seria.
 - Solucion: rotar clave de firma con nuevo par RSA 4096, actualizar la publica en instalador/plantilla y hacer que `Build-Release.ps1` no dependa de `frontend/dist` ni del `wwwroot` fuente bloqueable.
-- Verificacion: `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local `SIGNATURE_OK`; SHA-256 ZIP `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
+- Verificacion: `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local `SIGNATURE_OK`; SHA-256 ZIP `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`.
 - Publicacion: GitHub Release `V-01.09-win-x64` publicado como `latest` con ZIP y `.sig`.
 - Pendiente operativo: cargar la nueva privada en GitHub Secret y guardar copia segura fuera del repo para futuros releases automatizados.
 - Estado: cerrado en codigo y publicacion.
