@@ -43,6 +43,8 @@ public sealed class AuthResponse
     public string? MfaChallengeId { get; set; }
     public string? MfaSecret { get; set; }
     public string? MfaOtpAuthUri { get; set; }
+    public bool MfaRememberDeviceAllowed { get; set; }
+    public int MfaRememberDeviceDays { get; set; }
 }
 
 public sealed class PermisoUsuarioResponse

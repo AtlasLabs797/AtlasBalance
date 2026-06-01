@@ -45,6 +45,8 @@ public sealed class ConfiguracionControllerTests
         var payload = ok.Value.Should().BeOfType<ConfiguracionSistemaResponse>().Subject;
         payload.Smtp.Password.Should().BeEmpty();
         payload.General.AppUpdateCheckUrl.Should().Be(ConfigurationDefaults.UpdateCheckUrl);
+        payload.General.MfaRememberDeviceEnabled.Should().BeFalse();
+        payload.General.MfaRememberDeviceDays.Should().Be(SecurityConfigurationDefaults.MfaRememberDeviceDays);
     }
 
     [Fact]
@@ -75,6 +77,7 @@ public sealed class ConfiguracionControllerTests
             {
                 AppBaseUrl = "https://app.local",
                 AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
+                MfaRememberDeviceEnabled = true,
                 BackupPath = "C:\\backups",
                 ExportPath = "C:\\exports"
             },
@@ -91,6 +94,8 @@ public sealed class ConfiguracionControllerTests
         smtpPassword.Valor.Should().Be("super-secret");
         var updateUrl = await db.Configuraciones.SingleAsync(x => x.Clave == "app_update_check_url");
         updateUrl.Valor.Should().Be(ConfigurationDefaults.UpdateCheckUrl);
+        var mfaRemember = await db.Configuraciones.SingleAsync(x => x.Clave == SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey);
+        mfaRemember.Valor.Should().Be("true");
 
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.UpdateConfiguracion);
         audit.DetallesJson.Should().NotContain("super-secret");

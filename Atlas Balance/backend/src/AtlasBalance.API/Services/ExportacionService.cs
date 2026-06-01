@@ -30,8 +30,10 @@ public sealed class ExportacionService : IExportacionService
     public async Task<Exportacion> ExportarCuentaAsync(Guid cuentaId, TipoProceso tipo, Guid? iniciadoPorId, CancellationToken cancellationToken)
     {
         var cuenta = await _dbContext.Cuentas
+            .Where(c => c.Id == cuentaId && c.Activa)
+            .Where(c => _dbContext.Titulares.Any(t => t.Id == c.TitularId && t.DeletedAt == null))
             .Include(c => c.Titular)
-            .FirstOrDefaultAsync(c => c.Id == cuentaId && c.Activa, cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken);
         if (cuenta is null)
         {
             throw new InvalidOperationException("Cuenta no encontrada o inactiva");
@@ -214,6 +216,7 @@ public sealed class ExportacionService : IExportacionService
     {
         var cuentas = await _dbContext.Cuentas
             .Where(c => c.Activa)
+            .Where(c => _dbContext.Titulares.Any(t => t.Id == c.TitularId && t.DeletedAt == null))
             .Select(c => c.Id)
             .ToListAsync(cancellationToken);
 

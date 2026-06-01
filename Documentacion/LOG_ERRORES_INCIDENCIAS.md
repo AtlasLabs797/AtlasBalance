@@ -1,5 +1,192 @@
 # Log de errores e incidencias
 
+## 2026-06-01 - V-01.09 - Auditoria profunda encontro falsos verdes de seguridad y datos
+
+- Contexto: revision en profundidad previa a release con foco en seguridad, bugs y publicacion.
+- Hallazgos confirmados:
+  - Refresh tokens no estaban ligados al `security_stamp`; una rotacion de seguridad podia dejar tokens viejos vivos hasta su vencimiento.
+  - Cambio de password exigia MFA solo si `MfaEnabled=true`, dejando una ventana para usuarios con setup MFA pendiente.
+  - Integraciones con permiso `escritura` podian pasar backstops RLS de lectura.
+  - Conversion de divisas sin tasa devolvia el importe original, maquillando el error como 1:1.
+  - Huella de importacion incluia columnas extra no financieras, permitiendo duplicados al cambiar una referencia auxiliar.
+  - Importaciones y movimientos de plazo fijo no reactivaban alertas de saldo bajo.
+  - Ranking IA por titular respondia con filas de cuenta.
+  - Actualizador externo no restauraba binarios automaticamente tras health check fallido.
+- Solucion aplicada:
+  - `security_stamp` en `REFRESH_TOKENS`, validacion de stamp en refresh y MFA obligatorio por politica en cambio de password.
+  - Migracion RLS de endurecimiento para lectura de integracion y revision.
+  - `TipoCambioMissingException` con respuesta HTTP 409.
+  - Fingerprint de importacion limitado a identidad financiera estable.
+  - Evaluacion de `IAlertaService` tras persistir importaciones/plazo fijo.
+  - Agrupacion IA por titular/divisa cuando el prompt pide titulares.
+  - Rollback automatico de binarios en `Actualizar-AtlasBalance.ps1`.
+- Verificacion: tests focalizados 136/136 OK; suite backend sin Docker/Testcontainers 276/276 OK; backend Release build OK; frontend lint/build OK; secret scan OK.
+- Bloqueos: Docker/Testcontainers no disponible, falta clave privada de firma de release y falta autenticacion GitHub local.
+
+## 2026-05-22 - V-01.09 - Actualizacion online solo aplicaba API/frontend
+
+- Contexto: se pidio que el boton `Actualizar ahora` actualizase toda la aplicacion desde GitHub `latest`, sin pasos intermedios ni intervencion humana.
+- Hallazgo confirmado:
+  - `ActualizacionService` descargaba y validaba el ZIP completo, pero devolvia `resolvedPackageRoot\api`.
+  - Watchdog sincronizaba `sourcePath -> targetPath`, y `targetPath` era `C:\AtlasBalance\api`.
+  - Resultado: API/frontend podian quedar en version nueva, mientras Watchdog, scripts, wrappers y metadatos raiz seguian viejos.
+- Solucion aplicada:
+  - API pasa al Watchdog la raiz del paquete completo validado.
+  - API/Watchdog derivan `InstallPath` desde `UpdateInstallPath` o desde el legacy `UpdateTargetPath=...\api`.
+  - Watchdog valida paquete completo y aplica API, Watchdog, scripts, wrappers, `VERSION` y runtime.
+  - En servicio Windows real, Watchdog lanza un helper PowerShell que ejecuta el actualizador del paquete para poder reemplazar tambien su propia carpeta.
+  - La UI espera durante reinicios temporales de API en vez de declarar fallo al primer corte de red.
+- Verificacion: update/watchdog 26/26 OK; frontend lint/build OK; suite backend sin Docker/Testcontainers 270/270 OK.
+- Bloqueos: GitHub latest sigue siendo `V-01.06-win-x64`; tests PostgreSQL/Testcontainers bloqueados porque Docker no esta disponible; falta prueba real en Windows instalacion reemplazando Watchdog vivo.
+- Regla: si actualizas solo `api`, no has actualizado la app. Has creado una instalacion partida con una etiqueta bonita.
+
+## 2026-05-22 - V-01.09 - Cambio de contrasena podia convertir sesion pre-MFA en post-MFA
+
+- Contexto: verificacion del threat model con subagentes sobre autenticacion, autorizacion, OpenClaw, ficheros/admin/watchdog y frontend/configuracion.
+- Hallazgo confirmado:
+  - `RefreshTokenAsync` ya rechazaba refresh tokens sin `mfa_verified_at` cuando MFA era obligatorio.
+  - `ChangePasswordAsync`, en cambio, emitia un refresh token nuevo con `MfaVerifiedAt = now` si el usuario tenia MFA activo, aunque la sesion actual no hubiera completado MFA.
+- Riesgo: si MFA se activaba despues de emitir una sesion, un access token todavia valido podia llamar a cambio de contrasena y recibir una nueva sesion con garantia MFA falsa.
+- Solucion aplicada:
+  - `CambiarPassword` pasa la cookie `refresh_token` actual.
+  - `ChangePasswordAsync` exige que ese refresh token este activo y tenga `mfa_verified_at` para usuarios con MFA obligatorio.
+  - El refresh nuevo preserva la garantia existente; no crea una garantia falsa.
+  - Regresiones cubren rechazo de sesion pre-MFA y preservacion de sesion MFA verificada.
+- Verificacion: bloque auth/controladores afectados 27/27 OK; suite backend sin Docker/Testcontainers 269/269 OK.
+- Regla: la garantia MFA pertenece a la sesion, no al perfil del usuario. Confundir eso es una forma elegante de abrir un bypass.
+
+## 2026-05-22 - V-01.09 - RLS y rutas de backup/export necesitaban backstops mas duros
+
+- Contexto: los subagentes confirmaron que la autorizacion normal estaba cerrada, pero RLS no era un backstop suficiente frente a soft-delete; tambien habia validaciones de fichero despues de `File.Exists`.
+- Hallazgos:
+  - Las politicas RLS dependian demasiado de query filters/controladores para ocultar filas soft-deleted.
+  - Exportaciones y backups tocaban disco antes de validar raiz permitida.
+  - Retencion de backups podia intentar borrar una ruta persistida en DB sin comprobar que siguiera bajo `backup_path`.
+- Solucion aplicada:
+  - Migracion RLS de hardening para filtrar soft-delete en lectura usuario/integracion y en helpers de cuenta/extracto/exportacion.
+  - Descarga de exportaciones y restauracion de backups validan extension, ruta absoluta y raiz configurada antes de `File.Exists`.
+  - Retencion omite y registra backups cuya ruta no cae bajo la raiz permitida.
+- Verificacion: suite backend sin Docker/Testcontainers 269/269 OK; `RowLevelSecurityTests` no pudo ejecutarse porque Docker/Testcontainers no esta disponible/configurado.
+- Regla: si una ruta sale de DB, tratala como hostil hasta que demuestre que vive bajo la raiz permitida. La DB no es agua bendita.
+
+## 2026-05-20 - V-01.09 - Importacion/exportacion no heredaban soft-delete del titular
+
+- Contexto: revision del threat model de seguridad recibido para comprobar si `V-01.09` cubria autenticacion, autorizacion, OpenClaw, imports/exports, Watchdog y actualizaciones.
+- Hallazgo confirmado:
+  - `ImportacionService.EnsureCuentaPermitidaAsync` buscaba `CUENTAS` por `Id` y `Activa`, pero no exigia titular padre activo.
+  - `ExportacionService.ExportarCuentaAsync` y `ExportarMensualAsync` repetian el patron.
+  - Un usuario con permiso global/de cuenta, o el job mensual, podia operar sobre una cuenta activa cuyo titular estaba soft-deleted si conocia el `cuentaId`.
+- Riesgo: exposicion o manipulacion de datos financieros que el modelo logico ya habia eliminado de la superficie visible. No es RCE ni auth bypass, pero si es un fallo de aislamiento de datos.
+- Solucion aplicada:
+  - Importacion exige titular activo antes de validar, confirmar o registrar movimientos de plazo fijo.
+  - Exportacion manual exige titular activo antes de generar XLSX.
+  - Exportacion mensual enumera solo cuentas con titular activo.
+  - Regresiones cubren importacion, exportacion manual y exportacion mensual.
+- Verificacion: bloque focalizado `ImportacionServiceTests|ExportacionServiceTests|ActualizacionServiceTests` 63/63 OK con SDK local.
+- Regla: una cuenta no hereda magicamente la eliminacion logica del titular. Si el servicio acepta `cuentaId` directo, tiene que verificar el padre o estas dejando un IDOR vestido de detalle de implementacion.
+
+## 2026-05-20 - V-01.09 - Actualizador rechazaba paquetes grandes demasiado tarde
+
+- Contexto: el threat model marcaba DoS por ficheros/importaciones y supply chain de actualizaciones como superficie sensible.
+- Hallazgo confirmado: `ActualizacionService` revisaba `Content-Length`, pero si el servidor no declaraba tamano podia descargar el ZIP completo y solo despues rechazarlo por superar el limite.
+- Riesgo: consumo evitable de disco/IO en una ruta admin de actualizacion. Requiere origen GitHub oficial ya validado, asi que no es critico; aun asi, la defensa era perezosa.
+- Solucion aplicada:
+  - Copia de `HttpContent` a fichero con contador de bytes y corte inmediato al superar el limite.
+  - `UpdateSecurity:MaxUpdatePackageBytes` permite bajar el limite por instalacion; el maximo productivo sigue capado en 300 MB.
+  - Regresion con asset sin `Content-Length` y limite reducido.
+- Verificacion: bloque focalizado `ImportacionServiceTests|ExportacionServiceTests|ActualizacionServiceTests` 63/63 OK.
+- Regla: validar tamano despues de escribir todo es como revisar la puerta despues de que ya te vaciaron el salon. Corta durante el stream.
+
+## 2026-05-20 - V-01.09 - IA filtraba diagnosticos internos en errores de red
+
+- Contexto: Codex Security marco `AI provider network errors leak internal diagnostics`.
+- Causa: `BuildProviderNetworkMessage` construia un mensaje visible con detalles derivados de `HttpRequestException`; `IaController` devolvia `IaProviderException.Message` directamente en el HTTP 502.
+- Riesgo: usuarios autenticados con permiso IA podian ver hostnames internos, proxy, puertos, detalles de certificados o diagnosticos del sistema si fallaba la conexion al proveedor.
+- Solucion aplicada:
+  - El mensaje visible de red queda generico.
+  - La auditoria guarda solo codigos de categoria (`tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused`, `network_error`).
+  - Se agrego una regresion con TLS/proxy/certificado interno ficticio.
+  - Se excluyeron `.local-build`/`.codex-build` de MSBuild y Git para que intentos de test aislados no contaminen compilacion ni estado.
+- Verificacion: regresion focalizada 1/1 OK, `AtlasAiServiceTests` 62/62 OK y `git diff --check` OK con avisos CRLF esperados.
+- Regla: una app financiera no debe enseñar diagnosticos de infraestructura al usuario para "ayudar a depurar". El usuario necesita un error claro; el operador necesita categorias seguras.
+
+## 2026-05-20 - V-01.09 - Refresh tokens pre-MFA renovaban sesion sin segundo factor
+
+- Contexto: hallazgo de seguridad `Refresh tokens bypass new MFA requirement` sobre el flujo `/api/auth/refresh-token`.
+- Hallazgo confirmado:
+  - `LoginAsync` exigia MFA y no emitia tokens si `RequireMfaForWebUsers=true`.
+  - `RefreshTokenAsync` aceptaba un refresh token valido aunque hubiera sido emitido antes de MFA y rotaba access/refresh sin garantia MFA.
+- Causa: el modelo `RefreshToken` no tenia estado server-side de MFA completado. La cookie `mfa_trusted` no es el sitio correcto para representar la garantia de una sesion concreta.
+- Solucion aplicada:
+  - Nueva columna nullable `mfa_verified_at` en `REFRESH_TOKENS`.
+  - Tokens emitidos tras MFA o login con dispositivo confiable valido guardan esa garantia.
+  - Refresh con MFA obligatorio revoca y rechaza tokens sin `mfa_verified_at`.
+  - La rotacion preserva `mfa_verified_at` para sesiones validas.
+- Verificacion:
+  - Reproduccion previa: el test de pre-MFA refresh fallaba porque no se lanzaba excepcion.
+  - `AuthServiceTests`: 18/18 OK.
+  - Suite backend sin Docker/Testcontainers: 261/261 OK.
+- Regla: no uses cookies de "recordar dispositivo" como sustituto de estado de sesion. Si el control depende del refresh token, la garantia debe viajar con el refresh token.
+
+## 2026-05-20 - V-01.09 - Logout conservaba `mfa_trusted`
+
+- Contexto: revision de hallazgo de seguridad sobre MFA recordado tras logout.
+- Hallazgo confirmado:
+  - `LoginAsync` acepta `mfa_trusted` para saltar el reto TOTP cuando el token firmado es valido.
+  - `Logout` no borraba `mfa_trusted`.
+  - `MfaRememberDuration` estaba en 90 dias.
+- Causa: se habia confundido "recordar dispositivo" con "mantener confianza despues de logout". En una app financiera, esa comodidad no compensa la perdida de semantica de cierre de sesion.
+- Solucion aplicada:
+  - `AuthController.Logout` borra `mfa_trusted`.
+  - `AuthService` reduce el recuerdo MFA a 62 dias.
+  - `CONFIGURACION.mfa_remember_device_enabled` gobierna si el login muestra y acepta recordar dispositivo; queda desactivado por defecto.
+  - `LoginAsync` ignora y limpia `mfa_trusted` cuando esa politica admin esta apagada.
+  - Tests de logout, expiracion, politica admin desactivada y caso legitimo recordado actualizados.
+- Verificacion:
+  - Suite focalizada `AuthServiceTests|AuthControllerTests|ConfiguracionControllerTests`: 29/29 OK.
+  - Frontend `npm.cmd run lint`: OK.
+  - Frontend `npm.cmd run build`: OK.
+  - Intento de sincronizar `frontend/dist` en `backend/src/AtlasBalance.API/wwwroot`: bloqueado por `Access denied`; no insistir en esta via dentro de esta maquina.
+- Nota: la mitigacion backend queda activa aunque un frontend viejo envie `remember_device=true`: si la politica admin esta apagada no se emite `mfa_trusted`, y logout siempre borra la cookie. La publicacion debe regenerar `wwwroot` para exponer la nueva UI admin.
+- Regla: logout debe limpiar artefactos de autenticacion del navegador. Si se quiere "confiar este dispositivo" mas tiempo, debe sobrevivir a expiracion de sesion, no a un logout explicito.
+
+## 2026-05-20 - V-01.09 - Actualizador rechazaba entradas ZIP raiz inocuas
+
+- Contexto: hallazgo reportado sobre paquetes de actualizacion con entradas de directorio raiz (`.` / `./`) que podian rechazarse antes de tratarse como directorios.
+- Causa: `TryExtractPackageSafely` usaba un root con separador final como unica condicion `StartsWith`; si una entrada normalizaba exactamente al root sin separador, quedaba fuera del prefijo seguro y se rechazaba el paquete completo.
+- Solucion aplicada:
+  - Root normalizado sin separador final para comparar igualdad.
+  - Prefijo con separador solo para rutas hijas.
+  - Igualdad con root aceptada unicamente para marcadores de directorio actual (`.`) de longitud cero o con terminador de directorio.
+  - Regresiones para aceptar `.` / `./` y rechazar `../evil.txt`.
+- Verificacion:
+  - Reproduccion previa con `ActualizacionServiceTests`: fallo en `rootDirectoryEntry: "."`.
+  - `ActualizacionServiceTests`: 13/13 OK tras el fix.
+  - Bloque actualizacion/watchdog: 20/20 OK.
+  - Suite backend sin Docker/Testcontainers quedo roja en ese momento por fallos ajenos de IA/Auth; no se mezclan con este bug y se cubren en bloques posteriores.
+- Regla: no arregles disponibilidad del updater rompiendo el guard Zip Slip. Si una ruta resuelve al root, solo puede ser el marcador de directorio actual, no cualquier camino creativo con `..`.
+
+## 2026-05-20 - V-01.09 - Login: throttle por IP compartida permitia DoS no autenticado
+
+- Contexto: hallazgo Codex Security `Per-client login throttle enables unauthenticated DoS` reportado sobre el login.
+- Hallazgo confirmado:
+  - `AuthService` mantenia `MaxLoginFailuresPerClient = 20` durante 15 minutos.
+  - El contador cliente/IP se consultaba antes de buscar usuario o verificar password.
+  - 20 fallos con emails distintos desde una misma IP compartida podian hacer que un usuario legitimo recibiera 429 con credenciales validas.
+  - `ClearLoginFailures` solo eliminaba el contador email+cliente, no el contador cliente/IP.
+  - No habia `UseForwardedHeaders`, asi que un proxy inverso podia colapsar clientes reales en una sola IP observada.
+- Solucion aplicada:
+  - El precheck temprano se limita al contador email+cliente.
+  - El contador cliente/IP se aplica a intentos invalidos despues de resolver usuario inexistente o fallo de password.
+  - El login correcto limpia el contador cliente/IP.
+  - Se activa `ForwardedHeaders` con proxies/redes conocidas configurables.
+  - Regresiones de `AuthServiceTests` cubren el bypass legitimo tras 20 fallos de IP compartida y la limpieza post-login.
+- Verificacion:
+  - `AuthServiceTests`: 20/20 OK con SDK local `C:\tmp\dotnet-sdk-8.0.419`.
+  - Suite backend sin Docker/Testcontainers: 267/267 OK.
+  - `git diff --check` OK en archivos tocados, con avisos CRLF esperados.
+- Regla: un limite anonimo por IP no puede bloquear credenciales validas antes de verificarlas. Eso no es seguridad; es un boton de apagar login para quien comparta NAT.
+
 ## 2026-05-19 - V-01.07 - UI/UX: jerarquia visual plana y acciones criticas sin peso suficiente
 
 - Contexto: revision adicional pedida sobre jerarquia de ventanas, informacion importante, botones, checks, tablas y menus.
@@ -169,7 +356,7 @@
 - Solucion aplicada:
   - Comisiones IA queda alineado con la regla conservadora de revision: solo senales fuertes.
   - Seguros IA se limita a cargos negativos y aplica exclusiones de falsos positivos.
-  - Errores de red de OpenRouter/OpenAI muestran diagnostico tecnico saneado sin prompt, respuesta ni claves.
+  - En V-01.07 los errores de red de OpenRouter/OpenAI mostraban diagnostico tecnico saneado sin prompt, respuesta ni claves; en V-01.09 esto queda sustituido por mensaje publico generico y codigos seguros en auditoria.
   - Regresiones en `AtlasAiServiceTests` cubren tarjeta, cuota/leasing, transferencia a aseguradora, anulacion de seguro y Generalitat.
 - Verificacion:
   - Documentacion oficial de OpenRouter revisada para `models`, `reasoning.exclude`, privacidad/routing y slugs publicados.

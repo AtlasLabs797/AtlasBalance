@@ -64,8 +64,12 @@ public sealed class TiposCambioService : ITiposCambioService
         var catalog = await GetRateCatalogAsync(cancellationToken);
         var rate = ResolveRate(from, to, catalog);
 
-        // Fallback defensivo para no romper dashboards si falta una tasa.
-        return rate.HasValue ? amount * rate.Value : amount;
+        if (!rate.HasValue)
+        {
+            throw new TipoCambioMissingException(from, to);
+        }
+
+        return amount * rate.Value;
     }
 
     public async Task<IReadOnlyList<TipoCambioDto>> ListarTiposCambioAsync(CancellationToken cancellationToken)
@@ -573,3 +577,16 @@ public sealed record SyncTiposCambioResult(
     bool Success,
     int UpdatedCount,
     string? ErrorMessage);
+
+public sealed class TipoCambioMissingException : InvalidOperationException
+{
+    public string DivisaOrigen { get; }
+    public string DivisaDestino { get; }
+
+    public TipoCambioMissingException(string divisaOrigen, string divisaDestino)
+        : base($"No existe tipo de cambio configurado para convertir {divisaOrigen} a {divisaDestino}.")
+    {
+        DivisaOrigen = divisaOrigen;
+        DivisaDestino = divisaDestino;
+    }
+}

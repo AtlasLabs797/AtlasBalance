@@ -1186,6 +1186,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("inet")
                         .HasColumnName("ip_address");
 
+                    b.Property<DateTime?>("MfaVerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("mfa_verified_at");
+
                     b.Property<string>("ReemplazadoPor")
                         .HasColumnType("text")
                         .HasColumnName("reemplazado_por");
@@ -1193,6 +1197,12 @@ namespace AtlasBalance.API.Migrations
                     b.Property<DateTime?>("RevocadoEn")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revocado_en");
+
+                    b.Property<string>("SecurityStamp")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("security_stamp");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-01.07",
+    [string]$Version = "V-01.09",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall,
@@ -31,6 +31,20 @@ function Write-JsonFile {
 
     $json = $Value | ConvertTo-Json -Depth 20
     Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
+}
+
+function Resolve-DotnetPath {
+    $localDotnet = Join-Path $workspaceRoot ".dotnet\dotnet.exe"
+    if (Test-Path -LiteralPath $localDotnet) {
+        return $localDotnet
+    }
+
+    $command = Get-Command "dotnet" -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    throw "No se encontro dotnet. Instala el SDK local en $localDotnet o agrega dotnet al PATH."
 }
 
 function Invoke-ReleaseSigner {
@@ -78,7 +92,7 @@ await File.WriteAllBytesAsync(args[1], signature);
 return 0;
 '@
 
-        & dotnet run --project $signerProject --configuration Release -- $ZipPath $SignaturePath
+        & $dotnetPath run --project $signerProject --configuration Release -- $ZipPath $SignaturePath
         if ($LASTEXITCODE -ne 0) { throw "Firma RSA del release fallo." }
     } finally {
         Remove-Item -LiteralPath $signerRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -88,6 +102,8 @@ return 0;
 if (-not (Test-Path $apiProject) -or -not (Test-Path $watchdogProject)) {
     throw "No se encontraron los proyectos .NET desde $repoRoot."
 }
+
+$dotnetPath = Resolve-DotnetPath
 
 Remove-Item -LiteralPath $packageRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
@@ -107,10 +123,10 @@ try {
     Pop-Location
 }
 
-& dotnet restore $apiProject --locked-mode -r $Runtime
+& $dotnetPath restore $apiProject --locked-mode -r $Runtime
 if ($LASTEXITCODE -ne 0) { throw "dotnet restore API --locked-mode fallo." }
 
-& dotnet restore $watchdogProject --locked-mode -r $Runtime
+& $dotnetPath restore $watchdogProject --locked-mode -r $Runtime
 if ($LASTEXITCODE -ne 0) { throw "dotnet restore Watchdog --locked-mode fallo." }
 
 if (Test-Path -LiteralPath $apiWwwroot) {
@@ -122,7 +138,7 @@ if (Get-ChildItem -LiteralPath $apiWwwroot -Force | Select-Object -First 1) {
 }
 Copy-DirectoryContents -Source (Join-Path $frontendPath "dist") -Target $apiWwwroot
 
-& dotnet publish $apiProject `
+& $dotnetPath publish $apiProject `
     -c $Configuration `
     -r $Runtime `
     --no-restore `
@@ -132,7 +148,7 @@ Copy-DirectoryContents -Source (Join-Path $frontendPath "dist") -Target $apiWwwr
     -o (Join-Path $packageRoot "api")
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish API fallo." }
 
-& dotnet publish $watchdogProject `
+& $dotnetPath publish $watchdogProject `
     -c $Configuration `
     -r $Runtime `
     --no-restore `
@@ -187,7 +203,8 @@ if (Test-Path $userDocumentation) {
 $manifest = [ordered]@{
     version = $Version
     message = "Atlas Balance $Version"
-    source_path = "C:\AtlasBalance\updates\$Version\api"
+    source_path = "C:\AtlasBalance\updates\$Version"
+    target_path = "C:\AtlasBalance"
 }
 Write-JsonFile -Value $manifest -Path (Join-Path $packageRoot "version.json")
 

@@ -15,6 +15,10 @@
   "Security": {
     "RequireMfaForWebUsers": true
   },
+  "ForwardedHeaders": {
+    "KnownProxies": [],
+    "KnownNetworks": []
+  },
   "Ia": {
     "UseSystemProxy": false,
     "ProxyUrl": ""
@@ -27,6 +31,7 @@
     "DockerPostgresContainer": "atlas_balance_db",
     "DockerCliPath": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
     "UpdateSourceRoot": "C:\\AtlasBalance\\updates",
+    "UpdateInstallPath": "C:\\AtlasBalance",
     "UpdateTargetPath": "C:\\AtlasBalance\\api"
   },
   "GitHubSettings": {

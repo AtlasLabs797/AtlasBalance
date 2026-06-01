@@ -15,6 +15,10 @@
   "Security": {
     "RequireMfaForWebUsers": true
   },
+  "ForwardedHeaders": {
+    "KnownProxies": [],
+    "KnownNetworks": []
+  },
   "Ia": {
     "UseSystemProxy": false,
     "ProxyUrl": ""
@@ -25,6 +29,7 @@
     "PostgresBinPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
     "StateFilePath": "C:\\<ruta-local>\\watchdog-state.json",
     "UpdateSourceRoot": "C:\\<ruta-local>\\updates",
+    "UpdateInstallPath": "C:\\<ruta-local>",
     "UpdateTargetPath": "C:\\<ruta-local>\\api",
     "DockerPostgresContainer": "atlas_balance_db"
   },

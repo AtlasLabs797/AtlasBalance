@@ -118,6 +118,8 @@ public sealed class BackupService : IBackupService
         var retentionWeeks = int.TryParse(weeksRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? Math.Clamp(parsed, 1, 52)
             : 6;
+        var rawBackupDirectory = await GetConfigValueAsync("backup_path", @"C:\atlas-balance\backups", cancellationToken);
+        var backupDirectory = ResolveSafeDirectory(rawBackupDirectory, "backup_path");
 
         var cutoff = DateTime.UtcNow.AddDays(-7 * retentionWeeks);
         var oldBackups = await _dbContext.Backups
@@ -129,6 +131,12 @@ public sealed class BackupService : IBackupService
         {
             try
             {
+                if (!IsAllowedBackupFile(backup.RutaArchivo, backupDirectory))
+                {
+                    _logger.LogWarning("Retention omitio backup {BackupId} por ruta fuera de la raiz permitida", backup.Id);
+                    continue;
+                }
+
                 if (File.Exists(backup.RutaArchivo))
                 {
                     File.Delete(backup.RutaArchivo);
@@ -419,5 +427,39 @@ public sealed class BackupService : IBackupService
                char.IsLetter(value[0]) &&
                value[1] == ':' &&
                (value[2] == '\\' || value[2] == '/');
+    }
+
+    private static bool IsAllowedBackupFile(string filePath, string backupDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || !LooksLikeRootedPath(filePath))
+        {
+            return false;
+        }
+
+        if (!string.Equals(Path.GetExtension(filePath), ".dump", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullFilePath = Path.GetFullPath(filePath);
+            var fullRoot = EnsureTrailingSeparator(Path.GetFullPath(backupDirectory));
+            return fullFilePath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static bool LooksLikeRootedPath(string value) =>
+        Path.IsPathRooted(value) || LooksLikeWindowsRootedPath(value);
+
+    private static string EnsureTrailingSeparator(string path)
+    {
+        return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
+            ? path
+            : $"{path}{Path.DirectorySeparatorChar}";
     }
 }

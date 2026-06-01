@@ -525,6 +525,49 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
+    public async Task AskAsync_Should_Group_Deterministic_Ranking_By_Titular_When_Requested()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var titularAtlasId = Guid.NewGuid();
+        var titularUsaId = Guid.NewGuid();
+        var cuentaOperativaId = Guid.NewGuid();
+        var cuentaImpuestosId = Guid.NewGuid();
+        var cuentaDolaresId = Guid.NewGuid();
+
+        db.Titulares.AddRange(
+            new Titular { Id = titularAtlasId, Nombre = "Atlas Labs", Tipo = TipoTitular.EMPRESA },
+            new Titular { Id = titularUsaId, Nombre = "Atlas USA", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaOperativaId, TitularId = titularAtlasId, Nombre = "Cuenta Operativa", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaImpuestosId, TitularId = titularAtlasId, Nombre = "Cuenta Impuestos", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaDolaresId, TitularId = titularUsaId, Nombre = "Cuenta Dolares", Divisa = "USD", Activa = true });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaOperativaId, Fecha = today, Concepto = "Pago proveedor", Monto = -1200m, Saldo = 8800m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaImpuestosId, Fecha = today, Concepto = "Pago impuesto", Monto = -800m, Saldo = 1200m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaDolaresId, Fecha = today, Concepto = "Pago internacional", Monto = -2000m, Saldo = 4000m, FilaNumero = 1 });
+        await db.SaveChangesAsync();
+
+        var httpFactory = new CapturingHttpClientFactory();
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db),
+            new AuditService(db));
+
+        var result = await sut.AskAsync(AdminScope(userId), "Que titulares han tenido mas gastos este trimestre?", "127.0.0.1", CancellationToken.None);
+
+        httpFactory.RequestCount.Should().Be(0);
+        result.Respuesta.Should().Contain("Titulares con mas gastos en el trimestre actual");
+        result.Respuesta.Should().Contain("Atlas Labs: gastos 2.000,00 EUR (2 movimientos)");
+        result.Respuesta.Should().Contain("Atlas USA: gastos 2.000,00 USD (1 movimiento)");
+        result.Respuesta.Should().NotContain("Cuenta Operativa | Atlas Labs");
+        result.MovimientosAnalizados.Should().Be(3);
+    }
+
+    [Fact]
     public async Task AskAsync_Should_Return_Clear_Message_When_Deterministic_Ranking_Has_No_Expenses()
     {
         await using var db = BuildDbContext();
@@ -1014,15 +1057,15 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
-    public async Task AskAsync_Should_Unwrap_Nested_Tls_Authentication_Error_In_User_Message_And_Audit()
+    public async Task AskAsync_Should_Hide_Provider_Network_Diagnostics_From_User_Message_And_Audit()
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db);
         var tlsException = new HttpRequestException(
-            "The SSL connection could not be established, see inner exception.",
+            "The SSL connection could not be established for https://api.internal.local:8443 via http://user:password@corp-proxy.local:8080, see inner exception.",
             new AuthenticationException(
-                "Authentication failed, see inner exception.",
-                new InvalidOperationException("The remote certificate is invalid because the certificate chain is untrusted.")));
+                "Authentication failed for certificate CN=corp-mitm.local issued by CN=Internal CA, see inner exception.",
+                new InvalidOperationException("The remote certificate is invalid because the certificate chain is untrusted for host api.internal.local:8443.")));
         var httpFactory = new CapturingHttpClientFactory(exception: tlsException);
         var sut = new AtlasAiService(
             db,
@@ -1035,17 +1078,28 @@ public class AtlasAiServiceTests
 
         var assertion = await act.Should().ThrowAsync<IaProviderException>();
         assertion.Which.Message.Should().Contain("OpenRouter");
-        assertion.Which.Message.Should().Contain("fallo TLS/certificado");
-        assertion.Which.Message.Should().Contain("certificate chain is untrusted");
-        assertion.Which.Message.Should().NotContain("Authentication failed, see inner exception");
+        assertion.Which.Message.Should().Contain("No se pudo conectar");
+        assertion.Which.Message.Should().NotContain("Detalle tecnico");
+        assertion.Which.Message.Should().NotContain("api.internal.local");
+        assertion.Which.Message.Should().NotContain("corp-proxy");
+        assertion.Which.Message.Should().NotContain("corp-mitm");
+        assertion.Which.Message.Should().NotContain("8443");
+        assertion.Which.Message.Should().NotContain("Internal CA");
+        assertion.Which.Message.Should().NotContain("certificate chain is untrusted");
+        assertion.Which.Message.Should().NotContain("Authentication failed");
         assertion.Which.Message.Should().NotContain("test-key");
         httpFactory.RequestCount.Should().Be(2);
 
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_network_error");
-        audit.DetallesJson.Should().Contain("fallo TLS/certificado");
-        audit.DetallesJson.Should().Contain("certificate chain is untrusted");
-        audit.DetallesJson.Should().NotContain("Authentication failed, see inner exception");
+        audit.DetallesJson.Should().Contain("tls_certificate");
+        audit.DetallesJson.Should().NotContain("api.internal.local");
+        audit.DetallesJson.Should().NotContain("corp-proxy");
+        audit.DetallesJson.Should().NotContain("corp-mitm");
+        audit.DetallesJson.Should().NotContain("8443");
+        audit.DetallesJson.Should().NotContain("Internal CA");
+        audit.DetallesJson.Should().NotContain("certificate chain is untrusted");
+        audit.DetallesJson.Should().NotContain("Authentication failed");
         audit.DetallesJson.Should().NotContain("Consulta privada");
         audit.DetallesJson.Should().NotContain("test-key");
     }

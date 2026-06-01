@@ -30,6 +30,7 @@ import type {
 
 type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones';
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+const MFA_REMEMBER_DEVICE_DAYS = 62;
 
 const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
   { key: 'general', label: 'General + SMTP', Icon: Mail },
@@ -69,6 +70,8 @@ export default function ConfiguracionPage() {
       app_update_auto_last_checked_utc: '',
       app_update_auto_last_started_utc: '',
       app_update_auto_last_result: '',
+      mfa_remember_device_enabled: false,
+      mfa_remember_device_days: MFA_REMEMBER_DEVICE_DAYS,
       backup_path: '',
       export_path: '',
     },
@@ -195,6 +198,11 @@ export default function ConfiguracionPage() {
       const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
       setConfig({
         ...cfg.data,
+        general: {
+          ...cfg.data.general,
+          mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? false,
+          mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
+        },
         exchange: cfg.data.exchange ?? { api_key: '', api_key_configurada: false },
         revision: cfg.data.revision ?? { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
         ia: {
@@ -244,6 +252,11 @@ export default function ConfiguracionPage() {
     const refreshed = await api.get<ConfiguracionSistema>('/configuracion');
     setConfig((prev) => ({
       ...refreshed.data,
+      general: {
+        ...(refreshed.data.general ?? prev.general),
+        mfa_remember_device_enabled: refreshed.data.general?.mfa_remember_device_enabled ?? prev.general.mfa_remember_device_enabled,
+        mfa_remember_device_days: refreshed.data.general?.mfa_remember_device_days ?? prev.general.mfa_remember_device_days,
+      },
       exchange: refreshed.data.exchange ?? prev.exchange,
       ia: {
         ...(refreshed.data.ia ?? prev.ia),
@@ -307,25 +320,31 @@ export default function ConfiguracionPage() {
       await api.post('/sistema/actualizar', {});
       const timeoutAt = Date.now() + 10 * 60 * 1000;
       while (Date.now() < timeoutAt) {
-        const { data } = await api.get<WatchdogState>('/sistema/estado');
-        const state = (data.estado ?? '').toUpperCase();
-        if (state === 'SUCCESS') {
-          sessionStorage.setItem('atlas_balance_update_message', 'Aplicación actualizada correctamente.');
-          try {
-            await api.post('/auth/logout');
-          } catch {
-            // Si el watchdog ya reinicio la API, al menos limpiamos el estado local.
+        try {
+          const { data } = await api.get<WatchdogState>('/sistema/estado');
+          const state = (data.estado ?? '').toUpperCase();
+          if (state === 'SUCCESS') {
+            sessionStorage.setItem('atlas_balance_update_message', 'Aplicación actualizada correctamente.');
+            try {
+              await api.post('/auth/logout');
+            } catch {
+              // Si el watchdog ya reinicio la API, al menos limpiamos el estado local.
+            }
+            logout();
+            window.location.href = '/login';
+            return;
           }
-          logout();
-          window.location.href = '/login';
-          return;
-        }
-        if (state === 'FAILED') {
-          setError(data.mensaje || 'La actualización falló.');
-          break;
+          if (state === 'FAILED') {
+            setError(data.mensaje || 'La actualización falló.');
+            return;
+          }
+        } catch {
+          // Durante una actualizacion real la API se detiene y vuelve a arrancar.
+          // No es fallo final mientras el timeout del watchdog siga abierto.
         }
         await new Promise((resolve) => setTimeout(resolve, 2500));
       }
+      setError('La actualización no confirmó el resultado dentro del tiempo esperado.');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo actualizar.'));
     } finally {
@@ -578,6 +597,26 @@ export default function ConfiguracionPage() {
                   <input value={config.general.export_path} onChange={(e) => setConfig((p) => ({ ...p, general: { ...p.general, export_path: e.target.value } }))} />
                 </label>
               </div>
+            </article>
+
+            <article className="config-section-panel">
+              <h3>Autenticación</h3>
+              <label className="config-check">
+                <input
+                  type="checkbox"
+                  checked={config.general.mfa_remember_device_enabled}
+                  onChange={(e) =>
+                    setConfig((p) => ({
+                      ...p,
+                      general: { ...p.general, mfa_remember_device_enabled: e.target.checked },
+                    }))
+                  }
+                />
+                Permitir recordar dispositivos MFA durante {config.general.mfa_remember_device_days || MFA_REMEMBER_DEVICE_DAYS} días
+              </label>
+              <p className="config-note config-note--warning">
+                Cerrar sesión borra la confianza MFA del navegador; este ajuste solo permite omitir el código en nuevos logins mientras la cookie siga viva.
+              </p>
             </article>
 
             <article className="config-section-panel">

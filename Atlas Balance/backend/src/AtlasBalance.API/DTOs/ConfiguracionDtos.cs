@@ -1,3 +1,5 @@
+using AtlasBalance.API.Constants;
+
 namespace AtlasBalance.API.DTOs;
 
 public sealed class ConfiguracionSistemaResponse
@@ -28,6 +30,8 @@ public sealed class GeneralConfigResponse
     public string AppUpdateAutoLastCheckedUtc { get; set; } = string.Empty;
     public string AppUpdateAutoLastStartedUtc { get; set; } = string.Empty;
     public string AppUpdateAutoLastResult { get; set; } = string.Empty;
+    public bool MfaRememberDeviceEnabled { get; set; }
+    public int MfaRememberDeviceDays { get; set; } = SecurityConfigurationDefaults.MfaRememberDeviceDays;
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
 }
@@ -70,6 +74,7 @@ public sealed class UpdateGeneralConfigRequest
     public string AppUpdateCheckUrl { get; set; } = string.Empty;
     public bool AppUpdateAutoEnabled { get; set; }
     public int AppUpdateAutoHourUtc { get; set; } = 3;
+    public bool MfaRememberDeviceEnabled { get; set; }
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
 }

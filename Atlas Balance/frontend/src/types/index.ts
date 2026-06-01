@@ -281,6 +281,8 @@ export interface ConfiguracionSistema {
     app_update_auto_last_checked_utc: string;
     app_update_auto_last_started_utc: string;
     app_update_auto_last_result: string;
+    mfa_remember_device_enabled: boolean;
+    mfa_remember_device_days: number;
     backup_path: string;
     export_path: string;
   };
@@ -343,6 +345,7 @@ export interface SaveConfiguracionSistemaRequest {
     app_update_check_url: string;
     app_update_auto_enabled: boolean;
     app_update_auto_hour_utc: number;
+    mfa_remember_device_enabled: boolean;
     backup_path: string;
     export_path: string;
   };
@@ -580,6 +583,8 @@ export interface LoginResponse {
   mfa_challenge_id?: string;
   mfa_secret?: string | null;
   mfa_otp_auth_uri?: string | null;
+  mfa_remember_device_allowed?: boolean;
+  mfa_remember_device_days?: number;
 }
 
 export interface DashboardConcentracionBanco {

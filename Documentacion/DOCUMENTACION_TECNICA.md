@@ -1,5 +1,284 @@
 # Documentacion tecnica
 
+## 2026-06-01 - V-01.09 - Auditoria profunda: seguridad, bugs y release gate
+
+### Que cambio
+
+- `RefreshToken` incorpora `security_stamp` y la migracion `20260601090000_AddRefreshTokenSecurityStamp` backfillea tokens existentes desde `USUARIOS.security_stamp`.
+- `AuthService.RefreshTokenAsync` revoca tokens cuyo stamp no coincide con el usuario actual; `ChangePasswordAsync` exige garantia MFA de sesion para todo usuario sujeto a MFA.
+- La migracion `20260601091000_HardenRlsIntegrationReadBackstop` reasegura `REVISION_EXTRACTO_ESTADOS` con RLS/FORCE y limita lecturas de integracion a permisos `lectura`.
+- `TiposCambioService.ConvertAsync` deja de caer a 1:1 cuando falta tasa. Lanza `TipoCambioMissingException`; el handler global devuelve `409` con error claro.
+- `ImportacionService` reevalua alertas de saldo bajo tras confirmacion de importacion y tras movimiento de plazo fijo. La huella de importacion se queda en identidad financiera estable: cuenta, fecha, monto, saldo y concepto.
+- `AtlasAiService` distingue ranking por cuenta vs titular. Si el prompt pide titulares, agrupa por titular/divisa y no por cuenta.
+- `Build-Release.ps1` resuelve `.dotnet\dotnet.exe` local antes que PATH. `Actualizar-AtlasBalance.ps1` backfillea claves no secretas faltantes y restaura binarios anteriores si falla el health check post-update.
+- `.github/workflows/release.yml` crea un gate manual de release: verify completo, firma obligatoria y publicacion/actualizacion de GitHub Release como latest.
+
+### Por que
+
+La version tenia varios falsos verdes: refresh tokens que sobrevivian a revocaciones de seguridad, importaciones que no disparaban alertas, conversiones sin tasa convertidas en 1:1, y un actualizador que avisaba de rollback pero no lo ejecutaba. En tesoreria, el dato falso es peor que el error visible.
+
+### Verificacion
+
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "TiposCambioServiceTests|ImportacionServiceTests|AtlasAiServiceTests|AuthServiceTests"`: 136/136 OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"`: 276/276 OK.
+- `dotnet build AtlasBalance.API.csproj -c Release --no-restore -p:UseAppHost=false`: OK, 1 warning obsoleto preexistente de Hangfire/PostgreSQL.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+- Parser PowerShell para `Build-Release.ps1` y `Actualizar-AtlasBalance.ps1`: OK.
+- Secret scan de alta confianza sobre archivos versionables: OK.
+
+### Limite real
+
+No hay paquete publicable ni GitHub latest nuevo en esta maquina: falta `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`, falta `gh`/token local y Docker/Testcontainers sigue sin daemon operativo para validar RLS/concurrencia con PostgreSQL real. Publicar sin esos tres gates seria humo caro.
+
+## 2026-05-22 - V-01.09 - Actualizacion one-click de paquete completo
+
+### Que cambio
+
+- `ActualizacionService` sigue consultando GitHub `releases/latest`, pero ahora entrega al Watchdog la raiz del paquete extraido, no `api`.
+- Si la configuracion antigua solo tiene `WatchdogSettings:UpdateTargetPath=C:\AtlasBalance\api`, API y Watchdog derivan el `InstallPath` como `C:\AtlasBalance`. Las instalaciones nuevas escriben tambien `UpdateInstallPath`.
+- `WatchdogOperationsService` valida que el origen sea un paquete completo firmado y extraido bajo `UpdateSourceRoot`: `VERSION`, `api/AtlasBalance.API.exe`, `watchdog/AtlasBalance.Watchdog.exe` y `scripts/Actualizar-AtlasBalance.ps1`.
+- En modo normal de servicio Windows, Watchdog lanza un helper PowerShell no interactivo, resolviendo el PowerShell de sistema cuando existe, y ejecuta el mismo `scripts/Actualizar-AtlasBalance.ps1` del paquete. Asi puede reemplazar tambien su propia carpeta `watchdog` sin copiar encima de binarios vivos.
+- En modo test/no-servicio, Watchdog aplica el paquete completo inline: `api`, `watchdog`, scripts, wrappers `.cmd`, `VERSION` y `atlas-balance.runtime.json`.
+- `ConfiguracionPage.updateNow` ya no trata una caida temporal de la API como fallo inmediato; durante la ventana de update sigue esperando hasta que la API vuelva y el estado del Watchdog sea `SUCCESS` o `FAILED`, y conserva el mensaje real de `FAILED` sin pisarlo con un timeout generico.
+
+### Por que
+
+El flujo anterior validaba bien el ZIP, pero aplicaba solo `api`. Eso dejaba Watchdog, scripts y metadatos de instalacion atrasados. Una actualizacion de producto que solo cambia media instalacion es una trampa elegante: parece verde hasta que necesitas el script nuevo o el Watchdog nuevo.
+
+### Verificacion
+
+- Bloque focalizado update/watchdog: 26/26 OK.
+- Frontend lint: OK.
+- Frontend build: OK.
+- Suite backend sin Docker/Testcontainers: 270/270 OK.
+- GitHub `releases/latest` verificado por API: sigue en `V-01.06-win-x64` con `AtlasBalance-V-01.06-win-x64.zip` y `.zip.sig`.
+
+### Limite real
+
+El codigo ya apunta a `latest` y el boton queda preparado para actualizar paquete completo en instalaciones que ejecuten este codigo. Pero GitHub todavia no publica `V-01.09-win-x64` como latest. Ademas, una instalacion antigua cuyo Watchdog aun tenga el flujo parcial no puede actualizarse a si misma de forma completa con codigo que todavia no tiene; ese primer salto puede requerir `update.cmd` manual o una estrategia de bootstrap separada.
+
+## 2026-05-22 - V-01.09 - Verificacion de actualizacion one-click desde GitHub
+
+Nota: esta seccion documenta el diagnostico previo al fix. El estado actual esta en la seccion inmediatamente anterior: el codigo ya aplica paquete completo, con los limites pendientes de publicacion `latest`, bootstrap desde Watchdog antiguo y validacion Windows real.
+
+### Que se comprobo
+
+- Se reviso el flujo `Configuracion > Sistema > Actualizar ahora`: `SistemaController`, `ActualizacionService`, `WatchdogClientService`, `WatchdogOperationsService`, `AutoUpdateJob` y la UI de `ConfiguracionPage`.
+- Se consulto la API real de GitHub para `AtlasLabs797/AtlasBalance/releases/latest`.
+- Se ejecuto el bloque focalizado de tests de actualizacion/watchdog.
+
+### Resultado
+
+No cumple la promesa "solo dar a actualizar y que funcione" para una actualizacion completa de version.
+
+La parte de seguridad del paquete esta razonablemente cerrada: repo oficial por HTTPS, asset `win-x64`, digest SHA-256, firma `.zip.sig`, limites de tamano/contenido y defensa Zip Slip. El problema es operativo: la actualizacion online descarga un paquete completo, pero `ActualizacionService` entrega al Watchdog solo la carpeta `api` y el target configurado es `C:\AtlasBalance\api`. Eso actualiza API/frontend, pero no actualiza Watchdog, scripts instalados, wrappers, `VERSION` raiz ni `atlas-balance.runtime.json`.
+
+Ademas, el release real publicado como `latest` en GitHub es `V-01.06-win-x64`, no `V-01.09-win-x64`. Mientras no exista un release firmado `V-01.09` publicado como latest, ninguna instalacion puede actualizar online a `V-01.09` desde GitHub.
+
+### Verificacion
+
+- `https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest` -> `tag_name: V-01.06-win-x64`, assets `AtlasBalance-V-01.06-win-x64.zip` y `.zip.sig`.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~AutoUpdateJobTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogOperationsServiceTests" --no-restore` -> 23/23 OK.
+
+### Bloqueo
+
+Este bloqueo quedo superado en codigo por la implementacion de paquete completo descrita arriba. Siguen vivos los bloqueos externos: publicar `V-01.09-win-x64` firmado como `latest`, validar el helper en una instalacion Windows real y definir bootstrap para Watchdog antiguos.
+
+## 2026-05-22 - V-01.09 - Threat model: MFA en cambio de password, RLS y rutas de ficheros
+
+### Que cambio
+
+- `AuthController.CambiarPassword` pasa la cookie `refresh_token` actual a `AuthService.ChangePasswordAsync`.
+- `ChangePasswordAsync` ya no inventa `mfa_verified_at` al emitir el refresh token nuevo. Si MFA es obligatorio y el usuario tiene MFA activo, solo preserva la garantia de una sesion actual ya verificada.
+- Si la sesion actual no tiene refresh token activo con `mfa_verified_at`, el cambio de contrasena responde `401` y no rota password ni tokens.
+- Nueva migracion `20260522103000_HardenRlsSoftDeleteBackstop`: RLS filtra soft-delete para usuario/integracion en titulares, cuentas, plazos, extractos y exportaciones, y los helpers por cuenta/extracto exigen cuenta y titular activos para datos dependientes.
+- `ExportacionesController.Descargar`, `BackupsController.Restaurar` y `BackupService.ApplyRetentionAsync` validan ruta absoluta, extension esperada y raiz configurada antes de tocar disco.
+
+### Por que
+
+El bug de MFA era sutil y peligroso: el cambio de password marcaba el nuevo refresh como MFA-verificado por mirar el estado del usuario, no la garantia de la sesion. Eso podia convertir una sesion pre-MFA en sesion post-MFA. RLS y rutas de ficheros recibieron hardening porque son backstops: no deben depender de que todos los futuros controladores recuerden los mismos filtros.
+
+### Verificacion
+
+- `AuthServiceTests|AuthControllerTests|ManualProcessResponseTests`: 27/27 OK.
+- Bloque autorizacion/integracion/import-export/update/watchdog: 88/88 OK.
+- Suite backend sin Docker/Testcontainers: 269/269 OK.
+- `RowLevelSecurityTests` compila, pero no se ejecuto porque Testcontainers falla antes de crear PostgreSQL: Docker no esta disponible/configurado en esta maquina.
+
+### Limite real
+
+RLS con PostgreSQL real sigue siendo gate de release. Compilar la migracion no prueba las politicas con el motor; sin Docker, vender esto como "validado completo" seria hacerse trampas.
+
+## 2026-05-20 - V-01.09 - Threat model: soft-delete heredado en importacion/exportacion
+
+### Que cambio
+
+- `ImportacionService.EnsureCuentaPermitidaAsync` ya no considera suficiente que `CUENTAS.activa=true`: ahora exige que exista un `TITULARES` activo para la cuenta.
+- `ExportacionService.ExportarCuentaAsync` aplica la misma regla antes de generar XLSX manuales.
+- `ExportacionService.ExportarMensualAsync` solo enumera cuentas con titular activo; el job ya no intenta exportar cuentas colgadas de titulares eliminados.
+- `ActualizacionService` copia paquetes descargados con limite durante streaming. Si el servidor no declara `Content-Length`, el backend corta la escritura al superar el limite en vez de llenar disco y rechazar al final.
+- `UpdateSecurity:MaxUpdatePackageBytes` permite bajar el limite por entorno; no puede subir por encima del maximo productivo de 300 MB.
+
+### Por que
+
+El fallo no estaba en la UI ni en los route guards. La ruta peligrosa era mas aburrida y por eso mas real: servicios backend que reciben un `cuentaId` directo y no heredan el soft-delete del titular padre. En una app de tesoreria, una cuenta de un titular eliminado debe comportarse como no visible, no como "activa si conoces el GUID".
+
+### Verificacion
+
+- Regresion de importacion: validar contra una cuenta activa con titular soft-deleted devuelve `404`.
+- Regresion de exportacion manual: la misma cuenta se rechaza como no encontrada/inactiva y no genera XLSX.
+- Regresion mensual: solo se exporta la cuenta con titular activo.
+- Regresion de actualizador: asset sin `Content-Length` y superior al limite configurado se rechaza durante descarga y no llama al Watchdog.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~ExportacionServiceTests|FullyQualifiedName~ActualizacionServiceTests" --verbosity minimal` -> 63/63 OK.
+
+### Limite real
+
+El threat model recibido no era una lista de hallazgos concretos y venia duplicado. Se revisaron las superficies descritas y se corrigio lo verificable encontrado. No sustituye a Testcontainers, E2E autenticado ni prueba real de backup/restore.
+
+## 2026-05-20 - V-01.09 - IA: errores de red sin diagnosticos internos visibles
+
+### Que cambio
+
+- `AtlasAiService.BuildProviderNetworkMessage` devuelve un mensaje publico generico para fallos de conexion con OpenRouter/OpenAI.
+- La ruta `ProviderNetworkException -> IaProviderException -> IaController HTTP 502` ya no transporta mensajes crudos de excepciones de red al usuario.
+- La auditoria IA conserva solo codigos de diagnostico: `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`.
+- Se eliminaron del mensaje visible y de la auditoria los detalles derivados de `rootMessage`: hostnames internos, proxy, puertos, sujetos/emisores de certificados y mensajes de sistema.
+- `Directory.Build.props` excluye `**/.local-build/**` y `**/.codex-build/**`; `.gitignore` ignora `.local-build` anidados bajo backend.
+
+### Por que
+
+Sanitizar texto arbitrario de excepciones no es una defensa seria. El stack de transporte puede meter topologia interna en mensajes de TLS, DNS, proxy o socket. La solucion correcta es no enviar esa cadena al cliente y registrar solo una categoria operativa.
+
+### Verificacion
+
+- Test de regresion con TLS/proxy/certificado interno ficticio: 1/1 OK.
+- `AtlasAiServiceTests`: 62/62 OK.
+- `git diff --check`: OK, con avisos CRLF esperados.
+- Barrido estatico confirma que la ruta de red de `AtlasAiService` ya no contiene `Detalle tecnico` ni diagnosticos crudos.
+
+## 2026-05-20 - V-01.09 - Garantia MFA en refresh tokens
+
+### Que cambio
+
+- `REFRESH_TOKENS` incorpora `mfa_verified_at` mediante la migracion `20260520123000_AddRefreshTokenMfaAssurance`.
+- `AuthService.VerifyMfaAsync` emite refresh tokens con `mfa_verified_at` tras validar el codigo TOTP.
+- `AuthService.LoginAsync` tambien marca el refresh token cuando MFA es obligatorio y el login se acepta por `mfa_trusted` valido.
+- `AuthService.RefreshTokenAsync` rechaza y revoca tokens sin `mfa_verified_at` si `Security:RequireMfaForWebUsers=true`.
+- La rotacion de refresh preserva `mfa_verified_at` en el token de reemplazo.
+
+### Por que
+
+El bug no era "falta pasar una cookie". El bug real era que el refresh token no llevaba estado de garantia MFA. Usar solo `mfa_trusted` habria roto sesiones legitimas de usuarios que verifican MFA sin recordar dispositivo. La garantia correcta vive en el refresh token que se esta rotando.
+
+### Verificacion
+
+- Reproduccion previa: `RefreshToken_Should_Reject_PreMfa_Token_When_Mfa_Becomes_Required` fallaba porque no se lanzaba `AuthException`.
+- Tras el fix: `AuthServiceTests` 18/18 OK.
+- Suite backend sin Docker/Testcontainers: 261/261 OK.
+
+### Limite real
+
+Los refresh tokens antiguos sin `mfa_verified_at` quedaran revocados al intentar renovarse con MFA obligatorio; el usuario tendra que iniciar sesion y completar MFA. Es el corte correcto. Lo contrario seria seguridad de escaparate.
+
+## 2026-05-20 - V-01.09 - Logout limpia MFA recordado
+
+### Que cambio
+
+- `AuthController.Logout` vuelve a eliminar la cookie `mfa_trusted` junto a `access_token`, `refresh_token` y `csrf_token`.
+- `SecurityConfigurationDefaults` fija `MfaRememberDeviceDays=62` y la clave `mfa_remember_device_enabled`.
+- `AuthService.LoginAsync` solo acepta `mfa_trusted` si el admin activo esa clave en `CONFIGURACION`; si esta desactivada, exige TOTP y ordena limpiar la cookie.
+- `AuthService.VerifyMfaAsync` solo emite `mfa_trusted` cuando el usuario marca recordar dispositivo y la politica admin lo permite.
+- `Configuracion > General y SMTP > Autenticacion` permite activar o desactivar la opcion de recordar dispositivos MFA.
+- `AuthControllerTests.Logout_Should_Delete_Trusted_Mfa_Cookie` prueba que logout emite el borrado de la cookie MFA recordada.
+- `AuthServiceTests` cubre los casos permitido, desactivado por admin, expirado y revocado por rotacion de `security_stamp`.
+
+### Por que
+
+Un logout explicito debe cortar todos los artefactos de autenticacion del navegador. Dejar `mfa_trusted` vivo permitia que alguien con la contrasena volviera a entrar desde ese navegador sin TOTP durante hasta 90 dias. Para tesoreria, eso no es "recordar dispositivo"; es dejar una llave bajo el felpudo.
+
+### Verificacion
+
+- Suite focalizada `AuthServiceTests|AuthControllerTests|ConfiguracionControllerTests`: 29/29 OK.
+- Frontend lint: OK.
+- Frontend build (`tsc && vite build`): OK.
+- Barrido estatico confirma `DeleteCookie("mfa_trusted")` en logout y `SecurityConfigurationDefaults.MfaRememberDeviceDays = 62`.
+- La sincronizacion local de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot` fallo por `Access denied`; `Build-Release.ps1` debe regenerar `wwwroot` en un entorno con permisos antes de publicar.
+
+### Limite real
+
+La politica final elegida es 62 dias, no 30. Es menos estricta, pero el control importante queda intacto: un logout explicito ya no conserva la confianza MFA del navegador y la opcion de recordarlo queda bajo decision del administrador.
+
+## 2026-05-20 - V-01.09 - Extraccion segura de paquetes con entrada raiz
+
+### Que cambio
+
+- `ActualizacionService.TryExtractPackageSafely` normaliza `packageRoot` sin separador final y conserva un `rootFullPathWithSeparator` solo para validar rutas hijas.
+- Si una entrada ZIP resuelve exactamente al directorio raiz de extraccion, solo se acepta cuando el nombre normalizado es `.` y la entrada es directorio o longitud cero.
+- Las entradas hijas siguen obligadas a empezar por `rootFullPathWithSeparator`, por lo que `../evil.txt` y rutas hermanas siguen rechazadas antes de extraer.
+- `ActualizacionServiceTests` cubre paquetes firmados con entradas raiz `.` y `./`, mas un ZIP firmado con traversal `../evil.txt`.
+
+### Verificacion
+
+- Reproduccion previa: `ActualizacionServiceTests` fallaba con `rootDirectoryEntry: "."` porque el paquete se rechazaba.
+- Despues del fix: `ActualizacionServiceTests` 13/13 OK.
+- Bloque actualizacion/watchdog: 20/20 OK.
+- Suite backend sin Docker/Testcontainers: 256/258 OK en ese momento; los fallos ajenos se tratan en bloques posteriores.
+
+### Limite real
+
+El parche corrige compatibilidad del updater y mantiene Zip Slip cerrado en la ruta cubierta. No convierte `V-01.09` en release final: siguen pendientes los gates Docker/Testcontainers y E2E autenticado.
+
+## 2026-05-20 - V-01.09 - Hardening de login contra DoS por IP compartida
+
+### Que cambio
+
+- `AuthService` deja de aplicar el contador cliente/IP como bloqueo previo a credenciales validas.
+- El precheck temprano mantiene solo el limite por email+cliente; el limite cliente/IP se aplica tras resolver usuario inexistente o fallo de password.
+- Un login correcto limpia tanto el contador email+cliente como el contador cliente/IP.
+- `Program.cs` activa `ForwardedHeaders` para `X-Forwarded-For` y `X-Forwarded-Proto` con `ForwardLimit=1` y confianza limitada a proxies/redes configuradas.
+- `appsettings*.json*` documenta `ForwardedHeaders:KnownProxies` y `ForwardedHeaders:KnownNetworks` para despliegues con proxy inverso.
+- Se corrigio un bloqueo de compilacion existente en el arbol actual: `mfaVerifiedAt` queda tipado como `DateTime?`.
+
+### Por que
+
+El hallazgo era correcto: 20 intentos invalidos desde una IP compartida podian dejar fuera a usuarios legitimos durante la ventana de 15 minutos. Subir el limite no arregla el fallo; solo encarece un poco el ataque. La regla buena es simple: una credencial valida no debe morir por un contador anonimo de IP antes de verificarla.
+
+### Verificacion
+
+- Regresiones nuevas en `AuthServiceTests`:
+  - 20 fallos con emails distintos desde la misma IP ya no bloquean un login valido posterior.
+  - un login valido limpia el contador cliente/IP y el siguiente fallo aislado no recibe 429.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName~AuthServiceTests --no-restore -p:UseAppHost=false` -> 20/20 OK.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" --no-restore -p:UseAppHost=false` -> 267/267 OK.
+- `git diff --check` sobre archivos tocados -> OK, solo avisos CRLF esperados.
+
+### Limite real
+
+No se ejecuto la suite completa con Docker/Testcontainers ni E2E autenticado. Este cambio queda validado en la ruta de servicio de autenticacion y en la suite backend no Docker; el gate de release completo sigue abierto.
+
+## 2026-05-20 - V-01.09 - Apertura de version
+
+### Que cambio
+
+- La version activa pasa de `V-01.07` a `V-01.09`.
+- Runtime backend actualizado a `1.9.0` / `V-01.09` en `Directory.Build.props`.
+- Runtime frontend actualizado a `1.9.0` / `V-01.09` en `package.json` y `package-lock.json`.
+- `Atlas Balance/VERSION`, scripts de release/instalacion, seed `app_version`, tests de autoactualizacion y documentacion viva apuntan a `V-01.09`.
+- Se crea `Documentacion/Versiones/v-01.09.md`; `v-01.07.md` queda cerrada como base anterior.
+
+### Verificacion
+
+- Barrido estatico de referencias activas `V-01.07` / `1.7.0` tras el cambio; solo quedan referencias historicas, la dependencia `esquery 1.7.0` y menciones legitimas a la base anterior.
+- JSON de `package.json` y `package-lock.json` validado con Node.
+- Parser PowerShell OK para `Build-Release.ps1`, `Instalar-AtlasBalance.ps1` e `install.ps1`.
+- `git diff --check` OK, con avisos CRLF esperados.
+- `AutoUpdateJobTests`: 3/3 OK con SDK local `C:\tmp\dotnet-sdk-8.0.419`.
+
+### Limite real
+
+No se genero paquete `V-01.09`, no se firmo ZIP y no se cerro el gate Docker/Testcontainers. Llamarlo release final ahora seria humo con numero nuevo.
+
 ## 2026-05-19 - V-01.07 - Jerarquia visual y pesos de accion UI/UX
 
 ### Que cambio
@@ -194,14 +473,14 @@ La suite no Docker destapo un fallo real: `Cargo tarjeta comercio` estaba inflan
 
 - `AtlasAiService` deja de tratar `cuota`, `servicio`, `tarjeta` y `transferencia` como senales directas de comision en el contexto que se envia a IA.
 - La seccion `SEGUROS DETECTADOS` del contexto IA se limita a cargos negativos y excluye falsos positivos: Seguridad Social/TGSS, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
-- Los errores de red del proveedor IA devuelven al usuario un diagnostico tecnico saneado (`fallo TLS/certificado`, proxy, DNS o conexion) en vez de quedarse en un mensaje generico. El prompt, la respuesta y las claves siguen sin exponerse.
+- En V-01.07 los errores de red del proveedor IA pasaron a mostrar diagnostico tecnico saneado. En V-01.09 ese enfoque queda endurecido: el usuario ve un mensaje generico y la auditoria conserva solo codigos seguros de transporte.
 - `AtlasAiServiceTests` anade regresion con falsos positivos reales de tarjeta, cuota/leasing, transferencia a aseguradora, anulacion de seguro y Generalitat.
 
 ### Por que
 
 La IA no estaba "alucinando" sola: el backend podia darle contexto contaminado. Si metes transferencias a aseguradoras o Generalitat dentro de `SEGUROS DETECTADOS`, el modelo puede responder con basura muy convincente. Eso es peor que fallar: parece analisis.
 
-El error de red generico tampoco ayudaba. Si hay TLS/proxy/DNS roto, el operador necesita una pista saneada para arreglar la salida a OpenRouter/OpenAI sin ver secretos.
+El error de red generico tampoco ayudaba. La solucion posterior en V-01.09 corrige el exceso de detalle: el operador conserva una categoria segura en auditoria sin exponer topologia interna al usuario.
 
 ### Verificacion
 

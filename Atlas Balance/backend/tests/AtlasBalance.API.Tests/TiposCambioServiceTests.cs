@@ -56,6 +56,19 @@ public class TiposCambioServiceTests
     }
 
     [Fact]
+    public async Task ConvertAsync_Should_Fail_When_Rate_Is_Missing()
+    {
+        await using var db = BuildDbContext();
+        var sut = BuildService(db);
+
+        var act = () => sut.ConvertAsync(100m, "EUR", "USD", CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<TipoCambioMissingException>();
+        ex.Which.Message.Should().Contain("EUR");
+        ex.Which.Message.Should().Contain("USD");
+    }
+
+    [Fact]
     public async Task SincronizarTiposCambioAsync_Should_Use_Active_Base_Currency_From_Db()
     {
         await using var db = BuildDbContext();

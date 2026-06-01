@@ -240,6 +240,143 @@ function Write-JsonFile {
     Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
 }
 
+function Ensure-JsonObjectProperty {
+    param([object]$Object, [string]$Name)
+
+    if (-not ($Object.PSObject.Properties.Name -contains $Name) -or $null -eq $Object.$Name) {
+        $Object | Add-Member -NotePropertyName $Name -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+}
+
+function Set-JsonDefault {
+    param(
+        [object]$Object,
+        [string]$Name,
+        [object]$Value,
+        [switch]$ReplaceBlank
+    )
+
+    $hasProperty = $Object.PSObject.Properties.Name -contains $Name
+    if (-not $hasProperty) {
+        $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+        return $true
+    }
+
+    if ($ReplaceBlank -and $Object.$Name -is [string] -and [string]::IsNullOrWhiteSpace([string]$Object.$Name)) {
+        $Object.$Name = $Value
+        return $true
+    }
+
+    return $false
+}
+
+function Get-PackagedReleasePublicKey {
+    param([string]$ApiSource)
+
+    $templatePath = Join-Path $ApiSource "appsettings.Production.json.template"
+    if (-not (Test-Path -LiteralPath $templatePath)) {
+        return ""
+    }
+
+    try {
+        $template = Read-JsonFile -Path $templatePath
+        return [string]$template.UpdateSecurity.ReleaseSigningPublicKeyPem
+    } catch {
+        return ""
+    }
+}
+
+function Update-ProductionConfigDefaults {
+    param(
+        [string]$ApiConfigPath,
+        [string]$WatchdogConfigPath,
+        [string]$ApiSource,
+        [string]$InstallPath,
+        [object]$Runtime
+    )
+
+    $changed = $false
+    $apiConfig = Read-JsonFile -Path $ApiConfigPath
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "Security"
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "Ia"
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "ForwardedHeaders"
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "WatchdogSettings"
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "GitHubSettings"
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "UpdateSecurity"
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "DataProtection"
+
+    $apiPort = if ($Runtime -and $Runtime.ApiPort) { [int]$Runtime.ApiPort } else { 443 }
+    $apiHealthUrl = if ($apiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost:$apiPort/api/health" }
+    $publicKey = Get-PackagedReleasePublicKey -ApiSource $ApiSource
+
+    $changed = (Set-JsonDefault -Object $apiConfig.Security -Name "RequireMfaForWebUsers" -Value $true) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.Ia -Name "UseSystemProxy" -Value $false) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.Ia -Name "ProxyUrl" -Value "") -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.ForwardedHeaders -Name "KnownProxies" -Value @()) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.ForwardedHeaders -Name "KnownNetworks" -Value @()) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "UpdateSourceRoot" -Value (Join-Path $InstallPath "updates")) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "UpdateInstallPath" -Value $InstallPath) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "UpdateTargetPath" -Value (Join-Path $InstallPath "api")) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "RequireDatabaseBackupBeforeUpdate" -Value $true) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "RequireHealthCheckAfterUpdate" -Value $true) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiHealthUrl) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.GitHubSettings -Name "UpdateToken" -Value "") -or $changed
+    if (-not [string]::IsNullOrWhiteSpace($publicKey)) {
+        $changed = (Set-JsonDefault -Object $apiConfig.UpdateSecurity -Name "ReleaseSigningPublicKeyPem" -Value $publicKey -ReplaceBlank) -or $changed
+    }
+    $changed = (Set-JsonDefault -Object $apiConfig.DataProtection -Name "KeysPath" -Value "C:\ProgramData\AtlasBalance\keys") -or $changed
+
+    if ($changed) {
+        Write-JsonFile -Value $apiConfig -Path $ApiConfigPath
+        Write-Host "Config API actualizada con claves no secretas faltantes." -ForegroundColor Cyan
+    }
+
+    if (Test-Path -LiteralPath $WatchdogConfigPath) {
+        $watchdogChanged = $false
+        $watchdogConfig = Read-JsonFile -Path $WatchdogConfigPath
+        Ensure-JsonObjectProperty -Object $watchdogConfig -Name "WatchdogSettings"
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "UpdateSourceRoot" -Value (Join-Path $InstallPath "updates")) -or $watchdogChanged
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "UpdateInstallPath" -Value $InstallPath) -or $watchdogChanged
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "UpdateTargetPath" -Value (Join-Path $InstallPath "api")) -or $watchdogChanged
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "RequireDatabaseBackupBeforeUpdate" -Value $true) -or $watchdogChanged
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "RequireHealthCheckAfterUpdate" -Value $true) -or $watchdogChanged
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiHealthUrl) -or $watchdogChanged
+        if ($watchdogChanged) {
+            Write-JsonFile -Value $watchdogConfig -Path $WatchdogConfigPath
+            Write-Host "Config Watchdog actualizada con claves no secretas faltantes." -ForegroundColor Cyan
+        }
+    }
+}
+
+function Restore-UpdatedBinaries {
+    param(
+        [string]$RollbackRoot,
+        [string]$InstallPath,
+        [string]$ApiTarget,
+        [string]$WatchdogTarget
+    )
+
+    Write-Warning "Health check fallido. Restaurando binarios anteriores desde $RollbackRoot."
+    Stop-ServiceIfExists -Name $ApiServiceName
+    Stop-ServiceIfExists -Name $WatchdogServiceName
+
+    if (Test-Path -LiteralPath (Join-Path $RollbackRoot "api")) {
+        Remove-Item -LiteralPath $ApiTarget -Recurse -Force -ErrorAction SilentlyContinue
+        Copy-Item -LiteralPath (Join-Path $RollbackRoot "api") -Destination $ApiTarget -Recurse -Force
+    }
+    if (Test-Path -LiteralPath (Join-Path $RollbackRoot "watchdog")) {
+        Remove-Item -LiteralPath $WatchdogTarget -Recurse -Force -ErrorAction SilentlyContinue
+        Copy-Item -LiteralPath (Join-Path $RollbackRoot "watchdog") -Destination $WatchdogTarget -Recurse -Force
+    }
+    Copy-IfExists -Source (Join-Path $RollbackRoot "VERSION") -Destination (Join-Path $InstallPath "VERSION")
+    Copy-IfExists -Source (Join-Path $RollbackRoot "atlas-balance.runtime.json") -Destination (Join-Path $InstallPath "atlas-balance.runtime.json")
+
+    Set-ServiceBinaryPathIfExists -Name $WatchdogServiceName -ExePath (Join-Path $WatchdogTarget "AtlasBalance.Watchdog.exe")
+    Set-ServiceBinaryPathIfExists -Name $ApiServiceName -ExePath (Join-Path $ApiTarget "AtlasBalance.API.exe")
+    Start-ServiceIfExists -Name $WatchdogServiceName
+    Start-ServiceIfExists -Name $ApiServiceName
+}
+
 function Read-PackageVersion {
     param([string]$PackageRoot)
 
@@ -299,9 +436,17 @@ $rollbackRoot = Join-Path (Join-Path $InstallPath "backups") ("app_before_update
 New-Item -ItemType Directory -Path $rollbackRoot -Force | Out-Null
 Copy-Item -LiteralPath $apiTarget -Destination (Join-Path $rollbackRoot "api") -Recurse -Force
 Copy-Item -LiteralPath $watchdogTarget -Destination (Join-Path $rollbackRoot "watchdog") -Recurse -Force
+Copy-IfExists -Source (Join-Path $InstallPath "VERSION") -Destination (Join-Path $rollbackRoot "VERSION")
+Copy-IfExists -Source (Join-Path $InstallPath "atlas-balance.runtime.json") -Destination (Join-Path $rollbackRoot "atlas-balance.runtime.json")
 
 Sync-DirectoryPreserveConfig -Source $apiSource -Target $apiTarget
 Sync-DirectoryPreserveConfig -Source $watchdogSource -Target $watchdogTarget
+Update-ProductionConfigDefaults `
+    -ApiConfigPath (Join-Path $apiTarget "appsettings.Production.json") `
+    -WatchdogConfigPath (Join-Path $watchdogTarget "appsettings.Production.json") `
+    -ApiSource $apiSource `
+    -InstallPath $InstallPath `
+    -Runtime $runtime
 
 Set-ServiceBinaryPathIfExists -Name $WatchdogServiceName -ExePath (Join-Path $watchdogTarget "AtlasBalance.Watchdog.exe")
 Set-ServiceBinaryPathIfExists -Name $ApiServiceName -ExePath (Join-Path $apiTarget "AtlasBalance.API.exe")
@@ -382,7 +527,8 @@ if ($curl) {
 }
 
 if (-not $healthOk) {
-    throw "La actualizacion copio los binarios, pero la API no respondio al health check. Revisa servicios y logs. Rollback de binarios disponible en $rollbackRoot."
+    Restore-UpdatedBinaries -RollbackRoot $rollbackRoot -InstallPath $InstallPath -ApiTarget $apiTarget -WatchdogTarget $watchdogTarget
+    throw "La actualizacion fallo porque la API no respondio al health check. Se restauraron los binarios anteriores desde $rollbackRoot."
 }
 
 Write-Host ""

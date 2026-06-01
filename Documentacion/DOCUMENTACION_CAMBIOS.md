@@ -8,6 +8,505 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-01 - V-01.09 - Auditoria profunda de seguridad, bugs y release gate
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se corrigio la vinculacion de refresh tokens al `security_stamp` del usuario para invalidar sesiones tras reset/password/MFA/revocacion.
+- Se endurecio cambio de password para exigir sesion con MFA real cuando la politica MFA aplica.
+- Se agrego hardening RLS para `REVISION_EXTRACTO_ESTADOS` y lecturas de integracion.
+- Se elimino el fallback silencioso 1:1 en tipos de cambio sin tasa.
+- Se corrigio deduplicacion de importacion para que columnas extra cambiantes no creen duplicados.
+- Se disparan alertas de saldo bajo despues de confirmar importaciones y movimientos de plazo fijo.
+- La IA agrupa rankings por titular cuando la pregunta pide titulares.
+- Se reforzaron scripts de release/update y se agrego workflow manual de GitHub Release latest.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/TiposCambioService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260601090000_AddRefreshTokenSecurityStamp.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260601091000_HardenRlsIntegrationReadBackstop.cs`
+- Tests backend de auth, RLS, tipos de cambio, importacion e IA.
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/RELEASE.gitignore`
+- `.github/workflows/release.yml`
+- Documentacion bajo `Documentacion/`.
+
+**Comandos ejecutados:**
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~TiposCambioServiceTests|FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~AtlasAiServiceTests|FullyQualifiedName~AuthServiceTests"`
+- `dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"`
+- `dotnet build AtlasBalance.API.csproj -c Release --no-restore -p:UseAppHost=false`
+- Parser PowerShell de `Build-Release.ps1` y `Actualizar-AtlasBalance.ps1`.
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Escaneo local de secretos de alta confianza.
+
+**Resultado de verificacion:**
+- Tests focalizados: 136/136 OK.
+- Suite backend sin Docker/Testcontainers: 276/276 OK.
+- Backend Release build: OK, con warning obsoleto preexistente de Hangfire/PostgreSQL.
+- Frontend lint/build: OK.
+- Scripts PowerShell parse: OK.
+- Secret scan: OK.
+
+**Pendientes:**
+- No se genero paquete release publicable: falta `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- No se hizo push/publicacion GitHub: no hay `gh` ni token local.
+- No se ejecutaron `RowLevelSecurityTests` ni `ExtractosConcurrencyTests`: Docker daemon no esta disponible.
+
+---
+## 2026-05-22 - V-01.09 - Implementacion de actualizacion one-click completa
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se implemento el flujo para que el boton `Actualizar ahora` aplique el paquete completo, no solo `api`.
+- `ActualizacionService` descarga, valida y extrae el GitHub Release firmado como antes, pero ahora pasa al Watchdog la raiz del paquete extraido.
+- API y Watchdog derivan `C:\AtlasBalance` desde configuraciones legacy con `UpdateTargetPath=C:\AtlasBalance\api`, y las instalaciones nuevas escriben `UpdateInstallPath`.
+- Watchdog valida paquete completo y, cuando se esta ejecutando desde la instalacion real, lanza un helper PowerShell no interactivo que reutiliza `scripts\Actualizar-AtlasBalance.ps1`; asi puede actualizar tambien Watchdog, scripts, wrappers, `VERSION` y runtime sin copiar encima de su propio proceso vivo. El helper resuelve el PowerShell de sistema cuando existe.
+- El modo inline queda cubierto por tests para aplicar paquete completo en rutas temporales.
+- La UI de Configuracion tolera caidas temporales de la API mientras reinicia y espera el estado final del Watchdog hasta timeout; si Watchdog devuelve `FAILED`, conserva ese error y no lo pisa con un timeout generico.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings*.json*`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Controllers/WatchdogController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings*.json*`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- Documentacion bajo `Documentacion/`
+
+**Comandos ejecutados:**
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~AutoUpdateJobTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogOperationsServiceTests|FullyQualifiedName~WatchdogControllerTests" --no-restore -p:UseAppHost=false`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" --no-restore -p:UseAppHost=false`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~RowLevelSecurityTests|FullyQualifiedName~ExtractosConcurrencyTests" --no-restore -p:UseAppHost=false`
+- Consulta de solo lectura a `https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest`.
+
+**Resultado de verificacion:**
+- Update/watchdog focalizado: 26/26 OK.
+- Frontend lint/build: OK.
+- Suite backend sin Docker/Testcontainers: 270/270 OK.
+- Tests Docker/Testcontainers: 0/2 OK; fallan antes de arrancar porque Docker no esta disponible/configurado.
+- GitHub latest real: `V-01.06-win-x64`, assets `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`.
+
+**Pendientes:**
+- Publicar `V-01.09-win-x64` firmado como GitHub Release/latest cuando el resto de gates este listo.
+- Ejecutar Docker/Testcontainers con Docker operativo.
+- Validar en una instalacion Windows real el helper externo reemplazando Watchdog vivo. Los tests cubren el motor inline y el contrato; no pueden simular que Windows pare el propio servicio Watchdog y deje vivo el helper.
+- Para instalaciones antiguas con Watchdog anterior al fix, planificar bootstrap: un primer `update.cmd` manual o una ruta puente. Pretender que el Watchdog viejo actualice su propio codigo nuevo seria pedirle que se arregle antes de tener el arreglo.
+
+---
+## 2026-05-22 - V-01.09 - Verificacion de actualizacion one-click desde GitHub
+
+Nota: esta entrada conserva el diagnostico previo. Quedo superado por la implementacion de actualizacion one-click completa registrada arriba; permanecen como pendientes la publicacion `latest`, Docker/Testcontainers, validacion Windows real y bootstrap desde Watchdog antiguo.
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se reviso si la version actual permite actualizar desde GitHub Release sin pasos intermedios ni intervencion humana aparte de pulsar `Actualizar ahora`.
+- Se inspecciono el flujo completo: `SistemaController`, `ActualizacionService`, `WatchdogClientService`, `WatchdogOperationsService`, `AutoUpdateJob` y `ConfiguracionPage`.
+- Se consulto GitHub `releases/latest` del repo oficial: el ultimo release publicado sigue siendo `V-01.06-win-x64`, con ZIP y `.zip.sig`; no hay `V-01.09-win-x64` publicado como latest.
+- Se confirmo un bloqueo de producto: el flujo online valida el ZIP completo, pero pasa al Watchdog solo la carpeta `api`, por lo que no actualiza Watchdog, scripts instalados, wrappers ni metadatos raiz de instalacion.
+- Se registro bug abierto y se corrigio la documentacion para no prometer una actualizacion online completa.
+
+**Archivos tocados:**
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, `version_actual.md`, `v-01.09.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Busquedas `rg` sobre actualizacion, GitHub Release, Watchdog, scripts y documentacion.
+- Consulta de solo lectura a `https://api.github.com/repos/AtlasLabs797/AtlasBalance/releases/latest`.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~AutoUpdateJobTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogOperationsServiceTests" --no-restore`
+
+**Resultado de verificacion:**
+- GitHub latest real: `V-01.06-win-x64`, assets `AtlasBalance-V-01.06-win-x64.zip` y `AtlasBalance-V-01.06-win-x64.zip.sig`.
+- Tests focalizados de actualizacion/watchdog: 23/23 OK.
+- Resultado de producto: bloqueado para prometer one-click completo en `V-01.09`.
+
+**Pendientes:**
+- Publicar `V-01.09-win-x64` firmado como GitHub Release cuando el release este listo.
+- Redisenar el update online para actualizar instalacion completa o documentar formalmente que solo actualiza API/frontend.
+- Hacer que el polling de UI tolere reinicios temporales de API durante una actualizacion real.
+
+---
+## 2026-05-22 - V-01.09 - Verificacion threat model con subagentes y hardening adicional
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se reviso el threat model de Atlas Balance con cinco subagentes por superficie: autenticacion/sesion, autorizacion/aislamiento, OpenClaw, ficheros/admin/watchdog y frontend/configuracion.
+- Se confirmo que la mayoria de controles revisados ya estaban cerrados: scopes de usuario, OpenClaw, CSRF, cookies HttpOnly, headers, update URL oficial, saneado de exportaciones y ausencia de sinks HTML crudos en frontend.
+- Se corrigio un fallo real en cambio de contrasena: una sesion pre-MFA podia recibir un nuevo refresh token marcado como MFA-verificado si `RequireMfaForWebUsers` se activaba despues.
+- `ChangePasswordAsync` exige ahora que la cookie `refresh_token` actual exista, este activa y tenga `mfa_verified_at` antes de emitir una nueva sesion cuando MFA es obligatorio.
+- Se endurecio RLS como backstop: filas soft-deleted de titulares, cuentas, plazos, extractos y exportaciones quedan fuera para usuario/integracion; los helpers por cuenta/extracto exigen cuenta y titular activos para datos dependientes.
+- Se endurecieron descargas/restauraciones y retencion: exportaciones/backups validan extension, ruta absoluta y raiz permitida antes de tocar disco o pedir al Watchdog que restaure.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260522103000_HardenRlsSoftDeleteBackstop.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExportacionesController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/BackupsController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, version activa, `v-01.09.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Lectura de `codex-security:security-scan` y `Skills Curated/05_Security/cyber-neo/SKILL.md`.
+- Barridos `rg` sobre auth, CSRF, OpenClaw, Watchdog, RLS, XSS, secretos, imports/exports y rutas de fichero.
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~AuthControllerTests|FullyQualifiedName~ManualProcessResponseTests" -p:UseAppHost=false`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorization|FullyQualifiedName~OpenClaw|FullyQualifiedName~ExportacionServiceTests|FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~Watchdog" -p:UseAppHost=false`
+- `C:\Proyectos\Atlas Balance Dev\.dotnet\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" -p:UseAppHost=false`
+- Intento de `RowLevelSecurityTests`: bloqueado por Docker/Testcontainers no disponible/configurado.
+
+**Resultado de verificacion:**
+- Auth/controladores afectados: 27/27 OK.
+- Autorizacion, integracion, import/export, actualizacion y watchdog no-Docker: 88/88 OK.
+- Suite backend no-Docker amplia: 269/269 OK.
+- `RowLevelSecurityTests`: no ejecutado; Testcontainers falla antes de arrancar por Docker no disponible/configurado.
+
+**Pendientes:**
+- Ejecutar `RowLevelSecurityTests` y `ExtractosConcurrencyTests` con Docker operativo.
+- Mantener E2E autenticado real como gate de release.
+
+---
+## 2026-05-20 - V-01.09 - Revision threat model y cierre de soft-delete en importacion/exportacion
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se reviso el threat model reportado contra la version actual. El texto venia duplicado y no era una lista concreta de bugs; se trato como checklist de superficies criticas.
+- Se verificaron rutas de autenticacion, CSRF, OpenClaw, configuracion, update/watchdog, importacion/exportacion y frontend frente a los riesgos descritos.
+- Se encontro una omision real: `ImportacionService` y `ExportacionService` aceptaban cuentas activas cuyo titular padre estaba soft-deleted si se llamaba con `cuentaId` directo.
+- Importacion, exportacion manual y exportacion mensual ahora exigen titular activo ademas de cuenta activa.
+- El actualizador deja de descargar un asset completo antes de rechazarlo por tamano: el stream se corta cuando supera el limite. Se mantiene limite productivo maximo de 300 MB y se permite bajarlo por `UpdateSecurity:MaxUpdatePackageBytes`.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ExportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ImportacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExportacionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.09.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Lectura de `codex-security:security-scan`.
+- Lectura manual de `Skills Curated/05_Security/cyber-neo/SKILL.md`; la ruta documentada en `SKILLS_LOCALES.md` no existe en esta copia.
+- `rg --files`
+- `git status --short`
+- Barridos `rg` sobre `Authorize`, `AllowAnonymous`, `dangerouslySetInnerHTML`, cookies, CSRF, OpenClaw, Watchdog, actualizador, importacion/exportacion, paths y secretos.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~ExportacionServiceTests|FullyQualifiedName~ActualizacionServiceTests" --verbosity minimal`
+
+**Resultado de verificacion:**
+- Tests focalizados: 63/63 OK.
+- El primer `dotnet --version` fallo porque `dotnet` no esta en PATH; se uso el SDK local `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe`.
+- Durante el build de tests aparecieron reintentos por DLL bloqueada por `testhost`, pero el runner recupero y finalizo verde.
+- No se ejecuto suite Docker/Testcontainers ni E2E autenticado real; siguen siendo gates de release.
+
+**Pendientes:**
+- Ejecutar Testcontainers con Docker operativo.
+- Ejecutar E2E autenticado con datos reales antes de publicar `V-01.09`.
+
+---
+## 2026-05-20 - Logout vuelve a limpiar confianza MFA
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se reviso el hallazgo de seguridad `Logout preserves trusted MFA cookie for 90 days`.
+- Se confirmo que `POST /api/auth/logout` seguia borrando `access_token`, `refresh_token` y `csrf_token`, pero dejaba viva la cookie `mfa_trusted`.
+- `AuthController.Logout` vuelve a borrar `mfa_trusted`.
+- El recuerdo MFA queda en 62 dias por decision de producto, reduciendo la ventana original de 90 dias sin conservar confianza tras logout.
+- Se agrega politica admin `mfa_remember_device_enabled`: si esta desactivada, `LoginAsync` ignora cualquier `mfa_trusted`, exige TOTP y ordena limpiar la cookie.
+- `VerifyMfaAsync` solo emite `mfa_trusted` si el usuario marco recordar dispositivo y el administrador lo permite.
+- `Configuracion > General y SMTP > Autenticacion` permite activar o desactivar la opcion visible en login.
+- Se actualizaron las regresiones de logout, duracion, politica admin desactivada y dispositivo recordado valido.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/SecurityConfigurationDefaults.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/AuthDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- `rg -n "mfa_trusted|MfaRememberDuration|rememberDevice|TrustedMfa|Logout\\(" "Atlas Balance/backend"`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~AuthControllerTests|FullyQualifiedName~ConfiguracionControllerTests" --verbosity minimal`
+- `rg -n "mfa_trusted" "Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs"`
+- `rg -n --fixed-strings -e 'MfaRememberDuration' -e 'Logout_Should_Delete_Trusted_Mfa_Cookie' -e 'AddDays(61)' -e 'AddDays(63)' "Atlas Balance/backend/src/AtlasBalance.API" "Atlas Balance/backend/tests/AtlasBalance.API.Tests"`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- Sincronizacion controlada de `frontend/dist` a `backend/src/AtlasBalance.API/wwwroot`: bloqueada por `Access denied` en assets, fuentes, logos e `index.html`.
+
+**Resultado de verificacion:**
+- Suite focalizada Auth/Configuracion: 29/29 OK.
+- Frontend lint: OK.
+- Frontend build (`tsc && vite build`): OK.
+- Verificacion estatica: `AuthController` borra `mfa_trusted` en logout, el default `MfaRememberDeviceDays` queda en 62 dias y el codigo fuente no conserva texto activo de "90 dias".
+- `wwwroot` local no quedo alineado por permisos; el release debe regenerarlo con `Build-Release.ps1` o desbloquear ACL antes de publicar.
+
+**Pendientes:**
+- Ejecutar suite backend completa sin Docker y, despues, Testcontainers con Docker operativo antes de release.
+- Regenerar/sincronizar `backend/src/AtlasBalance.API/wwwroot` en un entorno con permisos de escritura; el intento local quedo bloqueado por ACL.
+
+---
+## 2026-05-20 - V-01.09 - Cierre de bypass MFA en refresh token
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se confirmo que el hallazgo seguia vivo en la version actual: un refresh token emitido antes de activar MFA podia rotarse y emitir una sesion nueva sin completar MFA.
+- Se anadio garantia MFA persistida en `REFRESH_TOKENS.mfa_verified_at`.
+- Los refresh tokens emitidos tras verificar MFA, o tras login con dispositivo confiable valido, quedan marcados como MFA-verificados.
+- `RefreshTokenAsync` ahora exige esa garantia cuando `Security:RequireMfaForWebUsers=true`; si recibe un token legacy/pre-MFA, lo revoca y devuelve `401` sin access token ni refresh token nuevo.
+- Se evita el parche flojo basado solo en `mfa_trusted`: un usuario que completo MFA sin marcar "recordar dispositivo" puede seguir renovando su sesion porque la garantia vive en el refresh token.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260520123000_AddRefreshTokenMfaAssurance.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/AppDbContextModelSnapshot.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore --filter FullyQualifiedName~RefreshToken_Should_Reject_PreMfa_Token_When_Mfa_Becomes_Required --logger "console;verbosity=minimal"` antes del fix: fallo reproducido, no se lanzaba `AuthException`.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore --filter FullyQualifiedName~AuthServiceTests --logger "console;verbosity=minimal"`: 18/18 OK.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" --logger "console;verbosity=minimal"`: 261/261 OK.
+
+**Resultado de verificacion:**
+- La reproduccion previa demuestra el bypass: el refresh legacy no fallaba.
+- Tras el fix, el refresh legacy/pre-MFA falla con `401`, queda revocado y no se crea token de reemplazo.
+- El refresh legitimo tras MFA sin `mfa_trusted` sigue funcionando y conserva `mfa_verified_at` en el token de reemplazo.
+- Suite backend sin Docker/Testcontainers: OK.
+
+**Pendientes:**
+- Ejecutar `RowLevelSecurityTests` y `ExtractosConcurrencyTests` con Docker/Testcontainers operativo antes de llamar final a `V-01.09`.
+- Ejecutar E2E autenticado real antes de publicar release.
+
+---
+## 2026-05-20 - V-01.09 - Actualizador acepta entradas ZIP de directorio raiz
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se corrigio `TryExtractPackageSafely` para aceptar entradas inocuas de directorio raiz (`.` / `./`) sin debilitar la defensa Zip Slip.
+- El guard ahora compara el root normalizado sin separador final, permite solo marcadores raiz equivalentes a `.` y mantiene el requisito de prefijo con separador para cualquier ruta hija.
+- Se anadieron regresiones para paquetes firmados con entrada raiz y para rechazo de `../evil.txt`.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ActualizacionServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName~ActualizacionServiceTests --no-restore -p:UseAppHost=false --verbosity minimal` antes del fix: fallo reproducido en entrada raiz `.`.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName~ActualizacionServiceTests --no-restore -p:UseAppHost=false --verbosity minimal` despues del fix: 13/13 OK.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ActualizacionServiceTests|FullyQualifiedName~AutoUpdateJobTests|FullyQualifiedName~WatchdogClientServiceTests|FullyQualifiedName~WatchdogControllerTests" --no-restore -p:UseAppHost=false --verbosity minimal`: 20/20 OK.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test ".\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~ExtractosConcurrencyTests&FullyQualifiedName!~RowLevelSecurityTests" --no-restore -p:UseAppHost=false --verbosity minimal`: fallo por dos tests ajenos (`AtlasAiServiceTests...Hide_Provider_Network_Diagnostics...` y `AuthServiceTests.RefreshToken_Should_Reject_PreMfa_Token_When_Mfa_Becomes_Required`).
+- `git diff --check`: OK, con avisos CRLF ya conocidos.
+
+**Resultado de verificacion:**
+- El bug queda reproducido antes del cambio y corregido despues.
+- La ruta de actualizacion firmada acepta `.` y `./` como entradas raiz.
+- El ZIP firmado con `../evil.txt` se rechaza, no llama al Watchdog y no escribe el archivo escapado.
+- El bloque de actualizacion/watchdog queda verde.
+- Whitespace check OK.
+
+**Pendientes:**
+- Los fallos ajenos de esa pasada quedan resueltos/absorbidos por bloques posteriores; la suite backend sin Docker/Testcontainers pasa 261/261 tras el cierre MFA.
+- Ejecutar Docker/Testcontainers y E2E autenticado antes de llamar release final a `V-01.09`.
+
+---
+## 2026-05-20 - V-01.09 - Correccion de DoS por throttle de login por IP compartida
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Confirmado que V-01.09 seguia vulnerable: el contador cliente/IP de login se evaluaba antes de validar credenciales.
+- `AuthService` mantiene el limite por cliente/IP para intentos invalidos, pero deja pasar credenciales validas hasta la verificacion.
+- El login correcto limpia tambien el contador cliente/IP.
+- `Program.cs` activa `ForwardedHeaders` con proxies/redes conocidas configurables para que `RemoteIpAddress` no dependa ciegamente del proxy observado.
+- Se agregaron regresiones enfocadas en `AuthServiceTests` para el DoS por IP compartida y la limpieza del contador.
+- Se corrigio un bloqueo de compilacion existente en `AuthService.cs` tipando `mfaVerifiedAt` como `DateTime?`.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-01.09.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Lectura de la skill `codex-security:fix-finding`.
+- Intento de cargar skill local `cyber-neo`: bloqueado porque la ruta documentada `Skills/Seguridad/cyber-neo-main/skills/cyber-neo/SKILL.md` no existe en esta copia.
+- `rg --line-number "MaxLoginFailuresPerClient|IsLoginThrottled|RecordLoginFailure|ClearLoginFailures|UseForwardedHeaders|ForwardedHeaders|RemoteIpAddress" ...`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName~AuthServiceTests --no-restore -p:UseAppHost=false`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests" --no-restore -p:UseAppHost=false`
+- `git diff --check -- <archivos tocados>`
+
+**Resultado de verificacion:**
+- Primer intento de test fallo antes de ejecutar pruebas por ambiguedad `IPNetwork` en el cambio nuevo y por un `DateTime`/`null` existente en `AuthService.cs`; ambos corregidos.
+- `AuthServiceTests`: 20/20 OK.
+- Suite backend sin Docker/Testcontainers: 267/267 OK.
+- Revision estatica confirma que el precheck temprano ya no consulta el contador cliente/IP.
+- Revision estatica confirma que `ClearLoginFailures` elimina tambien `auth:login-failures-client:*`.
+- `git diff --check` OK, con avisos CRLF esperados.
+
+**Pendientes:**
+- Ejecutar suite backend completa con Docker/Testcontainers cuando Docker este disponible.
+- Ejecutar E2E autenticado real antes de llamar a V-01.09 release final.
+- Corregir el catalogo de skills locales: referencia `Skills/Seguridad/cyber-neo-main/...`, pero la carpeta `Skills` no existe en esta copia.
+
+---
+## 2026-05-20 - Fix fuga de diagnosticos internos en errores de red IA
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se corrigio el hallazgo `AI provider network errors leak internal diagnostics`.
+- `AtlasAiService` deja de incrustar mensajes crudos de `HttpRequestException` en `IaProviderException`.
+- El mensaje publico de red para OpenRouter/OpenAI queda generico y apto para que `IaController` lo devuelva en HTTP 502.
+- La auditoria conserva solo codigos estables de transporte (`tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused`, `network_error`) sin hostnames, proxy, puertos, certificados ni mensajes de sistema.
+- Se excluyeron `**/.local-build/**` y `**/.codex-build/**` de MSBuild y Git para que artefactos temporales no entren en compilacion ni estado versionable.
+
+**Archivos principales:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/Directory.Build.props`
+- `.gitignore`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- Lectura de `CLAUDE.md`, `AGENTS.md`, `version_actual.md`, `v-01.09.md` y `LOG_ERRORES_INCIDENCIAS.md`.
+- `rg -n "BuildProviderNetworkMessage|ShortTransportMessage|IaProviderException|ProviderNetwork" ...`
+- `dotnet test ... --filter FullyQualifiedName~AskAsync_Should_Hide_Provider_Network_Diagnostics_From_User_Message_And_Audit ...`
+- `dotnet test ... --filter FullyQualifiedName~AtlasAiServiceTests ...`
+- `git diff --check -- ".gitignore" "Atlas Balance/Directory.Build.props" "Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs" "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs"`
+
+**Resultado de verificacion:**
+- Regresion focalizada IA: 1/1 OK.
+- `AtlasAiServiceTests`: 62/62 OK.
+- `git diff --check`: OK, solo avisos CRLF esperados.
+- Barrido estatico en `AtlasAiService.cs`: sin `Detalle tecnico`, `ShortTransportMessage`, `SanitizeDiagnosticMessage`, `fallo TLS/certificado`, `proxy local invalido` ni mensajes de certificado crudos en la ruta de red.
+
+**Pendientes:**
+- Ejecutar suite backend completa y Testcontainers antes de release final.
+- Dos carpetas temporales `.local-build` generadas durante intentos de test quedaron en disco con `Access denied`; ya estan ignoradas por Git y excluidas de MSBuild, pero pueden limpiarse manualmente fuera de la sesion si Windows libera la ACL.
+
+---
+## 2026-05-20 - Apertura de version V-01.09
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se abrio formalmente `V-01.09` como version activa del proyecto.
+- Se actualizo runtime backend a `1.9.0` / `V-01.09`.
+- Se actualizo runtime frontend a `1.9.0` / `V-01.09`.
+- Se actualizaron scripts de release/instalacion, seed `app_version`, tests de autoactualizacion y documentacion viva.
+- Se creo `Documentacion/Versiones/v-01.09.md` y `V-01.07` quedo como base anterior.
+
+**Archivos principales:**
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/install.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AutoUpdateJobTests.cs`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-01.07.md`
+- `Documentacion/Versiones/v-01.09.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+
+**Comandos ejecutados:**
+- `git pull --ff-only`
+- `git switch --no-track -c V-01.09 origin/main`
+- `git pull --ff-only origin main`
+- `rg -n "V-01\\.07|1\\.7\\.0|v-01\\.07" ...`
+- Lectura de `CLAUDE.md`, `version_actual.md` y archivos `v-*` de `Documentacion/Versiones`.
+- Parser PowerShell de `Build-Release.ps1`, `Instalar-AtlasBalance.ps1` e `install.ps1`.
+- `node -e "JSON.parse(...)"` para `package.json` y `package-lock.json`.
+- `npm.cmd pkg get version appVersion`
+- `git diff --check`
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe test ... --filter FullyQualifiedName~AutoUpdateJobTests --no-restore -p:UseAppHost=false`
+
+**Resultado de verificacion:**
+- Referencias activas actualizadas a `V-01.09` / `1.9.0`; las menciones restantes a `V-01.07` son historicas, base anterior o advertencias legitimas de no reutilizar paquetes.
+- JSON frontend OK con Node; `npm pkg get` devuelve `version=1.9.0` y `appVersion=V-01.09`.
+- Parser PowerShell OK para scripts tocados.
+- `git diff --check` OK, con avisos CRLF esperados.
+- `AutoUpdateJobTests`: 3/3 OK con SDK local.
+- `dotnet` no esta en PATH; se uso el SDK local documentado en `C:\tmp\dotnet-sdk-8.0.419`.
+
+**Pendientes:**
+- Generar y firmar `AtlasBalance-V-01.09-win-x64.zip` cuando toque publicar.
+- Ejecutar build completo y suite completa antes de llamar a `V-01.09` release final.
+- Cerrar Docker/Testcontainers y E2E autenticado real; cambiar el numero no arregla esos gates.
+
+---
 ## 2026-05-20 - Reintento de release package V-01.07
 
 **Version:** V-01.07

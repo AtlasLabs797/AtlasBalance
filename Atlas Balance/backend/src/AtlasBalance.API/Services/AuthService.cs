@@ -22,7 +22,7 @@ public interface IAuthService
     Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken);
     Task<Guid?> LogoutAsync(string? refreshToken, CancellationToken cancellationToken);
     Task<AuthResult> GetCurrentAsync(Guid userId, CancellationToken cancellationToken);
-    Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, CancellationToken cancellationToken);
+    Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken);
 }
 
 public sealed class AuthService : IAuthService
@@ -40,7 +40,7 @@ public sealed class AuthService : IAuthService
     private static readonly TimeSpan LoginFailureWindow = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MfaChallengeDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MfaFailureWindow = TimeSpan.FromMinutes(15);
-    private static readonly TimeSpan MfaRememberDuration = TimeSpan.FromDays(90);
+    private static readonly TimeSpan MfaRememberDuration = TimeSpan.FromDays(SecurityConfigurationDefaults.MfaRememberDeviceDays);
     private static readonly IMemoryCache FallbackMemoryCache = new MemoryCache(new MemoryCacheOptions());
 
     private readonly AppDbContext _dbContext;
@@ -72,7 +72,7 @@ public sealed class AuthService : IAuthService
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
         var now = DateTime.UtcNow;
-        if (IsLoginThrottled(normalizedEmail, ipAddress))
+        if (IsLoginEmailThrottled(normalizedEmail, ipAddress))
         {
             await _auditService.LogAsync(
                 null,
@@ -90,6 +90,19 @@ public sealed class AuthService : IAuthService
 
         if (usuario is null)
         {
+            if (IsLoginClientThrottled(ipAddress))
+            {
+                await _auditService.LogAsync(
+                    null,
+                    AuditActions.LoginFailed,
+                    "USUARIOS",
+                    null,
+                    ipAddress,
+                    JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
+                    cancellationToken);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+            }
+
             var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
             await _auditService.LogAsync(
                 null,
@@ -185,7 +198,10 @@ public sealed class AuthService : IAuthService
         UserSessionState.EnsureSecurityStamp(usuario);
         ClearLoginFailures(normalizedEmail, ipAddress);
 
-        if (RequiresMfa(usuario) && !IsTrustedMfaTokenValid(usuario, trustedMfaToken, now))
+        var mfaRequired = RequiresMfa(usuario);
+        var rememberDeviceEnabled = mfaRequired && await IsMfaRememberDeviceEnabledAsync(cancellationToken);
+        var trustedMfaTokenValid = rememberDeviceEnabled && IsTrustedMfaTokenValid(usuario, trustedMfaToken, now);
+        if (mfaRequired && !trustedMfaTokenValid)
         {
             var challenge = CreateMfaChallenge(usuario, ipAddress);
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -210,13 +226,16 @@ public sealed class AuthService : IAuthService
                 MfaSecret = challenge.SetupRequired ? challenge.Secret : null,
                 MfaOtpAuthUri = challenge.SetupRequired
                     ? TotpService.BuildOtpAuthUri(MfaIssuer, usuario.Email, challenge.Secret)
-                    : null
+                    : null,
+                MfaRememberDeviceAllowed = rememberDeviceEnabled,
+                MfaRememberDeviceDays = SecurityConfigurationDefaults.MfaRememberDeviceDays,
+                ClearTrustedMfaToken = !string.IsNullOrWhiteSpace(trustedMfaToken)
             };
         }
 
         usuario.FechaUltimaLogin = now;
         ClearMfaFailures(usuario.Id);
-        var tokens = await IssueTokensAsync(usuario, ipAddress, cancellationToken);
+        var tokens = await IssueTokensAsync(usuario, ipAddress, cancellationToken, mfaVerifiedAt: mfaRequired ? now : null);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await _auditService.LogAsync(
             usuario.Id,
@@ -227,7 +246,9 @@ public sealed class AuthService : IAuthService
             JsonSerializer.Serialize(new { email = normalizedEmail }),
             cancellationToken);
 
-        return await BuildAuthResultAsync(usuario, tokens.AccessToken, tokens.RefreshToken, cancellationToken);
+        var result = await BuildAuthResultAsync(usuario, tokens.AccessToken, tokens.RefreshToken, cancellationToken);
+        result.ClearTrustedMfaToken = !mfaRequired && !string.IsNullOrWhiteSpace(trustedMfaToken);
+        return result;
     }
 
     public async Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken)
@@ -340,7 +361,7 @@ public sealed class AuthService : IAuthService
         UserSessionState.EnsureSecurityStamp(usuario);
         ClearMfaFailures(usuario.Id);
 
-        var tokens = await IssueTokensAsync(usuario, ipAddress, cancellationToken);
+        var tokens = await IssueTokensAsync(usuario, ipAddress, cancellationToken, mfaVerifiedAt: now);
         await _auditService.LogAsync(
             usuario.Id,
             AuditActions.MfaVerified,
@@ -360,10 +381,15 @@ public sealed class AuthService : IAuthService
 
         RemoveMfaChallenge(challengeId);
         var result = await BuildAuthResultAsync(usuario, tokens.AccessToken, tokens.RefreshToken, cancellationToken);
-        if (rememberDevice)
+        var rememberDeviceEnabled = rememberDevice && await IsMfaRememberDeviceEnabledAsync(cancellationToken);
+        if (rememberDeviceEnabled)
         {
             result.TrustedMfaTokenExpiresAt = now.Add(MfaRememberDuration);
             result.TrustedMfaToken = GenerateTrustedMfaToken(usuario, result.TrustedMfaTokenExpiresAt.Value);
+        }
+        else
+        {
+            result.ClearTrustedMfaToken = true;
         }
 
         return result;
@@ -424,6 +450,30 @@ public sealed class AuthService : IAuthService
 
             UserSessionState.EnsureSecurityStamp(usuario);
 
+            if (!HasMatchingSecurityStamp(storedToken.SecurityStamp, usuario.SecurityStamp))
+            {
+                storedToken.RevocadoEn = now;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                if (tx is not null)
+                {
+                    await tx.CommitAsync(cancellationToken);
+                }
+
+                throw new AuthException("Refresh token inválido o expirado", StatusCodes.Status401Unauthorized);
+            }
+
+            if (RequiresMfa(usuario) && storedToken.MfaVerifiedAt is null)
+            {
+                storedToken.RevocadoEn = now;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                if (tx is not null)
+                {
+                    await tx.CommitAsync(cancellationToken);
+                }
+
+                throw new AuthException("Se requiere MFA para renovar la sesión", StatusCodes.Status401Unauthorized);
+            }
+
             var replacement = GenerateRefreshToken();
             var replacementHash = ComputeSha256(replacement);
 
@@ -435,8 +485,10 @@ public sealed class AuthService : IAuthService
                 Id = Guid.NewGuid(),
                 UsuarioId = usuario.Id,
                 TokenHash = replacementHash,
+                SecurityStamp = usuario.SecurityStamp,
                 ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
                 CreadoEn = now,
+                MfaVerifiedAt = storedToken.MfaVerifiedAt,
                 IpAddress = ParseIpAddress(ipAddress)
             });
 
@@ -491,7 +543,7 @@ public sealed class AuthService : IAuthService
         return await BuildAuthResultAsync(usuario, accessToken: null, refreshToken: null, cancellationToken);
     }
 
-    public async Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, CancellationToken cancellationToken)
+    public async Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(passwordActual))
         {
@@ -515,6 +567,16 @@ public sealed class AuthService : IAuthService
         }
 
         var now = DateTime.UtcNow;
+        DateTime? currentSessionMfaVerifiedAt = null;
+        if (RequiresMfa(usuario))
+        {
+            currentSessionMfaVerifiedAt = await ResolveCurrentSessionMfaVerifiedAtAsync(userId, currentRefreshToken, usuario.SecurityStamp, now, cancellationToken);
+            if (currentSessionMfaVerifiedAt is null)
+            {
+                throw new AuthException("Se requiere MFA para cambiar la contraseña", StatusCodes.Status401Unauthorized);
+            }
+        }
+
         usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(passwordNueva, workFactor: 12);
         usuario.PrimerLogin = false;
         UserSessionState.RotateAfterPasswordChange(usuario, now);
@@ -534,8 +596,10 @@ public sealed class AuthService : IAuthService
             Id = Guid.NewGuid(),
             UsuarioId = usuario.Id,
             TokenHash = ComputeSha256(newRefreshToken),
+            SecurityStamp = usuario.SecurityStamp,
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
+            MfaVerifiedAt = currentSessionMfaVerifiedAt,
             IpAddress = ParseIpAddress(ipAddress)
         });
 
@@ -550,6 +614,22 @@ public sealed class AuthService : IAuthService
             cancellationToken: cancellationToken);
 
         return await BuildAuthResultAsync(usuario, accessToken, newRefreshToken, cancellationToken);
+    }
+
+    private async Task<DateTime?> ResolveCurrentSessionMfaVerifiedAtAsync(Guid userId, string? refreshToken, string securityStamp, DateTime now, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return null;
+        }
+
+        var refreshHash = ComputeSha256(refreshToken);
+        return await _dbContext.RefreshTokens
+            .AsNoTracking()
+            .Where(rt => rt.UsuarioId == userId && rt.TokenHash == refreshHash && rt.RevocadoEn == null && rt.ExpiraEn > now)
+            .Where(rt => rt.SecurityStamp == securityStamp)
+            .Select(rt => rt.MfaVerifiedAt)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<AuthResult> BuildAuthResultAsync(Usuario usuario, string? accessToken, string? refreshToken, CancellationToken cancellationToken)
@@ -610,18 +690,25 @@ public sealed class AuthService : IAuthService
         };
     }
 
-    private async Task<(string AccessToken, string RefreshToken)> IssueTokensAsync(Usuario usuario, string? ipAddress, CancellationToken cancellationToken)
+    private async Task<(string AccessToken, string RefreshToken)> IssueTokensAsync(
+        Usuario usuario,
+        string? ipAddress,
+        CancellationToken cancellationToken,
+        DateTime? mfaVerifiedAt = null)
     {
         var accessToken = GenerateAccessToken(usuario);
         var refreshToken = GenerateRefreshToken();
+        var now = DateTime.UtcNow;
 
         _dbContext.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UsuarioId = usuario.Id,
             TokenHash = ComputeSha256(refreshToken),
-            ExpiraEn = DateTime.UtcNow.AddDays(GetRefreshTokenExpDays()),
-            CreadoEn = DateTime.UtcNow,
+            SecurityStamp = usuario.SecurityStamp,
+            ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
+            CreadoEn = now,
+            MfaVerifiedAt = mfaVerifiedAt,
             IpAddress = ParseIpAddress(ipAddress)
         });
 
@@ -749,16 +836,23 @@ public sealed class AuthService : IAuthService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private bool IsLoginThrottled(string normalizedEmail, string? ipAddress)
+    private bool IsLoginEmailThrottled(string normalizedEmail, string? ipAddress)
     {
         var emailKey = BuildLoginFailureCacheKey(normalizedEmail, ipAddress);
+        lock (LoginRateLimitLock)
+        {
+            return _cache.TryGetValue<int>(emailKey, out var emailCount) &&
+                   emailCount >= MaxLoginFailuresPerClientAndEmail;
+        }
+    }
+
+    private bool IsLoginClientThrottled(string? ipAddress)
+    {
         var clientKey = BuildLoginClientFailureCacheKey(ipAddress);
         lock (LoginRateLimitLock)
         {
-            return (_cache.TryGetValue<int>(emailKey, out var emailCount) &&
-                    emailCount >= MaxLoginFailuresPerClientAndEmail) ||
-                   (_cache.TryGetValue<int>(clientKey, out var clientCount) &&
-                    clientCount >= MaxLoginFailuresPerClient);
+            return _cache.TryGetValue<int>(clientKey, out var clientCount) &&
+                   clientCount >= MaxLoginFailuresPerClient;
         }
     }
 
@@ -780,6 +874,7 @@ public sealed class AuthService : IAuthService
     private void ClearLoginFailures(string normalizedEmail, string? ipAddress)
     {
         _cache.Remove(BuildLoginFailureCacheKey(normalizedEmail, ipAddress));
+        _cache.Remove(BuildLoginClientFailureCacheKey(ipAddress));
     }
 
     private static string BuildLoginFailureCacheKey(string normalizedEmail, string? ipAddress)
@@ -847,6 +942,19 @@ public sealed class AuthService : IAuthService
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    private static bool HasMatchingSecurityStamp(string tokenStamp, string userStamp)
+    {
+        if (string.IsNullOrWhiteSpace(tokenStamp) || string.IsNullOrWhiteSpace(userStamp))
+        {
+            return false;
+        }
+
+        var tokenBytes = Encoding.UTF8.GetBytes(tokenStamp);
+        var userBytes = Encoding.UTF8.GetBytes(userStamp);
+        return tokenBytes.Length == userBytes.Length &&
+               CryptographicOperations.FixedTimeEquals(tokenBytes, userBytes);
+    }
+
     private async Task AcquireRefreshTokenLockAsync(string refreshHash, CancellationToken cancellationToken)
     {
         var bytes = Convert.FromHexString(refreshHash);
@@ -860,6 +968,17 @@ public sealed class AuthService : IAuthService
     private int GetAccessTokenExpMinutes() => _configuration.GetValue("JwtSettings:AccessTokenExpMinutes", 60);
 
     private int GetRefreshTokenExpDays() => _configuration.GetValue("JwtSettings:RefreshTokenExpDays", 7);
+
+    private async Task<bool> IsMfaRememberDeviceEnabledAsync(CancellationToken cancellationToken)
+    {
+        var value = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Where(x => x.Clave == SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey)
+            .Select(x => x.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return bool.TryParse(value, out var enabled) && enabled;
+    }
 
     private bool IsTrustedMfaTokenValid(Usuario usuario, string? token, DateTime now)
     {
@@ -975,8 +1094,11 @@ public sealed class AuthResult
     public string? MfaChallengeId { get; set; }
     public string? MfaSecret { get; set; }
     public string? MfaOtpAuthUri { get; set; }
+    public bool MfaRememberDeviceAllowed { get; set; }
+    public int MfaRememberDeviceDays { get; set; } = SecurityConfigurationDefaults.MfaRememberDeviceDays;
     public string? TrustedMfaToken { get; set; }
     public DateTime? TrustedMfaTokenExpiresAt { get; set; }
+    public bool ClearTrustedMfaToken { get; set; }
 }
 
 public sealed class AuthException : Exception

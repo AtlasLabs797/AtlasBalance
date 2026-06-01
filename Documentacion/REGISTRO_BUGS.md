@@ -2,11 +2,20 @@
 
 ## Abiertos
 
+### 2026-05-22 - V-01.09 - Publicacion latest y bootstrap desde Watchdog antiguo pendientes
+
+- Contexto: tras implementar el update online de paquete completo, quedan dos bloqueos fuera del codigo nuevo.
+- Pendientes:
+  - GitHub `releases/latest` apunta hoy a `V-01.06-win-x64`, no a `V-01.09-win-x64`; mientras no se publique `V-01.09` firmado, no hay destino online real para esta version.
+  - Una instalacion que todavia ejecuta un Watchdog anterior al fix no puede usar ese Watchdog viejo para actualizarse de forma completa; puede requerir un primer `update.cmd` manual o una ruta puente.
+  - Falta validacion real en Windows instalacion reemplazando el Watchdog vivo mediante el helper externo.
+- Estado: abierto. Bloquea vender el upgrade desde cualquier version antigua como 100% one-click.
+
 ### 2026-05-10 - V-01.06 - Pendientes altos tras auditoria final
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
 - Pendientes:
-  - Ejecutar suite completa V-01.07 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
+  - Ejecutar suite completa V-01.09 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
   - Hacer E2E autenticado contra PostgreSQL real con datos de volumen antes de release.
   - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en auditorias UI previas; el 2026-05-19 se reforzaron select nativo, modal de importacion, errores persistentes de celda, estados de importacion, tabs de Configuracion, tablas de cuenta/extractos, token modal/metricas, backups y alternativas accesibles de graficas. Falta sesion real con datos de volumen.
 - Estado: abierto. Bloquea recomendar release final.
@@ -19,6 +28,150 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-06-01 - V-01.09 - Cerrado - Refresh tokens no quedaban ligados a rotaciones de seguridad
+
+- Contexto: auditoria profunda de autenticacion.
+- Causa: `REFRESH_TOKENS` no guardaba el `security_stamp` vigente al emitirse.
+- Impacto: tokens emitidos antes de reset/password/MFA/revocacion podian seguir rotando si no se borraban por otra via.
+- Solucion: columna `security_stamp`, backfill por migracion y comparacion constant-time contra el usuario actual en refresh.
+- Verificacion: regresiones AuthService incluidas en bloque focalizado 136/136 OK.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Tipos de cambio faltantes se convertian como 1:1
+
+- Contexto: auditoria de integridad de dashboards/OpenClaw.
+- Causa: `TiposCambioService.ConvertAsync` devolvia `amount` si no encontraba tasa.
+- Impacto: cifras financieras falsas sin aviso.
+- Solucion: lanzar `TipoCambioMissingException` y responder `409` con mensaje claro.
+- Verificacion: `TiposCambioServiceTests` en bloque focalizado 136/136 OK.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Importacion podia duplicar filas si cambiaban columnas extra
+
+- Contexto: auditoria de idempotencia de importacion.
+- Causa: la huella de contenido mezclaba identidad financiera con columnas auxiliares `extra:*`.
+- Impacto: reimportar el mismo movimiento con una referencia auxiliar corregida podia insertarlo dos veces.
+- Solucion: fingerprint por cuenta, fecha, monto, saldo y concepto; las columnas extra siguen guardandose pero no definen identidad.
+- Verificacion: regresion `ConfirmarAsync_Should_Deduplicate_When_Only_Extra_Columns_Change`.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Alertas de saldo bajo no se evaluaban tras importacion/plazo fijo
+
+- Contexto: auditoria funcional de alertas.
+- Causa: `ImportacionService` persistia saldos nuevos sin llamar a `IAlertaService`.
+- Impacto: una cuenta podia quedar bajo umbral sin email hasta otra edicion manual.
+- Solucion: evaluar alerta tras commit de importacion y de movimiento de plazo fijo.
+- Verificacion: regresiones con `RecordingAlertaService`.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Ranking IA por titular agrupaba realmente por cuenta
+
+- Contexto: auditoria de respuestas deterministas IA.
+- Causa: el detector aceptaba `titular`, pero la query agrupaba siempre por cuenta/titular/divisa.
+- Impacto: respuesta semanticamente falsa para preguntas por titulares.
+- Solucion: nueva dimension de ranking; si el prompt pide titulares, agrega por titular/divisa.
+- Verificacion: regresion `AskAsync_Should_Group_Deterministic_Ranking_By_Titular_When_Requested`.
+- Estado: cerrado.
+
+### 2026-06-01 - V-01.09 - Cerrado - Actualizador externo avisaba rollback pero no restauraba
+
+- Contexto: auditoria de release/update.
+- Causa: `Actualizar-AtlasBalance.ps1` creaba copia rollback, pero si fallaba `/api/health` solo lanzaba excepcion.
+- Impacto: instalacion con binarios nuevos fallidos y rollback manual en el peor momento.
+- Solucion: restauracion automatica de `api`, `watchdog`, `VERSION` y runtime antes de fallar.
+- Verificacion: parser PowerShell OK; validacion real Windows queda pendiente.
+- Estado: cerrado en script; pendiente prueba Windows real.
+
+### 2026-05-22 - V-01.09 - Cerrado - Actualizacion online solo reemplazaba API/frontend
+
+- Contexto: verificacion de la promesa "solo pulsar actualizar" para subir de version desde GitHub Release sin pasos intermedios.
+- Causa: `ActualizacionService.DownloadAndPreparePackageAsync` validaba el ZIP completo, pero devolvia `...\api`; Watchdog sincronizaba ese origen contra `C:\AtlasBalance\api`.
+- Impacto: API/frontend podian quedar en version nueva mientras Watchdog, scripts, wrappers, `VERSION` raiz y runtime seguian viejos.
+- Solucion: API pasa la raiz del paquete completo; Watchdog valida paquete completo y aplica API, Watchdog, scripts, wrappers, `VERSION` y runtime. En Windows servicio lanza helper PowerShell para ejecutar el actualizador del paquete y poder reemplazar su propia carpeta.
+- Verificacion: update/watchdog focalizado 26/26 OK; frontend lint/build OK; backend sin Docker/Testcontainers 270/270 OK.
+- Estado: cerrado en codigo; la publicacion de `latest` y el bootstrap desde Watchdog antiguo quedan como pendientes abiertos separados.
+
+### 2026-05-22 - V-01.09 - Cerrado - Cambio de contrasena emitia garantia MFA falsa
+
+- Contexto: revision del threat model con subagentes.
+- Causa: `ChangePasswordAsync` marcaba el refresh token nuevo como MFA-verificado por el estado del usuario, no por la sesion actual.
+- Impacto: una sesion pre-MFA todavia valida podia transformarse en sesion post-MFA despues de cambiar contrasena.
+- Solucion: `CambiarPassword` pasa el refresh token actual; `AuthService` exige `mfa_verified_at` existente cuando MFA es obligatorio y lo preserva en la nueva sesion.
+- Verificacion: regresiones de sesion pre-MFA y sesion verificada; bloque auth/controladores 27/27 OK; suite backend sin Docker/Testcontainers 269/269 OK.
+- Estado: cerrado.
+
+### 2026-05-22 - V-01.09 - Cerrado - RLS y ficheros necesitaban hardening de backstop
+
+- Contexto: revision del threat model y hallazgos de subagentes.
+- Causa: RLS no filtraba soft-delete como ultima barrera y algunas rutas de export/backup validaban raiz despues de tocar disco.
+- Impacto: mayor riesgo de exposicion por futuros SQL crudos/`IgnoreQueryFilters()` y de operaciones sobre rutas persistidas fuera de raices permitidas si DB/config se corrompen.
+- Solucion: migracion RLS `20260522103000_HardenRlsSoftDeleteBackstop`, validacion previa de rutas de exportaciones/backups y retencion que omite rutas fuera de raiz.
+- Verificacion: suite backend no-Docker 269/269 OK; test RLS con PostgreSQL real bloqueado por Docker/Testcontainers no disponible.
+- Estado: cerrado en codigo; validacion PostgreSQL real sigue como gate abierto de release.
+
+### 2026-05-20 - V-01.09 - Cerrado - Importacion/exportacion aceptaban cuentas de titulares soft-deleted
+
+- Contexto: la revision del threat model encontro que algunos servicios no heredaban el soft-delete del titular padre.
+- Causa: `ImportacionService` y `ExportacionService` filtraban por cuenta activa, pero no por titular activo, en rutas que aceptan `cuentaId` directo.
+- Impacto: posible acceso/operacion sobre datos financieros fuera de la superficie logica visible si se conocia el ID de la cuenta.
+- Solucion: importacion, exportacion manual y exportacion mensual exigen titular activo.
+- Verificacion: regresiones focalizadas de importacion/exportacion incluidas en bloque de 63/63 tests OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Descarga de actualizacion rechazaba tamano tarde si faltaba Content-Length
+
+- Contexto: la ruta de actualizacion ya limitaba paquetes por tamano declarado y por tamano final, pero no cortaba durante streaming cuando el servidor no declaraba `Content-Length`.
+- Causa: `CopyToAsync` escribia todo el contenido antes de comprobar `FileInfo.Length`.
+- Impacto: consumo evitable de disco/IO en una ruta admin. Severidad media/baja por las validaciones existentes de repo/asset/firma, pero seguia siendo una defensa floja.
+- Solucion: copia con limite de bytes durante el stream y config opcional `UpdateSecurity:MaxUpdatePackageBytes` para bajar el limite por entorno.
+- Verificacion: regresion de asset sin longitud declarada incluida en bloque de 63/63 tests OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Errores de red IA exponian diagnosticos internos
+
+- Contexto: hallazgo `AI provider network errors leak internal diagnostics`.
+- Causa: el mensaje de red del proveedor IA incluia detalles derivados de excepciones de transporte y `IaController` los devolvia en el JSON 502.
+- Impacto: usuarios con IA podian ver topologia interna si fallaba TLS, proxy, DNS o conexion.
+- Solucion: mensaje publico generico; auditoria con codigos seguros de transporte; regresion con hostname/proxy/certificado ficticios.
+- Verificacion: test focalizado 1/1 OK, `AtlasAiServiceTests` 62/62 OK y `git diff --check` OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Refresh tokens legacy saltan MFA obligatorio
+
+- Contexto: el analisis de seguridad reporto que `RefreshTokenAsync` seguia renovando sesiones aunque el login ya exigia MFA.
+- Causa: `REFRESH_TOKENS` no guardaba ninguna garantia de MFA completado; el refresh validaba token/usuario y rotaba sin mirar el nuevo requisito.
+- Impacto: un refresh token emitido antes de activar MFA podia mantener acceso web sin completar el segundo factor.
+- Solucion: nueva columna `mfa_verified_at`, emision marcada tras MFA o login con `mfa_trusted`, rechazo y revocacion de tokens sin garantia cuando MFA es obligatorio.
+- Verificacion: reproduccion previa fallida del exploit, `AuthServiceTests` 18/18 OK y suite backend sin Docker/Testcontainers 261/261 OK.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Logout conservaba cookie MFA recordada
+
+- Contexto: el analisis de seguridad marco que `POST /api/auth/logout` dejaba viva `mfa_trusted` y que el dispositivo recordado duraba 90 dias.
+- Causa: en V-01.07 se priorizo comodidad y se trato logout como cierre de sesion, no como cierre de confianza MFA del navegador.
+- Impacto: en un equipo compartido o perfil de navegador comprometido, alguien con la contrasena podia saltarse TOTP desde ese navegador durante una ventana larga.
+- Solucion: logout vuelve a borrar `mfa_trusted`, el recuerdo MFA queda en 62 dias y la opcion pasa a depender de `CONFIGURACION.mfa_remember_device_enabled`, desactivada por defecto.
+- Verificacion: suite focalizada Auth/Configuracion 29/29 OK, frontend lint OK y build OK. La sincronizacion local de `wwwroot` quedo bloqueada por `Access denied`, asi que el paquete de release debe regenerar assets antes de publicar.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Entradas ZIP raiz rompian actualizaciones
+
+- Contexto: algunos ZIP de actualizacion pueden incluir entradas raiz inocuas (`.` / `./`) antes de los archivos reales.
+- Causa: el guard de extraccion comparaba contra el root con separador final y rechazaba destinos que normalizaban exactamente al root.
+- Impacto: disponibilidad/compatibilidad; el paquete firmado podia rechazarse aunque no hubiera Zip Slip.
+- Solucion: aceptar solo marcadores raiz equivalentes a `.` y mantener prefijo estricto con separador para rutas hijas.
+- Verificacion: reproduccion previa fallida, `ActualizacionServiceTests` 13/13 OK y bloque actualizacion/watchdog 20/20 OK; traversal `../evil.txt` sigue rechazado.
+- Estado: cerrado.
+
+### 2026-05-20 - V-01.09 - Cerrado - Throttle de login por IP compartida permitia DoS no autenticado
+
+- Contexto: hallazgo Codex Security sobre `/api/auth/login`.
+- Causa: el contador cliente/IP de 20 fallos se evaluaba antes de validar credenciales y no se limpiaba en login correcto.
+- Impacto: un atacante no autenticado podia lanzar 20 intentos invalidos desde una IP/NAT/proxy compartido y provocar 429 a usuarios legitimos de esa misma IP durante la ventana de 15 minutos.
+- Solucion: el precheck temprano usa solo email+cliente; el contador cliente/IP queda para intentos invalidos despues de resolver usuario/password; el login correcto limpia ambos contadores; `ForwardedHeaders` queda habilitado con proxies/redes conocidas configurables.
+- Verificacion: regresiones nuevas en `AuthServiceTests`; suite enfocada `AuthServiceTests` 20/20 OK; suite backend sin Docker/Testcontainers 267/267 OK; `git diff --check` OK.
+- Estado: cerrado en codigo; pendiente suite completa y E2E autenticado como gates generales de release.
 
 ### 2026-05-19 - V-01.07 - Cerrado - Jerarquia visual plana y acciones criticas poco diferenciadas
 

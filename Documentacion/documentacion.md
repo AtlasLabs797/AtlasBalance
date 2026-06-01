@@ -1,14 +1,16 @@
 # Atlas Balance - instalacion y actualizaciones
 
-Version actual del paquete: `V-01.07`.
+Version actual del paquete: `V-01.09`.
 
-No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-01.07-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-01.09-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+
+Si la API queda detras de proxy inverso, configura `ForwardedHeaders:KnownProxies` o `ForwardedHeaders:KnownNetworks` en `appsettings.Production.json`. Sin eso, auditoria y limites por cliente pueden ver solo la IP del proxy; confiar todos los `X-Forwarded-For` seria igual de malo, porque el cliente podria falsearlos.
 
 ## Que queda preparado
 
-La version `V-01.07` deja el proyecto listo para generar un paquete instalable de Windows:
+La version `V-01.09` deja el proyecto listo para generar un paquete instalable de Windows:
 
-- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.07-win-x64.zip`.
+- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`.
 - `install.cmd`: instalador de un clic.
 - `update.cmd`: actualizador de un clic.
 - `uninstall.cmd`: desinstalador de un clic.
@@ -46,9 +48,9 @@ En la maquina de desarrollo, desde la carpeta `Atlas Balance`:
 Salida esperada:
 
 ```text
-Atlas Balance Release\AtlasBalance-V-01.07-win-x64\
-Atlas Balance Release\AtlasBalance-V-01.07-win-x64.zip
-Atlas Balance Release\AtlasBalance-V-01.07-win-x64.zip.sig
+Atlas Balance Release\AtlasBalance-V-01.09-win-x64\
+Atlas Balance Release\AtlasBalance-V-01.09-win-x64.zip
+Atlas Balance Release\AtlasBalance-V-01.09-win-x64.zip.sig
 ```
 
 Si quieres que la actualizacion online desde la app acepte el paquete, ejecuta `Build-Release.ps1` con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` disponible en el entorno. La clave privada no va en el repo ni en documentacion.
@@ -69,11 +71,11 @@ Tras purgar, el primer arranque solo crea el admin inicial si `SeedAdmin:Passwor
 
 ### 2. Copiar al servidor
 
-1. Copia `AtlasBalance-V-01.07-win-x64.zip` al servidor.
+1. Copia `AtlasBalance-V-01.09-win-x64.zip` al servidor.
 2. Descomprime el ZIP, por ejemplo en:
 
 ```text
-C:\Temp\AtlasBalance-V-01.07-win-x64
+C:\Temp\AtlasBalance-V-01.09-win-x64
 ```
 
 ### 3. Ejecutar instalador
@@ -191,6 +193,8 @@ Regla de oro: los datos viven en PostgreSQL, no en la carpeta `api`. Una actuali
 
 ### Actualizacion automatica desde la app
 
+Estado `V-01.09`: el codigo ya prepara el boton para aplicar el paquete completo desde GitHub `latest`: API, Watchdog, scripts, wrappers, `VERSION` y runtime. Falta publicar `V-01.09-win-x64` firmado como `latest`; hoy GitHub sigue apuntando a `V-01.06-win-x64`. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
+
 En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
 
 ```text
@@ -209,9 +213,10 @@ Al pulsar `Actualizar ahora`, Atlas Balance:
 4. Lo extrae dentro de `C:\AtlasBalance\updates`.
 5. Crea backup PostgreSQL previo.
 6. Crea rollback de binarios.
-7. Reemplaza la API conservando configuracion.
-8. Arranca de nuevo y aplica migraciones al iniciar.
-9. Comprueba `/api/health`; si no responde, revierte binarios.
+7. Reemplaza API y Watchdog conservando configuracion.
+8. Copia scripts, wrappers `.cmd`, `VERSION` y `atlas-balance.runtime.json`.
+9. Arranca de nuevo y aplica migraciones al iniciar.
+10. Comprueba `/api/health`; si no responde, revierte binarios.
 
 Si no puede verificar firma, crear backup previo o recuperar `/api/health`, no actualiza. Bien. Actualizar una app financiera sin backup o sin firma es una forma elegante de pedir problemas.
 
@@ -222,7 +227,7 @@ La instalacion debe tener `UpdateSecurity:ReleaseSigningPublicKeyPem` o `ATLAS_R
 En desarrollo, cuando haya una version nueva:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version V-01.07
+.\scripts\Build-Release.ps1 -Version V-01.09
 ```
 
 ### 2. Copiar al servidor
@@ -231,7 +236,7 @@ En desarrollo, cuando haya una version nueva:
 2. Descomprime en una carpeta temporal, por ejemplo:
 
 ```text
-C:\Temp\AtlasBalance-V-01.07-win-x64
+C:\Temp\AtlasBalance-V-01.09-win-x64
 ```
 
 ### 3. Ejecutar actualizador
@@ -251,7 +256,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Actualizar-At
 Si ya estas trabajando desde una instalacion que tiene los scripts nuevos y quieres apuntar a un paquete descargado/descomprimido:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.07-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.09-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador hace esto:
@@ -267,7 +272,7 @@ El actualizador hace esto:
 9. La API aplica migraciones EF Core automaticamente al arrancar.
 10. Verifica `/api/health` con `curl.exe -k`.
 
-Si el health check falla, no sigas tocando a ciegas. Revisa servicios y logs. La copia rollback de binarios queda indicada en consola.
+Si el health check falla, el actualizador restaura automaticamente los binarios anteriores desde `C:\AtlasBalance\backups\app_before_update_*`, vuelve a apuntar los servicios a esos binarios y falla con mensaje claro. Revisa servicios y logs antes de otro intento; repetir a ciegas es como reiniciar el incendio.
 
 ## Desinstalar completamente
 
@@ -314,16 +319,19 @@ Datos de PostgreSQL
 
 Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exactamente como se pierden configuraciones y luego todo el mundo mira al techo.
 
-## Notas de seguridad V-01.07
+## Notas de seguridad V-01.09
 
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
 - PostgreSQL aplica Row Level Security con politicas por usuario, integracion, admin y operaciones internas. El contexto va firmado; el rol runtime de la app no debe tener `BYPASSRLS` ni ser owner de las tablas.
+- MFA web es obligatorio cuando `Security:RequireMfaForWebUsers=true`. El recuerdo de dispositivo dura 62 dias, solo aparece si un administrador activa `mfa_remember_device_enabled`, y `logout` borra `mfa_trusted`.
 - `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
 - La URL de actualizaciones queda limitada al repo oficial de Atlas Balance en GitHub por HTTPS y el paquete online debe venir firmado con `.zip.sig`.
 - `config\INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial con ACL limitada a Administrators/SYSTEM y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.
 
 ## Recuperacion si una actualizacion falla
+
+Desde `V-01.09`, el script de actualizacion intenta esta recuperacion automaticamente cuando falla el health check post-update. Usa estos pasos solo si el rollback automatico tambien falla o si estas reparando una instalacion antigua.
 
 1. Para servicios:
 
@@ -350,7 +358,7 @@ Start-Service AtlasBalance.API
 
 La version visible del backend se toma de `AssemblyInformationalVersion`.
 
-Para `V-01.07` queda fijado en:
+Para `V-01.09` queda fijado en:
 
 ```text
 Atlas Balance/Directory.Build.props
