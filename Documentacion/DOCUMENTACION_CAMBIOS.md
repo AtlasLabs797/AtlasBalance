@@ -38,6 +38,7 @@ Regla de trabajo desde ahora:
 - Intento de release firmado: `npm ci` OK fuera del sandbox, build bloqueado por `frontend/dist` y luego por `backend/src/AtlasBalance.API/wwwroot` con `Access denied`; se cambio estrategia para no usar esas carpetas fuente.
 - Build firmado final: `Build-Release.ps1 -Version V-01.09 -Runtime win-x64` OK.
 - Intento de publicacion GitHub Release por API usando credencial local de Git: bloqueado; `git credential fill` no devolvio token util y no hay `gh`, `GH_TOKEN` ni `GITHUB_TOKEN`.
+- Ajustado el workflow `Release` para publicar el tag `V-01.09-win-x64` (`version-runtime`) y no solo `V-01.09`, manteniendo continuidad con los releases existentes.
 
 **Resultado de verificacion:**
 - Clave privada historica no encontrada.
