@@ -1,5 +1,34 @@
 # Documentacion tecnica
 
+## 2026-06-01 - V-01.09 - Rotacion de clave de firma de releases
+
+### Que cambio
+
+- Se genero un nuevo par RSA 4096 para firma detached de releases.
+- `Instalar-AtlasBalance.ps1` y `appsettings.Production.json.template` usan la nueva clave publica por defecto.
+- La clave privada no se versiona. Se genero localmente en `tmp-release-signing-key/atlas-release-private.pem`, carpeta ignorada por Git.
+- `Build-Release.ps1` construye el frontend en una carpeta temporal de release (`Atlas Balance Release/.frontend-dist-*`) y copia desde ahi al `api/wwwroot` publicado. No toca `frontend/dist` ni `backend/src/AtlasBalance.API/wwwroot`, que en Windows pueden quedar bloqueados por permisos o procesos externos.
+
+### Por que
+
+La clave privada anterior no esta en el repo ni en el entorno local. Eso es bueno para seguridad, pero si tampoco esta en el gestor de secretos, no se puede firmar. La clave publica no permite reconstruir la privada; si alguien te dice lo contrario, esta vendiendo humo con matematicas.
+
+### Huella publica
+
+`1762B5DFD784A0947EC0F191D38BC28D3AC7ED6EA7BA63902CEB31C0616242B4`
+
+### Paquete generado
+
+- ZIP: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`
+- Firma: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip.sig`
+- SHA-256 ZIP: `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`
+- SHA-256 firma: `C0AEF6FF1E2B5D79644CC5D934046691AFD4B95CC11571B74232E8E1D97DA5A4`
+- Verificacion local: `SIGNATURE_OK`
+
+### Implicacion operativa
+
+Los paquetes firmados con esta clave solo verifican en instalaciones que tengan esta nueva publica. Instalaciones con la publica vieja necesitaran actualizar `UpdateSecurity:ReleaseSigningPublicKeyPem` manualmente, recibir un paquete con la nueva plantilla, o usar una ruta de update manual controlada.
+
 ## 2026-06-01 - V-01.09 - Auditoria profunda: seguridad, bugs y release gate
 
 ### Que cambio

@@ -14,10 +14,10 @@ $documentationRoot = Join-Path $workspaceRoot "Documentacion"
 $frontendPath = Join-Path $repoRoot "frontend"
 $apiProject = Join-Path $repoRoot "backend\src\AtlasBalance.API\AtlasBalance.API.csproj"
 $watchdogProject = Join-Path $repoRoot "backend\src\AtlasBalance.Watchdog\AtlasBalance.Watchdog.csproj"
-$apiWwwroot = Join-Path $repoRoot "backend\src\AtlasBalance.API\wwwroot"
 $releaseRoot = Join-Path $repoRoot "Atlas Balance Release"
 $packageName = "AtlasBalance-$Version-$Runtime"
 $packageRoot = Join-Path $releaseRoot $packageName
+$frontendBuildDist = Join-Path $releaseRoot ".frontend-dist-$Version-$Runtime"
 
 function Copy-DirectoryContents {
     param([string]$Source, [string]$Target)
@@ -106,6 +106,7 @@ if (-not (Test-Path $apiProject) -or -not (Test-Path $watchdogProject)) {
 $dotnetPath = Resolve-DotnetPath
 
 Remove-Item -LiteralPath $packageRoot -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $frontendBuildDist -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
 Push-Location $frontendPath
@@ -117,8 +118,11 @@ try {
     & npm.cmd ci
     if ($LASTEXITCODE -ne 0) { throw "npm ci fallo." }
 
-    & npm.cmd run build
-    if ($LASTEXITCODE -ne 0) { throw "npm run build fallo." }
+    & npm.cmd exec tsc -- --noEmit
+    if ($LASTEXITCODE -ne 0) { throw "tsc --noEmit fallo." }
+
+    & npm.cmd exec vite -- build --outDir $frontendBuildDist --emptyOutDir true
+    if ($LASTEXITCODE -ne 0) { throw "vite build fallo." }
 } finally {
     Pop-Location
 }
@@ -129,15 +133,6 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet restore API --locked-mode fallo." }
 & $dotnetPath restore $watchdogProject --locked-mode -r $Runtime
 if ($LASTEXITCODE -ne 0) { throw "dotnet restore Watchdog --locked-mode fallo." }
 
-if (Test-Path -LiteralPath $apiWwwroot) {
-    Remove-Item -LiteralPath $apiWwwroot -Recurse -Force -ErrorAction Stop
-}
-New-Item -ItemType Directory -Path $apiWwwroot -Force | Out-Null
-if (Get-ChildItem -LiteralPath $apiWwwroot -Force | Select-Object -First 1) {
-    throw "wwwroot no quedo limpio; abortando release para no empaquetar assets antiguos."
-}
-Copy-DirectoryContents -Source (Join-Path $frontendPath "dist") -Target $apiWwwroot
-
 & $dotnetPath publish $apiProject `
     -c $Configuration `
     -r $Runtime `
@@ -147,6 +142,14 @@ Copy-DirectoryContents -Source (Join-Path $frontendPath "dist") -Target $apiWwwr
     -p:InformationalVersion=$Version `
     -o (Join-Path $packageRoot "api")
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish API fallo." }
+
+$publishedWwwroot = Join-Path $packageRoot "api\wwwroot"
+if (Test-Path -LiteralPath $publishedWwwroot) {
+    Remove-Item -LiteralPath $publishedWwwroot -Recurse -Force -ErrorAction Stop
+}
+New-Item -ItemType Directory -Path $publishedWwwroot -Force | Out-Null
+Copy-DirectoryContents -Source $frontendBuildDist -Target $publishedWwwroot
+Remove-Item -LiteralPath $frontendBuildDist -Recurse -Force -ErrorAction SilentlyContinue
 
 & $dotnetPath publish $watchdogProject `
     -c $Configuration `

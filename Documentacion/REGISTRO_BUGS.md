@@ -2,14 +2,13 @@
 
 ## Abiertos
 
-### 2026-05-22 - V-01.09 - Publicacion latest y bootstrap desde Watchdog antiguo pendientes
+### 2026-05-22 - V-01.09 - Bootstrap desde Watchdog antiguo pendiente
 
 - Contexto: tras implementar el update online de paquete completo, quedan dos bloqueos fuera del codigo nuevo.
 - Pendientes:
-  - GitHub `releases/latest` apunta hoy a `V-01.06-win-x64`, no a `V-01.09-win-x64`; mientras no se publique `V-01.09` firmado, no hay destino online real para esta version.
   - Una instalacion que todavia ejecuta un Watchdog anterior al fix no puede usar ese Watchdog viejo para actualizarse de forma completa; puede requerir un primer `update.cmd` manual o una ruta puente.
   - Falta validacion real en Windows instalacion reemplazando el Watchdog vivo mediante el helper externo.
-- Estado: abierto. Bloquea vender el upgrade desde cualquier version antigua como 100% one-click.
+- Estado: abierto. GitHub `latest` ya apunta a `V-01.09-win-x64`; esto solo bloquea vender el upgrade desde cualquier version antigua como 100% one-click.
 
 ### 2026-05-10 - V-01.06 - Pendientes altos tras auditoria final
 
@@ -28,6 +27,17 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-06-01 - V-01.09 - Cerrado - Clave privada de firma de release perdida/no disponible
+
+- Contexto: se necesitaba publicar `V-01.09` como release latest firmado.
+- Causa: no habia `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en entorno, repo ni rutas locales razonables.
+- Impacto: no se podia generar `.zip.sig`; publicar unsigned romperia el actualizador online y seria una mala practica seria.
+- Solucion: rotar clave de firma con nuevo par RSA 4096, actualizar la publica en instalador/plantilla y hacer que `Build-Release.ps1` no dependa de `frontend/dist` ni del `wwwroot` fuente bloqueable.
+- Verificacion: `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local `SIGNATURE_OK`; SHA-256 ZIP `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
+- Publicacion: GitHub Release `V-01.09-win-x64` publicado como `latest` con ZIP y `.sig`.
+- Pendiente operativo: cargar la nueva privada en GitHub Secret y guardar copia segura fuera del repo para futuros releases automatizados.
+- Estado: cerrado en codigo y publicacion.
 
 ### 2026-06-01 - V-01.09 - Cerrado - Refresh tokens no quedaban ligados a rotaciones de seguridad
 

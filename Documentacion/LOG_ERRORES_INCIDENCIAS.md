@@ -1,5 +1,24 @@
 # Log de errores e incidencias
 
+## 2026-06-01 - V-01.09 - Clave privada de firma de release no disponible
+
+- Contexto: se pidio publicar el paquete release como latest, pero el entorno no tenia `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- Hallazgo confirmado:
+  - No existe en variables `Process`, `User` ni `Machine`.
+  - No aparece en repo ni rutas locales razonables.
+  - Solo existe la clave publica historica en instalador/plantilla.
+- Causa: la private key original no esta disponible en esta maquina. Si no esta en un gestor de secretos externo, esta perdida.
+- Solucion aplicada:
+  - Generado nuevo par RSA 4096.
+  - Reemplazada clave publica de release en instalador y plantilla productiva.
+  - Private key nueva dejada fuera de Git en `tmp-release-signing-key/atlas-release-private.pem`.
+  - `Build-Release.ps1` deja de depender de limpiar `frontend/dist`; usa salida temporal propia del release.
+  - El script tambien deja de borrar/escribir `backend/src/AtlasBalance.API/wwwroot`; copia los assets al `api/wwwroot` ya publicado dentro del paquete.
+- Verificacion: paquete `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local verificada como `SIGNATURE_OK`; SHA-256 ZIP `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
+- Publicacion: tras autenticar GitHub CLI, `V-01.09-win-x64` quedo publicado como GitHub Release `latest` con ZIP y `.sig`.
+- Pendiente: copiar la private key a GitHub Secret `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` y guardarla en un gestor de secretos.
+- Regla: la clave privada no se pega en chat, docs ni commits. Nunca.
+
 ## 2026-06-01 - V-01.09 - Auditoria profunda encontro falsos verdes de seguridad y datos
 
 - Contexto: revision en profundidad previa a release con foco en seguridad, bugs y publicacion.
@@ -37,7 +56,7 @@
   - En servicio Windows real, Watchdog lanza un helper PowerShell que ejecuta el actualizador del paquete para poder reemplazar tambien su propia carpeta.
   - La UI espera durante reinicios temporales de API en vez de declarar fallo al primer corte de red.
 - Verificacion: update/watchdog 26/26 OK; frontend lint/build OK; suite backend sin Docker/Testcontainers 270/270 OK.
-- Bloqueos: GitHub latest sigue siendo `V-01.06-win-x64`; tests PostgreSQL/Testcontainers bloqueados porque Docker no esta disponible; falta prueba real en Windows instalacion reemplazando Watchdog vivo.
+- Bloqueos restantes: tests PostgreSQL/Testcontainers bloqueados porque Docker no esta disponible; falta prueba real en Windows instalacion reemplazando Watchdog vivo.
 - Regla: si actualizas solo `api`, no has actualizado la app. Has creado una instalacion partida con una etiqueta bonita.
 
 ## 2026-05-22 - V-01.09 - Cambio de contrasena podia convertir sesion pre-MFA en post-MFA

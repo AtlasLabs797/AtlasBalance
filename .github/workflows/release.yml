@@ -159,15 +159,16 @@ jobs:
         run: |
           $version = "${{ inputs.version }}"
           $runtime = "${{ inputs.runtime }}"
+          $tag = "$version-$runtime"
           $zip = "./Atlas Balance/Atlas Balance Release/AtlasBalance-$version-$runtime.zip"
           $sig = "$zip.sig"
           if (-not (Test-Path -LiteralPath $zip) -or -not (Test-Path -LiteralPath $sig)) {
             throw "Release package or signature missing."
           }
-          gh release view $version *> $null
+          gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $version $zip $sig --clobber
-            gh release edit $version --title "Atlas Balance $version" --notes "Release $version" --latest
+            gh release upload $tag $zip $sig --clobber
+            gh release edit $tag --title "Atlas Balance $tag" --notes "Release $tag" --latest
           } else {
-            gh release create $version $zip $sig --title "Atlas Balance $version" --notes "Release $version" --latest --target "${{ github.sha }}"
+            gh release create $tag $zip $sig --title "Atlas Balance $tag" --notes "Release $tag" --latest --target "${{ github.sha }}"
           }
