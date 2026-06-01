@@ -193,7 +193,7 @@ Regla de oro: los datos viven en PostgreSQL, no en la carpeta `api`. Una actuali
 
 ### Actualizacion automatica desde la app
 
-Estado `V-01.09`: el codigo ya prepara el boton para aplicar el paquete completo desde GitHub `latest`: API, Watchdog, scripts, wrappers, `VERSION` y runtime. Falta publicar `V-01.09-win-x64` firmado como `latest`; hoy GitHub sigue apuntando a `V-01.06-win-x64`. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
+Estado `V-01.09`: GitHub `latest` ya apunta a `V-01.09-win-x64` firmado. El boton puede descargar y aplicar el paquete completo: API, Watchdog, scripts, wrappers, `VERSION` y runtime. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
 
 En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
 
