@@ -85,7 +85,7 @@ SHA256 del ZIP firmado de `V-01.09`:
 4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128
 ```
 
-No reutilices hashes ni paquetes de `V-01.07` para publicar `V-01.09`. El paquete local corregido esta firmado, pero el asset de GitHub debe republicarse para que `latest` sirva este ZIP y no el anterior.
+No reutilices hashes ni paquetes de `V-01.07` para publicar `V-01.09`. El asset de GitHub Release `V-01.09-win-x64` ya fue reemplazado con este ZIP corregido y su firma.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 

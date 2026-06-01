@@ -17,7 +17,8 @@
   - La plantilla productiva del Watchdog vuelve a incluir campos owner.
 - Verificacion: parser PowerShell OK; fallbacks estaticos OK para archivo de credenciales, conexion de migracion por entorno y owner por entorno; paquete local regenerado y firmado con `SIGNATURE_OK`.
 - Paquete local corregido: SHA-256 ZIP `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`; SHA-256 firma `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`.
-- Pendiente: republicar el paquete firmado en GitHub Release `V-01.09-win-x64` y reintentar en la instalacion afectada. Publicacion bloqueada localmente porque `gh` no esta instalado y no hay token GitHub disponible.
+- Publicacion: paquete firmado republicado en GitHub Release `V-01.09-win-x64` mediante API REST; assets remotos verificados (`ZIP 102580181 bytes`, `.sig 512 bytes`).
+- Pendiente: reintentar en la instalacion afectada.
 
 ## 2026-06-01 - V-01.09 - Update desde V-01.06 fallaba en backup por RLS sin MigrationConnection
 

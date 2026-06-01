@@ -193,7 +193,7 @@ Regla de oro: los datos viven en PostgreSQL, no en la carpeta `api`. Una actuali
 
 ### Actualizacion automatica desde la app
 
-Estado `V-01.09`: GitHub `latest` apunta al tag `V-01.09-win-x64`, pero tras el fix adicional de credenciales owner hay que republicar los assets para que `latest` sirva el ZIP corregido. El paquete local corregido ya esta generado y firmado. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
+Estado `V-01.09`: GitHub `latest` apunta al tag `V-01.09-win-x64` y sus assets ya fueron reemplazados con el ZIP corregido del fix de credenciales owner. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
 
 En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
 

@@ -39,6 +39,9 @@ Regla de trabajo desde ahora:
 - Comprobacion de que el ZIP contiene los scripts corregidos.
 - Intento de `gh release upload ... --clobber`: bloqueado porque `gh` no esta instalado.
 - Intento de leer credencial GitHub local con Git Credential Manager: bloqueado por timeout.
+- Push de rama `V-01.09` a GitHub.
+- Publicacion de assets por GitHub REST API con credencial local y `HttpClient` para el ZIP grande.
+- Verificacion de assets remotos en GitHub Release `V-01.09-win-x64`.
 
 **Resultado de verificacion:**
 - Parser PowerShell OK.
@@ -49,9 +52,10 @@ Regla de trabajo desde ahora:
 - SHA-256 ZIP: `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`.
 - SHA-256 firma: `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`.
 - ZIP contiene `PromptForDbOwnerCredentials` y fallback `ATLAS_DB_MIGRATION_CONNECTION` en los scripts empaquetados.
+- Commit `3cc47249` subido a `origin/V-01.09`.
+- GitHub Release `V-01.09-win-x64` actualizado con ZIP `102580181` bytes y firma `512` bytes.
 
 **Pendientes:**
-- Republicar el ZIP firmado `V-01.09-win-x64` para que GitHub `latest` incluya este segundo fix. En esta maquina falta `gh` o un token GitHub util para subir assets.
 - Reintentar la actualizacion real en la instalacion afectada.
 
 ---

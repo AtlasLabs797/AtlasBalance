@@ -35,7 +35,7 @@
 - Impacto: la actualizacion se bloqueaba antes de reemplazar binarios. La app quedaba sana en la version anterior, pero no podia avanzar sin intervencion.
 - Solucion: fallbacks adicionales para `ATLAS_DB_MIGRATION_CONNECTION`, `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`, `INSTALL_CREDENTIALS_ONCE.txt` y prompt seguro manual con `-PromptForDbOwnerCredentials`; plantilla Watchdog corregida.
 - Verificacion: parser PowerShell OK, pruebas estaticas de fallbacks OK, paquete local firmado con `SIGNATURE_OK`.
-- Estado: cerrado en codigo; pendiente publicar paquete firmado y probar en la instalacion afectada. Publicacion bloqueada localmente porque `gh` no esta instalado y no hay token GitHub disponible.
+- Estado: cerrado en codigo y publicado como asset en GitHub Release `V-01.09-win-x64`; pendiente probar en la instalacion afectada.
 
 ### 2026-06-01 - V-01.09 - Cerrado - Update V-01.06 sin MigrationConnection fallaba en pg_dump por RLS
 

@@ -27,7 +27,7 @@ No uses `-SkipBackup` para saltar este problema salvo que ya tengas un backup pr
 - SHA-256 ZIP: `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`
 - SHA-256 firma: `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`
 - Verificacion local: `SIGNATURE_OK`
-- Publicacion GitHub: pendiente; `gh` no esta instalado en esta maquina y no hay token disponible para subir assets por API.
+- Publicacion GitHub: assets reemplazados en Release `V-01.09-win-x64` mediante GitHub REST API. `gh` no estaba instalado, asi que se uso la credencial local de Git y subida con `HttpClient`.
 
 ## 2026-06-01 - V-01.09 - Backup de update compatible con V-01.06
 
