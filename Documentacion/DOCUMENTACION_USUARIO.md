@@ -82,10 +82,10 @@ AtlasBalance-V-01.09-win-x64.zip.sig
 SHA256 del ZIP firmado de `V-01.09`:
 
 ```text
-Pendiente hasta generar el paquete firmado de esta version.
+4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128
 ```
 
-No reutilices hashes ni paquetes de `V-01.07` para publicar `V-01.09`.
+No reutilices hashes ni paquetes de `V-01.07` para publicar `V-01.09`. El asset de GitHub Release `V-01.09-win-x64` ya fue reemplazado con este ZIP corregido y su firma.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
@@ -93,7 +93,7 @@ No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquet
 
 Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.09-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
-Nota dura de `V-01.09`: el codigo ya prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Pero hoy GitHub `latest` sigue apuntando a `V-01.06-win-x64`, asi que aun no hay paquete `V-01.09` real al que actualizar online. Una instalacion que todavia tenga un Watchdog anterior a este cambio puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
+Nota dura de `V-01.09`: el codigo ya prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este cambio puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
 
 ## Limpieza antes de publicar
 
@@ -139,6 +139,20 @@ Para actualizar una instalacion ya existente, descomprime el paquete nuevo y eje
 ```
 
 Desde `V-01.05`, ese wrapper acepta `-InstallPath` directamente y crea backup antes de reemplazar binarios. Si una actualizacion anterior dejo la API parada por formatos de importacion duplicados, actualiza con un paquete `V-01.06` o posterior; el arranque ya no intenta duplicar esos formatos por ID fijo.
+
+Si el backup falla con RLS en `AUDITORIAS` y el mensaje dice que faltan credenciales owner/migracion, no uses `-SkipBackup` como primera salida. Ejecuta la actualizacion manual pidiendo la credencial owner:
+
+```powershell
+.\update.cmd -InstallPath C:\AtlasBalance -PromptForDbOwnerCredentials
+```
+
+Si el usuario owner no es `atlas_balance_owner`, indica el nombre:
+
+```powershell
+.\update.cmd -InstallPath C:\AtlasBalance -PromptForDbOwnerCredentials -DbOwnerUser nombre_owner
+```
+
+El prompt pedira la password en consola segura. No la pegues en comandos, chats ni documentos.
 
 Si la instalacion ya tiene los scripts actualizados, tambien vale:
 

@@ -1,5 +1,49 @@
 # Documentacion tecnica
 
+## 2026-06-01 - V-01.09 - Fallbacks de backup para updates desde instalaciones antiguas
+
+### Que cambio
+
+- `Actualizar-AtlasBalance.ps1` mantiene `ConnectionStrings:MigrationConnection` como primera opcion para `pg_dump`.
+- Si falta, acepta una conexion completa en `ATLAS_DB_MIGRATION_CONNECTION` o `ATLAS_BALANCE_MIGRATION_CONNECTION`.
+- Si solo se necesita cambiar usuario/password sobre la misma base, acepta `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD` o `ATLAS_BALANCE_DB_OWNER_USER`/`ATLAS_BALANCE_DB_OWNER_PASSWORD`.
+- Si existe `C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt`, el script puede recuperar de ahi el usuario/password de migracion/owner sin imprimirlos.
+- Para actualizacion manual, `update.cmd -PromptForDbOwnerCredentials` pide usuario owner y password en consola segura antes de ejecutar `pg_dump`.
+- `update.ps1` propaga ese modo aunque tenga que elevarse por UAC.
+- `appsettings.Production.json.template` del Watchdog incluye de nuevo `DbOwnerUser` y `DbOwnerPassword`.
+
+### Por que
+
+El primer fix asumio que las instalaciones `V-01.06` sin `MigrationConnection` si tendrian credenciales owner en Watchdog. Eso era demasiado optimista. Una instalacion hecha desde plantilla o modificada a mano puede no tenerlas, y entonces el actualizador vuelve a caer al usuario runtime. Con RLS/FORCE RLS, ese usuario no sirve para un dump completo. No es un fallo de PostgreSQL; es exactamente la proteccion haciendo su trabajo.
+
+### Regla operativa
+
+No uses `-SkipBackup` para saltar este problema salvo que ya tengas un backup probado y reciente. Actualizar sin backup porque falta una password es una apuesta mala con nombre tecnico.
+
+### Paquete local
+
+- ZIP: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`
+- Firma: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip.sig`
+- SHA-256 ZIP: `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`
+- SHA-256 firma: `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`
+- Verificacion local: `SIGNATURE_OK`
+- Publicacion GitHub: assets reemplazados en Release `V-01.09-win-x64` mediante GitHub REST API. `gh` no estaba instalado, asi que se uso la credencial local de Git y subida con `HttpClient`.
+
+## 2026-06-01 - V-01.09 - Backup de update compatible con V-01.06
+
+### Que cambio
+
+- `Actualizar-AtlasBalance.ps1` resuelve la conexion de backup con prioridad:
+  1. `ConnectionStrings:MigrationConnection`.
+  2. `WatchdogSettings.DbOwnerUser`/`DbOwnerPassword` del `watchdog/appsettings.Production.json`.
+  3. `ConnectionStrings:DefaultConnection` solo como ultimo recurso.
+- El fallback owner reutiliza `DbHost`, `DbPort` y `DbName` de Watchdog si existen; si faltan, toma host/puerto/base desde `DefaultConnection`.
+- Si solo queda `DefaultConnection` y `pg_dump` falla, el mensaje explica que RLS puede bloquear el backup completo y que faltan credenciales owner/migracion.
+
+### Por que
+
+Instalaciones `V-01.06` pueden no tener `MigrationConnection` en la API, pero si tienen credenciales owner en Watchdog. Usar el usuario runtime para `pg_dump` contra tablas con RLS/FORCE RLS puede fallar antes de actualizar, como ocurrio con `AUDITORIAS`. La solucion correcta es usar credencial owner para backup, no saltarse el backup.
+
 ## 2026-06-01 - V-01.09 - Rotacion de clave de firma de releases
 
 ### Que cambio
@@ -21,8 +65,8 @@ La clave privada anterior no esta en el repo ni en el entorno local. Eso es buen
 
 - ZIP: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`
 - Firma: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip.sig`
-- SHA-256 ZIP: `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`
-- SHA-256 firma: `C0AEF6FF1E2B5D79644CC5D934046691AFD4B95CC11571B74232E8E1D97DA5A4`
+- SHA-256 ZIP: `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`
+- SHA-256 firma: `19F9AE0197A7BB7F20E2DE0EBE87A9108B3E6D59922970466132DC2A27DC729E`
 - Verificacion local: `SIGNATURE_OK`
 
 ### Implicacion operativa

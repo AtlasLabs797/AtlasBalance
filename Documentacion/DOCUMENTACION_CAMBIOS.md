@@ -8,6 +8,94 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-01 - V-01.09 - Fix robusto update sin owner persistido
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se amplio `Actualizar-AtlasBalance.ps1` para instalaciones antiguas que no tienen `MigrationConnection` ni `DbOwnerUser`/`DbOwnerPassword` en Watchdog.
+- El backup pre-update ahora acepta `ATLAS_DB_MIGRATION_CONNECTION`, `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`, el archivo local `config/INSTALL_CREDENTIALS_ONCE.txt` si aun existe, o prompt seguro con `-PromptForDbOwnerCredentials`.
+- `update.ps1` propaga `-PromptForDbOwnerCredentials` y `-DbOwnerUser` tambien cuando eleva por UAC.
+- La plantilla productiva del Watchdog vuelve a declarar campos owner para que las instalaciones manuales no nazcan sin la credencial de backup.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Production.json.template`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- Parser PowerShell de `Actualizar-AtlasBalance.ps1`, `update.ps1` e `Instalar-AtlasBalance.ps1`.
+- Prueba estatica de fallback desde `INSTALL_CREDENTIALS_ONCE.txt`.
+- Prueba estatica de fallback por `ATLAS_DB_MIGRATION_CONNECTION`.
+- Prueba estatica de fallback por `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`.
+- `Build-Release.ps1 -Version V-01.09 -Runtime win-x64` con firma local.
+- Verificacion local RSA/SHA-256 de `.zip.sig`.
+- Comprobacion de que el ZIP contiene los scripts corregidos.
+- Intento de `gh release upload ... --clobber`: bloqueado porque `gh` no esta instalado.
+- Intento de leer credencial GitHub local con Git Credential Manager: bloqueado por timeout.
+- Push de rama `V-01.09` a GitHub.
+- Publicacion de assets por GitHub REST API con credencial local y `HttpClient` para el ZIP grande.
+- Verificacion de assets remotos en GitHub Release `V-01.09-win-x64`.
+
+**Resultado de verificacion:**
+- Parser PowerShell OK.
+- `CREDENTIAL_FILE_FALLBACK_OK`.
+- `ENV_FALLBACKS_OK`.
+- Paquete `AtlasBalance-V-01.09-win-x64.zip` regenerado y firmado localmente.
+- Firma local: `SIGNATURE_OK`.
+- SHA-256 ZIP: `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`.
+- SHA-256 firma: `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`.
+- ZIP contiene `PromptForDbOwnerCredentials` y fallback `ATLAS_DB_MIGRATION_CONNECTION` en los scripts empaquetados.
+- Commit `3cc47249` subido a `origin/V-01.09`.
+- GitHub Release `V-01.09-win-x64` actualizado con ZIP `102580181` bytes y firma `512` bytes.
+
+**Pendientes:**
+- Reintentar la actualizacion real en la instalacion afectada.
+
+---
+## 2026-06-01 - V-01.09 - Fix update V-01.06 sin MigrationConnection
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se corrigio `Actualizar-AtlasBalance.ps1` para que el backup pre-update no dependa solo de `ConnectionStrings:DefaultConnection`.
+- El actualizador ahora usa `ConnectionStrings:MigrationConnection` si existe.
+- Si una instalacion antigua no tiene `MigrationConnection`, usa `WatchdogSettings.DbOwnerUser` y `DbOwnerPassword` desde `watchdog/appsettings.Production.json`, conservando host/puerto/base desde Watchdog o desde `DefaultConnection`.
+- Si solo queda `DefaultConnection` y `pg_dump` falla, el error explica que faltan credenciales owner/migracion y que RLS puede bloquear backups completos.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+- `Documentacion/documentacion.md`
+
+**Comandos ejecutados:**
+- Parser PowerShell de `Actualizar-AtlasBalance.ps1`.
+- `Build-Release.ps1 -Version V-01.09 -Runtime win-x64` con firma.
+- Verificacion local de firma RSA/SHA-256.
+- `gh release upload V-01.09-win-x64 ... --clobber`.
+
+**Resultado de verificacion:**
+- `Actualizar-AtlasBalance.ps1 parse OK`.
+- Paquete `V-01.09-win-x64` regenerado y firmado.
+- Verificacion local de firma RSA/SHA-256: `SIGNATURE_OK`.
+- GitHub Release `V-01.09-win-x64` republicado como `latest` con assets corregidos.
+- SHA-256 ZIP corregido: `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`.
+- SHA-256 firma corregida: `19F9AE0197A7BB7F20E2DE0EBE87A9108B3E6D59922970466132DC2A27DC729E`.
+
+**Pendientes:**
+- Reintentar actualizacion en la instalacion `V-01.06` afectada con el paquete corregido.
+
+---
 ## 2026-06-01 - V-01.09 - Rotacion de clave de firma de release
 
 **Version:** V-01.09
@@ -47,8 +135,8 @@ Regla de trabajo desde ahora:
 - Parser PowerShell de `Build-Release.ps1`: OK tras cambiar a dist temporal y `api/wwwroot` publicado.
 - ZIP generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`.
 - Firma generada: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip.sig`.
-- SHA-256 ZIP: `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
-- SHA-256 firma: `C0AEF6FF1E2B5D79644CC5D934046691AFD4B95CC11571B74232E8E1D97DA5A4`.
+- SHA-256 ZIP: `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`.
+- SHA-256 firma: `19F9AE0197A7BB7F20E2DE0EBE87A9108B3E6D59922970466132DC2A27DC729E`.
 - Verificacion local de firma RSA/SHA-256 con clave publica nueva: `SIGNATURE_OK`.
 - GitHub Release `latest`: `https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-01.09-win-x64`.
 - Assets verificados en GitHub: `AtlasBalance-V-01.09-win-x64.zip` y `AtlasBalance-V-01.09-win-x64.zip.sig`.

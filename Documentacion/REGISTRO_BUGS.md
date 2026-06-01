@@ -28,13 +28,31 @@
 
 ## Cerrados
 
+### 2026-06-01 - V-01.09 - Cerrado - Update antiguo sin owner en Watchdog seguia cayendo a usuario runtime
+
+- Contexto: una instalacion `V-01.06` intento actualizar a `V-01.09` con el paquete corregido y `pg_dump` siguio fallando por RLS en `AUDITORIAS`.
+- Causa: la instalacion no tenia `MigrationConnection` ni credenciales owner en Watchdog; el primer fix no cubria esa variante.
+- Impacto: la actualizacion se bloqueaba antes de reemplazar binarios. La app quedaba sana en la version anterior, pero no podia avanzar sin intervencion.
+- Solucion: fallbacks adicionales para `ATLAS_DB_MIGRATION_CONNECTION`, `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`, `INSTALL_CREDENTIALS_ONCE.txt` y prompt seguro manual con `-PromptForDbOwnerCredentials`; plantilla Watchdog corregida.
+- Verificacion: parser PowerShell OK, pruebas estaticas de fallbacks OK, paquete local firmado con `SIGNATURE_OK`.
+- Estado: cerrado en codigo y publicado como asset en GitHub Release `V-01.09-win-x64`; pendiente probar en la instalacion afectada.
+
+### 2026-06-01 - V-01.09 - Cerrado - Update V-01.06 sin MigrationConnection fallaba en pg_dump por RLS
+
+- Contexto: una instalacion `V-01.06` intento actualizar a `V-01.09`; el backup pre-update fallo en `AUDITORIAS` por RLS/FORCE RLS.
+- Causa: `Actualizar-AtlasBalance.ps1` usaba solo `DefaultConnection` para `pg_dump`, pero instalaciones antiguas pueden no tener `MigrationConnection` en API.
+- Impacto: no se podia actualizar aunque la app estuviera sana; por suerte el fallo ocurria antes de tocar binarios.
+- Solucion: resolver conexion de backup con prioridad `MigrationConnection`, credenciales owner de Watchdog y ultimo fallback a `DefaultConnection` con error claro.
+- Verificacion: parser PowerShell OK; paquete `V-01.09-win-x64` regenerado, firmado, verificado como `SIGNATURE_OK` y republicado en GitHub Release `latest`.
+- Estado: cerrado en codigo y publicacion.
+
 ### 2026-06-01 - V-01.09 - Cerrado - Clave privada de firma de release perdida/no disponible
 
 - Contexto: se necesitaba publicar `V-01.09` como release latest firmado.
 - Causa: no habia `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en entorno, repo ni rutas locales razonables.
 - Impacto: no se podia generar `.zip.sig`; publicar unsigned romperia el actualizador online y seria una mala practica seria.
 - Solucion: rotar clave de firma con nuevo par RSA 4096, actualizar la publica en instalador/plantilla y hacer que `Build-Release.ps1` no dependa de `frontend/dist` ni del `wwwroot` fuente bloqueable.
-- Verificacion: `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local `SIGNATURE_OK`; SHA-256 ZIP `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
+- Verificacion: `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local `SIGNATURE_OK`; SHA-256 ZIP `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`.
 - Publicacion: GitHub Release `V-01.09-win-x64` publicado como `latest` con ZIP y `.sig`.
 - Pendiente operativo: cargar la nueva privada en GitHub Secret y guardar copia segura fuera del repo para futuros releases automatizados.
 - Estado: cerrado en codigo y publicacion.
@@ -200,7 +218,7 @@
 - Verificacion: `git check-ignore` confirma `Skills Curated/`, `TestResults/`, `*.p12`, `*.jks`, `*.cer` y `*.dump`; secret scan local 0 hallazgos.
 - Estado: cerrado.
 
-### 2026-05-19 - V-01.07 - Cerrado - Refinamiento UI/UX pre-entrega detecto semantica y estados engañosos
+### 2026-05-19 - V-01.07 - Cerrado - Refinamiento UI/UX pre-entrega detecto semantica y estados enga�osos
 
 - Contexto: revision UI/UX de pantallas, tablas, botones, checks, menus, modales y estados con skills de frontend y skills locales.
 - Causa:
@@ -239,7 +257,7 @@
 ### 2026-05-17 - V-01.07 - Cerrado - Recibos/facturas IA incluia cargos de tarjeta
 
 - Contexto: la suite backend sin Docker fallo porque el contexto IA de recibos/facturas sumaba `Cargo tarjeta comercio` junto a `Recibo luz factura`.
-- Causa: la categoria aceptaba `cargo` sin excluir tarjeta/TPV/datáfono.
+- Causa: la categoria aceptaba `cargo` sin excluir tarjeta/TPV/dat�fono.
 - Solucion: `ReceiptExcludedTerms` evita que cargos de tarjeta, prestamos o leasing inflen `RECIBOS/FACTURAS DETECTADOS`.
 - Verificacion: test focalizado OK y suite backend sin Testcontainers 242/242 OK.
 - Estado: cerrado.
@@ -315,7 +333,7 @@
 ### 2026-05-12 - V-01.06 - Cerrado - Hardening de estados feos, permisos y overflow UI
 
 - Contexto: subagentes detectaron estados vacios falsos, errores API escondidos, panel IA vacio sin permisos, acciones de revision ofrecidas a usuarios de solo lectura, limite silencioso de 500 movimientos y riesgo de overflow en tablas/selectores/importes.
-- Causa: la UI asumía datos felices y permisos uniformes; eso en finanzas es pedir que alguien lea una pantalla incompleta como si fuera verdad.
+- Causa: la UI asum�a datos felices y permisos uniformes; eso en finanzas es pedir que alguien lea una pantalla incompleta como si fuera verdad.
 - Solucion: extractor unico de errores API, estados de error/reintento, rollback de preferencias fallidas, paginacion real en cuenta, estados de permiso visibles, acciones de revision condicionadas por cuenta/titular y CSS defensivo para textos/importes/tablas grandes.
 - Verificacion: frontend lint OK, TypeScript OK, build frontend OK y `wwwroot` sincronizado 61/61 archivos.
 - Estado: cerrado.
@@ -771,7 +789,7 @@
 
 ### 2026-04-25 - V-01.05 - Reinstalacion reutilizaba PFX con password nueva
 
-- Contexto: reinstalar sobre `C:\AtlasBalance` existente podia dejar `AtlasBalance.API` parado con `CryptographicException: La contraseña de red especificada no es válida`.
+- Contexto: reinstalar sobre `C:\AtlasBalance` existente podia dejar `AtlasBalance.API` parado con `CryptographicException: La contrase�a de red especificada no es v�lida`.
 - Solucion: `Instalar-AtlasBalance.ps1` elimina `atlas-balance.pfx` y `atlas-balance.cer` existentes antes de generar un certificado HTTPS nuevo, evitando que el PFX viejo quede asociado a una password nueva en `appsettings.Production.json`.
 - Verificacion: diagnostico reproducido por traza de Windows Event Log; correccion revisada en el flujo `New-AtlasCertificate`.
 
@@ -855,7 +873,7 @@
 ### 2026-04-20 - V-01.02 - Secretos de desarrollo en archivos versionables
 
 - Contexto: `appsettings.json`, `appsettings` de Watchdog y `docker-compose.yml` contenian credenciales/defaults de desarrollo.
-- Solucion: se dejaron sin secretos versionables, se añadieron plantillas y `.env.example`, y el seed admin exige password configurada.
+- Solucion: se dejaron sin secretos versionables, se a�adieron plantillas y `.env.example`, y el seed admin exige password configurada.
 
 ### 2026-04-20 - V-01.02 - Version runtime antigua en seed y actualizaciones
 

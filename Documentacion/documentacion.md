@@ -193,7 +193,7 @@ Regla de oro: los datos viven en PostgreSQL, no en la carpeta `api`. Una actuali
 
 ### Actualizacion automatica desde la app
 
-Estado `V-01.09`: GitHub `latest` ya apunta a `V-01.09-win-x64` firmado. El boton puede descargar y aplicar el paquete completo: API, Watchdog, scripts, wrappers, `VERSION` y runtime. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
+Estado `V-01.09`: GitHub `latest` apunta al tag `V-01.09-win-x64` y sus assets ya fueron reemplazados con el ZIP corregido del fix de credenciales owner. Una instalacion antigua con Watchdog anterior al fix puede necesitar un primer `update.cmd` manual o una ruta puente, porque el Watchdog viejo no puede ejecutar el flujo nuevo que todavia no tiene.
 
 En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
 
@@ -271,6 +271,14 @@ El actualizador hace esto:
 8. Arranca servicios.
 9. La API aplica migraciones EF Core automaticamente al arrancar.
 10. Verifica `/api/health` con `curl.exe -k`.
+
+En instalaciones antiguas que no tengan `ConnectionStrings:MigrationConnection`, el actualizador usa las credenciales owner de `watchdog\appsettings.Production.json` para el backup previo. Si tampoco estan ahi, puede usar `ATLAS_DB_MIGRATION_CONNECTION`, `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`, `config\INSTALL_CREDENTIALS_ONCE.txt` si aun existe, o pedirlas con:
+
+```powershell
+.\update.cmd -InstallPath C:\AtlasBalance -PromptForDbOwnerCredentials
+```
+
+Usar el usuario runtime de la app contra tablas con RLS puede bloquear `pg_dump`; saltarse el backup seria peor.
 
 Si el health check falla, el actualizador restaura automaticamente los binarios anteriores desde `C:\AtlasBalance\backups\app_before_update_*`, vuelve a apuntar los servicios a esos binarios y falla con mensaje claro. Revisa servicios y logs antes de otro intento; repetir a ciegas es como reiniciar el incendio.
 

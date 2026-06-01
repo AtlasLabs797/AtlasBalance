@@ -1,5 +1,37 @@
 # Log de errores e incidencias
 
+## 2026-06-01 - V-01.09 - Update V-01.06 seguia fallando si Watchdog no tenia owner
+
+- Contexto: el paquete `V-01.09-win-x64` corregido seguia fallando en una instalacion `V-01.06` durante el backup previo.
+- Hallazgo confirmado:
+  - La instalacion no tenia `ConnectionStrings:MigrationConnection`.
+  - Tampoco tenia `WatchdogSettings.DbOwnerUser`/`DbOwnerPassword`.
+  - `pg_dump` volvia a usar `DefaultConnection` y chocaba contra RLS/FORCE RLS en `AUDITORIAS`.
+- Causa: el primer fix cubria instalaciones con owner persistido en Watchdog, pero no instalaciones antiguas/manuales sin esa credencial.
+- Solucion aplicada:
+  - `Actualizar-AtlasBalance.ps1` acepta `ATLAS_DB_MIGRATION_CONNECTION`.
+  - Tambien acepta `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`.
+  - Si existe `config/INSTALL_CREDENTIALS_ONCE.txt`, recupera de ahi la credencial owner sin imprimirla.
+  - Para actualizacion manual, `update.cmd -PromptForDbOwnerCredentials` pide la password owner en prompt seguro.
+  - `update.ps1` propaga el prompt al elevar por UAC.
+  - La plantilla productiva del Watchdog vuelve a incluir campos owner.
+- Verificacion: parser PowerShell OK; fallbacks estaticos OK para archivo de credenciales, conexion de migracion por entorno y owner por entorno; paquete local regenerado y firmado con `SIGNATURE_OK`.
+- Paquete local corregido: SHA-256 ZIP `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`; SHA-256 firma `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`.
+- Publicacion: paquete firmado republicado en GitHub Release `V-01.09-win-x64` mediante API REST; assets remotos verificados (`ZIP 102580181 bytes`, `.sig 512 bytes`).
+- Pendiente: reintentar en la instalacion afectada.
+
+## 2026-06-01 - V-01.09 - Update desde V-01.06 fallaba en backup por RLS sin MigrationConnection
+
+- Contexto: una instalacion `V-01.06` sana (`/api/health` OK) intento actualizar con `V-01.09-win-x64` y fallo antes de tocar binarios.
+- Hallazgo confirmado:
+  - `pg_dump` se ejecutaba con `ConnectionStrings:DefaultConnection`.
+  - La instalacion antigua no tenia `ConnectionStrings:MigrationConnection`.
+  - PostgreSQL bloqueo el dump de `AUDITORIAS` porque la consulta quedaba afectada por RLS/FORCE RLS.
+  - La instalacion quedo correctamente en `V-01.06`; el fallo ocurrio antes del reemplazo.
+- Causa: el actualizador no usaba las credenciales owner que si existen en `watchdog/appsettings.Production.json` (`WatchdogSettings.DbOwnerUser`/`DbOwnerPassword`) para el backup pre-update.
+- Solucion aplicada: `Actualizar-AtlasBalance.ps1` resuelve la conexion de backup en este orden: `MigrationConnection`, owner de `WatchdogSettings`, y solo como ultimo recurso `DefaultConnection` con error explicito si `pg_dump` falla.
+- Verificacion: parser PowerShell OK; paquete `V-01.09-win-x64` regenerado, firmado, verificado como `SIGNATURE_OK` y republicado en GitHub Release `latest`. SHA-256 ZIP `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`.
+
 ## 2026-06-01 - V-01.09 - Clave privada de firma de release no disponible
 
 - Contexto: se pidio publicar el paquete release como latest, pero el entorno no tenia `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
@@ -14,7 +46,7 @@
   - Private key nueva dejada fuera de Git en `tmp-release-signing-key/atlas-release-private.pem`.
   - `Build-Release.ps1` deja de depender de limpiar `frontend/dist`; usa salida temporal propia del release.
   - El script tambien deja de borrar/escribir `backend/src/AtlasBalance.API/wwwroot`; copia los assets al `api/wwwroot` ya publicado dentro del paquete.
-- Verificacion: paquete `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local verificada como `SIGNATURE_OK`; SHA-256 ZIP `B7E93C5EDFB3CFED9458258BB2674E4721944DE89D983C983E4848A85E2A93FE`.
+- Verificacion: paquete `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` generados; firma local verificada como `SIGNATURE_OK`; SHA-256 ZIP `A1F6D5A6BBEFAD7C05C8CBFBB09046A5B9C9F5DBCE5E5E1FB0D7DA41DC7E8061`.
 - Publicacion: tras autenticar GitHub CLI, `V-01.09-win-x64` quedo publicado como GitHub Release `latest` con ZIP y `.sig`.
 - Pendiente: copiar la private key a GitHub Secret `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` y guardarla en un gestor de secretos.
 - Regla: la clave privada no se pega en chat, docs ni commits. Nunca.

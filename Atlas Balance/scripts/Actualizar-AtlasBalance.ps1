@@ -1,6 +1,8 @@
 param(
     [string]$InstallPath = "C:\AtlasBalance",
-    [switch]$SkipBackup
+    [switch]$SkipBackup,
+    [switch]$PromptForDbOwnerCredentials,
+    [string]$DbOwnerUser = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +13,21 @@ function Test-IsAdmin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Convert-SecureStringToPlain {
+    param([Security.SecureString]$Value)
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    }
 }
 
 function Get-RelativePathCompat {
@@ -88,6 +105,220 @@ function Parse-ConnectionString {
         Username = if ($map.ContainsKey("username")) { $map["username"] } elseif ($map.ContainsKey("user id")) { $map["user id"] } else { "atlas_balance_app" }
         Password = if ($map.ContainsKey("password")) { $map["password"] } else { "" }
     }
+}
+
+function Get-ConfigValue {
+    param([object]$Object, [string]$Name)
+
+    if ($null -eq $Object) {
+        return $null
+    }
+
+    $property = $Object.PSObject.Properties[$Name]
+    if ($property) {
+        return $property.Value
+    }
+
+    return $null
+}
+
+function Get-EnvironmentValue {
+    param([string[]]$Names)
+
+    foreach ($target in @(
+        [EnvironmentVariableTarget]::Process,
+        [EnvironmentVariableTarget]::User,
+        [EnvironmentVariableTarget]::Machine
+    )) {
+        foreach ($name in $Names) {
+            $value = [Environment]::GetEnvironmentVariable($name, $target)
+            if (-not [string]::IsNullOrWhiteSpace($value)) {
+                return $value
+            }
+        }
+    }
+
+    return ""
+}
+
+function Read-InstallCredentialValue {
+    param([string]$InstallPath, [string]$LabelPrefix)
+
+    $credentialsPath = Join-Path (Join-Path $InstallPath "config") "INSTALL_CREDENTIALS_ONCE.txt"
+    if (-not (Test-Path -LiteralPath $credentialsPath)) {
+        return ""
+    }
+
+    foreach ($line in Get-Content -LiteralPath $credentialsPath -ErrorAction SilentlyContinue) {
+        if ($line -like "$LabelPrefix*") {
+            $separator = $line.IndexOf(":")
+            if ($separator -ge 0) {
+                return $line.Substring($separator + 1).Trim()
+            }
+        }
+    }
+
+    return ""
+}
+
+function New-OwnerConnection {
+    param(
+        [object]$BaseConnection,
+        [object]$WatchdogSettings,
+        [string]$OwnerUser,
+        [string]$OwnerPassword,
+        [string]$Source
+    )
+
+    $dbHost = Get-ConfigValue -Object $WatchdogSettings -Name "DbHost"
+    $dbPort = Get-ConfigValue -Object $WatchdogSettings -Name "DbPort"
+    $dbName = Get-ConfigValue -Object $WatchdogSettings -Name "DbName"
+
+    return [ordered]@{
+        Host = if ([string]::IsNullOrWhiteSpace([string]$dbHost)) { $BaseConnection.Host } else { [string]$dbHost }
+        Port = if ([string]::IsNullOrWhiteSpace([string]$dbPort)) { $BaseConnection.Port } else { [string]$dbPort }
+        Database = if ([string]::IsNullOrWhiteSpace([string]$dbName)) { $BaseConnection.Database } else { [string]$dbName }
+        Username = [string]$OwnerUser
+        Password = [string]$OwnerPassword
+        Source = $Source
+    }
+}
+
+function Get-ExplicitOwnerCredentials {
+    $ownerUser = $DbOwnerUser
+    if ([string]::IsNullOrWhiteSpace($ownerUser)) {
+        $ownerUser = Get-EnvironmentValue -Names @("ATLAS_DB_OWNER_USER", "ATLAS_BALANCE_DB_OWNER_USER")
+    }
+
+    $ownerPassword = Get-EnvironmentValue -Names @("ATLAS_DB_OWNER_PASSWORD", "ATLAS_BALANCE_DB_OWNER_PASSWORD")
+    if (-not [string]::IsNullOrWhiteSpace($ownerUser) -and
+        -not [string]::IsNullOrWhiteSpace($ownerPassword)) {
+        return [ordered]@{
+            Username = [string]$ownerUser
+            Password = [string]$ownerPassword
+            Source = "param/env owner credentials"
+        }
+    }
+
+    return $null
+}
+
+function Get-InstallFileOwnerCredentials {
+    param([string]$InstallPath)
+
+    $ownerUser = Read-InstallCredentialValue -InstallPath $InstallPath -LabelPrefix "Usuario DB migraci"
+    $ownerPassword = Read-InstallCredentialValue -InstallPath $InstallPath -LabelPrefix "Password DB migraci"
+    if (-not [string]::IsNullOrWhiteSpace($ownerUser) -and
+        -not [string]::IsNullOrWhiteSpace($ownerPassword)) {
+        return [ordered]@{
+            Username = [string]$ownerUser
+            Password = [string]$ownerPassword
+            Source = "INSTALL_CREDENTIALS_ONCE.txt"
+        }
+    }
+
+    return $null
+}
+
+function Request-OwnerCredentials {
+    if (-not $PromptForDbOwnerCredentials) {
+        return $null
+    }
+
+    $ownerUser = $DbOwnerUser
+    if ([string]::IsNullOrWhiteSpace($ownerUser)) {
+        $enteredUser = Read-Host "Usuario PostgreSQL owner/migracion [atlas_balance_owner]"
+        $ownerUser = if ([string]::IsNullOrWhiteSpace($enteredUser)) { "atlas_balance_owner" } else { $enteredUser.Trim() }
+    }
+
+    $ownerPassword = Convert-SecureStringToPlain (Read-Host "Password PostgreSQL owner/migracion" -AsSecureString)
+    if (-not [string]::IsNullOrWhiteSpace($ownerUser) -and
+        -not [string]::IsNullOrWhiteSpace($ownerPassword)) {
+        return [ordered]@{
+            Username = [string]$ownerUser
+            Password = [string]$ownerPassword
+            Source = "interactive owner credentials"
+        }
+    }
+
+    return $null
+}
+
+function Resolve-BackupConnection {
+    param(
+        [object]$ApiConfig,
+        [object]$WatchdogConfig,
+        [string]$InstallPath
+    )
+
+    $connectionStrings = Get-ConfigValue -Object $ApiConfig -Name "ConnectionStrings"
+    $migrationConnection = Get-ConfigValue -Object $connectionStrings -Name "MigrationConnection"
+    if (-not [string]::IsNullOrWhiteSpace([string]$migrationConnection)) {
+        $connection = Parse-ConnectionString -ConnectionString ([string]$migrationConnection)
+        $connection["Source"] = "MigrationConnection"
+        return $connection
+    }
+
+    $environmentMigrationConnection = Get-EnvironmentValue -Names @("ATLAS_DB_MIGRATION_CONNECTION", "ATLAS_BALANCE_MIGRATION_CONNECTION")
+    if (-not [string]::IsNullOrWhiteSpace([string]$environmentMigrationConnection)) {
+        $connection = Parse-ConnectionString -ConnectionString ([string]$environmentMigrationConnection)
+        $connection["Source"] = "environment MigrationConnection"
+        return $connection
+    }
+
+    $defaultConnectionRaw = Get-ConfigValue -Object $connectionStrings -Name "DefaultConnection"
+    if ([string]::IsNullOrWhiteSpace([string]$defaultConnectionRaw)) {
+        throw "appsettings.Production.json no contiene ConnectionStrings:DefaultConnection."
+    }
+
+    $defaultConnection = Parse-ConnectionString -ConnectionString ([string]$defaultConnectionRaw)
+    $watchdogSettings = Get-ConfigValue -Object $WatchdogConfig -Name "WatchdogSettings"
+
+    $explicitOwner = Get-ExplicitOwnerCredentials
+    if ($null -ne $explicitOwner) {
+        return New-OwnerConnection `
+            -BaseConnection $defaultConnection `
+            -WatchdogSettings $watchdogSettings `
+            -OwnerUser $explicitOwner.Username `
+            -OwnerPassword $explicitOwner.Password `
+            -Source $explicitOwner.Source
+    }
+
+    $ownerUser = Get-ConfigValue -Object $watchdogSettings -Name "DbOwnerUser"
+    $ownerPassword = Get-ConfigValue -Object $watchdogSettings -Name "DbOwnerPassword"
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$ownerUser) -and
+        -not [string]::IsNullOrWhiteSpace([string]$ownerPassword)) {
+        return New-OwnerConnection `
+            -BaseConnection $defaultConnection `
+            -WatchdogSettings $watchdogSettings `
+            -OwnerUser ([string]$ownerUser) `
+            -OwnerPassword ([string]$ownerPassword) `
+            -Source "WatchdogSettings.DbOwnerUser"
+    }
+
+    $installFileOwner = Get-InstallFileOwnerCredentials -InstallPath $InstallPath
+    if ($null -ne $installFileOwner) {
+        return New-OwnerConnection `
+            -BaseConnection $defaultConnection `
+            -WatchdogSettings $watchdogSettings `
+            -OwnerUser $installFileOwner.Username `
+            -OwnerPassword $installFileOwner.Password `
+            -Source $installFileOwner.Source
+    }
+
+    $promptOwner = Request-OwnerCredentials
+    if ($null -ne $promptOwner) {
+        return New-OwnerConnection `
+            -BaseConnection $defaultConnection `
+            -WatchdogSettings $watchdogSettings `
+            -OwnerUser $promptOwner.Username `
+            -OwnerPassword $promptOwner.Password `
+            -Source $promptOwner.Source
+    }
+
+    $defaultConnection["Source"] = "DefaultConnection"
+    return $defaultConnection
 }
 
 function Find-PostgresDump {
@@ -194,7 +425,7 @@ function Backup-Database {
         [string]$Version
     )
 
-    $connection = Parse-ConnectionString -ConnectionString $ApiConfig.ConnectionStrings.DefaultConnection
+    $connection = Resolve-BackupConnection -ApiConfig $ApiConfig -WatchdogConfig $WatchdogConfig -InstallPath $InstallPath
     $pgDump = Find-PostgresDump -ConfiguredBinPath $WatchdogConfig.WatchdogSettings.PostgresBinPath
     if ([string]::IsNullOrWhiteSpace($pgDump)) {
         throw "No se encontro pg_dump.exe. No actualizo sin backup."
@@ -219,7 +450,11 @@ function Backup-Database {
             $connection.Database
 
         if ($LASTEXITCODE -ne 0) {
-            throw "pg_dump devolvio codigo $LASTEXITCODE"
+            if ($connection.Source -eq "DefaultConnection") {
+                throw "pg_dump devolvio codigo $LASTEXITCODE. No hay MigrationConnection ni credenciales owner/migracion disponibles. Ejecuta update.cmd -PromptForDbOwnerCredentials o define ATLAS_DB_MIGRATION_CONNECTION antes de actualizar. El usuario runtime puede quedar bloqueado por RLS y no sirve para un backup completo."
+            }
+
+            throw "pg_dump devolvio codigo $LASTEXITCODE usando $($connection.Source)"
         }
     } finally {
         $env:PGPASSWORD = $previousPassword
