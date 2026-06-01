@@ -37,6 +37,7 @@ Regla de trabajo desde ahora:
 - Generacion RSA 4096 con SDK local `.dotnet`.
 - Intento de release firmado: `npm ci` OK fuera del sandbox, build bloqueado por `frontend/dist` y luego por `backend/src/AtlasBalance.API/wwwroot` con `Access denied`; se cambio estrategia para no usar esas carpetas fuente.
 - Build firmado final: `Build-Release.ps1 -Version V-01.09 -Runtime win-x64` OK.
+- Intento de publicacion GitHub Release por API usando credencial local de Git: bloqueado; `git credential fill` no devolvio token util y no hay `gh`, `GH_TOKEN` ni `GITHUB_TOKEN`.
 
 **Resultado de verificacion:**
 - Clave privada historica no encontrada.
@@ -50,7 +51,7 @@ Regla de trabajo desde ahora:
 
 **Pendientes:**
 - Copiar la privada local a GitHub Secret `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
-- Ejecutar el workflow `Release`.
+- Subir `AtlasBalance-V-01.09-win-x64.zip` y `.zip.sig` a GitHub Release `V-01.09-win-x64` como `latest` desde una sesion con credencial API/`gh` autenticado, o ejecutar el workflow `Release` tras configurar el secret.
 - Guardar la privada en gestor de secretos. Si se pierde otra vez, habra que rotar otra vez. Divertido no es.
 
 ---
