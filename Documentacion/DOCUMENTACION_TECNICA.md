@@ -1,5 +1,34 @@
 # Documentacion tecnica
 
+## 2026-06-01 - V-01.09 - Fallbacks de backup para updates desde instalaciones antiguas
+
+### Que cambio
+
+- `Actualizar-AtlasBalance.ps1` mantiene `ConnectionStrings:MigrationConnection` como primera opcion para `pg_dump`.
+- Si falta, acepta una conexion completa en `ATLAS_DB_MIGRATION_CONNECTION` o `ATLAS_BALANCE_MIGRATION_CONNECTION`.
+- Si solo se necesita cambiar usuario/password sobre la misma base, acepta `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD` o `ATLAS_BALANCE_DB_OWNER_USER`/`ATLAS_BALANCE_DB_OWNER_PASSWORD`.
+- Si existe `C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt`, el script puede recuperar de ahi el usuario/password de migracion/owner sin imprimirlos.
+- Para actualizacion manual, `update.cmd -PromptForDbOwnerCredentials` pide usuario owner y password en consola segura antes de ejecutar `pg_dump`.
+- `update.ps1` propaga ese modo aunque tenga que elevarse por UAC.
+- `appsettings.Production.json.template` del Watchdog incluye de nuevo `DbOwnerUser` y `DbOwnerPassword`.
+
+### Por que
+
+El primer fix asumio que las instalaciones `V-01.06` sin `MigrationConnection` si tendrian credenciales owner en Watchdog. Eso era demasiado optimista. Una instalacion hecha desde plantilla o modificada a mano puede no tenerlas, y entonces el actualizador vuelve a caer al usuario runtime. Con RLS/FORCE RLS, ese usuario no sirve para un dump completo. No es un fallo de PostgreSQL; es exactamente la proteccion haciendo su trabajo.
+
+### Regla operativa
+
+No uses `-SkipBackup` para saltar este problema salvo que ya tengas un backup probado y reciente. Actualizar sin backup porque falta una password es una apuesta mala con nombre tecnico.
+
+### Paquete local
+
+- ZIP: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`
+- Firma: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip.sig`
+- SHA-256 ZIP: `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`
+- SHA-256 firma: `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`
+- Verificacion local: `SIGNATURE_OK`
+- Publicacion GitHub: pendiente; `gh` no esta instalado en esta maquina y no hay token disponible para subir assets por API.
+
 ## 2026-06-01 - V-01.09 - Backup de update compatible con V-01.06
 
 ### Que cambio

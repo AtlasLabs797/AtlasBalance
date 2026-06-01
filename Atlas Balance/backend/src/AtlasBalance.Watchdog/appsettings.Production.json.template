@@ -8,6 +8,8 @@
     "DbHost": "localhost",
     "DbPort": "5432",
     "DbName": "atlas_balance",
+    "DbOwnerUser": "atlas_balance_owner",
+    "DbOwnerPassword": "CAMBIAR_PASSWORD_OWNER_AQUI",
     "DbUser": "atlas_balance_app",
     "DbPassword": "CAMBIAR_PASSWORD_POSTGRES_AQUI",
     "DockerPostgresContainer": "atlas_balance_db",

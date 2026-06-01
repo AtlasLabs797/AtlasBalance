@@ -1,5 +1,24 @@
 # Log de errores e incidencias
 
+## 2026-06-01 - V-01.09 - Update V-01.06 seguia fallando si Watchdog no tenia owner
+
+- Contexto: el paquete `V-01.09-win-x64` corregido seguia fallando en una instalacion `V-01.06` durante el backup previo.
+- Hallazgo confirmado:
+  - La instalacion no tenia `ConnectionStrings:MigrationConnection`.
+  - Tampoco tenia `WatchdogSettings.DbOwnerUser`/`DbOwnerPassword`.
+  - `pg_dump` volvia a usar `DefaultConnection` y chocaba contra RLS/FORCE RLS en `AUDITORIAS`.
+- Causa: el primer fix cubria instalaciones con owner persistido en Watchdog, pero no instalaciones antiguas/manuales sin esa credencial.
+- Solucion aplicada:
+  - `Actualizar-AtlasBalance.ps1` acepta `ATLAS_DB_MIGRATION_CONNECTION`.
+  - Tambien acepta `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`.
+  - Si existe `config/INSTALL_CREDENTIALS_ONCE.txt`, recupera de ahi la credencial owner sin imprimirla.
+  - Para actualizacion manual, `update.cmd -PromptForDbOwnerCredentials` pide la password owner en prompt seguro.
+  - `update.ps1` propaga el prompt al elevar por UAC.
+  - La plantilla productiva del Watchdog vuelve a incluir campos owner.
+- Verificacion: parser PowerShell OK; fallbacks estaticos OK para archivo de credenciales, conexion de migracion por entorno y owner por entorno; paquete local regenerado y firmado con `SIGNATURE_OK`.
+- Paquete local corregido: SHA-256 ZIP `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`; SHA-256 firma `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`.
+- Pendiente: republicar el paquete firmado en GitHub Release `V-01.09-win-x64` y reintentar en la instalacion afectada. Publicacion bloqueada localmente porque `gh` no esta instalado y no hay token GitHub disponible.
+
 ## 2026-06-01 - V-01.09 - Update desde V-01.06 fallaba en backup por RLS sin MigrationConnection
 
 - Contexto: una instalacion `V-01.06` sana (`/api/health` OK) intento actualizar con `V-01.09-win-x64` y fallo antes de tocar binarios.

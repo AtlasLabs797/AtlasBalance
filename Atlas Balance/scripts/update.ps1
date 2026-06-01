@@ -1,7 +1,9 @@
 param(
     [string]$PackagePath = "",
     [string]$InstallPath = "C:\AtlasBalance",
-    [switch]$SkipBackup
+    [switch]$SkipBackup,
+    [switch]$PromptForDbOwnerCredentials,
+    [string]$DbOwnerUser = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,6 +53,12 @@ if (-not (Test-IsAdmin)) {
     if ($SkipBackup) {
         $argumentList += "-SkipBackup"
     }
+    if ($PromptForDbOwnerCredentials) {
+        $argumentList += "-PromptForDbOwnerCredentials"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($DbOwnerUser)) {
+        $argumentList += @("-DbOwnerUser", (Quote-Argument $DbOwnerUser))
+    }
 
     Start-Process -FilePath "powershell.exe" -ArgumentList ($argumentList -join " ") -Verb RunAs | Out-Null
     exit 0
@@ -59,6 +67,12 @@ if (-not (Test-IsAdmin)) {
 $updaterArgs = @("-InstallPath", $InstallPath)
 if ($SkipBackup) {
     $updaterArgs += "-SkipBackup"
+}
+if ($PromptForDbOwnerCredentials) {
+    $updaterArgs += "-PromptForDbOwnerCredentials"
+}
+if (-not [string]::IsNullOrWhiteSpace($DbOwnerUser)) {
+    $updaterArgs += @("-DbOwnerUser", $DbOwnerUser)
 }
 
 & $updater @updaterArgs

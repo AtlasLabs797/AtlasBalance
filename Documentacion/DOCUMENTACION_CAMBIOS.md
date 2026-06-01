@@ -8,6 +8,53 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-01 - V-01.09 - Fix robusto update sin owner persistido
+
+**Version:** V-01.09
+
+**Trabajo realizado:**
+- Se amplio `Actualizar-AtlasBalance.ps1` para instalaciones antiguas que no tienen `MigrationConnection` ni `DbOwnerUser`/`DbOwnerPassword` en Watchdog.
+- El backup pre-update ahora acepta `ATLAS_DB_MIGRATION_CONNECTION`, `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`, el archivo local `config/INSTALL_CREDENTIALS_ONCE.txt` si aun existe, o prompt seguro con `-PromptForDbOwnerCredentials`.
+- `update.ps1` propaga `-PromptForDbOwnerCredentials` y `-DbOwnerUser` tambien cuando eleva por UAC.
+- La plantilla productiva del Watchdog vuelve a declarar campos owner para que las instalaciones manuales no nazcan sin la credencial de backup.
+
+**Archivos tocados:**
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/update.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Production.json.template`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-01.09.md`
+
+**Comandos ejecutados:**
+- Parser PowerShell de `Actualizar-AtlasBalance.ps1`, `update.ps1` e `Instalar-AtlasBalance.ps1`.
+- Prueba estatica de fallback desde `INSTALL_CREDENTIALS_ONCE.txt`.
+- Prueba estatica de fallback por `ATLAS_DB_MIGRATION_CONNECTION`.
+- Prueba estatica de fallback por `ATLAS_DB_OWNER_USER`/`ATLAS_DB_OWNER_PASSWORD`.
+- `Build-Release.ps1 -Version V-01.09 -Runtime win-x64` con firma local.
+- Verificacion local RSA/SHA-256 de `.zip.sig`.
+- Comprobacion de que el ZIP contiene los scripts corregidos.
+- Intento de `gh release upload ... --clobber`: bloqueado porque `gh` no esta instalado.
+- Intento de leer credencial GitHub local con Git Credential Manager: bloqueado por timeout.
+
+**Resultado de verificacion:**
+- Parser PowerShell OK.
+- `CREDENTIAL_FILE_FALLBACK_OK`.
+- `ENV_FALLBACKS_OK`.
+- Paquete `AtlasBalance-V-01.09-win-x64.zip` regenerado y firmado localmente.
+- Firma local: `SIGNATURE_OK`.
+- SHA-256 ZIP: `4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128`.
+- SHA-256 firma: `E0CFAC2276D5AED379E5492DCC7E5B1A8FDE583525B5E3659D08AF7C239DD374`.
+- ZIP contiene `PromptForDbOwnerCredentials` y fallback `ATLAS_DB_MIGRATION_CONNECTION` en los scripts empaquetados.
+
+**Pendientes:**
+- Republicar el ZIP firmado `V-01.09-win-x64` para que GitHub `latest` incluya este segundo fix. En esta maquina falta `gh` o un token GitHub util para subir assets.
+- Reintentar la actualizacion real en la instalacion afectada.
+
+---
 ## 2026-06-01 - V-01.09 - Fix update V-01.06 sin MigrationConnection
 
 **Version:** V-01.09
