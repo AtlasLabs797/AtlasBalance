@@ -8,6 +8,87 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-08 - V-02-02 - Actualizador, MFA recordado, IA/OpenRouter y pais
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- `version-disponible` ahora separa `actualizacion_disponible` de `instalable` y devuelve bloqueos accionables: ZIP oficial, firma `.sig`, digest SHA-256, clave publica y Watchdog local.
+- `Actualizar ahora` y auto-update solo arrancan si el preflight es instalable; se mantiene el repo oficial de GitHub como unica fuente online.
+- MFA recordado pasa a dispositivos persistidos en `MFA_TRUSTED_DEVICES` con token opaco hasheado, expiracion de 90 dias, `security_stamp`, revocacion y listado/revocacion por API.
+- Logout deja de borrar `mfa_trusted`; cambiar password, revocar MFA o rotar `security_stamp` invalida dispositivos recordados.
+- OpenRouter deja de usar allowlist fija: acepta cualquier model id sintacticamente valido y manda el modelo exacto, con `openrouter/auto` conservado.
+- Nuevo `GET /api/ia/modelos?provider=OPENROUTER&search=` con cache corta sobre `/api/v1/models`.
+- Render IA mejorado para listas, tablas Markdown, bloques de codigo y JSON simple sin HTML crudo.
+- Se agrega catalogo `PAISES`, `CUENTAS.pais_id`, CRUD `/api/paises`, filtro `paisId` en cuentas/dashboard y agregado `saldos_por_pais`.
+- Frontend actualizado para paises, modelos OpenRouter libres y estado de instalabilidad del updater.
+
+**Archivos tocados:**
+- Backend API: entidades, `AppDbContext`, migracion `20260608120000_AddPaisAndMfaTrustedDevices`, controladores Auth/Sistema/Cuentas/Dashboard/IA/Paises, servicios Auth/Actualizacion/AtlasAi/Dashboard/Watchdog.
+- Frontend: tipos, store de update, configuracion, chat IA, cuentas, dashboard principal/titular, detalle de cuenta, estilos.
+- Tests backend: auth, updater, auto-update, dashboard e IA.
+- Documentacion de version, cambios, tecnica, usuario y registro de bugs.
+
+**Comandos ejecutados:**
+- Lectura obligatoria: `CLAUDE.md`, `version_actual.md`, `v-02-02.md`, `LOG_ERRORES_INCIDENCIAS.md`, `SKILLS_LOCALES.md`.
+- Barridos `rg` sobre Auth/MFA, updater, OpenRouter/IA, cuentas/dashboard/paises y contratos frontend.
+- Verificacion oficial consultada: OpenRouter Chat Completions, OpenRouter Models API, GitHub Releases API y GitHub release asset digest.
+
+**Resultado de verificacion:**
+- `git diff --check`: OK, solo avisos CRLF esperados en Windows.
+- `npm ci`: primer intento bloqueado por sandbox/red; reintento aprobado fuera del sandbox OK, 0 vulnerabilidades npm.
+- `npm run build` en `Atlas Balance/frontend`: OK (`tsc && vite build`).
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe restore AtlasBalance.API.csproj`: OK con warning `NU1900` por no poder consultar vulnerabilidades en `https://api.nuget.org/v3/index.json`.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe build AtlasBalance.API.csproj --no-restore`: OK. Warnings: `NU1900` y obsoleto preexistente de Hangfire/PostgreSQL.
+- Tests focalizados con SDK local: `ActualizacionServiceTests|AutoUpdateJobTests|AuthServiceTests|AuthControllerTests|AtlasAiServiceTests|DashboardServiceTests|ManualProcessResponseTests`: 122/122 OK.
+
+**Pendientes:**
+- No se ejecutaron tests Docker/Testcontainers; si el release exige RLS/concurrencia PostgreSQL real, ese bloque sigue siendo gate separado.
+
+---
+## 2026-06-08 - V-02-02 - Apertura de version y rama
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se creo la rama local `V-02-02`.
+- Se actualizo `Documentacion/Versiones/version_actual.md` para declarar `V-02-02` como version activa.
+- Se creo `Documentacion/Versiones/v-02-02.md` con `V-01.09` como base anterior.
+- Se alinearon las fuentes runtime y scripts de release con `V-02-02` / `2.2.0`.
+
+**Archivos tocados:**
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/README_RELEASE.md`
+- `Atlas Balance/AGENTS.md`
+- `Atlas Balance/CLAUDE.md`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `git status --short --branch`
+- `git branch --list V-02-02`
+- `git switch -c V-02-02`
+- Lectura de `CLAUDE.md`, `version_actual.md`, `v-01.09.md` y fuentes runtime.
+- `rg` de referencias activas a `V-01.09` / `1.9.0`.
+- `git diff --check`
+
+**Resultado de verificacion:**
+- Rama local `V-02-02` creada.
+- Barrido `rg` confirma que no quedan referencias activas a `V-01.09` / `1.9.0` fuera de documentacion historica excluida.
+- Fuentes activas localizadas con `V-02-02` / `2.2.0`: `VERSION`, `Directory.Build.props`, `package.json`, `package-lock.json`, `version_actual.md` y `v-02-02.md`.
+- `git diff --check`: OK; solo avisos CRLF normales en Windows.
+
+**Pendientes:**
+- Ninguno funcional; no se ejecutan builds/tests porque el cambio es de versionado y documentacion.
+
+---
 ## 2026-06-01 - V-01.09 - Fix robusto update sin owner persistido
 
 **Version:** V-01.09

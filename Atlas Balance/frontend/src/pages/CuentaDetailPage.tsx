@@ -699,6 +699,12 @@ export default function CuentaDetailPage() {
                 {bankLabel}
               </dd>
             </div>
+            <div>
+              <dt>País</dt>
+              <dd className={summary.pais_nombre ? undefined : 'account-identity-value--muted'}>
+                {summary.pais_nombre || 'Sin pais'}
+              </dd>
+            </div>
             <div className="account-identity-iban">
               <dt>IBAN</dt>
               <dd className={hasIban ? undefined : 'account-identity-value--muted'}>{formatIban(summary.iban)}</dd>

@@ -712,6 +712,13 @@ public sealed class UsuariosController : ControllerBase
         usuario.MfaEnabledAt = null;
         usuario.MfaLastAcceptedStep = null;
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, revokedAt, cancellationToken);
+        var trustedDevices = await _dbContext.MfaTrustedDevices
+            .Where(x => x.UsuarioId == usuario.Id && x.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var trustedDevice in trustedDevices)
+        {
+            trustedDevice.RevokedAt = revokedAt;
+        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -729,7 +736,7 @@ public sealed class UsuariosController : ControllerBase
             "USUARIOS",
             usuario.Id,
             HttpContext,
-            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }),
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens, dispositivos_mfa_revocados = trustedDevices.Count }),
             cancellationToken);
 
         return Ok(new { message = "Authenticator revocado. El usuario tendra que configurarlo de nuevo en el proximo acceso." });

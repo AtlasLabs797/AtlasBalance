@@ -87,11 +87,22 @@ public sealed class ActualizacionService : IActualizacionService
             }
 
             var hasUpdate = CompareVersions(versionActual, payload.Version) < 0;
+            var preflight = hasUpdate
+                ? await BuildUpdatePreflightAsync(payload, cancellationToken)
+                : UpdatePreflight.Empty;
             return new VersionDisponibleResponse
             {
                 VersionActual = versionActual,
                 VersionDisponible = payload.Version,
                 ActualizacionDisponible = hasUpdate,
+                Instalable = hasUpdate && preflight.Instalable,
+                Bloqueos = preflight.Bloqueos,
+                AssetZipNombre = payload.AssetName,
+                AssetZipDetectado = preflight.AssetZipDetectado,
+                FirmaDetectada = preflight.FirmaDetectada,
+                DigestPresente = preflight.DigestPresente,
+                ClavePublicaConfigurada = preflight.ClavePublicaConfigurada,
+                WatchdogDisponible = preflight.WatchdogDisponible,
                 Mensaje = hasUpdate
                     ? $"Actualización disponible: {payload.Version}. Revisa el paquete antes de instalar."
                     : "El sistema ya está actualizado."
@@ -114,6 +125,13 @@ public sealed class ActualizacionService : IActualizacionService
         if (!string.IsNullOrWhiteSpace(sourcePath))
         {
             _logger.LogWarning("No se puede iniciar actualizacion: sourcePath manual rechazado; la app solo instala assets descargados y firmados.");
+            return false;
+        }
+
+        var available = await CheckVersionDisponibleAsync(cancellationToken);
+        if (!available.ActualizacionDisponible || !available.Instalable)
+        {
+            _logger.LogWarning("No se puede iniciar actualizacion: preflight no instalable. Bloqueos: {Bloqueos}", string.Join(" | ", available.Bloqueos));
             return false;
         }
 
@@ -157,6 +175,61 @@ public sealed class ActualizacionService : IActualizacionService
         }
 
         return await _watchdogClientService.SolicitarActualizacionAsync(finalSourcePath, finalTargetPath, cancellationToken);
+    }
+
+    private async Task<UpdatePreflight> BuildUpdatePreflightAsync(UpdateCheckPayload payload, CancellationToken cancellationToken)
+    {
+        var bloqueos = new List<string>();
+        var assetZipDetectado = IsOfficialReleaseAssetUrl(payload.AssetDownloadUrl);
+        if (!assetZipDetectado)
+        {
+            bloqueos.Add("No se detecto un asset ZIP oficial win-x64 del repositorio Atlas Balance.");
+        }
+
+        var firmaDetectada = IsOfficialReleaseSignatureUrl(payload.AssetSignatureDownloadUrl);
+        if (!firmaDetectada)
+        {
+            bloqueos.Add("No se detecto la firma .zip.sig oficial del asset.");
+        }
+
+        var digestPresente = HasValidSha256Digest(payload.AssetDigest);
+        if (!digestPresente)
+        {
+            bloqueos.Add("El asset no incluye digest SHA-256 valido.");
+        }
+
+        var clavePublicaConfigurada = !string.IsNullOrWhiteSpace(ResolveReleaseSigningPublicKeyPem());
+        if (!clavePublicaConfigurada)
+        {
+            bloqueos.Add("Falta configurar UpdateSecurity:ReleaseSigningPublicKeyPem.");
+        }
+
+        var sourceRoot = ResolveConfiguredUpdateSourceRoot();
+        if (string.IsNullOrWhiteSpace(sourceRoot) || !IsExplicitlyRooted(sourceRoot))
+        {
+            bloqueos.Add("Falta configurar WatchdogSettings:UpdateSourceRoot como ruta absoluta.");
+        }
+
+        var installPath = ResolveConfiguredUpdateInstallPath();
+        if (string.IsNullOrWhiteSpace(installPath) || !IsExplicitlyRooted(installPath))
+        {
+            bloqueos.Add("Falta configurar WatchdogSettings:UpdateInstallPath como ruta absoluta.");
+        }
+
+        var watchdogDisponible = await _watchdogClientService.EstaDisponibleAsync(cancellationToken);
+        if (!watchdogDisponible)
+        {
+            bloqueos.Add("Watchdog local no disponible o sin secreto configurado.");
+        }
+
+        return new UpdatePreflight(
+            bloqueos.Count == 0,
+            bloqueos,
+            assetZipDetectado,
+            firmaDetectada,
+            digestPresente,
+            clavePublicaConfigurada,
+            watchdogDisponible);
     }
 
     private static int CompareVersions(string left, string right)
@@ -459,6 +532,7 @@ public sealed class ActualizacionService : IActualizacionService
         public string? Message { get; init; }
         public string? SourcePath { get; init; }
         public string? TargetPath { get; init; }
+        public string? AssetName { get; init; }
         public string? AssetDownloadUrl { get; init; }
         public string? AssetDigest { get; init; }
         public string? AssetSignatureDownloadUrl { get; init; }
@@ -482,6 +556,7 @@ public sealed class ActualizacionService : IActualizacionService
                 Message = TryGetString(root, "message", "mensaje", "name", "body"),
                 SourcePath = TryGetString(root, "source_path", "sourcePath", "package_path"),
                 TargetPath = TryGetString(root, "target_path", "targetPath", "install_path"),
+                AssetName = asset.Name,
                 AssetDownloadUrl = asset.DownloadUrl,
                 AssetDigest = asset.Digest,
                 AssetSignatureDownloadUrl = asset.SignatureDownloadUrl
@@ -517,6 +592,7 @@ public sealed class ActualizacionService : IActualizacionService
         if (!string.IsNullOrWhiteSpace(direct))
         {
             return new ReleaseAssetRef(
+                TryGetString(root, "asset_name", "assetName", "name"),
                 direct,
                 TryGetString(root, "asset_digest", "assetDigest", "digest"),
                 TryGetString(root, "asset_signature_url", "assetSignatureUrl", "signature_download_url", "signatureDownloadUrl"));
@@ -524,7 +600,7 @@ public sealed class ActualizacionService : IActualizacionService
 
         if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
         {
-            return new ReleaseAssetRef(null, null, null);
+            return new ReleaseAssetRef(null, null, null, null);
         }
 
         string? zipName = null;
@@ -562,7 +638,25 @@ public sealed class ActualizacionService : IActualizacionService
                 ? matchingSignature
                 : null;
 
-        return new ReleaseAssetRef(zipDownloadUrl, zipDigest, signatureDownloadUrl);
+        return new ReleaseAssetRef(zipName, zipDownloadUrl, zipDigest, signatureDownloadUrl);
+    }
+
+    private static bool HasValidSha256Digest(string? expectedDigest)
+    {
+        if (string.IsNullOrWhiteSpace(expectedDigest))
+        {
+            return false;
+        }
+
+        var normalized = expectedDigest.Trim();
+        const string prefix = "sha256:";
+        if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var expectedHash = normalized[prefix.Length..].Trim();
+        return expectedHash.Length == 64 && expectedHash.All(Uri.IsHexDigit);
     }
 
     private static bool VerifyAssetDigest(string zipPath, string? expectedDigest)
@@ -852,5 +946,17 @@ public sealed class ActualizacionService : IActualizacionService
         }
     }
 
-    private readonly record struct ReleaseAssetRef(string? DownloadUrl, string? Digest, string? SignatureDownloadUrl);
+    private sealed record UpdatePreflight(
+        bool Instalable,
+        IReadOnlyList<string> Bloqueos,
+        bool AssetZipDetectado,
+        bool FirmaDetectada,
+        bool DigestPresente,
+        bool ClavePublicaConfigurada,
+        bool WatchdogDisponible)
+    {
+        public static UpdatePreflight Empty { get; } = new(false, [], false, false, false, false, false);
+    }
+
+    private readonly record struct ReleaseAssetRef(string? Name, string? DownloadUrl, string? Digest, string? SignatureDownloadUrl);
 }

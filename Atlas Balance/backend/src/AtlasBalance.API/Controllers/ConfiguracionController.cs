@@ -70,7 +70,7 @@ public sealed class ConfiguracionController : ControllerBase
                 AppUpdateAutoLastCheckedUtc = GetValue(config, "app_update_auto_last_checked_utc"),
                 AppUpdateAutoLastStartedUtc = GetValue(config, "app_update_auto_last_started_utc"),
                 AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
-                MfaRememberDeviceEnabled = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey), fallback: false),
+                MfaRememberDeviceEnabled = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey), fallback: true),
                 MfaRememberDeviceDays = SecurityConfigurationDefaults.MfaRememberDeviceDays,
                 BackupPath = GetValue(config, "backup_path"),
                 ExportPath = GetValue(config, "export_path")
@@ -162,10 +162,15 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "Proveedor de IA no soportado. Atlas Balance admite OpenRouter u OpenAI con clave API de servidor." });
         }
 
+        if (!string.IsNullOrWhiteSpace(aiRequest.Model) && !AiConfiguration.IsAllowedModel(aiProvider, aiRequest.Model))
+        {
+            return BadRequest(new { error = "Modelo de IA invalido para el proveedor seleccionado." });
+        }
+
         var aiModel = AiConfiguration.NormalizeModel(aiProvider, aiRequest.Model);
         if (!AiConfiguration.IsAllowedModel(aiProvider, aiModel))
         {
-            return BadRequest(new { error = "Modelo de IA no permitido por la politica de Atlas Balance. Usa un modelo permitido o openrouter/auto." });
+            return BadRequest(new { error = "Modelo de IA invalido para el proveedor seleccionado." });
         }
 
         var aiValidationError = ValidateIaGovernance(aiRequest);

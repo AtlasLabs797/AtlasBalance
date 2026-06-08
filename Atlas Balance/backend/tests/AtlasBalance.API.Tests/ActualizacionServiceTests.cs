@@ -59,6 +59,77 @@ public sealed class ActualizacionServiceTests
     }
 
     [Fact]
+    public async Task CheckVersionDisponible_Should_Report_Not_Installable_When_Preflight_Is_Blocked()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"tag_name":"v99.0.0","name":"Release 99","assets":[]}""")
+        });
+        var service = BuildService(db, handler, watchdog: new UnavailableWatchdogClientService(), releaseSigningPublicKeyPem: null);
+
+        var result = await service.CheckVersionDisponibleAsync(CancellationToken.None);
+
+        result.ActualizacionDisponible.Should().BeTrue();
+        result.Instalable.Should().BeFalse();
+        result.AssetZipDetectado.Should().BeFalse();
+        result.FirmaDetectada.Should().BeFalse();
+        result.DigestPresente.Should().BeFalse();
+        result.ClavePublicaConfigurada.Should().BeFalse();
+        result.WatchdogDisponible.Should().BeFalse();
+        result.Bloqueos.Should().Contain(x => x.Contains("asset ZIP", StringComparison.OrdinalIgnoreCase));
+        result.Bloqueos.Should().Contain(x => x.Contains("Watchdog", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CheckVersionDisponible_Should_Report_Installable_When_Preflight_Passes()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "app_update_check_url",
+            Valor = ConfigurationDefaults.UpdateCheckUrl
+        });
+        await db.SaveChangesAsync();
+
+        var root = Path.Combine(Path.GetTempPath(), $"atlas-balance-preflight-{Guid.NewGuid():N}");
+        var updateRoot = Path.Combine(root, "updates");
+        var configuredTarget = Path.Combine(root, "app");
+        Directory.CreateDirectory(updateRoot);
+
+        var zipBytes = CreateReleaseZipBytes("V-99.00");
+        using var signingKey = RSA.Create(2048);
+        var handler = BuildSignedReleaseHandler(zipBytes, SignZipBytes(zipBytes, signingKey));
+        var service = BuildService(
+            db,
+            handler,
+            updateSourceRoot: updateRoot,
+            updateTargetPath: configuredTarget,
+            releaseSigningPublicKeyPem: signingKey.ExportSubjectPublicKeyInfoPem());
+
+        var result = await service.CheckVersionDisponibleAsync(CancellationToken.None);
+
+        result.ActualizacionDisponible.Should().BeTrue();
+        result.Instalable.Should().BeTrue();
+        result.Bloqueos.Should().BeEmpty();
+        result.AssetZipDetectado.Should().BeTrue();
+        result.FirmaDetectada.Should().BeTrue();
+        result.DigestPresente.Should().BeTrue();
+        result.ClavePublicaConfigurada.Should().BeTrue();
+        result.WatchdogDisponible.Should().BeTrue();
+        result.AssetZipNombre.Should().Be("AtlasBalance-V-99.00-win-x64.zip");
+
+        Directory.Delete(root, recursive: true);
+    }
+
+    [Fact]
     public async Task CheckVersionDisponible_Should_Fallback_To_Default_Repo_Url_When_Config_Is_Blank()
     {
         await using var db = BuildDbContext();
@@ -793,6 +864,24 @@ public sealed class ActualizacionServiceTests
 
         public Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken)
             => Task.FromResult(new WatchdogStateResponse());
+
+        public Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken)
+            => Task.FromResult(true);
+    }
+
+    private sealed class UnavailableWatchdogClientService : IWatchdogClientService
+    {
+        public Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken)
+            => Task.FromResult(false);
+
+        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
+            => Task.FromResult(false);
+
+        public Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new WatchdogStateResponse());
+
+        public Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken)
+            => Task.FromResult(false);
     }
 
     private sealed class RecordingWatchdogClientService : IWatchdogClientService
@@ -814,6 +903,9 @@ public sealed class ActualizacionServiceTests
 
         public Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken)
             => Task.FromResult(new WatchdogStateResponse());
+
+        public Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken)
+            => Task.FromResult(true);
     }
 
     private static byte[] CreateReleaseZipBytes(string version, string? rootDirectoryEntry = null, string? pathTraversalEntry = null)

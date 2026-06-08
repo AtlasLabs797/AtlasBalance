@@ -311,6 +311,7 @@ public class AuthServiceTests
         result.AccessToken.Should().NotBeNullOrWhiteSpace();
         result.RefreshToken.Should().NotBeNullOrWhiteSpace();
         result.Usuario.MfaEnabled.Should().BeTrue();
+        result.TrustedMfaToken.Should().BeNull();
 
         var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
         persisted.MfaEnabled.Should().BeTrue();
@@ -321,6 +322,9 @@ public class AuthServiceTests
         var refreshToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == refreshHash);
         refreshToken.MfaVerifiedAt.Should().NotBeNull();
         (await db.Auditorias.AnyAsync(x => x.TipoAccion == AtlasBalance.API.Constants.AuditActions.MfaVerified)).Should().BeTrue();
+
+        var nextLogin = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        nextLogin.MfaRequired.Should().BeTrue();
     }
 
     [Fact]
@@ -521,7 +525,7 @@ public class AuthServiceTests
     }
 
     [Fact]
-    public async Task Login_Should_Require_Mfa_When_Trusted_Mfa_Cookie_Is_Valid_But_Admin_Disables_Remember_Device()
+    public async Task Login_Should_Require_Mfa_When_Trusted_Mfa_Cookie_Is_Present_But_Admin_Disables_Remember_Device()
     {
         await using var db = BuildDbContext();
         var user = new Usuario
@@ -539,12 +543,12 @@ public class AuthServiceTests
             FechaCreacion = DateTime.UtcNow
         };
         db.Usuarios.Add(user);
+        db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "false" });
         await db.SaveChangesAsync();
 
-        var trustedToken = BuildTrustedMfaTokenForTest(user, DateTime.UtcNow.AddDays(SecurityConfigurationDefaults.MfaRememberDeviceDays));
         var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
 
-        var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, trustedToken);
+        var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, "opaque-token");
 
         result.MfaRequired.Should().BeTrue();
         result.MfaRememberDeviceAllowed.Should().BeFalse();
@@ -569,6 +573,7 @@ public class AuthServiceTests
             FechaCreacion = DateTime.UtcNow
         };
         db.Usuarios.Add(user);
+        db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "false" });
         await db.SaveChangesAsync();
 
         var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
@@ -605,17 +610,53 @@ public class AuthServiceTests
         var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
-        var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, true, "127.0.0.1", CancellationToken.None);
+        var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, true, "127.0.0.1", CancellationToken.None, "UnitTest Browser");
 
         var trustedLogin = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, verified.TrustedMfaToken);
 
         login.MfaRememberDeviceAllowed.Should().BeTrue();
         verified.TrustedMfaToken.Should().NotBeNullOrWhiteSpace();
-        verified.TrustedMfaTokenExpiresAt.Should().BeAfter(DateTime.UtcNow.AddDays(61));
-        verified.TrustedMfaTokenExpiresAt.Should().BeBefore(DateTime.UtcNow.AddDays(63));
+        verified.TrustedMfaTokenExpiresAt.Should().BeAfter(DateTime.UtcNow.AddDays(89));
+        verified.TrustedMfaTokenExpiresAt.Should().BeBefore(DateTime.UtcNow.AddDays(91));
+        var trustedDevice = await db.MfaTrustedDevices.SingleAsync(x => x.UsuarioId == user.Id);
+        trustedDevice.TokenHash.Should().NotBe(verified.TrustedMfaToken);
+        trustedDevice.UserAgentSummary.Should().Be("UnitTest Browser");
         trustedLogin.MfaRequired.Should().BeFalse();
         trustedLogin.AccessToken.Should().NotBeNullOrWhiteSpace();
         trustedLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Login_Should_Require_Mfa_When_Trusted_Mfa_Device_Is_Revoked()
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-trusted-revoked@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Mfa Trusted Revoked",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "true" });
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
+        var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, true, "127.0.0.1", CancellationToken.None);
+        var devices = await sut.GetTrustedMfaDevicesAsync(user.Id, verified.TrustedMfaToken, CancellationToken.None);
+
+        var revoked = await sut.RevokeTrustedMfaDeviceAsync(user.Id, devices.Single().Id, CancellationToken.None);
+        var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, verified.TrustedMfaToken);
+
+        revoked.Should().BeTrue();
+        result.MfaRequired.Should().BeTrue();
+        result.ClearTrustedMfaToken.Should().BeTrue();
     }
 
     [Fact]
@@ -677,7 +718,7 @@ public class AuthServiceTests
         db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "true" });
         await db.SaveChangesAsync();
 
-        var expiredTrustedToken = BuildTrustedMfaTokenForTest(user, DateTime.UtcNow.AddSeconds(-1));
+        var expiredTrustedToken = SeedTrustedMfaDevice(db, user, DateTime.UtcNow.AddSeconds(-1));
         var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
 
         var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, expiredTrustedToken);
@@ -885,19 +926,22 @@ public class AuthServiceTests
         (await db.RefreshTokens.SingleAsync()).RevocadoEn.Should().NotBeNull();
     }
 
-    private static string BuildTrustedMfaTokenForTest(Usuario usuario, DateTime expiresAtUtc)
+    private static string SeedTrustedMfaDevice(AppDbContext db, Usuario usuario, DateTime expiresAtUtc)
     {
-        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        var token = $"trusted-{Guid.NewGuid():N}";
+        var now = DateTime.UtcNow;
+        db.MfaTrustedDevices.Add(new MfaTrustedDevice
         {
-            Version = "v1",
-            UserId = usuario.Id,
+            Id = Guid.NewGuid(),
+            UsuarioId = usuario.Id,
+            TokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant(),
             SecurityStamp = usuario.SecurityStamp,
-            ExpiresAtUnix = new DateTimeOffset(expiresAtUtc).ToUnixTimeSeconds()
+            CreatedAt = now,
+            LastUsedAt = now,
+            ExpiresAt = expiresAtUtc
         });
-        var payloadBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(payload));
-        using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes("test-secret-key-minimum-32-characters-long"));
-        var signature = Base64UrlEncode(hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadBase64)));
-        return $"{payloadBase64}.{signature}";
+        db.SaveChanges();
+        return token;
     }
 
     private static Usuario BuildActiveUser(string email) => new()
@@ -912,11 +956,4 @@ public class AuthServiceTests
         FechaCreacion = DateTime.UtcNow
     };
 
-    private static string Base64UrlEncode(byte[] bytes)
-    {
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
-    }
 }

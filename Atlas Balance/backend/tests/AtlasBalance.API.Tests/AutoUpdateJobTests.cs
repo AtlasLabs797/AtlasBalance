@@ -29,6 +29,7 @@ public sealed class AutoUpdateJobTests
                 VersionActual = "V-01.09",
                 VersionDisponible = "V-99.00",
                 ActualizacionDisponible = true,
+                Instalable = true,
                 Mensaje = "Actualizacion disponible"
             },
             StartAccepted = true

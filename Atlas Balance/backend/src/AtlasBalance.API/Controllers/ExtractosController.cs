@@ -451,10 +451,10 @@ public sealed class ExtractosController : ControllerBase
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!await CanView(actor, cuentaId, ct)) return Forbid();
-        var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
+        var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.PaisId, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
         var titular = await _db.Titulares.Where(t => t.Id == cuenta.TitularId).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
-        return Ok(await BuildSummary(actor, cuenta.Id, cuenta.Nombre, cuenta.Iban, cuenta.BancoNombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct));
+        return Ok(await BuildSummary(actor, cuenta.Id, cuenta.Nombre, cuenta.Iban, cuenta.BancoNombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct, cuenta.PaisId));
     }
 
     [HttpGet("titulares/{titularId:guid}/cuentas")]
@@ -469,7 +469,7 @@ public sealed class ExtractosController : ControllerBase
         var summary = new List<CuentaResumenKpiResponse>();
         foreach (var c in cuentas)
         {
-            summary.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct));
+            summary.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct, c.PaisId));
         }
         return Ok(new TitularConCuentasResponse { TitularId = titular.Id, TitularNombre = titular.Nombre, Cuentas = summary });
     }
@@ -487,7 +487,7 @@ public sealed class ExtractosController : ControllerBase
         {
             var tc = cuentas.Where(c => c.TitularId == t.Id).ToList();
             var s = new List<CuentaResumenKpiResponse>();
-            foreach (var c in tc) s.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct));
+            foreach (var c in tc) s.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct, c.PaisId));
             outData.Add(new TitularConCuentasResponse { TitularId = t.Id, TitularNombre = t.Nombre, Cuentas = s });
         }
         return Ok(outData);
@@ -536,8 +536,11 @@ public sealed class ExtractosController : ControllerBase
         return Ok(new { message = "Preferencias guardadas" });
     }
 
-    private async Task<CuentaResumenKpiResponse> BuildSummary(Actor actor, Guid cuentaId, string cuentaNombre, string? iban, string? bancoNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct)
+    private async Task<CuentaResumenKpiResponse> BuildSummary(Actor actor, Guid cuentaId, string cuentaNombre, string? iban, string? bancoNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct, Guid? paisId = null)
     {
+        var paisNombre = paisId.HasValue
+            ? await _db.Paises.IgnoreQueryFilters().Where(p => p.Id == paisId.Value).Select(p => p.Nombre).FirstOrDefaultAsync(ct)
+            : null;
         var q = _db.Extractos.Where(e => e.CuentaId == cuentaId);
         var latest = await q
             .OrderByDescending(e => e.FilaNumero)
@@ -587,6 +590,8 @@ public sealed class ExtractosController : ControllerBase
             Iban = iban,
             BancoNombre = bancoNombre,
             Divisa = divisa,
+            PaisId = paisId,
+            PaisNombre = paisNombre,
             TitularId = titularId,
             TitularNombre = titularNombre,
             EsEfectivo = esEfectivo,

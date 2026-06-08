@@ -11,6 +11,8 @@ public class AppDbContext : DbContext
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<UsuarioEmail> UsuarioEmails => Set<UsuarioEmail>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<MfaTrustedDevice> MfaTrustedDevices => Set<MfaTrustedDevice>();
+    public DbSet<Pais> Paises => Set<Pais>();
     public DbSet<Titular> Titulares => Set<Titular>();
     public DbSet<Cuenta> Cuentas => Set<Cuenta>();
     public DbSet<PlazoFijo> PlazosFijos => Set<PlazoFijo>();
@@ -83,6 +85,40 @@ public class AppDbContext : DbContext
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<MfaTrustedDevice>(entity =>
+        {
+            entity.ToTable("MFA_TRUSTED_DEVICES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.TokenHash).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.SecurityStamp).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.UserAgentSummary).HasMaxLength(256);
+            entity.Property(e => e.IpAddressSummary).HasMaxLength(128);
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            entity.HasIndex(e => e.UsuarioId);
+            entity.HasIndex(e => e.ExpiresAt);
+            entity.HasIndex(e => e.RevokedAt);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Pais>(entity =>
+        {
+            entity.ToTable("PAISES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.Nombre).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.CodigoIso2).HasMaxLength(2);
+            entity.HasIndex(e => e.Nombre).IsUnique();
+            entity.HasIndex(e => e.CodigoIso2)
+                .IsUnique()
+                .HasFilter("\"codigo_iso2\" IS NOT NULL");
+            entity.HasIndex(e => e.Activo);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<Titular>(entity =>
         {
             entity.ToTable("TITULARES");
@@ -99,12 +135,14 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.TitularId);
             entity.HasIndex(e => e.Divisa);
+            entity.HasIndex(e => e.PaisId);
             entity.HasIndex(e => e.EsEfectivo);
             entity.HasIndex(e => e.TipoCuenta);
             entity.HasIndex(e => e.Activa);
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne(e => e.Titular).WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FormatoImportacion>().WithMany().HasForeignKey(e => e.FormatoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Pais).WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 

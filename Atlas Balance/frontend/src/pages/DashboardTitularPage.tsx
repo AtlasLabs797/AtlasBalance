@@ -218,6 +218,7 @@ export default function DashboardTitularPage() {
                 <thead>
                   <tr>
                     <th>Cuenta</th>
+                    <th>País</th>
                     <th>Tipo</th>
                     <th>Saldo ({titular.divisa_principal})</th>
                     <th>Saldo original</th>
@@ -228,6 +229,7 @@ export default function DashboardTitularPage() {
                   {titular.saldos_por_cuenta.map((cuenta) => (
                     <tr key={cuenta.cuenta_id}>
                       <td>{cuenta.cuenta_nombre}</td>
+                      <td>{cuenta.pais_nombre || 'Sin pais'}</td>
                       <td>{cuenta.es_efectivo ? 'Efectivo' : 'Bancaria'}</td>
                       <td>
                         <SignedAmount value={cuenta.saldo_convertido}>

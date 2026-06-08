@@ -15,12 +15,17 @@ namespace AtlasBalance.API.Services;
 public interface IAtlasAiService
 {
     Task<IaConfigResponse> GetConfigAsync(UserAccessScope scope, CancellationToken cancellationToken);
+    Task<IReadOnlyList<IaModelResponse>> GetModelsAsync(string? provider, string? search, CancellationToken cancellationToken);
     Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null);
 }
 
 public sealed class AtlasAiService : IAtlasAiService
 {
     private const string OutOfScopeMessage = "Solo puedo responder sobre Atlas Balance, su funcionamiento o los datos financieros disponibles.";
+    private static readonly object OpenRouterModelsCacheLock = new();
+    private static readonly TimeSpan OpenRouterModelsCacheTtl = TimeSpan.FromMinutes(5);
+    private static IReadOnlyList<IaModelResponse>? CachedOpenRouterModels;
+    private static DateTime CachedOpenRouterModelsUntilUtc;
 
     private readonly AppDbContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -53,6 +58,35 @@ public sealed class AtlasAiService : IAtlasAiService
             : await LoadUserUsageSnapshotAsync(scope.UserId, UsageMonthKey(now), cancellationToken);
 
         return BuildConfigResponse(state, userCanUse, state.UsageMonthCostEur, state.UsageTotalCostEur, userUsage);
+    }
+
+    public async Task<IReadOnlyList<IaModelResponse>> GetModelsAsync(string? provider, string? search, CancellationToken cancellationToken)
+    {
+        var normalizedProvider = AiConfiguration.NormalizeProvider(provider);
+        IReadOnlyList<IaModelResponse> models = normalizedProvider switch
+        {
+            "OPENAI" => AiConfiguration.OpenAiModels
+                .Select(x => new IaModelResponse { Id = x, Nombre = x })
+                .ToList(),
+            "OPENROUTER" => await LoadOpenRouterModelsAsync(cancellationToken),
+            _ => throw new IaConfigurationException("Proveedor de IA no soportado.")
+        };
+
+        var term = search?.Trim();
+        if (!string.IsNullOrWhiteSpace(term))
+        {
+            models = models
+                .Where(x =>
+                    x.Id.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    x.Nombre.Contains(term, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        return models
+            .OrderByDescending(x => string.Equals(x.Id, AiConfiguration.OpenRouterAutoModel, StringComparison.Ordinal))
+            .ThenBy(x => x.Id, StringComparer.Ordinal)
+            .Take(80)
+            .ToList();
     }
 
     public async Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null)
@@ -104,17 +138,17 @@ public sealed class AtlasAiService : IAtlasAiService
         state = ApplyRequestedModel(state, requestedModel);
         if (!string.IsNullOrWhiteSpace(requestedModel) && !AiConfiguration.IsAllowedModel(state.Provider, state.Model))
         {
-            await LogBlockedAsync(scope.UserId, "requested_model_not_allowed", state, ipAddress, cancellationToken, new
+            await LogBlockedAsync(scope.UserId, "requested_model_invalid", state, ipAddress, cancellationToken, new
             {
                 requested_model = requestedModel?.Trim()
             });
-            throw new IaConfigurationException("Modelo de IA no permitido por la politica de Atlas Balance.");
+            throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
         }
 
         if (!AiConfiguration.IsAllowedModel(state.Provider, state.Model))
         {
-            await LogBlockedAsync(scope.UserId, "model_not_allowed", state, ipAddress, cancellationToken);
-            throw new IaConfigurationException("Modelo de IA no permitido por la politica de Atlas Balance.");
+            await LogBlockedAsync(scope.UserId, "model_invalid", state, ipAddress, cancellationToken);
+            throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
         }
 
         var deterministicAnswer = await TryAnswerDeterministicFinancialAsync(scope, prompt, state, now, ipAddress, cancellationToken);
@@ -142,8 +176,8 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (!AiConfiguration.IsAllowedModel(state.Provider, state.Model))
         {
-            await LogBlockedAsync(scope.UserId, "model_not_allowed", state, ipAddress, cancellationToken);
-            throw new IaConfigurationException("Modelo de IA no permitido por la politica de Atlas Balance.");
+            await LogBlockedAsync(scope.UserId, "model_invalid", state, ipAddress, cancellationToken);
+            throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
         }
 
         var runtimeModel = ProviderRuntimeModel(state);
@@ -407,6 +441,82 @@ public sealed class AtlasAiService : IAtlasAiService
         return new ProviderHttpCall(response, httpClientName, usedFallback);
     }
 
+    private async Task<IReadOnlyList<IaModelResponse>> LoadOpenRouterModelsAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        lock (OpenRouterModelsCacheLock)
+        {
+            if (CachedOpenRouterModels is not null && CachedOpenRouterModelsUntilUtc > now)
+            {
+                return CachedOpenRouterModels;
+            }
+        }
+
+        var config = await LoadConfigAsync(cancellationToken);
+        var protectedKey = GetValue(config, "openrouter_api_key");
+        string? apiKey = null;
+        if (!string.IsNullOrWhiteSpace(protectedKey))
+        {
+            try
+            {
+                apiKey = _secretProtector.UnprotectFromStorage(protectedKey);
+            }
+            catch (InvalidOperationException)
+            {
+                apiKey = null;
+            }
+        }
+
+        var http = _httpClientFactory.CreateClient("openrouter");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "models");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
+        using var response = await http.SendAsync(request, cancellationToken);
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new IaProviderException(BuildProviderHttpErrorMessage(
+                new IaGovernanceState(
+                    Enabled: true,
+                    Provider: "OPENROUTER",
+                    Model: AiConfiguration.OpenRouterAutoModel,
+                    ProtectedOpenRouterApiKey: protectedKey,
+                    HasOpenRouterKey: !string.IsNullOrWhiteSpace(protectedKey),
+                    ProtectedOpenAiApiKey: string.Empty,
+                    HasOpenAiKey: false,
+                    RequestsPerMinute: AiConfigurationDefaults.RequestsPerMinute,
+                    RequestsPerHour: AiConfigurationDefaults.RequestsPerHour,
+                    RequestsPerDay: AiConfigurationDefaults.RequestsPerDay,
+                    GlobalRequestsPerDay: AiConfigurationDefaults.GlobalRequestsPerDay,
+                    MonthlyBudgetEur: 0m,
+                    UserMonthlyBudgetEur: 0m,
+                    TotalBudgetEur: 0m,
+                    BudgetWarningPercent: AiConfigurationDefaults.BudgetWarningPercent,
+                    InputCostPerMillionTokensEur: 0m,
+                    OutputCostPerMillionTokensEur: 0m,
+                    MaxInputTokens: AiConfigurationDefaults.MaxInputTokens,
+                    MaxOutputTokens: AiConfigurationDefaults.MaxOutputTokens,
+                    MaxContextRows: AiConfigurationDefaults.MaxContextRows,
+                    UsageMonthCostEur: 0m,
+                    UsageTotalCostEur: 0m),
+                (int)response.StatusCode,
+                ExtractProviderErrorSummary(payload)));
+        }
+
+        var models = ParseOpenRouterModels(payload);
+        lock (OpenRouterModelsCacheLock)
+        {
+            CachedOpenRouterModels = models;
+            CachedOpenRouterModelsUntilUtc = now.Add(OpenRouterModelsCacheTtl);
+        }
+
+        return models;
+    }
+
     private static HttpRequestMessage BuildProviderRequest(
         IaGovernanceState state,
         string apiKey,
@@ -420,76 +530,20 @@ public sealed class AtlasAiService : IAtlasAiService
         {
             request.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "Atlas Balance");
             request.Headers.TryAddWithoutValidation("X-Title", "Atlas Balance");
-            if (AiConfiguration.IsOpenRouterAutoModel(state.Model))
-            {
-                request.Content = JsonContent.Create(new
-                {
-                    models = AiConfiguration.OpenRouterAutoFallbackModels,
-                    provider = OpenRouterPrivacyProvider(),
-                    reasoning = new
-                    {
-                        exclude = true
-                    },
-                    temperature = 0.1,
-                    max_tokens = state.MaxOutputTokens,
-                    stream = false,
-                    messages
-                });
-                return request;
-            }
-
             var runtimeModel = AiConfiguration.ResolveOpenRouterRuntimeModel(state.Model);
-            request.Content = AiConfiguration.TryGetOpenRouterPinnedProvider(runtimeModel, out var pinnedProvider)
-                ? JsonContent.Create(new
+            request.Content = JsonContent.Create(new
+            {
+                model = runtimeModel,
+                provider = OpenRouterPrivacyProvider(),
+                reasoning = new
                 {
-                    model = runtimeModel,
-                    provider = new
-                    {
-                        only = new[] { pinnedProvider },
-                        allow_fallbacks = false,
-                        zdr = true,
-                        data_collection = "deny"
-                    },
-                    reasoning = new
-                    {
-                        exclude = true
-                    },
-                    temperature = 0.1,
-                    max_tokens = state.MaxOutputTokens,
-                    stream = false,
-                    messages
-                })
-                : AiConfiguration.IsOpenRouterFreeModel(runtimeModel)
-                    ? JsonContent.Create(new
-                    {
-                        model = runtimeModel,
-                        provider = OpenRouterPrivacyProvider(),
-                        reasoning = new
-                        {
-                            exclude = true
-                        },
-                        temperature = 0.1,
-                        max_tokens = state.MaxOutputTokens,
-                        stream = false,
-                        messages
-                    })
-                : JsonContent.Create(new
-                {
-                    model = runtimeModel,
-                    provider = new
-                    {
-                        zdr = true,
-                        data_collection = "deny"
-                    },
-                    reasoning = new
-                    {
-                        exclude = true
-                    },
-                    temperature = 0.1,
-                    max_tokens = state.MaxOutputTokens,
-                    stream = false,
-                    messages
-                });
+                    exclude = true
+                },
+                temperature = 0.1,
+                max_tokens = state.MaxOutputTokens,
+                stream = false,
+                messages
+            });
             return request;
         }
 
@@ -1503,7 +1557,7 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (!AiConfiguration.IsAllowedModel(state.Provider, state.Model))
         {
-            return "El modelo seleccionado no esta permitido.";
+            return "El modelo seleccionado no es valido para el proveedor.";
         }
 
         return "IA configurada.";
@@ -1584,23 +1638,18 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (state.Provider == "OPENROUTER" && statusCode == 404 && IsOpenRouterDataPolicyError(providerError))
         {
-            return $"{provider} no encontro endpoints compatibles con la allowlist y privacidad configuradas ({statusCode}). Atlas Balance ya envia los modelos permitidos en tu cuenta; si persiste, revisa OpenRouter > Settings > Privacy o anade un modelo ZDR permitido.{detail}";
+            return $"{provider} no encontro endpoints compatibles con la privacidad configurada ({statusCode}). Revisa OpenRouter > Settings > Privacy o prueba un modelo con ruta ZDR disponible.{detail}";
         }
 
         if (state.Provider == "OPENROUTER" && statusCode == 404 && IsOpenRouterModelRestrictionError(providerError))
         {
-            return $"{provider} no encontro ningun modelo compatible con las restricciones configuradas ({statusCode}). Auto ya prueba los modelos gratis permitidos por Atlas Balance; revisa que al menos uno siga habilitado en tu allowlist de OpenRouter.{detail}";
-        }
-
-        if (state.Provider == "OPENROUTER" && statusCode == 400 && IsOpenRouterModelsArrayLimitError(providerError))
-        {
-            return $"{provider} rechazo la lista de modelos fallback ({statusCode}). OpenRouter solo acepta hasta {AiConfiguration.OpenRouterMaxFallbackModels} modelos en `models`; Atlas Balance debe enviar como maximo ese numero.{detail}";
+            return $"{provider} no encontro ningun modelo compatible con las restricciones configuradas ({statusCode}). Revisa el ID del modelo, tu saldo/cuota o la configuracion de privacidad del proveedor.{detail}";
         }
 
         return statusCode switch
         {
             401 or 403 => $"{provider} rechazo la autenticacion ({statusCode}). Revisa la clave API configurada.{detail}",
-            404 => $"{provider} no encontro el modelo solicitado ({statusCode}). Atlas Balance normaliza modelos obsoletos conocidos y bloquea modelos no permitidos antes de llamar al proveedor; revisa que el modelo siga disponible en OpenRouter.{detail}",
+            404 => $"{provider} no encontro el modelo solicitado ({statusCode}). Revisa que el ID exista y este disponible para tu cuenta.{detail}",
             429 => $"{provider} limito la consulta ({statusCode}). Revisa cuota, rate limit o saldo del proveedor.{detail}",
             503 => $"{provider} no tiene proveedor disponible ahora mismo ({statusCode}). Reintenta mas tarde o prueba otro modelo.{detail}",
             _ => $"{provider} no ha respondido correctamente ({statusCode}).{detail}"
@@ -1651,18 +1700,6 @@ public sealed class AtlasAiService : IAtlasAiService
 
         return providerError.Contains("No models match", StringComparison.OrdinalIgnoreCase) ||
                providerError.Contains("model restrictions", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsOpenRouterModelsArrayLimitError(string? providerError)
-    {
-        if (string.IsNullOrWhiteSpace(providerError))
-        {
-            return false;
-        }
-
-        return providerError.Contains("models", StringComparison.OrdinalIgnoreCase) &&
-               providerError.Contains("array", StringComparison.OrdinalIgnoreCase) &&
-               providerError.Contains("3", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildProviderNetworkMessage(IaGovernanceState state)
@@ -1787,6 +1824,64 @@ public sealed class AtlasAiService : IAtlasAiService
         {
             return ParseProviderResponse(document.RootElement);
         }
+    }
+
+    private static IReadOnlyList<IaModelResponse> ParseOpenRouterModels(string payload)
+    {
+        var result = new List<IaModelResponse>
+        {
+            new()
+            {
+                Id = AiConfiguration.OpenRouterAutoModel,
+                Nombre = "OpenRouter Auto"
+            }
+        };
+
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return result;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (!document.RootElement.TryGetProperty("data", out var data) ||
+                data.ValueKind != JsonValueKind.Array)
+            {
+                return result;
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            seen.Add(AiConfiguration.OpenRouterAutoModel);
+            foreach (var item in data.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object ||
+                    !TryGetStringProperty(item, "id", out var id) ||
+                    string.IsNullOrWhiteSpace(id) ||
+                    !AiConfiguration.IsValidOpenRouterModelId(id) ||
+                    !seen.Add(id.Trim()))
+                {
+                    continue;
+                }
+
+                var name = TryGetStringProperty(item, "name", out var parsedName) && !string.IsNullOrWhiteSpace(parsedName)
+                    ? parsedName.Trim()
+                    : id.Trim();
+
+                result.Add(new IaModelResponse
+                {
+                    Id = id.Trim(),
+                    Nombre = name,
+                    ContextLength = TryGetInt(item, "context_length")
+                });
+            }
+        }
+        catch (JsonException)
+        {
+            return result;
+        }
+
+        return result;
     }
 
     private static ProviderResponse ParseProviderResponse(JsonElement root)

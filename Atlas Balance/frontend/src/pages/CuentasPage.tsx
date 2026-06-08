@@ -21,6 +21,7 @@ import type {
   DashboardPrincipal,
   DashboardSaldosDivisa,
   PaginatedResponse,
+  Pais,
   PeriodoDashboard,
   TipoCuenta,
   TipoTitular,
@@ -59,6 +60,7 @@ interface CuentaFormState {
   banco_nombre: string;
   divisa: string;
   formato_id: string;
+  pais_id: string;
   tipo_cuenta: TipoCuenta;
   activa: boolean;
   notas: string;
@@ -81,6 +83,8 @@ interface DashboardCuentaRow {
   titular_id: string;
   titular_nombre: string;
   banco_nombre: string | null;
+  pais_id: string | null;
+  pais_nombre: string | null;
   divisa: string;
   saldo_actual: number;
   saldo_convertido: number;
@@ -94,6 +98,7 @@ const emptyForm: CuentaFormState = {
   banco_nombre: '',
   divisa: 'EUR',
   formato_id: '',
+  pais_id: '',
   tipo_cuenta: 'NORMAL',
   activa: true,
   notas: '',
@@ -146,6 +151,7 @@ export default function CuentasPage() {
   const [titulares, setTitulares] = useState<Titular[]>([]);
   const [divisas, setDivisas] = useState<DivisaOption[]>([]);
   const [formatos, setFormatos] = useState<FormatoOption[]>([]);
+  const [paises, setPaises] = useState<Pais[]>([]);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -154,6 +160,7 @@ export default function CuentasPage() {
   const [titularFilter, setTitularFilter] = useState('');
   const [tipoTitularFilter, setTipoTitularFilter] = useState('');
   const [tipoCuentaFilter, setTipoCuentaFilter] = useState('');
+  const [paisFilter, setPaisFilter] = useState('');
   const [incluirEliminados, setIncluirEliminados] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
   const [loading, setLoading] = useState(false);
@@ -215,12 +222,14 @@ export default function CuentasPage() {
   const loadAuxData = async () => {
     setAuxError(null);
     try {
-      const [titularesRes, divisasRes] = await Promise.all([
+      const [titularesRes, divisasRes, paisesRes] = await Promise.all([
         api.get<PaginatedResponse<Titular>>('/titulares', { params: { page: 1, pageSize: 500, sortBy: 'nombre', sortDir: 'asc' } }),
         api.get<DivisaOption[]>('/cuentas/divisas-activas'),
+        api.get<Pais[]>('/paises'),
       ]);
       setTitulares(titularesRes.data.data ?? []);
       setDivisas(divisasRes.data ?? []);
+      setPaises(paisesRes.data ?? []);
 
       if (isAdmin) {
         const { data } = await api.get<PaginatedResponse<FormatoOption>>('/formatos-importacion', {
@@ -253,6 +262,7 @@ export default function CuentasPage() {
           pageSize,
           search: debouncedSearch || undefined,
           titularId: titularFilter || undefined,
+          paisId: paisFilter || undefined,
           tipoTitular: tipoTitularFilter || undefined,
           tipoCuenta: tipoCuentaFilter || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
@@ -277,7 +287,7 @@ export default function CuentasPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros/paginacion
-  }, [page, pageSize, debouncedSearch, titularFilter, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
+  }, [page, pageSize, debouncedSearch, titularFilter, paisFilter, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -292,9 +302,9 @@ export default function CuentasPage() {
       setDashboardError(null);
       try {
         const [principalRes, evolucionRes, saldosDivisaRes] = await Promise.all([
-          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal } }),
-          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal } }),
-          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal } }),
+          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: paisFilter || undefined } }),
+          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: paisFilter || undefined } }),
+          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: paisFilter || undefined } }),
         ]);
         const cuentaRows = (principalRes.data.saldos_por_cuenta ?? [])
           .map((cuenta) => ({
@@ -303,6 +313,8 @@ export default function CuentasPage() {
             titular_id: cuenta.titular_id,
             titular_nombre: cuenta.titular_nombre,
             banco_nombre: cuenta.banco_nombre ?? null,
+            pais_id: cuenta.pais_id ?? null,
+            pais_nombre: cuenta.pais_nombre ?? null,
             divisa: cuenta.divisa,
             saldo_actual: cuenta.saldo_actual,
             saldo_convertido: cuenta.saldo_convertido,
@@ -338,7 +350,7 @@ export default function CuentasPage() {
     return () => {
       mounted = false;
     };
-  }, [canSeeDashboard, divisaPrincipal, periodo]);
+  }, [canSeeDashboard, divisaPrincipal, periodo, paisFilter]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -347,6 +359,7 @@ export default function CuentasPage() {
       ...emptyForm,
       titular_id: titulares[0]?.id ?? '',
       divisa: divisas[0]?.codigo ?? 'EUR',
+      pais_id: '',
     }));
   };
 
@@ -421,6 +434,7 @@ export default function CuentasPage() {
         banco_nombre: data.banco_nombre ?? '',
         divisa: data.divisa,
         formato_id: data.tipo_cuenta === 'PLAZO_FIJO' ? '' : (data.formato_id ?? ''),
+        pais_id: data.pais_id ?? '',
         tipo_cuenta: data.tipo_cuenta ?? (data.es_efectivo ? 'EFECTIVO' : 'NORMAL'),
         activa: data.activa,
         notas: data.notas ?? '',
@@ -466,6 +480,7 @@ export default function CuentasPage() {
       banco_nombre: form.banco_nombre.trim() || null,
       divisa: form.divisa,
       formato_id: form.tipo_cuenta === 'PLAZO_FIJO' ? null : (form.formato_id || null),
+      pais_id: form.pais_id || null,
       tipo_cuenta: form.tipo_cuenta,
       es_efectivo: form.tipo_cuenta === 'EFECTIVO',
       activa: form.activa,
@@ -590,13 +605,26 @@ export default function CuentasPage() {
                 </section>
               ) : null}
 
+              {principal.saldos_por_pais?.length ? (
+                <div className="titulares-divisa-banners" aria-label="Saldos por país">
+                  {principal.saldos_por_pais.slice(0, 6).map((pais) => (
+                    <article className="dashboard-mini-card" key={pais.pais_id ?? 'sin-pais'}>
+                      <span>{pais.pais_nombre}</span>
+                      <strong>{formatCurrency(pais.total_convertido, principal.divisa_principal)}</strong>
+                      <small>{pais.total_cuentas} cuenta{pais.total_cuentas === 1 ? '' : 's'}</small>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="cuentas-balance-list" aria-label={`Saldos por cuenta bancaria en ${principal.divisa_principal}`}>
-                <div className="cuentas-balance-heading" aria-hidden="true">
-                  <span>Cuenta bancaria</span>
-                  <span>Banco</span>
-                  <span>Divisa</span>
-                  <span>Saldo total</span>
-                  <span>Detalle</span>
+              <div className="cuentas-balance-heading" aria-hidden="true">
+                <span>Cuenta bancaria</span>
+                <span>Banco</span>
+                <span>País</span>
+                <span>Divisa</span>
+                <span>Saldo total</span>
+                <span>Detalle</span>
                 </div>
 
                 {saldosCuentaRows.map((item) => {
@@ -619,6 +647,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -637,6 +666,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -678,6 +708,18 @@ export default function CuentasPage() {
           onChange={(next) => {
             setPage(1);
             setTitularFilter(next);
+          }}
+        />
+        <AppSelect
+          ariaLabel="País"
+          value={paisFilter}
+          options={[
+            { value: '', label: 'Todos los países' },
+            ...paises.map((pais) => ({ value: pais.id, label: pais.nombre })),
+          ]}
+          onChange={(next) => {
+            setPage(1);
+            setPaisFilter(next);
           }}
         />
         <AppSelect
@@ -769,6 +811,10 @@ export default function CuentasPage() {
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Banco</span>
                     <strong className="cuenta-card-meta-value">{item.banco_nombre || 'Sin banco'}</strong>
+                  </div>
+                  <div className="cuenta-card-meta-item">
+                    <span className="cuenta-card-meta-label">País</span>
+                    <strong className="cuenta-card-meta-value">{item.pais_nombre || 'Sin pais'}</strong>
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Estado</span>
@@ -904,6 +950,19 @@ export default function CuentasPage() {
                       label: `${divisa.codigo} ${divisa.nombre ? `- ${divisa.nombre}` : ''}`,
                     }))}
                     onChange={(next) => setForm((f) => ({ ...f, divisa: next }))}
+                  />
+
+                  <AppSelect
+                    label="País"
+                    value={form.pais_id}
+                    options={[
+                      { value: '', label: 'Sin país' },
+                      ...paises.map((pais) => ({
+                        value: pais.id,
+                        label: pais.codigo_iso2 ? `${pais.nombre} (${pais.codigo_iso2})` : pais.nombre,
+                      })),
+                    ]}
+                    onChange={(next) => setForm((f) => ({ ...f, pais_id: next }))}
                   />
 
                   <AppSelect

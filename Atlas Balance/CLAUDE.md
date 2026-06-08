@@ -244,7 +244,7 @@ npm run build
 
 # Release Windows x64
 cd "Atlas Balance"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.09
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-02-02
 
 # Conectar a PostgreSQL
 psql -h localhost -p 5433 -U app_user -d atlas_balance

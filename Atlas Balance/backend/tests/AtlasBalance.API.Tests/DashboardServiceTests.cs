@@ -141,7 +141,7 @@ public class DashboardServiceTests
 
         var sut = BuildService(db);
 
-        var result = await sut.GetPrincipalAsync(adminId, "USD", CancellationToken.None);
+        var result = await sut.GetPrincipalAsync(adminId, "USD", null, CancellationToken.None);
 
         result.DivisaPrincipal.Should().Be("USD");
         result.SaldosPorDivisa.Should().ContainKey("EUR").WhoseValue.Should().Be(60m);
@@ -156,7 +156,7 @@ public class DashboardServiceTests
         result.SaldosPorTitular[1].TotalConvertido.Should().Be(72m);
         result.ChartColors.Ingresos.Should().Be("#43B430");
 
-        var saldosTitular = await sut.GetSaldosDivisaAsync(adminId, "USD", titularEurId, CancellationToken.None);
+        var saldosTitular = await sut.GetSaldosDivisaAsync(adminId, "USD", titularEurId, null, CancellationToken.None);
         saldosTitular.Divisas.Should().ContainSingle();
         saldosTitular.Divisas[0].Divisa.Should().Be("EUR");
         saldosTitular.Divisas[0].Saldo.Should().Be(60m);
@@ -211,7 +211,7 @@ public class DashboardServiceTests
 
         var sut = BuildService(db);
 
-        var result = await sut.GetPrincipalAsync(adminId, "EUR", CancellationToken.None);
+        var result = await sut.GetPrincipalAsync(adminId, "EUR", null, CancellationToken.None);
 
         result.SaldosPorDivisa.Should().ContainKey("EUR").WhoseValue.Should().Be(25m);
         result.TotalConvertido.Should().Be(25m);
@@ -283,7 +283,7 @@ public class DashboardServiceTests
 
         var sut = BuildService(db);
 
-        var act = async () => await sut.GetTitularAsync(managerId, blockedTitularId, "EUR", CancellationToken.None);
+        var act = async () => await sut.GetTitularAsync(managerId, blockedTitularId, "EUR", null, CancellationToken.None);
 
         var exception = await act.Should().ThrowAsync<DashboardAccessException>();
         exception.Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
@@ -345,7 +345,7 @@ public class DashboardServiceTests
 
         var sut = BuildService(db);
 
-        var act = async () => await sut.GetPrincipalAsync(managerId, "EUR", CancellationToken.None);
+        var act = async () => await sut.GetPrincipalAsync(managerId, "EUR", null, CancellationToken.None);
 
         var exception = await act.Should().ThrowAsync<DashboardAccessException>();
         exception.Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
@@ -407,7 +407,7 @@ public class DashboardServiceTests
 
         var sut = BuildService(db);
 
-        var result = await sut.GetPrincipalAsync(managerId, "EUR", CancellationToken.None);
+        var result = await sut.GetPrincipalAsync(managerId, "EUR", null, CancellationToken.None);
 
         result.TotalConvertido.Should().Be(50m);
         result.SaldosPorTitular.Should().ContainSingle(x => x.TitularId == titularId);
@@ -468,7 +468,7 @@ public class DashboardServiceTests
 
         var sut = BuildService(db);
 
-        var result = await sut.GetPrincipalAsync(adminId, null, CancellationToken.None);
+        var result = await sut.GetPrincipalAsync(adminId, null, null, CancellationToken.None);
 
         result.DivisaPrincipal.Should().Be("USD");
         result.TotalConvertido.Should().Be(120m);
@@ -514,8 +514,8 @@ public class DashboardServiceTests
 
         var sut = BuildService(db);
 
-        var divisas = await sut.GetSaldosDivisaAsync(adminId, "EUR", null, CancellationToken.None);
-        var principal = await sut.GetPrincipalAsync(adminId, "EUR", CancellationToken.None);
+        var divisas = await sut.GetSaldosDivisaAsync(adminId, "EUR", null, null, CancellationToken.None);
+        var principal = await sut.GetPrincipalAsync(adminId, "EUR", null, CancellationToken.None);
 
         divisas.Divisas.Should().ContainSingle();
         divisas.Divisas[0].SaldoDisponible.Should().Be(80m);
@@ -529,6 +529,52 @@ public class DashboardServiceTests
         principal.PlazosFijos.InteresesPrevistosConvertidos.Should().Be(12.5m);
         principal.PlazosFijos.DiasHastaProximoVencimiento.Should().Be(30);
         principal.PlazosFijos.TotalCuentas.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetPrincipalAsync_Should_Filter_And_Group_By_Pais()
+    {
+        await using var db = BuildDbContext();
+        var adminId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var spainId = Guid.NewGuid();
+        var franceId = Guid.NewGuid();
+        var cuentaSpainId = Guid.NewGuid();
+        var cuentaFranceId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = adminId,
+            Email = "admin.dashboard-country@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Dashboard Country Admin",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        SeedDashboardConfig(db, adminId);
+        db.Paises.AddRange(
+            new Pais { Id = spainId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = franceId, Nombre = "Francia", CodigoIso2 = "FR", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaSpainId, TitularId = titularId, Nombre = "Cuenta Espana", Divisa = "EUR", PaisId = spainId, Activa = true },
+            new Cuenta { Id = cuentaFranceId, TitularId = titularId, Nombre = "Cuenta Francia", Divisa = "EUR", PaisId = franceId, Activa = true });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaSpainId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = 100m, Saldo = 100m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaFranceId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = 200m, Saldo = 200m, FilaNumero = 1 });
+        await db.SaveChangesAsync();
+
+        var sut = BuildService(db);
+
+        var filtered = await sut.GetPrincipalAsync(adminId, "EUR", spainId, CancellationToken.None);
+        var unfiltered = await sut.GetPrincipalAsync(adminId, "EUR", null, CancellationToken.None);
+
+        filtered.TotalConvertido.Should().Be(100m);
+        filtered.SaldosPorCuenta.Should().ContainSingle(x => x.CuentaId == cuentaSpainId);
+        filtered.SaldosPorPais.Should().ContainSingle(x => x.PaisId == spainId && x.TotalConvertido == 100m);
+        unfiltered.SaldosPorPais.Should().HaveCount(2);
+        unfiltered.SaldosPorPais.Should().Contain(x => x.PaisId == franceId && x.TotalConvertido == 200m);
     }
 
     private sealed class StaticHttpClientFactory : IHttpClientFactory

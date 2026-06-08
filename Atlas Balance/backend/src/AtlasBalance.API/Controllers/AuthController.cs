@@ -41,7 +41,8 @@ public sealed class AuthController : ControllerBase
                 request.Password,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 cancellationToken,
-                trustedMfaToken);
+                trustedMfaToken,
+                Request.Headers.UserAgent.ToString());
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
         catch (AuthException ex)
@@ -82,7 +83,8 @@ public sealed class AuthController : ControllerBase
                 request.Code,
                 request.RememberDevice,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
-                cancellationToken);
+                cancellationToken,
+                Request.Headers.UserAgent.ToString());
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
         catch (AuthException ex)
@@ -102,7 +104,6 @@ public sealed class AuthController : ControllerBase
         DeleteCookie("access_token");
         DeleteCookie("refresh_token");
         DeleteCookie("csrf_token");
-        DeleteCookie("mfa_trusted");
 
         var actorUserId = TryGetUserId(out var authenticatedUserId)
             ? authenticatedUserId
@@ -121,6 +122,46 @@ public sealed class AuthController : ControllerBase
         }
 
         return Ok(new { message = "Sesión cerrada" });
+    }
+
+    [HttpGet("mfa/trusted-devices")]
+    [Authorize]
+    public async Task<IActionResult> TrustedDevices(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        var devices = await _authService.GetTrustedMfaDevicesAsync(userId, Request.Cookies["mfa_trusted"], cancellationToken);
+        return Ok(devices);
+    }
+
+    [HttpDelete("mfa/trusted-devices")]
+    [Authorize]
+    public async Task<IActionResult> RevokeCurrentTrustedDevice(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        var revoked = await _authService.RevokeCurrentTrustedMfaDeviceAsync(userId, Request.Cookies["mfa_trusted"], cancellationToken);
+        DeleteCookie("mfa_trusted");
+        return revoked ? Ok(new { message = "Dispositivo MFA recordado revocado" }) : NotFound(new { error = "Dispositivo MFA recordado no encontrado" });
+    }
+
+    [HttpDelete("mfa/trusted-devices/{deviceId:guid}")]
+    [Authorize]
+    public async Task<IActionResult> RevokeTrustedDevice(Guid deviceId, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        var revoked = await _authService.RevokeTrustedMfaDeviceAsync(userId, deviceId, cancellationToken);
+        return revoked ? Ok(new { message = "Dispositivo MFA recordado revocado" }) : NotFound(new { error = "Dispositivo MFA recordado no encontrado" });
     }
 
     [HttpGet("me")]

@@ -10,6 +10,7 @@ public sealed class DashboardPrincipalResponse
     public DashboardPlazosFijosResumenResponse PlazosFijos { get; set; } = new();
     public IReadOnlyList<DashboardSaldoTitularResponse> SaldosPorTitular { get; set; } = [];
     public IReadOnlyList<DashboardSaldoCuentaResponse> SaldosPorCuenta { get; set; } = [];
+    public IReadOnlyList<DashboardSaldoPaisResponse> SaldosPorPais { get; set; } = [];
     public IReadOnlyList<DashboardConcentracionBancoResponse> ConcentracionBancos { get; set; } = [];
     public DashboardChartColorsResponse ChartColors { get; set; } = new();
 }
@@ -33,6 +34,7 @@ public sealed class DashboardTitularResponse
     public decimal EgresosMes { get; set; }
     public decimal TotalConvertido { get; set; }
     public IReadOnlyList<DashboardSaldoCuentaResponse> SaldosPorCuenta { get; set; } = [];
+    public IReadOnlyList<DashboardSaldoPaisResponse> SaldosPorPais { get; set; } = [];
     public DashboardChartColorsResponse ChartColors { get; set; } = new();
 }
 
@@ -53,12 +55,23 @@ public sealed class DashboardSaldoCuentaResponse
     public string CuentaNombre { get; set; } = string.Empty;
     public Guid TitularId { get; set; }
     public string TitularNombre { get; set; } = string.Empty;
+    public Guid? PaisId { get; set; }
+    public string? PaisNombre { get; set; }
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = string.Empty;
     public bool EsEfectivo { get; set; }
     public string TipoCuenta { get; set; } = string.Empty;
     public decimal SaldoActual { get; set; }
     public decimal SaldoConvertido { get; set; }
+}
+
+public sealed class DashboardSaldoPaisResponse
+{
+    public Guid? PaisId { get; set; }
+    public string PaisNombre { get; set; } = string.Empty;
+    public IReadOnlyDictionary<string, decimal> SaldosPorDivisa { get; set; } = new Dictionary<string, decimal>();
+    public decimal TotalConvertido { get; set; }
+    public int TotalCuentas { get; set; }
 }
 
 public sealed class DashboardSaldosDivisaResponse

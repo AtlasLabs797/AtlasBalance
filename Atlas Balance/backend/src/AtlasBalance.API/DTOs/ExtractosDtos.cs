@@ -79,6 +79,8 @@ public sealed class CuentaResumenKpiResponse
     public string? Iban { get; set; }
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = string.Empty;
+    public Guid? PaisId { get; set; }
+    public string? PaisNombre { get; set; }
     public Guid TitularId { get; set; }
     public string TitularNombre { get; set; } = string.Empty;
     public bool EsEfectivo { get; set; }

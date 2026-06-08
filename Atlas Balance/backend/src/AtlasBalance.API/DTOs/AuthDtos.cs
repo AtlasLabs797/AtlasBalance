@@ -47,6 +47,18 @@ public sealed class AuthResponse
     public int MfaRememberDeviceDays { get; set; }
 }
 
+public sealed class TrustedMfaDeviceResponse
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public string? UserAgentSummary { get; set; }
+    public string? IpAddressSummary { get; set; }
+    public bool Current { get; set; }
+}
+
 public sealed class PermisoUsuarioResponse
 {
     public Guid Id { get; set; }

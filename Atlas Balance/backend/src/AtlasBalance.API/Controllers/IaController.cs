@@ -33,6 +33,23 @@ public sealed class IaController : ControllerBase
         return Ok(await _atlasAiService.GetConfigAsync(scope, cancellationToken));
     }
 
+    [HttpGet("modelos")]
+    public async Task<IActionResult> Modelos([FromQuery] string? provider, [FromQuery] string? search, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await _atlasAiService.GetModelsAsync(provider, search, cancellationToken));
+        }
+        catch (IaConfigurationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (IaProviderException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message });
+        }
+    }
+
     [HttpPost("chat")]
     public async Task<IActionResult> Chat([FromBody] IaChatRequest request, CancellationToken cancellationToken)
     {

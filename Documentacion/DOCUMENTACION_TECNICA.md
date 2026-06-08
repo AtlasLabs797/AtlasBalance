@@ -1,5 +1,41 @@
 # Documentacion tecnica
 
+## 2026-06-08 - V-02-02 - Actualizador, MFA recordado, OpenRouter y paises
+
+### Que cambio
+
+- `GET /api/sistema/version-disponible` devuelve preflight de instalabilidad: `instalable`, `bloqueos`, asset ZIP, firma, digest, clave publica y Watchdog disponible.
+- `POST /api/sistema/actualizar` y `AutoUpdateJob` rechazan iniciar update si `instalable=false`.
+- `IWatchdogClientService.EstaDisponibleAsync` comprueba el Watchdog local por HTTP con secreto y timeout; ya no se infiere disponibilidad desde el estado fallback.
+- `MFA_TRUSTED_DEVICES` guarda dispositivos recordados con token opaco hasheado, `usuario_id`, `security_stamp`, expiracion, revocacion, `last_used_at`, user-agent e IP resumidos.
+- `POST /api/auth/mfa/verify` emite `mfa_trusted` httpOnly/SameSite Strict por 90 dias si `remember_device=true`. `logout` no borra esa cookie.
+- `GET/DELETE /api/auth/mfa/trusted-devices` lista y revoca dispositivos del usuario. Revocar MFA o cambiar password invalida por rotacion de `security_stamp`.
+- OpenRouter acepta cualquier ID valido por sintaxis y conserva `openrouter/auto`; no hay allowlist fija ni array `models` de fallback.
+- `GET /api/ia/modelos` consulta OpenRouter `/api/v1/models` con cache corta y devuelve sugerencias filtradas.
+- `PAISES` es catalogo propio con soft delete; `CUENTAS.pais_id` es nullable. Cuentas y dashboard aceptan `paisId` y dashboard devuelve `saldos_por_pais`.
+
+### Por que
+
+El boton de update no podia depender solo de "hay version nueva": un release sin ZIP instalable, firma, digest, clave publica o Watchdog vivo no debe habilitar actualizacion. Eso no es UX; es control de danos.
+
+La confianza MFA anterior era fragil: default apagado, duracion incorrecta y logout la borraba. Si "recordar dispositivo" no sobrevive a logout, el texto miente.
+
+La allowlist fija de OpenRouter contradecia el objetivo de usar cualquier modelo disponible en la cuenta. La validacion correcta es sintactica y el proveedor decide disponibilidad, saldo y privacidad.
+
+Pais pertenece a cuenta porque el dashboard y los filtros operan sobre saldos por cuenta. Ponerlo en titular habria mezclado estructuras cuando un titular tenga cuentas en varios paises.
+
+### Verificacion
+
+- Tests nuevos/actualizados cubren preflight de update, MFA recordado 90 dias/revocacion, modelos OpenRouter arbitrarios e invalidos, y dashboard filtrado/agregado por pais.
+- `npm run build` frontend: OK.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe build AtlasBalance.API.csproj --no-restore`: OK con warnings no bloqueantes `NU1900` y Hangfire/PostgreSQL obsoleto.
+- Tests focalizados backend: 122/122 OK para updater, auto-update, auth/MFA, IA/OpenRouter, dashboard y respuestas manuales.
+- `git diff --check`: OK; solo avisos CRLF esperados.
+
+### Limite real
+
+No se ejecuto Testcontainers/Docker. Si una entrega necesita validar RLS con PostgreSQL real, ese gate no queda cubierto por esta pasada.
+
 ## 2026-06-01 - V-01.09 - Fallbacks de backup para updates desde instalaciones antiguas
 
 ### Que cambio

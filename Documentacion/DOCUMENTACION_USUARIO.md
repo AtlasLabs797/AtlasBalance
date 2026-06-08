@@ -32,6 +32,7 @@ El dashboard principal prioriza la lectura financiera:
 - Saldo total en la divisa base.
 - Porcentajes de variacion compactos bajo los KPIs principales, sin texto comparativo adicional.
 - Saldos por divisa, separando disponible e inmovilizado. La divisa base aparece siempre primero.
+- Filtro por pais y bloque `Saldos por pais` cuando las cuentas tienen pais asociado.
 - Plazos fijos debajo del resumen de saldo, ingresos y egresos.
 - Evolucion del periodo en una grafica ancha para leer la tendencia sin pelearse con tarjetas laterales.
 - Saldos por titular en la parte inferior, agrupados en tres columnas: Empresa, Autonomo y Particular.
@@ -60,9 +61,23 @@ Atlas Balance usa MFA con aplicaciones compatibles tipo Google Authenticator.
 
 La primera vez que entras, despues de email y contrasena, aparece un QR. Escanealo con Google Authenticator y escribe el codigo de 6 digitos. Si el QR no se puede escanear, usa la clave manual que aparece debajo.
 
-Despues de verificarlo, la casilla `Recordar este dispositivo durante 62 dias` solo aparece si un administrador la ha permitido en `Configuracion > General y SMTP > Autenticacion`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login. Se volvera a pedir tambien cuando pasen esos 62 dias, cierres sesion, borres cookies, cambie la seguridad del usuario o uses otro navegador/equipo.
+Despues de verificarlo, la casilla `Recordar este dispositivo durante 90 dias` aparece si el recuerdo de dispositivo esta habilitado en `Configuracion > General y SMTP > Autenticacion`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login.
 
-Cerrar sesion borra tambien la confianza MFA guardada en ese navegador. Si ya tenias una sesion abierta antes de que MFA fuera obligatorio, Atlas Balance puede pedirte iniciar sesion de nuevo y completar MFA; eso es intencionado para cortar sesiones antiguas sin garantia MFA. Si necesitas cortar todos los dispositivos recordados de un usuario, un administrador puede revocar el Authenticator desde `Usuarios`.
+Cerrar sesion ya no borra el dispositivo recordado. Se volvera a pedir MFA cuando pasen esos 90 dias, borres cookies, cambies de navegador/equipo, un administrador revoque el Authenticator, cambie la contrasena o rote la seguridad del usuario. Si necesitas cortar todos los dispositivos recordados de un usuario, un administrador puede revocar el Authenticator desde `Usuarios`.
+
+## Paises en cuentas
+
+En `Cuentas`, cada cuenta puede tener un pais opcional. Las cuentas antiguas quedan sin pais para no romper datos existentes.
+
+El filtro `Pais` aparece en cuentas y dashboard. El dashboard no solo filtra: tambien muestra `Saldos por pais`, para que no tengas que adivinar si el filtro esta haciendo algo.
+
+Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
+
+## IA y modelos OpenRouter
+
+En `Configuracion > Revision e IA`, OpenRouter permite escribir cualquier model id valido, por ejemplo `openrouter/auto` o `proveedor/modelo`. Las sugerencias vienen de OpenRouter, pero no son una jaula.
+
+Si OpenRouter rechaza un modelo por saldo, privacidad, proveedor no disponible o ID inexistente, Atlas Balance muestra un error limpio. Si escribes un ID con formato invalido, el backend lo rechaza antes de llamar al proveedor.
 
 ## Paquetes de instalacion
 
@@ -72,7 +87,7 @@ Los paquetes de release estan en:
 Atlas Balance/Atlas Balance Release
 ```
 
-Paquete esperado para la version actual `V-01.09`:
+Ultimo paquete publicado documentado antes de `V-02-02`:
 
 ```text
 AtlasBalance-V-01.09-win-x64.zip
@@ -85,7 +100,7 @@ SHA256 del ZIP firmado de `V-01.09`:
 4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128
 ```
 
-No reutilices hashes ni paquetes de `V-01.07` para publicar `V-01.09`. El asset de GitHub Release `V-01.09-win-x64` ya fue reemplazado con este ZIP corregido y su firma.
+No reutilices hashes ni paquetes de `V-01.09` para publicar `V-02-02`. Cuando se genere `V-02-02`, debe tener ZIP y `.sig` propios.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
@@ -172,11 +187,11 @@ Tambien puedes actualizar desde la propia app:
 2. Ve a `Configuracion > Sistema`.
 3. Deja el repo `https://github.com/AtlasLabs797/AtlasBalance`.
 4. Pulsa `Verificar actualizacion`.
-5. Si hay version nueva, pulsa `Actualizar ahora`.
+5. Si hay version nueva y el preflight dice `Instalable`, pulsa `Actualizar ahora`.
 
 Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
 
-La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena. En `V-01.09`, esa ruta ya apunta al paquete completo, pero depende de que `latest` publique el paquete firmado correcto y de que la instalacion tenga el Watchdog compatible.
+La app descarga el ZIP oficial `win-x64`, verifica digest y firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si falta ZIP, firma, digest, clave publica o Watchdog disponible, el boton queda bloqueado con el motivo. En `V-02-02`, `Actualizacion disponible` no significa `Instalable`; esa diferencia evita actualizaciones a medias.
 
 El limite maximo de descarga del paquete es 300 MB. Si una instalacion necesita un limite mas bajo, configura `UpdateSecurity:MaxUpdatePackageBytes`; no sirve para subir el maximo por encima de 300 MB. Si el servidor no declara tamano, Atlas Balance corta igualmente la descarga al superar el limite.
 
@@ -238,6 +253,8 @@ Las cuentas pueden ser:
 - `Plazo fijo`: dinero inmovilizado hasta una fecha de vencimiento.
 
 En cuentas normales y de efectivo puedes asociar un `Formato de importacion` desde `Cuentas`. Las normales ademas permiten banco, numero de cuenta e IBAN; las de efectivo no, porque ponerle IBAN a una caja es teatro administrativo.
+
+Tambien puedes asignar `Pais` a cualquier cuenta. Es opcional y se usa para filtros y agregados del dashboard.
 
 Al crear una cuenta de plazo fijo debes indicar fecha de inicio, fecha de vencimiento y si es renovable. Opcionalmente puedes informar interes previsto, cuenta de referencia y notas.
 

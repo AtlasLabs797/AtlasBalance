@@ -230,5 +230,10 @@ public class ManualProcessResponseTests
         {
             return Task.FromResult(new WatchdogStateResponse());
         }
+
+        public Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
     }
 }

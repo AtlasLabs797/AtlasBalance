@@ -10,6 +10,7 @@ public interface IWatchdogClientService
     Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken);
     Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken);
     Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken);
+    Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken);
 }
 
 public sealed class WatchdogClientService : IWatchdogClientService
@@ -140,6 +141,32 @@ public sealed class WatchdogClientService : IWatchdogClientService
             Mensaje = "Sin actividad",
             UpdatedAt = DateTime.UtcNow
         };
+    }
+
+    public async Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken)
+    {
+        var secret = _configuration["WatchdogSettings:SharedSecret"];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            var http = _httpClientFactory.CreateClient("watchdog-client");
+            EnsureLocalWatchdogBaseAddress(http.BaseAddress);
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/watchdog/estado");
+            request.Headers.Add("X-Watchdog-Secret", secret);
+            using var response = await http.SendAsync(request, timeout.Token);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Watchdog no disponible para preflight");
+            return false;
+        }
     }
 
     private static void EnsureLocalWatchdogBaseAddress(Uri? baseAddress)

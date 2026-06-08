@@ -28,6 +28,33 @@
 
 ## Cerrados
 
+### 2026-06-08 - V-02-02 - Cerrado - MFA recordado no reflejaba la intencion de producto
+
+- Contexto: el producto queria recordar dispositivo unos 3 meses, pero el estado activo era inconsistente.
+- Causa: `mfa_remember_device_enabled` venia apagado por defecto, `MfaRememberDeviceDays` era 62 y logout borraba `mfa_trusted`. Ademas, el token recordado era una cookie firmada, no un dispositivo persistido y revocable.
+- Impacto: el usuario no podia confiar en "recordar dispositivo"; cerrar sesion lo anulaba y no habia listado/revocacion por dispositivo.
+- Solucion: `MFA_TRUSTED_DEVICES` con token opaco hasheado, 90 dias, `security_stamp`, expiracion/revocacion y endpoints de listado/revocacion. Logout conserva la cookie; password/MFA/security stamp invalidan.
+- Verificacion: tests focalizados auth incluidos en bloque backend 122/122 OK.
+- Estado: cerrado.
+
+### 2026-06-08 - V-02-02 - Cerrado - Boton de update podia ofrecer una version no instalable
+
+- Contexto: `actualizacion_disponible=true` no garantiza que el release tenga ZIP oficial, firma, digest, clave publica y Watchdog operativo.
+- Causa: el contrato de `version-disponible` no exponia preflight de instalabilidad.
+- Impacto: la UI podia empujar al usuario a pulsar un boton condenado a fallar. Eso es mala UX y peor operacion.
+- Solucion: `version-disponible` devuelve `instalable`, `bloqueos` y flags de preflight; `Actualizar ahora` y auto-update solo arrancan si `instalable=true`.
+- Verificacion: tests de updater/auto-update incluidos en bloque backend 122/122 OK.
+- Estado: cerrado.
+
+### 2026-06-08 - V-02-02 - Cerrado - OpenRouter estaba limitado por allowlist local fija
+
+- Contexto: el objetivo era usar cualquier modelo OpenRouter valido, no solo una lista local.
+- Causa: backend y frontend normalizaban/recortaban modelos OpenRouter a sugerencias fijas y rutas fallback viejas.
+- Impacto: modelos validos de OpenRouter quedaban bloqueados por Atlas antes de llegar al proveedor.
+- Solucion: validacion sintactica de model id, envio exacto del modelo, `openrouter/auto` conservado y catalogo `/api/ia/modelos` con cache corta.
+- Verificacion: tests IA incluidos en bloque backend 122/122 OK y frontend `npm run build` OK.
+- Estado: cerrado.
+
 ### 2026-06-01 - V-01.09 - Cerrado - Update antiguo sin owner en Watchdog seguia cayendo a usuario runtime
 
 - Contexto: una instalacion `V-01.06` intento actualizar a `V-01.09` con el paquete corregido y `pg_dump` siguio fallando por RLS en `AUDITORIAS`.

@@ -22,6 +22,7 @@ import { formatDateTime as formatDateTimeValue } from '@/utils/formatters';
 import type {
   ConfiguracionSistema,
   DivisaActiva,
+  IaModel,
   IntegrationTokenListItem,
   PaginatedResponse,
   TipoCambio,
@@ -30,7 +31,7 @@ import type {
 
 type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones';
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
-const MFA_REMEMBER_DEVICE_DAYS = 62;
+const MFA_REMEMBER_DEVICE_DAYS = 90;
 
 const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
   { key: 'general', label: 'General + SMTP', Icon: Mail },
@@ -70,7 +71,7 @@ export default function ConfiguracionPage() {
       app_update_auto_last_checked_utc: '',
       app_update_auto_last_started_utc: '',
       app_update_auto_last_result: '',
-      mfa_remember_device_enabled: false,
+      mfa_remember_device_enabled: true,
       mfa_remember_device_days: MFA_REMEMBER_DEVICE_DAYS,
       backup_path: '',
       export_path: '',
@@ -120,11 +121,15 @@ export default function ConfiguracionPage() {
 
   const [tokens, setTokens] = useState<IntegrationTokenListItem[]>([]);
   const [catalogos, setCatalogos] = useState<CatalogoPermisos>({ titulares: [], cuentas: [] });
+  const [openRouterModels, setOpenRouterModels] = useState<IaModel[]>([]);
   const [showCreateTokenModal, setShowCreateTokenModal] = useState(false);
   const [tokenPlano, setTokenPlano] = useState<string | null>(null);
 
   const logout = useAuthStore((state) => state.logout);
   const updateAvailable = useUpdateStore((state) => state.available);
+  const updateInstallable = useUpdateStore((state) => state.installable);
+  const updateBlockers = useUpdateStore((state) => state.blockers);
+  const updatePreflight = useUpdateStore((state) => state.preflight);
   const currentVersion = useUpdateStore((state) => state.currentVersion);
   const availableVersion = useUpdateStore((state) => state.availableVersion);
   const checkUpdate = useUpdateStore((state) => state.check);
@@ -200,7 +205,7 @@ export default function ConfiguracionPage() {
         ...cfg.data,
         general: {
           ...cfg.data.general,
-          mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? false,
+          mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? true,
           mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
         },
         exchange: cfg.data.exchange ?? { api_key: '', api_key_configurada: false },
@@ -237,6 +242,33 @@ export default function ConfiguracionPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial explícita de configuración
   }, []);
+
+  useEffect(() => {
+    if (normalizeAiProvider(config.ia.provider) !== 'OPENROUTER') {
+      return;
+    }
+
+    let mounted = true;
+    const loadModels = async () => {
+      try {
+        const { data } = await api.get<IaModel[]>('/ia/modelos', {
+          params: { provider: 'OPENROUTER', search: config.ia.model || undefined },
+        });
+        if (mounted) {
+          setOpenRouterModels(data ?? []);
+        }
+      } catch {
+        if (mounted) {
+          setOpenRouterModels([]);
+        }
+      }
+    };
+
+    void loadModels();
+    return () => {
+      mounted = false;
+    };
+  }, [config.ia.provider, config.ia.model]);
 
   const saveConfig = async (message: string) => {
     const aiProvider = normalizeAiProvider(config.ia.provider);
@@ -532,6 +564,9 @@ export default function ConfiguracionPage() {
   const selectedAiProvider = normalizeAiProvider(config.ia.provider);
   const selectedAiModel = normalizeAiModel(selectedAiProvider, config.ia.model);
   const aiModelOptions = getAiModelOptions(selectedAiProvider);
+  const openRouterModelOptions = openRouterModels.length > 0
+    ? openRouterModels.map((model) => ({ value: model.id, label: model.nombre || model.id }))
+    : aiModelOptions;
   const aiUsesOpenAi = selectedAiProvider === 'OPENAI';
   const aiApiKeyValue = aiUsesOpenAi ? config.ia.openai_api_key : config.ia.openrouter_api_key;
   const aiApiKeyConfigured = aiUsesOpenAi ? config.ia.openai_api_key_configurada : config.ia.openrouter_api_key_configurada;
@@ -615,7 +650,7 @@ export default function ConfiguracionPage() {
                 Permitir recordar dispositivos MFA durante {config.general.mfa_remember_device_days || MFA_REMEMBER_DEVICE_DAYS} días
               </label>
               <p className="config-note config-note--warning">
-                Cerrar sesión borra la confianza MFA del navegador; este ajuste solo permite omitir el código en nuevos logins mientras la cookie siga viva.
+                Cerrar sesión mantiene el dispositivo recordado. Revoca dispositivos desde MFA o cambia la contraseña para invalidarlos.
               </p>
             </article>
 
@@ -789,13 +824,32 @@ export default function ConfiguracionPage() {
                     }
                   />
                 </label>
-                <AppSelect
-                  className="config-inline-select"
-                  label="Modelo"
-                  value={selectedAiModel}
-                  options={aiModelOptions}
-                  onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
-                />
+                {aiUsesOpenAi ? (
+                  <AppSelect
+                    className="config-inline-select"
+                    label="Modelo"
+                    value={selectedAiModel}
+                    options={aiModelOptions}
+                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
+                  />
+                ) : (
+                  <label className="config-field">
+                    <span>Modelo</span>
+                    <input
+                      list="openrouter-modelos"
+                      value={config.ia.model}
+                      placeholder="openrouter/auto o proveedor/modelo"
+                      onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: e.target.value } }))}
+                    />
+                    <datalist id="openrouter-modelos">
+                      {openRouterModelOptions.map((model) => (
+                        <option key={model.value} value={model.value}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </datalist>
+                  </label>
+                )}
               </div>
               <p className={config.ia.configurada ? 'config-note' : 'config-note config-note--warning'}>
                 {config.ia.mensaje_estado || 'Configura IA antes de permitir consultas.'}
@@ -1102,16 +1156,27 @@ export default function ConfiguracionPage() {
             <article><h3>Versión actual</h3><p>{currentVersion ?? 'Sin dato'}</p></article>
             <article><h3>Versión disponible</h3><p>{availableVersion ?? 'Ninguna'}</p></article>
             <article><h3>Estado</h3><p className={updateAvailable ? 'config-badge config-badge--stale' : 'config-badge config-badge--ok'}>{updateAvailable ? 'Actualización disponible' : 'Actualizado'}</p></article>
+            <article><h3>Instalable</h3><p className={updateInstallable ? 'config-badge config-badge--ok' : 'config-badge config-badge--stale'}>{updateInstallable ? 'Listo' : 'Bloqueado'}</p></article>
+            <article><h3>ZIP</h3><p>{updatePreflight.assetZipName ?? (updatePreflight.assetZipDetected ? 'Detectado' : 'Sin detectar')}</p></article>
+            <article><h3>Firma/digest</h3><p>{updatePreflight.signatureDetected && updatePreflight.digestPresent ? 'OK' : 'Pendiente'}</p></article>
+            <article><h3>Watchdog</h3><p className={updatePreflight.watchdogAvailable ? 'config-badge config-badge--ok' : 'config-badge config-badge--stale'}>{updatePreflight.watchdogAvailable ? 'Disponible' : 'No disponible'}</p></article>
             <article><h3>Auto</h3><p className={config.general.app_update_auto_enabled ? 'config-badge config-badge--ok' : 'config-badge'}>{config.general.app_update_auto_enabled ? 'Activo' : 'Inactivo'}</p></article>
             <article><h3>Última comprobación auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_checked_utc || null)}</p></article>
             <article><h3>Último inicio auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_started_utc || null)}</p></article>
           </div>
+          {updateAvailable && !updateInstallable && updateBlockers.length > 0 ? (
+            <ul className="config-note config-note--warning">
+              {updateBlockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          ) : null}
           {config.general.app_update_auto_last_result ? <p className="config-note">{config.general.app_update_auto_last_result}</p> : null}
           {updateMessage ? <p className="config-note" role="status">{updateMessage}</p> : null}
           <div className="import-actions">
             <button type="submit" className="button-primary" disabled={busy}>Guardar actualizaciones</button>
             <button type="button" className="button-secondary" onClick={() => void checkUpdate(true)} disabled={busy}>Verificar actualización</button>
-            <button type="button" className="button-warning" onClick={updateNow} disabled={!updateAvailable || busy}>Actualizar ahora</button>
+            <button type="button" className="button-warning" onClick={updateNow} disabled={!updateAvailable || !updateInstallable || busy}>Actualizar ahora</button>
           </div>
         </form>
       )}

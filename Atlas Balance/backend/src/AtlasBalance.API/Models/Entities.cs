@@ -53,6 +53,35 @@ public class RefreshToken
     public Usuario? Usuario { get; set; }
 }
 
+public class MfaTrustedDevice : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid UsuarioId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public string SecurityStamp { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public string? UserAgentSummary { get; set; }
+    public string? IpAddressSummary { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+    public Usuario? Usuario { get; set; }
+}
+
+public class Pais : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string? CodigoIso2 { get; set; }
+    public bool Activo { get; set; } = true;
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
 public class Titular : ISoftDelete
 {
     public Guid Id { get; set; }
@@ -78,6 +107,8 @@ public class Cuenta : ISoftDelete
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = "EUR";
     public Guid? FormatoId { get; set; }
+    public Guid? PaisId { get; set; }
+    public Pais? Pais { get; set; }
     public TipoCuenta TipoCuenta { get; set; } = TipoCuenta.NORMAL;
     public bool EsEfectivo { get; set; }
     public bool Activa { get; set; } = true;

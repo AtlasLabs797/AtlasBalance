@@ -17,12 +17,15 @@ namespace AtlasBalance.API.Services;
 
 public interface IAuthService
 {
-    Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null);
-    Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken);
+    Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null, string? userAgent = null);
+    Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken, string? userAgent = null);
     Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken);
     Task<Guid?> LogoutAsync(string? refreshToken, CancellationToken cancellationToken);
     Task<AuthResult> GetCurrentAsync(Guid userId, CancellationToken cancellationToken);
     Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken);
+    Task<IReadOnlyList<TrustedMfaDeviceResponse>> GetTrustedMfaDevicesAsync(Guid userId, string? currentTrustedMfaToken, CancellationToken cancellationToken);
+    Task<bool> RevokeTrustedMfaDeviceAsync(Guid userId, Guid deviceId, CancellationToken cancellationToken);
+    Task<bool> RevokeCurrentTrustedMfaDeviceAsync(Guid userId, string? currentTrustedMfaToken, CancellationToken cancellationToken);
 }
 
 public sealed class AuthService : IAuthService
@@ -33,7 +36,6 @@ public sealed class AuthService : IAuthService
     private const int MaxMfaFailuresPerChallenge = 5;
     private const int MaxMfaFailuresPerUser = 5;
     private const string MfaIssuer = "Atlas Balance";
-    private const string MfaRememberTokenVersion = "v1";
     private static readonly object LoginRateLimitLock = new();
     private static readonly object MfaRateLimitLock = new();
     private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(30);
@@ -63,7 +65,7 @@ public sealed class AuthService : IAuthService
         _secretProtector = secretProtector ?? PassthroughSecretProtector.Instance;
     }
 
-    public async Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null)
+    public async Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null, string? userAgent = null)
     {
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
         {
@@ -200,7 +202,8 @@ public sealed class AuthService : IAuthService
 
         var mfaRequired = RequiresMfa(usuario);
         var rememberDeviceEnabled = mfaRequired && await IsMfaRememberDeviceEnabledAsync(cancellationToken);
-        var trustedMfaTokenValid = rememberDeviceEnabled && IsTrustedMfaTokenValid(usuario, trustedMfaToken, now);
+        var trustedMfaTokenValid = rememberDeviceEnabled &&
+            await TryUseTrustedMfaDeviceAsync(usuario, trustedMfaToken, now, ipAddress, userAgent, cancellationToken);
         if (mfaRequired && !trustedMfaTokenValid)
         {
             var challenge = CreateMfaChallenge(usuario, ipAddress);
@@ -251,7 +254,7 @@ public sealed class AuthService : IAuthService
         return result;
     }
 
-    public async Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken)
+    public async Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken, string? userAgent = null)
     {
         if (string.IsNullOrWhiteSpace(challengeId) || string.IsNullOrWhiteSpace(code))
         {
@@ -384,8 +387,11 @@ public sealed class AuthService : IAuthService
         var rememberDeviceEnabled = rememberDevice && await IsMfaRememberDeviceEnabledAsync(cancellationToken);
         if (rememberDeviceEnabled)
         {
-            result.TrustedMfaTokenExpiresAt = now.Add(MfaRememberDuration);
-            result.TrustedMfaToken = GenerateTrustedMfaToken(usuario, result.TrustedMfaTokenExpiresAt.Value);
+            var trustedDevice = CreateTrustedMfaDevice(usuario, now, ipAddress, userAgent);
+            _dbContext.MfaTrustedDevices.Add(trustedDevice.Device);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            result.TrustedMfaTokenExpiresAt = trustedDevice.ExpiresAt;
+            result.TrustedMfaToken = trustedDevice.Token;
         }
         else
         {
@@ -530,6 +536,72 @@ public sealed class AuthService : IAuthService
         storedToken.RevocadoEn = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
         return storedToken.UsuarioId;
+    }
+
+    public async Task<IReadOnlyList<TrustedMfaDeviceResponse>> GetTrustedMfaDevicesAsync(Guid userId, string? currentTrustedMfaToken, CancellationToken cancellationToken)
+    {
+        var currentHash = TryHashTrustedMfaToken(currentTrustedMfaToken);
+        var now = DateTime.UtcNow;
+        var devices = await _dbContext.MfaTrustedDevices
+            .AsNoTracking()
+            .Where(x => x.UsuarioId == userId && x.ExpiresAt > now)
+            .OrderByDescending(x => x.LastUsedAt ?? x.CreatedAt)
+            .Select(x => new TrustedMfaDeviceResponse
+            {
+                Id = x.Id,
+                CreatedAt = x.CreatedAt,
+                ExpiresAt = x.ExpiresAt,
+                LastUsedAt = x.LastUsedAt,
+                RevokedAt = x.RevokedAt,
+                UserAgentSummary = x.UserAgentSummary,
+                IpAddressSummary = x.IpAddressSummary,
+                Current = currentHash != null && x.TokenHash == currentHash
+            })
+            .ToListAsync(cancellationToken);
+
+        return devices;
+    }
+
+    public async Task<bool> RevokeTrustedMfaDeviceAsync(Guid userId, Guid deviceId, CancellationToken cancellationToken)
+    {
+        var device = await _dbContext.MfaTrustedDevices
+            .FirstOrDefaultAsync(x => x.Id == deviceId && x.UsuarioId == userId, cancellationToken);
+        if (device is null)
+        {
+            return false;
+        }
+
+        if (device.RevokedAt is null)
+        {
+            device.RevokedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return true;
+    }
+
+    public async Task<bool> RevokeCurrentTrustedMfaDeviceAsync(Guid userId, string? currentTrustedMfaToken, CancellationToken cancellationToken)
+    {
+        var currentHash = TryHashTrustedMfaToken(currentTrustedMfaToken);
+        if (currentHash is null)
+        {
+            return false;
+        }
+
+        var device = await _dbContext.MfaTrustedDevices
+            .FirstOrDefaultAsync(x => x.UsuarioId == userId && x.TokenHash == currentHash, cancellationToken);
+        if (device is null)
+        {
+            return false;
+        }
+
+        if (device.RevokedAt is null)
+        {
+            device.RevokedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return true;
     }
 
     public async Task<AuthResult> GetCurrentAsync(Guid userId, CancellationToken cancellationToken)
@@ -977,82 +1049,105 @@ public sealed class AuthService : IAuthService
             .Select(x => x.Valor)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return bool.TryParse(value, out var enabled) && enabled;
+        return string.IsNullOrWhiteSpace(value) || !bool.TryParse(value, out var enabled) || enabled;
     }
 
-    private bool IsTrustedMfaTokenValid(Usuario usuario, string? token, DateTime now)
+    private async Task<bool> TryUseTrustedMfaDeviceAsync(
+        Usuario usuario,
+        string? token,
+        DateTime now,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(token) || !usuario.MfaEnabled || string.IsNullOrWhiteSpace(usuario.MfaSecret))
+        if (!usuario.MfaEnabled || string.IsNullOrWhiteSpace(usuario.MfaSecret))
         {
             return false;
         }
 
-        var parts = token.Split('.', 2);
-        if (parts.Length != 2 ||
-            string.IsNullOrWhiteSpace(parts[0]) ||
-            string.IsNullOrWhiteSpace(parts[1]) ||
-            !FixedTimeEquals(parts[1], ComputeMfaRememberSignature(parts[0])))
+        var tokenHash = TryHashTrustedMfaToken(token);
+        if (tokenHash is null)
         {
             return false;
         }
 
-        MfaRememberPayload? payload;
-        try
-        {
-            payload = JsonSerializer.Deserialize<MfaRememberPayload>(Encoding.UTF8.GetString(Base64UrlDecode(parts[0])));
-        }
-        catch
+        var device = await _dbContext.MfaTrustedDevices
+            .FirstOrDefaultAsync(x => x.UsuarioId == usuario.Id && x.TokenHash == tokenHash, cancellationToken);
+        if (device is null ||
+            device.RevokedAt.HasValue ||
+            device.ExpiresAt <= now ||
+            !HasMatchingSecurityStamp(device.SecurityStamp, usuario.SecurityStamp))
         {
             return false;
         }
 
-        return payload is not null &&
-               payload.Version == MfaRememberTokenVersion &&
-               payload.UserId == usuario.Id &&
-               payload.SecurityStamp == usuario.SecurityStamp &&
-               payload.ExpiresAtUnix > new DateTimeOffset(now).ToUnixTimeSeconds();
+        device.LastUsedAt = now;
+        var ipSummary = SummarizeIp(ipAddress);
+        if (ipSummary is not null)
+        {
+            device.IpAddressSummary = ipSummary;
+        }
+
+        var userAgentSummary = SummarizeUserAgent(userAgent);
+        if (userAgentSummary is not null)
+        {
+            device.UserAgentSummary = userAgentSummary;
+        }
+
+        return true;
     }
 
-    private string GenerateTrustedMfaToken(Usuario usuario, DateTime expiresAtUtc)
+    private TrustedMfaDeviceIssue CreateTrustedMfaDevice(Usuario usuario, DateTime now, string? ipAddress, string? userAgent)
     {
-        var payload = new MfaRememberPayload(
-            MfaRememberTokenVersion,
-            usuario.Id,
-            usuario.SecurityStamp,
-            new DateTimeOffset(expiresAtUtc).ToUnixTimeSeconds());
-        var payloadBase64 = Base64UrlEncode(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload)));
-        return $"{payloadBase64}.{ComputeMfaRememberSignature(payloadBase64)}";
+        var token = GenerateRefreshToken();
+        var expiresAt = now.Add(MfaRememberDuration);
+        return new TrustedMfaDeviceIssue(
+            token,
+            expiresAt,
+            new MfaTrustedDevice
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = usuario.Id,
+                TokenHash = ComputeSha256(token),
+                SecurityStamp = usuario.SecurityStamp,
+                CreatedAt = now,
+                ExpiresAt = expiresAt,
+                LastUsedAt = now,
+                UserAgentSummary = SummarizeUserAgent(userAgent),
+                IpAddressSummary = SummarizeIp(ipAddress)
+            });
     }
 
-    private string ComputeMfaRememberSignature(string payloadBase64)
+    private static string? TryHashTrustedMfaToken(string? token)
     {
-        var jwtSecret = _configuration["JwtSettings:Secret"]
-            ?? throw new InvalidOperationException("JwtSettings:Secret is required");
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(jwtSecret));
-        return Base64UrlEncode(hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadBase64)));
+        var normalized = token?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > 512)
+        {
+            return null;
+        }
+
+        return ComputeSha256(normalized);
     }
 
-    private static string Base64UrlEncode(byte[] bytes)
+    private static string? SummarizeUserAgent(string? userAgent)
     {
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
+        return TruncateForStorage(userAgent, 256);
     }
 
-    private static byte[] Base64UrlDecode(string value)
+    private static string? SummarizeIp(string? ipAddress)
     {
-        var padded = value.Replace('-', '+').Replace('_', '/');
-        padded = padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '=');
-        return Convert.FromBase64String(padded);
+        return TruncateForStorage(ipAddress, 128);
     }
 
-    private static bool FixedTimeEquals(string left, string right)
+    private static string? TruncateForStorage(string? value, int maxLength)
     {
-        var leftBytes = Encoding.ASCII.GetBytes(left);
-        var rightBytes = Encoding.ASCII.GetBytes(right);
-        return leftBytes.Length == rightBytes.Length &&
-               CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
+        var normalized = value?.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength];
     }
 
     private static IReadOnlyList<string>? ParseJsonArray(string? rawJson)
@@ -1119,11 +1214,10 @@ internal sealed record MfaChallengeState(
     string? IpAddress,
     int FailedAttempts);
 
-internal sealed record MfaRememberPayload(
-    string Version,
-    Guid UserId,
-    string SecurityStamp,
-    long ExpiresAtUnix);
+internal sealed record TrustedMfaDeviceIssue(
+    string Token,
+    DateTime ExpiresAt,
+    MfaTrustedDevice Device);
 
 internal sealed class PassthroughSecretProtector : ISecretProtector
 {

@@ -43,6 +43,8 @@ export interface Cuenta {
   banco_nombre: string | null;
   divisa: string;
   formato_id: string | null;
+  pais_id: string | null;
+  pais_nombre: string | null;
   es_efectivo: boolean;
   tipo_cuenta: TipoCuenta;
   titular_tipo?: TipoTitular;
@@ -103,6 +105,8 @@ export interface CuentaResumenKpi {
   iban: string | null;
   banco_nombre: string | null;
   divisa: string;
+  pais_id: string | null;
+  pais_nombre: string | null;
   titular_id: string;
   titular_nombre: string;
   es_efectivo: boolean;
@@ -256,6 +260,16 @@ export interface TipoCambio {
   tasa: number;
   fecha_actualizacion: string;
   fuente: FuenteTipoCambio;
+}
+
+export interface Pais {
+  id: string;
+  nombre: string;
+  codigo_iso2: string | null;
+  activo: boolean;
+  fecha_creacion: string;
+  fecha_modificacion: string | null;
+  deleted_at: string | null;
 }
 
 export interface Configuracion {
@@ -454,6 +468,12 @@ export interface IaChatResponse {
   aviso: string | null;
 }
 
+export interface IaModel {
+  id: string;
+  nombre: string;
+  context_length: number | null;
+}
+
 export interface BackupItem {
   id: string;
   fecha_creacion: string;
@@ -495,6 +515,14 @@ export interface VersionDisponibleResponse {
   version_actual: string;
   version_disponible: string | null;
   actualizacion_disponible: boolean;
+  instalable: boolean;
+  bloqueos: string[];
+  asset_zip_nombre: string | null;
+  asset_zip_detectado: boolean;
+  firma_detectada: boolean;
+  digest_presente: boolean;
+  clave_publica_configurada: boolean;
+  watchdog_disponible: boolean;
   mensaje: string | null;
 }
 
@@ -602,6 +630,7 @@ export interface DashboardPrincipal {
   plazos_fijos: DashboardPlazosFijosResumen;
   saldos_por_titular: DashboardSaldoTitular[];
   saldos_por_cuenta: DashboardSaldoCuenta[];
+  saldos_por_pais: DashboardSaldoPais[];
   concentracion_bancos: DashboardConcentracionBanco[];
   chart_colors: DashboardChartColors;
 }
@@ -623,6 +652,7 @@ export interface DashboardTitular {
   egresos_mes: number;
   total_convertido: number;
   saldos_por_cuenta: DashboardSaldoCuenta[];
+  saldos_por_pais: DashboardSaldoPais[];
   chart_colors: DashboardChartColors;
 }
 
@@ -669,12 +699,22 @@ export interface DashboardSaldoCuenta {
   cuenta_nombre: string;
   titular_id: string;
   titular_nombre: string;
+  pais_id: string | null;
+  pais_nombre: string | null;
   banco_nombre?: string | null;
   divisa: string;
   es_efectivo: boolean;
   tipo_cuenta: TipoCuenta;
   saldo_actual: number;
   saldo_convertido: number;
+}
+
+export interface DashboardSaldoPais {
+  pais_id: string | null;
+  pais_nombre: string;
+  saldos_por_divisa: Record<string, number>;
+  total_convertido: number;
+  total_cuentas: number;
 }
 
 export interface DashboardSaldoDivisa {

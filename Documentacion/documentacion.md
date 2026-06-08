@@ -201,9 +201,11 @@ En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
 https://github.com/AtlasLabs797/AtlasBalance
 ```
 
-Al pulsar `Verificar actualizacion`, Atlas Balance consulta el ultimo GitHub Release oficial.
+Al pulsar `Verificar actualizacion`, Atlas Balance consulta el ultimo GitHub Release oficial y devuelve si la version es instalable. Hay una diferencia importante: version nueva no significa paquete aplicable.
 
 Si activas `Actualizar automaticamente desde GitHub`, la API revisa una vez al dia a partir de la hora UTC configurada. Si hay una version superior, descarga el release firmado y pide al Watchdog aplicar la actualizacion. Viene desactivado por defecto. Activarlo sin entender las ventanas de mantenimiento seria comodidad barata y downtime caro.
+
+Desde `V-02-02`, la UI solo habilita `Actualizar ahora` si el preflight confirma ZIP oficial `win-x64`, firma `.zip.sig`, digest SHA-256, clave publica de firma y Watchdog local disponible. Si algo falta, muestra el bloqueo en vez de dejarte pulsar un boton que iba a fallar.
 
 Al pulsar `Actualizar ahora`, Atlas Balance:
 
@@ -332,7 +334,7 @@ Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exac
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
 - PostgreSQL aplica Row Level Security con politicas por usuario, integracion, admin y operaciones internas. El contexto va firmado; el rol runtime de la app no debe tener `BYPASSRLS` ni ser owner de las tablas.
-- MFA web es obligatorio cuando `Security:RequireMfaForWebUsers=true`. El recuerdo de dispositivo dura 62 dias, solo aparece si un administrador activa `mfa_remember_device_enabled`, y `logout` borra `mfa_trusted`.
+- MFA web es obligatorio cuando `Security:RequireMfaForWebUsers=true`. Desde `V-02-02`, el recuerdo de dispositivo dura 90 dias, queda habilitado por defecto en configuracion nueva, persiste tras logout y puede revocarse por dispositivo o invalidarse al rotar `security_stamp`.
 - `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
 - La URL de actualizaciones queda limitada al repo oficial de Atlas Balance en GitHub por HTTPS y el paquete online debe venir firmado con `.zip.sig`.
 - `config\INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial con ACL limitada a Administrators/SYSTEM y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.

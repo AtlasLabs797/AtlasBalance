@@ -7,10 +7,10 @@ namespace AtlasBalance.API.Services;
 
 public interface IDashboardService
 {
-    Task<DashboardPrincipalResponse> GetPrincipalAsync(Guid userId, string? divisaPrincipal, CancellationToken cancellationToken);
-    Task<DashboardTitularResponse> GetTitularAsync(Guid userId, Guid titularId, string? divisaPrincipal, CancellationToken cancellationToken);
-    Task<DashboardSaldosDivisaResponse> GetSaldosDivisaAsync(Guid userId, string? divisaPrincipal, Guid? titularId, CancellationToken cancellationToken);
-    Task<DashboardEvolucionResponse> GetEvolucionAsync(Guid userId, string periodo, string? divisaPrincipal, Guid? titularId, CancellationToken cancellationToken);
+    Task<DashboardPrincipalResponse> GetPrincipalAsync(Guid userId, string? divisaPrincipal, Guid? paisId, CancellationToken cancellationToken);
+    Task<DashboardTitularResponse> GetTitularAsync(Guid userId, Guid titularId, string? divisaPrincipal, Guid? paisId, CancellationToken cancellationToken);
+    Task<DashboardSaldosDivisaResponse> GetSaldosDivisaAsync(Guid userId, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellationToken);
+    Task<DashboardEvolucionResponse> GetEvolucionAsync(Guid userId, string periodo, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellationToken);
 }
 
 public sealed class DashboardService : IDashboardService
@@ -24,12 +24,12 @@ public sealed class DashboardService : IDashboardService
         _tiposCambioService = tiposCambioService;
     }
 
-    public async Task<DashboardPrincipalResponse> GetPrincipalAsync(Guid userId, string? divisaPrincipal, CancellationToken cancellationToken)
+    public async Task<DashboardPrincipalResponse> GetPrincipalAsync(Guid userId, string? divisaPrincipal, Guid? paisId, CancellationToken cancellationToken)
     {
         var scope = await GetAuthorizedScopeAsync(userId, cancellationToken);
         var targetCurrency = await ResolveDivisaPrincipalAsync(divisaPrincipal, cancellationToken);
         var chartColors = await ResolveChartColorsAsync(cancellationToken);
-        var cuentas = await GetScopedCuentasAsync(scope, null, cancellationToken);
+        var cuentas = await GetScopedCuentasAsync(scope, null, paisId, cancellationToken);
         var metrics = await BuildMetricsAsync(cuentas, targetCurrency, cancellationToken);
         var plazosFijos = await BuildPlazosFijosResumenAsync(cuentas, metrics, targetCurrency, cancellationToken);
 
@@ -66,6 +66,7 @@ public sealed class DashboardService : IDashboardService
 
         var concentracionBancos = BuildConcentracionBancos(cuentas, metrics);
         var saldosPorCuenta = BuildSaldosPorCuenta(cuentas, metrics);
+        var saldosPorPais = BuildSaldosPorPais(cuentas, metrics);
 
         return new DashboardPrincipalResponse
         {
@@ -78,12 +79,13 @@ public sealed class DashboardService : IDashboardService
             PlazosFijos = plazosFijos,
             SaldosPorTitular = titulares,
             SaldosPorCuenta = saldosPorCuenta,
+            SaldosPorPais = saldosPorPais,
             ConcentracionBancos = concentracionBancos,
             ChartColors = chartColors
         };
     }
 
-    public async Task<DashboardTitularResponse> GetTitularAsync(Guid userId, Guid titularId, string? divisaPrincipal, CancellationToken cancellationToken)
+    public async Task<DashboardTitularResponse> GetTitularAsync(Guid userId, Guid titularId, string? divisaPrincipal, Guid? paisId, CancellationToken cancellationToken)
     {
         var scope = await GetAuthorizedScopeAsync(userId, cancellationToken);
         var canAccessTitular = await CanAccessTitularAsync(scope, titularId, cancellationToken);
@@ -94,7 +96,7 @@ public sealed class DashboardService : IDashboardService
 
         var targetCurrency = await ResolveDivisaPrincipalAsync(divisaPrincipal, cancellationToken);
         var chartColors = await ResolveChartColorsAsync(cancellationToken);
-        var cuentas = await GetScopedCuentasAsync(scope, titularId, cancellationToken);
+        var cuentas = await GetScopedCuentasAsync(scope, titularId, paisId, cancellationToken);
 
         var titularNombre = cuentas.FirstOrDefault()?.TitularNombre
             ?? await _dbContext.Titulares
@@ -106,6 +108,7 @@ public sealed class DashboardService : IDashboardService
         var metrics = await BuildMetricsAsync(cuentas, targetCurrency, cancellationToken);
 
         var saldosPorCuenta = BuildSaldosPorCuenta(cuentas, metrics);
+        var saldosPorPais = BuildSaldosPorPais(cuentas, metrics);
 
         return new DashboardTitularResponse
         {
@@ -118,6 +121,7 @@ public sealed class DashboardService : IDashboardService
             EgresosMes = Decimal.Round(metrics.EgresosMes, 2),
             TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
             SaldosPorCuenta = saldosPorCuenta,
+            SaldosPorPais = saldosPorPais,
             ChartColors = chartColors
         };
     }
@@ -138,6 +142,8 @@ public sealed class DashboardService : IDashboardService
                     CuentaNombre = c.CuentaNombre,
                     TitularId = c.TitularId,
                     TitularNombre = c.TitularNombre,
+                    PaisId = c.PaisId,
+                    PaisNombre = c.PaisNombre,
                     BancoNombre = c.BancoNombre,
                     Divisa = c.Divisa,
                     EsEfectivo = c.EsEfectivo,
@@ -150,7 +156,7 @@ public sealed class DashboardService : IDashboardService
             .ToList();
     }
 
-    public async Task<DashboardSaldosDivisaResponse> GetSaldosDivisaAsync(Guid userId, string? divisaPrincipal, Guid? titularId, CancellationToken cancellationToken)
+    public async Task<DashboardSaldosDivisaResponse> GetSaldosDivisaAsync(Guid userId, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellationToken)
     {
         var scope = await GetAuthorizedScopeAsync(userId, cancellationToken);
         if (titularId.HasValue && !await CanAccessTitularAsync(scope, titularId.Value, cancellationToken))
@@ -159,7 +165,7 @@ public sealed class DashboardService : IDashboardService
         }
 
         var targetCurrency = await ResolveDivisaPrincipalAsync(divisaPrincipal, cancellationToken);
-        var cuentas = await GetScopedCuentasAsync(scope, titularId, cancellationToken);
+        var cuentas = await GetScopedCuentasAsync(scope, titularId, paisId, cancellationToken);
         var metrics = await BuildMetricsAsync(cuentas, targetCurrency, cancellationToken);
 
         var items = new List<DashboardSaldoDivisaResponse>();
@@ -189,7 +195,7 @@ public sealed class DashboardService : IDashboardService
         };
     }
 
-    public async Task<DashboardEvolucionResponse> GetEvolucionAsync(Guid userId, string periodo, string? divisaPrincipal, Guid? titularId, CancellationToken cancellationToken)
+    public async Task<DashboardEvolucionResponse> GetEvolucionAsync(Guid userId, string periodo, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellationToken)
     {
         var normalizedPeriodo = NormalizePeriodo(periodo);
         var scope = await GetAuthorizedScopeAsync(userId, cancellationToken);
@@ -200,7 +206,7 @@ public sealed class DashboardService : IDashboardService
         }
 
         var targetCurrency = await ResolveDivisaPrincipalAsync(divisaPrincipal, cancellationToken);
-        var cuentas = await GetScopedCuentasAsync(scope, titularId, cancellationToken);
+        var cuentas = await GetScopedCuentasAsync(scope, titularId, paisId, cancellationToken);
         var cuentaIds = cuentas.Select(x => x.CuentaId).ToHashSet();
 
         if (cuentaIds.Count == 0)
@@ -384,6 +390,39 @@ public sealed class DashboardService : IDashboardService
             .ToList();
     }
 
+    private static IReadOnlyList<DashboardSaldoPaisResponse> BuildSaldosPorPais(
+        IReadOnlyList<CuentaScopeItem> cuentas,
+        DashboardMetrics metrics)
+    {
+        return cuentas
+            .GroupBy(c => new
+            {
+                c.PaisId,
+                PaisNombre = string.IsNullOrWhiteSpace(c.PaisNombre) ? "Sin pais" : c.PaisNombre!
+            })
+            .Select(group =>
+            {
+                var saldosPorDivisa = group
+                    .GroupBy(x => x.Divisa)
+                    .ToDictionary(
+                        x => x.Key,
+                        x => Decimal.Round(x.Sum(c => metrics.SaldoByCuentaId.TryGetValue(c.CuentaId, out var saldo) ? saldo : 0m), 2));
+                var totalConvertido = group.Sum(c => metrics.SaldoConvertidoByCuentaId.GetValueOrDefault(c.CuentaId, 0m));
+
+                return new DashboardSaldoPaisResponse
+                {
+                    PaisId = group.Key.PaisId,
+                    PaisNombre = group.Key.PaisNombre,
+                    SaldosPorDivisa = saldosPorDivisa,
+                    TotalConvertido = Decimal.Round(totalConvertido, 2),
+                    TotalCuentas = group.Count()
+                };
+            })
+            .OrderByDescending(x => x.TotalConvertido)
+            .ThenBy(x => x.PaisNombre)
+            .ToList();
+    }
+
     private async Task<DashboardMetrics> BuildMetricsAsync(IReadOnlyList<CuentaScopeItem> cuentas, string targetCurrency, CancellationToken cancellationToken)
     {
         if (cuentas.Count == 0)
@@ -539,10 +578,12 @@ public sealed class DashboardService : IDashboardService
         };
     }
 
-    private async Task<IReadOnlyList<CuentaScopeItem>> GetScopedCuentasAsync(DashboardScope scope, Guid? titularId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<CuentaScopeItem>> GetScopedCuentasAsync(DashboardScope scope, Guid? titularId, Guid? paisId, CancellationToken cancellationToken)
     {
         var query = from cuenta in _dbContext.Cuentas.AsNoTracking()
                     join titular in _dbContext.Titulares.AsNoTracking() on cuenta.TitularId equals titular.Id
+                    join pais in _dbContext.Paises.AsNoTracking().IgnoreQueryFilters() on cuenta.PaisId equals pais.Id into paises
+                    from pais in paises.DefaultIfEmpty()
                     select new CuentaScopeItem
                     {
                         CuentaId = cuenta.Id,
@@ -550,6 +591,8 @@ public sealed class DashboardService : IDashboardService
                         BancoNombre = cuenta.BancoNombre,
                         TitularId = titular.Id,
                         TitularNombre = titular.Nombre,
+                        PaisId = cuenta.PaisId,
+                        PaisNombre = pais != null ? pais.Nombre : null,
                         Divisa = cuenta.Divisa,
                         EsEfectivo = cuenta.EsEfectivo,
                         TipoCuenta = cuenta.TipoCuenta == TipoCuenta.NORMAL && cuenta.EsEfectivo
@@ -561,6 +604,11 @@ public sealed class DashboardService : IDashboardService
         if (titularId.HasValue)
         {
             query = query.Where(x => x.TitularId == titularId.Value);
+        }
+
+        if (paisId.HasValue)
+        {
+            query = query.Where(x => x.PaisId == paisId.Value);
         }
 
         if (!scope.GlobalAccess)
@@ -848,6 +896,8 @@ public sealed class DashboardService : IDashboardService
         public string? BancoNombre { get; set; }
         public Guid TitularId { get; set; }
         public string TitularNombre { get; set; } = string.Empty;
+        public Guid? PaisId { get; set; }
+        public string? PaisNombre { get; set; }
         public string Divisa { get; set; } = "EUR";
         public bool EsEfectivo { get; set; }
         public TipoCuenta TipoCuenta { get; set; } = TipoCuenta.NORMAL;

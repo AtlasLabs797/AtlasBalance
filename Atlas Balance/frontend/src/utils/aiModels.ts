@@ -13,7 +13,7 @@ export const aiProviderOptions: AiModelOption[] = [
 ];
 
 export const openRouterModelOptions: AiModelOption[] = [
-  { value: OPENROUTER_AUTO_MODEL, label: 'Auto (gratis permitido)' },
+  { value: OPENROUTER_AUTO_MODEL, label: 'OpenRouter Auto' },
   { value: OPENROUTER_DEFAULT_RUNTIME_MODEL, label: 'Nemotron 3 Super (free)' },
   { value: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (free)' },
   { value: 'minimax/minimax-m2.5:free', label: 'MiniMax M2.5 (free)' },
@@ -42,12 +42,28 @@ export function getDefaultAiModel(provider: string | null | undefined) {
 
 export function normalizeAiModel(provider: string | null | undefined, model: string | null | undefined) {
   const trimmed = model?.trim() ?? '';
-  return getAiModelOptions(provider).some((item) => item.value === trimmed)
-    ? trimmed
-    : getDefaultAiModel(provider);
+  const normalizedProvider = normalizeAiProvider(provider);
+  if (normalizedProvider === 'OPENROUTER') {
+    return trimmed || OPENROUTER_AUTO_MODEL;
+  }
+
+  return openAiModelOptions.some((item) => item.value === trimmed) ? trimmed : DEFAULT_OPENAI_MODEL;
 }
 
 export function getAiModelLabel(provider: string | null | undefined, model: string | null | undefined) {
   const normalizedModel = normalizeAiModel(provider, model);
   return getAiModelOptions(provider).find((item) => item.value === normalizedModel)?.label ?? normalizedModel;
+}
+
+export function isValidOpenRouterModelId(model: string | null | undefined) {
+  const trimmed = model?.trim() ?? '';
+  if (trimmed.length < 3 || trimmed.length > 160) {
+    return false;
+  }
+
+  if (trimmed.includes('..') || trimmed.includes('//') || trimmed.startsWith('/') || trimmed.endsWith('/')) {
+    return false;
+  }
+
+  return /^[A-Za-z0-9/_:.\-+]+$/.test(trimmed);
 }

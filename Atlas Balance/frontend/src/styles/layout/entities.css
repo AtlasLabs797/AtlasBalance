@@ -566,7 +566,7 @@
 .cuentas-balance-heading,
 .cuentas-balance-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(7rem, 0.7fr) 4.75rem minmax(11rem, 0.75fr) 5.5rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(7rem, 0.65fr) minmax(6rem, 0.55fr) 4.75rem minmax(11rem, 0.75fr) 5.5rem;
   align-items: center;
   gap: var(--space-3);
 }
@@ -580,7 +580,7 @@
   text-transform: uppercase;
 }
 
-.cuentas-balance-heading span:nth-child(4),
+.cuentas-balance-heading span:nth-child(5),
 .cuentas-balance-heading span:last-child {
   text-align: right;
 }
@@ -725,10 +725,31 @@
 
 .titulares-divisa-banners {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-3);
 }
 
 .titulares-divisa-banners .dashboard-card {
   box-shadow: none;
+}
+
+.dashboard-mini-card {
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  padding: var(--space-3);
+}
+
+.dashboard-mini-card span,
+.dashboard-mini-card small {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.dashboard-mini-card strong {
+  font-size: var(--font-size-base);
 }
 
 .extra-col-row {

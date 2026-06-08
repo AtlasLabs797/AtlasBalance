@@ -30,6 +30,8 @@ public sealed class CuentaListItemResponse
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = "EUR";
     public Guid? FormatoId { get; set; }
+    public Guid? PaisId { get; set; }
+    public string? PaisNombre { get; set; }
     public bool EsEfectivo { get; set; }
     public string TipoCuenta { get; set; } = "NORMAL";
     public string TitularTipo { get; set; } = string.Empty;
@@ -47,6 +49,8 @@ public sealed class CuentaResumenResponse
     public string? Iban { get; set; }
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = "EUR";
+    public Guid? PaisId { get; set; }
+    public string? PaisNombre { get; set; }
     public Guid TitularId { get; set; }
     public string TitularNombre { get; set; } = string.Empty;
     public bool EsEfectivo { get; set; }
@@ -68,6 +72,7 @@ public sealed class SaveCuentaRequest
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = "EUR";
     public Guid? FormatoId { get; set; }
+    public Guid? PaisId { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TipoCuenta? TipoCuenta { get; set; }
     public bool EsEfectivo { get; set; }

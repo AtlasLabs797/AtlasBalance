@@ -211,10 +211,10 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
-    public async Task AskAsync_Should_Block_Model_Outside_Allowlist_Before_Provider_Call()
+    public async Task AskAsync_Should_Block_Invalid_OpenRouter_Model_Before_Provider_Call()
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, model: "untrusted/model");
+        var userId = await SeedAiUserAndConfigAsync(db);
         var httpFactory = new CapturingHttpClientFactory();
         var sut = new AtlasAiService(
             db,
@@ -223,13 +223,13 @@ public class AtlasAiServiceTests
             new UserAccessService(db),
             new AuditService(db));
 
-        var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
+        var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None, "../bad model");
 
         await act.Should().ThrowAsync<IaConfigurationException>()
-            .WithMessage("*Modelo de IA no permitido*");
+            .WithMessage("*Modelo de IA invalido*");
         httpFactory.RequestCount.Should().Be(0);
         var audit = await db.Auditorias.SingleAsync();
-        audit.DetallesJson.Should().Contain("model_not_allowed");
+        audit.DetallesJson.Should().Contain("requested_model_invalid");
         audit.DetallesJson.Should().NotContain("Resumen de gastos");
     }
 
@@ -918,17 +918,13 @@ public class AtlasAiServiceTests
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
         await act.Should().ThrowAsync<IaProviderException>()
-            .WithMessage("*allowlist y privacidad*404*");
-        httpFactory.LastPayload.Should().Contain("\"models\"");
-        httpFactory.LastPayload.Should().Contain(AiConfiguration.OpenRouterDefaultModel);
-        httpFactory.LastPayload.Should().Contain("google/gemma-4-31b-it:free");
-        httpFactory.LastPayload.Should().NotContain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
-        httpFactory.LastPayload.Should().NotContain("\"id\":\"auto-router\"");
-        httpFactory.LastPayload.Should().NotContain("\"allowed_models\"");
+            .WithMessage("*privacidad*404*");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_http_error");
         audit.DetallesJson.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
-        audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.OpenRouterDefaultModel}\"");
+        audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
         audit.DetallesJson.Should().Contain("data policy");
     }
 
@@ -951,16 +947,15 @@ public class AtlasAiServiceTests
 
         await act.Should().ThrowAsync<IaProviderException>()
             .WithMessage("*restricciones configuradas*404*");
-        httpFactory.LastPayload.Should().Contain("\"models\"");
-        httpFactory.LastPayload.Should().Contain(AiConfiguration.OpenRouterDefaultModel);
-        httpFactory.LastPayload.Should().NotContain("\"id\":\"auto-router\"");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("No models match");
         audit.DetallesJson.Should().NotContain("Resumen de gastos");
     }
 
     [Fact]
-    public async Task AskAsync_Should_Report_OpenRouter_Fallback_Array_Limit_400_Clearly()
+    public async Task AskAsync_Should_Surface_OpenRouter_Provider_Error_Without_Fallback_Array()
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: AiConfiguration.OpenRouterAutoModel);
@@ -977,10 +972,9 @@ public class AtlasAiServiceTests
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
         await act.Should().ThrowAsync<IaProviderException>()
-            .WithMessage("*400*hasta 3 modelos*");
-        ExtractModelsFromPayload(httpFactory.LastPayload)
-            .Should()
-            .HaveCount(AiConfiguration.OpenRouterMaxFallbackModels);
+            .WithMessage("*400*models*array*");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("models");
         audit.DetallesJson.Should().NotContain("Resumen de gastos");
@@ -1383,12 +1377,12 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
-    public async Task AskAsync_Should_Send_OpenRouter_Auto_As_Free_Model_Fallbacks()
+    public async Task AskAsync_Should_Send_OpenRouter_Auto_As_Exact_Model()
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: AiConfiguration.OpenRouterAutoModel);
         var httpFactory = new CapturingHttpClientFactory(
-            responseBody: $"{{\"model\":\"{AiConfiguration.OpenRouterDefaultModel}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
+            responseBody: $"{{\"model\":\"{AiConfiguration.OpenRouterAutoModel}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
         var sut = new AtlasAiService(
             db,
             httpFactory,
@@ -1399,15 +1393,10 @@ public class AtlasAiServiceTests
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
         result.Provider.Should().Be("OPENROUTER");
-        result.Model.Should().Be(AiConfiguration.OpenRouterDefaultModel);
+        result.Model.Should().Be(AiConfiguration.OpenRouterAutoModel);
         httpFactory.RequestCount.Should().Be(1);
-        httpFactory.LastPayload.Should().Contain("\"models\"");
-        var fallbackModels = ExtractModelsFromPayload(httpFactory.LastPayload);
-        fallbackModels.Should().HaveCount(AiConfiguration.OpenRouterMaxFallbackModels);
-        fallbackModels.Should().Equal(AiConfiguration.OpenRouterAutoFallbackModels);
-        fallbackModels.Should().OnlyContain(model => AiConfiguration.IsAllowedOpenRouterModel(model));
-        fallbackModels.Should().NotContain(AiConfiguration.OpenRouterAutoModel);
-        httpFactory.LastPayload.Should().NotContain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         httpFactory.LastPayload.Should().NotContain("\"id\":\"auto-router\"");
         httpFactory.LastPayload.Should().NotContain("\"allowed_models\"");
         httpFactory.LastPayload.Should().Contain("\"provider\"");
@@ -1420,15 +1409,16 @@ public class AtlasAiServiceTests
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsulta);
         audit.DetallesJson.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
-        audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.OpenRouterDefaultModel}\"");
+        audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
         audit.DetallesJson.Should().Contain("\"zero_data_retention\":true");
     }
 
     [Theory]
-    [InlineData("google/gemma-4-31b-it:free", AiConfiguration.OpenRouterGoogleAiStudioProvider)]
-    [InlineData("minimax/minimax-m2.5:free", AiConfiguration.OpenRouterOpenInferenceProvider)]
-    [InlineData(AiConfiguration.OpenRouterGptOss120BModel, AiConfiguration.OpenRouterOpenInferenceProvider)]
-    public async Task AskAsync_Should_Pin_User_Allowed_Free_OpenRouter_Model_To_Its_Provider(string model, string provider)
+    [InlineData("google/gemma-4-31b-it:free")]
+    [InlineData("minimax/minimax-m2.5:free")]
+    [InlineData(AiConfiguration.OpenRouterGptOss120BModel)]
+    [InlineData("anthropic/claude-3.5-sonnet")]
+    public async Task AskAsync_Should_Send_Any_Valid_OpenRouter_Model_With_Privacy_Guard(string model)
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: model);
@@ -1444,8 +1434,9 @@ public class AtlasAiServiceTests
 
         result.Model.Should().Be(model);
         httpFactory.LastPayload.Should().Contain($"\"model\":\"{model}\"");
-        httpFactory.LastPayload.Should().Contain($"\"only\":[\"{provider}\"]");
-        httpFactory.LastPayload.Should().Contain("\"allow_fallbacks\":false");
+        httpFactory.LastPayload.Should().NotContain("\"only\"");
+        httpFactory.LastPayload.Should().NotContain("\"allow_fallbacks\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         httpFactory.LastPayload.Should().Contain("\"zdr\":true");
         httpFactory.LastPayload.Should().Contain("\"data_collection\":\"deny\"");
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
@@ -1471,6 +1462,7 @@ public class AtlasAiServiceTests
 
         result.Model.Should().Be(model);
         httpFactory.LastPayload.Should().Contain($"\"model\":\"{model}\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
         httpFactory.LastPayload.Should().Contain("\"provider\"");
         httpFactory.LastPayload.Should().Contain("\"zdr\":true");
@@ -1495,16 +1487,17 @@ public class AtlasAiServiceTests
             "Resumen de gastos",
             "127.0.0.1",
             CancellationToken.None,
-            "google/gemma-4-31b-it:free");
+            "custom/vendor-model-2.1:free");
 
-        result.Model.Should().Be("google/gemma-4-31b-it:free");
-        httpFactory.LastPayload.Should().Contain("\"model\":\"google/gemma-4-31b-it:free\"");
-        httpFactory.LastPayload.Should().Contain($"\"only\":[\"{AiConfiguration.OpenRouterGoogleAiStudioProvider}\"]");
+        result.Model.Should().Be("custom/vendor-model-2.1:free");
+        httpFactory.LastPayload.Should().Contain("\"model\":\"custom/vendor-model-2.1:free\"");
+        httpFactory.LastPayload.Should().NotContain("\"only\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         db.Configuraciones.Single(x => x.Clave == "ai_model").Valor.Should().Be(AiConfiguration.OpenRouterDefaultModel);
     }
 
     [Fact]
-    public async Task AskAsync_Should_Block_Requested_Model_Outside_Allowlist_Before_Provider_Call()
+    public async Task AskAsync_Should_Block_Invalid_Requested_OpenRouter_Model_Before_Provider_Call()
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db);
@@ -1521,19 +1514,19 @@ public class AtlasAiServiceTests
             "Resumen de gastos",
             "127.0.0.1",
             CancellationToken.None,
-            "evil/model");
+            "evil model");
 
         await act.Should().ThrowAsync<IaConfigurationException>()
-            .WithMessage("*Modelo de IA no permitido*");
+            .WithMessage("*Modelo de IA invalido*");
         httpFactory.RequestCount.Should().Be(0);
         var audit = await db.Auditorias.SingleAsync();
-        audit.DetallesJson.Should().Contain("requested_model_not_allowed");
-        audit.DetallesJson.Should().Contain("evil/model");
+        audit.DetallesJson.Should().Contain("requested_model_invalid");
+        audit.DetallesJson.Should().Contain("evil model");
         audit.DetallesJson.Should().NotContain("Resumen de gastos");
     }
 
     [Fact]
-    public async Task AskAsync_Should_Normalize_Stale_OpenRouter_Model_To_Auto_Before_Provider_Call()
+    public async Task AskAsync_Should_Preserve_Stored_Custom_OpenRouter_Model_Before_Provider_Call()
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: "anthropic/claude-3.5-sonnet");
@@ -1547,16 +1540,12 @@ public class AtlasAiServiceTests
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
-        result.Model.Should().Be(AiConfiguration.OpenRouterDefaultModel);
-        httpFactory.LastPayload.Should().Contain("\"models\"");
+        result.Model.Should().Be("anthropic/claude-3.5-sonnet");
+        httpFactory.LastPayload.Should().Contain("\"model\":\"anthropic/claude-3.5-sonnet\"");
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
-        ExtractModelsFromPayload(httpFactory.LastPayload)
-            .Should()
-            .HaveCount(AiConfiguration.OpenRouterMaxFallbackModels);
-        httpFactory.LastPayload.Should().NotContain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
+        httpFactory.LastPayload.Should().NotContain("\"models\"");
         httpFactory.LastPayload.Should().NotContain("\"id\":\"auto-router\"");
         httpFactory.LastPayload.Should().NotContain("\"allowed_models\"");
-        httpFactory.LastPayload.Should().NotContain("anthropic/claude-3.5-sonnet");
     }
 
     [Fact]
@@ -1717,16 +1706,6 @@ public class AtlasAiServiceTests
         }
 
         return count;
-    }
-
-    private static string[] ExtractModelsFromPayload(string payload)
-    {
-        using var document = JsonDocument.Parse(payload);
-        return document.RootElement
-            .GetProperty("models")
-            .EnumerateArray()
-            .Select(x => x.GetString() ?? string.Empty)
-            .ToArray();
     }
 
     private static bool ExtractReasoningExcludeFromPayload(string payload)

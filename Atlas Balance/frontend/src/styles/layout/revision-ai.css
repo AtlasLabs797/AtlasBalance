@@ -329,6 +329,21 @@
   font-weight: var(--font-weight-medium);
 }
 
+.ai-chat-model-input {
+  width: min(15rem, 42vw);
+  min-height: 2rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  padding: 0 var(--space-3);
+}
+
+.ai-chat-model-input:disabled {
+  opacity: 0.65;
+}
+
 .ai-chat-toolbar .app-select-popover {
   min-width: 11rem;
   right: auto;
@@ -464,6 +479,22 @@
   background: color-mix(in srgb, var(--bg-surface-muted) 68%, transparent);
   border-radius: 4px;
   padding: 0 0.25rem;
+}
+
+.ai-chat-code-block {
+  overflow-x: auto;
+  margin: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--bg-surface-muted) 84%, transparent);
+  padding: var(--space-3);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.ai-chat-code-block code {
+  background: transparent;
+  padding: 0;
 }
 
 .ai-chat-facts {

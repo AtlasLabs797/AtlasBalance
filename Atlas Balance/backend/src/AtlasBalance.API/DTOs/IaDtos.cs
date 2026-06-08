@@ -65,6 +65,13 @@ public sealed class IaChatRequest
     public string? Model { get; set; }
 }
 
+public sealed class IaModelResponse
+{
+    public string Id { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public int? ContextLength { get; set; }
+}
+
 public sealed class IaChatResponse
 {
     public string Respuesta { get; set; } = string.Empty;
