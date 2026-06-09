@@ -1,0 +1,1361 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Balance - Mockup UI/UX V-02-02</title>
+  <style>
+    :root {
+      --bg-app: #f3f7fb;
+      --bg-canvas: #f7fafc;
+      --bg-surface: #fbfcfe;
+      --bg-surface-soft: #f1f5fa;
+      --bg-surface-muted: #e9eff6;
+      --bg-input: #fbfcfe;
+      --bg-hover: #e9eff6;
+      --bg-selected: #e6eefc;
+      --border-soft: rgba(23, 33, 52, 0.10);
+      --border-strong: rgba(23, 33, 52, 0.18);
+      --border-focus: #285bd9;
+      --text-primary: #172033;
+      --text-secondary: #536174;
+      --text-muted: #5f6b7a;
+      --text-inverse: #f8fbff;
+      --accent-primary: #285bd9;
+      --accent-primary-hover: #214cad;
+      --accent-primary-soft: #e6eefc;
+      --success-bg: #eaf8f0;
+      --success-text: #176a3a;
+      --warning-bg: #fff4df;
+      --warning-text: #8a5200;
+      --danger-bg: #fdecef;
+      --danger-text: #a82234;
+      --info-bg: #eaf1ff;
+      --info-text: #315fcf;
+      --chart-income: #2f9f68;
+      --chart-expense: #c94a5a;
+      --chart-balance: #285bd9;
+      --chart-grid: rgba(23, 33, 52, 0.10);
+      --font-family: "Aptos", "Segoe UI", system-ui, -apple-system, sans-serif;
+      --font-family-heading: "Aptos Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+      --font-family-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+      --radius-control: 8px;
+      --radius-card: 8px;
+      --radius-panel: 18px;
+      --radius-shell: 22px;
+      --shadow-sm: 0 2px 10px color-mix(in srgb, var(--text-primary) 5%, transparent);
+      --shadow-card: 0 8px 24px color-mix(in srgb, var(--text-primary) 6%, transparent);
+      --shadow-overlay: 0 24px 60px color-mix(in srgb, var(--text-primary) 16%, transparent);
+      --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+      color-scheme: light;
+    }
+
+    [data-theme="dark"] {
+      --bg-app: #12171f;
+      --bg-canvas: #151b24;
+      --bg-surface: #1b2330;
+      --bg-surface-soft: #202a38;
+      --bg-surface-muted: #293545;
+      --bg-input: #161d27;
+      --bg-hover: #242f3e;
+      --bg-selected: #233558;
+      --border-soft: rgba(216, 226, 240, 0.10);
+      --border-strong: rgba(216, 226, 240, 0.18);
+      --border-focus: #82a4ff;
+      --text-primary: #f1f5f9;
+      --text-secondary: #b7c2d2;
+      --text-muted: #98a6ba;
+      --text-inverse: #101720;
+      --accent-primary: #82a4ff;
+      --accent-primary-hover: #a8bdff;
+      --accent-primary-soft: rgba(130, 164, 255, 0.14);
+      --success-bg: rgba(47, 159, 104, 0.16);
+      --success-text: #79d6a4;
+      --warning-bg: rgba(255, 185, 79, 0.16);
+      --warning-text: #ffcd7a;
+      --danger-bg: rgba(201, 74, 90, 0.16);
+      --danger-text: #ff9aa8;
+      --info-bg: rgba(130, 164, 255, 0.14);
+      --info-text: #a8bdff;
+      --chart-grid: rgba(216, 226, 240, 0.10);
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      background: var(--bg-app);
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text-primary);
+      background:
+        radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--accent-primary) 8%, transparent) 0, transparent 34rem),
+        linear-gradient(180deg, var(--bg-app), var(--bg-canvas));
+      font-family: var(--font-family);
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .mockup {
+      display: grid;
+      grid-template-columns: 252px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 18px 14px;
+      border-right: 1px solid var(--border-soft);
+      background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+      box-shadow: 12px 0 40px color-mix(in srgb, var(--text-primary) 4%, transparent);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 0 8px 16px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--accent-primary) 28%, var(--border-soft));
+      border-radius: 10px;
+      color: var(--accent-primary);
+      background: var(--accent-primary-soft);
+      font-family: var(--font-family-heading);
+      font-weight: 800;
+    }
+
+    .brand strong {
+      display: block;
+      font-family: var(--font-family-heading);
+      font-size: 15px;
+      line-height: 1.1;
+    }
+
+    .brand span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .nav-section {
+      padding: 18px 0 0;
+    }
+
+    .nav-title {
+      margin: 0 8px 8px;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 38px;
+      margin: 2px 0;
+      padding: 0 10px;
+      border-radius: var(--radius-control);
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+
+    .nav-item::before {
+      width: 18px;
+      color: var(--text-muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .nav-item[data-icon="dashboard"]::before { content: "D"; }
+    .nav-item[data-icon="holders"]::before { content: "T"; }
+    .nav-item[data-icon="accounts"]::before { content: "C"; }
+    .nav-item[data-icon="extract"]::before { content: "E"; }
+    .nav-item[data-icon="import"]::before { content: "I"; }
+    .nav-item[data-icon="review"]::before { content: "R"; }
+    .nav-item[data-icon="users"]::before { content: "U"; }
+    .nav-item[data-icon="backup"]::before { content: "B"; }
+
+    .nav-item.active {
+      color: var(--accent-primary-hover);
+      background: var(--accent-primary-soft);
+      font-weight: 700;
+    }
+
+    .nav-item.disabled {
+      color: var(--text-muted);
+      background: transparent;
+      cursor: not-allowed;
+      opacity: 0.68;
+    }
+
+    .nav-note {
+      margin: 10px 8px 0;
+      padding: 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-control);
+      color: var(--text-secondary);
+      background: var(--bg-surface-soft);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 18px 24px 32px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 58px;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-family: var(--font-family-heading);
+      font-size: 25px;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .breadcrumb {
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .scope-control,
+    .control-button,
+    .primary-button,
+    .ghost-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      border-radius: var(--radius-control);
+      transition: transform 160ms var(--ease-premium), background 160ms var(--ease-premium), border-color 160ms var(--ease-premium);
+    }
+
+    .scope-control {
+      gap: 8px;
+      min-width: 210px;
+      padding: 0 12px;
+      border: 1px solid color-mix(in srgb, var(--warning-text) 38%, var(--border-soft));
+      color: var(--text-primary);
+      background: color-mix(in srgb, var(--warning-bg) 62%, var(--bg-surface));
+      font-weight: 650;
+    }
+
+    .scope-control .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--warning-text);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-text) 16%, transparent);
+    }
+
+    .control-button,
+    .ghost-button {
+      padding: 0 12px;
+      border: 1px solid var(--border-soft);
+      color: var(--text-secondary);
+      background: var(--bg-surface);
+    }
+
+    .primary-button {
+      padding: 0 14px;
+      color: var(--text-inverse);
+      background: var(--accent-primary);
+      font-weight: 700;
+    }
+
+    .control-button:active,
+    .primary-button:active,
+    .ghost-button:active,
+    .scope-control:active {
+      transform: scale(0.97);
+    }
+
+    .scope-banner {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 16px;
+      margin: 14px 0 18px;
+      padding: 12px 14px;
+      border: 1px solid color-mix(in srgb, var(--warning-text) 36%, var(--border-soft));
+      border-radius: var(--radius-card);
+      background: color-mix(in srgb, var(--warning-bg) 72%, var(--bg-surface));
+    }
+
+    .scope-banner strong {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--warning-text);
+    }
+
+    .scope-banner span {
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .page-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .content-stack {
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .panel {
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-panel);
+      background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 18px 20px 0;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-family: var(--font-family-heading);
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .panel-subtitle {
+      margin: 4px 0 0;
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .kpi-panel {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.5fr) repeat(4, minmax(130px, 1fr));
+      gap: 1px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-panel);
+      background: var(--border-soft);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+    }
+
+    .kpi-cell {
+      min-width: 0;
+      padding: 18px;
+      background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+    }
+
+    .kpi-cell.primary {
+      padding: 22px 24px;
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--accent-primary) 10%, var(--bg-surface)), var(--bg-surface));
+    }
+
+    .metric-label {
+      margin: 0 0 8px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .metric-value {
+      margin: 0;
+      font-family: var(--font-family-heading);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .primary .metric-value {
+      font-size: clamp(34px, 4vw, 52px);
+    }
+
+    .metric-delta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      color: var(--success-text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .metric-delta.danger {
+      color: var(--danger-text);
+    }
+
+    .metric-helper {
+      margin-top: 8px;
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+      gap: 18px;
+    }
+
+    .chart-area {
+      position: relative;
+      height: 280px;
+      margin: 18px 20px 20px;
+      border-left: 1px solid var(--chart-grid);
+      border-bottom: 1px solid var(--chart-grid);
+      background:
+        linear-gradient(to bottom, var(--chart-grid) 1px, transparent 1px) 0 24px / 100% 48px,
+        linear-gradient(to right, color-mix(in srgb, var(--chart-grid) 52%, transparent) 1px, transparent 1px) 0 0 / 12.5% 100%;
+    }
+
+    .bars {
+      position: absolute;
+      inset: 24px 20px 34px 18px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      align-items: end;
+      gap: 18px;
+    }
+
+    .bar-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: end;
+      gap: 5px;
+      height: 100%;
+    }
+
+    .bar {
+      border-radius: 7px 7px 2px 2px;
+      background: var(--chart-balance);
+      min-height: 8px;
+    }
+
+    .bar.secondary {
+      background: color-mix(in srgb, var(--chart-income) 82%, var(--bg-surface));
+    }
+
+    .chart-labels {
+      position: absolute;
+      left: 18px;
+      right: 20px;
+      bottom: 6px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      color: var(--text-muted);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .chart-tooltip {
+      position: absolute;
+      top: 42px;
+      right: 52px;
+      min-width: 188px;
+      padding: 11px 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-overlay);
+    }
+
+    .chart-tooltip strong {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 12px;
+    }
+
+    .tooltip-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    .tooltip-row span:last-child {
+      color: var(--text-primary);
+      font-family: var(--font-family-mono);
+      font-weight: 700;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 0 20px 18px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend span::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: var(--chart-balance);
+    }
+
+    .legend span:nth-child(2)::before {
+      background: var(--chart-income);
+    }
+
+    .risk-list {
+      display: grid;
+      gap: 1px;
+      margin: 18px 0 0;
+      background: var(--border-soft);
+    }
+
+    .risk-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 14px 18px;
+      background: var(--bg-surface);
+    }
+
+    .risk-row strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 13px;
+    }
+
+    .risk-row span {
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .risk-row .amount {
+      font-family: var(--font-family-mono);
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .amount.positive {
+      color: var(--success-text);
+    }
+
+    .amount.negative {
+      color: var(--danger-text);
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--bg-surface-soft);
+    }
+
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .search {
+      width: min(280px, 100%);
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-control);
+      color: var(--text-primary);
+      background: var(--bg-input);
+    }
+
+    .table-wrap {
+      overflow: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--border-soft);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    td.money {
+      font-family: var(--font-family-mono);
+      font-weight: 750;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .row-flag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      color: var(--warning-text);
+      background: var(--warning-bg);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .import-panel {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-height: 100%;
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 14px;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--bg-surface-soft);
+    }
+
+    .tab {
+      min-height: 34px;
+      border-radius: var(--radius-control);
+      color: var(--text-secondary);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .tab[aria-selected="true"] {
+      color: var(--accent-primary-hover);
+      background: var(--accent-primary-soft);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 18%, transparent);
+    }
+
+    .import-state {
+      display: none;
+      padding: 18px;
+    }
+
+    .import-state.active {
+      display: block;
+    }
+
+    .state-box {
+      padding: 14px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+    }
+
+    .state-box strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .state-box p {
+      margin: 0;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    .state-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .side-column {
+      display: grid;
+      gap: 18px;
+    }
+
+    .mobile-frame {
+      width: 100%;
+      max-width: 360px;
+      justify-self: end;
+      padding: 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: 30px;
+      background: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-app));
+      box-shadow: var(--shadow-card);
+    }
+
+    .phone-screen {
+      min-height: 650px;
+      border: 1px solid var(--border-soft);
+      border-radius: 22px;
+      background: var(--bg-canvas);
+      overflow: hidden;
+    }
+
+    .phone-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 14px;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--bg-surface);
+    }
+
+    .phone-title {
+      min-width: 0;
+    }
+
+    .phone-title strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .phone-title span {
+      display: block;
+      overflow: hidden;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .ai-chip {
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-control);
+      color: var(--accent-primary-hover);
+      background: var(--accent-primary-soft);
+      font-weight: 800;
+    }
+
+    .phone-content {
+      padding: 14px;
+    }
+
+    .phone-kpi {
+      padding: 15px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+    }
+
+    .phone-kpi .metric-value {
+      font-size: 28px;
+    }
+
+    .phone-chart {
+      height: 128px;
+      margin-top: 12px;
+      border-left: 1px solid var(--chart-grid);
+      border-bottom: 1px solid var(--chart-grid);
+      background:
+        linear-gradient(to bottom, var(--chart-grid) 1px, transparent 1px) 0 24px / 100% 36px;
+    }
+
+    .phone-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .phone-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-control);
+      background: var(--bg-surface);
+      font-size: 12px;
+    }
+
+    .phone-sheet {
+      margin: 14px;
+      padding: 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: 18px 18px 10px 10px;
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-overlay);
+    }
+
+    .sheet-handle {
+      width: 42px;
+      height: 4px;
+      margin: 0 auto 12px;
+      border-radius: 999px;
+      background: var(--border-strong);
+    }
+
+    .sheet-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .sheet-link {
+      min-height: 38px;
+      border-radius: var(--radius-control);
+      color: var(--text-secondary);
+      background: var(--bg-surface-soft);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .phone-bottom {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      padding: 10px 12px 14px;
+      border-top: 1px solid var(--border-soft);
+      background: var(--bg-surface);
+    }
+
+    .bottom-item {
+      min-height: 42px;
+      border-radius: var(--radius-control);
+      color: var(--text-muted);
+      background: transparent;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .bottom-item.active {
+      color: var(--accent-primary-hover);
+      background: var(--accent-primary-soft);
+    }
+
+    .decision-list {
+      display: grid;
+      gap: 10px;
+      padding: 18px;
+    }
+
+    .decision {
+      padding: 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+    }
+
+    .decision strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .decision span {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 1180px) {
+      .page-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .side-column {
+        grid-template-columns: minmax(0, 1fr) 360px;
+      }
+
+      .mobile-frame {
+        justify-self: stretch;
+      }
+    }
+
+    @media (max-width: 920px) {
+      .mockup {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .main {
+        padding: 14px 14px 86px;
+      }
+
+      .topbar,
+      .scope-banner {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+      }
+
+      .topbar {
+        display: grid;
+      }
+
+      .top-actions {
+        justify-content: space-between;
+      }
+
+      .scope-control {
+        min-width: 0;
+      }
+
+      .kpi-panel,
+      .analysis-grid,
+      .workbench,
+      .side-column {
+        grid-template-columns: 1fr;
+      }
+
+      .mobile-frame {
+        max-width: none;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .kpi-panel {
+        display: block;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+      }
+
+      .kpi-cell {
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-card);
+        margin-bottom: 10px;
+      }
+
+      .toolbar,
+      .toolbar-left,
+      .toolbar-right,
+      .panel-header {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .chart-tooltip {
+        position: static;
+        margin: 0 20px 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="mockup">
+    <aside class="sidebar" aria-label="Navegacion principal">
+      <div class="brand">
+        <div class="brand-mark">A</div>
+        <div>
+          <strong>Atlas Balance</strong>
+          <span>Tesoreria local</span>
+        </div>
+      </div>
+
+      <nav>
+        <section class="nav-section">
+          <p class="nav-title">Operacion</p>
+          <a class="nav-item active" data-icon="dashboard" href="#">Dashboard</a>
+          <a class="nav-item" data-icon="holders" href="#">Titulares</a>
+          <a class="nav-item" data-icon="accounts" href="#">Cuentas</a>
+          <a class="nav-item" data-icon="extract" href="#">Extractos</a>
+          <a class="nav-item" data-icon="import" href="#">Importacion</a>
+          <a class="nav-item" data-icon="review" href="#">Revision</a>
+        </section>
+
+        <section class="nav-section">
+          <p class="nav-title">Control</p>
+          <a class="nav-item disabled" data-icon="dashboard" href="#" aria-disabled="true">Dashboard gerente</a>
+          <div class="nav-note">Oculto para usuarios sin permiso. Si se muestra, explica el motivo y no redirige en silencio.</div>
+        </section>
+
+        <section class="nav-section">
+          <p class="nav-title">Sistema</p>
+          <a class="nav-item" data-icon="users" href="#">Usuarios</a>
+          <a class="nav-item" data-icon="backup" href="#">Backups</a>
+        </section>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1>Cabina financiera</h1>
+          <div class="breadcrumb">Dashboard / General / V-02-02</div>
+        </div>
+        <div class="top-actions">
+          <button class="scope-control" type="button" aria-label="Scope de organizacion con aviso">
+            <span class="status-dot" aria-hidden="true"></span>
+            Espana · ultimo scope validado
+          </button>
+          <button class="control-button" type="button" id="themeToggle">Modo oscuro</button>
+          <button class="primary-button" type="button">Importar extracto</button>
+        </div>
+      </header>
+
+      <section class="scope-banner" role="status" aria-live="polite">
+        <div>
+          <strong>No se pudieron actualizar los paises.</strong>
+          <span>Se mantiene Espana porque fue el ultimo scope validado. Las consultas siguen acotadas a ese pais hasta que se recargue la lista.</span>
+        </div>
+        <button class="ghost-button" type="button">Reintentar</button>
+      </section>
+
+      <div class="page-grid">
+        <div class="content-stack">
+          <section class="kpi-panel" aria-label="Resumen financiero principal">
+            <article class="kpi-cell primary">
+              <p class="metric-label">Saldo operativo total</p>
+              <p class="metric-value">1.284.920,40 EUR</p>
+              <div class="metric-delta">+ 38.420,12 EUR vs. cierre anterior</div>
+              <div class="metric-helper">Incluye 18 cuentas visibles en Espana. 2 cuentas requieren revision de permisos.</div>
+            </article>
+            <article class="kpi-cell">
+              <p class="metric-label">Disponible</p>
+              <p class="metric-value">884.210</p>
+              <div class="metric-helper">68,8% liquido</div>
+            </article>
+            <article class="kpi-cell">
+              <p class="metric-label">Inmovilizado</p>
+              <p class="metric-value">400.710</p>
+              <div class="metric-helper">Plazo fijo y reservas</div>
+            </article>
+            <article class="kpi-cell">
+              <p class="metric-label">Alertas reales</p>
+              <p class="metric-value">7</p>
+              <div class="metric-delta danger">3 requieren accion</div>
+            </article>
+            <article class="kpi-cell">
+              <p class="metric-label">Pendiente revisar</p>
+              <p class="metric-value">42</p>
+              <div class="metric-helper">Movimientos nuevos</div>
+            </article>
+          </section>
+
+          <section class="analysis-grid">
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2 class="panel-title">Saldos por titular</h2>
+                  <p class="panel-subtitle">Tooltip propio, leyenda textual y lectura accesible. Sin aspecto default de Recharts.</p>
+                </div>
+                <button class="ghost-button" type="button">Ver titulares</button>
+              </div>
+
+              <div class="chart-area" role="img" aria-label="Saldos por titular: Atlas Labs 482.140 euros, Operaciones Norte 318.220 euros, Iberia Holding 246.900 euros.">
+                <div class="bars" aria-hidden="true">
+                  <div class="bar-group"><div class="bar" style="height:92%"></div><div class="bar secondary" style="height:56%"></div></div>
+                  <div class="bar-group"><div class="bar" style="height:73%"></div><div class="bar secondary" style="height:42%"></div></div>
+                  <div class="bar-group"><div class="bar" style="height:61%"></div><div class="bar secondary" style="height:36%"></div></div>
+                  <div class="bar-group"><div class="bar" style="height:44%"></div><div class="bar secondary" style="height:24%"></div></div>
+                  <div class="bar-group"><div class="bar" style="height:33%"></div><div class="bar secondary" style="height:20%"></div></div>
+                  <div class="bar-group"><div class="bar" style="height:24%"></div><div class="bar secondary" style="height:16%"></div></div>
+                </div>
+                <div class="chart-labels" aria-hidden="true">
+                  <span>Atlas</span>
+                  <span>Norte</span>
+                  <span>Iberia</span>
+                  <span>Sur</span>
+                  <span>Patr.</span>
+                  <span>Otros</span>
+                </div>
+                <div class="chart-tooltip" aria-hidden="true">
+                  <strong>Titular: Atlas Labs</strong>
+                  <div class="tooltip-row"><span>Saldo total</span><span>482.140,20 EUR</span></div>
+                  <div class="tooltip-row"><span>Disponible</span><span>391.210,00 EUR</span></div>
+                  <div class="tooltip-row"><span>Riesgo</span><span>2 alertas</span></div>
+                </div>
+              </div>
+              <div class="legend">
+                <span>Saldo total</span>
+                <span>Disponible</span>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2 class="panel-title">Riesgo operativo</h2>
+                  <p class="panel-subtitle">Peso visual reservado a impacto financiero y accion.</p>
+                </div>
+              </div>
+              <div class="risk-list">
+                <div class="risk-row">
+                  <div><strong>Vencimiento plazo fijo</strong><span>Cuenta ES82 · 3 dias</span></div>
+                  <div class="amount negative">-240.000</div>
+                </div>
+                <div class="risk-row">
+                  <div><strong>Permiso parcial</strong><span>2 cuentas ocultas en Espana</span></div>
+                  <div class="amount">2</div>
+                </div>
+                <div class="risk-row">
+                  <div><strong>Saldo bajo</strong><span>Operaciones Norte · BBVA</span></div>
+                  <div class="amount negative">-8.410</div>
+                </div>
+                <div class="risk-row">
+                  <div><strong>Entrada confirmada</strong><span>Cliente mayorista · hoy</span></div>
+                  <div class="amount positive">+62.300</div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="workbench">
+            <article class="panel">
+              <div class="toolbar">
+                <div class="toolbar-left">
+                  <input class="search" value="cliente mayorista" aria-label="Buscar movimientos">
+                  <button class="ghost-button" type="button">Filtros</button>
+                </div>
+                <div class="toolbar-right">
+                  <button class="ghost-button" type="button">Marcar revisado</button>
+                  <button class="primary-button" type="button">Resolver 3 alertas</button>
+                </div>
+              </div>
+              <div class="table-wrap" aria-label="Tabla de movimientos financieros">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Cuenta</th>
+                      <th>Concepto</th>
+                      <th>Estado</th>
+                      <th style="text-align:right">Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>09/06/2026</td>
+                      <td>BBVA Operativa ES82</td>
+                      <td>Transferencia cliente mayorista norte</td>
+                      <td><span class="row-flag">Revisar</span></td>
+                      <td class="money positive">+62.300,00</td>
+                    </tr>
+                    <tr>
+                      <td>08/06/2026</td>
+                      <td>Santander Reservas ES21</td>
+                      <td>Renovacion plazo fijo 90 dias</td>
+                      <td>Confirmado</td>
+                      <td class="money negative">-240.000,00</td>
+                    </tr>
+                    <tr>
+                      <td>08/06/2026</td>
+                      <td>Caixa Pagos ES44</td>
+                      <td>Comisiones mantenimiento cuenta empresa</td>
+                      <td><span class="row-flag">Posible comision</span></td>
+                      <td class="money negative">-84,35</td>
+                    </tr>
+                    <tr>
+                      <td>07/06/2026</td>
+                      <td>Bankinter Cobros ES67</td>
+                      <td>Cobro remesa internacional</td>
+                      <td>Revisado</td>
+                      <td class="money positive">+18.902,18</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel import-panel">
+              <div class="panel-header">
+                <div>
+                  <h2 class="panel-title">Importacion</h2>
+                  <p class="panel-subtitle">Vacios separados para que el usuario sepa que arreglar.</p>
+                </div>
+              </div>
+              <div class="tabs" role="tablist" aria-label="Estados de importacion">
+                <button class="tab" type="button" role="tab" aria-selected="false" data-target="no-permiso">Sin permiso</button>
+                <button class="tab" type="button" role="tab" aria-selected="true" data-target="sin-cuentas">Sin cuentas</button>
+                <button class="tab" type="button" role="tab" aria-selected="false" data-target="sin-formato">Sin formato</button>
+              </div>
+              <div class="import-state" id="no-permiso" role="tabpanel">
+                <div class="state-box">
+                  <strong>No tienes permiso para importar en este scope.</strong>
+                  <p>Pide acceso de importacion sobre una cuenta, titular o pais. Ver datos no concede escritura.</p>
+                  <div class="state-actions"><button class="ghost-button" type="button">Ver permisos</button></div>
+                </div>
+              </div>
+              <div class="import-state active" id="sin-cuentas" role="tabpanel">
+                <div class="state-box">
+                  <strong>No hay cuentas importables en Espana.</strong>
+                  <p>Cambia a General o asigna una cuenta activa a este pais antes de subir un extracto.</p>
+                  <div class="state-actions">
+                    <button class="primary-button" type="button">Cambiar a General</button>
+                    <button class="ghost-button" type="button">Crear cuenta</button>
+                  </div>
+                </div>
+              </div>
+              <div class="import-state" id="sin-formato" role="tabpanel">
+                <div class="state-box">
+                  <strong>La cuenta no tiene formato de importacion.</strong>
+                  <p>Crea un formato para mapear fecha, concepto e importe antes de confirmar movimientos.</p>
+                  <div class="state-actions"><button class="primary-button" type="button">Crear formato</button></div>
+                </div>
+              </div>
+            </article>
+          </section>
+        </div>
+
+        <aside class="side-column">
+          <section class="mobile-frame" aria-label="Vista movil propuesta">
+            <div class="phone-screen">
+              <div class="phone-top">
+                <div class="phone-title">
+                  <strong>Dashboard</strong>
+                  <span>Espana · scope validado con aviso</span>
+                </div>
+                <button class="ai-chip" type="button">IA</button>
+              </div>
+              <div class="phone-content">
+                <div class="phone-kpi">
+                  <p class="metric-label">Saldo operativo</p>
+                  <p class="metric-value">1.284.920</p>
+                  <div class="metric-delta">+38.420 EUR</div>
+                  <div class="phone-chart"></div>
+                </div>
+                <div class="phone-list">
+                  <div class="phone-row"><span>Alertas reales</span><strong>3</strong></div>
+                  <div class="phone-row"><span>Movimientos por revisar</span><strong>42</strong></div>
+                  <div class="phone-row"><span>Permisos parciales</span><strong>2 cuentas</strong></div>
+                </div>
+              </div>
+              <div class="phone-sheet" aria-label="Menu movil abierto">
+                <div class="sheet-handle"></div>
+                <div class="sheet-grid">
+                  <button class="sheet-link" type="button">Extractos</button>
+                  <button class="sheet-link" type="button">Importacion</button>
+                  <button class="sheet-link" type="button">Revision</button>
+                  <button class="sheet-link" type="button">Backups</button>
+                </div>
+              </div>
+              <div class="phone-bottom" aria-label="Navegacion inferior">
+                <button class="bottom-item active" type="button">Inicio</button>
+                <button class="bottom-item" type="button">Cuentas</button>
+                <button class="bottom-item" type="button">Extractos</button>
+                <button class="bottom-item" type="button">Mas</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">Decisiones aplicadas</h2>
+                <p class="panel-subtitle">Bolder en datos, quieter en chrome. Sin mas teatro.</p>
+              </div>
+            </div>
+            <div class="decision-list">
+              <div class="decision"><strong>IA sin solape</strong><span>En mobile queda integrada en topbar; no flota encima del sheet.</span></div>
+              <div class="decision"><strong>Scope explicito</strong><span>El fallo de paises se comunica y mantiene el ultimo scope validado.</span></div>
+              <div class="decision"><strong>Tablas intactas</strong><span>Extractos siguen siendo spreadsheet, no cards decorativas.</span></div>
+              <div class="decision"><strong>Motion sobria</strong><span>Feedback tactil en botones; sin pulsos infinitos ni entradas de cards.</span></div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const root = document.documentElement;
+    const themeToggle = document.getElementById('themeToggle');
+    themeToggle.addEventListener('click', () => {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      themeToggle.textContent = next === 'dark' ? 'Modo claro' : 'Modo oscuro';
+    });
+
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((item) => item.setAttribute('aria-selected', 'false'));
+        document.querySelectorAll('.import-state').forEach((panel) => panel.classList.remove('active'));
+        tab.setAttribute('aria-selected', 'true');
+        document.getElementById(tab.dataset.target).classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

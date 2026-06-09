@@ -8,6 +8,75 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-09 - V-02-02 - Mockup HTML post-auditoria UI/UX
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se creo un mockup HTML estatico en `Documentacion/Diseno/mockups/atlas-balance-post-uiux-v02-02.html`.
+- El mockup representa una direccion visual posterior a las mejoras propuestas: jerarquia financiera mas fuerte, chrome mas silencioso, selector de pais con error explicito, navegacion sin redireccion muda, tooltip de chart propio, estados de importacion diferenciados, tabla financiera densa y vista mobile sin solape entre IA, bottom nav y sheet.
+- El archivo es autonomo: HTML, CSS y JS inline, sin dependencias externas y sin servidor.
+
+**Archivos tocados:**
+- `Documentacion/Diseno/mockups/atlas-balance-post-uiux-v02-02.html`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `AGENTS.md`, `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Lectura de `PRODUCT.md`, `Documentacion/Diseno/DESIGN.md` y `Documentacion/Diseno/AUDITORIA_UI_UX_GLOBAL_V-02-02.md`.
+- `Select-String` sobre el HTML para comprobar que no introduce CDN, Tailwind, shadcn ni styled-components.
+- `git diff --check`.
+- Intento de captura Playwright contra `file://...atlas-balance-post-uiux-v02-02.html`.
+
+**Resultado de verificacion:**
+- HTML creado y localizado correctamente.
+- No se detectaron referencias externas ni dependencias prohibidas en el HTML.
+- `git diff --check`: OK, con avisos CRLF en cambios backend ajenos ya presentes.
+- Captura Playwright bloqueada: falta el ejecutable local `chromium_headless_shell-1217`. No se descargaron browsers por ser un mockup estatico y no requerir red.
+
+**Pendientes:**
+- Este mockup no implementa cambios en la app real ni sustituye el gate visual por rutas/roles/estados.
+
+---
+## 2026-06-09 - V-02-02 - Auditoria UI/UX premium por skills
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se creo `PRODUCT.md` con contexto de producto, usuarios, anti-referencias, principios de diseno y accesibilidad.
+- Se aplicaron todas las skills solicitadas por el usuario como lentes de auditoria: `critique`, `audit`, `layout`, `typeset`, `colorize`, `harden`, `polish`, `redesign-existing-projects`, `impeccable craft`, `design-taste-frontend`, `adapt`, `animate`, `emil-design-eng`, `clarify`, `distill`, `quieter` y `bolder`.
+- Se genero el informe por skill en `Documentacion/Diseno/AUDITORIA_UI_UX_SKILLS_V-02-02.md`.
+- Se genero el informe global coordinado en `Documentacion/Diseno/AUDITORIA_UI_UX_GLOBAL_V-02-02.md`, con prioridades P0-P3, conflictos entre skills y plan de mejora sin pisar criterios.
+- Se actualizo `Documentacion/SKILLS_LOCALES.md` porque las rutas reales de diseno en este checkout estan bajo `Skills/02_Design-UI-UX/...`, no bajo la ruta historica `Skills/Diseno/...`.
+- Se usaron subagentes para repartir cobertura funcional, sistema visual y catalogo de skills. Sus hallazgos sobre scope de pais, puertas falsas de permisos, overlay IA/mobile, chart tooltip default, inline styles, `.auth-error` generico y rutas reales de skills quedaron incorporados en los informes.
+
+**Archivos tocados:**
+- `PRODUCT.md`
+- `Documentacion/Diseno/AUDITORIA_UI_UX_SKILLS_V-02-02.md`
+- `Documentacion/Diseno/AUDITORIA_UI_UX_GLOBAL_V-02-02.md`
+- `Documentacion/SKILLS_LOCALES.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `AGENTS.md`, `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Lectura de `Documentacion/Diseno/DESIGN.md`, rutas React, CSS visual y skill files locales.
+- Busquedas estaticas con `rg`/PowerShell sobre rutas, `aria-label`, charts, animaciones y textos UTF-8.
+- Subagentes exploradores de cobertura funcional, sistema visual y catalogo de skills.
+- `git diff --check`.
+- `npm.cmd run lint` en `Atlas Balance/frontend`.
+
+**Resultado de verificacion:**
+- `git diff --check`: OK, con avisos CRLF en cambios ajenos ya presentes de seed demo.
+- Frontend lint: OK.
+- Existencia de los tres documentos nuevos verificada.
+
+**Pendientes:**
+- No se hizo una nueva validacion visual interactiva all-routes; los informes usan capturas existentes en `output/playwright/` y lectura estatica.
+- Antes de una entrega a cliente, ejecutar el gate visual propuesto por ruta/rol/pais/estado.
+
+---
 ## 2026-06-09 - V-02-02 - Seed de datos demo para desarrollo
 
 **Version:** V-02-02

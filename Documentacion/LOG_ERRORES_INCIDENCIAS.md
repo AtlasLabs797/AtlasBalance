@@ -1,5 +1,16 @@
 # Log de errores e incidencias
 
+## 2026-06-09 - V-02-02 - Captura Playwright de mockup HTML bloqueada por navegador no instalado
+
+- Contexto: validacion visual del mockup `Documentacion/Diseno/mockups/atlas-balance-post-uiux-v02-02.html`.
+- Incidencia:
+  - `npm.cmd exec playwright -- screenshot ...` fallo porque no existe `C:\Users\usuario\AppData\Local\ms-playwright\chromium_headless_shell-1217\chrome-headless-shell-win64\chrome-headless-shell.exe`.
+  - Playwright sugirio instalar browsers con `npx playwright install`.
+- Decision:
+  - No se descargo Chromium ni se pidio red/elevacion porque el entregable es un HTML estatico y la validacion funcional de app no dependia de ello.
+  - Se mantuvo validacion estatica: archivo creado, sin referencias externas/dependencias prohibidas y `git diff --check` OK.
+- Regla: para mockups HTML estaticos, no conviertas una captura bloqueada por browser ausente en instalacion de tooling salvo que el usuario pida evidencia visual renderizada.
+
 ## 2026-06-09 - V-02-02 - Autorizacion por pais: fallos detectados en verificacion
 
 - Contexto: implementacion de permisos/RLS/modelo de autorizacion por pais.
