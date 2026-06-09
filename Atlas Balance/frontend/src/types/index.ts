@@ -779,6 +779,7 @@ export interface ImportCuentaContexto {
   nombre: string;
   titular_nombre: string;
   divisa: string;
+  pais_id: string | null;
   es_efectivo: boolean;
   tipo_cuenta: TipoCuenta;
   formato_id: string | null;

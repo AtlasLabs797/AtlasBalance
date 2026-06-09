@@ -1,5 +1,29 @@
 # Documentacion tecnica
 
+## 2026-06-09 - V-02-02 - Datos demo de desarrollo
+
+### Que cambio
+
+- `SeedData` incorpora datos demo sinteticos para entornos `Development`.
+- La demo crea 3 paises, 3 titulares, 5 cuentas, 25 extractos, 1 plazo fijo, alertas de saldo, permiso global para el admin seed y una auditoria `DEMO_SEED`.
+- Los IDs son fijos y el seed es idempotente: arrancar dos veces no duplica cuentas ni extractos.
+- `DemoData:Enabled=false` desactiva el seed demo en desarrollo; en `Production` nunca se carga aunque la clave este en `true`.
+- `appsettings.Development.json.template` deja `DemoData.Enabled=true` para que una instalacion local nueva muestre la app con datos.
+
+### Por que
+
+La UI financiera vacia no sirve para evaluar jerarquia, tablas, dashboards, paises, titulares, divisas, alertas ni plazos fijos. Meter datos demo sin guardarrail de entorno seria una mala idea: una app de tesoreria no debe arrancar produccion con movimientos ficticios.
+
+### Verificacion
+
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter SeedDataTests --no-restore` desde `C:\tmp`: 8/8 OK.
+- El comando desde la raiz queda bloqueado por el `global.json` que exige SDK `8.0.419`; se uso el workaround ya documentado con SDK `8.0.421`.
+- Warnings no bloqueantes: `NU1900` por NuGet sin red y obsoleto Hangfire/PostgreSQL preexistente.
+
+### Limite real
+
+No se arranco la app ni se hizo validacion visual. El cambio queda validado a nivel de seed/test; la vista real dependera de levantar la base local con configuracion valida.
+
 ## 2026-06-09 - V-02-02 - Autorizacion real por pais en permisos y RLS
 
 ### Que cambio
@@ -10,6 +34,9 @@
 - RLS actualiza `can_read_cuenta`, `can_write_cuenta`, `can_read_titular`, `can_export_cuenta` y `can_review_extracto` con `pais_id`.
 - `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS` quedan bajo RLS/FORCE RLS.
 - Las preferencias de columnas (`PREFERENCIAS_USUARIO_CUENTA`) agregan `pais_id` y `titular_id` para que restricciones por columnas no contaminen otro pais/titular.
+- En extractos, las preferencias visibles se guardan con el scope real de la cuenta (`pais_id`, `titular_id`, `cuenta_id`) y las columnas editables solo se resuelven desde filas de permiso que conceden edicion. Una preferencia visual ya no puede actuar como permiso de edicion ilimitado.
+- `RowLevelSecurityTests` cubre usuario e integracion con `pais_id + titular_id` y comprueba FORCE RLS en tablas nuevas de paises, MFA y permisos.
+- `ImportacionContextoResponse` devuelve `pais_id` por cuenta para que el frontend mantenga el mismo contrato de scope que el backend.
 - El frontend envia y consume `pais_id` en permisos de usuarios, tokens de integracion y helpers de permisos.
 - Dashboard-only queda alineado: sin permiso operativo de datos no abre cuentas ni dashboard de datos.
 
@@ -21,13 +48,14 @@ El selector global de pais era solo scope operativo. Eso no era seguridad. La se
 
 - Subagentes usados para auditoria backend/RLS y frontend/contratos; se corrigieron los hallazgos de sobreconcesion por scopes combinados, exportacion incoherente, columnas por scope y dashboard-only inconsistente.
 - Backend build OK desde `C:\tmp` con SDK `8.0.421` y `-p:UseAppHost=false`.
-- Tests focalizados backend: `UserAccessServiceTests|IntegrationAuthorizationServiceTests|DashboardServiceTests`: 24/24 OK.
+- Tests focalizados backend no Docker: `ExtractosControllerTests|UserAccessServiceTests|IntegrationAuthorizationServiceTests`: 32/32 OK.
 - Frontend `npm.cmd run lint`: OK.
 - Frontend `npm.cmd run build`: OK.
+- `RowLevelSecurityTests`: bloqueado por Docker/Testcontainers no disponible (`Docker is either not running or misconfigured`).
 
 ### Limite real
 
-No se ejecuto PostgreSQL real/Testcontainers. La migracion y RLS compilan estaticamente, pero el gate de RLS con motor real sigue pendiente si esto va a release final.
+El modelo RLS esta preparado y el test ya cubre pais, pero la validacion PostgreSQL/Testcontainers queda como gate obligatorio de release. Si Docker no esta operativo, no se puede declarar RLS verde.
 
 ## 2026-06-09 - V-02-02 - App shell nativo con scope global por pais
 

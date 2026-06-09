@@ -4,6 +4,20 @@
 
 La aplicacion esta en la carpeta `Atlas Balance`.
 
+## Datos demo en desarrollo
+
+En entorno `Development`, Atlas Balance puede cargar datos demo sinteticos para revisar la interfaz con contenido: paises, titulares, cuentas, extractos, alertas y plazo fijo.
+
+La plantilla `appsettings.Development.json.template` lo deja activado con:
+
+```json
+"DemoData": {
+  "Enabled": true
+}
+```
+
+Para trabajar con una base limpia, cambia `DemoData.Enabled` a `false` antes del primer arranque. En produccion no se cargan datos demo.
+
 ## Proxy inverso y login
 
 Si Atlas Balance se publica detras de IIS, Nginx, HAProxy u otro proxy inverso, configura en `appsettings.Production.json` las IPs o redes de proxy confiables:
@@ -251,6 +265,8 @@ En `Usuarios`, el modal de alta/edicion incluye `Acceso a todas las cuentas`. Es
 Para permisos manuales, marca `Pais` si el usuario solo debe operar en un pais. Luego puedes reducir mas con `Titular` y `Cuenta`. Un permiso con pais y titular no significa "todo el pais o todo el titular"; significa la interseccion exacta.
 
 Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
+
+Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas visibles en `Extractos` no concede permiso de edicion; la edicion de columnas se decide por los permisos configurados en `Usuarios`.
 
 `Puede ver dashboard` solo permite dashboard si la fila tambien tiene algun permiso operativo de datos dentro de ese alcance. No abre cuentas ni extractos por si solo.
 

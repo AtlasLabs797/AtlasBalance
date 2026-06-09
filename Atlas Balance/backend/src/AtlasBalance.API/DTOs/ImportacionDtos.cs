@@ -100,6 +100,7 @@ public sealed class CuentaImportacionContextoResponse
     public string Nombre { get; set; } = string.Empty;
     public string TitularNombre { get; set; } = string.Empty;
     public string Divisa { get; set; } = string.Empty;
+    public Guid? PaisId { get; set; }
     public bool EsEfectivo { get; set; }
     public string TipoCuenta { get; set; } = string.Empty;
     public Guid? FormatoId { get; set; }

@@ -497,13 +497,23 @@ public sealed class ExtractosController : ControllerBase
     }
 
     [HttpGet("columnas-visibles")]
-    public async Task<IActionResult> GetColumnasVisibles([FromQuery] Guid? cuentaId = null, CancellationToken ct = default)
+    public async Task<IActionResult> GetColumnasVisibles(
+        [FromQuery] Guid? cuentaId = null,
+        [FromQuery] Guid? titularId = null,
+        [FromQuery] Guid? paisId = null,
+        CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
-        if (cuentaId.HasValue && !await CanView(actor, cuentaId.Value, ct)) return Forbid();
+        var scope = await ResolvePreferenciaScope(actor, cuentaId, titularId, paisId, ct);
+        if (scope.Forbidden) return Forbid();
+        if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
         var pref = await _db.PreferenciasUsuarioCuenta
-            .Where(p => p.UsuarioId == actor.Id && p.CuentaId == cuentaId)
+            .Where(p =>
+                p.UsuarioId == actor.Id &&
+                p.PaisId == scope.PaisId &&
+                p.TitularId == scope.TitularId &&
+                p.CuentaId == scope.CuentaId)
             .FirstOrDefaultAsync(ct);
 
         return Ok(new { columnas_visibles = ParseArray(pref?.ColumnasVisibles) });
@@ -514,10 +524,16 @@ public sealed class ExtractosController : ControllerBase
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!req.CuentaId.HasValue) return BadRequest(new { error = "cuenta_id es requerido" });
-        if (!await CanView(actor, req.CuentaId.Value, ct)) return Forbid();
+        var scope = await ResolvePreferenciaScope(actor, req.CuentaId, req.TitularId, req.PaisId, ct);
+        if (scope.Forbidden) return Forbid();
+        if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
         var pref = await _db.PreferenciasUsuarioCuenta
-            .Where(p => p.UsuarioId == actor.Id && p.CuentaId == req.CuentaId)
+            .Where(p =>
+                p.UsuarioId == actor.Id &&
+                p.PaisId == scope.PaisId &&
+                p.TitularId == scope.TitularId &&
+                p.CuentaId == scope.CuentaId)
             .FirstOrDefaultAsync(ct);
 
         if (pref is null)
@@ -526,7 +542,9 @@ public sealed class ExtractosController : ControllerBase
             {
                 Id = Guid.NewGuid(),
                 UsuarioId = actor.Id,
-                CuentaId = req.CuentaId,
+                PaisId = scope.PaisId,
+                TitularId = scope.TitularId,
+                CuentaId = scope.CuentaId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -753,21 +771,94 @@ public sealed class ExtractosController : ControllerBase
             .Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId)
             .ToListAsync(ct);
         if (!rows.Any()) return new Perm();
-        var prefRows = await _db.PreferenciasUsuarioCuenta
-            .Where(p => p.UsuarioId == actor.Id)
-            .Where(p => p.PaisId == null || p.PaisId == cuenta.PaisId)
-            .Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId)
-            .Where(p => p.CuentaId == null || p.CuentaId == cuenta.Id)
-            .ToListAsync(ct);
-        var parsed = prefRows.Select(r => ParseArray(r.ColumnasEditables)).ToList();
-        HashSet<string>? cols;
-        if (!parsed.Any() || parsed.Any(x => x is null)) cols = null;
-        else
+
+        var editableRows = rows.Where(r => r.PuedeEditarLineas).ToList();
+        List<PreferenciaUsuarioCuenta> prefRows = [];
+        if (editableRows.Count > 0)
         {
-            cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var x in parsed.Where(x => x is not null)) foreach (var c in x!) cols.Add(c);
+            prefRows = await _db.PreferenciasUsuarioCuenta
+                .Where(p => p.UsuarioId == actor.Id)
+                .ToListAsync(ct);
         }
+        var cols = ResolveEditableColumns(editableRows, prefRows);
+
         return new Perm { CanAdd = rows.Any(r => r.PuedeAgregarLineas), CanEdit = rows.Any(r => r.PuedeEditarLineas), CanDelete = rows.Any(r => r.PuedeEliminarLineas), EditableCols = cols };
+    }
+
+    private async Task<PreferenciaScope> ResolvePreferenciaScope(Actor actor, Guid? cuentaId, Guid? titularId, Guid? paisId, CancellationToken ct)
+    {
+        if (!cuentaId.HasValue)
+        {
+            if (titularId.HasValue && !await CanViewTitular(actor, titularId.Value, ct))
+            {
+                return PreferenciaScope.Forbid();
+            }
+
+            return new PreferenciaScope(paisId, titularId, null, false, false);
+        }
+
+        var cuenta = await _db.Cuentas
+            .AsNoTracking()
+            .Where(c => c.Id == cuentaId.Value)
+            .Select(c => new { c.Id, c.TitularId, c.PaisId })
+            .FirstOrDefaultAsync(ct);
+        if (cuenta is null)
+        {
+            return PreferenciaScope.Missing();
+        }
+
+        if (!await CanView(actor, cuenta.Id, ct))
+        {
+            return PreferenciaScope.Forbid();
+        }
+
+        if (paisId.HasValue && cuenta.PaisId != paisId.Value)
+        {
+            return PreferenciaScope.Missing();
+        }
+
+        if (titularId.HasValue && cuenta.TitularId != titularId.Value)
+        {
+            return PreferenciaScope.Missing();
+        }
+
+        return new PreferenciaScope(cuenta.PaisId, cuenta.TitularId, cuenta.Id, false, false);
+    }
+
+    private static HashSet<string>? ResolveEditableColumns(
+        IReadOnlyList<PermisoUsuario> editableRows,
+        IReadOnlyList<PreferenciaUsuarioCuenta> prefRows)
+    {
+        if (editableRows.Count == 0)
+        {
+            return null;
+        }
+
+        var parsed = editableRows
+            .Select(row => ParseArray(prefRows.FirstOrDefault(pref => SameScope(pref, row))?.ColumnasEditables))
+            .ToList();
+        if (parsed.Any(x => x is null))
+        {
+            return null;
+        }
+
+        var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in parsed)
+        {
+            foreach (var col in row!)
+            {
+                cols.Add(col);
+            }
+        }
+
+        return cols;
+    }
+
+    private static bool SameScope(PreferenciaUsuarioCuenta preferencia, PermisoUsuario permiso)
+    {
+        return preferencia.PaisId == permiso.PaisId &&
+               preferencia.TitularId == permiso.TitularId &&
+               preferencia.CuentaId == permiso.CuentaId;
     }
 
     private IQueryable<Cuenta> QueryVisibleAccounts(Actor actor)
@@ -845,5 +936,11 @@ public sealed class ExtractosController : ControllerBase
         public bool CanEdit { get; init; }
         public bool CanDelete { get; init; }
         public HashSet<string>? EditableCols { get; init; }
+    }
+
+    private readonly record struct PreferenciaScope(Guid? PaisId, Guid? TitularId, Guid? CuentaId, bool Forbidden, bool NotFound)
+    {
+        public static PreferenciaScope Forbid() => new(null, null, null, true, false);
+        public static PreferenciaScope Missing() => new(null, null, null, false, true);
     }
 }

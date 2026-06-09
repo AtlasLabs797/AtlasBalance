@@ -774,6 +774,131 @@ public sealed class ExtractosControllerTests
     }
 
     [Fact]
+    public async Task SaveColumnasVisibles_Should_Store_Exact_Country_Titular_Account_Scope()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var paisId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.columnas.scope@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Columnas Scope",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Paises.Add(new Pais { Id = paisId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Columnas", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, PaisId = paisId, Nombre = "Cuenta Columnas", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            PaisId = paisId,
+            TitularId = titularId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.SaveColumnasVisibles(
+            new SaveColumnasVisiblesRequest
+            {
+                CuentaId = cuentaId,
+                ColumnasVisibles = ["fecha", "monto"]
+            },
+            CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var pref = await db.PreferenciasUsuarioCuenta.SingleAsync();
+        pref.UsuarioId.Should().Be(userId);
+        pref.PaisId.Should().Be(paisId);
+        pref.TitularId.Should().Be(titularId);
+        pref.CuentaId.Should().Be(cuentaId);
+        pref.ColumnasVisibles.Should().Contain("monto");
+    }
+
+    [Fact]
+    public async Task Actualizar_Should_Not_Treat_VisibleColumns_Preference_As_Unrestricted_EditColumns()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var paisId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.columnas.edit@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Columnas Edit",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Paises.Add(new Pais { Id = paisId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Edit", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, PaisId = paisId, Nombre = "Cuenta Edit", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            PaisId = paisId,
+            TitularId = titularId,
+            PuedeVerCuentas = true,
+            PuedeEditarLineas = true
+        });
+        db.PreferenciasUsuarioCuenta.AddRange(
+            new PreferenciaUsuarioCuenta
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = userId,
+                PaisId = paisId,
+                TitularId = titularId,
+                ColumnasEditables = """["fecha"]"""
+            },
+            new PreferenciaUsuarioCuenta
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = userId,
+                PaisId = paisId,
+                TitularId = titularId,
+                CuentaId = cuentaId,
+                ColumnasVisibles = """["fecha","monto"]"""
+            });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Movimiento",
+            Monto = 10m,
+            Saldo = 10m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Actualizar(
+            extractoId,
+            new UpdateExtractoRequest { Monto = 20m },
+            CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var extracto = await db.Extractos.SingleAsync(x => x.Id == extractoId);
+        extracto.Monto.Should().Be(10m);
+    }
+
+    [Fact]
     public async Task GetCuentasTitular_Should_Forbid_Unauthorized_Titular()
     {
         await using var db = BuildDbContext();

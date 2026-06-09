@@ -8,6 +8,40 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-09 - V-02-02 - Seed de datos demo para desarrollo
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se agrego seed demo sintetico en `SeedData` para ver la app con paises, titulares, cuentas, extractos, alertas y plazo fijo.
+- La carga solo opera en entorno `Development`; en `Production` queda bloqueada aunque `DemoData:Enabled=true`.
+- El seed es idempotente con IDs fijos y comprobaciones de existencia para no duplicar datos al reiniciar.
+- La plantilla local `appsettings.Development.json.template` habilita `DemoData.Enabled=true`.
+- Se agregaron tests para carga demo en desarrollo, no duplicacion y bloqueo en produccion.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- `dotnet test "Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter SeedDataTests --no-restore` desde la raiz: bloqueado por SDK `8.0.419` exigido en `global.json`.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter SeedDataTests --no-restore` desde `C:\tmp`.
+
+**Resultado de verificacion:**
+- Tests focalizados `SeedDataTests`: 8/8 OK.
+- Warnings no bloqueantes: `NU1900` por NuGet sin red y obsoleto Hangfire/PostgreSQL preexistente.
+
+**Pendientes:**
+- No se arranco la app ni se hizo validacion visual.
+- Para bases locales ya existentes con cuentas reales/demo previas, el seed no fuerza recarga si detecta cuentas `Demo `; si se quiere reset visual completo, hay que limpiar datos de desarrollo conscientemente.
+
+---
 ## 2026-06-09 - V-02-02 - Autorizacion por pais en permisos, RLS e integraciones
 
 **Version:** V-02-02
@@ -19,6 +53,9 @@ Regla de trabajo desde ahora:
 - Se corrigio la sobreconcesion por union de listas: `Pais A + Titular B` ya no abre `Pais A` completo ni `Titular B` fuera de ese pais.
 - Se alineo exportacion manual con RLS: exportar requiere lectura de cuenta, no permisos de escritura/importacion.
 - Se ampliaron preferencias de columnas con `pais_id` y `titular_id` para que reglas por columnas no contaminen otro scope.
+- `ExtractosController` resuelve preferencias de columnas con scope exacto y ya no permite que una preferencia visual con `ColumnasEditables = null` abra todas las columnas editables.
+- `RowLevelSecurityTests` incorpora escenarios usuario/integracion con `pais_id + titular_id` y comprueba FORCE RLS tambien en `PAISES`, `MFA_TRUSTED_DEVICES`, `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS`.
+- El contexto de importacion devuelve `pais_id` por cuenta para mantener contrato frontend/backend completo.
 - Frontend actualizado para crear/editar permisos por pais en usuarios y tokens de integracion, y para calcular permisos con `pais_id`.
 - Subagentes usados: auditoria backend/RLS y auditoria frontend/contratos; sus hallazgos reales fueron corregidos.
 
@@ -26,25 +63,27 @@ Regla de trabajo desde ahora:
 - Backend API: entidades, `AppDbContext`, snapshot EF, migracion `20260609120000_AddCountryAuthorizationScopes`, DTOs Auth/Usuarios/Integraciones/Extractos/Revision.
 - Backend servicios/controladores: `UserAccessService`, `IntegrationAuthorizationService`, `ImportacionService`, `DashboardService`, `AlertaService`, `AuthService`, `UsuariosController`, `IntegracionesController`, `ExtractosController`, `ExportacionesController`, `CuentasController`.
 - Frontend: tipos, `UsuarioModal`, `UsuariosPage`, `TokenPermissionsEditor`, `CreateTokenModal`, `ConfiguracionPage`, `permisosStore`, paginas de cuentas/extractos/revision/dashboard.
-- Tests: `UserAccessServiceTests`, `IntegrationAuthorizationServiceTests`.
+- Tests: `UserAccessServiceTests`, `IntegrationAuthorizationServiceTests`, `ExtractosControllerTests`, `RowLevelSecurityTests`.
 - Documentacion: tecnica, usuario, cambios, version, bugs e incidencias.
 
 **Comandos ejecutados:**
 - Lectura obligatoria de `CLAUDE.md`, `version_actual.md`, `v-02-02.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
 - Auditorias con subagentes backend/RLS y frontend/contratos.
 - `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false` desde `C:\tmp`.
-- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~DashboardServiceTests"` desde `C:\tmp`.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~ExtractosControllerTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests"` desde `C:\tmp`.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~RowLevelSecurityTests"` desde `C:\tmp`.
 - `npm.cmd run lint`.
 - `npm.cmd run build`.
 
 **Resultado de verificacion:**
 - Backend build: OK. Warnings no bloqueantes: `NU1900` por consulta NuGet sin red y obsoleto Hangfire/PostgreSQL preexistente.
-- Tests focalizados backend: 24/24 OK.
+- Tests focalizados backend no Docker: 32/32 OK.
 - Frontend lint: OK.
 - Frontend build (`tsc && vite build`): OK.
+- `RowLevelSecurityTests`: bloqueado por Docker/Testcontainers no disponible (`Docker is either not running or misconfigured`).
 
 **Pendientes:**
-- No se ejecuto PostgreSQL real/Testcontainers; RLS queda pendiente de validacion con motor real antes de release final.
+- Ejecutar `RowLevelSecurityTests` con Docker operativo; el test ya contiene escenarios por pais, pero no se pudo validar contra PostgreSQL real en esta maquina.
 - No se ejecuto suite backend completa; ya existia deuda de suite amplia documentada en `ConfiguracionControllerTests`.
 
 ---

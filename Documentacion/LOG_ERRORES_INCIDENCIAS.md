@@ -8,10 +8,12 @@
   - `npm run build` detecto que `ExtractosPage` usaba `cuenta.pais_id` sin declararlo en el tipo local de opciones. Solucion: propagar `pais_id` desde `CuentaResumenKpi`.
   - Auditoria subagente detecto sobreconcesion en `CanWriteCuentaAsync`/`CanEditCuentaAsync` cuando coexistian `PaisId + TitularId + CuentaId`. Solucion: exigir coincidencia AND de todas las dimensiones no nulas.
   - Auditoria subagente detecto columnas por scope mezcladas por falta de `pais_id`/`titular_id` en preferencias. Solucion: extender `PREFERENCIAS_USUARIO_CUENTA` y resolver preferencias por scope exacto.
+  - Revalidacion detecto que una preferencia visual de extractos con `ColumnasEditables = null` podia abrir todas las columnas editables al mezclarse con una regla de edicion scopeada. Solucion: resolver columnas editables solo desde filas `PermisoUsuario` que conceden edicion y con preferencia de scope exacto.
   - Auditoria subagente detecto dashboard-only inconsistente entre frontend/backend/RLS. Solucion: frontend y RLS exigen `PuedeVerDashboard` mas permiso operativo de datos, igual que backend.
+  - `RowLevelSecurityTests` no pudo validar PostgreSQL real porque Docker/Testcontainers no esta disponible. Solucion aplicada: no reintentar; dejar el gate RLS pendiente para entorno con Docker operativo.
 - Resultado:
   - Backend build OK.
-  - Tests focalizados backend 24/24 OK.
+  - Tests focalizados backend no Docker 32/32 OK.
   - Frontend lint/build OK.
 - Regla: los scopes compuestos se evaluan como interseccion, nunca como union de listas independientes.
 

@@ -34,19 +34,30 @@ public sealed class RowLevelSecurityTests
         var adminId = Guid.NewGuid();
         var readerId = Guid.NewGuid();
         var writerId = Guid.NewGuid();
+        var countryScopedUserId = Guid.NewGuid();
+        var paisPermitidoId = Guid.NewGuid();
+        var paisBloqueadoId = Guid.NewGuid();
         var titularPermitidoId = Guid.NewGuid();
         var titularBloqueadoId = Guid.NewGuid();
         var cuentaPermitidaId = Guid.NewGuid();
         var cuentaBloqueadaId = Guid.NewGuid();
+        var cuentaMismaPaisOtroTitularId = Guid.NewGuid();
+        var cuentaMismoTitularOtroPaisId = Guid.NewGuid();
         var cuentaEliminadaId = Guid.NewGuid();
         var extractoPermitidoId = Guid.NewGuid();
         var extractoBloqueadoId = Guid.NewGuid();
+        var extractoMismaPaisOtroTitularId = Guid.NewGuid();
+        var extractoMismoTitularOtroPaisId = Guid.NewGuid();
         var extractoEliminadoId = Guid.NewGuid();
         var extractoCuentaEliminadaId = Guid.NewGuid();
         var revisionPermitidaId = Guid.NewGuid();
         var revisionBloqueadaId = Guid.NewGuid();
+        var readerPermissionId = Guid.NewGuid();
+        var countryPermissionId = Guid.NewGuid();
         var integrationTokenId = Guid.NewGuid();
         var writeOnlyIntegrationTokenId = Guid.NewGuid();
+        var countryIntegrationTokenId = Guid.NewGuid();
+        var countryIntegrationPermissionId = Guid.NewGuid();
 
         await using (var db = new AppDbContext(migrationOptions))
         {
@@ -94,7 +105,20 @@ public sealed class RowLevelSecurityTests
                     PasswordHash = "test",
                     Rol = RolUsuario.GERENTE,
                     Activo = true
+                },
+                new Usuario
+                {
+                    Id = countryScopedUserId,
+                    Email = $"country-{Guid.NewGuid():N}@atlas.local",
+                    NombreCompleto = "Country RLS",
+                    PasswordHash = "test",
+                    Rol = RolUsuario.GERENTE,
+                    Activo = true
                 });
+
+            db.Paises.AddRange(
+                new Pais { Id = paisPermitidoId, Nombre = "Pais permitido", CodigoIso2 = "AA", Activo = true },
+                new Pais { Id = paisBloqueadoId, Nombre = "Pais bloqueado", CodigoIso2 = "BB", Activo = true });
 
             db.Titulares.AddRange(
                 new Titular { Id = titularPermitidoId, Nombre = "Titular permitido", Tipo = TipoTitular.EMPRESA },
@@ -107,6 +131,7 @@ public sealed class RowLevelSecurityTests
                     TitularId = titularPermitidoId,
                     Nombre = "Cuenta permitida",
                     Divisa = "EUR",
+                    PaisId = paisPermitidoId,
                     Activa = true
                 },
                 new Cuenta
@@ -115,6 +140,25 @@ public sealed class RowLevelSecurityTests
                     TitularId = titularBloqueadoId,
                     Nombre = "Cuenta bloqueada",
                     Divisa = "EUR",
+                    PaisId = paisBloqueadoId,
+                    Activa = true
+                },
+                new Cuenta
+                {
+                    Id = cuentaMismaPaisOtroTitularId,
+                    TitularId = titularBloqueadoId,
+                    Nombre = "Cuenta misma pais otro titular",
+                    Divisa = "EUR",
+                    PaisId = paisPermitidoId,
+                    Activa = true
+                },
+                new Cuenta
+                {
+                    Id = cuentaMismoTitularOtroPaisId,
+                    TitularId = titularPermitidoId,
+                    Nombre = "Cuenta mismo titular otro pais",
+                    Divisa = "EUR",
+                    PaisId = paisBloqueadoId,
                     Activa = true
                 },
                 new Cuenta
@@ -123,6 +167,7 @@ public sealed class RowLevelSecurityTests
                     TitularId = titularPermitidoId,
                     Nombre = "Cuenta eliminada",
                     Divisa = "EUR",
+                    PaisId = paisPermitidoId,
                     Activa = true,
                     DeletedAt = DateTime.UtcNow
                 });
@@ -150,6 +195,26 @@ public sealed class RowLevelSecurityTests
                 },
                 new Extracto
                 {
+                    Id = extractoMismaPaisOtroTitularId,
+                    CuentaId = cuentaMismaPaisOtroTitularId,
+                    Fecha = new DateOnly(2026, 5, 1),
+                    Concepto = "Misma pais otro titular",
+                    Monto = 21,
+                    Saldo = 21,
+                    FilaNumero = 1
+                },
+                new Extracto
+                {
+                    Id = extractoMismoTitularOtroPaisId,
+                    CuentaId = cuentaMismoTitularOtroPaisId,
+                    Fecha = new DateOnly(2026, 5, 1),
+                    Concepto = "Mismo titular otro pais",
+                    Monto = 22,
+                    Saldo = 22,
+                    FilaNumero = 1
+                },
+                new Extracto
+                {
                     Id = extractoEliminadoId,
                     CuentaId = cuentaPermitidaId,
                     Fecha = new DateOnly(2026, 5, 1),
@@ -173,7 +238,7 @@ public sealed class RowLevelSecurityTests
             db.PermisosUsuario.AddRange(
                 new PermisoUsuario
                 {
-                    Id = Guid.NewGuid(),
+                    Id = readerPermissionId,
                     UsuarioId = readerId,
                     CuentaId = cuentaPermitidaId,
                     PuedeVerCuentas = true
@@ -191,6 +256,14 @@ public sealed class RowLevelSecurityTests
                     UsuarioId = writerId,
                     CuentaId = cuentaPermitidaId,
                     PuedeImportar = true
+                },
+                new PermisoUsuario
+                {
+                    Id = countryPermissionId,
+                    UsuarioId = countryScopedUserId,
+                    PaisId = paisPermitidoId,
+                    TitularId = titularPermitidoId,
+                    PuedeVerCuentas = true
                 });
 
             db.IntegrationTokens.Add(new IntegrationToken
@@ -213,6 +286,16 @@ public sealed class RowLevelSecurityTests
                 PermisoEscritura = true,
                 UsuarioCreadorId = adminId
             });
+            db.IntegrationTokens.Add(new IntegrationToken
+            {
+                Id = countryIntegrationTokenId,
+                Nombre = "RLS country integration",
+                TokenHash = Guid.NewGuid().ToString("N"),
+                Tipo = "openclaw",
+                Estado = EstadoTokenIntegracion.Activo,
+                PermisoLectura = true,
+                UsuarioCreadorId = adminId
+            });
             db.IntegrationPermissions.Add(new IntegrationPermission
             {
                 Id = Guid.NewGuid(),
@@ -233,6 +316,14 @@ public sealed class RowLevelSecurityTests
                 TokenId = writeOnlyIntegrationTokenId,
                 CuentaId = cuentaBloqueadaId,
                 AccesoTipo = "escritura"
+            });
+            db.IntegrationPermissions.Add(new IntegrationPermission
+            {
+                Id = countryIntegrationPermissionId,
+                TokenId = countryIntegrationTokenId,
+                PaisId = paisPermitidoId,
+                TitularId = titularPermitidoId,
+                AccesoTipo = "lectura"
             });
             db.RevisionExtractoEstados.AddRange(
                 new RevisionExtractoEstado
@@ -289,6 +380,10 @@ public sealed class RowLevelSecurityTests
                       'AUDITORIAS',
                       'AUDITORIA_INTEGRACIONES',
                       'BACKUPS',
+                      'PAISES',
+                      'MFA_TRUSTED_DEVICES',
+                      'PERMISOS_USUARIO',
+                      'INTEGRATION_PERMISSIONS',
                       'NOTIFICACIONES_ADMIN'
                   )
             ) r
@@ -320,6 +415,10 @@ public sealed class RowLevelSecurityTests
                   'AUDITORIAS',
                   'AUDITORIA_INTEGRACIONES',
                   'BACKUPS',
+                  'PAISES',
+                  'MFA_TRUSTED_DEVICES',
+                  'PERMISOS_USUARIO',
+                  'INTEGRATION_PERMISSIONS',
                   'NOTIFICACIONES_ADMIN'
               )
             """);
@@ -339,6 +438,7 @@ public sealed class RowLevelSecurityTests
         (await CountByIdsAsync(connection, "TITULARES", titularPermitidoId, titularBloqueadoId)).Should().Be(1);
         (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(1);
         (await CountByIdsAsync(connection, "REVISION_EXTRACTO_ESTADOS", revisionPermitidaId, revisionBloqueadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "PERMISOS_USUARIO", readerPermissionId, countryPermissionId)).Should().Be(1);
 
         var deniedInsert = async () => await InsertExtractoAsync(connection, cuentaPermitidaId);
         await deniedInsert.Should().ThrowAsync<PostgresException>()
@@ -358,17 +458,28 @@ public sealed class RowLevelSecurityTests
         await deniedWriterExport.Should().ThrowAsync<PostgresException>()
             .Where(ex => ex.SqlState == PostgresErrorCodes.InsufficientPrivilege);
 
+        await SetRlsContextAsync(connection, "user", countryScopedUserId, null, isAdmin: false, isSystem: false, "data");
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaMismaPaisOtroTitularId, cuentaMismoTitularOtroPaisId, cuentaBloqueadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoMismaPaisOtroTitularId, extractoMismoTitularOtroPaisId, extractoBloqueadoId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "PERMISOS_USUARIO", readerPermissionId, countryPermissionId)).Should().Be(1);
+
         await SetRlsContextAsync(connection, "system", null, null, isAdmin: true, isSystem: true, "system");
         await InsertExportacionAsync(connection, cuentaPermitidaId);
 
         await SetRlsContextAsync(connection, "integration", null, integrationTokenId, isAdmin: false, isSystem: false, "integration");
         (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(1);
         (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "INTEGRATION_PERMISSIONS", countryIntegrationPermissionId)).Should().Be(0);
 
         await SetRlsContextAsync(connection, "integration", null, writeOnlyIntegrationTokenId, isAdmin: false, isSystem: false, "integration");
         (await CountByIdsAsync(connection, "TITULARES", titularPermitidoId, titularBloqueadoId)).Should().Be(0);
         (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(0);
         (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(0);
+
+        await SetRlsContextAsync(connection, "integration", null, countryIntegrationTokenId, isAdmin: false, isSystem: false, "integration");
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaMismaPaisOtroTitularId, cuentaMismoTitularOtroPaisId, cuentaBloqueadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoMismaPaisOtroTitularId, extractoMismoTitularOtroPaisId, extractoBloqueadoId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "INTEGRATION_PERMISSIONS", countryIntegrationPermissionId)).Should().Be(1);
 
         await SetRlsContextAsync(connection, "user", adminId, null, isAdmin: true, isSystem: false, "data");
         (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(3);

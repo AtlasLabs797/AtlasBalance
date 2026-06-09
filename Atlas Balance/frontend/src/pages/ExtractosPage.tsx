@@ -83,6 +83,10 @@ export default function ExtractosPage() {
     () => cuentasOptions.filter((cuenta) => canAddInCuenta(cuenta.id, cuenta.titular_id, cuenta.pais_id)),
     [canAddInCuenta, cuentasOptions]
   );
+  const selectedCuenta = useMemo(
+    () => cuentasOptions.find((cuenta) => cuenta.id === cuentaFiltro) ?? null,
+    [cuentaFiltro, cuentasOptions]
+  );
 
   const loadResumen = useCallback(async () => {
     try {
@@ -137,13 +141,19 @@ export default function ExtractosPage() {
 
   const loadVisibleColumns = useCallback(async () => {
     try {
-      const { data } = await api.get('/extractos/columnas-visibles', { params: { cuentaId: cuentaFiltro || undefined } });
+      const { data } = await api.get('/extractos/columnas-visibles', {
+        params: {
+          cuentaId: cuentaFiltro || undefined,
+          titularId: selectedCuenta?.titular_id || titularFiltro || undefined,
+          paisId: selectedCuenta?.pais_id ?? (selectedPaisId || undefined)
+        }
+      });
       setVisibleColumns(data.columnas_visibles ?? null);
     } catch (err) {
       setVisibleColumns(null);
       setError(extractErrorMessage(err, 'No se pudieron cargar las preferencias de columnas.'));
     }
-  }, [cuentaFiltro]);
+  }, [cuentaFiltro, selectedCuenta, selectedPaisId, titularFiltro]);
 
   useEffect(() => {
     void loadResumen();
@@ -225,7 +235,12 @@ export default function ExtractosPage() {
     setVisibleColumns(next);
     setError(null);
     try {
-      await api.put('/extractos/columnas-visibles', { cuenta_id: cuentaFiltro || null, columnas_visibles: next });
+      await api.put('/extractos/columnas-visibles', {
+        cuenta_id: cuentaFiltro || null,
+        titular_id: selectedCuenta?.titular_id ?? null,
+        pais_id: selectedCuenta?.pais_id ?? (selectedPaisId || null),
+        columnas_visibles: next
+      });
     } catch (err) {
       setVisibleColumns(visibleColumns);
       setError(extractErrorMessage(err, 'No se pudieron guardar las columnas visibles.'));

@@ -104,5 +104,7 @@ public sealed class TitularConCuentasResponse
 public sealed class SaveColumnasVisiblesRequest
 {
     public Guid? CuentaId { get; set; }
+    public Guid? TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
 }

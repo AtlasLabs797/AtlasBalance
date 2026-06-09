@@ -34,7 +34,7 @@
 - Causa: varios servicios convertian permisos en listas separadas de paises, titulares y cuentas.
 - Impacto: una regla `Pais A + Titular B` podia abrir `Pais A` entero o `Titular B` fuera de ese pais.
 - Solucion: autorizacion por fila con AND de todas las dimensiones no nulas en usuarios, integraciones, importacion, dashboard, extractos y alertas.
-- Verificacion: backend build OK; tests focalizados 24/24 OK.
+- Verificacion: backend build OK; tests focalizados no Docker 32/32 OK.
 - Estado: cerrado.
 
 ### 2026-06-09 - V-02-02 - Cerrado - Restricciones de columnas no tenian scope por pais/titular
@@ -43,7 +43,16 @@
 - Causa: `PREFERENCIAS_USUARIO_CUENTA` solo guardaba `usuario_id + cuenta_id` o global.
 - Impacto: reglas de columnas de un pais/titular podian aplicarse sobre otro scope.
 - Solucion: `PREFERENCIAS_USUARIO_CUENTA` incorpora `pais_id` y `titular_id`; carga y auth resuelven preferencias por scope exacto.
-- Verificacion: backend build OK; frontend build OK.
+- Verificacion: backend build OK; frontend build OK; tests focalizados no Docker 32/32 OK.
+- Estado: cerrado.
+
+### 2026-06-09 - V-02-02 - Cerrado - Preferencias visibles podian abrir columnas editables
+
+- Contexto: extractos usa `PREFERENCIAS_USUARIO_CUENTA` para preferencias visuales y restricciones de columnas.
+- Causa: `GetPermission` mezclaba cualquier preferencia que coincidiera con la cuenta. Una preferencia visual con `ColumnasEditables = null` podia interpretarse como "todas las columnas editables".
+- Impacto: un usuario con edicion limitada por columnas podia editar mas columnas si existia una preferencia visual coincidente en un scope mas especifico.
+- Solucion: columnas editables se resuelven solo desde filas de permiso que conceden `PuedeEditarLineas` y con preferencia de scope exacto. Guardar columnas visibles almacena `pais_id`, `titular_id` y `cuenta_id` reales de la cuenta.
+- Verificacion: regresion en `ExtractosControllerTests`; bloque focalizado no Docker 32/32 OK.
 - Estado: cerrado.
 
 ### 2026-06-09 - V-02-02 - Cerrado - Dashboard-only tenia semantica partida
@@ -52,7 +61,7 @@
 - Causa: frontend aceptaba cualquier `PuedeVerDashboard`; backend exigia permiso operativo de datos; RLS permitia dashboard-only puro.
 - Impacto: UI podia mostrar rutas que backend rechazaba y RLS no actuaba como backstop equivalente.
 - Solucion: frontend y RLS se alinean con backend: dashboard requiere `PuedeVerDashboard` y permiso operativo de datos en el mismo scope.
-- Verificacion: tests `DashboardServiceTests` incluidos en bloque 24/24 OK; frontend lint/build OK.
+- Verificacion: tests de autorizacion incluidos en bloque no Docker 32/32 OK; frontend lint/build OK.
 - Estado: cerrado.
 
 ### 2026-06-08 - V-02-02 - Cerrado - MFA recordado no reflejaba la intencion de producto

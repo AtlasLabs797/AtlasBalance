@@ -91,6 +91,7 @@ public sealed class ImportacionService : IImportacionService
                 x.cuenta.Nombre,
                 TitularNombre = x.titular.Nombre,
                 x.cuenta.Divisa,
+                x.cuenta.PaisId,
                 x.cuenta.EsEfectivo,
                 TipoCuenta = x.cuenta.TipoCuenta == TipoCuenta.NORMAL && x.cuenta.EsEfectivo
                     ? TipoCuenta.EFECTIVO
@@ -113,6 +114,7 @@ public sealed class ImportacionService : IImportacionService
                 Nombre = c.Nombre,
                 TitularNombre = c.TitularNombre,
                 Divisa = c.Divisa,
+                PaisId = c.PaisId,
                 EsEfectivo = c.EsEfectivo,
                 TipoCuenta = c.TipoCuenta.ToString(),
                 FormatoId = c.FormatoId,
