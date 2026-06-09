@@ -1,5 +1,18 @@
 # Log de errores e incidencias
 
+## 2026-06-09 - V-02-02 - Verificacion pais scope: SDK clavado y suite amplia roja por Configuracion
+
+- Contexto: validacion de app shell y scope global por pais.
+- Incidencias:
+  - `dotnet build` desde el repo falla porque `global.json` exige SDK `8.0.419` con `rollForward=disable`, pero la maquina tiene `8.0.421`.
+  - Workaround limpio: ejecutar `dotnet build/test` desde `C:\tmp` apuntando al `.csproj`, para que el SDK resolver no lea ese `global.json`.
+  - Suite backend no Docker: 288/290 OK; fallan `ConfiguracionControllerTests.Update_Should_Normalize_Unknown_OpenRouter_Model_To_Auto` y `ConfiguracionControllerTests.Get_Should_Not_Return_SmtpPassword`.
+- Resultado:
+  - Build backend OK con SDK `8.0.421` desde `C:\tmp`.
+  - Tests focalizados del cambio OK: 161/161.
+  - No se tocaron los fallos de Configuracion porque son ajenos al scope de pais/shell.
+- Regla: no llames verde a una suite roja. Si el cambio focal pasa pero la suite amplia falla por deuda ajena, dilo con nombres.
+
 ## 2026-06-01 - V-01.09 - Update V-01.06 seguia fallando si Watchdog no tenia owner
 
 - Contexto: el paquete `V-01.09-win-x64` corregido seguia fallando en una instalacion `V-01.06` durante el backup previo.

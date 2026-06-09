@@ -77,7 +77,8 @@ public sealed class IaController : ControllerBase
                 pregunta,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 cancellationToken,
-                request.Model);
+                request.Model,
+                request.PaisId);
             return Ok(response);
         }
         catch (IaAccessDeniedException ex)

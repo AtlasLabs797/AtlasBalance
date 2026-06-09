@@ -7,8 +7,10 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
+import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { useUiStore } from '@/stores/uiStore';
 
 export function Layout() {
@@ -20,6 +22,9 @@ export function Layout() {
   const usuarioId = useAuthStore((state) => state.usuario?.id ?? null);
   const loadIaAvailability = useIaAvailabilityStore((state) => state.load);
   const clearIaAvailability = useIaAvailabilityStore((state) => state.clear);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const loadPaises = usePaisScopeStore((state) => state.loadPaises);
+  const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
 
   const { isToastVisible, isWarningVisible, remainingSeconds, resetTimeout, performLogout } =
     useSessionTimeout();
@@ -62,6 +67,22 @@ export function Layout() {
     const timer = window.setInterval(() => void loadIaAvailability(true), 60000);
     return () => window.clearInterval(timer);
   }, [clearIaAvailability, loadIaAvailability, usuarioId]);
+
+  useEffect(() => {
+    if (!usuarioId) {
+      return;
+    }
+
+    void loadPaises();
+  }, [loadPaises, usuarioId]);
+
+  useEffect(() => {
+    if (!usuarioId) {
+      return;
+    }
+
+    void loadAlertasActivas(selectedPaisId || undefined);
+  }, [loadAlertasActivas, selectedPaisId, usuarioId]);
 
   if (isEmbedded) {
     return (

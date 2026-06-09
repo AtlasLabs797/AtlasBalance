@@ -100,6 +100,52 @@
   transform: translateX(-0.35rem);
 }
 
+.pais-scope {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  padding: var(--space-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--bg-surface) 62%, transparent);
+}
+
+.pais-scope-label {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.pais-scope .app-select-field,
+.pais-scope .app-select-trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+.pais-scope .app-select-trigger {
+  min-height: 2.45rem;
+}
+
+.pais-scope--compact {
+  padding: var(--space-1);
+}
+
+.app-sidebar--collapsed .pais-scope {
+  margin-bottom: var(--space-3);
+  border-color: transparent;
+  background: transparent;
+}
+
+.app-sidebar--collapsed .pais-scope .app-select-trigger {
+  padding-inline: var(--space-1);
+}
+
+.app-sidebar--collapsed .pais-scope .app-select-trigger > span:first-child {
+  max-width: 2.1rem;
+}
+
 .app-nav {
   display: flex;
   flex-direction: column;

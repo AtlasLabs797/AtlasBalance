@@ -157,7 +157,7 @@ public sealed class RevisionService : IRevisionService
         var estadoFiltro = NormalizeEstadoFilter(request.Estado);
         var page = NormalizePage(request.Page);
         var pageSize = NormalizePageSize(request.PageSize);
-        var query = BuildRevisionBaseQuery(scope, TipoComision, ComisionSearchTerms)
+        var query = BuildRevisionBaseQuery(scope, request.PaisId, TipoComision, ComisionSearchTerms)
             .Where(x => x.Monto > settings.ComisionesImporteMinimo || x.Monto < -settings.ComisionesImporteMinimo)
             .Select(x => new RevisionComisionItemResponse
             {
@@ -197,7 +197,7 @@ public sealed class RevisionService : IRevisionService
         var estadoFiltro = NormalizeEstadoFilter(request.Estado);
         var page = NormalizePage(request.Page);
         var pageSize = NormalizePageSize(request.PageSize);
-        var query = BuildRevisionBaseQuery(scope, TipoSeguro, SeguroSearchTerms)
+        var query = BuildRevisionBaseQuery(scope, request.PaisId, TipoSeguro, SeguroSearchTerms)
             .Where(x => x.Monto < 0m)
             .Select(x => new RevisionSeguroItemResponse
             {
@@ -288,9 +288,11 @@ public sealed class RevisionService : IRevisionService
 
     public static bool IsInsuranceConcept(string? concept) => MatchesAnyIncludedTerm(concept, SeguroTerms, SeguroExcludedTerms);
 
-    private IQueryable<RevisionRawRow> BuildRevisionBaseQuery(UserAccessScope scope, string tipo, IReadOnlyList<string> terms)
+    private IQueryable<RevisionRawRow> BuildRevisionBaseQuery(UserAccessScope scope, Guid? paisId, string tipo, IReadOnlyList<string> terms)
     {
-        var cuentasQuery = _userAccessService.ApplyCuentaScope(_dbContext.Cuentas.AsNoTracking(), scope);
+        var cuentasQuery = _userAccessService
+            .ApplyCuentaScope(_dbContext.Cuentas.AsNoTracking(), scope)
+            .ApplyPaisScope(paisId);
 
         return
             from e in _dbContext.Extractos.AsNoTracking()

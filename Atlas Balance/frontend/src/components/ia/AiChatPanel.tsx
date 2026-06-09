@@ -5,6 +5,7 @@ import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
 import { AiMessageContent } from '@/components/ia/AiMessageContent';
 import api from '@/services/api';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { IaChatResponse, IaConfig, IaModel } from '@/types';
 import { getAiModelLabel, getAiModelOptions, normalizeAiModel, normalizeAiProvider } from '@/utils/aiModels';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -49,6 +50,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const configured = Boolean(config?.configurada);
   const disabledReason = config?.mensaje_estado || 'Falta configurar la IA en Ajustes.';
   const accessBlocked = Boolean(config && (!config.habilitada || !config.usuario_puede_usar));
@@ -164,7 +166,11 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     setLoading(true);
 
     try {
-      const { data } = await api.post<IaChatResponse>('/ia/chat', { pregunta: prompt, model: activeModel });
+      const { data } = await api.post<IaChatResponse>('/ia/chat', {
+        pregunta: prompt,
+        model: activeModel,
+        pais_id: selectedPaisId || undefined,
+      });
       setMessages((current) => [
         ...current,
         {

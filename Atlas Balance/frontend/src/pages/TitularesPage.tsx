@@ -13,6 +13,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type {
   DashboardEvolucion,
@@ -82,6 +83,7 @@ export default function TitularesPage() {
   usePermisosStore((state) => state.permisos);
   const isAdmin = usuario?.rol === 'ADMIN';
   const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [items, setItems] = useState<TitularCard[]>([]);
   const [page, setPage] = useState(1);
@@ -147,6 +149,7 @@ export default function TitularesPage() {
           pageSize,
           search: debouncedSearch || undefined,
           tipoTitular: tipoFilter || undefined,
+          paisId: selectedPaisId || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
           sortBy: 'nombre',
           sortDir: 'asc',
@@ -164,7 +167,11 @@ export default function TitularesPage() {
   useEffect(() => {
     void loadTitulares();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros y paginacion
-  }, [page, pageSize, debouncedSearch, tipoFilter, incluirEliminados, isAdmin]);
+  }, [page, pageSize, debouncedSearch, tipoFilter, selectedPaisId, incluirEliminados, isAdmin]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedPaisId]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -179,9 +186,9 @@ export default function TitularesPage() {
       setDashboardError(null);
       try {
         const [principalRes, evolucionRes, saldosDivisaRes] = await Promise.all([
-          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal } }),
-          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal } }),
-          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal } }),
+          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
         ]);
 
         if (!mounted) {
@@ -212,7 +219,7 @@ export default function TitularesPage() {
     return () => {
       mounted = false;
     };
-  }, [canSeeDashboard, divisaPrincipal, periodo]);
+  }, [canSeeDashboard, divisaPrincipal, periodo, selectedPaisId]);
 
   const resetForm = () => {
     setEditingId(null);

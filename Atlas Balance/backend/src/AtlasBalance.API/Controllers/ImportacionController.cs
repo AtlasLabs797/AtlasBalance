@@ -19,14 +19,14 @@ public sealed class ImportacionController : ControllerBase
     }
 
     [HttpGet("contexto")]
-    public async Task<IActionResult> Contexto(CancellationToken cancellationToken)
+    public async Task<IActionResult> Contexto([FromQuery] Guid? paisId = null, CancellationToken cancellationToken = default)
     {
         if (!TryGetActor(out var userId, out var rol))
         {
             return Unauthorized(new { error = "Usuario no autenticado" });
         }
 
-        var result = await _importacionService.GetContextoAsync(userId, rol, cancellationToken);
+        var result = await _importacionService.GetContextoAsync(userId, rol, paisId, cancellationToken);
         return Ok(result);
     }
 

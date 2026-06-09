@@ -1,5 +1,35 @@
 # Documentacion tecnica
 
+## 2026-06-09 - V-02-02 - App shell nativo con scope global por pais
+
+### Que cambio
+
+- Nuevo `paisScopeStore` frontend: `selectedPaisId: string | ''`, carga de paises activos, persistencia en `localStorage` y reset a `General` cuando el pais persistido ya no esta activo.
+- `Layout` carga paises al tener sesion y recarga alertas activas con el pais seleccionado.
+- `Sidebar` y `BottomNav` muestran `PaisScopeSelect`; en colapsado usa etiquetas cortas (`Gen`, ISO2) para no aplastar texto.
+- El filtro local de pais desaparece de dashboard/cuentas y el scope global se propaga explicitamente por params, no por interceptor global de Axios.
+- Nuevos filtros backend `paisId` en titulares, extractos/resumenes, importacion contexto, revision, exportaciones, alertas activas y auditoria. `/api/ia/chat` acepta `pais_id`.
+- `PaisScopeQueryExtensions.ApplyPaisScope` centraliza el filtro de cuentas: sin `paisId` no filtra; con `paisId` exige `Cuenta.PaisId == paisId`.
+
+### Por que
+
+El selector de pais no es un permiso. Es scope operativo. Primero se aplica el alcance del usuario; despues se reduce por pais. Confundir eso con aislamiento de seguridad seria una mentira peligrosa.
+
+Meter shadcn/Tailwind/app-shell externo aqui habria sido mala ingenieria: el repo no usa ese stack, no tiene `components.json` y falta token de registry. Se replico el comportamiento con las piezas reales del producto.
+
+### Verificacion
+
+- Backend build OK usando SDK instalado `8.0.421` desde `C:\tmp`; el `global.json` local exige `8.0.419` con `rollForward=disable`.
+- Tests focalizados de capas afectadas: 161/161 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd exec tsc -- --noEmit`: OK.
+- Frontend `npm.cmd run build`: OK.
+- Playwright con Chrome local y servidor temporal cerrado en el mismo comando: desktop expandido, desktop colapsado, tablet y movil verificados. Capturas en `output/playwright/`.
+
+### Limite real
+
+La suite backend no Docker completa quedo en 288/290 por dos fallos preexistentes/ajenos en `ConfiguracionControllerTests`. Docker/Testcontainers no se ejecuto.
+
 ## 2026-06-08 - V-02-02 - Actualizador, MFA recordado, OpenRouter y paises
 
 ### Que cambio

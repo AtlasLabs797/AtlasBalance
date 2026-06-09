@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { IconMenu } from '@/components/Icons';
+import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
 import { useAlertCount } from '@/stores/alertasStore';
@@ -139,6 +140,8 @@ export function BottomNav() {
                 ariaLabel="Cerrar menú de accesos"
               />
             </header>
+
+            <PaisScopeSelect />
 
             <div className="bottom-nav-sheet-sections">
               {secondaryGroups.map(({ group, items }) => (

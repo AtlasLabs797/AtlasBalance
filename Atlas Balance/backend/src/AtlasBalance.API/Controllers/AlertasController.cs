@@ -138,7 +138,7 @@ public sealed class AlertasController : ControllerBase
     }
 
     [HttpGet("activas")]
-    public async Task<IActionResult> Activas(CancellationToken cancellationToken)
+    public async Task<IActionResult> Activas([FromQuery] Guid? paisId = null, CancellationToken cancellationToken = default)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
         if (scope.UserId == Guid.Empty)
@@ -146,7 +146,7 @@ public sealed class AlertasController : ControllerBase
             return Unauthorized(new { error = "Usuario no autenticado" });
         }
 
-        var data = await _alertaService.GetAlertasActivasAsync(scope, cancellationToken);
+        var data = await _alertaService.GetAlertasActivasAsync(scope, paisId, cancellationToken);
         return Ok(data);
     }
 

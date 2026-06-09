@@ -97,6 +97,51 @@ public class AuditoriaControllerTests
     }
 
     [Fact]
+    public async Task AuditoriaEndpoints_Should_Filter_By_PaisId()
+    {
+        await using var db = BuildDbContext();
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaA = new Cuenta { Id = Guid.NewGuid(), TitularId = titularId, Nombre = "Cuenta ES", Divisa = "EUR", PaisId = paisAId };
+        var cuentaB = new Cuenta { Id = Guid.NewGuid(), TitularId = titularId, Nombre = "Cuenta MX", Divisa = "MXN", PaisId = paisBId };
+        var extractoA = new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaA.Id, Fecha = new DateOnly(2026, 5, 1), Concepto = "ES", Monto = 1m, Saldo = 1m, FilaNumero = 1 };
+        var extractoB = new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaB.Id, Fecha = new DateOnly(2026, 5, 1), Concepto = "MX", Monto = 1m, Saldo = 1m, FilaNumero = 1 };
+
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(cuentaA, cuentaB);
+        db.Extractos.AddRange(extractoA, extractoB);
+        db.Auditorias.AddRange(
+            new Auditoria { Id = Guid.NewGuid(), TipoAccion = "cuenta_actualizada", EntidadTipo = "CUENTAS", EntidadId = cuentaA.Id, Timestamp = new DateTime(2026, 5, 1, 10, 0, 0, DateTimeKind.Utc) },
+            new Auditoria { Id = Guid.NewGuid(), TipoAccion = "extracto_celda_actualizada", EntidadTipo = "EXTRACTOS", EntidadId = extractoB.Id, Timestamp = new DateTime(2026, 5, 1, 11, 0, 0, DateTimeKind.Utc) });
+        await db.SaveChangesAsync();
+
+        var controller = new AuditoriaController(db);
+
+        var listar = await controller.Listar(paisId: paisAId, ct: CancellationToken.None);
+        var filtros = await controller.GetFiltros(paisAId, CancellationToken.None);
+        var csvResult = await controller.ExportarCsv(paisId: paisAId, ct: CancellationToken.None);
+
+        var page = listar.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<AuditoriaListItemResponse>>().Subject;
+        page.Total.Should().Be(1);
+        page.Data.Single().CuentaNombre.Should().Be("Cuenta ES");
+
+        var filterPayload = filtros.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<AuditoriaFiltrosResponse>().Subject;
+        filterPayload.Cuentas.Select(c => c.Id).Should().ContainSingle().Which.Should().Be(cuentaA.Id);
+        filterPayload.TiposAccion.Should().ContainSingle().Which.Should().Be("cuenta_actualizada");
+
+        var csv = Encoding.UTF8.GetString(csvResult.Should().BeOfType<FileContentResult>().Subject.FileContents);
+        csv.Should().Contain("Cuenta ES");
+        csv.Should().NotContain("Cuenta MX");
+        csv.Should().NotContain("extracto_celda_actualizada");
+    }
+
+    [Fact]
     public async Task ExportarCsv_Should_Export_All_Filtered_Rows_Without_Truncation()
     {
         await using var db = BuildDbContext();

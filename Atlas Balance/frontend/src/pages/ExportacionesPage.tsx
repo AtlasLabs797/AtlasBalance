@@ -5,6 +5,7 @@ import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { Cuenta, ExportacionItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatDateTime, formatNumber } from '@/utils/formatters';
@@ -37,6 +38,7 @@ function formatTipoExportacion(value: string) {
 export default function ExportacionesPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const markExportacionesRead = useNotificacionesAdminStore((state) => state.markExportacionesRead);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [rows, setRows] = useState<ExportacionItem[]>([]);
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
   const [selectedCuentaId, setSelectedCuentaId] = useState('');
@@ -57,6 +59,7 @@ export default function ExportacionesPage() {
         params: {
           page: 1,
           pageSize: 200,
+          paisId: selectedPaisId || undefined,
           sortBy: 'nombre',
           sortDir: 'asc',
         },
@@ -76,6 +79,7 @@ export default function ExportacionesPage() {
           page,
           pageSize,
           cuentaId: selectedCuentaId || undefined,
+          paisId: selectedPaisId || undefined,
           sortBy: 'fecha_exportacion',
           sortDir: 'desc',
         },
@@ -138,12 +142,18 @@ export default function ExportacionesPage() {
 
   useEffect(() => {
     void loadCuentas();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por pais global
+  }, [selectedPaisId]);
 
   useEffect(() => {
     void loadRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por paginación/filtro cuenta
-  }, [page, pageSize, selectedCuentaId]);
+  }, [page, pageSize, selectedCuentaId, selectedPaisId]);
+
+  useEffect(() => {
+    setSelectedCuentaId('');
+    setPage(1);
+  }, [selectedPaisId]);
 
   useEffect(() => {
     if (usuario?.rol === 'ADMIN') {

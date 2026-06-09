@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import type {
@@ -150,6 +151,7 @@ export default function ImportacionPage() {
   const isEmbedded = searchParams.get('embedded') === '1';
   const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
   const usuario = useAuthStore((state) => state.usuario);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const rawDataId = useId();
   const [step, setStep] = useState<ImportStep>(1);
   const [contexto, setContexto] = useState<ImportCuentaContexto[]>([]);
@@ -177,8 +179,14 @@ export default function ImportacionPage() {
     const load = async () => {
       setLoadingContext(true);
       setError(null);
+      setStep(1);
+      setValidacion(null);
+      setConfirmResult(null);
+      setSelectedRows([]);
       try {
-        const { data } = await api.get<ImportContextoResponse>('/importacion/contexto');
+        const { data } = await api.get<ImportContextoResponse>('/importacion/contexto', {
+          params: { paisId: selectedPaisId || undefined },
+        });
         if (!mounted) {
           return;
         }
@@ -209,7 +217,7 @@ export default function ImportacionPage() {
     return () => {
       mounted = false;
     };
-  }, [preselectedCuentaId]);
+  }, [preselectedCuentaId, selectedPaisId]);
 
   const selectedCuenta = useMemo(
     () => contexto.find((cuenta) => cuenta.id === cuentaId) ?? null,

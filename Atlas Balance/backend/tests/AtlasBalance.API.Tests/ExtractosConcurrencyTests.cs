@@ -126,7 +126,7 @@ public sealed class ExtractosConcurrencyTests
         public Task EvaluateSaldoPostAsync(Guid cuentaId, Guid? actorUserId, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<AlertaActivaItemResponse>>([]);
     }
 }

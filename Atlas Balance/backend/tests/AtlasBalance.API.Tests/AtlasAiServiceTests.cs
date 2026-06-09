@@ -525,6 +525,54 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
+    public async Task AskAsync_Should_Respect_PaisId_In_Deterministic_Ranking()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaAId = Guid.NewGuid();
+        var cuentaBId = Guid.NewGuid();
+
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais IA", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaAId, TitularId = titularId, Nombre = "Cuenta ES IA", Divisa = "EUR", PaisId = paisAId, Activa = true },
+            new Cuenta { Id = cuentaBId, TitularId = titularId, Nombre = "Cuenta MX IA", Divisa = "MXN", PaisId = paisBId, Activa = true });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaAId, Fecha = today, Concepto = "Gasto ES", Monto = -100m, Saldo = 900m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaBId, Fecha = today, Concepto = "Gasto MX", Monto = -9999m, Saldo = 1m, FilaNumero = 1 });
+        await db.SaveChangesAsync();
+
+        var httpFactory = new CapturingHttpClientFactory();
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db),
+            new AuditService(db));
+
+        var result = await sut.AskAsync(
+            AdminScope(userId),
+            "Que cuentas han tenido mas gastos este trimestre?",
+            "127.0.0.1",
+            CancellationToken.None,
+            paisId: paisAId);
+
+        httpFactory.RequestCount.Should().Be(0);
+        result.Respuesta.Should().Contain("Cuenta ES IA");
+        result.Respuesta.Should().Contain("100,00 EUR");
+        result.Respuesta.Should().NotContain("Cuenta MX IA");
+        result.Respuesta.Should().NotContain("9.999,00");
+        (await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsulta))
+            .DetallesJson.Should().Contain(paisAId.ToString());
+    }
+
+    [Fact]
     public async Task AskAsync_Should_Group_Deterministic_Ranking_By_Titular_When_Requested()
     {
         await using var db = BuildDbContext();

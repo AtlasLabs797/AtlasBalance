@@ -5,6 +5,7 @@ import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import api from '@/services/api';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { PeriodoDashboard, TitularConCuentas } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
@@ -15,16 +16,19 @@ export default function TitularDetailPage() {
   const [periodo, setPeriodo] = useState<PeriodoDashboard>('1m');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
     setError(null);
-    void api.get<TitularConCuentas>(`/extractos/titulares/${id}/cuentas`, { params: { periodo } })
+    void api.get<TitularConCuentas>(`/extractos/titulares/${id}/cuentas`, {
+      params: { periodo, paisId: selectedPaisId || undefined },
+    })
       .then((res) => setData(res.data))
       .catch((err) => setError(extractErrorMessage(err, 'No se pudo cargar el titular')))
       .finally(() => setLoading(false));
-  }, [id, periodo]);
+  }, [id, periodo, selectedPaisId]);
 
   if (loading) return <PageSkeleton rows={3} />;
   if (error) return <p className="auth-error" role="alert">{error}</p>;

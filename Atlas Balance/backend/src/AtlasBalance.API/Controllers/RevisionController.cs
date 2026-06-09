@@ -28,6 +28,7 @@ public sealed class RevisionController : ControllerBase
     [HttpGet("comisiones")]
     public async Task<IActionResult> Comisiones(
         [FromQuery] string? estado = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
@@ -40,13 +41,14 @@ public sealed class RevisionController : ControllerBase
 
         return Ok(await _revisionService.GetComisionesAsync(
             scope,
-            new RevisionQueryRequest { Estado = estado, Page = page, PageSize = pageSize },
+            new RevisionQueryRequest { Estado = estado, PaisId = paisId, Page = page, PageSize = pageSize },
             cancellationToken));
     }
 
     [HttpGet("seguros")]
     public async Task<IActionResult> Seguros(
         [FromQuery] string? estado = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
@@ -59,7 +61,7 @@ public sealed class RevisionController : ControllerBase
 
         return Ok(await _revisionService.GetSegurosAsync(
             scope,
-            new RevisionQueryRequest { Estado = estado, Page = page, PageSize = pageSize },
+            new RevisionQueryRequest { Estado = estado, PaisId = paisId, Page = page, PageSize = pageSize },
             cancellationToken));
     }
 

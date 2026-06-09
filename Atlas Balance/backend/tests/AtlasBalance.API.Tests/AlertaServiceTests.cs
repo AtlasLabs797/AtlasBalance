@@ -340,12 +340,56 @@ public class AlertaServiceTests
                 HasPermissions = true,
                 HasGlobalAccess = true
             },
+            null,
             CancellationToken.None);
 
         result.Should().ContainSingle();
         result[0].CuentaId.Should().Be(cuentaActivaId);
         result[0].AlertaId.Should().Be(alertaGlobalId);
         result[0].SaldoActual.Should().Be(90m);
+    }
+
+    [Fact]
+    public async Task GetAlertasActivasAsync_Should_Filter_By_PaisId()
+    {
+        await using var db = BuildDbContext();
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaAId = Guid.NewGuid();
+        var cuentaBId = Guid.NewGuid();
+        var alertaGlobalId = Guid.NewGuid();
+
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaAId, TitularId = titularId, Nombre = "Cuenta ES", Divisa = "EUR", PaisId = paisAId, Activa = true },
+            new Cuenta { Id = cuentaBId, TitularId = titularId, Nombre = "Cuenta MX", Divisa = "MXN", PaisId = paisBId, Activa = true });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaAId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = -10m, Saldo = 40m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaBId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow), Monto = -10m, Saldo = 30m, FilaNumero = 1 });
+        db.AlertasSaldo.Add(new AlertaSaldo
+        {
+            Id = alertaGlobalId,
+            CuentaId = null,
+            SaldoMinimo = 100m,
+            Activa = true,
+            FechaCreacion = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new AlertaService(db, new RecordingEmailService(), new RecordingAuditService(), NullLogger<AlertaService>.Instance);
+
+        var result = await sut.GetAlertasActivasAsync(
+            new UserAccessScope { UserId = Guid.NewGuid(), IsAdmin = true, HasPermissions = true, HasGlobalAccess = true },
+            paisAId,
+            CancellationToken.None);
+
+        result.Should().ContainSingle();
+        result.Single().CuentaId.Should().Be(cuentaAId);
+        result.Single().AlertaId.Should().Be(alertaGlobalId);
     }
 
     [Fact]
@@ -379,6 +423,7 @@ public class AlertaServiceTests
 
         var result = await sut.GetAlertasActivasAsync(
             new UserAccessScope { UserId = Guid.NewGuid(), IsAdmin = true, HasPermissions = true, HasGlobalAccess = true },
+            null,
             CancellationToken.None);
 
         result.Should().ContainSingle();

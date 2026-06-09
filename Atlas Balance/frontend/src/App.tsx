@@ -9,6 +9,7 @@ import LoginPage from '@/pages/LoginPage';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 
 const AlertasPage            = lazy(() => import('@/pages/AlertasPage'));
@@ -66,6 +67,7 @@ export default function App() {
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const clearAlertas = useAlertasStore((state) => state.clear);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   useEffect(() => {
     if (location.pathname === '/login' || isAuthenticated) {
@@ -83,7 +85,7 @@ export default function App() {
 
         setUsuario(data.usuario, getCsrfTokenFromCookie());
         setPermisos(data.permisos ?? []);
-        await loadAlertasActivas();
+        await loadAlertasActivas(selectedPaisId || undefined);
       } catch {
         if (!mounted) return;
 
@@ -102,7 +104,7 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated, location.pathname, clearAlertas, loadAlertasActivas, logout, setLoading, setPermisos, setUsuario]);
+  }, [isAuthenticated, location.pathname, clearAlertas, loadAlertasActivas, logout, selectedPaisId, setLoading, setPermisos, setUsuario]);
 
   const section = (element: JSX.Element) => (
     <AppErrorBoundary resetKey={location.key}>

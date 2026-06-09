@@ -25,26 +25,42 @@ public sealed class PaisesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> Listar([FromQuery] bool incluirInactivos = false, [FromQuery] bool incluirEliminados = false, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Listar(
+        [FromQuery] bool incluirInactivos = false,
+        [FromQuery] bool incluirEliminados = false,
+        [FromQuery] bool? activos = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 500,
+        CancellationToken cancellationToken = default)
     {
         var isAdmin = User.IsInRole(nameof(RolUsuario.ADMIN));
         if (!isAdmin)
         {
             incluirInactivos = false;
             incluirEliminados = false;
+            activos = true;
         }
 
         IQueryable<Pais> query = incluirEliminados
             ? _dbContext.Paises.IgnoreQueryFilters()
             : _dbContext.Paises;
 
-        if (!incluirInactivos)
+        if (activos.HasValue)
+        {
+            query = query.Where(x => x.Activo == activos.Value);
+        }
+        else if (!incluirInactivos)
         {
             query = query.Where(x => x.Activo);
         }
 
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 1000);
+
         var paises = await query
             .OrderBy(x => x.Nombre)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(x => new PaisResponse
             {
                 Id = x.Id,

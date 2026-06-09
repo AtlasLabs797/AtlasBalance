@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
 import { useAlertCount } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -77,6 +78,7 @@ export function Sidebar() {
         <span className="app-brand-logo" aria-hidden="true" />
         <span className="app-brand-text" aria-hidden={sidebarCollapsed}>Atlas Balance</span>
       </div>
+      <PaisScopeSelect compact={sidebarCollapsed} />
       <nav className="app-nav">
         {groupOrder.map((group) => {
           const items = visibleNavItems.filter((item) => item.group === group);

@@ -7,6 +7,7 @@ import AddRowForm from '@/components/extractos/AddRowForm';
 import AuditCellModal from '@/components/extractos/AuditCellModal';
 import ExtractoTable from '@/components/extractos/ExtractoTable';
 import api from '@/services/api';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type { AuditCellEntry, Extracto, PaginatedResponse, TitularConCuentas } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -32,6 +33,7 @@ function parseDecimalInput(value: string, fieldLabel: string): number {
 
 export default function ExtractosPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [rows, setRows] = useState<Extracto[]>([]);
   const [sortBy, setSortBy] = useState('fecha');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -83,13 +85,15 @@ export default function ExtractosPage() {
 
   const loadResumen = useCallback(async () => {
     try {
-      const { data } = await api.get<TitularConCuentas[]>('/extractos/titulares-resumen');
+      const { data } = await api.get<TitularConCuentas[]>('/extractos/titulares-resumen', {
+        params: { paisId: selectedPaisId || undefined },
+      });
       setTitularesResumen(data);
     } catch (err) {
       setTitularesResumen([]);
       setError(extractErrorMessage(err, 'No se pudieron cargar las cuentas disponibles.'));
     }
-  }, []);
+  }, [selectedPaisId]);
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -112,6 +116,7 @@ export default function ExtractosPage() {
           sortDir,
           cuentaId: cuentaFiltro || undefined,
           titularId: titularFiltro || undefined,
+          paisId: selectedPaisId || undefined,
           fechaDesde: fechaDesde || undefined,
           fechaHasta: fechaHasta || undefined
         }
@@ -127,7 +132,7 @@ export default function ExtractosPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, sortBy, sortDir, cuentaFiltro, titularFiltro, fechaDesde, fechaHasta]);
+  }, [page, pageSize, sortBy, sortDir, cuentaFiltro, titularFiltro, selectedPaisId, fechaDesde, fechaHasta]);
 
   const loadVisibleColumns = useCallback(async () => {
     try {
@@ -150,6 +155,14 @@ export default function ExtractosPage() {
   useEffect(() => {
     void loadVisibleColumns();
   }, [loadVisibleColumns]);
+
+  useEffect(() => {
+    setCuentaFiltro('');
+    setTitularFiltro('');
+    setPage(1);
+    updateFilterParams({ cuentaId: '', titularId: '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset local filters when global country changes
+  }, [selectedPaisId]);
 
   useEffect(() => {
     const nextCuentaId = searchParams.get('cuentaId') ?? '';

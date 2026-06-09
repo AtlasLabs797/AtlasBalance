@@ -37,6 +37,7 @@ public sealed class ExtractosController : ControllerBase
         [FromQuery] bool? checkedValue = null,
         [FromQuery] bool? flagged = null,
         [FromQuery] string? search = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] bool incluirEliminados = false,
         CancellationToken ct = default)
     {
@@ -53,7 +54,7 @@ public sealed class ExtractosController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 500);
 
-        var allowed = await GetAllowedAccountIds(actor, ct);
+        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
         if (!allowed.Any())
         {
             return Ok(new PaginatedResponse<ExtractoListItemResponse> { Data = [], Total = 0, Page = page, PageSize = pageSize, TotalPages = 0 });
@@ -447,24 +448,25 @@ public sealed class ExtractosController : ControllerBase
     }
 
     [HttpGet("cuentas/{cuentaId:guid}/resumen")]
-    public async Task<IActionResult> GetCuentaResumen(Guid cuentaId, [FromQuery] string periodo = "1m", CancellationToken ct = default)
+    public async Task<IActionResult> GetCuentaResumen(Guid cuentaId, [FromQuery] string periodo = "1m", [FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!await CanView(actor, cuentaId, ct)) return Forbid();
         var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.PaisId, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        if (paisId.HasValue && cuenta.PaisId != paisId.Value) return NotFound(new { error = "Cuenta no encontrada en el pais activo" });
         var titular = await _db.Titulares.Where(t => t.Id == cuenta.TitularId).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
         return Ok(await BuildSummary(actor, cuenta.Id, cuenta.Nombre, cuenta.Iban, cuenta.BancoNombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct, cuenta.PaisId));
     }
 
     [HttpGet("titulares/{titularId:guid}/cuentas")]
-    public async Task<IActionResult> GetCuentasTitular(Guid titularId, [FromQuery] string periodo = "1m", CancellationToken ct = default)
+    public async Task<IActionResult> GetCuentasTitular(Guid titularId, [FromQuery] string periodo = "1m", [FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!await CanViewTitular(actor, titularId, ct)) return Forbid();
         var titular = await _db.Titulares.FirstOrDefaultAsync(t => t.Id == titularId, ct);
         if (titular is null) return NotFound(new { error = "Titular no encontrado" });
-        var allowed = await GetAllowedAccountIds(actor, ct);
+        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
         var cuentas = await _db.Cuentas.Where(c => c.TitularId == titularId && allowed.Contains(c.Id)).ToListAsync(ct);
         var summary = new List<CuentaResumenKpiResponse>();
         foreach (var c in cuentas)
@@ -475,10 +477,10 @@ public sealed class ExtractosController : ControllerBase
     }
 
     [HttpGet("titulares-resumen")]
-    public async Task<IActionResult> GetTitularesResumen([FromQuery] string periodo = "1m", CancellationToken ct = default)
+    public async Task<IActionResult> GetTitularesResumen([FromQuery] string periodo = "1m", [FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
-        var allowed = await GetAllowedAccountIds(actor, ct);
+        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
         var cuentas = await _db.Cuentas.Where(c => allowed.Contains(c.Id)).ToListAsync(ct);
         var titularesIds = cuentas.Select(c => c.TitularId).Distinct().ToList();
         var titulares = await _db.Titulares.Where(t => titularesIds.Contains(t.Id)).OrderBy(t => t.Nombre).ToListAsync(ct);
@@ -677,9 +679,9 @@ public sealed class ExtractosController : ControllerBase
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task<HashSet<Guid>> GetAllowedAccountIds(Actor actor, CancellationToken ct)
+    private async Task<HashSet<Guid>> GetAllowedAccountIds(Actor actor, CancellationToken ct, Guid? paisId = null)
     {
-        var visibleAccounts = QueryVisibleAccounts(actor);
+        var visibleAccounts = QueryVisibleAccounts(actor).ApplyPaisScope(paisId);
         if (actor.IsAdmin) return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
         var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
         if (!perms.Any()) return [];

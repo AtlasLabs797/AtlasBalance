@@ -8,6 +8,7 @@ public sealed class RevisionSettingsResponse
 public sealed class RevisionQueryRequest
 {
     public string? Estado { get; set; }
+    public Guid? PaisId { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }

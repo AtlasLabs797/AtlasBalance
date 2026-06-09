@@ -1,6 +1,7 @@
 using System.Text;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -25,12 +26,13 @@ public sealed class AuditoriaController : ControllerBase
         [FromQuery] int pageSize = 50,
         [FromQuery] Guid? usuarioId = null,
         [FromQuery] Guid? cuentaId = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] string? tipoAccion = null,
         [FromQuery] DateOnly? fechaDesde = null,
         [FromQuery] DateOnly? fechaHasta = null,
         CancellationToken ct = default)
     {
-        var query = BuildFilteredAuditoriaQuery(usuarioId, cuentaId, tipoAccion, fechaDesde, fechaHasta);
+        var query = BuildFilteredAuditoriaQuery(usuarioId, cuentaId, paisId, tipoAccion, fechaDesde, fechaHasta);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
 
@@ -68,7 +70,7 @@ public sealed class AuditoriaController : ControllerBase
     }
 
     [HttpGet("filtros")]
-    public async Task<IActionResult> GetFiltros(CancellationToken ct)
+    public async Task<IActionResult> GetFiltros([FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         var usuarios = await _db.Usuarios
             .IgnoreQueryFilters()
@@ -82,6 +84,7 @@ public sealed class AuditoriaController : ControllerBase
 
         var cuentas = await _db.Cuentas
             .IgnoreQueryFilters()
+            .ApplyPaisScope(paisId)
             .Join(
                 _db.Titulares.IgnoreQueryFilters(),
                 c => c.TitularId,
@@ -97,7 +100,7 @@ public sealed class AuditoriaController : ControllerBase
             .ThenBy(c => c.Nombre)
             .ToListAsync(ct);
 
-        var tiposAccion = await _db.Auditorias
+        var tiposAccion = await BuildFilteredAuditoriaQuery(null, null, paisId, null, null, null)
             .Select(a => a.TipoAccion)
             .Distinct()
             .OrderBy(x => x)
@@ -115,12 +118,13 @@ public sealed class AuditoriaController : ControllerBase
     public async Task<IActionResult> ExportarCsv(
         [FromQuery] Guid? usuarioId = null,
         [FromQuery] Guid? cuentaId = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] string? tipoAccion = null,
         [FromQuery] DateOnly? fechaDesde = null,
         [FromQuery] DateOnly? fechaHasta = null,
         CancellationToken ct = default)
     {
-        var query = BuildFilteredAuditoriaQuery(usuarioId, cuentaId, tipoAccion, fechaDesde, fechaHasta);
+        var query = BuildFilteredAuditoriaQuery(usuarioId, cuentaId, paisId, tipoAccion, fechaDesde, fechaHasta);
         var rawRows = await query
             .OrderByDescending(x => x.Timestamp)
             .Select(x => new RawAuditoriaRow
@@ -166,7 +170,7 @@ public sealed class AuditoriaController : ControllerBase
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
 
-    private IQueryable<Models.Auditoria> BuildFilteredAuditoriaQuery(Guid? usuarioId, Guid? cuentaId, string? tipoAccion, DateOnly? fechaDesde, DateOnly? fechaHasta)
+    private IQueryable<Models.Auditoria> BuildFilteredAuditoriaQuery(Guid? usuarioId, Guid? cuentaId, Guid? paisId, string? tipoAccion, DateOnly? fechaDesde, DateOnly? fechaHasta)
     {
         var query = _db.Auditorias.AsNoTracking();
 
@@ -206,6 +210,35 @@ public sealed class AuditoriaController : ControllerBase
                  extractosCuenta.Contains(a.EntidadId.Value)) ||
                 (a.EntidadTipo == "CUENTAS" &&
                  a.EntidadId == cuentaId.Value));
+        }
+
+        if (paisId.HasValue)
+        {
+            var cuentasPais = _db.Cuentas
+                .IgnoreQueryFilters()
+                .Where(c => c.PaisId == paisId.Value)
+                .Select(c => c.Id);
+
+            var extractosPais = _db.Extractos
+                .IgnoreQueryFilters()
+                .Where(e => cuentasPais.Contains(e.CuentaId))
+                .Select(e => e.Id);
+
+            var titularesPais = _db.Cuentas
+                .IgnoreQueryFilters()
+                .Where(c => c.PaisId == paisId.Value)
+                .Select(c => c.TitularId);
+
+            query = query.Where(a =>
+                (a.EntidadTipo == "EXTRACTOS" &&
+                 a.EntidadId.HasValue &&
+                 (extractosPais.Contains(a.EntidadId.Value) || cuentasPais.Contains(a.EntidadId.Value))) ||
+                (a.EntidadTipo == "CUENTAS" &&
+                 a.EntidadId.HasValue &&
+                 cuentasPais.Contains(a.EntidadId.Value)) ||
+                (a.EntidadTipo == "TITULARES" &&
+                 a.EntidadId.HasValue &&
+                 titularesPais.Contains(a.EntidadId.Value)));
         }
 
         return query;

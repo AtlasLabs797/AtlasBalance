@@ -2,18 +2,17 @@
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type {
   DashboardEvolucion,
   DashboardPrincipal,
   DashboardSaldosDivisa,
-  Pais,
   PeriodoDashboard,
 } from '@/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { EmptyState } from '@/components/common/EmptyState';
-import { AppSelect } from '@/components/common/AppSelect';
 import { ConcentracionDonutCharts } from '@/components/dashboard/ConcentracionDonutCharts';
 import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
 import { KpiCard } from '@/components/dashboard/KpiCard';
@@ -40,11 +39,10 @@ export default function DashboardPage() {
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   usePermisosStore((state) => state.permisos);
   const [searchParams, setSearchParams] = useSearchParams();
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>(() => parsePeriodo(searchParams.get('periodo')));
   const [divisaPrincipal, setDivisaPrincipal] = useState(() => searchParams.get('divisa') ?? 'EUR');
-  const [paisId, setPaisId] = useState(() => searchParams.get('pais') ?? '');
-  const [paises, setPaises] = useState<Pais[]>([]);
   const [principal, setPrincipal] = useState<DashboardPrincipal | null>(null);
   const [evolucion, setEvolucion] = useState<DashboardEvolucion | null>(null);
   const [saldosDivisa, setSaldosDivisa] = useState<DashboardSaldosDivisa | null>(null);
@@ -132,36 +130,8 @@ export default function DashboardPage() {
     const next = new URLSearchParams();
     next.set('periodo', periodo);
     next.set('divisa', divisaPrincipal);
-    if (paisId) {
-      next.set('pais', paisId);
-    }
     setSearchParams(next, { replace: true });
-  }, [divisaPrincipal, paisId, periodo, setSearchParams]);
-
-  useEffect(() => {
-    if (!allowed) {
-      return;
-    }
-
-    let mounted = true;
-    const loadPaises = async () => {
-      try {
-        const { data } = await api.get<Pais[]>('/paises');
-        if (mounted) {
-          setPaises(data ?? []);
-        }
-      } catch {
-        if (mounted) {
-          setPaises([]);
-        }
-      }
-    };
-
-    void loadPaises();
-    return () => {
-      mounted = false;
-    };
-  }, [allowed]);
+  }, [divisaPrincipal, periodo, setSearchParams]);
 
   useEffect(() => {
     if (!allowed) {
@@ -175,9 +145,9 @@ export default function DashboardPage() {
       setError(null);
       try {
         const [principalRes, evolucionRes, divisaRes] = await Promise.all([
-          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: paisId || undefined } }),
-          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: paisId || undefined } }),
-          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: paisId || undefined } }),
+          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
         ]);
 
         if (!mounted) {
@@ -208,7 +178,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [allowed, periodo, divisaPrincipal, paisId]);
+  }, [allowed, periodo, divisaPrincipal, selectedPaisId]);
 
   if (!allowed) {
     return <Navigate to="/extractos" replace />;
@@ -239,15 +209,6 @@ export default function DashboardPage() {
         <div className="dashboard-toolbar-actions">
           <PeriodoSelector value={periodo} onChange={setPeriodo} />
           <DivisaSelector value={principal.divisa_principal} options={divisaOptions} onChange={setDivisaPrincipal} />
-          <AppSelect
-            ariaLabel="País"
-            value={paisId}
-            options={[
-              { value: '', label: 'Todos los países' },
-              ...paises.map((pais) => ({ value: pais.id, label: pais.nombre })),
-            ]}
-            onChange={setPaisId}
-          />
         </div>
       </header>
 

@@ -16,6 +16,7 @@ import EditableCell from '@/components/extractos/EditableCell';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import type { CuentaResumenKpi, Extracto, PaginatedResponse, PeriodoDashboard } from '@/types';
@@ -119,6 +120,7 @@ export default function CuentaDetailPage() {
   const canImportInCuenta = usePermisosStore((state) => state.canImportInCuenta);
   const getColumnasEditables = usePermisosStore((state) => state.getColumnasEditables);
   usePermisosStore((state) => state.permisos);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [summary, setSummary] = useState<CuentaResumenKpi | null>(null);
   const [rows, setRows] = useState<Extracto[]>([]);
@@ -185,9 +187,9 @@ export default function CuentaDetailPage() {
 
     try {
       const [summaryRes, rowsRes] = await Promise.all([
-        api.get<CuentaResumenKpi>(`/extractos/cuentas/${id}/resumen`, { params: { periodo } }),
+        api.get<CuentaResumenKpi>(`/extractos/cuentas/${id}/resumen`, { params: { periodo, paisId: selectedPaisId || undefined } }),
         api.get<PaginatedResponse<Extracto>>('/extractos', {
-          params: { cuentaId: id, page: rowsPage, pageSize: rowsPageSize, sortBy: 'fila_numero', sortDir: 'desc' },
+          params: { cuentaId: id, paisId: selectedPaisId || undefined, page: rowsPage, pageSize: rowsPageSize, sortBy: 'fila_numero', sortDir: 'desc' },
         }),
       ]);
 
@@ -209,7 +211,7 @@ export default function CuentaDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize]);
+  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId]);
 
   useEffect(() => {
     void loadCuentaData();

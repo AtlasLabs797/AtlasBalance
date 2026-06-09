@@ -13,7 +13,7 @@ namespace AtlasBalance.API.Services;
 
 public interface IImportacionService
 {
-    Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, CancellationToken cancellationToken);
+    Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, Guid? paisId, CancellationToken cancellationToken);
     Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken);
     Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
@@ -48,10 +48,10 @@ public sealed class ImportacionService : IImportacionService
         _alertaService = alertaService;
     }
 
-    public async Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, CancellationToken cancellationToken)
+    public async Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, Guid? paisId, CancellationToken cancellationToken)
     {
         var isAdmin = string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
-        IQueryable<Cuenta> baseQuery = _dbContext.Cuentas.AsNoTracking().Where(c => c.Activa);
+        IQueryable<Cuenta> baseQuery = _dbContext.Cuentas.AsNoTracking().Where(c => c.Activa).ApplyPaisScope(paisId);
 
         if (!isAdmin)
         {

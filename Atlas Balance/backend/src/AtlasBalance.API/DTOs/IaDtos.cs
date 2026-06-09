@@ -63,6 +63,7 @@ public sealed class IaChatRequest
 {
     public string Pregunta { get; set; } = string.Empty;
     public string? Model { get; set; }
+    public Guid? PaisId { get; set; }
 }
 
 public sealed class IaModelResponse

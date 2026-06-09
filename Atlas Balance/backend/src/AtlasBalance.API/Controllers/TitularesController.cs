@@ -34,6 +34,7 @@ public sealed class TitularesController : ControllerBase
         [FromQuery] string sortDir = "asc",
         [FromQuery] string? search = null,
         [FromQuery] TipoTitular? tipoTitular = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] bool incluirEliminados = false,
         CancellationToken cancellationToken = default)
     {
@@ -52,6 +53,14 @@ public sealed class TitularesController : ControllerBase
             : _dbContext.Titulares;
 
         query = _userAccessService.ApplyTitularScope(query, scope);
+        var cuentasScope = _userAccessService
+            .ApplyCuentaScope(_dbContext.Cuentas.AsQueryable(), scope)
+            .ApplyPaisScope(paisId);
+
+        if (paisId.HasValue)
+        {
+            query = query.Where(t => cuentasScope.Any(c => c.TitularId == t.Id));
+        }
 
         if (tipoTitular.HasValue)
         {
@@ -87,10 +96,7 @@ public sealed class TitularesController : ControllerBase
             .ToListAsync(cancellationToken);
 
         var titularIds = pageItems.Select(t => t.Id).ToList();
-        var cuentasQuery = _dbContext.Cuentas.AsQueryable();
-        cuentasQuery = _userAccessService.ApplyCuentaScope(cuentasQuery, scope);
-
-        var cuentasCountByTitular = await cuentasQuery
+        var cuentasCountByTitular = await cuentasScope
             .Where(c => titularIds.Contains(c.TitularId))
             .GroupBy(c => c.TitularId)
             .Select(g => new { TitularId = g.Key, Count = g.Count() })
@@ -121,7 +127,11 @@ public sealed class TitularesController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> Obtener(Guid id, [FromQuery] bool incluirEliminados = false, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Obtener(
+        Guid id,
+        [FromQuery] bool incluirEliminados = false,
+        [FromQuery] Guid? paisId = null,
+        CancellationToken cancellationToken = default)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
         if (!scope.IsAdmin)
@@ -145,8 +155,14 @@ public sealed class TitularesController : ControllerBase
             return NotFound(new { error = "Titular no encontrado" });
         }
 
-        var cuentasQuery = _userAccessService.ApplyCuentaScope(_dbContext.Cuentas.AsQueryable(), scope);
+        var cuentasQuery = _userAccessService
+            .ApplyCuentaScope(_dbContext.Cuentas.AsQueryable(), scope)
+            .ApplyPaisScope(paisId);
         var cuentasCount = await cuentasQuery.CountAsync(c => c.TitularId == titular.Id, cancellationToken);
+        if (paisId.HasValue && cuentasCount == 0)
+        {
+            return NotFound(new { error = "Titular no encontrado en el pais activo" });
+        }
 
         return Ok(new TitularDetalleResponse
         {

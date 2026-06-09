@@ -6,6 +6,7 @@ import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { IntegrationAuditTable } from '@/components/auditoria/IntegrationAuditTable';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { AuditoriaFiltros, AuditoriaListItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatDateTime } from '@/utils/formatters';
@@ -48,6 +49,7 @@ function isAmountColumn(columna: string | null): boolean {
 }
 
 export default function AuditoriaPage() {
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [tab, setTab] = useState<AuditTab>('sistema');
   const [rows, setRows] = useState<AuditoriaListItem[]>([]);
   const [filtros, setFiltros] = useState<AuditoriaFiltros>({ usuarios: [], cuentas: [], tipos_accion: [] });
@@ -71,7 +73,9 @@ export default function AuditoriaPage() {
   const fetchFiltros = async () => {
     setLoadingFiltros(true);
     try {
-      const { data } = await api.get<AuditoriaFiltros>('/auditoria/filtros');
+      const { data } = await api.get<AuditoriaFiltros>('/auditoria/filtros', {
+        params: { paisId: selectedPaisId || undefined },
+      });
       setFiltros(data);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudieron cargar filtros de auditoría'));
@@ -90,6 +94,7 @@ export default function AuditoriaPage() {
           pageSize,
           usuarioId: usuarioId || undefined,
           cuentaId: cuentaId || undefined,
+          paisId: selectedPaisId || undefined,
           tipoAccion: tipoAccion || undefined,
           fechaDesde: fechaDesde || undefined,
           fechaHasta: fechaHasta || undefined,
@@ -109,14 +114,20 @@ export default function AuditoriaPage() {
 
   useEffect(() => {
     void fetchFiltros();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por pais global
+  }, [selectedPaisId]);
 
   useEffect(() => {
     if (tab === 'sistema') {
       void fetchRows();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filtros del listado controlan la recarga
-  }, [tab, page, pageSize, usuarioId, cuentaId, tipoAccion, fechaDesde, fechaHasta]);
+  }, [tab, page, pageSize, usuarioId, cuentaId, selectedPaisId, tipoAccion, fechaDesde, fechaHasta]);
+
+  useEffect(() => {
+    setCuentaId('');
+    setPage(1);
+  }, [selectedPaisId]);
 
   const toggleExpanded = (rowId: string) => {
     setExpandedRows((prev) => ({ ...prev, [rowId]: !prev[rowId] }));
@@ -139,6 +150,7 @@ export default function AuditoriaPage() {
         params: {
           usuarioId: usuarioId || undefined,
           cuentaId: cuentaId || undefined,
+          paisId: selectedPaisId || undefined,
           tipoAccion: tipoAccion || undefined,
           fechaDesde: fechaDesde || undefined,
           fechaHasta: fechaHasta || undefined,

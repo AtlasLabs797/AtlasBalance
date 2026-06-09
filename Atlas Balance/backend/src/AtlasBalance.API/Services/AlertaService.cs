@@ -10,7 +10,7 @@ namespace AtlasBalance.API.Services;
 public interface IAlertaService
 {
     Task EvaluateSaldoPostAsync(Guid cuentaId, Guid? actorUserId, CancellationToken cancellationToken);
-    Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken);
 }
 
 public sealed class AlertaService : IAlertaService
@@ -164,9 +164,9 @@ public sealed class AlertaService : IAlertaService
             cancellationToken);
     }
 
-    public async Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
     {
-        var cuentasQuery = _dbContext.Cuentas.Where(c => c.Activa);
+        var cuentasQuery = _dbContext.Cuentas.Where(c => c.Activa).ApplyPaisScope(paisId);
         if (!scope.IsAdmin)
         {
             if (!scope.HasPermissions)

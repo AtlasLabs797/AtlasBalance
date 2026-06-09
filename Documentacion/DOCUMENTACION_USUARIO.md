@@ -69,7 +69,15 @@ Cerrar sesion ya no borra el dispositivo recordado. Se volvera a pedir MFA cuand
 
 En `Cuentas`, cada cuenta puede tener un pais opcional. Las cuentas antiguas quedan sin pais para no romper datos existentes.
 
-El filtro `Pais` aparece en cuentas y dashboard. El dashboard no solo filtra: tambien muestra `Saldos por pais`, para que no tengas que adivinar si el filtro esta haciendo algo.
+El selector `Organizacion` de la barra lateral es ahora el scope global por pais:
+
+- `General` muestra todo, incluidas cuentas sin pais.
+- Un pais concreto muestra solo cuentas, saldos, movimientos, titulares y datos derivados de ese pais.
+- Las cuentas sin pais no aparecen cuando eliges un pais concreto.
+
+El campo `Pais` en alta/edicion de cuenta solo asigna esa etiqueta a la cuenta. No cambia el scope de la app.
+
+El dashboard muestra `Saldos por pais`, para que no tengas que adivinar si el scope esta haciendo algo.
 
 Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
 

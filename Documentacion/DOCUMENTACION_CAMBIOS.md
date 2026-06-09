@@ -8,6 +8,46 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-09 - V-02-02 - App shell nativo y scope global por pais
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se recreo el shell con el stack real del repo: React, Zustand, lucide-react y CSS propio. No se instalo `@efferd/app-shell-7`, shadcn ni Tailwind.
+- Se agrego store frontend de scope global por pais con `selectedPaisId`, persistencia en `localStorage`, carga de paises activos desde `/api/paises?page=1&pageSize=500&activos=true` y fallback a `General` si el pais guardado deja de estar activo.
+- El selector `Organizacion` queda en sidebar y en el menu movil; `General` muestra todo y un pais concreto filtra cuentas con `pais_id` exacto. Las cuentas sin pais solo entran en `General`.
+- Dashboard, cuentas, titulares, extractos, importacion, revision, exportaciones, alertas activas, auditoria, detalle de titular/cuenta e IA consumen el scope global.
+- Se ampliaron endpoints con `paisId`/`pais_id`: titulares, extractos/resumenes, importacion contexto, revision, exportaciones, alertas activas, auditoria y chat IA.
+- El campo `Pais` se mantiene en alta/edicion de cuenta como asignacion de etiqueta, no como filtro local.
+
+**Archivos tocados:**
+- Backend API: controladores `Titulares`, `Extractos`, `Importacion`, `Revision`, `Exportaciones`, `Alertas`, `Auditoria`, `IA`, `Paises`; servicios `Importacion`, `Revision`, `Alerta`, `AtlasAi`; DTOs IA/Revision; helper `PaisScopeQueryExtensions`.
+- Frontend: layout shell, selector `PaisScopeSelect`, store `paisScopeStore`, stores de alertas, paginas de dashboard/cuentas/titulares/extractos/importacion/revision/exportaciones/alertas/auditoria/IA.
+- Tests backend: Dashboard, Cuentas, Extractos, Revision, Auditoria, Alertas, Importacion e IA.
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `CLAUDE.md`, version actual, `v-02-02.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Subagentes usados para exploracion backend, frontend y tests.
+- `dotnet build AtlasBalance.API.csproj --no-restore` desde `C:\tmp` para evitar el `global.json` clavado a SDK inexistente `8.0.419`.
+- `dotnet test AtlasBalance.API.Tests.csproj --filter ...` suite no Docker.
+- `dotnet test AtlasBalance.API.Tests.csproj --no-build --filter ...` suite focalizada de clases afectadas.
+- `npm.cmd run lint`, `npm.cmd exec tsc -- --noEmit`, `npm.cmd run build`.
+- Validacion visual con Playwright sobre build servido por servidor temporal cerrado en el mismo comando.
+
+**Resultado de verificacion:**
+- Backend build: OK con SDK instalado `8.0.421`; warnings `NU1900` por vulnerabilidades NuGet sin red y obsoleto Hangfire/PostgreSQL preexistente.
+- Suite backend no Docker: 288/290 OK; fallan 2 tests ajenos al cambio en `ConfiguracionControllerTests` (`OpenRouter model normalize` y `MfaRememberDeviceEnabled`).
+- Suite focalizada del cambio: 161/161 OK.
+- Frontend lint: OK.
+- Frontend TypeScript: OK.
+- Frontend build: OK.
+- Visual shell: capturas en `output/playwright/` para desktop expandido, desktop colapsado medido a 72px, tablet y movil con menu abierto. Sin errores de consola/pagina en el harness.
+
+**Pendientes:**
+- La suite completa sigue roja por `ConfiguracionControllerTests`; no se mezcla con este cambio.
+- No se ejecutaron tests Docker/Testcontainers.
+
+---
 ## 2026-06-08 - V-02-02 - Actualizador, MFA recordado, IA/OpenRouter y pais
 
 **Version:** V-02-02

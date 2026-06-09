@@ -40,6 +40,7 @@ public sealed class ExportacionesController : ControllerBase
         [FromQuery] string sortBy = "fecha_exportacion",
         [FromQuery] string sortDir = "desc",
         [FromQuery] Guid? cuentaId = null,
+        [FromQuery] Guid? paisId = null,
         CancellationToken cancellationToken = default)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
@@ -47,7 +48,10 @@ public sealed class ExportacionesController : ControllerBase
         pageSize = Math.Clamp(pageSize, 1, 100);
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
-        var cuentasPermitidas = _userAccessService.ApplyCuentaScope(_dbContext.Cuentas.AsNoTracking(), scope).Select(c => c.Id);
+        var cuentasPermitidas = _userAccessService
+            .ApplyCuentaScope(_dbContext.Cuentas.AsNoTracking(), scope)
+            .ApplyPaisScope(paisId)
+            .Select(c => c.Id);
         var query = _dbContext.Exportaciones
             .AsNoTracking()
             .Where(e => cuentasPermitidas.Contains(e.CuentaId));

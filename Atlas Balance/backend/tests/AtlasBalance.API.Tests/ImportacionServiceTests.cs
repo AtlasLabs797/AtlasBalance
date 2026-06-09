@@ -58,10 +58,36 @@ public class ImportacionServiceTests
 
         var service = new ImportacionService(db, new AuditService(db));
 
-        var result = await service.GetContextoAsync(userId, RolUsuario.EMPLEADO.ToString(), CancellationToken.None);
+        var result = await service.GetContextoAsync(userId, RolUsuario.EMPLEADO.ToString(), null, CancellationToken.None);
 
         result.Cuentas.Select(c => c.Id).Should().BeEquivalentTo([cuentaA1.Id, cuentaA2.Id, cuentaB1.Id]);
         result.Cuentas.Select(c => c.Id).Should().NotContain(cuentaB2.Id);
+    }
+
+    [Fact]
+    public async Task GetContextoAsync_Should_Filter_By_PaisId()
+    {
+        await using var db = BuildDbContext();
+
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA };
+        var cuentaA = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Pais A", Divisa = "EUR", PaisId = paisAId, Activa = true };
+        var cuentaB = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Pais B", Divisa = "EUR", PaisId = paisBId, Activa = true };
+        var cuentaGeneral = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Sin Pais", Divisa = "EUR", Activa = true };
+
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(titular);
+        db.Cuentas.AddRange(cuentaA, cuentaB, cuentaGeneral);
+        await db.SaveChangesAsync();
+
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), paisAId, CancellationToken.None);
+
+        result.Cuentas.Select(c => c.Id).Should().ContainSingle().Which.Should().Be(cuentaA.Id);
     }
 
     [Fact]
@@ -134,7 +160,7 @@ public class ImportacionServiceTests
 
         var service = new ImportacionService(db, new AuditService(db));
 
-        var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), CancellationToken.None);
+        var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), null, CancellationToken.None);
 
         result.Cuentas.Should().ContainSingle();
         result.Cuentas[0].TipoCuenta.Should().Be(nameof(TipoCuenta.PLAZO_FIJO));
@@ -175,7 +201,7 @@ public class ImportacionServiceTests
 
         var service = new ImportacionService(db, new AuditService(db));
 
-        var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), CancellationToken.None);
+        var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), null, CancellationToken.None);
 
         var mapeo = result.Cuentas.Single().FormatoPredefinido;
         mapeo.Should().NotBeNull();
@@ -1667,7 +1693,7 @@ public class ImportacionServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<AlertaActivaItemResponse>>([]);
     }
 }

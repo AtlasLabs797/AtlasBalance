@@ -2,6 +2,7 @@
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type {
   DashboardEvolucion,
@@ -34,6 +35,7 @@ export default function DashboardTitularPage() {
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
   usePermisosStore((state) => state.permisos);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>(() => parsePeriodo(searchParams.get('periodo')));
   const [divisaPrincipal, setDivisaPrincipal] = useState(() => searchParams.get('divisa') ?? 'EUR');
@@ -96,12 +98,12 @@ export default function DashboardTitularPage() {
       setError(null);
       try {
         const [titularRes, evolucionRes, saldosDivisaRes] = await Promise.all([
-          api.get<DashboardTitular>(`/dashboard/titular/${id}`, { params: { divisaPrincipal } }),
+          api.get<DashboardTitular>(`/dashboard/titular/${id}`, { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
           api.get<DashboardEvolucion>('/dashboard/evolucion', {
-            params: { periodo, divisaPrincipal, titularId: id },
+            params: { periodo, divisaPrincipal, titularId: id, paisId: selectedPaisId || undefined },
           }),
           api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', {
-            params: { divisaPrincipal, titularId: id },
+            params: { divisaPrincipal, titularId: id, paisId: selectedPaisId || undefined },
           }),
         ]);
 
@@ -133,7 +135,7 @@ export default function DashboardTitularPage() {
     return () => {
       mounted = false;
     };
-  }, [allowed, id, periodo, divisaPrincipal]);
+  }, [allowed, id, periodo, divisaPrincipal, selectedPaisId]);
 
   if (!allowed) {
     return <Navigate to="/extractos" replace />;

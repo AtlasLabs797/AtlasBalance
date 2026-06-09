@@ -14,6 +14,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type {
   Cuenta,
@@ -21,7 +22,6 @@ import type {
   DashboardPrincipal,
   DashboardSaldosDivisa,
   PaginatedResponse,
-  Pais,
   PeriodoDashboard,
   TipoCuenta,
   TipoTitular,
@@ -151,7 +151,8 @@ export default function CuentasPage() {
   const [titulares, setTitulares] = useState<Titular[]>([]);
   const [divisas, setDivisas] = useState<DivisaOption[]>([]);
   const [formatos, setFormatos] = useState<FormatoOption[]>([]);
-  const [paises, setPaises] = useState<Pais[]>([]);
+  const paises = usePaisScopeStore((state) => state.paises);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -160,7 +161,6 @@ export default function CuentasPage() {
   const [titularFilter, setTitularFilter] = useState('');
   const [tipoTitularFilter, setTipoTitularFilter] = useState('');
   const [tipoCuentaFilter, setTipoCuentaFilter] = useState('');
-  const [paisFilter, setPaisFilter] = useState('');
   const [incluirEliminados, setIncluirEliminados] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
   const [loading, setLoading] = useState(false);
@@ -222,14 +222,12 @@ export default function CuentasPage() {
   const loadAuxData = async () => {
     setAuxError(null);
     try {
-      const [titularesRes, divisasRes, paisesRes] = await Promise.all([
+      const [titularesRes, divisasRes] = await Promise.all([
         api.get<PaginatedResponse<Titular>>('/titulares', { params: { page: 1, pageSize: 500, sortBy: 'nombre', sortDir: 'asc' } }),
         api.get<DivisaOption[]>('/cuentas/divisas-activas'),
-        api.get<Pais[]>('/paises'),
       ]);
       setTitulares(titularesRes.data.data ?? []);
       setDivisas(divisasRes.data ?? []);
-      setPaises(paisesRes.data ?? []);
 
       if (isAdmin) {
         const { data } = await api.get<PaginatedResponse<FormatoOption>>('/formatos-importacion', {
@@ -262,7 +260,7 @@ export default function CuentasPage() {
           pageSize,
           search: debouncedSearch || undefined,
           titularId: titularFilter || undefined,
-          paisId: paisFilter || undefined,
+          paisId: selectedPaisId || undefined,
           tipoTitular: tipoTitularFilter || undefined,
           tipoCuenta: tipoCuentaFilter || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
@@ -287,7 +285,11 @@ export default function CuentasPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros/paginacion
-  }, [page, pageSize, debouncedSearch, titularFilter, paisFilter, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
+  }, [page, pageSize, debouncedSearch, titularFilter, selectedPaisId, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedPaisId]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -302,9 +304,9 @@ export default function CuentasPage() {
       setDashboardError(null);
       try {
         const [principalRes, evolucionRes, saldosDivisaRes] = await Promise.all([
-          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: paisFilter || undefined } }),
-          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: paisFilter || undefined } }),
-          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: paisFilter || undefined } }),
+          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
         ]);
         const cuentaRows = (principalRes.data.saldos_por_cuenta ?? [])
           .map((cuenta) => ({
@@ -350,7 +352,7 @@ export default function CuentasPage() {
     return () => {
       mounted = false;
     };
-  }, [canSeeDashboard, divisaPrincipal, periodo, paisFilter]);
+  }, [canSeeDashboard, divisaPrincipal, periodo, selectedPaisId]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -708,18 +710,6 @@ export default function CuentasPage() {
           onChange={(next) => {
             setPage(1);
             setTitularFilter(next);
-          }}
-        />
-        <AppSelect
-          ariaLabel="País"
-          value={paisFilter}
-          options={[
-            { value: '', label: 'Todos los países' },
-            ...paises.map((pais) => ({ value: pais.id, label: pais.nombre })),
-          ]}
-          onChange={(next) => {
-            setPage(1);
-            setPaisFilter(next);
           }}
         />
         <AppSelect

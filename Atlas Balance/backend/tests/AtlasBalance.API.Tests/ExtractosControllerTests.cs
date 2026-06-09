@@ -129,7 +129,7 @@ public sealed class ExtractosControllerTests
 
         var controller = BuildController(db, userId, RolUsuario.ADMIN);
 
-        var result = await controller.GetCuentaResumen(cuentaId, "1m", CancellationToken.None);
+        var result = await controller.GetCuentaResumen(cuentaId, "1m", null, CancellationToken.None);
 
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
         var summary = ok.Value.Should().BeOfType<CuentaResumenKpiResponse>().Subject;
@@ -464,6 +464,89 @@ public sealed class ExtractosControllerTests
     }
 
     [Fact]
+    public async Task Listar_Should_Filter_By_PaisId()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var cuentaAId = Guid.NewGuid();
+        var cuentaBId = Guid.NewGuid();
+        var cuentaSinPaisId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.extractos.pais@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Extractos Pais",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaAId, TitularId = titularId, Nombre = "Cuenta ES", Divisa = "EUR", PaisId = paisAId, Activa = true },
+            new Cuenta { Id = cuentaBId, TitularId = titularId, Nombre = "Cuenta MX", Divisa = "MXN", PaisId = paisBId, Activa = true },
+            new Cuenta { Id = cuentaSinPaisId, TitularId = titularId, Nombre = "Cuenta General", Divisa = "EUR", Activa = true });
+        db.Extractos.AddRange(
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaAId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date), Concepto = "Movimiento ES", Monto = 10m, Saldo = 10m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaBId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date), Concepto = "Movimiento MX", Monto = 20m, Saldo = 20m, FilaNumero = 1 },
+            new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaSinPaisId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date), Concepto = "Movimiento General", Monto = 30m, Saldo = 30m, FilaNumero = 1 });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+
+        var result = await controller.Listar(paisId: paisAId, ct: CancellationToken.None);
+
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
+        page.Total.Should().Be(1);
+        page.Data.Should().ContainSingle();
+        page.Data.Single().Concepto.Should().Be("Movimiento ES");
+        page.Data.Single().CuentaId.Should().Be(cuentaAId);
+    }
+
+    [Fact]
+    public async Task GetCuentaResumen_Should_Return_NotFound_When_PaisId_Does_Not_Match()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.extractos.resumen.pais@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Extractos Resumen Pais",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta ES", Divisa = "EUR", PaisId = paisAId, Activa = true });
+        db.Extractos.Add(new Extracto { Id = Guid.NewGuid(), CuentaId = cuentaId, Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date), Concepto = "Movimiento ES", Monto = 10m, Saldo = 10m, FilaNumero = 1 });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+
+        var result = await controller.GetCuentaResumen(cuentaId, "1m", paisBId, CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
     public async Task Restaurar_Should_Require_DeletePermission()
     {
         await using var db = BuildDbContext();
@@ -713,7 +796,7 @@ public sealed class ExtractosControllerTests
 
         var controller = BuildController(db, userId, RolUsuario.GERENTE);
 
-        var result = await controller.GetCuentasTitular(titularId, "1m", CancellationToken.None);
+        var result = await controller.GetCuentasTitular(titularId, "1m", null, CancellationToken.None);
 
         result.Should().BeOfType<ForbidResult>();
     }
@@ -742,7 +825,7 @@ public sealed class ExtractosControllerTests
         public Task EvaluateSaldoPostAsync(Guid cuentaId, Guid? actorUserId, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<AlertaActivaItemResponse>>([]);
     }
 }

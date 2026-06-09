@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type { LoginResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -40,6 +41,7 @@ export default function LoginPage() {
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>();
   const [error, setError] = useState<string | null>(null);
   const [postUpdateMessage, setPostUpdateMessage] = useState<string | null>(null);
@@ -106,7 +108,7 @@ export default function LoginPage() {
     setPermisos(data.permisos ?? []);
 
     if (!data.usuario.primer_login) {
-      await loadAlertasActivas();
+      await loadAlertasActivas(selectedPaisId || undefined);
     }
 
     if (data.usuario.primer_login) {
