@@ -132,7 +132,7 @@ public sealed class ExportacionesController : ControllerBase
     public async Task<IActionResult> Manual([FromBody] ExportacionManualRequest request, CancellationToken cancellationToken)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
-        var canExport = await _userAccessService.CanWriteCuentaAsync(request.CuentaId, scope, cancellationToken);
+        var canExport = await _userAccessService.CanAccessCuentaAsync(request.CuentaId, scope, cancellationToken);
         if (!canExport)
         {
             return Forbid();

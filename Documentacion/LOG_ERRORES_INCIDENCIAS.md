@@ -1,5 +1,20 @@
 # Log de errores e incidencias
 
+## 2026-06-09 - V-02-02 - Autorizacion por pais: fallos detectados en verificacion
+
+- Contexto: implementacion de permisos/RLS/modelo de autorizacion por pais.
+- Incidencias:
+  - `dotnet build` detecto uso de `ToHashSetAsync` no disponible en el stack EF actual. Solucion: `ToListAsync(...).ToHashSet()`.
+  - `npm run build` detecto que `ExtractosPage` usaba `cuenta.pais_id` sin declararlo en el tipo local de opciones. Solucion: propagar `pais_id` desde `CuentaResumenKpi`.
+  - Auditoria subagente detecto sobreconcesion en `CanWriteCuentaAsync`/`CanEditCuentaAsync` cuando coexistian `PaisId + TitularId + CuentaId`. Solucion: exigir coincidencia AND de todas las dimensiones no nulas.
+  - Auditoria subagente detecto columnas por scope mezcladas por falta de `pais_id`/`titular_id` en preferencias. Solucion: extender `PREFERENCIAS_USUARIO_CUENTA` y resolver preferencias por scope exacto.
+  - Auditoria subagente detecto dashboard-only inconsistente entre frontend/backend/RLS. Solucion: frontend y RLS exigen `PuedeVerDashboard` mas permiso operativo de datos, igual que backend.
+- Resultado:
+  - Backend build OK.
+  - Tests focalizados backend 24/24 OK.
+  - Frontend lint/build OK.
+- Regla: los scopes compuestos se evaluan como interseccion, nunca como union de listas independientes.
+
 ## 2026-06-09 - V-02-02 - Verificacion pais scope: SDK clavado y suite amplia roja por Configuracion
 
 - Contexto: validacion de app shell y scope global por pais.

@@ -8,6 +8,46 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-09 - V-02-02 - Autorizacion por pais en permisos, RLS e integraciones
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se implemento `pais_id` como dimension real de autorizacion en permisos de usuario e integraciones.
+- Se actualizo RLS para leer/escribir/revisar/exportar por cuenta cruzando `pais_id`, `titular_id` y `cuenta_id` en la misma fila de permiso.
+- Se habilito RLS/FORCE RLS en `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS`.
+- Se corrigio la sobreconcesion por union de listas: `Pais A + Titular B` ya no abre `Pais A` completo ni `Titular B` fuera de ese pais.
+- Se alineo exportacion manual con RLS: exportar requiere lectura de cuenta, no permisos de escritura/importacion.
+- Se ampliaron preferencias de columnas con `pais_id` y `titular_id` para que reglas por columnas no contaminen otro scope.
+- Frontend actualizado para crear/editar permisos por pais en usuarios y tokens de integracion, y para calcular permisos con `pais_id`.
+- Subagentes usados: auditoria backend/RLS y auditoria frontend/contratos; sus hallazgos reales fueron corregidos.
+
+**Archivos tocados:**
+- Backend API: entidades, `AppDbContext`, snapshot EF, migracion `20260609120000_AddCountryAuthorizationScopes`, DTOs Auth/Usuarios/Integraciones/Extractos/Revision.
+- Backend servicios/controladores: `UserAccessService`, `IntegrationAuthorizationService`, `ImportacionService`, `DashboardService`, `AlertaService`, `AuthService`, `UsuariosController`, `IntegracionesController`, `ExtractosController`, `ExportacionesController`, `CuentasController`.
+- Frontend: tipos, `UsuarioModal`, `UsuariosPage`, `TokenPermissionsEditor`, `CreateTokenModal`, `ConfiguracionPage`, `permisosStore`, paginas de cuentas/extractos/revision/dashboard.
+- Tests: `UserAccessServiceTests`, `IntegrationAuthorizationServiceTests`.
+- Documentacion: tecnica, usuario, cambios, version, bugs e incidencias.
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `CLAUDE.md`, `version_actual.md`, `v-02-02.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Auditorias con subagentes backend/RLS y frontend/contratos.
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false` desde `C:\tmp`.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~DashboardServiceTests"` desde `C:\tmp`.
+- `npm.cmd run lint`.
+- `npm.cmd run build`.
+
+**Resultado de verificacion:**
+- Backend build: OK. Warnings no bloqueantes: `NU1900` por consulta NuGet sin red y obsoleto Hangfire/PostgreSQL preexistente.
+- Tests focalizados backend: 24/24 OK.
+- Frontend lint: OK.
+- Frontend build (`tsc && vite build`): OK.
+
+**Pendientes:**
+- No se ejecuto PostgreSQL real/Testcontainers; RLS queda pendiente de validacion con motor real antes de release final.
+- No se ejecuto suite backend completa; ya existia deuda de suite amplia documentada en `ConfiguracionControllerTests`.
+
+---
 ## 2026-06-09 - V-02-02 - App shell nativo y scope global por pais
 
 **Version:** V-02-02

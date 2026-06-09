@@ -5,6 +5,7 @@ public sealed class IntegrationPermissionItemResponse
     public Guid Id { get; set; }
     public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
+    public Guid? PaisId { get; set; }
     public string AccesoTipo { get; set; } = "lectura";
 }
 
@@ -52,6 +53,7 @@ public sealed class SaveIntegrationPermissionRequest
 {
     public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
+    public Guid? PaisId { get; set; }
     public string AccesoTipo { get; set; } = "lectura";
 }
 

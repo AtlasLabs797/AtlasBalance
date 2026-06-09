@@ -1,5 +1,34 @@
 # Documentacion tecnica
 
+## 2026-06-09 - V-02-02 - Autorizacion real por pais en permisos y RLS
+
+### Que cambio
+
+- `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS` incorporan `pais_id`; el pais pasa a ser dimension de autorizacion, no solo filtro operativo.
+- Los scopes se evalúan por fila: si una regla tiene `pais_id`, `titular_id` y `cuenta_id`, las tres dimensiones deben coincidir. No se mezclan listas independientes.
+- `UserAccessService`, `IntegrationAuthorizationService`, `ImportacionService`, `DashboardService`, `ExtractosController`, `AlertaService` y exportaciones respetan el scope por pais.
+- RLS actualiza `can_read_cuenta`, `can_write_cuenta`, `can_read_titular`, `can_export_cuenta` y `can_review_extracto` con `pais_id`.
+- `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS` quedan bajo RLS/FORCE RLS.
+- Las preferencias de columnas (`PREFERENCIAS_USUARIO_CUENTA`) agregan `pais_id` y `titular_id` para que restricciones por columnas no contaminen otro pais/titular.
+- El frontend envia y consume `pais_id` en permisos de usuarios, tokens de integracion y helpers de permisos.
+- Dashboard-only queda alineado: sin permiso operativo de datos no abre cuentas ni dashboard de datos.
+
+### Por que
+
+El selector global de pais era solo scope operativo. Eso no era seguridad. La seguridad real exige que el permiso, el backend y la base apliquen la misma frontera. Si `Pais A + Titular B` se convierte en `Pais A entero OR Titular B entero`, no es un permiso: es una fuga con UI bonita.
+
+### Verificacion
+
+- Subagentes usados para auditoria backend/RLS y frontend/contratos; se corrigieron los hallazgos de sobreconcesion por scopes combinados, exportacion incoherente, columnas por scope y dashboard-only inconsistente.
+- Backend build OK desde `C:\tmp` con SDK `8.0.421` y `-p:UseAppHost=false`.
+- Tests focalizados backend: `UserAccessServiceTests|IntegrationAuthorizationServiceTests|DashboardServiceTests`: 24/24 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd run build`: OK.
+
+### Limite real
+
+No se ejecuto PostgreSQL real/Testcontainers. La migracion y RLS compilan estaticamente, pero el gate de RLS con motor real sigue pendiente si esto va a release final.
+
 ## 2026-06-09 - V-02-02 - App shell nativo con scope global por pais
 
 ### Que cambio

@@ -65,24 +65,16 @@ public sealed class ImportacionService : IImportacionService
                 return new ImportacionContextoResponse { Cuentas = [] };
             }
 
-            var hasGlobal = permisosImportacion.Any(p => p.CuentaId is null && p.TitularId is null);
+            var hasGlobal = permisosImportacion.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null);
             if (!hasGlobal)
             {
-                var permittedCuentaIds = permisosImportacion
-                    .Where(p => p.CuentaId.HasValue)
-                    .Select(p => p.CuentaId!.Value)
-                    .Distinct()
-                    .ToList();
-
-                var permittedTitularIds = permisosImportacion
-                    .Where(p => !p.CuentaId.HasValue && p.TitularId.HasValue)
-                    .Select(p => p.TitularId!.Value)
-                    .Distinct()
-                    .ToList();
-
                 baseQuery = baseQuery.Where(c =>
-                    permittedCuentaIds.Contains(c.Id) ||
-                    permittedTitularIds.Contains(c.TitularId));
+                    _dbContext.PermisosUsuario.Any(p =>
+                        p.UsuarioId == usuarioId &&
+                        p.PuedeImportar &&
+                        (p.PaisId == null || p.PaisId == c.PaisId) &&
+                        (p.TitularId == null || p.TitularId == c.TitularId) &&
+                        (p.CuentaId == null || p.CuentaId == c.Id)));
             }
         }
 
@@ -524,6 +516,7 @@ public sealed class ImportacionService : IImportacionService
 
         var hasPermission = permisos.Any(p =>
             (!requireImportPermission || p.PuedeImportar) &&
+            (p.PaisId is null || p.PaisId == cuenta.PaisId) &&
             (p.CuentaId is null || p.CuentaId == cuenta.Id) &&
             (p.TitularId is null || p.TitularId == cuenta.TitularId));
 

@@ -96,6 +96,7 @@ export interface Extracto {
   cuenta_nombre?: string;
   titular_id?: string;
   titular_nombre?: string;
+  pais_id?: string | null;
   divisa?: string;
 }
 
@@ -163,6 +164,7 @@ export interface PermisoUsuario {
   usuario_id: string;
   cuenta_id: string | null;
   titular_id: string | null;
+  pais_id: string | null;
   puede_ver_cuentas: boolean;
   puede_agregar_lineas: boolean;
   puede_editar_lineas: boolean;
@@ -404,6 +406,7 @@ export interface RevisionComisionItem {
   extracto_id: string;
   cuenta_id: string;
   titular_id: string;
+  pais_id: string | null;
   titular: string;
   cuenta: string;
   fecha: string;
@@ -417,6 +420,7 @@ export interface RevisionSeguroItem {
   extracto_id: string;
   cuenta_id: string;
   titular_id: string;
+  pais_id: string | null;
   titular: string;
   cuenta: string;
   fecha: string;
@@ -530,6 +534,7 @@ export interface IntegrationPermissionItem {
   id: string;
   titular_id: string | null;
   cuenta_id: string | null;
+  pais_id: string | null;
   acceso_tipo: string;
 }
 
@@ -561,6 +566,7 @@ export interface CreateIntegrationTokenRequest {
   permisos: Array<{
     titular_id: string | null;
     cuenta_id: string | null;
+    pais_id: string | null;
     acceso_tipo: string;
   }>;
 }

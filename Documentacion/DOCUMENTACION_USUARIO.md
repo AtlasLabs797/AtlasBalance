@@ -81,6 +81,8 @@ El dashboard muestra `Saldos por pais`, para que no tengas que adivinar si el sc
 
 Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
 
+Importante: el pais ya no es solo un filtro visual. En permisos de usuario y tokens de integracion, un administrador puede limitar el acceso a un pais concreto. Si ademas se elige titular o cuenta, Atlas Balance exige que todas esas condiciones coincidan a la vez.
+
 ## IA y modelos OpenRouter
 
 En `Configuracion > Revision e IA`, OpenRouter permite escribir cualquier model id valido, por ejemplo `openrouter/auto` o `proveedor/modelo`. Las sugerencias vienen de OpenRouter, pero no son una jaula.
@@ -246,7 +248,11 @@ Indica fecha, monto y concepto opcional. Atlas Balance calcula el saldo nuevo de
 
 En `Usuarios`, el modal de alta/edicion incluye `Acceso a todas las cuentas`. Ese ajuste crea un permiso global para ver todas las cuentas sin conceder automaticamente edicion, eliminacion ni importacion.
 
-Para permisos manuales, marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
+Para permisos manuales, marca `Pais` si el usuario solo debe operar en un pais. Luego puedes reducir mas con `Titular` y `Cuenta`. Un permiso con pais y titular no significa "todo el pais o todo el titular"; significa la interseccion exacta.
+
+Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
+
+`Puede ver dashboard` solo permite dashboard si la fila tambien tiene algun permiso operativo de datos dentro de ese alcance. No abre cuentas ni extractos por si solo.
 
 La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar Authenticator`. Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
 

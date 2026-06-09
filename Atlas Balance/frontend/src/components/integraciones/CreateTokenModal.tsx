@@ -6,8 +6,9 @@ import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 interface CatalogoPermisos {
+  paises: Array<{ id: string; nombre: string }>;
   titulares: Array<{ id: string; nombre: string }>;
-  cuentas: Array<{ id: string; nombre: string; titular_id: string }>;
+  cuentas: Array<{ id: string; nombre: string; titular_id: string; pais_id: string | null }>;
 }
 
 interface CreateTokenModalProps {

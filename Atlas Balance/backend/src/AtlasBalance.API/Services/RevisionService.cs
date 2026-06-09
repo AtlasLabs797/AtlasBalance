@@ -164,6 +164,7 @@ public sealed class RevisionService : IRevisionService
                 ExtractoId = x.ExtractoId,
                 CuentaId = x.CuentaId,
                 TitularId = x.TitularId,
+                PaisId = x.PaisId,
                 Titular = x.Titular,
                 Cuenta = x.Cuenta,
                 Divisa = x.Divisa,
@@ -204,6 +205,7 @@ public sealed class RevisionService : IRevisionService
                 ExtractoId = x.ExtractoId,
                 CuentaId = x.CuentaId,
                 TitularId = x.TitularId,
+                PaisId = x.PaisId,
                 Titular = x.Titular,
                 Cuenta = x.Cuenta,
                 Divisa = x.Divisa,
@@ -307,6 +309,7 @@ public sealed class RevisionService : IRevisionService
                 ExtractoId = e.Id,
                 CuentaId = c.Id,
                 TitularId = t.Id,
+                PaisId = c.PaisId,
                 Titular = t.Nombre,
                 Cuenta = c.Nombre,
                 Divisa = c.Divisa,
@@ -460,6 +463,7 @@ public sealed class RevisionService : IRevisionService
         public Guid ExtractoId { get; init; }
         public Guid CuentaId { get; init; }
         public Guid TitularId { get; init; }
+        public Guid? PaisId { get; init; }
         public string Titular { get; init; } = string.Empty;
         public string Cuenta { get; init; } = string.Empty;
         public string Divisa { get; init; } = string.Empty;

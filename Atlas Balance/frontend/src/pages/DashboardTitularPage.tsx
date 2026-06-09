@@ -244,7 +244,7 @@ export default function DashboardTitularPage() {
                         </SignedAmount>
                       </td>
                       <td>
-                        {canViewCuenta(cuenta.cuenta_id, titular.titular_id) ? (
+                        {canViewCuenta(cuenta.cuenta_id, titular.titular_id, cuenta.pais_id) ? (
                           <Link
                             to={`/dashboard/cuenta/${cuenta.cuenta_id}`}
                             className="dashboard-open-link"

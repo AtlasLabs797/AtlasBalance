@@ -49,13 +49,31 @@ public class IntegrationAuthorizationServiceTests
         var cuentaAllowed = new Cuenta { Id = Guid.NewGuid(), Nombre = "Cuenta OK", Divisa = "EUR", TitularId = titularAllowed.Id };
         var cuentaByTitular = new Cuenta { Id = Guid.NewGuid(), Nombre = "Cuenta por titular", Divisa = "EUR", TitularId = titularAllowed.Id };
         var cuentaDenied = new Cuenta { Id = Guid.NewGuid(), Nombre = "Cuenta NO", Divisa = "EUR", TitularId = titularDenied.Id };
+        var tokenId = Guid.NewGuid();
         db.Titulares.AddRange(titularAllowed, titularDenied);
         db.Cuentas.AddRange(cuentaAllowed, cuentaByTitular, cuentaDenied);
+        db.IntegrationPermissions.AddRange(
+            new IntegrationPermission
+            {
+                Id = Guid.NewGuid(),
+                TokenId = tokenId,
+                CuentaId = cuentaAllowed.Id,
+                AccesoTipo = "lectura",
+                FechaCreacion = DateTime.UtcNow
+            },
+            new IntegrationPermission
+            {
+                Id = Guid.NewGuid(),
+                TokenId = tokenId,
+                TitularId = titularAllowed.Id,
+                AccesoTipo = "lectura",
+                FechaCreacion = DateTime.UtcNow
+            });
         await db.SaveChangesAsync();
 
         var scope = new IntegrationAccessScope
         {
-            TokenId = Guid.NewGuid(),
+            TokenId = tokenId,
             HasPermissions = true,
             HasGlobalAccess = false,
             CuentaIds = [cuentaAllowed.Id],
@@ -68,6 +86,40 @@ public class IntegrationAuthorizationServiceTests
         result.Select(x => x.Id).Should().Contain(cuentaAllowed.Id);
         result.Select(x => x.Id).Should().Contain(cuentaByTitular.Id);
         result.Select(x => x.Id).Should().NotContain(cuentaDenied.Id);
+    }
+
+    [Fact]
+    public async Task ApplyCuentaScope_Should_Keep_Country_And_Titular_In_Same_Permission_Row()
+    {
+        await using var db = BuildDbContext();
+        var tokenId = Guid.NewGuid();
+        var paisPermitidoId = Guid.NewGuid();
+        var paisBloqueadoId = Guid.NewGuid();
+        var titularPermitido = new Titular { Id = Guid.NewGuid(), Nombre = "Titular OK", Tipo = TipoTitular.EMPRESA };
+        var titularBloqueado = new Titular { Id = Guid.NewGuid(), Nombre = "Titular NO", Tipo = TipoTitular.EMPRESA };
+        var cuentaPermitida = new Cuenta { Id = Guid.NewGuid(), Nombre = "Cuenta OK", Divisa = "EUR", TitularId = titularPermitido.Id, PaisId = paisPermitidoId };
+        var mismaPaisOtroTitular = new Cuenta { Id = Guid.NewGuid(), Nombre = "Pais OK Titular NO", Divisa = "EUR", TitularId = titularBloqueado.Id, PaisId = paisPermitidoId };
+        var mismoTitularOtroPais = new Cuenta { Id = Guid.NewGuid(), Nombre = "Titular OK Pais NO", Divisa = "EUR", TitularId = titularPermitido.Id, PaisId = paisBloqueadoId };
+
+        db.Titulares.AddRange(titularPermitido, titularBloqueado);
+        db.Cuentas.AddRange(cuentaPermitida, mismaPaisOtroTitular, mismoTitularOtroPais);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = tokenId,
+            PaisId = paisPermitidoId,
+            TitularId = titularPermitido.Id,
+            AccesoTipo = "lectura",
+            FechaCreacion = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new IntegrationAuthorizationService(db);
+        var scope = await sut.GetScopeAsync(tokenId, CancellationToken.None, "lectura");
+
+        var result = await sut.ApplyCuentaScope(db.Cuentas.AsQueryable(), scope).ToListAsync();
+
+        result.Select(x => x.Id).Should().ContainSingle().Which.Should().Be(cuentaPermitida.Id);
     }
 
     [Fact]

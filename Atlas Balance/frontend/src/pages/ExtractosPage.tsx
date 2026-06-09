@@ -63,7 +63,7 @@ export default function ExtractosPage() {
   usePermisosStore((s) => s.permisos);
 
   const cuentasOptions = useMemo(() => {
-    const items: Array<{ id: string; nombre: string; titular_id: string; titular_nombre: string; divisa: string }> = [];
+    const items: Array<{ id: string; nombre: string; titular_id: string; titular_nombre: string; divisa: string; pais_id: string | null }> = [];
     titularesResumen.forEach((t) => {
       t.cuentas.forEach((c) => {
         items.push({
@@ -71,7 +71,8 @@ export default function ExtractosPage() {
           nombre: c.cuenta_nombre,
           titular_id: t.titular_id,
           titular_nombre: t.titular_nombre,
-          divisa: c.divisa
+          divisa: c.divisa,
+          pais_id: c.pais_id
         });
       });
     });
@@ -79,7 +80,7 @@ export default function ExtractosPage() {
   }, [titularesResumen]);
 
   const cuentasConAlta = useMemo(
-    () => cuentasOptions.filter((cuenta) => canAddInCuenta(cuenta.id, cuenta.titular_id)),
+    () => cuentasOptions.filter((cuenta) => canAddInCuenta(cuenta.id, cuenta.titular_id, cuenta.pais_id)),
     [canAddInCuenta, cuentasOptions]
   );
 
@@ -293,8 +294,8 @@ export default function ExtractosPage() {
 
   const canEditCell = (row: Extracto, column: string) => {
     if (!row.cuenta_id) return false;
-    if (!canEditCuenta(row.cuenta_id, row.titular_id)) return false;
-    const cols = getColumnasEditables(row.cuenta_id, row.titular_id);
+    if (!canEditCuenta(row.cuenta_id, row.titular_id, row.pais_id)) return false;
+    const cols = getColumnasEditables(row.cuenta_id, row.titular_id, row.pais_id);
     return cols === null || cols.includes(column);
   };
 

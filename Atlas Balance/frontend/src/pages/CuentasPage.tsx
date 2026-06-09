@@ -630,7 +630,7 @@ export default function CuentasPage() {
                 </div>
 
                 {saldosCuentaRows.map((item) => {
-                  const canOpenDashboardCuenta = canViewCuenta(item.cuenta_id, item.titular_id);
+                  const canOpenDashboardCuenta = canViewCuenta(item.cuenta_id, item.titular_id, item.pais_id);
 
                   return canOpenDashboardCuenta ? (
                     <Link
@@ -780,7 +780,7 @@ export default function CuentasPage() {
             const fallbackSaldo = typeof item.saldo_actual === 'number' ? item.saldo_actual : null;
             const saldoValue = saldoCuenta?.saldo ?? fallbackSaldo;
             const saldoCurrency = saldoCuenta?.divisa ?? item.divisa;
-            const canOpenDashboardCuenta = canViewCuenta(item.id, item.titular_id);
+            const canOpenDashboardCuenta = canViewCuenta(item.id, item.titular_id, item.pais_id);
 
             return (
               <article className="titular-card cuenta-card" key={item.id}>

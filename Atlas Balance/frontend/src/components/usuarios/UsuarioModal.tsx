@@ -15,10 +15,19 @@ export interface CatalogCuenta {
   nombre: string;
   titular_id: string;
   titular_nombre: string | null;
+  pais_id: string | null;
+  pais_nombre: string | null;
+}
+
+export interface CatalogPais {
+  id: string;
+  nombre: string;
+  codigo_iso2: string | null;
 }
 
 interface PermisoFormRow {
   key: string;
+  pais_id: string;
   titular_id: string;
   cuenta_id: string;
   puede_ver_cuentas: boolean;
@@ -44,6 +53,7 @@ interface UserFormState {
 }
 
 interface PermisoApiRow {
+  pais_id?: string | null;
   titular_id?: string | null;
   cuenta_id?: string | null;
   puede_ver_cuentas?: boolean;
@@ -74,12 +84,14 @@ interface UsuarioModalProps {
   editingId: string | null;
   titulares: CatalogTitular[];
   cuentas: CatalogCuenta[];
+  paises: CatalogPais[];
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }
 
 const emptyPermiso = (): PermisoFormRow => ({
   key: crypto.randomUUID(),
+  pais_id: '',
   titular_id: '',
   cuenta_id: '',
   puede_ver_cuentas: false,
@@ -106,6 +118,7 @@ const emptyForm = (): UserFormState => ({
 
 const getPermisoScopeLabel = (
   permiso: PermisoFormRow,
+  paises: CatalogPais[],
   titulares: CatalogTitular[],
   cuentas: CatalogCuenta[]
 ) => {
@@ -125,6 +138,11 @@ const getPermisoScopeLabel = (
     return titular ? `Titular: ${titular.nombre}` : 'Titular específico';
   }
 
+  if (permiso.pais_id) {
+    const pais = paises.find((item) => item.id === permiso.pais_id);
+    return pais ? `País: ${pais.nombre}` : 'País específico';
+  }
+
   return 'Permiso global';
 };
 
@@ -139,6 +157,7 @@ export default function UsuarioModal({
   editingId,
   titulares,
   cuentas,
+  paises,
   onClose,
   onSaved,
 }: UsuarioModalProps) {
@@ -183,6 +202,7 @@ export default function UsuarioModal({
 
         const mappedPermisos: PermisoFormRow[] = (data.permisos ?? []).map((permiso) => ({
           key: crypto.randomUUID(),
+          pais_id: permiso.pais_id ?? '',
           titular_id: permiso.titular_id ?? '',
           cuenta_id: permiso.cuenta_id ?? '',
           puede_ver_cuentas: permiso.puede_ver_cuentas ?? false,
@@ -250,7 +270,7 @@ export default function UsuarioModal({
           permiso.puede_eliminar_lineas ||
           permiso.puede_importar ||
           permiso.puede_ver_dashboard;
-        const hasScope = !!permiso.cuenta_id || !!permiso.titular_id;
+        const hasScope = !!permiso.cuenta_id || !!permiso.titular_id || !!permiso.pais_id;
 
         if (!hasFlags && !hasScope && !columnasVisibles && !columnasEditables) {
           return null;
@@ -259,6 +279,7 @@ export default function UsuarioModal({
         return {
           cuenta_id: permiso.cuenta_id || null,
           titular_id: permiso.titular_id || null,
+          pais_id: permiso.pais_id || null,
           puede_ver_cuentas: permiso.puede_ver_cuentas,
           puede_agregar_lineas: permiso.puede_agregar_lineas,
           puede_editar_lineas: permiso.puede_editar_lineas,
@@ -290,7 +311,7 @@ export default function UsuarioModal({
   const grantAllAccounts = () => {
     setForm((prev) => {
       const globalIndex = prev.permisos.findIndex(
-        (permiso) => !permiso.titular_id && !permiso.cuenta_id
+        (permiso) => !permiso.pais_id && !permiso.titular_id && !permiso.cuenta_id
       );
 
       if (globalIndex >= 0) {
@@ -307,6 +328,7 @@ export default function UsuarioModal({
       const hasOnlyBlankRow =
         prev.permisos.length === 1 &&
         !prev.permisos[0].titular_id &&
+        !prev.permisos[0].pais_id &&
         !prev.permisos[0].cuenta_id &&
         !prev.permisos[0].puede_ver_cuentas &&
         !prev.permisos[0].puede_agregar_lineas &&
@@ -574,10 +596,15 @@ export default function UsuarioModal({
 
               <div className="users-permisos-list">
                 {form.permisos.map((permiso, index) => {
-                  const cuentasFiltradas = permiso.titular_id
-                    ? cuentas.filter((cuenta) => cuenta.titular_id === permiso.titular_id)
-                    : cuentas;
-                  const scopeLabel = getPermisoScopeLabel(permiso, titulares, cuentas);
+                  const cuentasFiltradas = cuentas
+                    .filter((cuenta) => !permiso.pais_id || cuenta.pais_id === permiso.pais_id)
+                    .filter((cuenta) => !permiso.titular_id || cuenta.titular_id === permiso.titular_id);
+                  const titularesFiltrados = permiso.pais_id
+                    ? titulares.filter((titular) =>
+                        cuentas.some((cuenta) => cuenta.pais_id === permiso.pais_id && cuenta.titular_id === titular.id)
+                      )
+                    : titulares;
+                  const scopeLabel = getPermisoScopeLabel(permiso, paises, titulares, cuentas);
 
                   return (
                     <div key={permiso.key} className="permiso-row">
@@ -597,11 +624,27 @@ export default function UsuarioModal({
 
                       <div className="permiso-grid">
                         <AppSelect
+                          label="País"
+                          value={permiso.pais_id}
+                          options={[
+                            { value: '', label: 'Todos los países' },
+                            ...paises.map((pais) => ({ value: pais.id, label: pais.nombre })),
+                          ]}
+                          onChange={(next) =>
+                            updatePermiso(permiso.key, {
+                              pais_id: next,
+                              titular_id: '',
+                              cuenta_id: '',
+                            })
+                          }
+                        />
+
+                        <AppSelect
                           label="Titular"
                           value={permiso.titular_id}
                           options={[
                             { value: '', label: 'Global o por cuenta' },
-                            ...titulares.map((titular) => ({ value: titular.id, label: titular.nombre })),
+                            ...titularesFiltrados.map((titular) => ({ value: titular.id, label: titular.nombre })),
                           ]}
                           onChange={(next) =>
                             updatePermiso(permiso.key, {

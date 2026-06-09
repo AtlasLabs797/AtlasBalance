@@ -70,13 +70,15 @@ public sealed class IntegracionesController : ControllerBase
 
         var permisos = await _dbContext.IntegrationPermissions
             .Where(x => x.TokenId == id)
-            .OrderBy(x => x.TitularId)
+            .OrderBy(x => x.PaisId)
+            .ThenBy(x => x.TitularId)
             .ThenBy(x => x.CuentaId)
             .Select(x => new IntegrationPermissionItemResponse
             {
                 Id = x.Id,
                 TitularId = x.TitularId,
                 CuentaId = x.CuentaId,
+                PaisId = x.PaisId,
                 AccesoTipo = x.AccesoTipo
             })
             .ToListAsync(cancellationToken);
@@ -407,7 +409,7 @@ public sealed class IntegracionesController : ControllerBase
 
             permiso.AccesoTipo = accesoTipo;
 
-            var duplicateKey = $"{permiso.TitularId?.ToString() ?? "global"}|{permiso.CuentaId?.ToString() ?? "global"}|{accesoTipo}";
+            var duplicateKey = $"{permiso.PaisId?.ToString() ?? "global"}|{permiso.TitularId?.ToString() ?? "global"}|{permiso.CuentaId?.ToString() ?? "global"}|{accesoTipo}";
             if (!seen.Add(duplicateKey))
             {
                 return "No repitas permisos idénticos.";
@@ -417,7 +419,7 @@ public sealed class IntegracionesController : ControllerBase
             {
                 var cuenta = await _dbContext.Cuentas
                     .Where(x => x.Id == permiso.CuentaId.Value)
-                    .Select(x => new { x.Id, x.TitularId })
+                    .Select(x => new { x.Id, x.TitularId, x.PaisId })
                     .FirstOrDefaultAsync(cancellationToken);
                 if (cuenta is null)
                 {
@@ -428,6 +430,11 @@ public sealed class IntegracionesController : ControllerBase
                 {
                     return "La cuenta indicada no pertenece al titular seleccionado.";
                 }
+
+                if (permiso.PaisId.HasValue && permiso.PaisId.Value != cuenta.PaisId)
+                {
+                    return "La cuenta indicada no pertenece al país seleccionado.";
+                }
             }
 
             if (permiso.TitularId.HasValue)
@@ -436,6 +443,15 @@ public sealed class IntegracionesController : ControllerBase
                 if (!exists)
                 {
                     return $"Titular inválido: {permiso.TitularId}";
+                }
+            }
+
+            if (permiso.PaisId.HasValue)
+            {
+                var exists = await _dbContext.Paises.AnyAsync(x => x.Id == permiso.PaisId.Value && x.Activo, cancellationToken);
+                if (!exists)
+                {
+                    return $"País inválido: {permiso.PaisId}";
                 }
             }
         }
@@ -453,6 +469,7 @@ public sealed class IntegracionesController : ControllerBase
                 TokenId = tokenId,
                 TitularId = permiso.TitularId,
                 CuentaId = permiso.CuentaId,
+                PaisId = permiso.PaisId,
                 AccesoTipo = NormalizeAccessType(permiso.AccesoTipo) ?? "lectura",
                 FechaCreacion = DateTime.UtcNow
             });
@@ -469,13 +486,15 @@ public sealed class IntegracionesController : ControllerBase
     {
         var permisos = await _dbContext.IntegrationPermissions
             .Where(x => x.TokenId == token.Id)
-            .OrderBy(x => x.TitularId)
+            .OrderBy(x => x.PaisId)
+            .ThenBy(x => x.TitularId)
             .ThenBy(x => x.CuentaId)
             .Select(x => new IntegrationPermissionItemResponse
             {
                 Id = x.Id,
                 TitularId = x.TitularId,
                 CuentaId = x.CuentaId,
+                PaisId = x.PaisId,
                 AccesoTipo = x.AccesoTipo
             })
             .ToListAsync(cancellationToken);

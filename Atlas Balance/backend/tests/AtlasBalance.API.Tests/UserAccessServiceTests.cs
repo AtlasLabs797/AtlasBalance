@@ -256,6 +256,83 @@ public class UserAccessServiceTests
     }
 
     [Fact]
+    public async Task ApplyCuentaScope_Should_Keep_Country_And_Titular_In_Same_Permission_Row()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var paisPermitidoId = Guid.NewGuid();
+        var paisBloqueadoId = Guid.NewGuid();
+        var titularPermitido = new Titular { Id = Guid.NewGuid(), Nombre = "Titular OK", Tipo = TipoTitular.EMPRESA };
+        var titularBloqueado = new Titular { Id = Guid.NewGuid(), Nombre = "Titular NO", Tipo = TipoTitular.EMPRESA };
+        var cuentaPermitida = new Cuenta { Id = Guid.NewGuid(), TitularId = titularPermitido.Id, PaisId = paisPermitidoId, Nombre = "Cuenta OK", Divisa = "EUR" };
+        var mismaPaisOtroTitular = new Cuenta { Id = Guid.NewGuid(), TitularId = titularBloqueado.Id, PaisId = paisPermitidoId, Nombre = "Pais OK Titular NO", Divisa = "EUR" };
+        var mismoTitularOtroPais = new Cuenta { Id = Guid.NewGuid(), TitularId = titularPermitido.Id, PaisId = paisBloqueadoId, Nombre = "Titular OK Pais NO", Divisa = "EUR" };
+
+        db.Titulares.AddRange(titularPermitido, titularBloqueado);
+        db.Cuentas.AddRange(cuentaPermitida, mismaPaisOtroTitular, mismoTitularOtroPais);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            PaisId = paisPermitidoId,
+            TitularId = titularPermitido.Id,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var scope = new UserAccessScope
+        {
+            UserId = userId,
+            HasPermissions = true,
+            HasGlobalAccess = false
+        };
+
+        var service = new UserAccessService(db);
+
+        var cuentas = await service.ApplyCuentaScope(db.Cuentas.AsNoTracking(), scope).ToListAsync();
+
+        cuentas.Select(x => x.Id).Should().ContainSingle().Which.Should().Be(cuentaPermitida.Id);
+    }
+
+    [Fact]
+    public async Task CanWriteAndEditCuenta_Should_Keep_Country_Titular_And_Cuenta_In_Same_Permission_Row()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var paisId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular", Tipo = TipoTitular.EMPRESA };
+        var cuentaPermitida = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, PaisId = paisId, Nombre = "Cuenta OK", Divisa = "EUR" };
+        var cuentaBloqueada = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, PaisId = paisId, Nombre = "Cuenta NO", Divisa = "EUR" };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.AddRange(cuentaPermitida, cuentaBloqueada);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            PaisId = paisId,
+            TitularId = titular.Id,
+            CuentaId = cuentaPermitida.Id,
+            PuedeEditarLineas = true
+        });
+        await db.SaveChangesAsync();
+
+        var scope = new UserAccessScope
+        {
+            UserId = userId,
+            HasPermissions = true,
+            HasGlobalAccess = false
+        };
+
+        var service = new UserAccessService(db);
+
+        (await service.CanWriteCuentaAsync(cuentaPermitida.Id, scope, CancellationToken.None)).Should().BeTrue();
+        (await service.CanEditCuentaAsync(cuentaPermitida.Id, scope, CancellationToken.None)).Should().BeTrue();
+        (await service.CanWriteCuentaAsync(cuentaBloqueada.Id, scope, CancellationToken.None)).Should().BeFalse();
+        (await service.CanEditCuentaAsync(cuentaBloqueada.Id, scope, CancellationToken.None)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ApplyTitularScope_Should_Not_Use_SoftDeleted_Account_Permission_As_Visibility_Bridge()
     {
         await using var db = BuildDbContext();

@@ -830,6 +830,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_creacion");
 
+                    b.Property<Guid?>("PaisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pais_id");
+
                     b.Property<Guid?>("TitularId")
                         .HasColumnType("uuid")
                         .HasColumnName("titular_id");
@@ -843,6 +847,9 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("CuentaId")
                         .HasDatabaseName("ix_integration_permissions_cuenta_id");
+
+                    b.HasIndex("PaisId")
+                        .HasDatabaseName("ix_integration_permissions_pais_id");
 
                     b.HasIndex("TitularId")
                         .HasDatabaseName("ix_integration_permissions_titular_id");
@@ -978,6 +985,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("cuenta_id");
 
+                    b.Property<Guid?>("PaisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pais_id");
+
                     b.Property<bool>("PuedeAgregarLineas")
                         .HasColumnType("boolean")
                         .HasColumnName("puede_agregar_lineas");
@@ -1016,6 +1027,9 @@ namespace AtlasBalance.API.Migrations
                     b.HasIndex("CuentaId")
                         .HasDatabaseName("ix_permisos_usuario_cuenta_id");
 
+                    b.HasIndex("PaisId")
+                        .HasDatabaseName("ix_permisos_usuario_pais_id");
+
                     b.HasIndex("TitularId")
                         .HasDatabaseName("ix_permisos_usuario_titular_id");
 
@@ -1024,6 +1038,9 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("UsuarioId", "CuentaId")
                         .HasDatabaseName("ix_permisos_usuario_usuario_id_cuenta_id");
+
+                    b.HasIndex("UsuarioId", "PaisId")
+                        .HasDatabaseName("ix_permisos_usuario_usuario_id_pais_id");
 
                     b.ToTable("PERMISOS_USUARIO", (string)null);
                 });
@@ -1140,6 +1157,14 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("cuenta_id");
 
+                    b.Property<Guid?>("PaisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pais_id");
+
+                    b.Property<Guid?>("TitularId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("titular_id");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -1154,15 +1179,17 @@ namespace AtlasBalance.API.Migrations
                     b.HasIndex("CuentaId")
                         .HasDatabaseName("ix_preferencias_usuario_cuenta_cuenta_id");
 
-                    b.HasIndex("UsuarioId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_preferencias_usuario_cuenta_usuario_id")
-                        .HasFilter("\"cuenta_id\" IS NULL");
+                    b.HasIndex("PaisId")
+                        .HasDatabaseName("ix_preferencias_usuario_cuenta_pais_id");
 
-                    b.HasIndex("UsuarioId", "CuentaId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_preferencias_usuario_cuenta_usuario_id_cuenta_id")
-                        .HasFilter("\"cuenta_id\" IS NOT NULL");
+                    b.HasIndex("TitularId")
+                        .HasDatabaseName("ix_preferencias_usuario_cuenta_titular_id");
+
+                    b.HasIndex("UsuarioId")
+                        .HasDatabaseName("ix_preferencias_usuario_cuenta_usuario_id");
+
+                    b.HasIndex("UsuarioId", "PaisId", "TitularId", "CuentaId")
+                        .HasDatabaseName("ix_preferencias_usuario_cuenta_usuario_id_pais_id_titular_id_cuenta_id");
 
                     b.ToTable("PREFERENCIAS_USUARIO_CUENTA", (string)null);
                 });
@@ -1722,6 +1749,12 @@ namespace AtlasBalance.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_integration_permissions_cuentas_cuenta_id");
 
+                    b.HasOne("AtlasBalance.API.Models.Pais", null)
+                        .WithMany()
+                        .HasForeignKey("PaisId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_integration_permissions_paises_pais_id");
+
                     b.HasOne("AtlasBalance.API.Models.Titular", null)
                         .WithMany()
                         .HasForeignKey("TitularId")
@@ -1759,6 +1792,12 @@ namespace AtlasBalance.API.Migrations
                         .HasForeignKey("CuentaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_permisos_usuario_cuentas_cuenta_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Pais", null)
+                        .WithMany()
+                        .HasForeignKey("PaisId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_permisos_usuario_paises_pais_id");
 
                     b.HasOne("AtlasBalance.API.Models.Titular", null)
                         .WithMany()
@@ -1807,6 +1846,18 @@ namespace AtlasBalance.API.Migrations
                         .HasForeignKey("CuentaId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .HasConstraintName("fk_preferencias_usuario_cuenta_cuentas_cuenta_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Pais", null)
+                        .WithMany()
+                        .HasForeignKey("PaisId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_preferencias_usuario_cuenta_paises_pais_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Titular", null)
+                        .WithMany()
+                        .HasForeignKey("TitularId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_preferencias_usuario_cuenta_titulares_titular_id");
 
                     b.HasOne("AtlasBalance.API.Models.Usuario", null)
                         .WithMany()

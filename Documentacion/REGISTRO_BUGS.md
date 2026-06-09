@@ -28,6 +28,33 @@
 
 ## Cerrados
 
+### 2026-06-09 - V-02-02 - Cerrado - Permisos por pais/titular/cuenta se podian expandir como union
+
+- Contexto: auditoria con subagentes durante implementacion de autorizacion por pais.
+- Causa: varios servicios convertian permisos en listas separadas de paises, titulares y cuentas.
+- Impacto: una regla `Pais A + Titular B` podia abrir `Pais A` entero o `Titular B` fuera de ese pais.
+- Solucion: autorizacion por fila con AND de todas las dimensiones no nulas en usuarios, integraciones, importacion, dashboard, extractos y alertas.
+- Verificacion: backend build OK; tests focalizados 24/24 OK.
+- Estado: cerrado.
+
+### 2026-06-09 - V-02-02 - Cerrado - Restricciones de columnas no tenian scope por pais/titular
+
+- Contexto: permisos por pais con columnas visibles/editables.
+- Causa: `PREFERENCIAS_USUARIO_CUENTA` solo guardaba `usuario_id + cuenta_id` o global.
+- Impacto: reglas de columnas de un pais/titular podian aplicarse sobre otro scope.
+- Solucion: `PREFERENCIAS_USUARIO_CUENTA` incorpora `pais_id` y `titular_id`; carga y auth resuelven preferencias por scope exacto.
+- Verificacion: backend build OK; frontend build OK.
+- Estado: cerrado.
+
+### 2026-06-09 - V-02-02 - Cerrado - Dashboard-only tenia semantica partida
+
+- Contexto: frontend, backend y RLS no interpretaban igual `PuedeVerDashboard`.
+- Causa: frontend aceptaba cualquier `PuedeVerDashboard`; backend exigia permiso operativo de datos; RLS permitia dashboard-only puro.
+- Impacto: UI podia mostrar rutas que backend rechazaba y RLS no actuaba como backstop equivalente.
+- Solucion: frontend y RLS se alinean con backend: dashboard requiere `PuedeVerDashboard` y permiso operativo de datos en el mismo scope.
+- Verificacion: tests `DashboardServiceTests` incluidos en bloque 24/24 OK; frontend lint/build OK.
+- Estado: cerrado.
+
 ### 2026-06-08 - V-02-02 - Cerrado - MFA recordado no reflejaba la intencion de producto
 
 - Contexto: el producto queria recordar dispositivo unos 3 meses, pero el estado activo era inconsistente.

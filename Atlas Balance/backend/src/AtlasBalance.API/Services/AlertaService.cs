@@ -177,8 +177,12 @@ public sealed class AlertaService : IAlertaService
             if (!scope.HasGlobalAccess)
             {
                 cuentasQuery = cuentasQuery.Where(c =>
-                    scope.CuentaIds.Contains(c.Id) ||
-                    scope.TitularIds.Contains(c.TitularId));
+                    _dbContext.PermisosUsuario.Any(p =>
+                        p.UsuarioId == scope.UserId &&
+                        p.PuedeVerCuentas &&
+                        (p.PaisId == null || p.PaisId == c.PaisId) &&
+                        (p.TitularId == null || p.TitularId == c.TitularId) &&
+                        (p.CuentaId == null || p.CuentaId == c.Id)));
             }
         }
 

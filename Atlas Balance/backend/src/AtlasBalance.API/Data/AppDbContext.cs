@@ -225,9 +225,11 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.UsuarioId);
             entity.HasIndex(e => new { e.UsuarioId, e.CuentaId });
+            entity.HasIndex(e => new { e.UsuarioId, e.PaisId });
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PreferenciaUsuarioCuenta>(entity =>
@@ -235,15 +237,12 @@ public class AppDbContext : DbContext
             entity.ToTable("PREFERENCIAS_USUARIO_CUENTA");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.UsuarioId);
-            entity.HasIndex(e => new { e.UsuarioId, e.CuentaId })
-                .IsUnique()
-                .HasFilter("\"cuenta_id\" IS NOT NULL");
-            entity.HasIndex(e => e.UsuarioId)
-                .IsUnique()
-                .HasFilter("\"cuenta_id\" IS NULL");
+            entity.HasIndex(e => new { e.UsuarioId, e.PaisId, e.TitularId, e.CuentaId });
             entity.Property(e => e.ColumnasVisibles).HasColumnType("jsonb");
             entity.Property(e => e.ColumnasEditables).HasColumnType("jsonb");
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -313,9 +312,11 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.TokenId);
             entity.HasIndex(e => e.TitularId);
             entity.HasIndex(e => e.CuentaId);
+            entity.HasIndex(e => e.PaisId);
             entity.HasOne<IntegrationToken>().WithMany().HasForeignKey(e => e.TokenId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AuditoriaIntegracion>(entity =>

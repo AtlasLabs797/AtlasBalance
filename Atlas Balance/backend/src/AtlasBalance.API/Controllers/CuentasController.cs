@@ -730,6 +730,7 @@ public sealed class CuentasController : ControllerBase
         return await _dbContext.PermisosUsuario.AnyAsync(
             p => p.UsuarioId == scope.UserId &&
                  p.PuedeEditarLineas &&
+                 (p.PaisId == null || p.PaisId == cuenta.PaisId) &&
                  (p.CuentaId == null || p.CuentaId == cuenta.Id) &&
                  (p.TitularId == null || p.TitularId == cuenta.TitularId),
             cancellationToken);

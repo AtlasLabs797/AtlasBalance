@@ -42,8 +42,9 @@ const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
 ];
 
 interface CatalogoPermisos {
+  paises: Array<{ id: string; nombre: string }>;
   titulares: Array<{ id: string; nombre: string }>;
-  cuentas: Array<{ id: string; nombre: string; titular_id: string }>;
+  cuentas: Array<{ id: string; nombre: string; titular_id: string; pais_id: string | null }>;
 }
 
 function formatOptionalDateTime(value: string | null) {
@@ -120,7 +121,7 @@ export default function ConfiguracionPage() {
   const [nuevaDivisa, setNuevaDivisa] = useState({ codigo: '', nombre: '', simbolo: '' });
 
   const [tokens, setTokens] = useState<IntegrationTokenListItem[]>([]);
-  const [catalogos, setCatalogos] = useState<CatalogoPermisos>({ titulares: [], cuentas: [] });
+  const [catalogos, setCatalogos] = useState<CatalogoPermisos>({ paises: [], titulares: [], cuentas: [] });
   const [openRouterModels, setOpenRouterModels] = useState<IaModel[]>([]);
   const [showCreateTokenModal, setShowCreateTokenModal] = useState(false);
   const [tokenPlano, setTokenPlano] = useState<string | null>(null);

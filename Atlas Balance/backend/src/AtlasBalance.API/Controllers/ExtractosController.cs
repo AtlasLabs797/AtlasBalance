@@ -121,6 +121,7 @@ public sealed class ExtractosController : ControllerBase
                 CuentaNombre = c.Nombre,
                 TitularId = t.Id,
                 TitularNombre = t.Nombre,
+                PaisId = c.PaisId,
                 Divisa = c.Divisa,
                 Fecha = x.Fecha,
                 Concepto = x.Concepto,
@@ -685,16 +686,18 @@ public sealed class ExtractosController : ControllerBase
         if (actor.IsAdmin) return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
         var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
         if (!perms.Any()) return [];
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
+        if (perms.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
         {
             return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
         }
 
-        var accountPerms = perms.Where(GrantsAccountAccess).ToList();
-        var ids = accountPerms.Where(p => p.CuentaId.HasValue).Select(p => p.CuentaId!.Value).ToHashSet();
-        var titularIds = accountPerms.Where(p => p.TitularId.HasValue).Select(p => p.TitularId!.Value).ToList();
         return [.. await visibleAccounts
-            .Where(c => ids.Contains(c.Id) || titularIds.Contains(c.TitularId))
+            .Where(c => _db.PermisosUsuario.Any(p =>
+                p.UsuarioId == actor.Id &&
+                p.PuedeVerCuentas &&
+                (p.PaisId == null || p.PaisId == c.PaisId) &&
+                (p.TitularId == null || p.TitularId == c.TitularId) &&
+                (p.CuentaId == null || p.CuentaId == c.Id)))
             .Select(c => c.Id)
             .ToListAsync(ct)];
     }
@@ -720,24 +723,20 @@ public sealed class ExtractosController : ControllerBase
             return false;
         }
 
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
+        if (perms.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
         {
             return true;
         }
 
-        if (perms.Any(p => p.TitularId == titularId && GrantsAccountAccess(p)))
-        {
-            return true;
-        }
-
-        var permittedCuentaIds = perms
-            .Where(p => p.CuentaId.HasValue)
-            .Select(p => p.CuentaId!.Value)
-            .Distinct()
-            .ToList();
-
-        return permittedCuentaIds.Count > 0 &&
-               await QueryVisibleAccounts(actor).AnyAsync(c => c.TitularId == titularId && permittedCuentaIds.Contains(c.Id), ct);
+        return await QueryVisibleAccounts(actor).AnyAsync(
+            c => c.TitularId == titularId &&
+                 _db.PermisosUsuario.Any(p =>
+                     p.UsuarioId == actor.Id &&
+                     p.PuedeVerCuentas &&
+                     (p.PaisId == null || p.PaisId == c.PaisId) &&
+                     (p.TitularId == null || p.TitularId == c.TitularId) &&
+                     (p.CuentaId == null || p.CuentaId == c.Id)),
+            ct);
     }
 
     private static bool GrantsAccountAccess(PermisoUsuario permiso) =>
@@ -747,10 +746,18 @@ public sealed class ExtractosController : ControllerBase
     {
         if (actor.IsAdmin) return new Perm { CanAdd = true, CanEdit = true, CanDelete = true, EditableCols = null };
         if (!await _db.Titulares.AnyAsync(t => t.Id == cuenta.TitularId && t.DeletedAt == null, ct)) return new Perm();
-        var rows = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).Where(p => p.CuentaId == null || p.CuentaId == cuenta.Id).Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId).ToListAsync(ct);
+        var rows = await _db.PermisosUsuario
+            .Where(p => p.UsuarioId == actor.Id)
+            .Where(p => p.PaisId == null || p.PaisId == cuenta.PaisId)
+            .Where(p => p.CuentaId == null || p.CuentaId == cuenta.Id)
+            .Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId)
+            .ToListAsync(ct);
         if (!rows.Any()) return new Perm();
         var prefRows = await _db.PreferenciasUsuarioCuenta
-            .Where(p => p.UsuarioId == actor.Id && (p.CuentaId == null || p.CuentaId == cuenta.Id))
+            .Where(p => p.UsuarioId == actor.Id)
+            .Where(p => p.PaisId == null || p.PaisId == cuenta.PaisId)
+            .Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId)
+            .Where(p => p.CuentaId == null || p.CuentaId == cuenta.Id)
             .ToListAsync(ct);
         var parsed = prefRows.Select(r => ParseArray(r.ColumnasEditables)).ToList();
         HashSet<string>? cols;

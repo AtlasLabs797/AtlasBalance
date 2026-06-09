@@ -144,11 +144,11 @@ export default function CuentaDetailPage() {
   const [forbidden, setForbidden] = useState(false);
 
   const allowedDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
-  const canImport = Boolean(cuentaId) && summary ? canImportInCuenta(cuentaId, summary.titular_id) : false;
-  const canAddRows = Boolean(cuentaId) && summary ? canAddInCuenta(cuentaId, summary.titular_id) : false;
-  const canDeleteRows = Boolean(cuentaId) && summary ? canDeleteInCuenta(cuentaId, summary.titular_id) : false;
-  const canOpenAccount = Boolean(cuentaId) && summary ? canViewCuenta(cuentaId, summary.titular_id) : false;
-  const canEditAccountNotes = Boolean(cuentaId) && summary ? canEditCuenta(cuentaId, summary.titular_id) : false;
+  const canImport = Boolean(cuentaId) && summary ? canImportInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canAddRows = Boolean(cuentaId) && summary ? canAddInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canDeleteRows = Boolean(cuentaId) && summary ? canDeleteInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canOpenAccount = Boolean(cuentaId) && summary ? canViewCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canEditAccountNotes = Boolean(cuentaId) && summary ? canEditCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
   const plazoFijo = summary?.tipo_cuenta === 'PLAZO_FIJO' ? summary.plazo_fijo : null;
   const hasBankName = Boolean(summary?.banco_nombre?.trim());
   const hasIban = Boolean(summary?.iban?.trim());
@@ -164,11 +164,11 @@ export default function CuentaDetailPage() {
         return false;
       }
 
-      if (!canEditCuenta(cuentaId, summary.titular_id)) {
+      if (!canEditCuenta(cuentaId, summary.titular_id, summary.pais_id)) {
         return false;
       }
 
-      const editableColumns = getColumnasEditables(cuentaId, summary.titular_id);
+      const editableColumns = getColumnasEditables(cuentaId, summary.titular_id, summary.pais_id);
       return editableColumns === null || editableColumns.includes(column);
     },
     [canEditCuenta, cuentaId, getColumnasEditables, summary]

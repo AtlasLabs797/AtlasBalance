@@ -206,6 +206,7 @@ public class PermisoUsuario
     public Guid UsuarioId { get; set; }
     public Guid? CuentaId { get; set; }
     public Guid? TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public bool PuedeVerCuentas { get; set; }
     public bool PuedeAgregarLineas { get; set; }
     public bool PuedeEditarLineas { get; set; }
@@ -218,6 +219,8 @@ public class PreferenciaUsuarioCuenta
 {
     public Guid Id { get; set; }
     public Guid UsuarioId { get; set; }
+    public Guid? PaisId { get; set; }
+    public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
     public string? ColumnasVisibles { get; set; }
     public string? ColumnasEditables { get; set; }
@@ -297,6 +300,7 @@ public class IntegrationPermission
     public Guid TokenId { get; set; }
     public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
+    public Guid? PaisId { get; set; }
     public string AccesoTipo { get; set; } = "lectura";
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
 }

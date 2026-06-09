@@ -18,6 +18,7 @@ public sealed class RevisionComisionItemResponse
     public Guid ExtractoId { get; set; }
     public Guid CuentaId { get; set; }
     public Guid TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public string Titular { get; set; } = string.Empty;
     public string Cuenta { get; set; } = string.Empty;
     public string Divisa { get; set; } = string.Empty;
@@ -32,6 +33,7 @@ public sealed class RevisionSeguroItemResponse
     public Guid ExtractoId { get; set; }
     public Guid CuentaId { get; set; }
     public Guid TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public string Titular { get; set; } = string.Empty;
     public string Cuenta { get; set; } = string.Empty;
     public string Divisa { get; set; } = string.Empty;

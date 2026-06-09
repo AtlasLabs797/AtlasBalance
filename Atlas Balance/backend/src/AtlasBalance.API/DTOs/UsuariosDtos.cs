@@ -38,6 +38,7 @@ public sealed class SavePermisoUsuarioRequest
 {
     public Guid? CuentaId { get; set; }
     public Guid? TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public bool PuedeVerCuentas { get; set; }
     public bool PuedeAgregarLineas { get; set; }
     public bool PuedeEditarLineas { get; set; }

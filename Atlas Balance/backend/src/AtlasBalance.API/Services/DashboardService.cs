@@ -97,6 +97,10 @@ public sealed class DashboardService : IDashboardService
         var targetCurrency = await ResolveDivisaPrincipalAsync(divisaPrincipal, cancellationToken);
         var chartColors = await ResolveChartColorsAsync(cancellationToken);
         var cuentas = await GetScopedCuentasAsync(scope, titularId, paisId, cancellationToken);
+        if (paisId.HasValue && cuentas.Count == 0)
+        {
+            throw new DashboardAccessException("Titular no encontrado para el pais seleccionado", StatusCodes.Status404NotFound);
+        }
 
         var titularNombre = cuentas.FirstOrDefault()?.TitularNombre
             ?? await _dbContext.Titulares
@@ -613,7 +617,7 @@ public sealed class DashboardService : IDashboardService
 
         if (!scope.GlobalAccess)
         {
-            query = query.Where(x => scope.ExplicitTitularIds.Contains(x.TitularId) || scope.CuentaIds.Contains(x.CuentaId));
+            query = query.Where(x => scope.CuentaIds.Contains(x.CuentaId));
         }
 
         return await query.OrderBy(x => x.TitularNombre).ThenBy(x => x.CuentaNombre).ToListAsync(cancellationToken);
@@ -706,6 +710,7 @@ public sealed class DashboardService : IDashboardService
             {
                 x.CuentaId,
                 x.TitularId,
+                x.PaisId,
                 x.PuedeVerCuentas,
                 x.PuedeAgregarLineas,
                 x.PuedeEditarLineas,
@@ -720,6 +725,7 @@ public sealed class DashboardService : IDashboardService
         }
 
         var globalAccess = permisos.Any(x =>
+            x.PaisId == null &&
             x.CuentaId == null &&
             x.TitularId == null &&
             GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar));
@@ -728,16 +734,25 @@ public sealed class DashboardService : IDashboardService
             return DashboardScope.GlobalForManager();
         }
 
-        var scopedPermisos = permisos.Where(x => x.CuentaId.HasValue || x.TitularId.HasValue).ToList();
-        var titularIds = scopedPermisos.Where(x => x.TitularId.HasValue).Select(x => x.TitularId!.Value).ToHashSet();
-        var cuentaIds = scopedPermisos.Where(x => x.CuentaId.HasValue).Select(x => x.CuentaId!.Value).ToHashSet();
+        var cuentaIdsList = await _dbContext.Cuentas
+            .AsNoTracking()
+            .Where(c => _dbContext.PermisosUsuario.Any(p =>
+                p.UsuarioId == userId &&
+                p.PuedeVerDashboard &&
+                (p.PuedeVerCuentas || p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas || p.PuedeImportar) &&
+                (p.PaisId == null || p.PaisId == c.PaisId) &&
+                (p.TitularId == null || p.TitularId == c.TitularId) &&
+                (p.CuentaId == null || p.CuentaId == c.Id)))
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+        var cuentaIds = cuentaIdsList.ToHashSet();
 
-        if (titularIds.Count == 0 && cuentaIds.Count == 0)
+        if (cuentaIds.Count == 0)
         {
             throw new DashboardAccessException("No tienes permisos para ver dashboards", StatusCodes.Status403Forbidden);
         }
 
-        return new DashboardScope(false, titularIds, cuentaIds);
+        return new DashboardScope(false, cuentaIds);
     }
 
     private static bool GrantsAccountDataAccess(
@@ -755,11 +770,6 @@ public sealed class DashboardService : IDashboardService
             return true;
         }
 
-        if (scope.ExplicitTitularIds.Contains(titularId))
-        {
-            return true;
-        }
-
         if (scope.CuentaIds.Count == 0)
         {
             return false;
@@ -767,7 +777,9 @@ public sealed class DashboardService : IDashboardService
 
         return await _dbContext.Cuentas
             .AsNoTracking()
-            .AnyAsync(x => x.TitularId == titularId && scope.CuentaIds.Contains(x.Id), cancellationToken);
+            .AnyAsync(
+                x => x.TitularId == titularId && scope.CuentaIds.Contains(x.Id),
+                cancellationToken);
     }
 
     private static string NormalizePeriodo(string? periodo)
@@ -875,18 +887,16 @@ public sealed class DashboardService : IDashboardService
     private sealed class DashboardScope
     {
         public bool GlobalAccess { get; }
-        public HashSet<Guid> ExplicitTitularIds { get; }
         public HashSet<Guid> CuentaIds { get; }
 
-        public DashboardScope(bool globalAccess, HashSet<Guid> titularIds, HashSet<Guid> cuentaIds)
+        public DashboardScope(bool globalAccess, HashSet<Guid> cuentaIds)
         {
             GlobalAccess = globalAccess;
-            ExplicitTitularIds = titularIds;
             CuentaIds = cuentaIds;
         }
 
-        public static DashboardScope GlobalForAdmin() => new(true, [], []);
-        public static DashboardScope GlobalForManager() => new(true, [], []);
+        public static DashboardScope GlobalForAdmin() => new(true, []);
+        public static DashboardScope GlobalForManager() => new(true, []);
     }
 
     private sealed class CuentaScopeItem

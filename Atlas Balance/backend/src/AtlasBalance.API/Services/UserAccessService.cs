@@ -22,6 +22,7 @@ public sealed class UserAccessScope
     public bool IsAdmin { get; init; }
     public bool HasPermissions { get; init; }
     public bool HasGlobalAccess { get; init; }
+    public IReadOnlyList<Guid> PaisIds { get; init; } = [];
     public IReadOnlyList<Guid> TitularIds { get; init; } = [];
     public IReadOnlyList<Guid> CuentaIds { get; init; } = [];
 }
@@ -64,6 +65,7 @@ public sealed class UserAccessService : IUserAccessService
             {
                 p.TitularId,
                 p.CuentaId,
+                p.PaisId,
                 p.PuedeVerCuentas,
                 p.PuedeAgregarLineas,
                 p.PuedeEditarLineas,
@@ -83,6 +85,12 @@ public sealed class UserAccessService : IUserAccessService
             .Distinct()
             .ToList();
 
+        var paisIds = dataPermissions
+            .Where(p => p.PaisId.HasValue)
+            .Select(p => p.PaisId!.Value)
+            .Distinct()
+            .ToList();
+
         var cuentaIds = dataPermissions
             .Where(p => p.CuentaId.HasValue)
             .Select(p => p.CuentaId!.Value)
@@ -90,7 +98,7 @@ public sealed class UserAccessService : IUserAccessService
             .ToList();
 
         var hasGlobalAccess = dataPermissions.Any(p =>
-            p.TitularId is null && p.CuentaId is null &&
+            p.PaisId is null && p.TitularId is null && p.CuentaId is null &&
             p.PuedeVerCuentas);
 
         return new UserAccessScope
@@ -99,6 +107,7 @@ public sealed class UserAccessService : IUserAccessService
             IsAdmin = false,
             HasPermissions = permisos.Count > 0,
             HasGlobalAccess = hasGlobalAccess,
+            PaisIds = paisIds,
             TitularIds = titularIds,
             CuentaIds = cuentaIds
         };
@@ -124,8 +133,15 @@ public sealed class UserAccessService : IUserAccessService
         }
 
         return query.Where(t =>
-            scope.TitularIds.Contains(t.Id) ||
-            _dbContext.Cuentas.Any(c => c.TitularId == t.Id && c.DeletedAt == null && scope.CuentaIds.Contains(c.Id)));
+            _dbContext.PermisosUsuario.Any(p =>
+                p.UsuarioId == scope.UserId &&
+                p.PuedeVerCuentas &&
+                _dbContext.Cuentas.Any(c =>
+                    c.TitularId == t.Id &&
+                    c.DeletedAt == null &&
+                    (p.PaisId == null || p.PaisId == c.PaisId) &&
+                    (p.TitularId == null || p.TitularId == c.TitularId) &&
+                    (p.CuentaId == null || p.CuentaId == c.Id))));
     }
 
     public IQueryable<Cuenta> ApplyCuentaScope(IQueryable<Cuenta> query, UserAccessScope scope)
@@ -147,7 +163,13 @@ public sealed class UserAccessService : IUserAccessService
             return query;
         }
 
-        return query.Where(c => scope.CuentaIds.Contains(c.Id) || scope.TitularIds.Contains(c.TitularId));
+        return query.Where(c =>
+            _dbContext.PermisosUsuario.Any(p =>
+                p.UsuarioId == scope.UserId &&
+                p.PuedeVerCuentas &&
+                (p.PaisId == null || p.PaisId == c.PaisId) &&
+                (p.TitularId == null || p.TitularId == c.TitularId) &&
+                (p.CuentaId == null || p.CuentaId == c.Id)));
     }
 
     public async Task<bool> CanAccessTitularAsync(Guid titularId, UserAccessScope scope, CancellationToken cancellationToken)
@@ -170,14 +192,13 @@ public sealed class UserAccessService : IUserAccessService
             return false;
         }
 
-        if (scope.HasGlobalAccess || scope.TitularIds.Contains(titularId))
+        if (scope.HasGlobalAccess)
         {
             return true;
         }
 
-        return await ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()).AnyAsync(
-            c => c.TitularId == titularId && scope.CuentaIds.Contains(c.Id),
-            cancellationToken);
+        return await ApplyTitularScope(_dbContext.Titulares.AsNoTracking(), scope)
+            .AnyAsync(t => t.Id == titularId, cancellationToken);
     }
 
     public async Task<bool> CanAccessCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
@@ -192,13 +213,8 @@ public sealed class UserAccessService : IUserAccessService
             return false;
         }
 
-        return await ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking())
-            .AnyAsync(c =>
-                c.Id == cuentaId &&
-                (scope.HasGlobalAccess ||
-                 scope.CuentaIds.Contains(c.Id) ||
-                 scope.TitularIds.Contains(c.TitularId)),
-                cancellationToken);
+        return await ApplyCuentaScope(_dbContext.Cuentas.AsNoTracking(), scope)
+            .AnyAsync(c => c.Id == cuentaId, cancellationToken);
     }
 
     public async Task<bool> CanWriteCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
@@ -218,9 +234,9 @@ public sealed class UserAccessService : IUserAccessService
                 join cuenta in ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()) on cuentaId equals cuenta.Id
                 where permiso.UsuarioId == scope.UserId &&
                       (permiso.PuedeAgregarLineas || permiso.PuedeEditarLineas || permiso.PuedeEliminarLineas || permiso.PuedeImportar) &&
-                      ((permiso.CuentaId == null && permiso.TitularId == null) ||
-                       permiso.CuentaId == cuentaId ||
-                       permiso.TitularId == cuenta.TitularId)
+                      (permiso.PaisId == null || permiso.PaisId == cuenta.PaisId) &&
+                      (permiso.TitularId == null || permiso.TitularId == cuenta.TitularId) &&
+                      (permiso.CuentaId == null || permiso.CuentaId == cuenta.Id)
                 select permiso.Id)
             .AnyAsync(cancellationToken);
     }
@@ -242,9 +258,9 @@ public sealed class UserAccessService : IUserAccessService
                 join cuenta in ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()) on cuentaId equals cuenta.Id
                 where permiso.UsuarioId == scope.UserId &&
                       permiso.PuedeEditarLineas &&
-                      ((permiso.CuentaId == null && permiso.TitularId == null) ||
-                       permiso.CuentaId == cuentaId ||
-                       permiso.TitularId == cuenta.TitularId)
+                      (permiso.PaisId == null || permiso.PaisId == cuenta.PaisId) &&
+                      (permiso.TitularId == null || permiso.TitularId == cuenta.TitularId) &&
+                      (permiso.CuentaId == null || permiso.CuentaId == cuenta.Id)
                 select permiso.Id)
             .AnyAsync(cancellationToken);
     }

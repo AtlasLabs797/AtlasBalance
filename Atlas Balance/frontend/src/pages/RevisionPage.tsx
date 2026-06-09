@@ -167,14 +167,14 @@ export default function RevisionPage() {
         <ComisionesTable
           rows={comisiones}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id)}
+          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setComisionEstado}
         />
       ) : (
         <SegurosTable
           rows={seguros}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id)}
+          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setSeguroEstado}
         />
       )}
