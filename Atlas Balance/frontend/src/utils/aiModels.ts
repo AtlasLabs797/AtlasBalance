@@ -6,10 +6,12 @@ export interface AiModelOption {
 export const OPENROUTER_AUTO_MODEL = 'openrouter/auto';
 export const OPENROUTER_DEFAULT_RUNTIME_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+export const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3';
 
 export const aiProviderOptions: AiModelOption[] = [
   { value: 'OPENROUTER', label: 'OpenRouter' },
   { value: 'OPENAI', label: 'OpenAI' },
+  { value: 'MINIMAX', label: 'MiniMax' },
 ];
 
 export const openRouterModelOptions: AiModelOption[] = [
@@ -28,16 +30,35 @@ export const openAiModelOptions: AiModelOption[] = [
   { value: 'gpt-4o', label: 'GPT-4o' },
 ];
 
+export const miniMaxModelOptions: AiModelOption[] = [
+  { value: DEFAULT_MINIMAX_MODEL, label: 'MiniMax M3' },
+  { value: 'MiniMax-M2.7', label: 'MiniMax M2.7' },
+];
+
 export function normalizeAiProvider(provider: string | null | undefined) {
-  return provider === 'OPENAI' ? 'OPENAI' : 'OPENROUTER';
+  if (provider === 'OPENAI' || provider === 'MINIMAX') {
+    return provider;
+  }
+
+  return 'OPENROUTER';
 }
 
 export function getAiModelOptions(provider: string | null | undefined) {
-  return normalizeAiProvider(provider) === 'OPENAI' ? openAiModelOptions : openRouterModelOptions;
+  const normalizedProvider = normalizeAiProvider(provider);
+  if (normalizedProvider === 'OPENAI') {
+    return openAiModelOptions;
+  }
+
+  return normalizedProvider === 'MINIMAX' ? miniMaxModelOptions : openRouterModelOptions;
 }
 
 export function getDefaultAiModel(provider: string | null | undefined) {
-  return normalizeAiProvider(provider) === 'OPENAI' ? DEFAULT_OPENAI_MODEL : OPENROUTER_AUTO_MODEL;
+  const normalizedProvider = normalizeAiProvider(provider);
+  if (normalizedProvider === 'OPENAI') {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  return normalizedProvider === 'MINIMAX' ? DEFAULT_MINIMAX_MODEL : OPENROUTER_AUTO_MODEL;
 }
 
 export function normalizeAiModel(provider: string | null | undefined, model: string | null | undefined) {
@@ -47,7 +68,8 @@ export function normalizeAiModel(provider: string | null | undefined, model: str
     return trimmed || OPENROUTER_AUTO_MODEL;
   }
 
-  return openAiModelOptions.some((item) => item.value === trimmed) ? trimmed : DEFAULT_OPENAI_MODEL;
+  const options = normalizedProvider === 'OPENAI' ? openAiModelOptions : miniMaxModelOptions;
+  return options.some((item) => item.value === trimmed) ? trimmed : getDefaultAiModel(normalizedProvider);
 }
 
 export function getAiModelLabel(provider: string | null | undefined, model: string | null | undefined) {

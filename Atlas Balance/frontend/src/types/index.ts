@@ -321,6 +321,8 @@ export interface ConfiguracionSistema {
     openrouter_api_key_configurada: boolean;
     openai_api_key: string;
     openai_api_key_configurada: boolean;
+    minimax_api_key: string;
+    minimax_api_key_configurada: boolean;
     model: string;
     habilitada: boolean;
     usuario_puede_usar: boolean;
@@ -381,6 +383,7 @@ export interface SaveConfiguracionSistemaRequest {
     provider: string;
     openrouter_api_key: string;
     openai_api_key: string;
+    minimax_api_key: string;
     model: string;
     habilitada: boolean;
     requests_por_minuto: number;
@@ -434,6 +437,7 @@ export interface IaConfig {
   provider: string;
   openrouter_api_key_configurada: boolean;
   openai_api_key_configurada: boolean;
+  minimax_api_key_configurada: boolean;
   model: string;
   habilitada: boolean;
   usuario_puede_usar: boolean;

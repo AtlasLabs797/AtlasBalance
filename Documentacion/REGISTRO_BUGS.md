@@ -2,6 +2,13 @@
 
 ## Abiertos
 
+### 2026-06-21 - V-02-02 - Test determinista IA sensible a la fecha actual
+
+- Contexto: al validar MiniMax, el filtro amplio `AtlasAiServiceTests|ConfiguracionControllerTests` fallo tambien en `AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking`.
+- Causa probable: el test depende de la fecha actual. El entorno esta en 2026-06-21 y la consulta de "este trimestre" resuelve `01/04/2026 a 21/06/2026`, pero el fixture no tiene gastos en ese periodo.
+- Impacto: la suite IA amplia no puede considerarse verde aunque la cobertura MiniMax focalizada pase.
+- Estado: abierto. Hay que fijar reloj/fixture o hacer el test independiente de la fecha real.
+
 ### 2026-05-22 - V-01.09 - Bootstrap desde Watchdog antiguo pendiente
 
 - Contexto: tras implementar el update online de paquete completo, quedan dos bloqueos fuera del codigo nuevo.

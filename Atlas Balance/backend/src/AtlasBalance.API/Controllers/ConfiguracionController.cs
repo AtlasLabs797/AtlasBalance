@@ -159,7 +159,7 @@ public sealed class ConfiguracionController : ControllerBase
         var aiProvider = AiConfiguration.NormalizeProvider(aiRequest.Provider);
         if (!AiConfiguration.IsSupportedProvider(aiProvider))
         {
-            return BadRequest(new { error = "Proveedor de IA no soportado. Atlas Balance admite OpenRouter u OpenAI con clave API de servidor." });
+            return BadRequest(new { error = "Proveedor de IA no soportado. Atlas Balance admite OpenRouter, OpenAI o MiniMax con clave API de servidor." });
         }
 
         if (!string.IsNullOrWhiteSpace(aiRequest.Model) && !AiConfiguration.IsAllowedModel(aiProvider, aiRequest.Model))
@@ -221,6 +221,11 @@ public sealed class ConfiguracionController : ControllerBase
         if (!string.IsNullOrWhiteSpace(openAiApiKey))
         {
             Upsert(config, "openai_api_key", _secretProtector.ProtectForStorage(openAiApiKey), userId, now);
+        }
+        var miniMaxApiKey = aiRequest.MiniMaxApiKey;
+        if (!string.IsNullOrWhiteSpace(miniMaxApiKey))
+        {
+            Upsert(config, "minimax_api_key", _secretProtector.ProtectForStorage(miniMaxApiKey), userId, now);
         }
         Upsert(config, "ai_requests_per_minute", aiRequest.RequestsPorMinuto.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "ai_requests_per_hour", aiRequest.RequestsPorHora.ToString(CultureInfo.InvariantCulture), userId, now);
@@ -379,6 +384,7 @@ public sealed class ConfiguracionController : ControllerBase
         var enabled = ParseBool(GetValue(config, "ai_enabled"), fallback: false);
         var hasOpenRouterKey = !string.IsNullOrWhiteSpace(GetValue(config, "openrouter_api_key"));
         var hasOpenAiKey = !string.IsNullOrWhiteSpace(GetValue(config, "openai_api_key"));
+        var hasMiniMaxKey = !string.IsNullOrWhiteSpace(GetValue(config, "minimax_api_key"));
         var currentMonthKey = DateTime.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
         var storedMonthKey = GetValue(config, "ai_usage_month_key");
         var openRouterConfigured = provider == "OPENROUTER" &&
@@ -389,6 +395,10 @@ public sealed class ConfiguracionController : ControllerBase
                                hasOpenAiKey &&
                                !string.IsNullOrWhiteSpace(model) &&
                                AiConfiguration.IsAllowedOpenAiModel(model);
+        var miniMaxConfigured = provider == "MINIMAX" &&
+                                hasMiniMaxKey &&
+                                !string.IsNullOrWhiteSpace(model) &&
+                                AiConfiguration.IsAllowedMiniMaxModel(model);
 
         return new IaConfigResponse
         {
@@ -398,8 +408,9 @@ public sealed class ConfiguracionController : ControllerBase
             UsuarioPuedeUsar = usuarioPuedeUsarIa,
             OpenRouterApiKeyConfigurada = hasOpenRouterKey,
             OpenAiApiKeyConfigurada = hasOpenAiKey,
-            Configurada = enabled && usuarioPuedeUsarIa && (openRouterConfigured || openAiConfigured),
-            MensajeEstado = BuildIaStatusMessage(enabled, usuarioPuedeUsarIa, provider, hasOpenRouterKey, hasOpenAiKey, model),
+            MiniMaxApiKeyConfigurada = hasMiniMaxKey,
+            Configurada = enabled && usuarioPuedeUsarIa && (openRouterConfigured || openAiConfigured || miniMaxConfigured),
+            MensajeEstado = BuildIaStatusMessage(enabled, usuarioPuedeUsarIa, provider, hasOpenRouterKey, hasOpenAiKey, hasMiniMaxKey, model),
             RequestsPorMinuto = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_minute"), AiConfigurationDefaults.RequestsPerMinute)),
             RequestsPorHora = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_hour"), AiConfigurationDefaults.RequestsPerHour)),
             RequestsPorDia = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_day"), AiConfigurationDefaults.RequestsPerDay)),
@@ -418,7 +429,7 @@ public sealed class ConfiguracionController : ControllerBase
         };
     }
 
-    private static string BuildIaStatusMessage(bool enabled, bool userCanUse, string provider, bool hasOpenRouterKey, bool hasOpenAiKey, string model)
+    private static string BuildIaStatusMessage(bool enabled, bool userCanUse, string provider, bool hasOpenRouterKey, bool hasOpenAiKey, bool hasMiniMaxKey, string model)
     {
         if (!enabled)
         {
@@ -443,6 +454,11 @@ public sealed class ConfiguracionController : ControllerBase
         if (provider == "OPENAI" && !hasOpenAiKey)
         {
             return "Falta configurar la clave API de OpenAI.";
+        }
+
+        if (provider == "MINIMAX" && !hasMiniMaxKey)
+        {
+            return "Falta configurar la clave API de MiniMax.";
         }
 
         if (string.IsNullOrWhiteSpace(model))
@@ -578,7 +594,8 @@ public sealed class ConfiguracionController : ControllerBase
                (request.Ia.Provider is null ||
                 request.Ia.Model is null ||
                 request.Ia.OpenRouterApiKey is null ||
-                request.Ia.OpenAiApiKey is null);
+                request.Ia.OpenAiApiKey is null ||
+                request.Ia.MiniMaxApiKey is null);
     }
 
     private static Dictionary<string, string> RedactSensitiveConfig(IReadOnlyDictionary<string, string> source)

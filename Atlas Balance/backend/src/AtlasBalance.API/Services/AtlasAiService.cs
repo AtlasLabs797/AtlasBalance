@@ -68,6 +68,9 @@ public sealed class AtlasAiService : IAtlasAiService
             "OPENAI" => AiConfiguration.OpenAiModels
                 .Select(x => new IaModelResponse { Id = x, Nombre = x })
                 .ToList(),
+            "MINIMAX" => AiConfiguration.MiniMaxModels
+                .Select(x => new IaModelResponse { Id = x, Nombre = x })
+                .ToList(),
             "OPENROUTER" => await LoadOpenRouterModelsAsync(cancellationToken),
             _ => throw new IaConfigurationException("Proveedor de IA no soportado.")
         };
@@ -82,11 +85,16 @@ public sealed class AtlasAiService : IAtlasAiService
                 .ToList();
         }
 
-        return models
-            .OrderByDescending(x => string.Equals(x.Id, AiConfiguration.OpenRouterAutoModel, StringComparison.Ordinal))
-            .ThenBy(x => x.Id, StringComparer.Ordinal)
-            .Take(80)
-            .ToList();
+        if (normalizedProvider == "OPENROUTER")
+        {
+            return models
+                .OrderByDescending(x => string.Equals(x.Id, AiConfiguration.OpenRouterAutoModel, StringComparison.Ordinal))
+                .ThenBy(x => x.Id, StringComparer.Ordinal)
+                .Take(80)
+                .ToList();
+        }
+
+        return models.Take(80).ToList();
     }
 
     public async Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null)
@@ -489,6 +497,8 @@ public sealed class AtlasAiService : IAtlasAiService
                     HasOpenRouterKey: !string.IsNullOrWhiteSpace(protectedKey),
                     ProtectedOpenAiApiKey: string.Empty,
                     HasOpenAiKey: false,
+                    ProtectedMiniMaxApiKey: string.Empty,
+                    HasMiniMaxKey: false,
                     RequestsPerMinute: AiConfigurationDefaults.RequestsPerMinute,
                     RequestsPerHour: AiConfigurationDefaults.RequestsPerHour,
                     RequestsPerDay: AiConfigurationDefaults.RequestsPerDay,
@@ -542,6 +552,38 @@ public sealed class AtlasAiService : IAtlasAiService
                 },
                 temperature = 0.1,
                 max_tokens = state.MaxOutputTokens,
+                stream = false,
+                messages
+            });
+            return request;
+        }
+
+        if (state.Provider == "MINIMAX")
+        {
+            if (string.Equals(state.Model, AiConfiguration.DefaultMiniMaxModel, StringComparison.Ordinal))
+            {
+                request.Content = JsonContent.Create(new
+                {
+                    model = state.Model,
+                    thinking = new
+                    {
+                        type = "disabled"
+                    },
+                    reasoning_split = true,
+                    temperature = 0.1,
+                    max_completion_tokens = state.MaxOutputTokens,
+                    stream = false,
+                    messages
+                });
+                return request;
+            }
+
+            request.Content = JsonContent.Create(new
+            {
+                model = state.Model,
+                reasoning_split = true,
+                temperature = 0.1,
+                max_completion_tokens = state.MaxOutputTokens,
                 stream = false,
                 messages
             });
@@ -1499,6 +1541,10 @@ public sealed class AtlasAiService : IAtlasAiService
                                state.HasOpenAiKey &&
                                !string.IsNullOrWhiteSpace(state.Model) &&
                                AiConfiguration.IsAllowedOpenAiModel(state.Model);
+        var miniMaxConfigured = state.Provider == "MINIMAX" &&
+                                state.HasMiniMaxKey &&
+                                !string.IsNullOrWhiteSpace(state.Model) &&
+                                AiConfiguration.IsAllowedMiniMaxModel(state.Model);
 
         return new IaConfigResponse
         {
@@ -1508,7 +1554,8 @@ public sealed class AtlasAiService : IAtlasAiService
             UsuarioPuedeUsar = userCanUse,
             OpenRouterApiKeyConfigurada = state.HasOpenRouterKey,
             OpenAiApiKeyConfigurada = state.HasOpenAiKey,
-            Configurada = state.Enabled && userCanUse && (openRouterConfigured || openAiConfigured),
+            MiniMaxApiKeyConfigurada = state.HasMiniMaxKey,
+            Configurada = state.Enabled && userCanUse && (openRouterConfigured || openAiConfigured || miniMaxConfigured),
             MensajeEstado = BuildStatusMessage(state, userCanUse),
             RequestsPorMinuto = state.RequestsPerMinute,
             RequestsPorHora = state.RequestsPerHour,
@@ -1559,6 +1606,11 @@ public sealed class AtlasAiService : IAtlasAiService
             return "Falta configurar la clave API de OpenAI.";
         }
 
+        if (state.Provider == "MINIMAX" && !state.HasMiniMaxKey)
+        {
+            return "Falta configurar la clave API de MiniMax.";
+        }
+
         if (string.IsNullOrWhiteSpace(state.Model))
         {
             return "Falta seleccionar el modelo de IA.";
@@ -1591,6 +1643,8 @@ public sealed class AtlasAiService : IAtlasAiService
             HasOpenRouterKey: !string.IsNullOrWhiteSpace(GetValue(config, "openrouter_api_key")),
             ProtectedOpenAiApiKey: GetValue(config, "openai_api_key"),
             HasOpenAiKey: !string.IsNullOrWhiteSpace(GetValue(config, "openai_api_key")),
+            ProtectedMiniMaxApiKey: GetValue(config, "minimax_api_key"),
+            HasMiniMaxKey: !string.IsNullOrWhiteSpace(GetValue(config, "minimax_api_key")),
             RequestsPerMinute: Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_minute"), AiConfigurationDefaults.RequestsPerMinute)),
             RequestsPerHour: Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_hour"), AiConfigurationDefaults.RequestsPerHour)),
             RequestsPerDay: Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_day"), AiConfigurationDefaults.RequestsPerDay)),
@@ -1609,7 +1663,12 @@ public sealed class AtlasAiService : IAtlasAiService
     }
 
     private static string GetProtectedApiKey(IaGovernanceState state) =>
-        state.Provider == "OPENAI" ? state.ProtectedOpenAiApiKey : state.ProtectedOpenRouterApiKey;
+        state.Provider switch
+        {
+            "OPENAI" => state.ProtectedOpenAiApiKey,
+            "MINIMAX" => state.ProtectedMiniMaxApiKey,
+            _ => state.ProtectedOpenRouterApiKey
+        };
 
     private static string ProviderRuntimeModel(IaGovernanceState state) =>
         state.Provider == "OPENROUTER" ? AiConfiguration.ResolveOpenRouterRuntimeModel(state.Model) : state.Model;
@@ -1625,16 +1684,31 @@ public sealed class AtlasAiService : IAtlasAiService
     }
 
     private static string HttpClientName(IaGovernanceState state) =>
-        state.Provider == "OPENAI" ? "openai" : "openrouter";
+        state.Provider switch
+        {
+            "OPENAI" => "openai",
+            "MINIMAX" => "minimax",
+            _ => "openrouter"
+        };
 
     private static string FallbackHttpClientName(IaGovernanceState state) =>
         HttpClientName(state) + "-fallback";
 
     private static string ProviderDisplayName(IaGovernanceState state) =>
-        state.Provider == "OPENAI" ? "OpenAI" : "OpenRouter";
+        state.Provider switch
+        {
+            "OPENAI" => "OpenAI",
+            "MINIMAX" => "MiniMax",
+            _ => "OpenRouter"
+        };
 
     private static string ProviderHostName(IaGovernanceState state) =>
-        state.Provider == "OPENAI" ? "api.openai.com" : "openrouter.ai";
+        state.Provider switch
+        {
+            "OPENAI" => "api.openai.com",
+            "MINIMAX" => "api.minimax.io",
+            _ => "openrouter.ai"
+        };
 
     private static string BuildProviderHttpErrorMessage(IaGovernanceState state, int statusCode, string? providerError, int? retryAfterSeconds = null)
     {
@@ -2484,7 +2558,7 @@ public sealed class AtlasAiService : IAtlasAiService
         "revision", "revisión", "importacion", "importación", "exportacion", "exportación",
         "dashboard", "configuracion", "configuración", "permiso", "permisos", "usuario",
         "usuarios", "alerta", "alertas", "backup", "auditoria", "auditoría", "excel",
-        "xlsx", "csv", "proveedor", "modelo", "api key", "openrouter", "openai", "ia financiera"
+        "xlsx", "csv", "proveedor", "modelo", "api key", "openrouter", "openai", "minimax", "ia financiera"
     ];
 
     private static readonly string[] AllowedMetaPhrases =
@@ -2666,6 +2740,8 @@ public sealed class AtlasAiService : IAtlasAiService
         bool HasOpenRouterKey,
         string ProtectedOpenAiApiKey,
         bool HasOpenAiKey,
+        string ProtectedMiniMaxApiKey,
+        bool HasMiniMaxKey,
         int RequestsPerMinute,
         int RequestsPerHour,
         int RequestsPerDay,

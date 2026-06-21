@@ -1,5 +1,41 @@
 # Documentacion tecnica
 
+## 2026-06-21 - V-02-02 - Proveedor IA MiniMax M3/M2.7
+
+### Que cambio
+
+- Atlas Balance admite `MINIMAX` como tercer proveedor IA junto a `OPENROUTER` y `OPENAI`.
+- Modelos permitidos para MiniMax: `MiniMax-M3` y `MiniMax-M2.7`.
+- `Program.cs` registra los clientes HTTP `minimax` y `minimax-fallback` contra `https://api.minimax.io/v1/`.
+- `AtlasAiService` llama a `chat/completions` con formato OpenAI-compatible. Para MiniMax usa `max_completion_tokens`, `reasoning_split=true` y, en `MiniMax-M3`, `thinking: { type: "disabled" }` para reducir razonamiento visible.
+- La clave se guarda en `CONFIGURACION.minimax_api_key`, protegida por `ISecretProtector`, redactada en auditoria y expuesta al frontend solo como `minimax_api_key_configurada`.
+- `Configuracion > Revision e IA` permite elegir MiniMax, pegar su API key y seleccionar M3 o M2.7. El chat IA muestra MiniMax y permite alternar esos modelos.
+- Se anade la migracion `20260621190000_AddMiniMaxProviderConfig`.
+
+### Por que
+
+MiniMax no es un slug de OpenRouter aqui. Es otro endpoint, otra clave, otra facturacion y otra politica de datos. Mezclarlo con OpenRouter habria parecido funcionar hasta que hubiera que depurar cuota, privacidad o errores de proveedor.
+
+Se verifico la documentacion oficial de MiniMax: la API compatible OpenAI usa `OPENAI_BASE_URL=https://api.minimax.io/v1`, `POST /v1/chat/completions`, y lista `MiniMax-M3` y `MiniMax-M2.7` como modelos disponibles. La misma documentacion marca `max_tokens` como legado y recomienda `max_completion_tokens`.
+
+Fuentes consultadas:
+- `https://platform.minimax.io/docs/api-reference/text-chat-openai`
+- `https://platform.minimax.io/docs/api-reference/text-openai-api`
+- `https://platform.minimax.io/docs/guides/quickstart-preparation`
+
+### Verificacion
+
+- Tests MiniMax focalizados: `dotnet test ... --filter "FullyQualifiedName~Update_Should_Accept_MiniMax|FullyQualifiedName~AskAsync_Should_Use_MiniMax"`: 3/3 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd exec tsc -- --noEmit`: OK.
+- Frontend `npm.cmd run build`: OK.
+- `git diff --check`: OK, con avisos CRLF de Git no bloqueantes.
+
+### Limite real
+
+- La suite focalizada amplia `AtlasAiServiceTests|ConfiguracionControllerTests` compilo pero quedo 73/76: dos fallos de `ConfiguracionControllerTests` ya documentados y un test de ranking trimestral sensible a la fecha actual. No son fallos de MiniMax.
+- No se hizo llamada real a MiniMax porque no hay API key en el entorno y no se deben inventar ni documentar secretos.
+
 ## 2026-06-09 - V-02-02 - Datos demo de desarrollo
 
 ### Que cambio

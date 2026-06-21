@@ -145,6 +145,7 @@ public static class SeedData
             ["ai_model"] = ("", "string", "Modelo de IA seleccionado"),
             ["openrouter_api_key"] = ("", "string", "Clave API de OpenRouter protegida"),
             ["openai_api_key"] = ("", "string", "Clave API de OpenAI protegida"),
+            ["minimax_api_key"] = ("", "string", "Clave API de MiniMax protegida"),
             ["ai_requests_per_minute"] = ("6", "int", "Consultas maximas de IA por usuario y minuto"),
             ["ai_requests_per_hour"] = ("30", "int", "Consultas maximas de IA por usuario y hora"),
             ["ai_requests_per_day"] = ("60", "int", "Consultas maximas de IA por usuario y dia"),

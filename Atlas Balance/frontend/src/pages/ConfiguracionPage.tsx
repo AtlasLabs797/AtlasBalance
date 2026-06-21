@@ -86,6 +86,8 @@ export default function ConfiguracionPage() {
       openrouter_api_key_configurada: false,
       openai_api_key: '',
       openai_api_key_configurada: false,
+      minimax_api_key: '',
+      minimax_api_key_configurada: false,
       model: OPENROUTER_AUTO_MODEL,
       habilitada: false,
       usuario_puede_usar: false,
@@ -175,6 +177,8 @@ export default function ConfiguracionPage() {
         openrouter_api_key_configurada: false,
         openai_api_key: '',
         openai_api_key_configurada: false,
+        minimax_api_key: '',
+        minimax_api_key_configurada: false,
         model: OPENROUTER_AUTO_MODEL,
         habilitada: false,
         usuario_puede_usar: false,
@@ -217,6 +221,7 @@ export default function ConfiguracionPage() {
           model: normalizeAiModel(loadedIaProvider, loadedIa.model),
           openrouter_api_key: '',
           openai_api_key: '',
+          minimax_api_key: '',
         },
       });
       setSmtpTo(cfg.data.smtp.from);
@@ -297,6 +302,7 @@ export default function ConfiguracionPage() {
         model: normalizeAiModel(refreshed.data.ia?.provider ?? prev.ia.provider, refreshed.data.ia?.model ?? prev.ia.model),
         openrouter_api_key: '',
         openai_api_key: '',
+        minimax_api_key: '',
       },
       smtp: { ...(refreshed.data.smtp ?? prev.smtp), password: '' },
     }));
@@ -569,8 +575,19 @@ export default function ConfiguracionPage() {
     ? openRouterModels.map((model) => ({ value: model.id, label: model.nombre || model.id }))
     : aiModelOptions;
   const aiUsesOpenAi = selectedAiProvider === 'OPENAI';
-  const aiApiKeyValue = aiUsesOpenAi ? config.ia.openai_api_key : config.ia.openrouter_api_key;
-  const aiApiKeyConfigured = aiUsesOpenAi ? config.ia.openai_api_key_configurada : config.ia.openrouter_api_key_configurada;
+  const aiUsesMiniMax = selectedAiProvider === 'MINIMAX';
+  const aiUsesOpenRouter = selectedAiProvider === 'OPENROUTER';
+  const aiProviderLabel = aiUsesOpenAi ? 'OpenAI' : aiUsesMiniMax ? 'MiniMax' : 'OpenRouter';
+  const aiApiKeyValue = aiUsesOpenAi
+    ? config.ia.openai_api_key
+    : aiUsesMiniMax
+      ? config.ia.minimax_api_key
+      : config.ia.openrouter_api_key;
+  const aiApiKeyConfigured = aiUsesOpenAi
+    ? config.ia.openai_api_key_configurada
+    : aiUsesMiniMax
+      ? config.ia.minimax_api_key_configurada
+      : config.ia.openrouter_api_key_configurada;
 
   return (
     <section className="config-page">
@@ -810,30 +827,24 @@ export default function ConfiguracionPage() {
                   onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value) } }))}
                 />
                 <label className="config-field">
-                  <span>{aiUsesOpenAi ? 'Clave API de OpenAI' : 'Clave API de OpenRouter'}</span>
+                  <span>Clave API de {aiProviderLabel}</span>
                   <input
                     type="password"
-                    placeholder={aiApiKeyConfigured ? 'Dejar en blanco para conservar' : `Pega la clave API de ${aiUsesOpenAi ? 'OpenAI' : 'OpenRouter'}`}
+                    placeholder={aiApiKeyConfigured ? 'Dejar en blanco para conservar' : `Pega la clave API de ${aiProviderLabel}`}
                     value={aiApiKeyValue}
                     onChange={(e) =>
                       setConfig((p) => ({
                         ...p,
                         ia: aiUsesOpenAi
                           ? { ...p.ia, openai_api_key: e.target.value }
-                          : { ...p.ia, openrouter_api_key: e.target.value },
+                          : aiUsesMiniMax
+                            ? { ...p.ia, minimax_api_key: e.target.value }
+                            : { ...p.ia, openrouter_api_key: e.target.value },
                       }))
                     }
                   />
                 </label>
-                {aiUsesOpenAi ? (
-                  <AppSelect
-                    className="config-inline-select"
-                    label="Modelo"
-                    value={selectedAiModel}
-                    options={aiModelOptions}
-                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
-                  />
-                ) : (
+                {aiUsesOpenRouter ? (
                   <label className="config-field">
                     <span>Modelo</span>
                     <input
@@ -850,6 +861,14 @@ export default function ConfiguracionPage() {
                       ))}
                     </datalist>
                   </label>
+                ) : (
+                  <AppSelect
+                    className="config-inline-select"
+                    label="Modelo"
+                    value={selectedAiModel}
+                    options={aiModelOptions}
+                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
+                  />
                 )}
               </div>
               <p className={config.ia.configurada ? 'config-note' : 'config-note config-note--warning'}>

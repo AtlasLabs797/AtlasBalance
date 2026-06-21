@@ -7,6 +7,8 @@ public static class AiConfiguration
     public const string OpenRouterDefaultModel = "nvidia/nemotron-3-super-120b-a12b:free";
     public const string OpenRouterGptOss120BModel = "openai/gpt-oss-120b:free";
     public const string DefaultOpenAiModel = "gpt-4o-mini";
+    public const string DefaultMiniMaxModel = "MiniMax-M3";
+    public const string MiniMaxM27Model = "MiniMax-M2.7";
 
     private static readonly string[] SuggestedOpenRouterModels =
     [
@@ -26,8 +28,15 @@ public static class AiConfiguration
         "gpt-4o"
     ];
 
+    private static readonly string[] AllowedMiniMaxModels =
+    [
+        DefaultMiniMaxModel,
+        MiniMaxM27Model
+    ];
+
     public static IReadOnlyList<string> OpenRouterModels => SuggestedOpenRouterModels;
     public static IReadOnlyList<string> OpenAiModels => AllowedOpenAiModels;
+    public static IReadOnlyList<string> MiniMaxModels => AllowedMiniMaxModels;
 
     public static bool IsAllowedOpenRouterModel(string? model)
     {
@@ -44,6 +53,16 @@ public static class AiConfiguration
         return AllowedOpenAiModels.Any(x => string.Equals(x, model.Trim(), StringComparison.Ordinal));
     }
 
+    public static bool IsAllowedMiniMaxModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return false;
+        }
+
+        return AllowedMiniMaxModels.Any(x => string.Equals(x, model.Trim(), StringComparison.Ordinal));
+    }
+
     public static bool IsAllowedModel(string? provider, string? model)
     {
         var normalized = NormalizeProvider(provider);
@@ -51,6 +70,7 @@ public static class AiConfiguration
         {
             "OPENROUTER" => IsAllowedOpenRouterModel(model),
             "OPENAI" => IsAllowedOpenAiModel(model),
+            "MINIMAX" => IsAllowedMiniMaxModel(model),
             _ => false
         };
     }
@@ -58,7 +78,7 @@ public static class AiConfiguration
     public static bool IsSupportedProvider(string? provider)
     {
         var normalized = NormalizeProvider(provider);
-        return normalized is "OPENROUTER" or "OPENAI";
+        return normalized is "OPENROUTER" or "OPENAI" or "MINIMAX";
     }
 
     public static string NormalizeModel(string? provider, string? model)
@@ -69,6 +89,7 @@ public static class AiConfiguration
         {
             "OPENROUTER" => IsValidOpenRouterModelId(normalizedModel) ? normalizedModel : OpenRouterAutoModel,
             "OPENAI" => IsAllowedOpenAiModel(normalizedModel) ? normalizedModel : DefaultOpenAiModel,
+            "MINIMAX" => IsAllowedMiniMaxModel(normalizedModel) ? normalizedModel : DefaultMiniMaxModel,
             _ => normalizedModel
         };
     }

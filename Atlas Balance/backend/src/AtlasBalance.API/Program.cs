@@ -151,6 +151,18 @@ builder.Services.AddHttpClient("openai-fallback", client =>
     client.Timeout = TimeSpan.FromSeconds(45);
 })
     .ConfigurePrimaryHttpMessageHandler(() => CreateAiHttpHandler(useProxy: false, proxyUrl: null));
+builder.Services.AddHttpClient("minimax", client =>
+{
+    client.BaseAddress = new Uri("https://api.minimax.io/v1/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+})
+    .ConfigurePrimaryHttpMessageHandler(() => CreateAiHttpHandler(primaryAiUsesProxy, aiProxyUrl));
+builder.Services.AddHttpClient("minimax-fallback", client =>
+{
+    client.BaseAddress = new Uri("https://api.minimax.io/v1/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+})
+    .ConfigurePrimaryHttpMessageHandler(() => CreateAiHttpHandler(useProxy: false, proxyUrl: null));
 
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
@@ -755,7 +767,8 @@ static void ProtectExistingConfigurationSecrets(AppDbContext dbContext, ISecretP
         "smtp_password",
         "exchange_rate_api_key",
         "openrouter_api_key",
-        "openai_api_key"
+        "openai_api_key",
+        "minimax_api_key"
     };
 
     var changed = false;

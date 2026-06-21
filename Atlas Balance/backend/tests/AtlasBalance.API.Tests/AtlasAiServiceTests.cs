@@ -1425,6 +1425,61 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
+    public async Task AskAsync_Should_Use_MiniMax_M3_Provider_With_Server_Api_Key()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db, provider: "MINIMAX", model: AiConfiguration.DefaultMiniMaxModel);
+        var httpFactory = new CapturingHttpClientFactory(
+            responseBody: $"{{\"model\":\"{AiConfiguration.DefaultMiniMaxModel}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db),
+            new AuditService(db));
+
+        var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
+
+        result.Provider.Should().Be("MINIMAX");
+        result.Model.Should().Be(AiConfiguration.DefaultMiniMaxModel);
+        httpFactory.RequestCount.Should().Be(1);
+        httpFactory.LastClientName.Should().Be("minimax");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.DefaultMiniMaxModel}\"");
+        httpFactory.LastPayload.Should().Contain("\"max_completion_tokens\":100");
+        httpFactory.LastPayload.Should().Contain("\"reasoning_split\":true");
+        httpFactory.LastPayload.Should().Contain("\"thinking\":{\"type\":\"disabled\"}");
+        httpFactory.LastPayload.Should().NotContain("\"max_tokens\"");
+        httpFactory.LastPayload.Should().NotContain("\"zdr\"");
+        var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsulta);
+        audit.DetallesJson.Should().Contain("\"provider\":\"MINIMAX\"");
+        audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.DefaultMiniMaxModel}\"");
+    }
+
+    [Fact]
+    public async Task AskAsync_Should_Use_MiniMax_M27_Without_DisableThinking_Payload()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db, provider: "MINIMAX", model: AiConfiguration.MiniMaxM27Model);
+        var httpFactory = new CapturingHttpClientFactory(
+            responseBody: $"{{\"model\":\"{AiConfiguration.MiniMaxM27Model}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db),
+            new AuditService(db));
+
+        var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
+
+        result.Provider.Should().Be("MINIMAX");
+        result.Model.Should().Be(AiConfiguration.MiniMaxM27Model);
+        httpFactory.LastClientName.Should().Be("minimax");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.MiniMaxM27Model}\"");
+        httpFactory.LastPayload.Should().Contain("\"reasoning_split\":true");
+        httpFactory.LastPayload.Should().NotContain("\"thinking\"");
+    }
+
+    [Fact]
     public async Task AskAsync_Should_Send_OpenRouter_Auto_As_Exact_Model()
     {
         await using var db = BuildDbContext();
@@ -1731,6 +1786,7 @@ public class AtlasAiServiceTests
             new Configuracion { Clave = "ai_provider", Valor = provider, Tipo = "string", Descripcion = "Proveedor IA" },
             new Configuracion { Clave = "openrouter_api_key", Valor = "test-key", Tipo = "secret", Descripcion = "API key" },
             new Configuracion { Clave = "openai_api_key", Valor = "test-openai-key", Tipo = "secret", Descripcion = "API key OpenAI" },
+            new Configuracion { Clave = "minimax_api_key", Valor = "test-minimax-key", Tipo = "secret", Descripcion = "API key MiniMax" },
             new Configuracion { Clave = "ai_model", Valor = model, Tipo = "string", Descripcion = "Modelo IA" },
             new Configuracion { Clave = "ai_max_output_tokens", Valor = "100", Tipo = "int", Descripcion = "Salida" },
             new Configuracion { Clave = "ai_max_context_rows", Valor = maxContextRows.ToString(), Tipo = "int", Descripcion = "Contexto" });
@@ -1788,7 +1844,12 @@ public class AtlasAiServiceTests
             LastClientName = name;
             return new HttpClient(_handler)
             {
-                BaseAddress = new Uri(name == "openai" ? "https://openai.test/v1/" : "https://openrouter.test/api/v1/")
+                BaseAddress = new Uri(name switch
+                {
+                    "openai" => "https://openai.test/v1/",
+                    "minimax" => "https://minimax.test/v1/",
+                    _ => "https://openrouter.test/api/v1/"
+                })
             };
         }
     }
@@ -1853,7 +1914,9 @@ public class AtlasAiServiceTests
             {
                 BaseAddress = new Uri(name.StartsWith("openai", StringComparison.Ordinal)
                     ? "https://openai.test/v1/"
-                    : "https://openrouter.test/api/v1/")
+                    : name.StartsWith("minimax", StringComparison.Ordinal)
+                        ? "https://minimax.test/v1/"
+                        : "https://openrouter.test/api/v1/")
             };
         }
     }

@@ -142,7 +142,7 @@ Antes de publicar o entregar una base local, ejecuta la purga de entrega desde l
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Purge-DeliveryData.ps1" -ConfirmDeliveryPurge
 ```
 
-Esto borra usuarios, titulares, cuentas, extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien deja vacias las claves SMTP, OpenRouter, OpenAI y tipos de cambio externos.
+Esto borra usuarios, titulares, cuentas, extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien deja vacias las claves SMTP, OpenRouter, OpenAI, MiniMax y tipos de cambio externos.
 
 No ejecutes esta purga contra una base de cliente en produccion salvo que quieras dejarla vacia. Su nombre no es decorativo.
 
@@ -341,19 +341,21 @@ Atlas Balance tambien filtra razonamiento interno del proveedor. No deberias ver
 
 Si el proveedor externo devuelve algo que Atlas Balance no puede usar, el error debe indicar una categoria tecnica corta, por ejemplo `invalid_json` o `unsupported_content`, en vez de repetir un mensaje generico de respuesta malformada.
 
-Si falla la conexion con OpenRouter u OpenAI, el chat muestra un error generico. El administrador puede revisar la auditoria, donde solo queda una categoria tecnica segura como `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`; no se muestran hostnames internos, proxy, puertos, certificados, prompt, respuesta completa ni API key.
+Si falla la conexion con OpenRouter, OpenAI o MiniMax, el chat muestra un error generico. El administrador puede revisar la auditoria, donde solo queda una categoria tecnica segura como `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`; no se muestran hostnames internos, proxy, puertos, certificados, prompt, respuesta completa ni API key.
 
 En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva. El selector de modelo queda discreto en la cabecera junto al proveedor y cambia el modelo solo para las siguientes consultas de esa conversacion; no modifica la configuracion global de la app.
 
 El chat esta limitado a Atlas Balance, funcionamiento de la app y datos financieros disponibles. Puede responder sobre gastos, ingresos, importes, montos, Seguridad Social, impuestos, comisiones, seguros, recibos, facturas, nominas, cuotas, cargos y cobros si esos datos estan en el contexto financiero accesible para tu usuario. Si preguntas por recetas, cocina, programacion, noticias, ocio, salud, asesoramiento legal externo o cualquier asunto externo, la app debe rechazar la consulta.
 
-En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter` u `OpenAI`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta.
+En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter`, `OpenAI` o `MiniMax`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta.
 
 Para OpenRouter, puedes dejar `Auto (gratis permitido)`. Atlas Balance guarda `openrouter/auto`, pero no usa el Auto Router abierto de OpenRouter porque puede chocar con las restricciones de modelos de tu cuenta. En su lugar, usa fallback con un maximo de 3 modelos por consulta, que es el limite efectivo de OpenRouter: `Nemotron 3 Super (free)`, `Gemma 4 31B (free)` y `MiniMax M2.5 (free)`. Si quieres forzar otro modelo gratis permitido, el selector del chat y el de Configuracion tambien muestran `gpt-oss-120b (free)`, `GLM 4.5 Air (free)` y `Qwen3 Coder 480B A35B (free)`.
 
+Para MiniMax, los modelos soportados son `MiniMax-M3` y `MiniMax-M2.7`. Atlas Balance llama directamente a `https://api.minimax.io/v1/chat/completions` con API key de servidor; no lo trata como slug de OpenRouter. `MiniMax-M3` se envia con `thinking` desactivado y `reasoning_split=true`; `MiniMax-M2.7` mantiene el comportamiento del proveedor porque MiniMax no permite desactivar thinking en la familia M2.x.
+
 Aviso serio: Atlas Balance envia a OpenRouter `zdr=true` y `data_collection=deny` en cada consulta. Si un modelo gratis no puede cumplir esa politica de privacidad, la consulta debe fallar. Eso es molesto, pero sacar finanzas a un proveedor con retencion seria peor.
 
-El chat interno usa una API key de servidor para llamar a OpenAI u OpenRouter.
+El chat interno usa una API key de servidor para llamar a OpenRouter, OpenAI o MiniMax.
 
 Si el servidor necesita proxy corporativo para salir a internet, configuralo en `appsettings.Production.json` con `Ia:UseSystemProxy=true` o con `Ia:ProxyUrl`. Por defecto Atlas Balance no usa proxies heredados de variables de entorno para la IA, porque ya provocaron errores falsos de OpenRouter.
 

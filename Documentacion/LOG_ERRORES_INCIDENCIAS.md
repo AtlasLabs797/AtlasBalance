@@ -1,5 +1,19 @@
 # Log de errores e incidencias
 
+## 2026-06-21 - V-02-02 - Validacion MiniMax: suite amplia IA/Configuracion sigue roja
+
+- Contexto: alta de MiniMax como proveedor IA con modelos `MiniMax-M3` y `MiniMax-M2.7`.
+- Incidencias:
+  - El filtro focalizado MiniMax paso 3/3.
+  - El filtro amplio `AtlasAiServiceTests|ConfiguracionControllerTests` fallo 3 tests: `ConfiguracionControllerTests.Update_Should_Normalize_Unknown_OpenRouter_Model_To_Auto`, `ConfiguracionControllerTests.Get_Should_Not_Return_SmtpPassword` y `AtlasAiServiceTests.AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking`.
+  - Los dos fallos de Configuracion ya estaban documentados como deuda tras permitir modelos OpenRouter arbitrarios y cambiar MFA recordado.
+  - El fallo de ranking IA es sensible a la fecha actual: con fecha 2026-06-21 el test espera datos de trimestre que no existen en su fixture para `01/04/2026 a 21/06/2026`.
+- Decision:
+  - No se reintento la misma via mas de dos veces.
+  - Se mantuvo la verificacion MiniMax acotada y se registro la deuda restante.
+  - No se llamo verde a la suite amplia.
+- Regla: si una suite amplia falla por deuda ajena, nombra los tests y ejecuta un filtro focalizado que pruebe exactamente el cambio.
+
 ## 2026-06-09 - V-02-02 - Captura Playwright de mockup HTML bloqueada por navegador no instalado
 
 - Contexto: validacion visual del mockup `Documentacion/Diseno/mockups/atlas-balance-post-uiux-v02-02.html`.

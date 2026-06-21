@@ -8,6 +8,69 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-21 - V-02-02 - Proveedor IA MiniMax M3/M2.7
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se anadio `MINIMAX` como proveedor IA propio, no como alias de OpenRouter.
+- Se incorporaron los modelos `MiniMax-M3` y `MiniMax-M2.7` en backend, frontend y chat.
+- Se agrego configuracion protegida `minimax_api_key`, migracion EF y seed idempotente.
+- `AtlasAiService` llama a `chat/completions` en `https://api.minimax.io/v1/` con payload OpenAI-compatible, `max_completion_tokens` y `reasoning_split=true`.
+- `MiniMax-M3` se envia con `thinking: { type: "disabled" }`; `MiniMax-M2.7` no recibe ese campo porque MiniMax documenta que M2.x no permite desactivar thinking.
+- La UI de Configuracion y el panel IA seleccionan modelos MiniMax mediante selector cerrado.
+
+**Fuentes externas revisadas:**
+- `https://platform.minimax.io/docs/guides/models-intro`
+- `https://platform.minimax.io/docs/api-reference/text-chat-openai`
+- `https://platform.minimax.io/docs/api-reference/text-openai-api`
+- `https://platform.minimax.io/docs/guides/quickstart-preparation`
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260621190000_AddMiniMaxProviderConfig.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/frontend/src/utils/aiModels.ts`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/documentacion.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Comandos ejecutados:**
+- Busqueda web en documentacion oficial de MiniMax.
+- Lectura obligatoria de `CLAUDE.md`, version actual, `v-02-02.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~Update_Should_Accept_MiniMax|FullyQualifiedName~AskAsync_Should_Use_MiniMax"`.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false --filter "FullyQualifiedName~AtlasAiServiceTests|FullyQualifiedName~ConfiguracionControllerTests"`.
+- `npm.cmd run lint`.
+- `npm.cmd exec tsc -- --noEmit`.
+- `npm.cmd run build`.
+- `git diff --check`.
+
+**Resultado de verificacion:**
+- Tests MiniMax focalizados: 3/3 OK.
+- Frontend lint: OK.
+- TypeScript: OK.
+- Frontend build: OK.
+- `git diff --check`: OK con avisos CRLF habituales.
+- Suite amplia `AtlasAiServiceTests|ConfiguracionControllerTests`: 73 OK / 3 fallos. Fallan dos tests de Configuracion ya conocidos y uno de ranking IA sensible a la fecha actual. No bloquea la cobertura MiniMax, pero bloquea llamar verde a esa suite.
+
+**Pendientes:**
+- No se hizo llamada real a MiniMax porque no hay API key en entorno. Siguiente validacion real: configurar `minimax_api_key` en servidor y probar una consulta con `MiniMax-M3` y otra con `MiniMax-M2.7`.
+- Corregir deuda de tests documentada antes de vender V-02-02 como release limpio.
+
+---
 ## 2026-06-09 - V-02-02 - Mockup HTML post-auditoria UI/UX
 
 **Version:** V-02-02

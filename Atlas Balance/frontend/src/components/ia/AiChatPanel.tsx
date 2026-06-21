@@ -68,7 +68,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     [modelOptions],
   );
   const activeModel = normalizeAiModel(selectedProvider, selectedModel || configModel);
-  const providerLabel = selectedProvider === 'OPENAI' ? 'OpenAI' : 'OpenRouter';
+  const providerLabel = selectedProvider === 'OPENAI' ? 'OpenAI' : selectedProvider === 'MINIMAX' ? 'MiniMax' : 'OpenRouter';
 
   useEffect(() => {
     let mounted = true;
@@ -230,7 +230,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
           {canAsk ? (
             <div className="ai-chat-toolbar" aria-label="Opciones de consulta IA">
               <span className="ai-chat-provider">{providerLabel}</span>
-              {selectedProvider === 'OPENAI' ? (
+              {selectedProvider !== 'OPENROUTER' ? (
                 <AppSelect
                   value={activeModel}
                   options={chatModelOptions}
