@@ -240,14 +240,14 @@ function ComisionesTable({
         <tbody>
           {rows.map((item) => (
             <tr key={item.extracto_id}>
-              <td>{item.titular}</td>
-              <td>{item.cuenta}</td>
-              <td className="revision-cell-fixed">{formatDate(item.fecha)}</td>
-              <td className="revision-cell-money">
+              <td data-label="Titular">{item.titular}</td>
+              <td data-label="Cuenta">{item.cuenta}</td>
+              <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
+              <td data-label="Monto" className="revision-cell-money">
                 <SignedAmount value={item.monto}>{formatCurrency(item.monto, item.divisa)}</SignedAmount>
               </td>
-              <td title={item.concepto}>{item.concepto}</td>
-              <td>
+              <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
+              <td data-label="Revision">
                 <RevisionComisionActions
                   item={item}
                   busy={busyId === item.extracto_id}
@@ -294,14 +294,14 @@ function SegurosTable({
         <tbody>
           {rows.map((item) => (
             <tr key={item.extracto_id}>
-              <td>{item.titular}</td>
-              <td>{item.cuenta}</td>
-              <td className="revision-cell-fixed">{formatDate(item.fecha)}</td>
-              <td className="revision-cell-money">
+              <td data-label="Titular">{item.titular}</td>
+              <td data-label="Cuenta">{item.cuenta}</td>
+              <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
+              <td data-label="Importe" className="revision-cell-money">
                 <SignedAmount value={item.importe}>{formatCurrency(item.importe, item.divisa)}</SignedAmount>
               </td>
-              <td title={item.concepto}>{item.concepto}</td>
-              <td>
+              <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
+              <td data-label="Estado">
                 <RevisionSeguroActions
                   item={item}
                   busy={busyId === item.extracto_id}

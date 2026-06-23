@@ -215,6 +215,7 @@
   --sidebar-width: 252px;
   --sidebar-collapsed-width: 72px;
   --topbar-height: 68px;
+  --mobile-bottom-nav-height: 78px;
 
   --border-radius-sm: 8px;
   --border-radius-md: 8px;
@@ -259,9 +260,10 @@
 
   --z-dropdown: 100;
   --z-sticky: 200;
+  --z-toast: 260;
+  --z-floating: 280;
   --z-modal-backdrop: 300;
   --z-modal: 400;
-  --z-toast: 500;
   --z-tooltip: 600;
 }
 

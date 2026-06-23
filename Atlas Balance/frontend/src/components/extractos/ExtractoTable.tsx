@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useId } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
@@ -29,6 +29,7 @@ const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'fecha', 'concepto', 
 const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
 const ACTION_COLUMNS = new Set(['checked', 'flagged']);
 const DEFAULT_SELECTED_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda' };
+const DEFAULT_FOCUSED_CELL = { rowIndex: 0, colIndex: 0 };
 
 export default function ExtractoTable({
   rows,
@@ -51,7 +52,9 @@ export default function ExtractoTable({
   const [showFilters, setShowFilters] = useState(false);
   const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
   const [selectedCell, setSelectedCell] = useState(DEFAULT_SELECTED_CELL);
+  const [focusedCell, setFocusedCell] = useState(DEFAULT_FOCUSED_CELL);
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const filtersId = useId();
   const columnsId = useId();
 
@@ -97,6 +100,13 @@ export default function ExtractoTable({
     rowVirtualizer.measure();
   }, [density, rowVirtualizer]);
 
+  useEffect(() => {
+    setFocusedCell((current) => ({
+      rowIndex: clampNumber(current.rowIndex, 0, Math.max(filteredRows.length - 1, 0)),
+      colIndex: clampNumber(current.colIndex, 0, Math.max(activeColumns.length - 1, 0)),
+    }));
+  }, [activeColumns.length, filteredRows.length]);
+
   const gridTemplateColumns = activeColumns.length > 0 ? activeColumns.map(getColumnTrack).join(' ') : '1fr';
   const sheetWidth = activeColumns.reduce((total, column) => total + getColumnWidth(column), 0);
   const sheetRootStyle = {
@@ -105,6 +115,103 @@ export default function ExtractoTable({
   const sheetGridStyle = {
     gridTemplateColumns
   } as CSSProperties;
+
+  const selectCell = (row: Extracto, column: string, colIndex: number) => {
+    if (ACTION_COLUMNS.has(column)) {
+      return;
+    }
+
+    setSelectedCell({
+      ref: getSheetCellReference(row.fila_numero, colIndex),
+      label: getColumnLabel(column),
+      value: getDisplayCellValue(row, column),
+    });
+  };
+
+  const focusGridCell = (rowIndex: number, colIndex: number) => {
+    if (filteredRows.length === 0 || activeColumns.length === 0) {
+      return;
+    }
+
+    const nextCell = {
+      rowIndex: clampNumber(rowIndex, 0, filteredRows.length - 1),
+      colIndex: clampNumber(colIndex, 0, activeColumns.length - 1),
+    };
+
+    setFocusedCell(nextCell);
+    rowVirtualizer.scrollToIndex(nextCell.rowIndex, { align: 'auto' });
+
+    window.requestAnimationFrame(() => {
+      cellRefs.current.get(getCellKey(nextCell.rowIndex, nextCell.colIndex))?.focus({ preventScroll: true });
+    });
+  };
+
+  const handleGridCellKeyDown = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    rowIndex: number,
+    colIndex: number,
+  ) => {
+    if (isInteractiveTarget(event.target)) {
+      return;
+    }
+
+    const pageSize = Math.max(
+      1,
+      Math.floor((parentRef.current?.clientHeight ?? 420) / (density === 'compact' ? 34 : 42)),
+    );
+
+    switch (event.key) {
+      case 'ArrowLeft':
+        event.preventDefault();
+        focusGridCell(rowIndex, colIndex - 1);
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        focusGridCell(rowIndex, colIndex + 1);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        focusGridCell(rowIndex - 1, colIndex);
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        focusGridCell(rowIndex + 1, colIndex);
+        break;
+      case 'Home':
+        event.preventDefault();
+        focusGridCell(event.ctrlKey ? 0 : rowIndex, 0);
+        break;
+      case 'End':
+        event.preventDefault();
+        focusGridCell(event.ctrlKey ? filteredRows.length - 1 : rowIndex, activeColumns.length - 1);
+        break;
+      case 'PageUp':
+        event.preventDefault();
+        focusGridCell(rowIndex - pageSize, colIndex);
+        break;
+      case 'PageDown':
+        event.preventDefault();
+        focusGridCell(rowIndex + pageSize, colIndex);
+        break;
+      case 'Enter':
+      case 'F2': {
+        event.preventDefault();
+        const cell = cellRefs.current.get(getCellKey(rowIndex, colIndex));
+        const editButton = cell?.querySelector<HTMLButtonElement>('.cell-edit-button:not(:disabled)');
+        if (editButton) {
+          editButton.click();
+          return;
+        }
+
+        cell
+          ?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(.cell-audit-button):not(:disabled)')
+          ?.focus();
+        break;
+      }
+      default:
+        break;
+    }
+  };
 
   return (
     <section
@@ -177,16 +284,18 @@ export default function ExtractoTable({
         ref={parentRef}
         className="extracto-table-viewport"
         style={sheetRootStyle}
-        role="table"
+        role="grid"
+        aria-label="Extractos de la pagina actual en formato hoja editable"
         aria-rowcount={filteredRows.length + 1}
         aria-colcount={activeColumns.length}
       >
-        <div id={filtersId} className="extracto-table-head" style={sheetGridStyle} role="row">
-          {activeColumns.map((column) => (
+        <div id={filtersId} className="extracto-table-head" style={sheetGridStyle} role="row" aria-rowindex={1}>
+          {activeColumns.map((column, columnIndex) => (
             <div
               key={column}
               className={`cell head ${getColumnClassName(column)}`}
               role="columnheader"
+              aria-colindex={columnIndex + 1}
               aria-sort={sortBy === column ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
             >
               <button
@@ -208,7 +317,7 @@ export default function ExtractoTable({
           ))}
         </div>
 
-        <div className="extracto-table-body">
+        <div className="extracto-table-body" role="rowgroup">
           {loading ? (
             <div className="extracto-empty">
               <PageSkeleton rows={5} variant="table" />
@@ -223,6 +332,7 @@ export default function ExtractoTable({
           ) : (
             <div
               className="extracto-table-spacer"
+              role="presentation"
               style={{
                 height: `${rowVirtualizer.getTotalSize()}px`
               } as CSSProperties}
@@ -240,29 +350,38 @@ export default function ExtractoTable({
                     role="row"
                     aria-rowindex={virtualRow.index + 2}
                   >
-                    {activeColumns.map((column) => (
+                    {activeColumns.map((column, columnIndex) => {
+                      const isFocusedCell =
+                        focusedCell.rowIndex === virtualRow.index && focusedCell.colIndex === columnIndex;
+                      const cellKey = getCellKey(virtualRow.index, columnIndex);
+
+                      return (
                       <div
                         key={`${row.id}-${column}`}
+                        ref={(node) => {
+                          if (node) {
+                            cellRefs.current.set(cellKey, node);
+                          } else {
+                            cellRefs.current.delete(cellKey);
+                          }
+                        }}
                         className={`cell ${getColumnClassName(column)}`}
-                        role="cell"
-                        onClick={() => {
-                          if (!ACTION_COLUMNS.has(column)) {
-                            setSelectedCell({
-                              ref: getSheetCellReference(row.fila_numero, activeColumns.indexOf(column)),
-                              label: getColumnLabel(column),
-                              value: getDisplayCellValue(row, column),
-                            });
+                        role="gridcell"
+                        aria-colindex={columnIndex + 1}
+                        aria-selected={isFocusedCell}
+                        tabIndex={isFocusedCell ? 0 : -1}
+                        onClick={(event) => {
+                          setFocusedCell({ rowIndex: virtualRow.index, colIndex: columnIndex });
+                          selectCell(row, column, columnIndex);
+                          if (event.target === event.currentTarget) {
+                            event.currentTarget.focus();
                           }
                         }}
                         onFocus={() => {
-                          if (!ACTION_COLUMNS.has(column)) {
-                            setSelectedCell({
-                              ref: getSheetCellReference(row.fila_numero, activeColumns.indexOf(column)),
-                              label: getColumnLabel(column),
-                              value: getDisplayCellValue(row, column),
-                            });
-                          }
+                          setFocusedCell({ rowIndex: virtualRow.index, colIndex: columnIndex });
+                          selectCell(row, column, columnIndex);
                         }}
+                        onKeyDown={(event) => handleGridCellKeyDown(event, virtualRow.index, columnIndex)}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           onOpenAudit(row, column);
@@ -290,7 +409,8 @@ export default function ExtractoTable({
                           </button>
                         ) : null}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -300,6 +420,22 @@ export default function ExtractoTable({
       </div>
     </section>
   );
+}
+
+function getCellKey(rowIndex: number, colIndex: number): string {
+  return `${rowIndex}:${colIndex}`;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (max < min) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
+}
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest('button, input, select, textarea, a, [contenteditable="true"]'));
 }
 
 function renderCell({

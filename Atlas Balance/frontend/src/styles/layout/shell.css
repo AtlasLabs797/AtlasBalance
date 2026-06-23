@@ -270,7 +270,7 @@
 .app-main {
   min-width: 0;
   display: grid;
-  grid-template-rows: var(--topbar-height) auto minmax(0, 1fr);
+  grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
 }
 
 .app-main > .app-topbar {
@@ -296,6 +296,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  min-height: var(--topbar-height);
   padding: 0 var(--space-5);
   background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
   border-bottom: 1px solid var(--border-soft);
@@ -312,6 +313,7 @@
 .app-topbar-heading {
   display: grid;
   min-width: 0;
+  overflow: hidden;
 }
 
 .app-topbar-page {
@@ -320,6 +322,9 @@
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-bold);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-topbar-breadcrumb {
@@ -682,6 +687,10 @@
   display: none;
 }
 
+.app-shell--overlay-open .ai-floating-widget {
+  display: none;
+}
+
 @keyframes bottom-sheet-backdrop-in {
   from {
     opacity: 0;
@@ -755,7 +764,7 @@
   }
 }
 
-@media (min-width: 768px) and (max-width: 1023.98px) {
+@media (min-width: 768px) and (max-width: 1199.98px) {
   .app-shell:not(.app-shell--collapsed) {
     grid-template-columns: var(--sidebar-collapsed-width) 1fr;
   }
@@ -779,8 +788,8 @@
   }
 
   .app-main {
-    grid-template-rows: var(--topbar-height) auto minmax(0, 1fr);
-    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+    grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
+    padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
   }
 
   .app-content {
@@ -799,7 +808,7 @@
 
   .app-topbar {
     gap: var(--space-2);
-    padding: 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
   }
 
   .app-topbar-actions {
@@ -822,7 +831,7 @@
   .toast-viewport {
     left: var(--space-2);
     right: var(--space-2);
-    bottom: calc(78px + env(safe-area-inset-bottom) + var(--space-2));
+    bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + var(--space-2));
     max-width: none;
   }
 

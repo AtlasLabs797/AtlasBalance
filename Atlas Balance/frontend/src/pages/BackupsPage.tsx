@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { useBlockingOverlay } from '@/hooks/useBlockingOverlay';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { BackupItem, PaginatedResponse, WatchdogState } from '@/types';
@@ -51,6 +52,7 @@ export default function BackupsPage() {
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [overlayMessage, setOverlayMessage] = useState('No cierres esta ventana; al terminar volverás al inicio de sesión.');
   const restoreOverlayRef = useRef<HTMLDivElement | null>(null);
+  useBlockingOverlay(overlayVisible);
 
   const logout = useAuthStore((state) => state.logout);
 

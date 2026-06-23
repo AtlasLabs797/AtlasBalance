@@ -954,6 +954,7 @@ export default function CuentaDetailPage() {
                       ) : null}
                       <td
                         className="account-cell-fixed account-row-anchor-cell"
+                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
                         onFocus={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
                       >
@@ -1019,6 +1020,7 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
+                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
                         onFocus={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
                       >
@@ -1028,6 +1030,7 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
+                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
                         onFocus={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
                       >

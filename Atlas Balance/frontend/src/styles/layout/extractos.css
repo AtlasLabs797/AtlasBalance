@@ -281,8 +281,11 @@
   line-height: 1.25;
 }
 
-.cell:focus-within {
+.cell:focus,
+.cell:focus-within,
+.cell[aria-selected="true"] {
   z-index: 4;
+  outline: none;
   box-shadow: inset 0 0 0 2px var(--sheet-selected);
 }
 

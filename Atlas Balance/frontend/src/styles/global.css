@@ -222,6 +222,23 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   color: var(--color-text-muted);
 }
 
+.date-picker-native-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.date-picker-native-input {
+  width: 100%;
+}
+
+.date-picker-native-clear {
+  flex: 0 0 auto;
+  min-height: var(--control-height);
+  padding-inline: var(--space-3);
+}
+
 .date-picker-popover {
   position: absolute;
   top: calc(100% + var(--space-2));

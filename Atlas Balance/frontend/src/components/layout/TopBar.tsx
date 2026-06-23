@@ -19,6 +19,7 @@ export function TopBar() {
   const location = useLocation();
   const theme = useUiStore((state) => state.theme);
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
+  const blockingOverlayCount = useUiStore((state) => state.blockingOverlayCount);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const usuario = useAuthStore((state) => state.usuario);
@@ -59,10 +60,10 @@ export function TopBar() {
   };
 
   useEffect(() => {
-    if (!aiAvailable) {
+    if (!aiAvailable || blockingOverlayCount > 0) {
       setChatOpen(false);
     }
-  }, [aiAvailable]);
+  }, [aiAvailable, blockingOverlayCount]);
 
   return (
     <>
@@ -100,13 +101,13 @@ export function TopBar() {
           </button>
         </div>
       </header>
-      {aiAvailable ? (
+      {aiAvailable && blockingOverlayCount === 0 ? (
         <div className="ai-floating-widget">
           <button
             type="button"
             className={`ai-floating-button${chatOpen ? ' ai-floating-button--active' : ''}`}
             onClick={() => setChatOpen((current) => !current)}
-            aria-pressed={chatOpen}
+            aria-expanded={chatOpen}
             aria-label={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
             title={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
           >

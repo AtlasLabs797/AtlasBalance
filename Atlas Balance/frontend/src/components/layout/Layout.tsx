@@ -17,6 +17,7 @@ export function Layout() {
   const location = useLocation();
   const isEmbedded = new URLSearchParams(location.search).get('embedded') === '1';
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
+  const blockingOverlayCount = useUiStore((state) => state.blockingOverlayCount);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const addToast = useUiStore((state) => state.addToast);
   const usuarioId = useAuthStore((state) => state.usuario?.id ?? null);
@@ -29,6 +30,22 @@ export function Layout() {
   const { isToastVisible, isWarningVisible, remainingSeconds, resetTimeout, performLogout } =
     useSessionTimeout();
   const toastShownRef = useRef(false);
+  const hasBlockingOverlay = blockingOverlayCount > 0;
+
+  useEffect(() => {
+    if (!hasBlockingOverlay) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.body.dataset.overlayOpen = 'true';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      delete document.body.dataset.overlayOpen;
+    };
+  }, [hasBlockingOverlay]);
 
   // Show toast warning when inactivity reaches 18 minutes.
   useEffect(() => {
@@ -49,7 +66,7 @@ export function Layout() {
     }
 
     const onResize = () => {
-      setSidebarCollapsed(window.matchMedia('(min-width: 768px) and (max-width: 1023.98px)').matches);
+      setSidebarCollapsed(window.matchMedia('(min-width: 768px) and (max-width: 1199.98px)').matches);
     };
 
     onResize();
@@ -102,7 +119,7 @@ export function Layout() {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}`}>
+    <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}${hasBlockingOverlay ? ' app-shell--overlay-open' : ''}`}>
       <a className="skip-link" href="#main-content">Saltar al contenido</a>
       <Sidebar />
       <div className="app-main">

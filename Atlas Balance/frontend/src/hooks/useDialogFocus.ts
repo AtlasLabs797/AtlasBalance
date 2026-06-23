@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useBlockingOverlay } from '@/hooks/useBlockingOverlay';
 
 const FOCUSABLE_SELECTOR =
   'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
@@ -17,6 +18,7 @@ export function useDialogFocus<T extends HTMLElement>(
   const { initialFocus, onEscape } = options;
   const initialFocusRef = useRef(initialFocus);
   const onEscapeRef = useRef(onEscape);
+  useBlockingOverlay(open);
 
   useEffect(() => {
     initialFocusRef.current = initialFocus;

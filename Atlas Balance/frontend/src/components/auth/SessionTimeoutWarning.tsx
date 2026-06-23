@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 
 interface SessionTimeoutWarningProps {
   open: boolean;
@@ -14,51 +15,9 @@ export const SessionTimeoutWarning: React.FC<SessionTimeoutWarningProps> = ({
   onLogout,
 }) => {
   const continueButtonRef = useRef<HTMLButtonElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<Element | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-
-    triggerRef.current = document.activeElement;
-    window.setTimeout(() => continueButtonRef.current?.focus(), 0);
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') {
-        return;
-      }
-
-      const focusable = Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-        ) ?? []
-      );
-
-      if (focusable.length === 0) {
-        return;
-      }
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      if (triggerRef.current instanceof HTMLElement) {
-        triggerRef.current.focus();
-      }
-    };
-  }, [open]);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
+    initialFocus: () => continueButtonRef.current,
+  });
 
   if (!open) return null;
 
