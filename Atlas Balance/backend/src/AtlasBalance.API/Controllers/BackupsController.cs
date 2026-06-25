@@ -19,17 +19,23 @@ public sealed class BackupsController : ControllerBase
     private readonly AppDbContext _dbContext;
     private readonly IBackupService _backupService;
     private readonly IWatchdogClientService _watchdogClientService;
+    private readonly IBackupConfigurationService _backupConfigurationService;
+    private readonly IGoogleDriveBackupService _googleDriveBackupService;
     private readonly ILogger<BackupsController> _logger;
 
     public BackupsController(
         AppDbContext dbContext,
         IBackupService backupService,
         IWatchdogClientService watchdogClientService,
+        IBackupConfigurationService backupConfigurationService,
+        IGoogleDriveBackupService googleDriveBackupService,
         ILogger<BackupsController>? logger = null)
     {
         _dbContext = dbContext;
         _backupService = backupService;
         _watchdogClientService = watchdogClientService;
+        _backupConfigurationService = backupConfigurationService;
+        _googleDriveBackupService = googleDriveBackupService;
         _logger = logger ?? NullLogger<BackupsController>.Instance;
     }
 
@@ -66,6 +72,15 @@ public sealed class BackupsController : ControllerBase
         var usersMap = await _dbContext.Usuarios.IgnoreQueryFilters()
             .Where(u => userIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.NombreCompleto, cancellationToken);
+        var backupIds = backups.Select(x => x.Id).ToList();
+        var cloudCopies = await _dbContext.BackupCloudCopies
+            .AsNoTracking()
+            .Where(x => backupIds.Contains(x.BackupId))
+            .OrderByDescending(x => x.FechaCreacion)
+            .ToListAsync(cancellationToken);
+        var latestCloudCopies = cloudCopies
+            .GroupBy(x => x.BackupId)
+            .ToDictionary(x => x.Key, x => x.First());
 
         var items = backups.Select(x => new BackupListItemResponse
         {
@@ -77,7 +92,14 @@ public sealed class BackupsController : ControllerBase
             Tipo = x.Tipo.ToString(),
             IniciadoPorId = x.IniciadoPorId,
             IniciadoPorNombre = x.IniciadoPorId.HasValue ? usersMap.GetValueOrDefault(x.IniciadoPorId.Value) : null,
-            Notas = x.Notas
+            Notas = x.Notas,
+            Destino = latestCloudCopies.ContainsKey(x.Id) ? "LOCAL_Y_GOOGLE_DRIVE" : "LOCAL",
+            CloudProvider = latestCloudCopies.GetValueOrDefault(x.Id)?.Provider,
+            CloudEstado = latestCloudCopies.GetValueOrDefault(x.Id)?.Estado,
+            CloudUploadedAt = latestCloudCopies.GetValueOrDefault(x.Id)?.UploadedAt,
+            CloudFileId = latestCloudCopies.GetValueOrDefault(x.Id)?.RemoteFileId,
+            CloudFileName = latestCloudCopies.GetValueOrDefault(x.Id)?.RemoteFileName,
+            CloudErrorMessage = latestCloudCopies.GetValueOrDefault(x.Id)?.ErrorMessage
         }).ToList();
 
         return Ok(new PaginatedResponse<BackupListItemResponse>
@@ -88,6 +110,25 @@ public sealed class BackupsController : ControllerBase
             PageSize = pageSize,
             TotalPages = (int)Math.Ceiling(total / (double)pageSize)
         });
+    }
+
+    [HttpGet("config")]
+    public async Task<IActionResult> GetConfig(CancellationToken cancellationToken)
+    {
+        var response = await _backupConfigurationService.GetAsync(cancellationToken);
+        return Ok(response);
+    }
+
+    [HttpPut("config")]
+    public async Task<IActionResult> UpdateConfig([FromBody] UpdateBackupConfigRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _backupConfigurationService.UpdateAsync(request, GetCurrentUserId(), HttpContext, cancellationToken);
+        if (!result.Success)
+        {
+            return BadRequest(new { error = result.Error });
+        }
+
+        return Ok(new { message = "Configuracion de copias actualizada." });
     }
 
     [HttpPost("manual")]
@@ -108,6 +149,106 @@ public sealed class BackupsController : ControllerBase
         {
             _logger.LogError(ex, "Fallo al crear backup manual");
             return StatusCode(StatusCodes.Status500InternalServerError, new { error = "No se pudo crear la copia de seguridad. Revisa la configuracion del servidor o avisa al administrador." });
+        }
+    }
+
+    [HttpPost("google-drive/link/start")]
+    public async Task<IActionResult> StartGoogleDriveLink(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _googleDriveBackupService.StartLinkAsync(cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo iniciar vinculacion con Google Drive");
+            return BadRequest(new { error = "No se pudo iniciar la vinculacion con Google Drive. Revisa el OAuth Client ID y Client Secret." });
+        }
+    }
+
+    [HttpGet("google-drive/link/{sessionId:guid}")]
+    public async Task<IActionResult> PollGoogleDriveLink(Guid sessionId, CancellationToken cancellationToken)
+    {
+        var response = await _googleDriveBackupService.PollLinkAsync(sessionId, GetCurrentUserId(), HttpContext, cancellationToken);
+        return Ok(response);
+    }
+
+    [HttpPost("google-drive/disconnect")]
+    public async Task<IActionResult> DisconnectGoogleDrive(CancellationToken cancellationToken)
+    {
+        await _googleDriveBackupService.DisconnectAsync(GetCurrentUserId(), HttpContext, cancellationToken);
+        return Ok(new { message = "Google Drive desvinculado." });
+    }
+
+    [HttpPost("google-drive/test")]
+    public async Task<IActionResult> TestGoogleDrive(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _googleDriveBackupService.TestConnectionAsync(cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Prueba de Google Drive fallida");
+            return BadRequest(new { error = "No se pudo validar Google Drive. Vuelve a vincular la cuenta." });
+        }
+    }
+
+    [HttpPost("{id:guid}/google-drive/retry")]
+    public async Task<IActionResult> RetryGoogleDriveUpload(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _googleDriveBackupService.UploadBackupByIdAsync(id, cancellationToken);
+            return Ok(new { message = "Subida a Google Drive completada." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Reintento de subida a Google Drive fallido para backup {BackupId}", id);
+            return BadRequest(new { error = "No se pudo subir esta copia a Google Drive." });
+        }
+    }
+
+    [HttpGet("google-drive/files")]
+    public async Task<IActionResult> ListGoogleDriveFiles(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var files = await _googleDriveBackupService.ListFilesAsync(cancellationToken);
+            return Ok(new { data = files });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudieron listar copias en Google Drive");
+            return BadRequest(new { error = "No se pudieron listar las copias de Google Drive." });
+        }
+    }
+
+    [HttpPost("google-drive/import")]
+    public async Task<IActionResult> ImportGoogleDriveFile([FromBody] GoogleDriveImportRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.FileId))
+        {
+            return BadRequest(new { error = "Debe indicar el archivo de Google Drive." });
+        }
+
+        try
+        {
+            var backup = await _googleDriveBackupService.ImportAsync(request.FileId, GetCurrentUserId(), HttpContext, cancellationToken);
+            return Ok(new
+            {
+                backup.Id,
+                Estado = backup.Estado.ToString(),
+                RutaArchivo = Path.GetFileName(backup.RutaArchivo),
+                backup.TamanioBytes
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo importar copia desde Google Drive");
+            return BadRequest(new { error = "No se pudo importar la copia desde Google Drive." });
         }
     }
 

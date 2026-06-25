@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -413,7 +414,7 @@ export default function FormatosImportacionPage() {
   };
 
   return (
-    <section className="phase2-page">
+    <section className="phase2-page formatos-page">
       <header className="phase2-header">
         <h1>Formatos de Importación</h1>
         {isAdmin && <button type="button" className="users-primary-button" onClick={resetForm}>Nuevo Formato</button>}
@@ -491,22 +492,11 @@ export default function FormatosImportacionPage() {
                     </td>
                     <td>
                       {(item.mapeo_json?.columnas_extra?.length ?? 0) === 0
-                        ? <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
+                        ? <span className="import-muted">—</span>
                         : (
-                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-1)' }}>
+                          <span className="formatos-extra-list">
                             {item.mapeo_json!.columnas_extra!.map((col, i) => (
-                              <span
-                                key={i}
-                                style={{
-                                  display: 'inline-block',
-                                  padding: '0.1em 0.45em',
-                                  borderRadius: '0.85em',
-                                  fontSize: 'var(--font-size-xs)',
-                                  background: 'var(--surface-bg-raised)',
-                                  color: 'var(--color-text-secondary)',
-                                  border: '1px solid var(--surface-border)',
-                                }}
-                              >
+                              <span key={i} className="formatos-extra-chip">
                                 {col.nombre}
                               </span>
                             ))}
@@ -588,14 +578,14 @@ export default function FormatosImportacionPage() {
 
             <fieldset>
               <legend>Orden de columnas de importación</legend>
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-2)' }}>
+              <p className="formatos-fieldset-help">
                 Define el orden real del archivo bancario. En dos/tres columnas, Ingreso/Egreso calculan el importe firmado; Importe banco solo valida cuadre.
               </p>
-              <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+              <div className="formatos-column-list">
                 {form.columnas.map((col, index) => (
                   <div key={`${col.tipo}-${index}`} className="extra-col-row">
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                      <strong style={{ minWidth: '2rem', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                    <span className="formatos-column-name">
+                      <strong className="formatos-column-index">
                         [{index}]
                       </strong>
                       {col.tipo === 'base' ? (
@@ -607,11 +597,11 @@ export default function FormatosImportacionPage() {
                           placeholder="Nombre de columna"
                           value={col.nombre}
                           onChange={(e) => updateColumnName(index, e.target.value)}
-                          style={{ flex: 1 }}
+                          className="formatos-column-input"
                         />
                       )}
                     </span>
-                    <div style={{ display: 'flex', gap: 'var(--space-1)', alignItems: 'center' }}>
+                    <div className="formatos-column-actions">
                       <button
                         type="button"
                         className="extra-col-btn-icon"
@@ -620,7 +610,7 @@ export default function FormatosImportacionPage() {
                         title="Mover arriba"
                         aria-label={`Mover columna ${col.nombre} arriba`}
                       >
-                        ↑
+                        <ArrowUp size={16} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -630,7 +620,7 @@ export default function FormatosImportacionPage() {
                         title="Mover abajo"
                         aria-label={`Mover columna ${col.nombre} abajo`}
                       >
-                        ↓
+                        <ArrowDown size={16} aria-hidden="true" />
                       </button>
                       {col.tipo === 'extra' && (
                         <button type="button" onClick={() => removeColumn(index)} aria-label={`Quitar columna ${col.nombre}`}>Quitar</button>
@@ -639,7 +629,7 @@ export default function FormatosImportacionPage() {
                   </div>
                 ))}
               </div>
-              <button type="button" onClick={addExtraColumn} style={{ marginTop: 'var(--space-2)' }}>Añadir columna extra</button>
+              <button type="button" className="formatos-add-column" onClick={addExtraColumn}>Añadir columna extra</button>
             </fieldset>
 
             <label className="users-check-row-item">

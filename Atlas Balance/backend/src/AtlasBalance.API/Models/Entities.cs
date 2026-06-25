@@ -361,6 +361,42 @@ public class Backup : ISoftDelete
     public Guid? DeletedById { get; set; }
 }
 
+public class BackupCloudConnection : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public string Provider { get; set; } = "GOOGLE_DRIVE";
+    public string Estado { get; set; } = "CONNECTED";
+    public string? AccountEmail { get; set; }
+    public string Scope { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public DateTime ConnectedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? LastValidatedAt { get; set; }
+    public string? LastError { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class BackupCloudCopy : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid BackupId { get; set; }
+    public Backup? Backup { get; set; }
+    public Guid? ConnectionId { get; set; }
+    public BackupCloudConnection? Connection { get; set; }
+    public string Provider { get; set; } = "GOOGLE_DRIVE";
+    public string Estado { get; set; } = "PENDING";
+    public string? RemoteFileId { get; set; }
+    public string? RemoteFileName { get; set; }
+    public long? RemoteSizeBytes { get; set; }
+    public string? ChecksumSha256 { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? UploadedAt { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
 public class Exportacion : ISoftDelete
 {
     public Guid Id { get; set; }

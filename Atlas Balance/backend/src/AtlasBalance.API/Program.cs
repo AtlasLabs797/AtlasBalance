@@ -123,6 +123,16 @@ builder.Services.AddHttpClient("watchdog-client", (sp, client) =>
     client.BaseAddress = ResolveWatchdogBaseUri(config["WatchdogSettings:BaseUrl"]);
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+builder.Services.AddHttpClient("google-oauth", client =>
+{
+    client.BaseAddress = new Uri("https://oauth2.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient("google-apis", client =>
+{
+    client.BaseAddress = new Uri("https://www.googleapis.com/");
+    client.Timeout = TimeSpan.FromMinutes(30);
+});
 var useAiSystemProxy = builder.Configuration.GetValue("Ia:UseSystemProxy", false);
 var aiProxyUrl = builder.Configuration["Ia:ProxyUrl"];
 var hasExplicitAiProxy = !string.IsNullOrWhiteSpace(aiProxyUrl);
@@ -208,6 +218,9 @@ builder.Services.AddScoped<IPlazoFijoService, PlazoFijoService>();
 builder.Services.AddScoped<IRevisionService, RevisionService>();
 builder.Services.AddScoped<IAtlasAiService, AtlasAiService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
+builder.Services.AddScoped<IBackupConfigurationService, BackupConfigurationService>();
+builder.Services.AddScoped<IBackupEncryptionService, BackupEncryptionService>();
+builder.Services.AddScoped<IGoogleDriveBackupService, GoogleDriveBackupService>();
 builder.Services.AddScoped<IExportacionService, ExportacionService>();
 builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
 builder.Services.AddScoped<IActualizacionService, ActualizacionService>();
@@ -218,6 +231,7 @@ builder.Services.AddScoped<SyncTiposCambioJob>();
 builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
 builder.Services.AddScoped<LimpiezaAuditoriaJob>();
 builder.Services.AddScoped<BackupWeeklyJob>();
+builder.Services.AddScoped<BackupSchedulerJob>();
 builder.Services.AddScoped<ExportMensualJob>();
 builder.Services.AddScoped<PlazoFijoVencimientoJob>();
 builder.Services.AddScoped<AutoUpdateJob>();
@@ -267,10 +281,11 @@ using (var scope = app.Services.CreateScope())
         job => job.ExecuteAsync(),
         "15 3 * * *");
 
-    recurringJobManager.AddOrUpdate<BackupWeeklyJob>(
-        "backup-weekly",
+    recurringJobManager.RemoveIfExists("backup-weekly");
+    recurringJobManager.AddOrUpdate<BackupSchedulerJob>(
+        "backup-scheduler",
         job => job.ExecuteAsync(),
-        "0 2 * * 0");
+        "*/15 * * * *");
 
     recurringJobManager.AddOrUpdate<ExportMensualJob>(
         "export-mensual",
@@ -768,7 +783,9 @@ static void ProtectExistingConfigurationSecrets(AppDbContext dbContext, ISecretP
         "exchange_rate_api_key",
         "openrouter_api_key",
         "openai_api_key",
-        "minimax_api_key"
+        "minimax_api_key",
+        "google_drive_oauth_client_secret",
+        "backup_cloud_encryption_key"
     };
 
     var changed = false;

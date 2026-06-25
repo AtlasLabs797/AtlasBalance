@@ -317,7 +317,10 @@ export default function ExtractosPage() {
   return (
     <section className="extractos-page">
       <header className="extractos-header">
-        <h1>Extractos</h1>
+        <div className="extractos-heading">
+          <h1>Extractos</h1>
+          <p>Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
+        </div>
         <div className="extractos-filters">
           <AppSelect
             ariaLabel="Titular"

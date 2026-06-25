@@ -14,6 +14,12 @@ const AiChatPanel = lazy(() =>
   import('@/components/ia/AiChatPanel').then((module) => ({ default: module.AiChatPanel }))
 );
 
+function getUserInitials(name?: string | null) {
+  const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+  return initials || 'AB';
+}
+
 export function TopBar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -28,6 +34,7 @@ export function TopBar() {
   const clearAlertas = useAlertasStore((state) => state.clear);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
   const [chatOpen, setChatOpen] = useState(false);
+  const userName = usuario?.nombre_completo ?? 'Sin sesión';
 
   const pageContext = useMemo(() => {
     const exact = navigationItems.find((item) => item.to === location.pathname);
@@ -85,7 +92,13 @@ export function TopBar() {
           </div>
         </div>
         <div className="app-topbar-actions">
-          <span className="app-topbar-user">{usuario?.nombre_completo ?? 'Sin sesión'}</span>
+          <span className="app-topbar-user" title={userName}>
+            <span className="app-topbar-avatar" aria-hidden="true">{getUserInitials(usuario?.nombre_completo)}</span>
+            <span className="app-topbar-user-copy">
+              <span>{userName}</span>
+              <small>{usuario?.rol ?? 'Invitado'}</small>
+            </span>
+          </span>
           <button
             type="button"
             className="theme-toggle"

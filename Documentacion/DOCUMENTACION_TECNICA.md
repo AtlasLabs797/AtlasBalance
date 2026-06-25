@@ -1,5 +1,97 @@
 # Documentacion tecnica
 
+## 2026-06-23 - V-02-02 - Interactividad responsive y accesibilidad operativa
+
+### Que cambio
+
+- `uiStore` incorpora `blockingOverlayCount` y acciones para registrar/desregistrar overlays bloqueantes.
+- Nuevo hook `useBlockingOverlay(open)` para que cualquier modal/sheet/alertdialog participe en el bloqueo global.
+- `useDialogFocus` usa `useBlockingOverlay`, conserva focus trap y restauracion de foco, y ahora sirve como punto unico para modales comunes.
+- `Layout` observa si hay overlays activos, bloquea `document.body.style.overflow`, marca `body[data-overlay-open]` y anade `app-shell--overlay-open`.
+- `TopBar` cierra y oculta el chat IA si hay overlay activo. En CSS movil, `.ai-floating-widget` queda oculto; la IA se usa por ruta.
+- La escala de capas queda: sticky/bottom nav < toast/IA < modal backdrop < modal surface < tooltip. Esto evita que IA/toasts queden por encima de una accion bloqueante.
+- `DatePickerField` detecta puntero tactil/coarse y renderiza `input type="date"` con boton `Limpiar`; en escritorio conserva el calendario custom con grid de dias.
+- `BottomNav` prioriza accesos moviles segun permisos: Dashboard si procede, Cuentas, Extractos, Importar y Mas. Sin Dashboard, Extractos pasa primero.
+- `ExtractoTable` declara `role="grid"` y cada celda de datos usa `role="gridcell"`, `aria-colindex`, `aria-selected` y `tabIndex` roving. Soporta flechas, Home/End, Ctrl+Home/End, PageUp/PageDown y Enter/F2.
+- `RevisionPage` agrega `data-label` en celdas y CSS mobile para convertir filas en tarjetas etiquetadas bajo `767.98px`.
+- `CuentaDetailPage` hace focusables las celdas no editables principales para actualizar la barra de formula con teclado.
+- `system-coherence.css` refuerza scroll tactil local en wrappers de tabla y da ancho minimo a tablas administrativas dentro de `config-table-wrap`.
+
+### Por que
+
+La app ya tenia responsive parcial, pero no interactividad robusta. El problema no era estetico: overlays competian con IA, el date picker movil peleaba con la bottom nav, y `ExtractoTable` se anunciaba como tabla aunque funcionaba como hoja editable. Eso rompe teclado, tactil y lectores de pantalla.
+
+Se mantuvo el criterio de producto: las superficies financieras densas no se convierten en tarjetas si perderian comparacion por columnas. Por eso Extractos y desglose de cuenta siguen siendo hojas con scroll local; Revision si cambia a tarjetas en movil porque cada fila es una decision aislada.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+
+### Limite real
+
+No se hizo QA visual con navegador real ni servidor dev. En este repo ya hay incidencias repetidas con Vite/Rolldown/Chromium y la instruccion operativa exige no encallar la sesion levantando servidores largos desde `shell_command`. Antes de release visual, revisar manualmente desktop, tablet y movil con backend local levantado.
+
+## 2026-06-22 - V-02-02 - Copias programables y Google Drive
+
+### Que cambio
+
+- `BackupSchedulerJob` reemplaza el recurring job semanal fijo. Hangfire ejecuta `backup-scheduler` cada 15 minutos y la decision real sale de `BackupSchedule`.
+- Configuracion nueva en `CONFIGURACION`:
+  - `backup_auto_enabled`
+  - `backup_auto_frequency` (`HOURLY`, `DAILY`, `WEEKLY`, `MONTHLY`)
+  - `backup_auto_time_utc`
+  - `backup_auto_day_of_week`
+  - `backup_auto_day_of_month`
+  - `backup_auto_interval_hours`
+  - `backup_auto_last_started_utc`
+  - `backup_auto_last_result`
+  - `backup_destination` (`LOCAL`, `LOCAL_Y_GOOGLE_DRIVE`)
+  - `google_drive_oauth_client_id`
+  - `google_drive_oauth_client_secret`
+  - `google_drive_folder_id`
+  - `backup_cloud_encryption_key`
+- `ISecretProtector` protege `google_drive_oauth_client_secret`, `backup_cloud_encryption_key` y los refresh tokens de Drive.
+- Tablas nuevas:
+  - `BACKUP_CLOUD_CONNECTIONS`: proveedor, estado, email de cuenta, scope, refresh token protegido y estado de validacion.
+  - `BACKUP_CLOUD_COPIES`: copia local, conexion, estado de subida/importacion, ID remoto, nombre remoto, tamano, checksum y error seguro.
+- Migracion: `20260622120000_AddBackupSchedulingAndGoogleDrive`.
+- RLS: ambas tablas nuevas quedan con FORCE RLS y politica admin/system.
+- Endpoints admin nuevos bajo `/api/backups`:
+  - `GET/PUT /config`
+  - `POST /google-drive/link/start`
+  - `GET /google-drive/link/{sessionId}`
+  - `POST /google-drive/disconnect`
+  - `POST /google-drive/test`
+  - `POST /{id}/google-drive/retry`
+  - `GET /google-drive/files`
+  - `POST /google-drive/import`
+- La subida a Drive usa OAuth device flow y scope `https://www.googleapis.com/auth/drive.file openid email`.
+- Antes de subir, el `.dump` local se cifra a `.dump.enc` con AES-GCM por bloques y clave local protegida. El archivo temporal cifrado se borra best-effort tras subir.
+- La importacion desde Drive descarga un `.enc`, lo descifra en la carpeta local de backups y registra un `Backup` restaurable.
+- `scripts/purge-delivery-data.sql` borra conexiones/subidas de Drive y vacia claves OAuth/cifrado antes de una entrega limpia.
+
+### Por que
+
+Guardar solo en local no es estrategia de copia de seguridad seria: si el disco muere, la "copia" muere con el sistema. Pero subir un dump financiero sin cifrar a Drive tambien seria una mala decision. La solucion implementada mantiene copia local restaurable y sube a nube solo una version cifrada.
+
+El scheduler no llama directamente a cron dinamico por cada cambio de configuracion. Hangfire despierta cada 15 minutos y `BackupSchedule.IsDue` decide si toca ejecutar. Es simple, auditable y evita reprogramaciones fragiles.
+
+### Verificacion
+
+- Backend build OK desde `C:\tmp` con SDK 8.0.421: `dotnet build ...AtlasBalance.API.csproj -p:UseAppHost=false --no-restore`.
+- Tests focalizados: `BackupScheduleTests|BackupEncryptionServiceTests|ManualProcessResponseTests`: 9/9 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd exec tsc -- --noEmit`: OK.
+- Frontend `npm.cmd run build`: OK.
+
+### Limite real
+
+- No se probo subida real a Google Drive porque faltan credenciales OAuth y cuenta vinculada en este entorno.
+- Para validar en servidor: configurar OAuth Client ID/Secret, guardar configuracion, vincular cuenta desde `Backups`, crear copia manual y confirmar que aparece un archivo `.enc` en Drive.
+- La clave `backup_cloud_encryption_key` debe conservarse junto con la instalacion. Si se pierde, las copias cifradas ya subidas a Drive no se podran descifrar. Esto no es opcional ni romantico: sin clave no hay restauracion.
+
 ## 2026-06-21 - V-02-02 - Proveedor IA MiniMax M3/M2.7
 
 ### Que cambio
@@ -3829,3 +3921,80 @@ El timeout de sesion del frontend separa actividad real de render visual: `lastA
 - Los paquetes de actualizacion todavia necesitan limites de tamano y validacion de contenido antes de extraer.
 - Importacion conserva riesgos de fingerprint dependiente del indice de fila y transacciones no garantizadas con `finally`.
 - El calculo de saldo actual no esta completamente unificado entre dashboard/extractos/cuentas.
+
+## 2026-06-23 - V-02-02 - Implementacion del sistema visual
+
+### Base de diseño
+
+La fuente canonica del rediseño es `Documentacion/Diseno/design.md`. El mockup de referencia queda versionado en `Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html`.
+
+El frontend mantiene React/Vite/CSS propio. No se agregaron dependencias ni se sustituyeron stores, rutas, permisos o contratos API.
+
+### Tokens y clases comunes
+
+`frontend/src/styles/variables.css` define el rail oscuro permanente, topbar de 64px y tokens de sidebar. `global.css` añade primitivas reutilizables:
+
+- `.ab-card`, `.ab-card-header`, `.ab-card-meta`
+- `.ab-kpi`
+- `.ab-badge`
+- `.ab-tabs`, `.ab-tab`
+- `.ab-field`, `.ab-input`
+- `.ab-empty`
+- `.ab-button--block`, `.ab-button--sm`
+
+Estas clases son una capa visual; no contienen lógica de negocio ni sustituyen los componentes existentes.
+
+### Shell y login
+
+`Sidebar` fuerza `data-theme="dark"` para que el rail sea oscuro en tema claro y oscuro. Conserva `PaisScopeSelect`, conteos de alertas/exportaciones, badge de update y filtrado de items por permisos/IA.
+
+`TopBar` conserva logout, toggle de tema, colapso de sidebar y chat IA flotante; solo cambia la representacion del usuario a pill con iniciales y rol.
+
+`LoginPage` pasa a layout partido y añade toggle de tema, pero mantiene:
+
+- login email/password,
+- MFA challenge,
+- QR de enrolamiento,
+- recordar dispositivo,
+- `returnTo` seguro,
+- mensaje post-update,
+- carga de permisos/alertas tras login.
+
+### Dashboard y extractos
+
+`DashboardPage` sigue consumiendo `/dashboard/principal`, `/dashboard/evolucion` y `/dashboard/saldos-divisa`. La composicion cambia a hero card con saldo consolidado, divisas y `EvolucionChart`; se conservan KPIs, plazos fijos, saldos por pais, concentracion y saldos por titular.
+
+`PeriodoSelector` se convierte en tabs segmentadas sobre los mismos valores (`1m`, `3m`, `6m`, `9m`, `12m`, `18m`, `24m`). No cambia query string ni carga de datos.
+
+`ExtractosPage` mantiene `ExtractoTable` virtualizada, `role="grid"`, edicion inline, auditoria de celda, columnas visibles, filtros por titular/cuenta/fechas y paginacion. Solo se ajusta estructura de header y estilos.
+
+### Pantallas operativas/admin
+
+La capa visual se extendio a importacion, revision, IA, entidades, formatos, usuarios, auditoria, exportaciones, papelera, configuracion y backups. Los cambios son CSS y hooks de clase en `FormatosImportacionPage`; no cambian endpoints ni permisos.
+
+### Validacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `git diff --check`: OK con avisos CRLF preexistentes.
+- `npm.cmd run build`: bloqueado por `EPERM` al limpiar `frontend/dist/assets`.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02 --emptyOutDir`: OK.
+
+## 2026-06-23 - V-02-02 - QA posterior del rediseno
+
+La pasada de QA posterior cerro huecos de cobertura:
+
+- `ChangePasswordPage` queda alineada con el layout partido de login.
+- `AppSelect` deja de depender del select nativo visible y usa popover/listbox propio; los selects de Backups se migran a este componente.
+- `PeriodoSelector` usa semantica `radiogroup`/`radio` con roving `tabIndex`.
+- `ExtractoTable` conserva la grilla roving: los botones internos de edicion quedan fuera de la tabulacion normal y el historial solo es focable en la celda activa.
+- `BackupsPage` diferencia `Ultima copia correcta en esta pagina` y limpia `linkStart` cuando Google Drive devuelve `FAILED` o `EXPIRED`, evitando codigos OAuth rancios en pantalla.
+- `.sr-only` se endurece con `!important`, `clip-path` y desplazamiento `left: -10000px` para que tablas accesibles de charts no creen overflow horizontal en mobile.
+
+Validacion adicional:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `git diff --check`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02-qa3 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright finita con Chrome local y API mock: login, cambio obligatorio de password, dashboard, periodo, extractos, backups y mobile OK; consola sin errores.

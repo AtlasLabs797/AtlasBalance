@@ -8,6 +8,134 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-23 - V-02-02 - Interactividad responsive y accesibilidad operativa
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se implemento una capa global de overlays bloqueantes: `useBlockingOverlay`, contador en `uiStore`, bloqueo de scroll desde `Layout` y cierre/ocultacion del chat flotante IA cuando hay modal, sheet o alertdialog activo.
+- `useDialogFocus` centraliza ahora foco y registro de overlays para modales de usuarios, cuentas, titulares, importacion, tokens, confirmaciones, timeout de sesion y auditoria de celda.
+- La jerarquia `z-index` queda corregida: IA y toasts ya no se ponen por encima de modales bloqueantes.
+- `DatePickerField` mantiene calendario custom en escritorio y usa `input type="date"` nativo en tactil/movil para evitar conflictos con bottom nav y viewport pequeno.
+- La navegacion inferior movil prioriza flujos operativos: Dashboard si procede, Cuentas, Extractos, Importar y Mas; si el usuario no puede ver Dashboard, Extractos entra primero.
+- `ExtractoTable` pasa de tabla falsa a `role="grid"` interactivo con celda activa, `aria-colindex`, `aria-selected`, navegacion con flechas/Home/End/PageUp/PageDown y Enter/F2 para editar/focalizar controles.
+- `Revision` se adapta a movil como tarjetas con etiquetas por celda, manteniendo tabla densa en tablet/escritorio.
+- En el desglose de cuenta se hicieron focusables las celdas no editables principales para que la barra de formula no dependa solo del raton.
+- Se ajusto el breakpoint tablet del shell hasta `1199.98px` y se reforzo scroll tactil local para tablas administrativas, dashboard, importacion y revision.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/stores/uiStore.ts`
+- `Atlas Balance/frontend/src/hooks/useBlockingOverlay.ts`
+- `Atlas Balance/frontend/src/hooks/useDialogFocus.ts`
+- `Atlas Balance/frontend/src/components/layout/Layout.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/components/layout/BottomNav.tsx`
+- `Atlas Balance/frontend/src/components/common/DatePickerField.tsx`
+- `Atlas Balance/frontend/src/components/common/ConfirmDialog.tsx`
+- `Atlas Balance/frontend/src/components/auth/SessionTimeoutWarning.tsx`
+- `Atlas Balance/frontend/src/components/extractos/AuditCellModal.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Atlas Balance/frontend/src/pages/RevisionPage.tsx`
+- `Atlas Balance/frontend/src/pages/BackupsPage.tsx`
+- `Atlas Balance/frontend/src/styles/variables.css`
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Decisiones visuales tomadas:**
+- En movil la IA se consume desde la ruta/menu `IA`, no como boton flotante. Prioridad: no tapar navegacion ni acciones financieras.
+- Extractos y desglose de cuenta siguen como hojas/tablas con scroll local; convertirlas a tarjetas destruiria comparacion por columnas.
+- Revision si pasa a tarjetas en movil porque el flujo es decision por movimiento, no comparacion masiva de columnas.
+- En tactil se prefiere selector de fecha nativo; el calendario custom queda para escritorio donde aporta navegacion fina de teclado/raton.
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `CLAUDE.md`, `version_actual.md`, `v-02-02.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Revision de skills locales de diseno ya cargadas para el plan: `impeccable/adapt`, `harden` y `polish`.
+- `npm.cmd run lint`.
+- `npm.cmd exec tsc -- --noEmit`.
+- `npm.cmd run build`.
+
+**Resultado de verificacion:**
+- Frontend lint: OK tras corregir una advertencia de dependencia innecesaria en `BottomNav`.
+- TypeScript: OK.
+- Frontend build (`tsc && vite build`): OK.
+
+**Pendientes:**
+- No se arranco servidor dev ni navegador real por la regla anti-encallamiento del proyecto. La validacion visual all-routes queda pendiente en entorno interactivo con app levantada.
+- No se ejecuto backend porque el cambio es frontend/UI y no modifica contratos API.
+
+---
+## 2026-06-22 - V-02-02 - Copias programables y Google Drive cifrado
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se sustituyo el backup semanal fijo por una programacion configurable: por horas, diaria, semanal o mensual.
+- Se anadio destino `LOCAL` o `LOCAL_Y_GOOGLE_DRIVE`.
+- Se implemento vinculacion de Google Drive con OAuth device flow, refresh token protegido y subida automatica al Drive vinculado.
+- Las copias subidas a la nube se cifran antes de subir con AES-GCM y clave protegida en `CONFIGURACION.backup_cloud_encryption_key`.
+- Se agregaron tablas `BACKUP_CLOUD_CONNECTIONS` y `BACKUP_CLOUD_COPIES`, migracion EF, RLS admin/system y auditoria de vinculacion, desconexion, subida e importacion.
+- La pantalla `Backups` permite editar programacion, configurar OAuth, vincular/desvincular Drive, probar conexion, listar copias en Drive, importar y reintentar subida.
+- Se corrigio un test incoherente de exportacion manual: el caso forbidden debe negar acceso (`canAccessCuenta=false`), no escritura, porque el endpoint valida acceso.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Entities.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/BackupsDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AuditActions.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/BackupsController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupConfigurationService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupEncryptionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/GoogleDriveBackupService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Jobs/BackupSchedulerJob.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260622120000_AddBackupSchedulingAndGoogleDrive.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/BackupEncryptionServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/BackupScheduleTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ManualProcessResponseTests.cs`
+- `Atlas Balance/scripts/purge-delivery-data.sql`
+- `Atlas Balance/frontend/src/pages/BackupsPage.tsx`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/styles/layout/admin.css`
+- `Documentacion/documentacion.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `CLAUDE.md`, version actual, `v-02-02.md`, `LOG_ERRORES_INCIDENCIAS.md` y `SKILLS_LOCALES.md`.
+- Revision de la skill local `cyber-neo` como lente de seguridad para tokens, backups e integraciones.
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" -p:UseAppHost=false --no-restore` desde raiz: bloqueado por `global.json` SDK 8.0.419 no instalado.
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" -p:UseAppHost=false --no-restore` desde `C:\tmp`.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "BackupScheduleTests|BackupEncryptionServiceTests|ManualProcessResponseTests" -p:UseAppHost=false`.
+- `npm.cmd run lint`.
+- `npm.cmd exec tsc -- --noEmit`.
+- `npm.cmd run build`.
+
+**Resultado de verificacion:**
+- Backend build final OK desde `C:\tmp` con SDK 8.0.421.
+- Tests focalizados backend: 9/9 OK.
+- Frontend lint: OK.
+- TypeScript: OK.
+- Frontend build: OK.
+
+**Pendientes:**
+- No se hizo prueba real contra Google Drive porque no hay OAuth Client ID/Secret ni cuenta Google vinculada en este entorno. La validacion real pendiente es configurar credenciales OAuth, vincular una cuenta y crear una copia manual verificando archivo `.enc` en Drive.
+- No se ejecuto suite RLS/Testcontainers; sigue dependiendo de Docker operativo.
+
+---
 ## 2026-06-21 - V-02-02 - Proveedor IA MiniMax M3/M2.7
 
 **Version:** V-02-02
@@ -15503,3 +15631,87 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 - Endurecer `backup_path`/`export_path` con allowlist de raices si se acepta una migracion de configuracion.
 - Limitar tamano y contenido de paquetes de actualizacion antes de extraerlos.
 - Revisar en otra pasada fingerprint de importacion, disposal de transacciones de importacion, calculo de saldo actual por fecha/fila, `ConfiguracionController` con JSON nulo y cooldown de alertas SMTP fallidas.
+
+## 2026-06-23 - Rediseño completo de interfaz V-02-02
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se aplico el nuevo sistema visual de `Documentacion/Diseno/design.md` a la app real sin eliminar funcionalidades existentes.
+- Se añadieron clases base `.ab-card`, `.ab-kpi`, `.ab-badge`, `.ab-tabs`, `.ab-field`, `.ab-empty` y modificadores de boton para extender el sistema sin acoplar pantallas concretas.
+- El shell adopta rail oscuro permanente, topbar sticky translúcida, marca ampliada y usuario en pill con iniciales/rol.
+- Login pasa a pantalla partida con panel de marca, tarjeta de acceso y toggle de tema, preservando MFA, QR, recordar dispositivo, retorno seguro y mensajes posteriores a update.
+- Dashboard principal reorganizado en hero card con saldo consolidado, saldos por divisa y evolucion; se mantienen KPIs, plazos fijos, saldos por pais, concentracion y saldos por titular.
+- `PeriodoSelector` cambia de select a tabs segmentadas manteniendo el mismo estado, query params y endpoints.
+- Extractos mantiene tabla virtualizada/editable, filtros, auditoria y columnas visibles; se rediseñan header, filtros, toolbar y tabla.
+- Pantallas operativas/admin rediseñadas: importacion, revision, IA, entidades, formatos de importacion, usuarios, auditoria, exportaciones, papelera, configuracion y backups.
+- Se versiono el mockup aceptado en `Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html`.
+
+**Archivos principales:**
+- `Atlas Balance/frontend/src/styles/variables.css`
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/src/styles/layout/admin.css`
+- `Atlas Balance/frontend/src/styles/layout/importacion.css`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/pages/FormatosImportacionPage.tsx`
+- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/PeriodoSelector.tsx`
+
+**Verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `git diff --check`: OK, con avisos CRLF preexistentes en archivos ajenos al rediseño.
+- `npm.cmd run build`: bloqueado por `EPERM` al limpiar `frontend/dist/assets`.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02 --emptyOutDir`: OK.
+
+**Pendientes:**
+- Hacer QA visual con navegador/app real cuando no haya bloqueo de servidor/navegador local.
+- Liberar o regenerar `frontend/dist/assets` antes de usar la build estandar como artefacto de release.
+
+## 2026-06-23 - QA posterior del rediseno y ajustes de accesibilidad
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se reviso el rediseno con subagentes y se corrigieron huecos que el primer pase dejaba a medias: cambio obligatorio de password, selects extensibles, backups, sidebar, foco en extractos y mobile.
+- `AppSelect` ahora renderiza popover propio del sistema de diseno, con opciones tipo listbox y cierre por Escape/click exterior.
+- `Backups` usa `AppSelect` en frecuencia, dia semanal y destino; el estado OAuth de Google Drive limpia codigos expirados y ofrece generar uno nuevo.
+- `PeriodoSelector` pasa a `radiogroup` con `aria-checked` y roving `tabIndex`.
+- `ExtractoTable` evita que botones de edicion internos entren todos en tabulacion; la celda activa conserva el control de foco y el boton de historial solo entra cuando corresponde.
+- `Sidebar` muestra footer con `V-02-02` y reloj; dashboard define clases pendientes y refuerza la hero card con `surface-highlight`.
+- `FormatosImportacionPage` reemplaza flechas de texto por iconos `ArrowUp`/`ArrowDown`.
+- Se corrigio overflow horizontal mobile causado por tablas `.sr-only` en charts, desplazandolas fuera del eje visible ademas de clippearlas.
+
+**Archivos principales:**
+- `Atlas Balance/frontend/src/components/common/AppSelect.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/PeriodoSelector.tsx`
+- `Atlas Balance/frontend/src/components/extractos/EditableCell.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
+- `Atlas Balance/frontend/src/pages/BackupsPage.tsx`
+- `Atlas Balance/frontend/src/pages/ChangePasswordPage.tsx`
+- `Atlas Balance/frontend/src/pages/FormatosImportacionPage.tsx`
+- `Atlas Balance/frontend/src/styles/global.css`
+- `Atlas Balance/frontend/src/styles/layout/admin.css`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `git diff --check`: OK, con avisos CRLF preexistentes en backend/scripts ajenos.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02-qa3 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright finita con Chrome local, build mock y API mock: login, cambio obligatorio de password, dashboard, selector de periodo, extractos, backups y mobile OK; consola sin errores.
+- Capturas generadas: `output/playwright/atlas-login-redesign.png`, `atlas-dashboard-redesign.png`, `atlas-extractos-redesign.png`, `atlas-mobile-dashboard-redesign.png`.
+
+**Pendientes:**
+- `npm.cmd run build` estandar sigue bloqueado por `EPERM` en `frontend/dist/assets`; liberar esa carpeta antes de empaquetar release.

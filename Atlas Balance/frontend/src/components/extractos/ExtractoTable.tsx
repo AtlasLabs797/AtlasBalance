@@ -396,12 +396,14 @@ export default function ExtractoTable({
                           onNoteChange: (next) => setFlagNotes((prev) => ({ ...prev, [row.id]: next })),
                           onSaveCell,
                           onToggleCheck,
-                          onToggleFlag
+                          onToggleFlag,
+                          isActive: isFocusedCell
                         })}
                         {!ACTION_COLUMNS.has(column) ? (
                           <button
                             type="button"
                             className="cell-audit-button"
+                            tabIndex={isFocusedCell ? 0 : -1}
                             onClick={() => onOpenAudit(row, column)}
                             aria-label={`Ver auditoría de ${column} en fila ${row.fila_numero}`}
                           >
@@ -447,7 +449,8 @@ function renderCell({
   onNoteChange,
   onSaveCell,
   onToggleCheck,
-  onToggleFlag
+  onToggleFlag,
+  isActive
 }: {
   row: Extracto;
   column: string;
@@ -458,6 +461,7 @@ function renderCell({
   onSaveCell: (row: Extracto, column: string, value: string) => Promise<void>;
   onToggleCheck: (row: Extracto, checked: boolean) => Promise<void>;
   onToggleFlag: (row: Extracto, flagged: boolean, nota?: string) => Promise<void>;
+  isActive: boolean;
 }) {
   if (column === 'fila_numero') return <span>{row.fila_numero}</span>;
   if (column === 'checked') {
@@ -466,6 +470,7 @@ function renderCell({
         type="checkbox"
         checked={row.checked}
         disabled={!canEdit}
+        tabIndex={isActive ? 0 : -1}
         aria-label={`Marcar fila ${row.fila_numero} como revisada`}
         onChange={(e) => void onToggleCheck(row, e.target.checked)}
       />
@@ -478,6 +483,7 @@ function renderCell({
           type="checkbox"
           checked={row.flagged}
           disabled={!canEdit}
+          tabIndex={isActive ? 0 : -1}
           aria-label={`Marcar fila ${row.fila_numero} con alerta`}
           onChange={(e) => void onToggleFlag(row, e.target.checked, note)}
         />
@@ -486,6 +492,7 @@ function renderCell({
           value={note}
           placeholder="Nota de alerta"
           disabled={!canEdit}
+          tabIndex={isActive ? 0 : -1}
           aria-label={`Nota de alerta para fila ${row.fila_numero}`}
           onChange={(e) => onNoteChange(e.target.value)}
           onBlur={() => {
@@ -504,6 +511,7 @@ function renderCell({
       editable={canEdit}
       displayValue={getDisplayCellValue(row, column)}
       displayClassName={amountClassName}
+      tabIndex={-1}
       onSave={(value) => onSaveCell(row, column, value)}
     />
   );

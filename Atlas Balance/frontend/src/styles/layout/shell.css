@@ -29,14 +29,19 @@
 }
 
 .app-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--color-bg-sidebar);
   color: var(--color-sidebar-text);
-  padding: var(--space-4);
-  border-right: 1px solid var(--border-soft);
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--color-sidebar-border);
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  box-shadow: 12px 0 40px color-mix(in srgb, var(--text-primary) 4%, transparent);
+  box-shadow: 18px 0 44px rgba(0, 0, 0, 0.18);
   transition:
     background-color var(--transition-normal),
     box-shadow var(--transition-normal);
@@ -62,6 +67,7 @@
   align-items: center;
   gap: var(--space-2);
   overflow: hidden;
+  color: var(--text-inverse);
 }
 
 .app-sidebar--collapsed .app-brand {
@@ -80,10 +86,10 @@
 }
 
 .app-brand-text {
-  display: inline-flex;
-  align-items: center;
+  display: inline-grid;
+  gap: 0.12rem;
   max-width: 9rem;
-  line-height: 1;
+  line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
   opacity: 1;
@@ -91,6 +97,19 @@
   transition:
     opacity var(--duration-fast) var(--ease-premium),
     transform var(--transition-normal);
+}
+
+.app-brand-name {
+  color: var(--text-inverse);
+  font-family: var(--font-family-heading);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-heavy);
+}
+
+.app-brand-subtitle {
+  color: var(--color-sidebar-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .app-sidebar--collapsed .app-brand-text {
@@ -105,13 +124,13 @@
   gap: var(--space-1);
   margin-bottom: var(--space-4);
   padding: var(--space-2);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--color-sidebar-border);
   border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--bg-surface) 62%, transparent);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .pais-scope-label {
-  color: var(--text-muted);
+  color: var(--color-sidebar-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.03em;
@@ -147,10 +166,42 @@
 }
 
 .app-nav {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   overflow-x: hidden;
+}
+
+.app-sidebar-footer {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-sidebar-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--color-sidebar-muted);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.app-sidebar-footer span,
+.app-sidebar-footer time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar--collapsed .app-sidebar-footer {
+  justify-content: center;
+  padding-inline: var(--space-1);
+}
+
+.app-sidebar--collapsed .app-sidebar-footer span {
+  display: none;
 }
 
 .app-nav-section {
@@ -158,7 +209,7 @@
   gap: var(--space-1);
   min-width: 0;
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--color-sidebar-border);
 }
 
 .app-nav-section:first-child {
@@ -170,7 +221,7 @@
   min-height: 1.45rem;
   max-height: 2rem;
   padding: 0 var(--space-3);
-  color: var(--text-muted);
+  color: var(--color-sidebar-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.03em;
@@ -250,8 +301,8 @@
 }
 
 .app-nav-link:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-inverse);
   text-decoration: none;
 }
 
@@ -264,7 +315,18 @@
 .app-nav-link--active {
   background: var(--color-sidebar-active-bg);
   color: var(--color-sidebar-active-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 22%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(130, 164, 255, 0.22);
+}
+
+.app-nav-link--active::before {
+  content: "";
+  position: absolute;
+  left: 0.45rem;
+  top: 0.65rem;
+  bottom: 0.65rem;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-primary);
 }
 
 .app-main {
@@ -290,7 +352,8 @@
 }
 
 .app-topbar {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: var(--z-sticky);
   display: flex;
   align-items: center;
@@ -298,8 +361,10 @@
   gap: var(--space-4);
   min-height: var(--topbar-height);
   padding: 0 var(--space-5);
-  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  background: color-mix(in srgb, var(--bg-app) 84%, transparent);
   border-bottom: 1px solid var(--border-soft);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .app-topbar-title {
@@ -345,12 +410,53 @@
 }
 
 .app-topbar-user {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  max-width: clamp(8rem, 18vw, 16rem);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: clamp(11rem, 20vw, 18rem);
+  min-height: 2.75rem;
+  padding: 0.35rem var(--space-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-topbar-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-primary-soft);
+  color: var(--text-link);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+
+.app-topbar-user-copy {
+  display: grid;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+.app-topbar-user-copy span {
+  min-width: 0;
   overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-topbar-user-copy small {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .sidebar-toggle {
@@ -401,6 +507,11 @@
 .theme-toggle:hover,
 .logout-button:hover {
   background: var(--color-bg-hover);
+}
+
+.logout-button:hover {
+  border-color: color-mix(in srgb, var(--danger-text) 32%, var(--color-border-primary));
+  color: var(--danger-text);
 }
 
 .app-content {

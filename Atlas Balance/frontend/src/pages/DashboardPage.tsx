@@ -212,23 +212,72 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="dashboard-kpi-grid dashboard-kpi-grid--overview">
-        <KpiCard
-          title="Saldo total"
-          featured
-          helper={
-            variacionPct !== null ? (
-              <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}%
-              </span>
-            ) : `Base: ${principal.divisa_principal}`
-          }
-          value={
+      <section className="dashboard-hero-card">
+        <div className="dashboard-hero-balance">
+          <span className="ab-badge ab-badge--info">Base {principal.divisa_principal}</span>
+          <p>Saldo consolidado</p>
+          <strong>
             <SignedAmount value={principal.total_convertido}>
               {formatCurrency(principal.total_convertido, principal.divisa_principal)}
             </SignedAmount>
-          }
-        />
+          </strong>
+          <span className="dashboard-hero-delta">
+            {variacionPct !== null ? (
+              <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}% en el periodo
+              </span>
+            ) : 'Sin comparativa suficiente'}
+          </span>
+          <div className="dashboard-hero-mini-grid">
+            <div>
+              <span>Ingresos</span>
+              <strong>
+                <SignedAmount value={periodTotals.ingresos}>
+                  {formatCurrency(periodTotals.ingresos, principal.divisa_principal)}
+                </SignedAmount>
+              </strong>
+            </div>
+            <div>
+              <span>Egresos</span>
+              <strong>
+                <SignedAmount value={periodTotals.egresos} tone="negative">
+                  {formatCurrency(periodTotals.egresos, principal.divisa_principal)}
+                </SignedAmount>
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-hero-divisas">
+          <SaldoPorDivisaCard
+            className="dashboard-divisa-strip dashboard-divisa-strip--hero"
+            items={saldosDivisa.divisas}
+            divisaPrincipal={saldosDivisa.divisa_principal}
+          />
+        </div>
+
+        <div className="dashboard-hero-chart">
+          <header className="dashboard-card-header dashboard-card-header--chart">
+            <div>
+              <h2>Evolución</h2>
+              <p>Saldo, ingresos y egresos del periodo seleccionado.</p>
+            </div>
+            {lastEvolutionPoint ? (
+              <span className="dashboard-card-meta">
+                Saldo final {formatCurrency(lastEvolutionPoint.saldo, principal.divisa_principal)}
+              </span>
+            ) : null}
+          </header>
+          <EvolucionChart
+            points={evolucion.puntos}
+            divisa={principal.divisa_principal}
+            colors={principal.chart_colors}
+            height={320}
+          />
+        </div>
+      </section>
+
+      <div className="dashboard-kpi-grid dashboard-kpi-grid--secondary">
         <KpiCard
           title="Ingresos período"
           value={
@@ -255,111 +304,69 @@ export default function DashboardPage() {
             </span>
           ) : undefined}
         />
+        {liquidezConsolidada ? (
+          <>
+            <KpiCard
+              title="Disponible"
+              value={
+                <SignedAmount value={liquidezConsolidada.disponible}>
+                  {formatCurrency(liquidezConsolidada.disponible, principal.divisa_principal)}
+                </SignedAmount>
+              }
+              helper={variacionDispPct !== null ? (
+                <span className={variacionDispPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                  {variacionDispPct >= 0 ? '+' : ''}{variacionDispPct.toFixed(1)}%
+                </span>
+              ) : undefined}
+            />
+            <KpiCard
+              title="Inmovilizado"
+              value={formatCurrency(liquidezConsolidada.inmovilizado, principal.divisa_principal)}
+              helper={variacionInmovPct !== null && Math.abs(variacionInmovPct) >= 0.1 ? (
+                <span className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
+                  {variacionInmovPct >= 0 ? '+' : ''}{variacionInmovPct.toFixed(1)}%
+                </span>
+              ) : undefined}
+            />
+          </>
+        ) : null}
       </div>
 
-      {liquidezConsolidada ? (
-        <div className="dashboard-secondary-row">
-          <KpiCard
-            title="Disponible"
-            value={
-              <SignedAmount value={liquidezConsolidada.disponible}>
-                {formatCurrency(liquidezConsolidada.disponible, principal.divisa_principal)}
+      <section className="dashboard-card dashboard-plazo-card">
+        <header className="dashboard-card-header">
+          <h2>Plazos fijos</h2>
+          <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
+        </header>
+        <div className="dashboard-plazo-metrics">
+          <div>
+            <span>Monto total</span>
+            <strong>
+              <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
+                {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
               </SignedAmount>
-            }
-            helper={variacionDispPct !== null ? (
-              <span className={variacionDispPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                {variacionDispPct >= 0 ? '+' : ''}{variacionDispPct.toFixed(1)}%
-              </span>
-            ) : undefined}
-          />
-          <KpiCard
-            title="Inmovilizado"
-            value={formatCurrency(liquidezConsolidada.inmovilizado, principal.divisa_principal)}
-            helper={variacionInmovPct !== null && Math.abs(variacionInmovPct) >= 0.1 ? (
-              <span className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
-                {variacionInmovPct >= 0 ? '+' : ''}{variacionInmovPct.toFixed(1)}%
-              </span>
-            ) : undefined}
-          />
-          <section className="dashboard-card dashboard-plazo-card">
-            <header className="dashboard-card-header">
-              <h2>Plazos fijos</h2>
-              <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
-            </header>
-            <div className="dashboard-plazo-metrics">
-              <div>
-                <span>Monto total</span>
-                <strong>
-                  <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
-                    {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
-                  </SignedAmount>
-                </strong>
-              </div>
-              <div>
-                <span>Intereses aprox.</span>
-                <strong>
-                  <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
-                    {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
-                  </SignedAmount>
-                </strong>
-              </div>
-              <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
-                <span>Próximo vencimiento</span>
-                <strong>
-                  {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
-                    ? 'Sin fecha'
-                    : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} dias`}
-                </strong>
-                {principal.plazos_fijos.proximo_vencimiento ? (
-                  <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
-                ) : null}
-              </div>
-            </div>
-          </section>
-        </div>
-      ) : (
-        <section className="dashboard-card dashboard-plazo-card">
-          <header className="dashboard-card-header">
-            <h2>Plazos fijos</h2>
-            <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
-          </header>
-          <div className="dashboard-plazo-metrics">
-            <div>
-              <span>Monto total</span>
-              <strong>
-                <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
-                  {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
-                </SignedAmount>
-              </strong>
-            </div>
-            <div>
-              <span>Intereses aprox.</span>
-              <strong>
-                <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
-                  {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
-                </SignedAmount>
-              </strong>
-            </div>
-            <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
-              <span>Próximo vencimiento</span>
-              <strong>
-                {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
-                  ? 'Sin fecha'
-                  : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} dias`}
-              </strong>
-              {principal.plazos_fijos.proximo_vencimiento ? (
-                <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
-              ) : null}
-            </div>
+            </strong>
           </div>
-        </section>
-      )}
-
-      <SaldoPorDivisaCard
-        className="dashboard-divisa-strip"
-        items={saldosDivisa.divisas}
-        divisaPrincipal={saldosDivisa.divisa_principal}
-      />
+          <div>
+            <span>Intereses aprox.</span>
+            <strong>
+              <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
+                {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
+              </SignedAmount>
+            </strong>
+          </div>
+          <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
+            <span>Próximo vencimiento</span>
+            <strong>
+              {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
+                ? 'Sin fecha'
+                : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} dias`}
+            </strong>
+            {principal.plazos_fijos.proximo_vencimiento ? (
+              <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       {principal.saldos_por_pais?.length ? (
         <section className="dashboard-card">
@@ -377,26 +384,6 @@ export default function DashboardPage() {
           </div>
         </section>
       ) : null}
-
-      <section className="dashboard-card dashboard-evolution-card">
-        <header className="dashboard-card-header dashboard-card-header--chart">
-          <div>
-            <h2>Evolución</h2>
-            <p>Saldo, ingresos y egresos del periodo seleccionado.</p>
-          </div>
-          {lastEvolutionPoint ? (
-            <span className="dashboard-card-meta">
-              Saldo final {formatCurrency(lastEvolutionPoint.saldo, principal.divisa_principal)}
-            </span>
-          ) : null}
-        </header>
-        <EvolucionChart
-          points={evolucion.puntos}
-          divisa={principal.divisa_principal}
-          colors={principal.chart_colors}
-          height={420}
-        />
-      </section>
 
       {((principal.concentracion_bancos ?? []).length > 0 || principal.saldos_por_titular.length > 0) ? (
         <section className="dashboard-card dashboard-bancos-card">

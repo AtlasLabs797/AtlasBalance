@@ -6,9 +6,10 @@ interface EditableCellProps {
   onSave: (next: string) => Promise<void> | void;
   displayValue?: string;
   displayClassName?: string;
+  tabIndex?: number;
 }
 
-export default function EditableCell({ value, editable, onSave, displayValue, displayClassName }: EditableCellProps) {
+export default function EditableCell({ value, editable, onSave, displayValue, displayClassName, tabIndex = -1 }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -85,6 +86,7 @@ export default function EditableCell({ value, editable, onSave, displayValue, di
       <button
         type="button"
         className={['cell-edit-button', displayClassName].filter(Boolean).join(' ')}
+        tabIndex={tabIndex}
         onClick={() => {
           setSaveState('idle');
           setIsEditing(true);

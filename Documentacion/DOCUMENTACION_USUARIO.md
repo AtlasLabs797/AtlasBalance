@@ -39,7 +39,7 @@ Desde `V-01.05`, el menu se organiza en tres bloques:
 - `Control`: Alertas y Exportaciones.
 - `Sistema`: Usuarios, Auditoria, Formatos, Backups, Configuracion y Papelera.
 
-En movil, la barra inferior muestra solo los accesos principales: Inicio, Titulares, Cuentas, Importar y Mas. El boton `Mas` abre el resto de secciones.
+En movil, la barra inferior muestra los accesos que mas se usan: Inicio si tienes Dashboard, Cuentas, Extractos, Importar y Mas. Si tu usuario no tiene Dashboard, Extractos pasa a ser el primer acceso. El boton `Mas` abre el resto de secciones, incluido `IA` si esta disponible.
 
 El dashboard principal prioriza la lectura financiera:
 
@@ -69,6 +69,8 @@ La vista `Extractos` usa una reticula de celdas tipo hoja de calculo. Las column
 
 Si falla la carga de movimientos, preferencias de columnas o auditoria de una celda, la pantalla muestra el error y permite reintentar. Si intentas ocultar columnas, siempre queda al menos una visible.
 
+Con teclado, la tabla de Extractos permite moverse por celdas con flechas, Home/End y PageUp/PageDown. Enter o F2 abre la edicion de una celda editable. En movil y tablet tactil conserva scroll local para no romper la comparacion por columnas.
+
 ## Acceso con Google Authenticator
 
 Atlas Balance usa MFA con aplicaciones compatibles tipo Google Authenticator.
@@ -96,6 +98,38 @@ El dashboard muestra `Saldos por pais`, para que no tengas que adivinar si el sc
 Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
 
 Importante: el pais ya no es solo un filtro visual. En permisos de usuario y tokens de integracion, un administrador puede limitar el acceso a un pais concreto. Si ademas se elige titular o cuenta, Atlas Balance exige que todas esas condiciones coincidan a la vez.
+
+## Copias de seguridad y Google Drive
+
+En `Sistema > Backups`, un administrador puede configurar:
+
+- Si las copias automaticas estan activas.
+- Frecuencia: cada X horas, diaria, semanal o mensual.
+- Hora UTC, dia semanal, dia mensual o intervalo horario segun la frecuencia.
+- Destino: `Solo local` o `Local + Google Drive`.
+
+La copia local sigue siendo el archivo restaurable principal. Si eliges `Local + Google Drive`, Atlas Balance crea la copia local y despues sube a Google Drive una version cifrada `.enc`.
+
+Para usar Google Drive:
+
+1. Crea credenciales OAuth en Google Cloud para la app.
+2. Copia `OAuth Client ID` y `OAuth Client Secret` en `Backups`.
+3. Pulsa `Guardar`.
+4. Pulsa `Vincular` y abre la URL que muestra la pantalla.
+5. Introduce el codigo de Google y concede acceso.
+6. Pulsa `Probar` para validar que el refresh token sigue funcionando.
+
+Si dejas vacia la carpeta Drive ID, Atlas Balance intentara crear una carpeta `Atlas Balance Backups`. Si quieres usar una carpeta concreta, pega su ID.
+
+Desde la misma pantalla puedes:
+
+- Crear una copia manual.
+- Ver si cada copia quedo solo local o subida a Drive.
+- Reintentar la subida a Drive de una copia local correcta.
+- Listar las copias creadas por Atlas Balance en Drive.
+- Importar una copia cifrada desde Drive para convertirla otra vez en copia local restaurable.
+
+Aviso importante: las copias en Drive dependen de la clave local `backup_cloud_encryption_key`. Si pierdes esa clave o reinstalas sin conservar la configuracion protegida, los `.enc` de Drive no se podran descifrar. Drive sera almacenamiento, no magia.
 
 ## IA y modelos OpenRouter
 
@@ -325,9 +359,11 @@ El estado queda guardado y puedes filtrar por pendientes, revisadas o descartada
 
 El importe minimo de comisiones se configura en `Configuracion > Revision e IA`. Se compara por valor absoluto: con umbral `1`, aparecen `-1,20` y `1,20`.
 
+En movil, `Revision` muestra cada movimiento como tarjeta etiquetada para que puedas leer titular, cuenta, importe, concepto y estado sin arrastrar una tabla ancha.
+
 ## IA
 
-El menu lateral incluye `IA` y la barra superior incluye un boton de IA para abrir un chat flotante cuando la IA esta habilitada globalmente y tu usuario tiene permiso.
+El menu lateral incluye `IA` y la barra superior incluye un boton de IA para abrir un chat flotante cuando la IA esta habilitada globalmente y tu usuario tiene permiso. En movil, el boton flotante no aparece: entra desde `Mas > IA` para no tapar la navegacion ni los formularios.
 
 La IA responde usando contexto financiero real minimizado: saldos, agregados y movimientos relevantes cuando aplican. El chat IA requiere permiso explicito por usuario, interruptor global activo, proveedor/modelo configurados, limites de uso disponibles y presupuesto no agotado. Si no tiene datos suficientes, debe decirlo. Si falta configurar proveedor, modelo, API key o permisos, el chat muestra un error claro en vez de inventar.
 
@@ -365,15 +401,17 @@ En `Usuarios`, un administrador puede marcar `Puede usar IA` para cada usuario. 
 
 El dashboard principal muestra:
 
-- Saldo disponible: cuentas normales y efectivo.
-- Saldo inmovilizado: cuentas de plazo fijo.
-- Saldo total: disponible + inmovilizado.
-- Saldos por divisa: la divisa base aparece primero y el resto debajo/despues segun el espacio disponible.
-- Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento, ubicados bajo los KPIs de saldo, ingresos y egresos.
-- La grafica de evolucion se muestra en una franja ancha propia, despues del resumen superior de KPIs y saldos por divisa.
+- Saldo consolidado en la tarjeta principal.
+- Saldos por divisa dentro del resumen superior; la divisa base aparece primero.
+- Grafica de evolucion en la misma zona principal del dashboard.
+- KPIs de ingresos, egresos, disponible e inmovilizado cuando hay datos suficientes.
+- Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento.
+- Saldos por pais, concentracion por banco/titular y saldos por titular.
 - En `Cuentas > Saldos y evolucion`, la grafica de `Evolucion` se muestra antes del listado de cuentas.
 
 Los saldos por titular ocupan la parte inferior completa del dashboard y se agrupan en tres columnas: Empresa, Autonomo y Particular.
+
+El periodo se elige con tabs (`1m`, `3m`, `6m`, `9m`, `12m`, `18m`, `24m`) y la divisa principal con el selector de divisa. Ambos siguen quedando reflejados en la URL del dashboard.
 
 ### Desglose de cuenta
 
@@ -388,7 +426,13 @@ En el dashboard de una cuenta, la tabla de movimientos permite seleccionar filas
 
 La interfaz mantiene el mismo funcionamiento, pero ahora los botones, campos, pestanas, tarjetas, tablas y estados de foco usan un sistema visual comun. No cambia el flujo de trabajo: solo debe sentirse mas consistente al pasar de dashboard a cuentas, extractos, importacion, configuracion o administracion.
 
-Los campos de fecha usan un selector propio de Atlas Balance. Al abrirlo veras el mes, los dias, la fecha seleccionada, el dia actual y las acciones `Hoy` y `Limpiar`. Si no cabe debajo del campo, se abre hacia arriba.
+El menu lateral queda oscuro aunque uses tema claro. Agrupa operacion, control y sistema, mantiene el selector global de pais/organizacion y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
+
+La barra superior queda fija al desplazarte. Desde ahi puedes contraer el menu, cambiar tema, abrir/cerrar el chat IA si tienes permiso y cerrar sesion.
+
+La pantalla de login ahora tiene un panel de marca y una tarjeta de acceso. El flujo no cambia: email, password, MFA, QR de configuracion, recordar dispositivo y primer cambio de password siguen funcionando igual.
+
+Los campos de fecha usan un selector propio de Atlas Balance en ordenador. Al abrirlo veras el mes, los dias, la fecha seleccionada, el dia actual y las acciones `Hoy` y `Limpiar`. Si no cabe debajo del campo, se abre hacia arriba. En movil y tablet tactil se usa el selector nativo del dispositivo para evitar solapes con la navegacion inferior.
 
 En tablets y pantallas pequenas se conservan los targets tactiles amplios y la navegacion inferior. Si algun texto largo o tabla concreta se desborda, hay que reportarlo con pantalla y ruta exacta; los fallos de UI vagos no se arreglan solos.
 
@@ -428,3 +472,21 @@ La tabla de `Extractos` ahora se lee mas como una hoja de calculo:
 - Las columnas tecnicas se muestran con nombres legibles, por ejemplo `Importe` en vez de `monto`.
 
 El funcionamiento no cambia: puedes filtrar, ordenar, editar celdas, abrir historial y cambiar columnas visibles igual que antes.
+
+## Actualizacion visual V-02-02
+
+En la parte inferior del menu lateral veras la version activa y la hora local. Sirve para comprobar rapido que estas mirando la build correcta.
+
+La pantalla de login y el cambio obligatorio de password usan el mismo layout visual: panel de marca y tarjeta de accion. El flujo no cambia: email, password, MFA, QR de configuracion, recordar dispositivo y primer cambio de password siguen funcionando igual.
+
+Los desplegables de la app usan el estilo visual de Atlas Balance. Funcionan como antes, pero se abren como menus propios para que filtros, configuracion y backups no parezcan controles del navegador pegados con cinta.
+
+En movil el dashboard no debe crear scroll horizontal. Las tablas ocultas usadas para accesibilidad de graficas no ocupan ancho visible.
+
+La navegacion por teclado de `Extractos` mantiene una celda activa. Los botones internos de cada celda no llenan la tabulacion; entra en la celda y usa `Enter` o `F2` para editar cuando corresponda.
+
+En `Backups`, los campos de frecuencia, dia y destino usan los mismos desplegables visuales que el resto de la app.
+
+El resumen muestra `Ultima copia correcta en esta pagina` porque ese dato se calcula sobre la pagina cargada. Si necesitas una verdad global, revisa el listado completo o cambia la paginacion; la app no debe fingir precision que no tiene.
+
+Si un codigo de vinculacion de Google Drive expira o falla, Atlas Balance deja de mostrar ese codigo viejo y ofrece generar uno nuevo.

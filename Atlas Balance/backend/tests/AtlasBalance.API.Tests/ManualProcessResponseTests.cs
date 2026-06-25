@@ -29,7 +29,9 @@ public class ManualProcessResponseTests
         var controller = new BackupsController(
             db,
             new FakeBackupService(),
-            new FakeWatchdogClientService());
+            new FakeWatchdogClientService(),
+            new FakeBackupConfigurationService(),
+            new FakeGoogleDriveBackupService());
         controller.ControllerContext = BuildControllerContext();
 
         var result = await controller.BackupManual(CancellationToken.None);
@@ -69,7 +71,7 @@ public class ManualProcessResponseTests
         var controller = new ExportacionesController(
             db,
             new FakeExportacionService(),
-            new FakeUserAccessService(canWriteCuenta: false));
+            new FakeUserAccessService(canAccessCuenta: false));
         controller.ControllerContext = BuildControllerContext();
 
         var result = await controller.Manual(
@@ -234,6 +236,70 @@ public class ManualProcessResponseTests
         public Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken)
         {
             return Task.FromResult(true);
+        }
+    }
+
+    private sealed class FakeBackupConfigurationService : IBackupConfigurationService
+    {
+        public Task<BackupConfigResponse> GetAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new BackupConfigResponse());
+        }
+
+        public Task<(bool Success, string? Error)> UpdateAsync(UpdateBackupConfigRequest request, Guid? userId, HttpContext? httpContext, CancellationToken cancellationToken)
+        {
+            return Task.FromResult((true, (string?)null));
+        }
+    }
+
+    private sealed class FakeGoogleDriveBackupService : IGoogleDriveBackupService
+    {
+        public Task<GoogleDriveLinkStartResponse> StartLinkAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new GoogleDriveLinkStartResponse());
+        }
+
+        public Task<GoogleDriveLinkStatusResponse> PollLinkAsync(Guid sessionId, Guid? userId, HttpContext? httpContext, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new GoogleDriveLinkStatusResponse());
+        }
+
+        public Task DisconnectAsync(Guid? userId, HttpContext? httpContext, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<GoogleDriveLinkStatusResponse> TestConnectionAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new GoogleDriveLinkStatusResponse());
+        }
+
+        public Task UploadBackupAsync(Backup backup, string backupPath, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task UploadBackupByIdAsync(Guid backupId, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<GoogleDriveBackupFileResponse>> ListFilesAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<GoogleDriveBackupFileResponse>>(Array.Empty<GoogleDriveBackupFileResponse>());
+        }
+
+        public Task<Backup> ImportAsync(string fileId, Guid? userId, HttpContext? httpContext, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new Backup
+            {
+                Id = Guid.NewGuid(),
+                Estado = EstadoProceso.SUCCESS,
+                Tipo = TipoProceso.MANUAL,
+                RutaArchivo = @"C:\temp\backup.dump",
+                TamanioBytes = 1024,
+                IniciadoPorId = userId
+            });
         }
     }
 }

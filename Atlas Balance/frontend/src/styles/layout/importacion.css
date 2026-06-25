@@ -1,6 +1,6 @@
 .import-page {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .import-header {
@@ -26,8 +26,8 @@
   align-items: center;
   justify-content: center;
   min-height: 2.75rem;
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
   padding: var(--space-2) var(--space-3);
   text-align: center;
   background: var(--surface-bg-sunken);
@@ -45,10 +45,10 @@
 
 .import-card {
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-lg);
-  background: var(--color-bg-primary);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
   box-shadow: var(--shadow-sm);
-  padding: var(--space-4);
+  padding: var(--space-5);
   display: grid;
   gap: var(--space-3);
 }
@@ -56,6 +56,9 @@
 .import-card textarea {
   width: 100%;
   font-family: var(--font-family-mono);
+  min-height: 16rem;
+  line-height: 1.55;
+  resize: vertical;
 }
 
 .import-subheader {
@@ -112,37 +115,76 @@
 
 .import-preview-grid {
   overflow: auto;
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  scrollbar-gutter: stable;
 }
 
 .import-preview-grid table,
 .import-validation-table {
   width: 100%;
   min-width: 760px;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--font-size-sm);
 }
 
 .import-preview-grid td,
 .import-validation-table th,
 .import-validation-table td {
-  border: 1px solid var(--color-border-primary);
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
   padding: var(--space-2);
   vertical-align: top;
   overflow-wrap: anywhere;
 }
 
+.import-preview-grid td:last-child,
+.import-validation-table th:last-child,
+.import-validation-table td:last-child {
+  border-right: 0;
+}
+
+.import-preview-grid tr:last-child td,
+.import-validation-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.import-validation-table th {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.import-validation-table td:nth-child(2),
+.import-validation-table td:nth-child(4),
+.import-validation-table td:nth-last-child(2),
+.import-validation-table td:nth-last-child(3),
+.import-preview-grid td {
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .import-validation-table-wrap {
   overflow: auto;
   max-height: 420px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  scrollbar-gutter: stable;
 }
 
-.import-validation-table tr.invalid {
-  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+.import-validation-table tr.invalid td {
+  background: color-mix(in srgb, var(--danger-bg) 78%, var(--bg-surface) 22%);
+  color: var(--danger-text);
 }
 
-.import-validation-table tr.warning {
-  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+.import-validation-table tr.warning td {
+  background: color-mix(in srgb, var(--warning-bg) 78%, var(--bg-surface) 22%);
+  color: var(--warning-text);
 }
 
 .import-actions {
@@ -161,10 +203,10 @@
 }
 
 .import-result-box {
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
   padding: var(--space-3);
-  background: var(--color-bg-secondary);
+  background: var(--bg-surface-soft);
   display: grid;
   gap: var(--space-1);
 }
@@ -224,7 +266,7 @@
   height: min(92vh, 940px);
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-overlay);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -266,6 +308,20 @@
 @media (max-width: 760px) {
   .import-plazo-grid {
     grid-template-columns: 1fr;
+  }
+
+  .import-card {
+    padding: var(--space-4);
+  }
+
+  .import-actions {
+    flex-direction: column;
+  }
+
+  .import-actions button,
+  .import-actions a {
+    width: 100%;
+    justify-content: center;
   }
 }
 

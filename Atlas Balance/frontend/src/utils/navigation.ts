@@ -28,7 +28,7 @@ export const navigationGroups: Record<NavigationGroup, { label: string }> = {
 
 const iconProps = {
   size: 20,
-  strokeWidth: 1.9,
+  strokeWidth: 1.75,
   'aria-hidden': true,
 } as const;
 

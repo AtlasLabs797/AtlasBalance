@@ -1,7 +1,7 @@
 .revision-page,
 .ia-page {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .revision-filter {
@@ -11,9 +11,10 @@
 .revision-table-wrap {
   overflow: auto;
   border: 1px solid var(--border-soft);
-  border-radius: calc(var(--radius-card) - 2px);
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   box-shadow: var(--shadow-sm);
+  scrollbar-gutter: stable;
 }
 
 .revision-table {
@@ -33,7 +34,7 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.07em;
 }
 
 .revision-table th,
@@ -42,6 +43,15 @@
   border-bottom: 1px solid var(--border-soft);
   text-align: left;
   white-space: nowrap;
+  vertical-align: middle;
+}
+
+.revision-table tbody tr {
+  transition: background-color var(--duration-instant) var(--ease-premium);
+}
+
+.revision-table tbody tr:hover {
+  background: var(--surface-highlight);
 }
 
 .revision-table td:nth-child(5) {
@@ -53,6 +63,7 @@
 .revision-cell-fixed,
 .revision-cell-money {
   font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .revision-cell-money {
@@ -64,13 +75,14 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  min-height: 2rem;
+  min-height: 2.25rem;
   padding: var(--space-1) var(--space-3);
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--warning-text) 24%, var(--border-soft));
   background: var(--warning-bg);
   color: var(--warning-text);
   font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
 }
 
 .revision-actions {
@@ -113,7 +125,7 @@
   min-height: var(--control-height);
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--danger-text) 24%, var(--border-soft));
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-control);
   background: var(--danger-bg);
   color: var(--danger-text);
 }
@@ -214,10 +226,16 @@
   height: min(60dvh, 520px);
   max-height: calc(100dvh - var(--space-6));
   border: 1px solid var(--border-soft);
-  border-radius: calc(var(--radius-card) - 4px);
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   box-shadow: var(--shadow-overlay);
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
+}
+
+.ia-page .ai-chat-panel:not(.ai-chat-panel--compact) {
+  height: min(72dvh, 720px);
+  min-height: min(34rem, 72dvh);
+  box-shadow: var(--shadow-sm);
 }
 
 .ai-chat-panel--compact {
@@ -337,6 +355,7 @@
   background: var(--bg-surface);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
   padding: 0 var(--space-3);
 }
 
@@ -425,9 +444,9 @@
   max-width: 100%;
   min-width: 0;
   padding: var(--space-3);
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-control);
   background: var(--bg-surface-soft);
-  border: none;
+  border: 1px solid var(--border-soft);
   overflow: hidden;
 }
 
@@ -572,6 +591,8 @@
 .ai-chat-message-meta dd {
   margin: 0;
   color: var(--text-secondary);
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
@@ -586,7 +607,7 @@
   max-width: 88%;
   background: var(--accent-primary);
   color: var(--text-inverse);
-  border: none;
+  border-color: color-mix(in srgb, var(--accent-primary-hover) 32%, var(--accent-primary));
 }
 
 .ai-chat-message--user p {
@@ -681,7 +702,7 @@
   font-family: var(--font-family);
   font-size: var(--font-size-sm);
   border: 1px solid var(--border-soft);
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-control);
   background: var(--bg-input);
   color: var(--text-primary);
   transition:
@@ -712,7 +733,7 @@
   border: none;
   background: var(--accent-primary);
   color: var(--text-inverse);
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
@@ -736,6 +757,11 @@
 @media (max-width: 767.98px) {
   .ai-floating-widget {
     display: none;
+  }
+
+  .ia-page .ai-chat-panel:not(.ai-chat-panel--compact) {
+    height: calc(100dvh - var(--topbar-height) - var(--mobile-bottom-nav-height) - var(--space-8));
+    min-height: 28rem;
   }
 
   .revision-filter {

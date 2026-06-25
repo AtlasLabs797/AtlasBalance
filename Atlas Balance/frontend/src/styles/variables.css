@@ -140,10 +140,12 @@
   --color-button-secondary-border: var(--border-strong);
   --color-button-secondary-text: var(--text-primary);
 
-  --color-bg-sidebar: #fbfcfe;
-  --color-sidebar-text: #445266;
-  --color-sidebar-active-bg: var(--accent-primary-soft);
-  --color-sidebar-active-text: #214cad;
+  --color-bg-sidebar: #12171f;
+  --color-sidebar-text: #c8d3e1;
+  --color-sidebar-muted: #8f9caf;
+  --color-sidebar-border: rgba(216, 226, 240, 0.12);
+  --color-sidebar-active-bg: rgba(130, 164, 255, 0.16);
+  --color-sidebar-active-text: #f8fbff;
 
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
@@ -214,7 +216,7 @@
 
   --sidebar-width: 252px;
   --sidebar-collapsed-width: 72px;
-  --topbar-height: 68px;
+  --topbar-height: 64px;
   --mobile-bottom-nav-height: 78px;
 
   --border-radius-sm: 8px;
@@ -330,10 +332,12 @@
   --row-flagged-bg: rgba(255, 196, 70, 0.18);
   --row-flagged-border: rgba(255, 213, 112, 0.42);
 
-  --color-bg-sidebar: #1b2330;
-  --color-sidebar-text: #c0cbda;
+  --color-bg-sidebar: #12171f;
+  --color-sidebar-text: #c8d3e1;
+  --color-sidebar-muted: #8f9caf;
+  --color-sidebar-border: rgba(216, 226, 240, 0.12);
   --color-sidebar-active-bg: rgba(130, 164, 255, 0.16);
-  --color-sidebar-active-text: #d5ddff;
+  --color-sidebar-active-text: #f8fbff;
 
   --surface-bg-raised: color-mix(in srgb, var(--bg-surface) 90%, transparent);
   --surface-bg-sunken: color-mix(in srgb, var(--bg-surface-soft) 76%, var(--bg-app));

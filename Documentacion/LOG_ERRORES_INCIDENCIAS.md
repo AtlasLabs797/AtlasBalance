@@ -1,5 +1,35 @@
 # Log de errores e incidencias
 
+## 2026-06-23 - V-02-02 - Lint en BottomNav por reactividad falsa
+
+- Contexto: implementacion de navegacion inferior movil dependiente de permiso de Dashboard.
+- Incidencia:
+  - `npm.cmd run lint` fallo por warning `react-hooks/exhaustive-deps`: `useMemo` tenia dependencia innecesaria `permisos`.
+  - La intencion era forzar recalc cuando cambiaban permisos, pero meter estado solo como dependencia es ruido y ESLint hizo bien en marcarlo.
+- Solucion:
+  - Se sustituyo por selector booleano real: `usePermisosStore((state) => state.canViewDashboard())`.
+  - `primaryItemPaths` depende de ese booleano y del rol del usuario.
+- Resultado:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - `npm.cmd run build`: OK.
+- Regla: no metas dependencias fantasma para "hacer reaccionar" un hook; deriva el dato que necesitas y suscribete a ese dato.
+
+## 2026-06-22 - V-02-02 - Validacion backups: SDK clavado y test incoherente
+
+- Contexto: implementacion de copias programables y subida cifrada a Google Drive.
+- Incidencias:
+  - `dotnet build` desde la raiz fallo porque `global.json` exige SDK `8.0.419` y la maquina tiene `8.0.421`.
+  - Se uso el workaround ya documentado: ejecutar build/test desde `C:\tmp` apuntando al `.csproj`, para que no se lea el `global.json` del repo.
+  - El filtro `BackupScheduleTests|ManualProcessResponseTests` expuso una incoherencia existente: `ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Write_Cuenta` esperaba `Forbid` por `canWriteCuenta=false`, pero el endpoint valida `CanAccessCuentaAsync`.
+  - Un intento de ejecutar build y tests .NET en paralelo bloqueo `obj\Debug\net8.0\AtlasBalance.API.dll`. Se repitio serializado y paso.
+- Decision:
+  - No se cambio el controlador de exportaciones para satisfacer un test equivocado.
+  - Se corrigio el test a `canAccessCuenta=false`.
+  - Build backend serializado: OK.
+  - Revalidacion focalizada: 9/9 OK.
+- Regla: si el test contradice el contrato real del controlador, arregla el test; no deformes produccion para hacer feliz una asercion mala.
+
 ## 2026-06-21 - V-02-02 - Validacion MiniMax: suite amplia IA/Configuracion sigue roja
 
 - Contexto: alta de MiniMax como proveedor IA con modelos `MiniMax-M3` y `MiniMax-M2.7`.
@@ -1693,3 +1723,26 @@
 - Causa: `permisosStore.canViewCuenta` trataba cualquier fila global (`cuenta_id/titular_id null`) como acceso de cuenta, sin distinguir si era solo `PuedeVerDashboard`.
 - Solucion aplicada: `canViewCuenta`, `canAddInCuenta`, `canEditCuenta`, `canDeleteInCuenta`, `canImportInCuenta`, `getColumnasVisibles` y `getColumnasEditables` pasan a ignorar filas globales `dashboard-only`; solo cuentan filas scopeadas de cuenta/titular o filas globales con acceso global de datos. `CuentasPage` muestra `Sin acceso` en vez de CTA operativos y `CuentaDetailPage` redirige al dashboard si recibe `403`.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR` OK.
+
+## 2026-06-23 - V-02-02 - Build estandar bloqueada por `frontend/dist/assets`
+
+- Contexto: durante la validacion del rediseño completo, `npm.cmd run build` compilo TypeScript y transformo modulos, pero fallo en `vite:prepare-out-dir`.
+- Causa observada: `EPERM, Permission denied` al intentar vaciar `Atlas Balance/frontend/dist/assets`. Es coherente con las incidencias conocidas de carpetas `dist`/`wwwroot` bloqueadas por procesos locales o permisos de Windows.
+- Impacto: no invalida el codigo del rediseño, pero impide usar la build estandar como artefacto mientras esa carpeta este bloqueada.
+- Workaround aplicado: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02 --emptyOutDir` compilo correctamente.
+- Verificacion relacionada: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, `git diff --check` OK con avisos CRLF preexistentes.
+- Pendiente: liberar/regenerar `frontend/dist/assets` antes de empaquetar release o sincronizar `wwwroot`.
+
+## 2026-06-23 - V-02-02 - Overflow horizontal mobile por tablas `.sr-only`
+
+- Contexto: durante la QA del rediseno, el dashboard mobile a 390px tenia `scrollWidth` mayor que `clientWidth`.
+- Causa: las tablas accesibles ocultas de `EvolucionChart` usan `className="sr-only"`, pero al ser tablas conservaban ancho intrinseco aunque estuvieran clippeadas.
+- Solucion aplicada: `.sr-only` fuerza dimensiones maximas de 1px, `clip-path: inset(50%)`, `!important` defensivo y `left: -10000px` para que el contenido accesible no aumente el ancho visible.
+- Verificacion: QA Playwright con Chrome local confirma dashboard mobile `clientWidth=390`, `scrollWidth=390`, bottom nav visible y consola sin errores.
+
+## 2026-06-23 - V-02-02 - Browser in-app con timeouts CDP durante QA visual
+
+- Contexto: el Browser in-app cargo DOM de login/cambio de password, pero `Page.captureScreenshot`, `Page.navigate` y un click por locator empezaron a expirar por CDP.
+- Causa observada: inestabilidad de la herramienta Browser/CDP en la sesion, no evidencia de error de la app; las mismas rutas funcionaron con Chrome local via Playwright.
+- Solucion aplicada: cortar la via tras dos intentos y cambiar a QA finita con Playwright + Chrome local + servidor/API mock cerrados en el mismo proceso.
+- Verificacion: Playwright local completo OK, capturas generadas en `output/playwright/` y consola sin errores.

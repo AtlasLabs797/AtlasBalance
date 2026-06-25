@@ -33,6 +33,8 @@ public class AppDbContext : DbContext
     public DbSet<DivisaActiva> DivisasActivas => Set<DivisaActiva>();
     public DbSet<Configuracion> Configuraciones => Set<Configuracion>();
     public DbSet<Backup> Backups => Set<Backup>();
+    public DbSet<BackupCloudConnection> BackupCloudConnections => Set<BackupCloudConnection>();
+    public DbSet<BackupCloudCopy> BackupCloudCopies => Set<BackupCloudCopy>();
     public DbSet<Exportacion> Exportaciones => Set<Exportacion>();
     public DbSet<NotificacionAdmin> NotificacionesAdmin => Set<NotificacionAdmin>();
 
@@ -357,6 +359,25 @@ public class AppDbContext : DbContext
             entity.ToTable("BACKUPS");
             entity.HasKey(e => e.Id);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.IniciadoPorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BackupCloudConnection>(entity =>
+        {
+            entity.ToTable("BACKUP_CLOUD_CONNECTIONS");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Provider, e.DeletedAt });
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BackupCloudCopy>(entity =>
+        {
+            entity.ToTable("BACKUP_CLOUD_COPIES");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.BackupId);
+            entity.HasIndex(e => new { e.Provider, e.Estado });
+            entity.HasOne(e => e.Backup).WithMany().HasForeignKey(e => e.BackupId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Connection).WithMany().HasForeignKey(e => e.ConnectionId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 

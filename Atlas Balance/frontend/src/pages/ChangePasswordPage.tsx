@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermisosStore } from '@/stores/permisosStore';
+import { useUiStore } from '@/stores/uiStore';
+import { IconMoon, IconSun } from '@/components/Icons';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 interface ChangePasswordForm {
@@ -17,6 +19,8 @@ export default function ChangePasswordPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
+  const theme = useUiStore((state) => state.theme);
+  const toggleTheme = useUiStore((state) => state.toggleTheme);
   const [error, setError] = useState<string | null>(null);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<ChangePasswordForm>();
 
@@ -44,7 +48,49 @@ export default function ChangePasswordPage() {
 
   return (
     <section className="auth-page">
-      <form className="auth-card" onSubmit={onSubmit}>
+      <button
+        type="button"
+        className="auth-theme-toggle"
+        onClick={toggleTheme}
+        aria-pressed={theme === 'dark'}
+        aria-label={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+        title={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+      >
+        {theme === 'light' ? <IconMoon /> : <IconSun />}
+      </button>
+
+      <aside className="auth-brand-panel" data-theme="dark" aria-label="Atlas Balance">
+        <div className="auth-brand-lockup">
+          <img
+            src="/logos/Atlas Balance.png"
+            alt="Atlas Balance"
+            className="auth-logo-image"
+          />
+          <div className="auth-branding">
+            <h1>Atlas Balance</h1>
+            <p>Control financiero interno</p>
+          </div>
+        </div>
+
+        <div className="auth-brand-copy">
+          <span className="auth-brand-eyebrow">Primer acceso</span>
+          <strong>Seguridad primero. Operativa después.</strong>
+          <p>Actualiza la contraseña inicial antes de entrar a datos financieros reales.</p>
+        </div>
+
+        <div className="auth-brand-footer">
+          <span>by</span>
+          <img
+            src="/logos/Atlas Labs.png"
+            alt="Atlas Labs"
+            className="auth-footer-logo"
+          />
+          <strong>Atlas Labs</strong>
+        </div>
+      </aside>
+
+      <main className="auth-main-panel">
+        <form className="auth-card" onSubmit={onSubmit}>
         <h1 className="auth-card-title">Cambio obligatorio de contraseña</h1>
         <p className="auth-card-description">Es tu primer inicio de sesión. Cambia la contraseña para continuar.</p>
 
@@ -104,7 +150,8 @@ export default function ChangePasswordPage() {
         <button type="submit" disabled={isSubmitting} className="auth-button">
           {isSubmitting ? 'Guardando...' : 'Actualizar contraseña'}
         </button>
-      </form>
+        </form>
+      </main>
     </section>
   );
 }

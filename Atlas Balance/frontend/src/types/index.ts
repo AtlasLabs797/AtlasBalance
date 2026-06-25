@@ -8,6 +8,8 @@ export type EstadoToken = 'activo' | 'revocado';
 export type FuenteTipoCambio = 'API' | 'MANUAL';
 export type EstadoBackup = 'PENDING' | 'SUCCESS' | 'FAILED';
 export type TipoBackup = 'AUTO' | 'MANUAL';
+export type BackupFrequency = 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+export type BackupDestination = 'LOCAL' | 'LOCAL_Y_GOOGLE_DRIVE';
 
 export interface Usuario {
   id: string;
@@ -492,6 +494,72 @@ export interface BackupItem {
   iniciado_por_id: string | null;
   iniciado_por_nombre: string | null;
   notas: string | null;
+  destino: BackupDestination | string;
+  cloud_provider: string | null;
+  cloud_estado: string | null;
+  cloud_uploaded_at: string | null;
+  cloud_file_id: string | null;
+  cloud_file_name: string | null;
+  cloud_error_message: string | null;
+}
+
+export interface GoogleDriveBackupConfig {
+  client_id: string;
+  client_secret_configured: boolean;
+  connected: boolean;
+  account_email: string | null;
+  folder_id: string | null;
+  last_validated_at: string | null;
+  last_error: string | null;
+  encryption_key_configured: boolean;
+}
+
+export interface BackupConfig {
+  auto_enabled: boolean;
+  frequency: BackupFrequency | string;
+  time_utc: string;
+  day_of_week: number;
+  day_of_month: number;
+  interval_hours: number;
+  destination: BackupDestination | string;
+  last_started_utc: string;
+  last_result: string;
+  google_drive: GoogleDriveBackupConfig;
+}
+
+export interface SaveBackupConfigRequest {
+  auto_enabled: boolean;
+  frequency: BackupFrequency | string;
+  time_utc: string;
+  day_of_week: number;
+  day_of_month: number;
+  interval_hours: number;
+  destination: BackupDestination | string;
+  google_drive_client_id: string;
+  google_drive_client_secret: string;
+  google_drive_folder_id: string;
+}
+
+export interface GoogleDriveLinkStart {
+  session_id: string;
+  user_code: string;
+  verification_url: string;
+  expires_at: string;
+  interval_seconds: number;
+}
+
+export interface GoogleDriveLinkStatus {
+  estado: 'PENDING' | 'CONNECTED' | 'FAILED' | 'EXPIRED' | string;
+  message: string | null;
+  account_email: string | null;
+  poll_after_seconds: number;
+}
+
+export interface GoogleDriveBackupFile {
+  file_id: string;
+  name: string;
+  size_bytes: number | null;
+  created_time: string | null;
 }
 
 export interface ExportacionItem {

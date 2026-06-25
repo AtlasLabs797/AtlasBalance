@@ -6,7 +6,9 @@ import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
+import { useUiStore } from '@/stores/uiStore';
 import type { LoginResponse } from '@/types';
+import { IconMoon, IconSun } from '@/components/Icons';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 interface LoginForm {
@@ -42,6 +44,8 @@ export default function LoginPage() {
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const theme = useUiStore((state) => state.theme);
+  const toggleTheme = useUiStore((state) => state.toggleTheme);
   const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>();
   const [error, setError] = useState<string | null>(null);
   const [postUpdateMessage, setPostUpdateMessage] = useState<string | null>(null);
@@ -162,8 +166,19 @@ export default function LoginPage() {
 
   return (
     <section className="auth-page">
-      <div className="auth-header">
-        <div className="auth-logo-container">
+      <button
+        type="button"
+        className="auth-theme-toggle"
+        onClick={toggleTheme}
+        aria-pressed={theme === 'dark'}
+        aria-label={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+        title={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+      >
+        {theme === 'light' ? <IconMoon /> : <IconSun />}
+      </button>
+
+      <aside className="auth-brand-panel" data-theme="dark" aria-label="Atlas Balance">
+        <div className="auth-brand-lockup">
           <img
             src="/logos/Atlas Balance.png"
             alt="Atlas Balance"
@@ -171,10 +186,28 @@ export default function LoginPage() {
           />
           <div className="auth-branding">
             <h1>Atlas Balance</h1>
+            <p>Control financiero interno</p>
           </div>
         </div>
-      </div>
 
+        <div className="auth-brand-copy">
+          <span className="auth-brand-eyebrow">Operación privada</span>
+          <strong>Una consola sobria para revisar dinero real.</strong>
+          <p>Acceso protegido para equipos que no pueden permitirse una pantalla confusa.</p>
+        </div>
+
+        <div className="auth-brand-footer">
+          <span>by</span>
+          <img
+            src="/logos/Atlas Labs.png"
+            alt="Atlas Labs"
+            className="auth-footer-logo"
+          />
+          <strong>Atlas Labs</strong>
+        </div>
+      </aside>
+
+      <main className="auth-main-panel">
       <form className="auth-card" onSubmit={onSubmit}>
         <h2 className="auth-card-title">{mfaChallenge ? 'Verificar acceso' : 'Iniciar sesión'}</h2>
         <p className="auth-card-description">
@@ -283,18 +316,7 @@ export default function LoginPage() {
           {isSubmitting ? 'Validando...' : (mfaChallenge ? 'Verificar acceso' : 'Entrar')}
         </button>
       </form>
-
-      <div className="auth-footer">
-        <div className="auth-footer-content">
-          <p className="auth-footer-text">by</p>
-          <img
-            src="/logos/Atlas Labs.png"
-            alt="Atlas Labs"
-            className="auth-footer-logo"
-          />
-          <span className="auth-footer-name">Atlas Labs</span>
-        </div>
-      </div>
+      </main>
     </section>
   );
 }

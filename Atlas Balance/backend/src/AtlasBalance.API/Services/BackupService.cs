@@ -22,17 +22,20 @@ public sealed class BackupService : IBackupService
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly IAuditService _auditService;
+    private readonly IGoogleDriveBackupService _googleDriveBackupService;
     private readonly ILogger<BackupService> _logger;
 
     public BackupService(
         AppDbContext dbContext,
         IConfiguration configuration,
         IAuditService auditService,
+        IGoogleDriveBackupService googleDriveBackupService,
         ILogger<BackupService> logger)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _auditService = auditService;
+        _googleDriveBackupService = googleDriveBackupService;
         _logger = logger;
     }
 
@@ -95,6 +98,17 @@ public sealed class BackupService : IBackupService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Retention falló tras backup exitoso {BackupId}", backup.Id);
+            }
+
+            try
+            {
+                await _googleDriveBackupService.UploadBackupAsync(backup, backupPath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                backup.Notas = "Copia local correcta; subida a Google Drive fallida.";
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                _logger.LogWarning(ex, "Backup local {BackupId} correcto, pero fallo la subida a Google Drive", backup.Id);
             }
 
             return backup;

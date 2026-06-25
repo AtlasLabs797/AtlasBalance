@@ -200,7 +200,7 @@ export default function AuditoriaPage() {
 
       {tab === 'sistema' ? (
         <>
-          <div className="auditoria-header" style={{ marginTop: '12px' }}>
+          <div className="auditoria-header auditoria-actions-header">
             <button type="button" onClick={exportCsv} disabled={exporting || loading}>
               {exporting ? 'Exportando...' : 'Exportar CSV'}
             </button>
