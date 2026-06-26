@@ -93,6 +93,31 @@ public class UsuariosControllerTests
     }
 
     [Fact]
+    public async Task Crear_Should_Reject_Manager_Without_DataScope()
+    {
+        await using var db = BuildDbContext();
+        var controller = new UsuariosController(db, new AuditService(db));
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+
+        var request = new CreateUsuarioRequest
+        {
+            Email = "manager.no-scope@atlasbalance.local",
+            NombreCompleto = "Manager Without Scope",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = true,
+            Password = "Manager12345!",
+            Emails = new[] { "manager.no-scope@atlasbalance.local" },
+            Permisos = Array.Empty<SavePermisoUsuarioRequest>()
+        };
+
+        var result = await controller.Crear(request, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Usuarios.AnyAsync(x => x.Email == request.Email)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Actualizar_Should_Revoke_Sessions_When_Admin_Resets_Password()
     {
         await using var db = BuildDbContext();

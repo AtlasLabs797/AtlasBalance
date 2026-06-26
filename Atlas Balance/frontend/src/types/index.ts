@@ -1,6 +1,6 @@
 ﻿// Mirror of DB schema + API response types
 
-export type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
+export type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO';
 export type TipoTitular = 'EMPRESA' | 'AUTONOMO' | 'PARTICULAR';
 export type TipoCuenta = 'NORMAL' | 'EFECTIVO' | 'PLAZO_FIJO';
 export type EstadoPlazoFijo = 'ACTIVO' | 'PROXIMO_VENCER' | 'VENCIDO' | 'RENOVADO' | 'CANCELADO';
@@ -674,6 +674,7 @@ export interface PaginatedResponse<T> {
   page: number;
   page_size: number;
   total_pages: number;
+  columnas_disponibles?: string[] | null;
 }
 
 export interface ApiResponse<T> {

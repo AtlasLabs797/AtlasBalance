@@ -608,7 +608,7 @@ Esta es la pieza central de la aplicación.
 
 
 
-**5 Roles:**
+**3 Roles:**
 
 
 
@@ -616,15 +616,11 @@ Esta es la pieza central de la aplicación.
 
 |-----|-------------|
 
-| **ADMIN** | Acceso total al sistema |
+| **ADMIN** | Acceso total: usuarios, permisos, configuracion, backups, auditoria, papelera, formatos, integraciones, paises, titulares, cuentas, alertas, revision, exportaciones y dashboard |
 
-| **GERENTE** | Ver y editar cuentas asignadas, exportar, dashboard si habilitado |
+| **GERENTE** | Acceso financiero asignado por permiso global, pais, titular o cuenta. Ve dashboards, alertas y revision de su alcance; puede hacer exportaciones manuales. No crea titulares/cuentas ni administra sistema |
 
-| **EMPLEADO_ULTRA** | Ver + agregar + editar en cuentas autorizadas |
-
-| **EMPLEADO_PLUS** | Ver + solo agregar nuevas líneas (no editar anteriores) |
-
-| **EMPLEADO** | Solo lectura en cuentas autorizadas |
+| **EMPLEADO** | Rol base por defecto. Su acceso depende solo de permisos granulares asignados |
 
 
 
@@ -1532,7 +1528,7 @@ password_hash           VARCHAR(255) NOT NULL
 
 nombre_completo         VARCHAR(255) NOT NULL
 
-rol                     ENUM('ADMIN','GERENTE','EMPLEADO_ULTRA','EMPLEADO_PLUS','EMPLEADO')
+rol                     ENUM('ADMIN','GERENTE','EMPLEADO')
 
 activo                  BOOLEAN DEFAULT true
 
@@ -4102,31 +4098,35 @@ No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mism
 
 
 
-|  | ADMIN | GERENTE | EMP.ULTRA | EMP.PLUS | EMPLEADO |
+|  | ADMIN | GERENTE | EMPLEADO |
 
-|--|-------|---------|-----------|----------|---------|
+|--|-------|---------|----------|
 
-| Ver extractos (cuentas asignadas) | ✅ | ✅* | ✅* | ✅* | ✅* |
+| Ver extractos/cuentas asignadas | Si | Si, por alcance global/pais/titular/cuenta | Segun permiso |
 
-| Agregar filas nuevas | ✅ | ✅* | ✅* | ✅* | ❌ |
+| Agregar filas nuevas | Si | Segun permiso | Segun permiso |
 
-| Editar filas existentes | ✅ | ✅* | ✅* | ❌ | ❌ |
+| Editar filas existentes | Si | Segun permiso | Segun permiso |
 
-| Eliminar filas | ✅ | ✅* | ❌ | ❌ | ❌ |
+| Eliminar filas | Si | Segun permiso | Segun permiso |
 
-| Checkbox / Flag por fila | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Checkbox / Flag por fila | Si | Segun permiso sobre la cuenta | Segun permiso sobre la cuenta |
 
-| Ver dashboard | ✅ | Si auth | ❌ | ❌ | ❌ |
+| Ver dashboard | Si | Si tiene alcance de datos asignado | Solo con `puede_ver_dashboard` y permiso de datos |
 
-| Exportar datos | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Exportacion manual | Si | Si tiene acceso a la cuenta | No |
 
-| Importar extractos | ✅ | ✅ | ✅* | ❌ | ❌ |
+| Importar extractos | Si | Segun permiso | Segun permiso |
 
-| Gestión usuarios | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Ver alertas activas | Si | Si, dentro de su alcance | Si, dentro de su alcance |
 
-| Gestión titulares/cuentas | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Ver revision bancaria | Si | Si, dentro de su alcance | Si, dentro de su alcance |
 
-| Gestión formatos importación | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Gestion usuarios/permisos | Si | No | No |
+
+| Gestion titulares/cuentas | Si | No | No |
+
+| Gestion formatos/importacion, backups, integraciones, configuracion, auditoria y papelera | Si | No | No |
 
 | Ver auditoría completa | ✅ | ❌ | ❌ | ❌ | ❌ |
 

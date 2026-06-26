@@ -13,7 +13,7 @@ interface UsuarioRow {
   id: string;
   email: string;
   nombre_completo: string;
-  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
+  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO';
   activo: boolean;
   primer_login: boolean;
   puede_usar_ia: boolean;
@@ -29,8 +29,6 @@ interface DeleteCandidate {
 const rolLabels: Record<UsuarioRow['rol'], string> = {
   ADMIN: 'Administrador',
   GERENTE: 'Gerente',
-  EMPLEADO_ULTRA: 'Empleado ultra',
-  EMPLEADO_PLUS: 'Empleado plus',
   EMPLEADO: 'Empleado',
 };
 

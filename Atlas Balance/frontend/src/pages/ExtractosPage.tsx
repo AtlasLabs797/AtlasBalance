@@ -49,6 +49,7 @@ export default function ExtractosPage() {
   const [fechaHasta, setFechaHasta] = useState<string>(() => searchParams.get('fechaHasta') ?? '');
   const [titularesResumen, setTitularesResumen] = useState<TitularConCuentas[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[] | null>(null);
+  const [availableExtraColumns, setAvailableExtraColumns] = useState<string[]>([]);
 
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditData, setAuditData] = useState<AuditCellEntry[]>([]);
@@ -105,6 +106,7 @@ export default function ExtractosPage() {
     setError(null);
     if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
       setRows([]);
+      setAvailableExtraColumns([]);
       setTotalPages(1);
       setTotalRows(0);
       setError('La fecha desde no puede ser posterior a la fecha hasta.');
@@ -127,11 +129,13 @@ export default function ExtractosPage() {
         }
       });
       setRows(data.data ?? []);
+      setAvailableExtraColumns(data.columnas_disponibles ?? []);
       setTotalPages(Math.max(1, data.total_pages ?? 1));
       setTotalRows(data.total ?? data.data?.length ?? 0);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudieron cargar extractos'));
       setRows([]);
+      setAvailableExtraColumns([]);
       setTotalPages(1);
       setTotalRows(0);
     } finally {
@@ -223,6 +227,37 @@ export default function ExtractosPage() {
     }
   };
 
+  const saveVisibleColumns = async (next: string[]) => {
+    setVisibleColumns(next);
+    setError(null);
+    try {
+      const payload: {
+        cuenta_id?: string;
+        titular_id?: string;
+        pais_id?: string;
+        columnas_visibles: string[];
+      } = {
+        columnas_visibles: next
+      };
+      if (cuentaFiltro) {
+        payload.cuenta_id = cuentaFiltro;
+      }
+      const titularScope = selectedCuenta?.titular_id ?? titularFiltro;
+      if (titularScope) {
+        payload.titular_id = titularScope;
+      }
+      const paisScope = selectedCuenta?.pais_id ?? selectedPaisId;
+      if (paisScope) {
+        payload.pais_id = paisScope;
+      }
+
+      await api.put('/extractos/columnas-visibles', payload);
+    } catch (err) {
+      setVisibleColumns(visibleColumns);
+      setError(extractErrorMessage(err, 'No se pudieron guardar las columnas visibles.'));
+    }
+  };
+
   const onToggleColumn = async (column: string, availableColumns: string[]) => {
     const availableSet = new Set(availableColumns);
     const current = (visibleColumns ?? availableColumns).filter((item) => availableSet.has(item));
@@ -232,19 +267,11 @@ export default function ExtractosPage() {
     }
 
     const next = current.includes(column) ? current.filter((c) => c !== column) : [...current, column];
-    setVisibleColumns(next);
-    setError(null);
-    try {
-      await api.put('/extractos/columnas-visibles', {
-        cuenta_id: cuentaFiltro || null,
-        titular_id: selectedCuenta?.titular_id ?? (titularFiltro || null),
-        pais_id: selectedCuenta?.pais_id ?? (selectedPaisId || null),
-        columnas_visibles: next
-      });
-    } catch (err) {
-      setVisibleColumns(visibleColumns);
-      setError(extractErrorMessage(err, 'No se pudieron guardar las columnas visibles.'));
-    }
+    await saveVisibleColumns(next);
+  };
+
+  const onShowAllColumns = async (availableColumns: string[]) => {
+    await saveVisibleColumns(availableColumns);
   };
 
   const onSaveCell = async (row: Extracto, column: string, value: string) => {
@@ -420,8 +447,10 @@ export default function ExtractosPage() {
         sortBy={sortBy}
         sortDir={sortDir}
         visibleColumns={visibleColumns}
+        availableExtraColumns={availableExtraColumns}
         onSort={onSort}
         onToggleColumn={(column, availableColumns) => void onToggleColumn(column, availableColumns)}
+        onShowAllColumns={(availableColumns) => void onShowAllColumns(availableColumns)}
         onSaveCell={onSaveCell}
         onToggleCheck={onToggleCheck}
         onToggleFlag={onToggleFlag}

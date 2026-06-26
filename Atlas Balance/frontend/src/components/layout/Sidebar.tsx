@@ -6,6 +6,7 @@ import { useAlertCount } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
+import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useUpdateStore } from '@/stores/updateStore';
 
@@ -29,6 +30,7 @@ export function Sidebar() {
   const updateAvailable = useUpdateStore((state) => state.available);
   const checkUpdate = useUpdateStore((state) => state.check);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
+  const canViewDashboard = usePermisosStore((state) => state.canViewDashboard());
   const [now, setNow] = useState(() => new Date());
 
   // Check for updates once per session when the user role is known, not on every navigation.
@@ -52,7 +54,10 @@ export function Sidebar() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const visibleNavItems = getVisibleNavigationItems(usuario?.rol, { aiAvailable });
+  const visibleNavItems = getVisibleNavigationItems(usuario?.rol, {
+    aiAvailable,
+    dashboardAvailable: usuario?.rol === 'ADMIN' || canViewDashboard,
+  });
   const groupOrder: NavigationGroup[] = ['operacion', 'control', 'sistema'];
 
   const getBadge = (to: string) => {

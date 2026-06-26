@@ -25,7 +25,7 @@ namespace AtlasBalance.API.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "estado_proceso", new[] { "pending", "success", "failed" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "estado_token_integracion", new[] { "activo", "revocado" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "fuente_tipo_cambio", new[] { "api", "manual" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "rol_usuario", new[] { "admin", "gerente", "empleado_ultra", "empleado_plus", "empleado" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "rol_usuario", new[] { "admin", "gerente", "empleado" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "tipo_cuenta", new[] { "normal", "efectivo", "plazo_fijo" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "tipo_proceso", new[] { "auto", "manual" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "tipo_titular", new[] { "empresa", "particular", "autonomo" });

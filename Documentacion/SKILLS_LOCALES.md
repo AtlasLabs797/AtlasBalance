@@ -101,7 +101,7 @@ Ruta base canonica: `Skills/02_Design-UI-UX/ui-ux-pro-max-skill/.claude/skills`.
 
 | Skill | Ruta canonica | Usar cuando | Como usarla |
 |---|---|---|---|
-| cyber-neo | `Skills/Seguridad/cyber-neo-main/skills/cyber-neo/SKILL.md` | El usuario pide auditoria de seguridad, vulnerabilidades, secretos, auth, permisos, criptografia, CI/CD, supply chain o pentest ligero. | Carga `SKILL.md`; revisa OWASP/CWE, secretos, dependencias, authz/authn y genera reporte priorizado. No ejecutes herramientas externas si no estan instaladas o si el coste/riesgo no esta claro. |
+| cyber-neo | `Skills/05_Security/cyber-neo/SKILL.md` | El usuario pide auditoria de seguridad, vulnerabilidades, secretos, auth, permisos, criptografia, CI/CD, supply chain o pentest ligero. | Carga `SKILL.md`; revisa OWASP/CWE, secretos, dependencias, authz/authn y genera reporte priorizado. No ejecutes herramientas externas si no estan instaladas o si el coste/riesgo no esta claro. |
 
 ## Orden recomendado por tipo de tarea
 

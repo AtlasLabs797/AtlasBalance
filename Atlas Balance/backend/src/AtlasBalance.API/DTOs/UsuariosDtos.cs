@@ -10,6 +10,7 @@ public sealed class PaginatedResponse<T>
     public int Page { get; set; }
     public int PageSize { get; set; }
     public int TotalPages { get; set; }
+    public IReadOnlyList<string>? ColumnasDisponibles { get; set; }
 }
 
 public sealed class UsuarioListItemResponse
@@ -54,7 +55,7 @@ public sealed class CreateUsuarioRequest
     public string Email { get; set; } = string.Empty;
     public string NombreCompleto { get; set; } = string.Empty;
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public RolUsuario Rol { get; set; }
+    public RolUsuario Rol { get; set; } = RolUsuario.EMPLEADO;
     public bool Activo { get; set; } = true;
     public bool PrimerLogin { get; set; } = true;
     public bool PuedeUsarIa { get; set; }
@@ -68,7 +69,7 @@ public sealed class UpdateUsuarioRequest
     public string Email { get; set; } = string.Empty;
     public string NombreCompleto { get; set; } = string.Empty;
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public RolUsuario Rol { get; set; }
+    public RolUsuario Rol { get; set; } = RolUsuario.EMPLEADO;
     public bool Activo { get; set; }
     public bool PrimerLogin { get; set; }
     public bool PuedeUsarIa { get; set; }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AtlasBalance.API.DTOs;
 
 public sealed class ExtractoListItemResponse
@@ -103,8 +105,15 @@ public sealed class TitularConCuentasResponse
 
 public sealed class SaveColumnasVisiblesRequest
 {
+    [JsonPropertyName("cuenta_id")]
     public Guid? CuentaId { get; set; }
+
+    [JsonPropertyName("titular_id")]
     public Guid? TitularId { get; set; }
+
+    [JsonPropertyName("pais_id")]
     public Guid? PaisId { get; set; }
+
+    [JsonPropertyName("columnas_visibles")]
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
 }

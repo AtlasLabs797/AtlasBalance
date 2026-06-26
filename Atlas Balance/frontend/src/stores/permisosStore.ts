@@ -95,7 +95,12 @@ export const usePermisosStore = create<PermisosState>((set, get) => ({
 
   canViewDashboard: () => {
     if (isAdmin()) return true;
-    return get().permisos.some((p) => p.puede_ver_dashboard && grantsAccountAccess(p));
+    const role = useAuthStore.getState().usuario?.rol;
+    return get().permisos.some((p) =>
+      role === 'GERENTE'
+        ? grantsAccountAccess(p)
+        : p.puede_ver_dashboard && grantsAccountAccess(p)
+    );
   },
 
   getColumnasVisibles: (cuentaId, titularId, paisId) => {

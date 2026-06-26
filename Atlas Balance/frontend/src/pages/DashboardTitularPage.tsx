@@ -45,7 +45,7 @@ export default function DashboardTitularPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const allowed = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const allowed = usuario?.rol === 'ADMIN' || canViewDashboard();
   const divisaOptions = useMemo(() => {
     const options = new Set<string>();
     Object.keys(titular?.saldos_por_divisa ?? {}).forEach((item) => options.add(item));

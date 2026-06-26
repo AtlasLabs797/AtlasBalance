@@ -698,14 +698,9 @@ public sealed class DashboardService : IDashboardService
             return DashboardScope.GlobalForAdmin();
         }
 
-        if (usuario.Rol != RolUsuario.GERENTE)
-        {
-            throw new DashboardAccessException("No tienes permisos para ver dashboards", StatusCodes.Status403Forbidden);
-        }
-
         var permisos = await _dbContext.PermisosUsuario
             .AsNoTracking()
-            .Where(x => x.UsuarioId == userId && x.PuedeVerDashboard)
+            .Where(x => x.UsuarioId == userId)
             .Select(x => new
             {
                 x.CuentaId,
@@ -715,9 +710,17 @@ public sealed class DashboardService : IDashboardService
                 x.PuedeAgregarLineas,
                 x.PuedeEditarLineas,
                 x.PuedeEliminarLineas,
-                x.PuedeImportar
+                x.PuedeImportar,
+                x.PuedeVerDashboard
             })
             .ToListAsync(cancellationToken);
+
+        permisos = permisos
+            .Where(x =>
+                usuario.Rol == RolUsuario.GERENTE
+                    ? GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar)
+                    : x.PuedeVerDashboard && GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar))
+            .ToList();
 
         if (permisos.Count == 0)
         {
@@ -738,7 +741,7 @@ public sealed class DashboardService : IDashboardService
             .AsNoTracking()
             .Where(c => _dbContext.PermisosUsuario.Any(p =>
                 p.UsuarioId == userId &&
-                p.PuedeVerDashboard &&
+                (usuario.Rol == RolUsuario.GERENTE || p.PuedeVerDashboard) &&
                 (p.PuedeVerCuentas || p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas || p.PuedeImportar) &&
                 (p.PaisId == null || p.PaisId == c.PaisId) &&
                 (p.TitularId == null || p.TitularId == c.TitularId) &&

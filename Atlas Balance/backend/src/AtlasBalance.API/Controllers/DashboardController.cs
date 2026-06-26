@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace AtlasBalance.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = "ADMIN,GERENTE")]
+[Authorize]
 [Route("api/dashboard")]
 public sealed class DashboardController : ControllerBase
 {

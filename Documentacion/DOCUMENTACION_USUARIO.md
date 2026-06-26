@@ -69,7 +69,9 @@ La vista `Extractos` usa una reticula de celdas tipo hoja de calculo. Las column
 
 Si falla la carga de movimientos, preferencias de columnas o auditoria de una celda, la pantalla muestra el error y permite reintentar. Si intentas ocultar columnas, siempre queda al menos una visible.
 
-El boton `Columnas` permite elegir que columnas se muestran. La preferencia se guarda para el scope actual: cuenta si hay una seleccionada, titular si filtraste por titular, pais si estas en un pais, o vista general si no hay filtros de cuenta/titular.
+El boton `Columnas` permite elegir que columnas se muestran. La preferencia se guarda para el scope actual: cuenta si hay una seleccionada, titular si filtraste por titular, pais si estas en un pais, o vista general si no hay filtros de cuenta/titular. No hace falta elegir una cuenta para guardar columnas en la vista general.
+
+El selector tambien muestra columnas extra disponibles en el resultado filtrado aunque no aparezcan en la fila visible actual. Si una preferencia queda demasiado recortada, usa `Mostrar todas` para recuperar todas las columnas disponibles de esa vista.
 
 En la columna `Alerta`, marca o desmarca el checkbox y escribe la nota si hace falta. La tabla ya no muestra el texto `Marcada/Sin marca` porque era redundante.
 
@@ -300,6 +302,12 @@ Indica fecha, monto y concepto opcional. Atlas Balance calcula el saldo nuevo de
 
 ## Usuarios y permisos
 
+Atlas Balance usa tres roles:
+
+- `Admin`: acceso total al sistema.
+- `Gerente`: acceso financiero asignado por permisos. Puede trabajar por todos los paises/titulares/cuentas o solo por los seleccionados. Ve dashboards, alertas activas y revision dentro de su alcance, y puede hacer exportaciones manuales. No crea titulares ni cuentas y no administra sistema.
+- `Empleado`: rol base por defecto. Hace lo que indiquen sus permisos granulares.
+
 En `Usuarios`, el modal de alta/edicion incluye `Acceso a todas las cuentas`. Ese ajuste crea un permiso global para ver todas las cuentas sin conceder automaticamente edicion, eliminacion ni importacion.
 
 Para permisos manuales, marca `Pais` si el usuario solo debe operar en un pais. Luego puedes reducir mas con `Titular` y `Cuenta`. Un permiso con pais y titular no significa "todo el pais o todo el titular"; significa la interseccion exacta.
@@ -308,7 +316,7 @@ Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las ac
 
 Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas visibles en `Extractos` no concede permiso de edicion; la edicion de columnas se decide por los permisos configurados en `Usuarios`.
 
-`Puede ver dashboard` solo permite dashboard si la fila tambien tiene algun permiso operativo de datos dentro de ese alcance. No abre cuentas ni extractos por si solo.
+Para `Gerente`, el dashboard se habilita cuando tiene al menos un permiso de datos. Para `Empleado`, `Puede ver dashboard` solo permite dashboard si la fila tambien tiene algun permiso operativo de datos dentro de ese alcance. No abre cuentas ni extractos por si solo.
 
 La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar Authenticator`. Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
 

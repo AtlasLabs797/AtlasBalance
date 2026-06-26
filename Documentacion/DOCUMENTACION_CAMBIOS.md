@@ -8,6 +8,220 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-26 - V-02-02 - Auditoria auth/RLS de acceso a datos
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se auditaron controladores y servicios que exponen datos financieros: cuentas, titulares, extractos, dashboard, revision, alertas, exportaciones, importacion, IA e integracion OpenClaw.
+- Se reviso la frontera OpenClaw: `IntegrationAuthMiddleware` exige Bearer propio, ignora JWT de usuario normal en `/api/integration/openclaw` y los endpoints leen desde cuentas filtradas por `IntegrationAuthorizationService`.
+- Se corrigio la desalineacion RLS del scope `dashboard`: un `EMPLEADO` con `PuedeVerCuentas` pero sin `PuedeVerDashboard` podia leer tablas financieras si una query llegaba a PostgreSQL con `atlas.request_scope = dashboard`; ahora queda bloqueado por RLS.
+- `GERENTE` conserva la semantica de producto: dashboard permitido con cualquier permiso de datos asignado, aunque no tenga `PuedeVerDashboard`.
+- Se agregaron regresiones RLS para gerente, empleado sin dashboard, empleado con dashboard y lectura normal fuera del scope `dashboard`.
+- Se corrigio la ruta canonica de `cyber-neo` en el catalogo de skills locales.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260626193000_AlignRlsDashboardAccessWithRoles.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/SKILLS_LOCALES.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Skills usadas: `codex-security:security-scan` como guia de seguridad y skill local `cyber-neo`.
+- Preflight `codex-security` para `security_scan`: `incomplete` por modo/capacidad multi-agent desconocidos; se hizo auditoria focalizada de auth/RLS, no escaneo exhaustivo multiagente.
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false`: OK, 1 warning obsoleto de Hangfire/PostgreSQL ya existente.
+- `dotnet test "...AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~DashboardServiceTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~IntegrationOpenClawControllerTests|FullyQualifiedName~ExtractosControllerTests|FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~AlertaServiceTests|FullyQualifiedName~RevisionServiceTests|FullyQualifiedName~ExportacionesControllerTests|FullyQualifiedName~UsuariosControllerTests" -p:UseAppHost=false`: 116/116 OK.
+- `dotnet test "...AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~RowLevelSecurityTests" -p:UseAppHost=false`: bloqueado por Docker/Testcontainers no disponible.
+
+**Pendientes:**
+- Ejecutar `RowLevelSecurityTests` con Docker/Testcontainers activo antes de vender RLS como runtime-verificado.
+- La auditoria fue focalizada en acceso a informacion y RLS; no sustituye un escaneo exhaustivo SCA/SAST/secrets de todo el repo.
+
+---
+## 2026-06-26 - V-02-02 - Selector de columnas sin `cuenta_id` requerido
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- `SaveColumnasVisiblesRequest` declara nombres JSON explicitos (`cuenta_id`, `titular_id`, `pais_id`, `columnas_visibles`) y mantiene `cuenta_id` nullable.
+- `ExtractosPage` deja de mandar `cuenta_id: null` en vista general; si no hay cuenta seleccionada, omite la clave y guarda solo `columnas_visibles` mas el scope que exista.
+- Se agrego regresion de serializacion para payload snake_case con `cuenta_id: null` y sin `cuenta_id`.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Skills usadas: `build-web-apps:frontend-testing-debugging` y Browser.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 18/18 OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-extractos-cuenta-id-v02-02 --emptyOutDir`: OK. Carpeta temporal eliminada despues.
+- QA Browser con API mock estricta: en vista general, activar `categoria` envia `PUT /api/extractos/columnas-visibles` sin `cuenta_id`, no muestra error y deja la columna visible.
+- Captura: `output/playwright/extractos-columnas-sin-cuenta-v02-02.png`.
+
+**Pendientes:**
+- Si la app en ejecucion sigue devolviendo `cuenta_id es requerido`, hay que reiniciar/republicar backend/frontend: ese mensaje ya no corresponde a este codigo fuente.
+
+---
+## 2026-06-26 - V-02-02 - Formatos de importacion sin columnas cortadas
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se corrigio el layout de `FormatosImportacionPage` para que la tabla de formatos no quede cortada cuando convive con el formulario lateral.
+- La tabla usa `colgroup`, `table-layout: fixed` y anchos en `rem` para las columnas criticas; `Extra` absorbe el espacio sobrante.
+- Las acciones de fila se encapsulan en `.formatos-row-actions`, sin borde/padding heredado de acciones tipo tarjeta, y los botones usan `white-space: nowrap` para no partir palabras.
+- Se elimino el corte agresivo `overflow-wrap: anywhere`, que partia textos cortos como `Activo` y `Eliminar`.
+- En pantallas tablet/mobile, el formulario baja debajo de la tabla y la tabla conserva scroll horizontal local solo cuando realmente falta ancho.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/FormatosImportacionPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/entities.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Decisiones visuales tomadas:**
+- Se priorizo que la tabla quepa en desktop sin scroll horizontal artificial. El scroll local queda como fallback en anchuras pequenas.
+- No se convirtio la tabla a tarjetas porque la pantalla compara formatos por columnas; destruir esa comparacion seria arreglar un corte creando otro problema.
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md` y `Documentacion/LOG_ERRORES_INCIDENCIAS.md`.
+- Skill usada: `build-web-apps:frontend-testing-debugging`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir tmp-vite-formatos-layout-v02-02 --emptyOutDir`: OK. Carpeta temporal eliminada despues.
+- Revalidacion tras evitar palabras partidas: lint OK, TypeScript OK y build Vite temporal OK.
+- QA Browser: bloqueada por politica de seguridad al intentar abrir una pagina `data:` de prueba. Se corto esa via y no se rodeo la politica.
+
+**Pendientes:**
+- Revisar visualmente contra la app autenticada real cuando haya servidor local activo; la validacion renderizada mockeada quedo bloqueada por el navegador integrado.
+
+---
+## 2026-06-26 - V-02-02 - Modelo de usuarios reducido a Admin/Gerente/Empleado
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se redujo `RolUsuario` a `ADMIN`, `GERENTE` y `EMPLEADO`, conservando valores numericos `0/1/2`.
+- Se agrego la migracion `20260626180000_ReduceUserRolesToThreeTypes` para convertir roles antiguos `3/4` a `EMPLEADO` y recrear el enum PostgreSQL auxiliar con tres labels.
+- `CreateUsuarioRequest` y `UpdateUsuarioRequest` usan `EMPLEADO` como default defensivo.
+- `UsuariosController` rechaza `GERENTE` sin permisos de datos.
+- `DashboardService` autoriza `GERENTE` por permiso de datos asignado y `EMPLEADO` por `PuedeVerDashboard` mas datos.
+- El frontend elimina `EMPLEADO_ULTRA`/`EMPLEADO_PLUS`, oculta `Dashboard` si no esta disponible y actualiza tipos/labels.
+- `ExportacionesPage` oculta la generacion manual para usuarios que no sean `ADMIN` o `GERENTE`, alineando UI con backend.
+- Se cerro el bug abierto de `DashboardService` por `PuedeVerDashboard` ausente en tipo anonimo.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Models/Enums.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/UsuariosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/DashboardController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/DashboardService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260626180000_ReduceUserRolesToThreeTypes.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/AppDbContextModelSnapshot.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/DashboardServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerTests.cs`
+- `Atlas Balance/frontend/src/App.tsx`
+- `Atlas Balance/frontend/src/components/auth/RoleGuard.tsx`
+- `Atlas Balance/frontend/src/components/layout/BottomNav.tsx`
+- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
+- `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
+- `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`
+- `Atlas Balance/frontend/src/pages/CuentasPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardTitularPage.tsx`
+- `Atlas Balance/frontend/src/pages/ExportacionesPage.tsx`
+- `Atlas Balance/frontend/src/pages/TitularesPage.tsx`
+- `Atlas Balance/frontend/src/pages/UsuariosPage.tsx`
+- `Atlas Balance/frontend/src/stores/permisosStore.ts`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/utils/navigation.ts`
+- `Documentacion/SPEC.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md` y `Documentacion/LOG_ERRORES_INCIDENCIAS.md`.
+- `rg -n "EMPLEADO_ULTRA|EMPLEADO_PLUS|EMP\\.ULTRA|EMP\\.PLUS" ...`: sin referencias en backend/frontend vivo.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run lint`, `npm.cmd exec tsc -- --noEmit` y `npm.cmd exec vite -- build --outDir tmp-vite-user-roles-v02-02 --emptyOutDir` reejecutados tras ajustar exportaciones: OK.
+- `dotnet build ...` desde el repo: bloqueado por `global.json` que exige SDK `8.0.419` y maquina con `8.0.421`.
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false` desde `C:\tmp`: OK.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~DashboardServiceTests|FullyQualifiedName~UsuariosControllerTests" -p:UseAppHost=false` desde `C:\tmp`: 17/17 OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-user-roles-v02-02 --emptyOutDir`: fallo por `outDir` relativo fuera del root.
+- `npm.cmd exec vite -- build --outDir tmp-vite-user-roles-v02-02 --emptyOutDir`: OK. Carpeta temporal eliminada despues.
+- `git diff --check` acotado: sin errores; solo avisos CRLF.
+
+**Pendientes:**
+- No se ejecuto suite completa con Docker/Testcontainers.
+- No se hizo QA visual con servidor real porque el cambio no requiere servidor dev y la regla anti-encallamiento prioriza validaciones finitas.
+
+---
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos usa columnas extra disponibles
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- `GET /api/extractos` devuelve `columnas_disponibles` con las columnas extra del conjunto filtrado completo, no solo de la pagina actual.
+- `ExtractosPage` consume esa lista y la pasa a `ExtractoTable`, evitando que el selector pierda columnas extra que existen en otras paginas o filas filtradas.
+- El panel `Columnas` incluye `Mostrar todas` para recuperar rapidamente una preferencia incompleta.
+- Se agrego una regresion backend que fuerza el caso pagina actual sin columna extra y conjunto filtrado con columna extra.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/UsuariosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/DashboardService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Skills usadas: `build-web-apps:frontend-testing-debugging` y Browser.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 17/17 OK.
+- Revalidacion posterior detecto bloqueo de compilacion en `DashboardService.cs(721)`: la logica usaba `PuedeVerDashboard` sin incluirlo en la proyeccion. Se corrigio la proyeccion para desbloquear la validacion.
+- Repeticion de `ExtractosControllerTests` tras la correccion de compilacion: 17/17 OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-extractos-columns-v02-02-audit --emptyOutDir`: OK.
+- QA Browser con build temporal y API mock: `/extractos` carga, el panel lista `canal`, `categoria` y `origen` desde `columnas_disponibles`, activar `categoria` actualiza cabecera y payload `PUT`, `Mostrar todas` deja 11 columnas visibles y consola sin errores.
+- Captura: `output/playwright/extractos-column-selector-v02-02.png`.
+- Revalidacion QA adicional: `output/playwright/extractos-column-selector-v02-02-audit.png`.
+
+**Pendientes:**
+- Ninguno para esta correccion.
+
+---
 ## 2026-06-26 - V-02-02 - Dashboard principal muestra ingresos y egresos en la grafica
 
 **Version:** V-02-02

@@ -468,6 +468,14 @@ export default function FormatosImportacionPage() {
           {!loading && items.length > 0 && (
             <div className="users-table-scroll">
             <table>
+              <colgroup>
+                <col className="formatos-col-banco" />
+                <col className="formatos-col-divisa" />
+                <col className="formatos-col-base" />
+                <col className="formatos-col-extra" />
+                <col className="formatos-col-estado" />
+                {isAdmin && <col className="formatos-col-acciones" />}
+              </colgroup>
               <thead>
                 <tr>
                   <th>Banco</th>
@@ -512,7 +520,8 @@ export default function FormatosImportacionPage() {
                           : <span className="users-badge">Inactivo</span>}
                     </td>
                     {isAdmin && (
-                      <td className="phase2-row-actions">
+                      <td>
+                        <div className="phase2-row-actions formatos-row-actions">
                         <button type="button" onClick={() => startEdit(item.id)} disabled={saving} aria-label={`Editar formato ${item.nombre}`}>Editar</button>
                         {!item.deleted_at ? (
                           <button
@@ -527,6 +536,7 @@ export default function FormatosImportacionPage() {
                         ) : (
                           <button type="button" onClick={() => restore(item.id)} disabled={saving} aria-label={`Restaurar formato ${item.nombre}`}>Restaurar</button>
                         )}
+                        </div>
                       </td>
                     )}
                   </tr>

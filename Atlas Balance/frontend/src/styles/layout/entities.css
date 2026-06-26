@@ -96,7 +96,7 @@
 }
 
 .formatos-page .phase2-grid {
-  grid-template-columns: minmax(0, 1.45fr) minmax(22rem, 0.75fr);
+  grid-template-columns: minmax(38rem, 1.35fr) minmax(22rem, 0.75fr);
   align-items: start;
 }
 
@@ -117,7 +117,9 @@
 }
 
 .formatos-page .users-table-scroll table {
-  min-width: 860px;
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
 }
 
 .formatos-page .users-table-scroll th {
@@ -127,10 +129,48 @@
   text-transform: uppercase;
 }
 
+.formatos-page .users-table-scroll th,
+.formatos-page .users-table-scroll td {
+  vertical-align: middle;
+}
+
+.formatos-page .users-table-scroll td {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.formatos-col-banco {
+  width: 5.75rem;
+}
+
+.formatos-col-divisa {
+  width: 4rem;
+}
+
+.formatos-col-base {
+  width: 10.5rem;
+}
+
+.formatos-col-extra {
+  width: auto;
+}
+
+.formatos-col-estado {
+  width: 5.25rem;
+}
+
+.formatos-col-acciones {
+  width: 6.75rem;
+}
+
 .formatos-page .users-table-scroll td:nth-child(2),
 .formatos-page .users-table-scroll td:nth-child(3) {
   font-family: var(--font-family-mono);
   font-variant-numeric: tabular-nums;
+}
+
+.formatos-page .users-table-scroll td:nth-child(3) {
+  line-height: 1.55;
 }
 
 .formatos-extra-list {
@@ -150,6 +190,19 @@
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
+}
+
+.formatos-row-actions {
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+  justify-content: flex-start;
+}
+
+.formatos-row-actions button {
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .formatos-page .users-form-card {
@@ -916,6 +969,14 @@
 @media (max-width: 1023.98px) {
   .phase2-grid {
     grid-template-columns: 1fr;
+  }
+
+  .formatos-page .phase2-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .formatos-page .users-table-scroll table {
+    min-width: 780px;
   }
 
   .titulares-page .phase2-cards {

@@ -35,6 +35,8 @@ public sealed class RowLevelSecurityTests
         var readerId = Guid.NewGuid();
         var writerId = Guid.NewGuid();
         var countryScopedUserId = Guid.NewGuid();
+        var employeeNoDashboardId = Guid.NewGuid();
+        var employeeDashboardId = Guid.NewGuid();
         var paisPermitidoId = Guid.NewGuid();
         var paisBloqueadoId = Guid.NewGuid();
         var titularPermitidoId = Guid.NewGuid();
@@ -53,6 +55,8 @@ public sealed class RowLevelSecurityTests
         var revisionPermitidaId = Guid.NewGuid();
         var revisionBloqueadaId = Guid.NewGuid();
         var readerPermissionId = Guid.NewGuid();
+        var employeeNoDashboardPermissionId = Guid.NewGuid();
+        var employeeDashboardPermissionId = Guid.NewGuid();
         var countryPermissionId = Guid.NewGuid();
         var integrationTokenId = Guid.NewGuid();
         var writeOnlyIntegrationTokenId = Guid.NewGuid();
@@ -113,6 +117,24 @@ public sealed class RowLevelSecurityTests
                     NombreCompleto = "Country RLS",
                     PasswordHash = "test",
                     Rol = RolUsuario.GERENTE,
+                    Activo = true
+                },
+                new Usuario
+                {
+                    Id = employeeNoDashboardId,
+                    Email = $"employee-no-dashboard-{Guid.NewGuid():N}@atlas.local",
+                    NombreCompleto = "Employee No Dashboard RLS",
+                    PasswordHash = "test",
+                    Rol = RolUsuario.EMPLEADO,
+                    Activo = true
+                },
+                new Usuario
+                {
+                    Id = employeeDashboardId,
+                    Email = $"employee-dashboard-{Guid.NewGuid():N}@atlas.local",
+                    NombreCompleto = "Employee Dashboard RLS",
+                    PasswordHash = "test",
+                    Rol = RolUsuario.EMPLEADO,
                     Activo = true
                 });
 
@@ -256,6 +278,22 @@ public sealed class RowLevelSecurityTests
                     UsuarioId = writerId,
                     CuentaId = cuentaPermitidaId,
                     PuedeImportar = true
+                },
+                new PermisoUsuario
+                {
+                    Id = employeeNoDashboardPermissionId,
+                    UsuarioId = employeeNoDashboardId,
+                    CuentaId = cuentaPermitidaId,
+                    PuedeVerCuentas = true,
+                    PuedeVerDashboard = false
+                },
+                new PermisoUsuario
+                {
+                    Id = employeeDashboardPermissionId,
+                    UsuarioId = employeeDashboardId,
+                    CuentaId = cuentaPermitidaId,
+                    PuedeVerCuentas = true,
+                    PuedeVerDashboard = true
                 },
                 new PermisoUsuario
                 {
@@ -439,6 +477,22 @@ public sealed class RowLevelSecurityTests
         (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(1);
         (await CountByIdsAsync(connection, "REVISION_EXTRACTO_ESTADOS", revisionPermitidaId, revisionBloqueadaId)).Should().Be(1);
         (await CountByIdsAsync(connection, "PERMISOS_USUARIO", readerPermissionId, countryPermissionId)).Should().Be(1);
+
+        await SetRlsContextAsync(connection, "user", readerId, null, isAdmin: false, isSystem: false, "dashboard");
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(1);
+
+        await SetRlsContextAsync(connection, "user", employeeNoDashboardId, null, isAdmin: false, isSystem: false, "dashboard");
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(0);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(0);
+
+        await SetRlsContextAsync(connection, "user", employeeNoDashboardId, null, isAdmin: false, isSystem: false, "data");
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(1);
+
+        await SetRlsContextAsync(connection, "user", employeeDashboardId, null, isAdmin: false, isSystem: false, "dashboard");
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId)).Should().Be(1);
 
         var deniedInsert = async () => await InsertExtractoAsync(connection, cuentaPermitidaId);
         await deniedInsert.Should().ThrowAsync<PostgresException>()

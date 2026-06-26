@@ -35,6 +35,51 @@
 
 ## Cerrados
 
+### 2026-06-26 - V-02-02 - Cerrado - RLS de dashboard desalineado con roles
+
+- Contexto: auditoria auth/RLS tras el cambio a tres roles.
+- Causa: la politica RLS de lectura mantenia `PuedeVerCuentas` como lectura general tambien para scope `dashboard` y no reflejaba que `GERENTE` puede ver dashboard con cualquier permiso de datos.
+- Impacto: defensa en profundidad inconsistente. Un empleado con permiso de cuentas pero sin dashboard podia leer datos financieros si una ruta/query llegaba a PostgreSQL con `atlas.request_scope = dashboard`; un gerente valido podia quedar bloqueado en la base.
+- Solucion: migracion `20260626193000_AlignRlsDashboardAccessWithRoles` con funcion `current_user_is_manager()` y ramas de lectura diferenciadas para `dashboard`.
+- Verificacion: backend build OK y tests focalizados no Docker de permisos/datos 116/116 OK. `RowLevelSecurityTests` queda pendiente por Docker/Testcontainers no disponible.
+- Estado: cerrado a nivel codigo; validacion runtime RLS pendiente por infraestructura.
+
+### 2026-06-26 - V-02-02 - Cerrado - Selector de columnas pedia `cuenta_id` en vista general
+
+- Contexto: el panel `Columnas` de `Extractos` seguia fallando al guardar en vista general con el mensaje `cuenta_id es requerido`.
+- Causa: la correccion anterior probaba el controlador directo, pero no el contrato JSON real; el frontend ademas enviaba `cuenta_id: null` cuando el scope era global.
+- Impacto: el usuario no podia guardar columnas visibles sin seleccionar una cuenta.
+- Solucion: DTO con nombres JSON explicitos y `cuenta_id` nullable; frontend omite claves de scope vacias; regresion de deserializacion snake_case.
+- Verificacion: lint OK, TypeScript OK, build Vite temporal OK, `ExtractosControllerTests` 18/18 OK y QA Browser con mock que rechazaba cualquier `cuenta_id` en vista general.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Formatos de importacion salian cortados
+
+- Contexto: la tabla de `Formatos` se veia cortada junto al formulario lateral, especialmente en columnas `Extra` y `Acciones`.
+- Causa: ancho minimo fijo de tabla (`860px`) dentro de una columna de grid que podia ser menor, mas estilos de acciones pensados para tarjetas.
+- Impacto: el usuario tenia que usar scroll horizontal interno o directamente no veia bien botones y columnas.
+- Solucion: `colgroup`, `table-layout: fixed`, anchos en `rem` para columnas criticas, columna `Extra` flexible, acciones de celda propias, botones sin corte de palabra y breakpoint para apilar formulario bajo la tabla.
+- Verificacion: frontend lint OK, TypeScript OK y build Vite temporal OK; revalidado tras quitar `overflow-wrap: anywhere`. QA renderizada con Browser bloqueada por politica de seguridad al abrir `data:`.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - DashboardService no compilaba por `PuedeVerDashboard` ausente en tipo anonimo
+
+- Contexto: un reintento de `ExtractosControllerTests` fallo durante compilacion de API antes de ejecutar tests.
+- Causa: `DashboardService` usaba `PuedeVerDashboard` sobre un tipo anonimo que solo proyectaba cuenta/titular/pais y permisos operativos.
+- Impacto: cualquier build backend que recompilara esa zona podia quedar bloqueada.
+- Solucion: `DashboardService` proyecta `PuedeVerDashboard`, reordena la autorizacion de dashboard para `GERENTE`/`EMPLEADO` y queda cubierto por tests focalizados.
+- Verificacion adicional: `ExtractosControllerTests` 17/17 OK tras corregir la proyeccion.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Selector de columnas de Extractos perdia columnas extra fuera de la pagina actual
+
+- Contexto: el selector `Columnas` de `Extractos` podia no mostrar columnas extra disponibles cuando no aparecian en la pagina cargada.
+- Causa: el frontend calculaba columnas extra desde `rows`, que representa solo la pagina actual, no el resultado filtrado completo.
+- Impacto: el usuario podia quedarse sin forma de activar o recuperar columnas extra del scope actual.
+- Solucion: `GET /api/extractos` expone `columnas_disponibles`; `ExtractosPage` las pasa a `ExtractoTable`; el panel agrega `Mostrar todas`.
+- Verificacion: frontend lint OK, TypeScript OK, build Vite temporal OK, `ExtractosControllerTests` 17/17 OK y QA Browser mockeada del flujo de columnas sin errores de consola.
+- Estado: cerrado.
+
 ### 2026-06-26 - V-02-02 - Cerrado - Grafica principal del dashboard ocultaba ingresos y egresos
 
 - Contexto: el dashboard principal mostraba la grafica de saldo consolidado, pero no las lineas de ingresos y egresos que el usuario esperaba ver en la misma grafica.

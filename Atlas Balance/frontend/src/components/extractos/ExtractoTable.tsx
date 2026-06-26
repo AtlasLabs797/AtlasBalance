@@ -16,8 +16,10 @@ interface ExtractoTableProps {
   sortBy: string;
   sortDir: 'asc' | 'desc';
   visibleColumns: string[] | null;
+  availableExtraColumns: string[];
   onSort: (field: string) => void;
   onToggleColumn: (column: string, availableColumns: string[]) => void;
+  onShowAllColumns: (availableColumns: string[]) => void;
   onSaveCell: (row: Extracto, column: string, value: string) => Promise<void>;
   onToggleCheck: (row: Extracto, checked: boolean) => Promise<void>;
   onToggleFlag: (row: Extracto, flagged: boolean, nota?: string) => Promise<void>;
@@ -38,8 +40,10 @@ export default function ExtractoTable({
   sortBy,
   sortDir,
   visibleColumns,
+  availableExtraColumns,
   onSort,
   onToggleColumn,
+  onShowAllColumns,
   onSaveCell,
   onToggleCheck,
   onToggleFlag,
@@ -60,9 +64,15 @@ export default function ExtractoTable({
 
   const extraColumns = useMemo(() => {
     const set = new Set<string>();
+    availableExtraColumns.forEach((column) => {
+      const trimmed = column.trim();
+      if (trimmed) {
+        set.add(trimmed);
+      }
+    });
     rows.forEach((row) => Object.keys(row.columnas_extra ?? {}).forEach((key) => set.add(key)));
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [rows]);
+  }, [availableExtraColumns, rows]);
 
   const allColumns = useMemo(() => [...BASE_COLUMNS, ...extraColumns], [extraColumns]);
   const activeColumns = useMemo(() => {
@@ -255,6 +265,15 @@ export default function ExtractoTable({
 
       {showColumns ? (
         <div id={columnsId} className="column-visibility-panel" role="group" aria-label="Columnas visibles">
+          <div className="column-visibility-panel-actions" aria-label="Acciones de columnas">
+            <button
+              type="button"
+              onClick={() => onShowAllColumns(allColumns)}
+              disabled={activeColumns.length === allColumns.length}
+            >
+              Mostrar todas
+            </button>
+          </div>
           {allColumns.map((column) => {
             const checked = visibleColumns ? visibleColumns.includes(column) || (visibleColumns.length === 0 && column === 'fila_numero') : true;
             const isLastVisibleColumn = checked && activeColumns.length <= 1 && activeColumns.includes(column);

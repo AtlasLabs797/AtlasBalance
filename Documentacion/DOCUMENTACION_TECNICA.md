@@ -1,5 +1,138 @@
 # Documentacion tecnica
 
+## 2026-06-26 - V-02-02 - RLS alineado con roles de dashboard
+
+### Que cambio
+
+- Se agrego la migracion `20260626193000_AlignRlsDashboardAccessWithRoles`.
+- RLS incorpora `atlas_security.current_user_is_manager()` para reconocer `GERENTE` activo desde `USUARIOS.rol = 1`.
+- `atlas_security.can_read_cuenta(...)` y `atlas_security.can_read_titular(...)` separan la lectura normal de la lectura `dashboard`.
+- En scope `dashboard`, un usuario solo lee datos si es `GERENTE` con permiso de datos o si tiene `PuedeVerDashboard` mas algun permiso de datos.
+- Un `EMPLEADO` con `PuedeVerCuentas` pero sin `PuedeVerDashboard` ya no puede leer cuentas/extractos cuando `atlas.request_scope = dashboard`.
+- `RowLevelSecurityTests` cubre gerente, empleado sin dashboard, empleado con dashboard y lectura normal fuera de dashboard.
+- Se revisaron endpoints sensibles de cuentas, titulares, extractos, dashboard, revision, alertas, exportaciones, importacion, IA y OpenClaw para confirmar que pasan por scopes de usuario/integracion antes de leer datos.
+
+### Por que
+
+El modelo de tres roles permitio dashboard a `GERENTE` con cualquier permiso de datos, pero la funcion RLS anterior no distinguia bien el scope `dashboard`: dejaba pasar `PuedeVerCuentas` de forma demasiado amplia y a la vez podia bloquear un gerente valido sin `PuedeVerDashboard`. Esa mezcla era mala defensa en profundidad. La base debe imponer la misma semantica que el backend.
+
+### Verificacion
+
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false`: OK.
+- Tests focalizados no Docker de permisos/datos: 116/116 OK.
+- `RowLevelSecurityTests` no se pudo ejecutar porque Docker/Testcontainers no esta disponible en esta maquina. Queda pendiente de validacion runtime PostgreSQL real.
+
+## 2026-06-26 - V-02-02 - Guardado de columnas de Extractos sin cuenta
+
+### Que cambio
+
+- `SaveColumnasVisiblesRequest` usa `JsonPropertyName` explicitos para el contrato snake_case del endpoint `PUT /api/extractos/columnas-visibles`.
+- `CuentaId`, `TitularId` y `PaisId` siguen siendo nullable para soportar scope global, por pais, por titular y por cuenta.
+- `ExtractosPage.saveVisibleColumns` construye el body del `PUT` sin claves nulas. En vista general envia solo `columnas_visibles`.
+- `ExtractosControllerTests` ahora cubre deserializacion snake_case con `cuenta_id: null` y con `cuenta_id` omitido.
+
+### Por que
+
+El test anterior llamaba al controlador directamente y no probaba el payload real del navegador. Eso dejaba un agujero: la UI podia seguir recibiendo validacion `cuenta_id es requerido` aunque la logica interna aceptara `CuentaId = null`. La solucion endurece ambos lados del contrato y evita enviar nulos innecesarios.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `ExtractosControllerTests`: 18/18 OK.
+- Build Vite temporal: OK.
+- QA Browser con mock estricto: el mock rechazaba cualquier `PUT` que incluyera `cuenta_id`; activar `categoria` en vista general guardo sin enviar esa clave y sin error.
+
+## 2026-06-26 - V-02-02 - Layout de formatos de importacion
+
+### Que cambio
+
+- `FormatosImportacionPage` declara un `colgroup` para la tabla de formatos.
+- `entities.css` sustituye el `min-width: 860px` fijo por `width: 100%`, `table-layout: fixed` y anchuras en `rem` para banco, divisa, columnas base, estado y acciones; `Extra` queda como columna flexible.
+- Las acciones de fila quedan dentro de `.formatos-row-actions`, anulando borde, margen y padding de `.phase2-row-actions` para que se comporten como acciones de celda.
+- Se evita partir palabras con `overflow-wrap: normal`, `word-break: normal` y `white-space: nowrap` en botones de accion.
+- El grid de la pagina usa una columna minima real para la tabla en desktop y pasa a una sola columna bajo `1023.98px`.
+
+### Por que
+
+La tabla estaba forzada a medir mas que la columna disponible. Eso creaba scroll horizontal interno y dejaba el usuario viendo media tabla, con acciones cortadas. El fallo no estaba en los datos: era layout CSS peleando contra el panel lateral.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir tmp-vite-formatos-layout-v02-02 --emptyOutDir`: OK.
+- Revalidacion tras evitar palabras partidas: lint OK, TypeScript OK y build Vite temporal OK.
+- QA Browser renderizada bloqueada por politica de seguridad al abrir una pagina `data:` de prueba; no se uso workaround.
+
+## 2026-06-26 - V-02-02 - Proyeccion de permisos en DashboardService
+
+### Que cambio
+
+- `DashboardService.GetAuthorizedScopeAsync` vuelve a proyectar `PuedeVerDashboard` cuando carga permisos de usuario.
+
+### Por que
+
+Una modificacion previa habia cambiado la logica para diferenciar `GERENTE` de otros roles, pero dejo fuera `PuedeVerDashboard` del tipo anonimo. El servicio lo leia despues y cualquier recompilacion del backend fallaba antes de ejecutar tests.
+
+### Verificacion
+
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 17/17 OK tras corregir la proyeccion.
+
+## 2026-06-26 - V-02-02 - Modelo de usuarios reducido a tres roles
+
+### Que cambio
+
+- `RolUsuario` queda en `ADMIN = 0`, `GERENTE = 1` y `EMPLEADO = 2`.
+- La migracion `20260626180000_ReduceUserRolesToThreeTypes` convierte roles numericos antiguos `3/4` a `2` y recrea el tipo PostgreSQL auxiliar `rol_usuario` con solo `admin`, `gerente` y `empleado`.
+- Los DTOs de alta/edicion de usuario tienen `EMPLEADO` como valor por defecto para evitar que un payload incompleto derive en `ADMIN`.
+- `UsuarioModal`, tipos frontend y labels de `UsuariosPage` eliminan `EMPLEADO_ULTRA` y `EMPLEADO_PLUS`.
+- `DashboardController` deja de depender de rol `GERENTE`: el servicio autoriza por rol y permisos.
+- `DashboardService` permite dashboard a `GERENTE` con cualquier permiso de datos asignado; `EMPLEADO` necesita `PuedeVerDashboard` mas permiso de datos.
+- El menu lateral y la navegacion inferior ocultan `Dashboard` cuando el usuario no lo tiene disponible.
+- `UsuariosController` rechaza crear o actualizar un `GERENTE` sin ningun permiso de datos global, por pais, titular o cuenta.
+
+### Por que
+
+`EMPLEADO_ULTRA` y `EMPLEADO_PLUS` eran nombres sin comportamiento real. Eso confundia permisos: parecia una jerarquia de roles, pero el producto ya operaba con permisos granulares. La decision limpia es tres roles y permisos explicitos.
+
+### Verificacion
+
+- `DashboardServiceTests` cubre gerente con permiso de datos sin `PuedeVerDashboard` y empleado que solo entra al dashboard si tiene `PuedeVerDashboard`.
+- `UsuariosControllerTests` cubre rechazo de gerente sin alcance de datos.
+- Frontend lint OK.
+- TypeScript OK.
+- Backend build OK desde `C:\tmp` por el bloqueo conocido de SDK fijado en `global.json`.
+- Tests focalizados `DashboardServiceTests|UsuariosControllerTests`: 17/17 OK.
+- Build Vite temporal OK con salida dentro de `frontend`.
+
+## 2026-06-26 - V-02-02 - Columnas extra disponibles en selector de Extractos
+
+### Que cambio
+
+- `PaginatedResponse<T>` incorpora `ColumnasDisponibles` como campo opcional. Con la politica JSON actual, solo se serializa cuando el endpoint lo rellena.
+- `ExtractosController.Listar` calcula `columnas_disponibles` sobre la consulta filtrada completa antes de aplicar paginacion.
+- `ExtractosPage` guarda `availableExtraColumns` desde `data.columnas_disponibles` y lo pasa a `ExtractoTable`.
+- `ExtractoTable` compone sus columnas con `BASE_COLUMNS + availableExtraColumns + columnas_extra presentes en filas`.
+- El panel `Columnas` anade `Mostrar todas`, que guarda todas las columnas disponibles en el scope activo.
+- `ExtractosControllerTests` cubre el caso donde la pagina actual no trae una columna extra, pero otra fila del mismo resultado filtrado si la trae.
+
+### Por que
+
+El selector estaba demasiado pegado a la pagina cargada. Si una columna extra existia en el resultado filtrado pero no en la pagina o fila visible, desaparecia del selector. Eso hacia que el usuario no pudiera activarla o recuperar una preferencia limpia. Un selector de columnas debe basarse en el conjunto disponible, no en una muestra accidental de filas.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 17/17 OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-extractos-columns-v02-02 --emptyOutDir`: OK.
+- QA Browser con API mock: `categoria` y `origen` aparecen desde `columnas_disponibles`; activar `categoria` actualiza cabecera y payload; `Mostrar todas` deja 11 columnas visibles; consola sin errores.
+
+### Limite real
+
+La QA fue mockeada para aislar el flujo del selector. No se tocaron datos reales ni preferencias reales de usuario.
+
 ## 2026-06-26 - V-02-02 - Ingresos y egresos en grafica principal del dashboard
 
 ### Que cambio

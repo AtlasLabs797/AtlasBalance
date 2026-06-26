@@ -1,5 +1,94 @@
 # Log de errores e incidencias
 
+## 2026-06-26 - V-02-02 - RLS `dashboard` no seguia el modelo real de tres roles
+
+- Contexto: comprobacion de seguridad/RLS tras reducir usuarios a `ADMIN`, `GERENTE` y `EMPLEADO`.
+- Causa:
+  - `DashboardService` permite a `GERENTE` ver dashboard con cualquier permiso de datos.
+  - RLS seguia atando `dashboard` a `p.puede_ver_dashboard` en una rama y dejaba `p.puede_ver_cuentas` como lectura general, incluso dentro de scope `dashboard`.
+  - Resultado: la base no era una copia fiel del contrato de backend. Un empleado con `PuedeVerCuentas` pero sin `PuedeVerDashboard` podia leer tablas financieras si una consulta llegaba con `atlas.request_scope = dashboard`; un gerente valido podia quedar bloqueado por RLS si no tenia `PuedeVerDashboard`.
+- Solucion:
+  - Nueva migracion `20260626193000_AlignRlsDashboardAccessWithRoles`.
+  - `current_user_is_manager()` reconoce gerente activo.
+  - `can_read_cuenta` y `can_read_titular` exigen, en scope `dashboard`, `GERENTE` o `PuedeVerDashboard`, y ademas algun permiso de datos.
+  - Regresiones agregadas en `RowLevelSecurityTests`.
+- Verificacion:
+  - Backend build OK.
+  - Tests focalizados no Docker de permisos/datos: 116/116 OK.
+  - `RowLevelSecurityTests` bloqueado por Docker/Testcontainers no disponible.
+- Regla: cuando cambias semantica de roles, actualiza tambien el backstop RLS. Si backend y base no dicen lo mismo, el atacante escucha a la capa mas floja.
+
+## 2026-06-26 - V-02-02 - Selector de columnas seguia fallando con `cuenta_id es requerido`
+
+- Contexto: tras corregir el selector de columnas de `Extractos`, el guardado en vista general seguia mostrando `cuenta_id es requerido`.
+- Causa:
+  - La regresion anterior llamaba al controlador directamente y no cubria el payload JSON real que envia el navegador.
+  - El frontend enviaba `cuenta_id: null` cuando no habia cuenta seleccionada, aumentando la probabilidad de choque con validaciones de modelo o builds no alineadas.
+  - El contrato del DTO dependia solo de la politica global snake_case, sin nombres JSON explicitos en el request critico.
+- Solucion:
+  - `SaveColumnasVisiblesRequest` declara `JsonPropertyName` para `cuenta_id`, `titular_id`, `pais_id` y `columnas_visibles`.
+  - `ExtractosPage` omite claves de scope vacias en el `PUT`; en vista general envia solo `columnas_visibles`.
+  - Se agrego test de deserializacion snake_case con `cuenta_id: null` y con `cuenta_id` omitido.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - `ExtractosControllerTests`: 18/18 OK.
+  - Build Vite temporal OK.
+  - QA Browser con mock estricto: el mock rechazaba cualquier body con `cuenta_id`; activar `categoria` guardo sin enviar `cuenta_id`, sin error y con la columna visible.
+- Regla: si el bug vive en HTTP, una prueba que llama al metodo C# directo no basta. Eso no es cobertura; es una coartada.
+
+## 2026-06-26 - V-02-02 - Tabla de formatos quedaba cortada por ancho fijo
+
+- Contexto: en `Formatos`, la lista de formatos aparecia con columnas y acciones cortadas al lado del formulario `Nuevo Formato`.
+- Causa:
+  - `.formatos-page .users-table-scroll table` forzaba `min-width: 860px`.
+  - El grid reservaba ancho al formulario lateral, dejando a la tabla menos espacio real que su ancho minimo.
+  - Las acciones heredaban estilos de `.phase2-row-actions` pensados para tarjetas, no para una celda de tabla.
+- Solucion:
+  - Se agrego `colgroup` a la tabla.
+  - La tabla usa `table-layout: fixed`, `width: 100%` y anchuras en `rem` para columnas criticas.
+  - Las acciones se encapsulan en `.formatos-row-actions` y el formulario baja debajo en breakpoints estrechos.
+  - Se elimino `overflow-wrap: anywhere`, que partia palabras como `Activo` y `Eliminar`.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build Vite temporal: OK.
+  - Revalidacion tras evitar palabras partidas: lint OK, TypeScript OK y build Vite temporal OK.
+  - QA Browser renderizada bloqueada por politica de seguridad al abrir `data:`.
+- Regla: si una tabla administrativa vive junto a un formulario lateral, no le metas un `min-width` fijo y reces. Define columnas o el layout te cobra intereses.
+
+## 2026-06-26 - V-02-02 - `DashboardService` no compilaba por proyeccion sin `PuedeVerDashboard`
+
+- Contexto: tras validar el selector de columnas de extractos, un reintento posterior de `ExtractosControllerTests` forzo recompilacion y fallo antes de ejecutar tests.
+- Causa:
+  - `DashboardService.cs(721)` intenta leer `PuedeVerDashboard` desde un tipo anonimo que no incluye esa propiedad.
+  - La consulta de permisos de dashboard habia separado permisos operativos de datos y permiso visual de dashboard.
+- Resolucion:
+  - `DashboardService` vuelve a proyectar `PuedeVerDashboard`.
+  - La autorizacion de dashboard queda alineada con el modelo de tres roles: `GERENTE` usa permiso de datos asignado; `EMPLEADO` necesita `PuedeVerDashboard` mas permiso de datos.
+  - Se agregan tests focalizados para ambos casos.
+- Verificacion adicional:
+  - `ExtractosControllerTests` 17/17 OK tras corregir la proyeccion, desbloqueando la validacion del selector de columnas.
+- Regla: si una politica mezcla rol y permiso, proyecta ambos datos en la misma consulta. Asumir que el campo "estara ahi" es programar con fe.
+
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos perdia columnas extra fuera de la pagina actual
+
+- Contexto: el selector `Columnas` de `Extractos` no funcionaba de forma fiable con columnas extra.
+- Causa:
+  - `ExtractoTable` calculaba columnas extra desde `rows`, que solo contiene la pagina cargada.
+  - Si una columna extra existia en el resultado filtrado completo pero no en esa pagina/fila, el selector no la mostraba y el usuario no podia activarla.
+- Solucion:
+  - `GET /api/extractos` devuelve `columnas_disponibles` calculadas sobre la consulta filtrada completa antes de paginar.
+  - `ExtractosPage` guarda esa lista y `ExtractoTable` la usa para construir el selector.
+  - El panel incorpora `Mostrar todas` para restaurar una preferencia completa del scope activo.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - `ExtractosControllerTests`: 17/17 OK.
+  - Build Vite temporal: OK.
+  - QA Browser mockeada: activar `categoria` actualiza cabecera y payload; `Mostrar todas` deja 11 columnas visibles; consola sin errores.
+- Regla: un selector de columnas no debe depender de una muestra paginada. Eso no es estado, es accidente.
+
 ## 2026-06-26 - V-02-02 - Grafica principal del dashboard ocultaba ingresos/egresos
 
 - Contexto: el usuario detecto que la grafica superior del dashboard principal solo mostraba saldo.

@@ -2,11 +2,9 @@ namespace AtlasBalance.API.Models;
 
 public enum RolUsuario
 {
-    ADMIN,
-    GERENTE,
-    EMPLEADO_ULTRA,
-    EMPLEADO_PLUS,
-    EMPLEADO
+    ADMIN = 0,
+    GERENTE = 1,
+    EMPLEADO = 2
 }
 
 public enum TipoTitular

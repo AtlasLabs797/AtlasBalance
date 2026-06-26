@@ -143,7 +143,7 @@ export default function CuentaDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
-  const allowedDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const allowedDashboard = usuario?.rol === 'ADMIN' || canViewDashboard();
   const canImport = Boolean(cuentaId) && summary ? canImportInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
   const canAddRows = Boolean(cuentaId) && summary ? canAddInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
   const canDeleteRows = Boolean(cuentaId) && summary ? canDeleteInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;

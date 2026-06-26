@@ -61,9 +61,16 @@ export const navigationItems: NavigationItem[] = [
   { to: '/papelera',             label: 'Papelera',      short: 'Papelera',  icon: createElement(Trash2, iconProps), group: 'sistema', adminOnly: true },
 ];
 
-export function getVisibleNavigationItems(role?: string | null, options?: { aiAvailable?: boolean }) {
+export function getVisibleNavigationItems(
+  role?: string | null,
+  options?: { aiAvailable?: boolean; dashboardAvailable?: boolean }
+) {
   return navigationItems.filter((item) => {
     if (item.adminOnly && role !== 'ADMIN') {
+      return false;
+    }
+
+    if (item.to === '/dashboard' && role !== 'ADMIN' && !options?.dashboardAvailable) {
       return false;
     }
 

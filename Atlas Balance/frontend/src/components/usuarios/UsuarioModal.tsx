@@ -43,7 +43,7 @@ interface PermisoFormRow {
 interface UserFormState {
   email: string;
   nombre_completo: string;
-  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
+  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO';
   activo: boolean;
   primer_login: boolean;
   puede_usar_ia: boolean;
@@ -486,8 +486,6 @@ export default function UsuarioModal({
                   options={[
                     { value: 'ADMIN', label: 'ADMIN' },
                     { value: 'GERENTE', label: 'GERENTE' },
-                    { value: 'EMPLEADO_ULTRA', label: 'EMPLEADO_ULTRA' },
-                    { value: 'EMPLEADO_PLUS', label: 'EMPLEADO_PLUS' },
                     { value: 'EMPLEADO', label: 'EMPLEADO' },
                   ]}
                   onChange={(next) =>

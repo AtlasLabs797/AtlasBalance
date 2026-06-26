@@ -145,7 +145,7 @@ export default function CuentasPage() {
   const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
   usePermisosStore((state) => state.permisos);
   const isAdmin = usuario?.rol === 'ADMIN';
-  const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const canSeeDashboard = usuario?.rol === 'ADMIN' || canViewDashboard();
 
   const [items, setItems] = useState<CuentaRow[]>([]);
   const [titulares, setTitulares] = useState<Titular[]>([]);

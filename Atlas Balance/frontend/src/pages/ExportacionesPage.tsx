@@ -50,6 +50,7 @@ export default function ExportacionesPage() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canCreateManualExport = usuario?.rol === 'ADMIN' || usuario?.rol === 'GERENTE';
 
   const totalRowsText = useMemo(() => `${rows.length} exportaciones en esta página`, [rows.length]);
 
@@ -96,6 +97,10 @@ export default function ExportacionesPage() {
   };
 
   const createManualExport = async () => {
+    if (!canCreateManualExport) {
+      return;
+    }
+
     if (!selectedCuentaId) {
       setError('Selecciona la cuenta que quieres exportar.');
       return;
@@ -166,7 +171,11 @@ export default function ExportacionesPage() {
       <header className="exportaciones-header">
         <div>
           <h1>Exportaciones</h1>
-          <p className="dashboard-subtitle">Historial y generación manual de XLSX por cuenta</p>
+          <p className="dashboard-subtitle">
+            {canCreateManualExport
+              ? 'Historial y generación manual de XLSX por cuenta'
+              : 'Historial de XLSX disponibles dentro de tu alcance'}
+          </p>
         </div>
       </header>
 
@@ -183,9 +192,11 @@ export default function ExportacionesPage() {
             setPage(1);
           }}
         />
-        <button type="button" onClick={createManualExport} disabled={exporting || loading}>
-          {exporting ? 'Generando...' : 'Generar exportación'}
-        </button>
+        {canCreateManualExport ? (
+          <button type="button" onClick={createManualExport} disabled={exporting || loading}>
+            {exporting ? 'Generando...' : 'Generar exportación'}
+          </button>
+        ) : null}
       </div>
 
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
@@ -195,7 +206,11 @@ export default function ExportacionesPage() {
         {!loading && rows.length === 0 ? (
           <EmptyState
             title="No hay exportaciones con estos filtros."
-            subtitle="Selecciona una cuenta y genera una exportación para descargar el XLSX."
+            subtitle={
+              canCreateManualExport
+                ? 'Selecciona una cuenta y genera una exportación para descargar el XLSX.'
+                : 'Cuando haya exportaciones listas para tus cuentas, aparecerán aquí.'
+            }
           />
         ) : null}
 

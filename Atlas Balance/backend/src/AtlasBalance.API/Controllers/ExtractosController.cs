@@ -82,6 +82,8 @@ public sealed class ExtractosController : ControllerBase
                 (x.Comentarios ?? "").ToLower().Contains(term));
         }
 
+        var filteredQuery = q;
+
         q = (sortBy.ToLowerInvariant(), desc) switch
         {
             ("fila_numero", true) => q.OrderByDescending(x => x.FilaNumero),
@@ -101,6 +103,14 @@ public sealed class ExtractosController : ControllerBase
         };
 
         var total = await q.CountAsync(ct);
+        var columnasDisponibles = await (
+                from extra in _db.ExtractosColumnasExtra
+                join extracto in filteredQuery on extra.ExtractoId equals extracto.Id
+                where extra.NombreColumna != ""
+                select extra.NombreColumna)
+            .Distinct()
+            .OrderBy(nombre => nombre)
+            .ToListAsync(ct);
         var pageRows = await q.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         var accountIds = pageRows.Select(x => x.CuentaId).Distinct().ToList();
         var cuentas = await _db.Cuentas.IgnoreQueryFilters().Where(c => accountIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
@@ -149,7 +159,8 @@ public sealed class ExtractosController : ControllerBase
             Total = total,
             Page = page,
             PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize),
+            ColumnasDisponibles = columnasDisponibles
         });
     }
 

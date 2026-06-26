@@ -183,6 +183,12 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = validation.Error });
         }
 
+        var roleValidation = ValidateRolePermissions(usuario.Rol, permisos);
+        if (!roleValidation.Ok)
+        {
+            return BadRequest(new { error = roleValidation.Error });
+        }
+
         var before = await LoadPermisosAuditSnapshotAsync(id, cancellationToken);
         await UpsertPermisosAsync(id, permisos, cancellationToken);
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
@@ -423,6 +429,12 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = validation.Error });
         }
 
+        var roleValidation = ValidateRolePermissions(request.Rol, request.Permisos);
+        if (!roleValidation.Ok)
+        {
+            return BadRequest(new { error = roleValidation.Error });
+        }
+
         var usuario = new Usuario
         {
             Id = Guid.NewGuid(),
@@ -494,6 +506,12 @@ public sealed class UsuariosController : ControllerBase
         if (!validation.Ok)
         {
             return BadRequest(new { error = validation.Error });
+        }
+
+        var roleValidation = ValidateRolePermissions(request.Rol, request.Permisos);
+        if (!roleValidation.Ok)
+        {
+            return BadRequest(new { error = roleValidation.Error });
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
@@ -800,6 +818,25 @@ public sealed class UsuariosController : ControllerBase
 
         return (true, null);
     }
+
+    private static (bool Ok, string? Error) ValidateRolePermissions(RolUsuario rol, IReadOnlyList<SavePermisoUsuarioRequest> permisos)
+    {
+        if (rol != RolUsuario.GERENTE)
+        {
+            return (true, null);
+        }
+
+        return permisos.Any(GrantsAccountDataAccess)
+            ? (true, null)
+            : (false, "Un gerente necesita al menos un permiso de datos: global, por país, titular o cuenta.");
+    }
+
+    private static bool GrantsAccountDataAccess(SavePermisoUsuarioRequest permiso) =>
+        permiso.PuedeVerCuentas ||
+        permiso.PuedeAgregarLineas ||
+        permiso.PuedeEditarLineas ||
+        permiso.PuedeEliminarLineas ||
+        permiso.PuedeImportar;
 
     private async Task<bool> UsuarioExisteAsync(Guid id, bool includeDeleted, CancellationToken cancellationToken)
     {

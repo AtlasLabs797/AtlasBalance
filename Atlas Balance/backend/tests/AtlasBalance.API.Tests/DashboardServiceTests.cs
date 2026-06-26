@@ -352,7 +352,7 @@ public class DashboardServiceTests
     }
 
     [Fact]
-    public async Task GetPrincipalAsync_Should_Allow_GlobalDashboard_When_GlobalDataPermission_Exists()
+    public async Task GetPrincipalAsync_Should_Allow_ManagerDashboard_When_GlobalDataPermission_Exists()
     {
         await using var db = BuildDbContext();
         var adminId = Guid.NewGuid();
@@ -391,8 +391,7 @@ public class DashboardServiceTests
             UsuarioId = managerId,
             CuentaId = null,
             TitularId = null,
-            PuedeVerCuentas = true,
-            PuedeVerDashboard = true
+            PuedeVerCuentas = true
         });
         db.Extractos.Add(new Extracto
         {
@@ -410,6 +409,76 @@ public class DashboardServiceTests
         var result = await sut.GetPrincipalAsync(managerId, "EUR", null, CancellationToken.None);
 
         result.TotalConvertido.Should().Be(50m);
+        result.SaldosPorTitular.Should().ContainSingle(x => x.TitularId == titularId);
+    }
+
+    [Fact]
+    public async Task GetPrincipalAsync_Should_Require_DashboardPermission_For_Employee()
+    {
+        await using var db = BuildDbContext();
+        var adminId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.AddRange(
+            new Usuario
+            {
+                Id = adminId,
+                Email = "admin.employee-dashboard@test.local",
+                PasswordHash = "hash",
+                NombreCompleto = "Admin Employee Dashboard",
+                Rol = RolUsuario.ADMIN,
+                Activo = true,
+                PrimerLogin = false
+            },
+            new Usuario
+            {
+                Id = employeeId,
+                Email = "employee.dashboard@test.local",
+                PasswordHash = "hash",
+                NombreCompleto = "Employee Dashboard",
+                Rol = RolUsuario.EMPLEADO,
+                Activo = true,
+                PrimerLogin = false
+            });
+
+        SeedDashboardConfig(db, adminId);
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Employee", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Employee", Divisa = "EUR", Activa = true });
+        var permiso = new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = employeeId,
+            CuentaId = null,
+            TitularId = null,
+            PuedeVerCuentas = true,
+            PuedeVerDashboard = false
+        };
+        db.PermisosUsuario.Add(permiso);
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Monto = 75m,
+            Saldo = 75m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var sut = BuildService(db);
+
+        var blocked = async () => await sut.GetPrincipalAsync(employeeId, "EUR", null, CancellationToken.None);
+        var exception = await blocked.Should().ThrowAsync<DashboardAccessException>();
+        exception.Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+
+        permiso.PuedeVerDashboard = true;
+        await db.SaveChangesAsync();
+
+        var result = await sut.GetPrincipalAsync(employeeId, "EUR", null, CancellationToken.None);
+
+        result.TotalConvertido.Should().Be(75m);
         result.SaldosPorTitular.Should().ContainSingle(x => x.TitularId == titularId);
     }
 

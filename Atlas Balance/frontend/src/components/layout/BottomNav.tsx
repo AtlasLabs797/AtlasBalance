@@ -27,7 +27,13 @@ export function BottomNav() {
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard());
 
-  const visibleNavItems = useMemo(() => getVisibleNavigationItems(usuario?.rol, { aiAvailable }), [aiAvailable, usuario?.rol]);
+  const visibleNavItems = useMemo(
+    () => getVisibleNavigationItems(usuario?.rol, {
+      aiAvailable,
+      dashboardAvailable: usuario?.rol === 'ADMIN' || canViewDashboard,
+    }),
+    [aiAvailable, canViewDashboard, usuario?.rol]
+  );
   const primaryItemPaths = useMemo(() => {
     const dashboardVisible = usuario?.rol === 'ADMIN' || canViewDashboard;
     return dashboardVisible

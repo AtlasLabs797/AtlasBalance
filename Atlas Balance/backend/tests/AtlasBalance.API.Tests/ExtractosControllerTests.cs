@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using AtlasBalance.API.Controllers;
 using AtlasBalance.API.Data;
@@ -14,6 +15,43 @@ namespace AtlasBalance.API.Tests;
 
 public sealed class ExtractosControllerTests
 {
+    [Fact]
+    public void SaveColumnasVisiblesRequest_Should_Deserialize_Global_Scope_From_Snake_Case_Json()
+    {
+        const string withNullCuentaId = """
+        {
+          "cuenta_id": null,
+          "titular_id": null,
+          "pais_id": null,
+          "columnas_visibles": ["fecha", "monto"]
+        }
+        """;
+
+        const string withoutCuentaId = """
+        {
+          "columnas_visibles": ["fecha", "monto"]
+        }
+        """;
+
+        var options = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        };
+
+        var requestWithNull = JsonSerializer.Deserialize<SaveColumnasVisiblesRequest>(withNullCuentaId, options);
+        var requestWithoutCuenta = JsonSerializer.Deserialize<SaveColumnasVisiblesRequest>(withoutCuentaId, options);
+
+        requestWithNull.Should().NotBeNull();
+        requestWithNull!.CuentaId.Should().BeNull();
+        requestWithNull.TitularId.Should().BeNull();
+        requestWithNull.PaisId.Should().BeNull();
+        requestWithNull.ColumnasVisibles.Should().BeEquivalentTo("fecha", "monto");
+
+        requestWithoutCuenta.Should().NotBeNull();
+        requestWithoutCuenta!.CuentaId.Should().BeNull();
+        requestWithoutCuenta.ColumnasVisibles.Should().BeEquivalentTo("fecha", "monto");
+    }
+
     private static AppDbContext BuildDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -472,6 +510,68 @@ public sealed class ExtractosControllerTests
         var page = ok.Value.Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
         page.Total.Should().Be(2);
         page.Data.Select(row => row.Concepto).Should().BeEquivalentTo("Cuenta A", "Cuenta B");
+    }
+
+    [Fact]
+    public async Task Listar_Should_Return_AvailableExtraColumns_From_Filtered_Result_Not_Only_Current_Page()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var firstExtractoId = Guid.NewGuid();
+        var secondExtractoId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.extractos.columnas-disponibles@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Columnas Disponibles",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Columnas Disponibles", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Columnas Disponibles", Divisa = "EUR", Activa = true });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = firstExtractoId,
+                CuentaId = cuentaId,
+                Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                Concepto = "Pagina sin extra",
+                Monto = 10m,
+                Saldo = 10m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = secondExtractoId,
+                CuentaId = cuentaId,
+                Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                Concepto = "Pagina con extra",
+                Monto = 20m,
+                Saldo = 30m,
+                FilaNumero = 2
+            });
+        db.ExtractosColumnasExtra.Add(new ExtractoColumnaExtra
+        {
+            Id = Guid.NewGuid(),
+            ExtractoId = secondExtractoId,
+            NombreColumna = "canal",
+            Valor = "Banca online"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+
+        var result = await controller.Listar(page: 1, pageSize: 1, sortBy: "fila_numero", sortDir: "asc", ct: CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var page = ok.Value.Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
+        page.Data.Should().ContainSingle(row => row.Id == firstExtractoId);
+        page.ColumnasDisponibles.Should().ContainSingle().Which.Should().Be("canal");
     }
 
     [Fact]

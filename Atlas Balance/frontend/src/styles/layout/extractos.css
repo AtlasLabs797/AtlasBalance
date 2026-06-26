@@ -168,9 +168,24 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
+  align-items: center;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--sheet-grid-strong);
   background: var(--bg-surface-soft);
+}
+
+.column-visibility-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  padding-right: var(--space-1);
+  margin-right: var(--space-1);
+  border-right: 1px solid var(--sheet-grid-strong);
+}
+
+.column-visibility-panel-actions button {
+  min-height: 2.25rem;
+  border-radius: calc(var(--radius-control) - 4px);
+  font-size: var(--font-size-xs);
 }
 
 .column-visibility-panel label {

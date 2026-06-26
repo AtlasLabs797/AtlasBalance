@@ -82,7 +82,7 @@ export default function TitularesPage() {
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   usePermisosStore((state) => state.permisos);
   const isAdmin = usuario?.rol === 'ADMIN';
-  const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const canSeeDashboard = usuario?.rol === 'ADMIN' || canViewDashboard();
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [items, setItems] = useState<TitularCard[]>([]);
