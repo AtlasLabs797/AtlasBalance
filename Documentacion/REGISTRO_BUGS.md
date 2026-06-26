@@ -35,6 +35,24 @@
 
 ## Cerrados
 
+### 2026-06-26 - V-02-02 - Cerrado - Grafica principal del dashboard ocultaba ingresos y egresos
+
+- Contexto: el dashboard principal mostraba la grafica de saldo consolidado, pero no las lineas de ingresos y egresos que el usuario esperaba ver en la misma grafica.
+- Causa: el rediseño bancario cambio `EvolucionChart` a `variant="saldoArea"` y esa variante solo renderizaba la serie `saldo`, aunque el dataset seguia trayendo `ingresos` y `egresos`.
+- Impacto: el dashboard separaba ingresos/egresos en KPIs, pero perdia su lectura temporal dentro de la grafica principal.
+- Solucion: `saldoArea` pasa a `ComposedChart`: area para saldo y lineas para ingresos/egresos con eje secundario.
+- Verificacion: frontend lint OK, TypeScript OK, build Vite temporal OK y QA Browser mockeada desktop/mobile con tres trazos SVG, consola sin errores y sin overflow horizontal.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Selector de columnas de Extractos no guardaba en vista general
+
+- Contexto: en `Extractos`, el panel `Columnas` no funcionaba correctamente cuando no habia cuenta seleccionada.
+- Causa: `SaveColumnasVisibles` rechazaba `CuentaId = null`, aunque `GetColumnasVisibles` y `ResolvePreferenciaScope` ya soportaban scopes globales, por pais y por titular. El frontend tambien construia el toggle con una lista de columnas calculada aparte de la tabla.
+- Impacto: el usuario podia marcar/desmarcar columnas, pero el guardado fallaba o se revertia en la vista general.
+- Solucion: backend permite guardar preferencias sin cuenta y frontend usa la lista real de columnas disponibles, conservando scope global/titular/pais/cuenta.
+- Verificacion: frontend lint OK y TypeScript OK. Test backend focalizado pendiente por bloqueo de entorno .NET documentado en incidencias.
+- Estado: cerrado.
+
 ### 2026-06-09 - V-02-02 - Cerrado - Permisos por pais/titular/cuenta se podian expandir como union
 
 - Contexto: auditoria con subagentes durante implementacion de autorizacion por pais.

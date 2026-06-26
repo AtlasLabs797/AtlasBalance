@@ -223,9 +223,9 @@ export default function ExtractosPage() {
     }
   };
 
-  const onToggleColumn = async (column: string) => {
-    const defaultColumns = [...new Set(rows.flatMap((r) => ['fila_numero', 'checked', 'flagged', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo', ...Object.keys(r.columnas_extra ?? {})]))];
-    const current = visibleColumns ?? defaultColumns;
+  const onToggleColumn = async (column: string, availableColumns: string[]) => {
+    const availableSet = new Set(availableColumns);
+    const current = (visibleColumns ?? availableColumns).filter((item) => availableSet.has(item));
     if (current.includes(column) && current.length <= 1) {
       setError('Debe quedar al menos una columna visible.');
       return;
@@ -237,7 +237,7 @@ export default function ExtractosPage() {
     try {
       await api.put('/extractos/columnas-visibles', {
         cuenta_id: cuentaFiltro || null,
-        titular_id: selectedCuenta?.titular_id ?? null,
+        titular_id: selectedCuenta?.titular_id ?? (titularFiltro || null),
         pais_id: selectedCuenta?.pais_id ?? (selectedPaisId || null),
         columnas_visibles: next
       });
@@ -421,7 +421,7 @@ export default function ExtractosPage() {
         sortDir={sortDir}
         visibleColumns={visibleColumns}
         onSort={onSort}
-        onToggleColumn={(column) => void onToggleColumn(column)}
+        onToggleColumn={(column, availableColumns) => void onToggleColumn(column, availableColumns)}
         onSaveCell={onSaveCell}
         onToggleCheck={onToggleCheck}
         onToggleFlag={onToggleFlag}

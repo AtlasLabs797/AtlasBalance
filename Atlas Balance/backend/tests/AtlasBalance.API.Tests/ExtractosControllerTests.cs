@@ -23,7 +23,7 @@ public sealed class ExtractosControllerTests
     }
 
     [Fact]
-    public async Task SaveColumnasVisibles_Should_Reject_Null_CuentaId()
+    public async Task SaveColumnasVisibles_Should_Store_Global_Scope_When_CuentaId_Is_Null()
     {
         await using var db = BuildDbContext();
         var userId = Guid.NewGuid();
@@ -53,7 +53,6 @@ public sealed class ExtractosControllerTests
             }
         };
 
-        var beforeCount = await db.PreferenciasUsuarioCuenta.CountAsync();
         var result = await controller.SaveColumnasVisibles(
             new SaveColumnasVisiblesRequest
             {
@@ -62,8 +61,13 @@ public sealed class ExtractosControllerTests
             },
             CancellationToken.None);
 
-        result.Should().BeOfType<BadRequestObjectResult>();
-        (await db.PreferenciasUsuarioCuenta.CountAsync()).Should().Be(beforeCount);
+        result.Should().BeOfType<OkObjectResult>();
+        var pref = await db.PreferenciasUsuarioCuenta.SingleAsync();
+        pref.UsuarioId.Should().Be(userId);
+        pref.PaisId.Should().BeNull();
+        pref.TitularId.Should().BeNull();
+        pref.CuentaId.Should().BeNull();
+        pref.ColumnasVisibles.Should().Contain("monto");
     }
 
     [Fact]

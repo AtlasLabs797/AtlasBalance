@@ -8,6 +8,78 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-26 - V-02-02 - Dashboard principal muestra ingresos y egresos en la grafica
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- `EvolucionChart` mantiene la variante visual `saldoArea`, pero ahora combina area de saldo con lineas de ingresos y egresos.
+- La variante `saldoArea` usa `ComposedChart` y eje secundario para movimiento del periodo, evitando aplastar ingresos/egresos contra la escala millonaria del saldo.
+- La leyenda y el `aria-label` de la grafica principal vuelven a declarar las tres series: saldo, ingresos y egresos.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Decisiones visuales tomadas:**
+- Se conserva el area azul de saldo porque era la mejora visual del rediseño anterior.
+- Ingresos y egresos se pintan como lineas sobre eje derecho: si se metian en el mismo eje que el saldo, podian quedar invisibles o deformar la lectura del saldo.
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Skills usadas: `build-web-apps:frontend-testing-debugging`, `build-web-apps:react-best-practices` e `impeccable` en modo harden/polish.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-dashboard-ingresos-egresos-v02-02 --emptyOutDir`: OK.
+- QA Browser con servidor temporal y API mock cerrados en el mismo proceso: desktop y mobile renderizan la grafica con tres trazos SVG, leyenda `Saldo/Ingresos/Egresos`, consola sin errores y sin overflow horizontal.
+- La carpeta temporal de build se elimino al terminar.
+
+**Pendientes:**
+- Revisar contra datos reales antes de release para confirmar que los importes de movimiento extremos siguen siendo legibles en el eje derecho.
+
+---
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos por scope
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se corrigio el selector `Columnas` de `Extractos` para que guarde preferencias sin exigir una cuenta seleccionada.
+- `ExtractosPage` calcula el toggle con la lista real de columnas disponibles de la tabla, incluidas columnas extra.
+- El guardado conserva scope de cuenta, titular, pais o global segun los filtros activos.
+- `ExtractosController.SaveColumnasVisibles` ya no rechaza `CuentaId = null`; usa la misma resolucion de scope que el endpoint de lectura.
+- Se actualizo la regresion backend que antes esperaba el comportamiento roto.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Skill usada: `build-web-apps:frontend-testing-debugging`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: bloqueado por `project.assets.json` faltante.
+- Reintento con restore: restore OK, build bloqueado por `Access denied` en `bin/obj`.
+- Reintento con `BaseIntermediateOutputPath`/`OutputPath` en `C:\tmp`: bloqueado por atributos duplicados de MSBuild.
+
+**Pendientes:**
+- Repetir `ExtractosControllerTests` cuando el entorno .NET no tenga `bin/obj` bloqueado.
+- QA visual real pendiente; no se levanto servidor dev por protocolo anti-encallamiento.
+
+---
 ## 2026-06-26 - V-02-02 - Flag de extractos simplificado
 
 **Version:** V-02-02

@@ -47,7 +47,7 @@ El dashboard principal prioriza la lectura financiera:
 - Variacion del saldo junto al periodo comparado.
 - Saldos por divisa en tarjetas compactas. La divisa base aparece siempre primero.
 - Filtro por pais y bloque `Saldos por pais` cuando las cuentas tienen pais asociado.
-- Evolucion del saldo en una grafica ancha de area azul para leer tendencia.
+- Evolucion del saldo en una grafica ancha de area azul, con lineas de ingresos y egresos del periodo.
 - KPIs de ingresos, egresos, disponible e inmovilizado debajo del panel principal.
 - Saldos por titular y plazos fijos juntos en desktop; en movil se apilan.
 
@@ -68,6 +68,8 @@ Si la cuenta tiene muchos movimientos, el desglose usa paginacion. Ya no se cort
 La vista `Extractos` usa una reticula de celdas tipo hoja de calculo. Las columnas visibles mantienen ancho estable y la cabecera queda alineada con las filas aunque haya muchas columnas extra.
 
 Si falla la carga de movimientos, preferencias de columnas o auditoria de una celda, la pantalla muestra el error y permite reintentar. Si intentas ocultar columnas, siempre queda al menos una visible.
+
+El boton `Columnas` permite elegir que columnas se muestran. La preferencia se guarda para el scope actual: cuenta si hay una seleccionada, titular si filtraste por titular, pais si estas en un pais, o vista general si no hay filtros de cuenta/titular.
 
 En la columna `Alerta`, marca o desmarca el checkbox y escribe la nota si hace falta. La tabla ya no muestra el texto `Marcada/Sin marca` porque era redundante.
 
@@ -407,7 +409,7 @@ El dashboard principal muestra:
 
 - Saldo consolidado en el panel principal.
 - Saldos por divisa dentro del panel superior; la divisa base aparece primero.
-- Grafica de evolucion de saldo en la misma zona principal del dashboard.
+- Grafica de evolucion de saldo en la misma zona principal del dashboard, con ingresos y egresos visibles como lineas.
 - KPIs de ingresos, egresos, disponible e inmovilizado cuando hay datos suficientes.
 - Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento.
 - Saldos por pais, concentracion por banco/titular y saldos por titular.

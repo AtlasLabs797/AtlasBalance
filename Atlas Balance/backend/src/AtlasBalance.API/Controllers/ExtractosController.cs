@@ -523,7 +523,6 @@ public sealed class ExtractosController : ControllerBase
     public async Task<IActionResult> SaveColumnasVisibles([FromBody] SaveColumnasVisiblesRequest req, CancellationToken ct)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
-        if (!req.CuentaId.HasValue) return BadRequest(new { error = "cuenta_id es requerido" });
         var scope = await ResolvePreferenciaScope(actor, req.CuentaId, req.TitularId, req.PaisId, ct);
         if (scope.Forbidden) return Forbid();
         if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });

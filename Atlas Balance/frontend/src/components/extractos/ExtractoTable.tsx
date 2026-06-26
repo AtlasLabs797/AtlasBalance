@@ -17,7 +17,7 @@ interface ExtractoTableProps {
   sortDir: 'asc' | 'desc';
   visibleColumns: string[] | null;
   onSort: (field: string) => void;
-  onToggleColumn: (column: string) => void;
+  onToggleColumn: (column: string, availableColumns: string[]) => void;
   onSaveCell: (row: Extracto, column: string, value: string) => Promise<void>;
   onToggleCheck: (row: Extracto, checked: boolean) => Promise<void>;
   onToggleFlag: (row: Extracto, flagged: boolean, nota?: string) => Promise<void>;
@@ -265,7 +265,7 @@ export default function ExtractoTable({
                   type="checkbox"
                   checked={checked}
                   disabled={isLastVisibleColumn}
-                  onChange={() => onToggleColumn(column)}
+                  onChange={() => onToggleColumn(column, allColumns)}
                 />
                 {getColumnLabel(column)}
               </label>

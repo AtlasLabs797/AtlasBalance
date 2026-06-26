@@ -1,5 +1,63 @@
 # Documentacion tecnica
 
+## 2026-06-26 - V-02-02 - Ingresos y egresos en grafica principal del dashboard
+
+### Que cambio
+
+- `EvolucionChart` mantiene `variant="saldoArea"` para el dashboard principal, pero cambia internamente esa variante de `AreaChart` a `ComposedChart`.
+- La serie `saldo` sigue como area azul con dominio propio calculado por `getSaldoDomain`.
+- `ingresos` y `egresos` se renderizan como lineas sobre un eje Y secundario calculado por `getMovementDomain`.
+- La leyenda de la variante `saldoArea` muestra `Saldo`, `Ingresos` y `Egresos`.
+- El `aria-label` vuelve a describir las tres series para lectores de pantalla.
+
+### Por que
+
+El rediseño bancario anterior gano limpieza, pero oculto datos que el usuario espera ver en la grafica principal. Eso no es minimalismo, es informacion perdida.
+
+Usar un unico eje para saldo e ingresos/egresos era mala solucion: el saldo esta en millones y el movimiento del periodo suele ser mucho menor. El eje secundario permite conservar la lectura fina del saldo sin hacer invisibles las lineas de movimiento.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-dashboard-ingresos-egresos-v02-02 --emptyOutDir`: OK.
+- QA Browser con build temporal y API mock:
+  - desktop: wrapper `saldoArea` con leyenda `Saldo/Ingresos/Egresos`, tres trazos SVG y consola sin errores;
+  - mobile `390x800`: grafica presente, tres trazos SVG, bottom nav visible y sin overflow horizontal.
+
+### Limite real
+
+La QA fue mockeada para aislar el componente. Antes de release conviene validar con datos reales de movimientos altos/bajos para confirmar que el eje derecho mantiene lectura clara.
+
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos por scope
+
+### Que cambio
+
+- `ExtractosPage.onToggleColumn` recibe desde `ExtractoTable` la lista real de columnas disponibles (`BASE_COLUMNS + columnas_extra`).
+- Al guardar preferencias, el frontend usa ese set disponible para calcular altas/bajas y descartar columnas obsoletas.
+- El payload de `PUT /api/extractos/columnas-visibles` conserva el scope correcto:
+  - cuenta seleccionada: `cuenta_id + titular_id + pais_id`;
+  - titular sin cuenta: `titular_id`;
+  - pais/global sin cuenta: `pais_id` o scope global.
+- `ExtractosController.SaveColumnasVisibles` deja de rechazar `CuentaId = null`; ahora usa `ResolvePreferenciaScope`, igual que el `GET`.
+- `ExtractosControllerTests` cambia el test que esperaba `BadRequest` por una regresion que exige guardar preferencias globales sin cuenta.
+
+### Por que
+
+El bug era de contrato, no de CSS. La lectura de preferencias ya aceptaba scope global/titular/pais, pero la escritura exigia cuenta. Resultado: en la vista general de Extractos el selector parecia permitir ocultar columnas, pero el backend rechazaba el guardado y el estado se revertia. Eso es una mala UX y una mala API: dos endpoints hermanos no pueden discrepar asi.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test ...ExtractosControllerTests --no-restore`: bloqueado por `project.assets.json` faltante.
+- `dotnet test ...ExtractosControllerTests`: restore OK, build bloqueado por `Access denied` en `bin/obj`.
+- Reintento con salidas en `C:\tmp`: bloqueado por atributos duplicados de MSBuild.
+
+### Limite real
+
+No se pudo ejecutar el test backend focalizado por bloqueo de entorno. Antes de release, repetir `ExtractosControllerTests` cuando `bin/obj` no este bloqueado.
+
 ## 2026-06-26 - V-02-02 - Flag de extractos simplificado
 
 ### Que cambio

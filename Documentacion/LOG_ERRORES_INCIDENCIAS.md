@@ -1,5 +1,55 @@
 # Log de errores e incidencias
 
+## 2026-06-26 - V-02-02 - Grafica principal del dashboard ocultaba ingresos/egresos
+
+- Contexto: el usuario detecto que la grafica superior del dashboard principal solo mostraba saldo.
+- Causa:
+  - `DashboardPage` llamaba `EvolucionChart` con `variant="saldoArea"`.
+  - Esa variante habia sido creada para replicar la referencia bancaria y solo renderizaba `saldo`, aunque `DashboardPuntoEvolucion` ya tenia `ingresos` y `egresos`.
+- Solucion:
+  - `saldoArea` usa `ComposedChart`.
+  - `saldo` se mantiene como area con eje izquierdo.
+  - `ingresos` y `egresos` se renderizan como lineas con eje derecho para no perder escala.
+  - La leyenda y el `aria-label` incluyen las tres series.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build Vite temporal dentro del workspace: OK.
+  - QA Browser mockeada desktop/mobile: tres trazos SVG, consola sin errores y sin overflow horizontal.
+- Incidencias de QA:
+  - `tab.playwright.waitForLoadState({ state: 'networkidle' })` no esta soportado por el Browser runtime aunque la documentacion mencione `networkidle`; usar `load` + espera concreta de selector/DOM.
+  - Un mock de dashboard devolvio error por variable `puntos` inexistente; se corrigio a `points` antes de validar mobile.
+- Regla: si un rediseño oculta datos que el usuario necesita, no lo llames limpio; arreglalo.
+
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos no guardaba sin cuenta
+
+- Contexto: el selector `Columnas` de `Extractos` parecia no funcionar en la vista general.
+- Causa:
+  - `GET /api/extractos/columnas-visibles` permitia scope sin `cuentaId`.
+  - `PUT /api/extractos/columnas-visibles`, en cambio, rechazaba `CuentaId = null` con `BadRequest`.
+  - El frontend ademas calculaba columnas por defecto desde `rows`, no desde la lista real que renderizaba la tabla.
+- Solucion:
+  - Backend: `SaveColumnasVisibles` usa `ResolvePreferenciaScope` tambien cuando no hay cuenta.
+  - Frontend: `ExtractoTable` pasa `allColumns` al toggle y `ExtractosPage` guarda scope global/titular/pais/cuenta segun filtros.
+  - Test actualizado: la regresion ahora exige guardar preferencias globales sin cuenta.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - Test backend focalizado bloqueado por entorno .NET: primer intento sin restore fallo por `project.assets.json`; segundo con restore fallo por `Access denied` en `bin/obj`; salida a `C:\tmp` fallo por atributos duplicados de MSBuild.
+- Regla: si lectura y escritura comparten recurso de preferencias, no les inventes contratos distintos. Eso no es defensa, es sabotaje de UX.
+
+## 2026-06-26 - V-02-02 - Test backend focalizado bloqueado por `bin/obj`
+
+- Contexto: validacion de `ExtractosControllerTests` tras corregir selector de columnas.
+- Incidencias:
+  - `--no-restore` fallo porque faltaba `project.assets.json` de API.
+  - Con restore, NuGet/restauracion paso, pero el build fallo con `Access denied` al escribir `AtlasBalance.API.staticwebassets.runtime.json`, `AtlasBalance.API.csproj.FileListAbsolute.txt` y cache de Watchdog.
+  - Redirigir `BaseIntermediateOutputPath`/`OutputPath` a `C:\tmp` cambio el fallo a atributos duplicados generados por MSBuild.
+- Decision:
+  - Se corto tras cambiar de estrategia y no se siguio golpeando `bin/obj`.
+  - Queda pendiente repetir el test focalizado cuando no haya locks/permisos rotos en el entorno .NET.
+- Regla: si `bin/obj` esta bloqueado y el workaround de salida temporal tambien rompe MSBuild, para. El codigo no mejora por mirar otro error de build.
+
 ## 2026-06-26 - V-02-02 - Build Vite temporal en `C:\tmp` bloqueado por `EPERM`
 
 - Contexto: validacion del ajuste visual del dashboard contra referencia.

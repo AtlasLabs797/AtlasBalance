@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
 import {
   Area,
-  AreaChart,
   CartesianGrid,
+  ComposedChart,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -56,6 +56,8 @@ export function EvolucionChart({
   const lastPoint = points[points.length - 1];
   const yDomain = getEvolutionDomain(points);
   const axisWidth = getEvolutionAxisWidth(points, divisa, yDomain);
+  const saldoDomain = getSaldoDomain(points);
+  const movementDomain = getMovementDomain(points);
   const chartColors = {
     ingresos: resolveChartColor(colors.ingresos, 'var(--chart-ingresos)'),
     egresos: resolveChartColor(colors.egresos, 'var(--chart-egresos)'),
@@ -68,10 +70,15 @@ export function EvolucionChart({
       <div
         className="dashboard-chart-wrapper dashboard-chart-wrapper--saldo-area"
         role="group"
-        aria-label={`Evolución de saldo. Saldo final ${formatCurrency(lastPoint.saldo, divisa)}.`}
+        aria-label={`Evolución de saldo, ingresos y egresos. Saldo final ${formatCurrency(lastPoint.saldo, divisa)}.`}
       >
+        <div className="dashboard-chart-legend" aria-hidden="true">
+          <span style={{ '--series-color': chartColors.saldo } as CSSProperties}>Saldo</span>
+          <span style={{ '--series-color': chartColors.ingresos } as CSSProperties}>Ingresos</span>
+          <span style={{ '--series-color': chartColors.egresos } as CSSProperties}>Egresos</span>
+        </div>
         <ResponsiveContainer width="100%" height={height}>
-          <AreaChart data={points} margin={{ top: 12, right: 10, bottom: 8, left: 0 }}>
+          <ComposedChart data={points} margin={{ top: 12, right: 0, bottom: 8, left: 0 }}>
             <defs>
               <linearGradient id="dashboardSaldoArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={chartColors.saldo} stopOpacity={0.22} />
@@ -90,8 +97,20 @@ export function EvolucionChart({
               tick={EVOLUTION_AXIS_TICK_STYLE}
             />
             <YAxis
+              yAxisId="saldo"
               tickFormatter={(value) => formatCompactAxis(value)}
-              domain={getSaldoDomain(points)}
+              domain={saldoDomain}
+              width={74}
+              axisLine={false}
+              tickLine={false}
+              tickMargin={EVOLUTION_AXIS_TICK_MARGIN}
+              tick={EVOLUTION_AXIS_TICK_STYLE}
+            />
+            <YAxis
+              yAxisId="movement"
+              orientation="right"
+              tickFormatter={(value) => formatCompactAxis(value)}
+              domain={movementDomain}
               width={74}
               axisLine={false}
               tickLine={false}
@@ -100,6 +119,7 @@ export function EvolucionChart({
             />
             <Tooltip content={<DashboardTooltip divisa={divisa} />} cursor={{ stroke: 'var(--chart-grid)' }} />
             <Area
+              yAxisId="saldo"
               type="monotone"
               name="Saldo"
               dataKey="saldo"
@@ -110,7 +130,29 @@ export function EvolucionChart({
               isAnimationActive={false}
               activeDot={{ r: 5, strokeWidth: 0, fill: chartColors.saldo }}
             />
-          </AreaChart>
+            <Line
+              yAxisId="movement"
+              type="monotone"
+              name="Ingresos"
+              dataKey="ingresos"
+              stroke={chartColors.ingresos}
+              dot={false}
+              strokeWidth={2.2}
+              isAnimationActive={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: chartColors.ingresos }}
+            />
+            <Line
+              yAxisId="movement"
+              type="monotone"
+              name="Egresos"
+              dataKey="egresos"
+              stroke={chartColors.egresos}
+              dot={false}
+              strokeWidth={2.2}
+              isAnimationActive={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: chartColors.egresos }}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
         <EvolutionDataTable points={points} divisa={divisa} />
       </div>
@@ -281,6 +323,20 @@ function getSaldoDomain(points: DashboardPuntoEvolucion[]): [number, number] {
   const span = dataMax - dataMin;
   const padding = Math.max(span * 0.12, Math.max(Math.abs(dataMin), Math.abs(dataMax), 1) * 0.015);
   return [dataMin - padding, dataMax + padding];
+}
+
+function getMovementDomain(points: DashboardPuntoEvolucion[]): [number, number] {
+  const values = points.flatMap((point) => [point.ingresos, point.egresos]);
+  const dataMin = Math.min(...values, 0);
+  const dataMax = Math.max(...values, 0);
+
+  if (dataMin === dataMax) {
+    return [dataMin - 1, dataMax + 1];
+  }
+
+  const span = dataMax - dataMin;
+  const padding = Math.max(span * 0.12, Math.max(Math.abs(dataMin), Math.abs(dataMax), 1) * 0.04);
+  return [dataMin < 0 ? dataMin - padding : 0, dataMax > 0 ? dataMax + padding : 0];
 }
 
 function formatCompactAxis(value: number | string): string {
