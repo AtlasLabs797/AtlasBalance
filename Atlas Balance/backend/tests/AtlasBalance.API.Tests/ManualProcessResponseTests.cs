@@ -177,7 +177,7 @@ public class ManualProcessResponseTests
             return Task.FromResult(new UserAccessScope
             {
                 UserId = Guid.NewGuid(),
-                IsAdmin = true,
+                IsAdmin = !(_canAccessCuenta == false || _canWriteCuenta == false),
                 HasPermissions = true,
                 HasGlobalAccess = true
             });
