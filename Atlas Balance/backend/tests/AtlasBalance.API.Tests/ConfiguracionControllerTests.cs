@@ -193,7 +193,7 @@ public sealed class ConfiguracionControllerTests
     }
 
     [Fact]
-    public async Task Update_Should_Normalize_Unknown_OpenRouter_Model_To_Auto()
+    public async Task Update_Should_Preserve_Valid_OpenRouter_Model()
     {
         await using var db = BuildDbContext();
         var controller = BuildController(db);
@@ -226,7 +226,7 @@ public sealed class ConfiguracionControllerTests
         }, CancellationToken.None);
 
         result.Should().BeOfType<OkObjectResult>();
-        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.OpenRouterAutoModel);
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be("random/expensive-model");
         (await db.Configuraciones.SingleAsync(x => x.Clave == "openrouter_api_key")).Valor.Should().Be("openrouter-test-placeholder");
     }
 

@@ -494,6 +494,12 @@ public class AtlasAiServiceTests
         db.Extractos.AddRange(
             new Extracto { Id = Guid.NewGuid(), CuentaId = allowedCuentaId, Fecha = today, Concepto = "Gasto permitido", Monto = -100m, Saldo = 900m, FilaNumero = 1 },
             new Extracto { Id = Guid.NewGuid(), CuentaId = hiddenCuentaId, Fecha = today, Concepto = "Gasto oculto", Monto = -9999m, Saldo = 1m, FilaNumero = 1 });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            UsuarioId = userId,
+            CuentaId = allowedCuentaId,
+            PuedeVerCuentas = true
+        });
         await db.SaveChangesAsync();
 
         var httpFactory = new CapturingHttpClientFactory();
