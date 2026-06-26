@@ -1,5 +1,32 @@
 # Log de errores e incidencias
 
+## 2026-06-26 - V-02-02 - Build Vite temporal en `C:\tmp` bloqueado por `EPERM`
+
+- Contexto: validacion del ajuste visual del dashboard contra referencia.
+- Incidencia:
+  - `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-dashboard-reference-v02-02 --emptyOutDir` transformo modulos, pero fallo en `vite:prepare-out-dir`.
+  - Error: `EPERM: operation not permitted, mkdir 'C:\tmp\atlas-balance-dashboard-reference-v02-02'`.
+- Solucion:
+  - No se reintento la misma ruta.
+  - Se uso salida temporal dentro del workspace: `..\..\tmp-vite-dashboard-reference-v02-02`, que compilo correctamente.
+  - La carpeta temporal del build se elimino despues de la captura Playwright.
+- Regla: si `C:\tmp` devuelve `EPERM`, no conviertas el build en pelea de permisos; usa una salida temporal dentro del workspace o pide elevacion solo si es imprescindible.
+
+## 2026-06-26 - V-02-02 - Sidebar bloqueado en oscuro por `data-theme`
+
+- Contexto: correccion del menu lateral para que acompanara el modo claro/oscuro.
+- Incidencias:
+  - El `<aside>` de `Sidebar` tenia `data-theme="dark"`, anulando el tema global.
+  - Los tokens `--color-sidebar-*` estaban duplicados con valores oscuros tanto en `:root` como en `[data-theme="dark"]`.
+  - Un wrapper de validacion con `Start-Process` fallo por entorno Windows con claves `Path`/`PATH` duplicadas; se cambio a `npm.cmd` directo.
+  - El primer `tsc --noEmit` emitio errores transitorios en `EvolucionChart.tsx` mientras habia cambios no relacionados; el segundo intento paso.
+  - Build Vite en sandbox fallo con `EPERM` al crear `C:\tmp\atlas-balance-vite-build-sidebar-theme-v02-02`; fuera del sandbox paso.
+- Solucion:
+  - Se elimino el `data-theme` local del sidebar.
+  - Se separaron tokens claros/oscuros de fondo, texto, hover, scope, activo, ring y sombra.
+  - Se valido con lint, TypeScript y build temporal fuera del sandbox.
+- Regla: si un componente fija `data-theme`, deja de ser tema global; usalo solo para islas deliberadas como paneles de marca.
+
 ## 2026-06-23 - V-02-02 - Lint en BottomNav por reactividad falsa
 
 - Contexto: implementacion de navegacion inferior movil dependiente de permiso de Dashboard.
@@ -1746,3 +1773,20 @@
 - Causa observada: inestabilidad de la herramienta Browser/CDP en la sesion, no evidencia de error de la app; las mismas rutas funcionaron con Chrome local via Playwright.
 - Solucion aplicada: cortar la via tras dos intentos y cambiar a QA finita con Playwright + Chrome local + servidor/API mock cerrados en el mismo proceso.
 - Verificacion: Playwright local completo OK, capturas generadas en `output/playwright/` y consola sin errores.
+
+## 2026-06-26 - V-02-02 - QA login: EPERM en build temporal y Chromium ausente
+
+- Contexto: validacion visual del login redisenado segun referencia.
+- Incidencias:
+  - `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-reference-v02-02 --emptyOutDir` fallo dentro del sandbox con `EPERM` al crear el `outDir`.
+  - Playwright no pudo lanzar Chromium bundled porque faltaba `C:\Users\usuario\AppData\Local\ms-playwright\chromium_headless_shell-1217\chrome-headless-shell-win64\chrome-headless-shell.exe`.
+  - `npm.cmd run lint` y `npm.cmd exec tsc -- --noEmit` detectaron una variable muerta preexistente: `lastEvolutionPoint` en `DashboardPage.tsx`.
+- Solucion aplicada:
+  - No se reintento Vite/Rolldown dentro del sandbox; se ejecuto build finito fuera del sandbox y paso.
+  - No se descargo Chromium; se uso Chrome local con `executablePath` explicito y servidor estatico temporal cerrado al terminar.
+  - Se elimino `lastEvolutionPoint` porque no tenia usos.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build temporal fuera del sandbox: OK.
+  - QA Playwright con Chrome local: capturas desktop/mobile, consola sin errores y sin overflow horizontal.

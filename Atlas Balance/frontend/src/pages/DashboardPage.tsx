@@ -125,6 +125,20 @@ export default function DashboardPage() {
       })),
     [principal?.saldos_por_titular],
   );
+  const resumenConsolidado = useMemo(() => {
+    const cuentas = principal?.saldos_por_cuenta?.length ?? 0;
+    const bancos = new Set((principal?.saldos_por_cuenta ?? []).map((cuenta) => cuenta.banco_nombre).filter(Boolean)).size;
+    const divisas = saldosDivisa?.divisas?.length ?? Object.keys(principal?.saldos_por_divisa ?? {}).length;
+
+    return { cuentas, bancos, divisas };
+  }, [principal?.saldos_por_cuenta, principal?.saldos_por_divisa, saldosDivisa?.divisas]);
+  const disponiblePct = useMemo(() => {
+    if (!liquidezConsolidada || principal?.total_convertido === 0) {
+      return null;
+    }
+
+    return (liquidezConsolidada.disponible / Math.abs(principal?.total_convertido ?? 1)) * 100;
+  }, [liquidezConsolidada, principal?.total_convertido]);
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -197,13 +211,11 @@ export default function DashboardPage() {
     );
   }
 
-  const lastEvolutionPoint = evolucion.puntos.length > 0 ? evolucion.puntos[evolucion.puntos.length - 1] : null;
-
   return (
     <section className="dashboard-page">
       <header className="dashboard-toolbar">
         <div>
-          <h1>Dashboard principal</h1>
+          <h1>Dashboard</h1>
           <p className="dashboard-subtitle">Saldos consolidados, movimiento del periodo y exposición por titular.</p>
         </div>
         <div className="dashboard-toolbar-actions">
@@ -213,66 +225,48 @@ export default function DashboardPage() {
       </header>
 
       <section className="dashboard-hero-card">
-        <div className="dashboard-hero-balance">
-          <span className="ab-badge ab-badge--info">Base {principal.divisa_principal}</span>
-          <p>Saldo consolidado</p>
-          <strong>
-            <SignedAmount value={principal.total_convertido}>
-              {formatCurrency(principal.total_convertido, principal.divisa_principal)}
-            </SignedAmount>
-          </strong>
-          <span className="dashboard-hero-delta">
-            {variacionPct !== null ? (
-              <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}% en el periodo
-              </span>
-            ) : 'Sin comparativa suficiente'}
-          </span>
-          <div className="dashboard-hero-mini-grid">
-            <div>
-              <span>Ingresos</span>
-              <strong>
-                <SignedAmount value={periodTotals.ingresos}>
-                  {formatCurrency(periodTotals.ingresos, principal.divisa_principal)}
-                </SignedAmount>
-              </strong>
-            </div>
-            <div>
-              <span>Egresos</span>
-              <strong>
-                <SignedAmount value={periodTotals.egresos} tone="negative">
-                  {formatCurrency(periodTotals.egresos, principal.divisa_principal)}
-                </SignedAmount>
-              </strong>
-            </div>
+        <div className="dashboard-hero-summary">
+          <div className="dashboard-hero-balance">
+            <p>Saldo consolidado</p>
+            <strong>
+              <SignedAmount value={principal.total_convertido}>
+                {formatCurrency(principal.total_convertido, principal.divisa_principal)}
+              </SignedAmount>
+            </strong>
+            <span className="dashboard-hero-delta">
+              {variacionPct !== null ? (
+                <>
+                  <span className={variacionPct >= 0 ? 'dashboard-variacion-pill dashboard-variacion--positive' : 'dashboard-variacion-pill dashboard-variacion--negative'}>
+                    {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}%
+                  </span>
+                  <span>vs. periodo anterior · {formatPeriodoLabel(periodo)}</span>
+                </>
+              ) : 'Sin comparativa suficiente'}
+            </span>
+            <small>
+              {resumenConsolidado.cuentas} cuenta{resumenConsolidado.cuentas === 1 ? '' : 's'} ·{' '}
+              {resumenConsolidado.bancos} banco{resumenConsolidado.bancos === 1 ? '' : 's'} ·{' '}
+              {resumenConsolidado.divisas} divisa{resumenConsolidado.divisas === 1 ? '' : 's'}
+            </small>
+          </div>
+
+          <div className="dashboard-hero-divisas">
+            <SaldoPorDivisaCard
+              className="dashboard-divisa-strip dashboard-divisa-strip--hero"
+              items={saldosDivisa.divisas}
+              divisaPrincipal={saldosDivisa.divisa_principal}
+            />
           </div>
         </div>
 
-        <div className="dashboard-hero-divisas">
-          <SaldoPorDivisaCard
-            className="dashboard-divisa-strip dashboard-divisa-strip--hero"
-            items={saldosDivisa.divisas}
-            divisaPrincipal={saldosDivisa.divisa_principal}
-          />
-        </div>
-
         <div className="dashboard-hero-chart">
-          <header className="dashboard-card-header dashboard-card-header--chart">
-            <div>
-              <h2>Evolución</h2>
-              <p>Saldo, ingresos y egresos del periodo seleccionado.</p>
-            </div>
-            {lastEvolutionPoint ? (
-              <span className="dashboard-card-meta">
-                Saldo final {formatCurrency(lastEvolutionPoint.saldo, principal.divisa_principal)}
-              </span>
-            ) : null}
-          </header>
           <EvolucionChart
             points={evolucion.puntos}
             divisa={principal.divisa_principal}
             colors={principal.chart_colors}
-            height={320}
+            height={310}
+            variant="saldoArea"
+            xAxisMode="month"
           />
         </div>
       </section>
@@ -287,7 +281,7 @@ export default function DashboardPage() {
           }
           helper={variacionIngPct !== null ? (
             <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-              {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}%
+              {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}% vs. anterior
             </span>
           ) : undefined}
         />
@@ -300,7 +294,7 @@ export default function DashboardPage() {
           }
           helper={variacionEgrPct !== null ? (
             <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-              {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}%
+              {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}% vs. anterior
             </span>
           ) : undefined}
         />
@@ -315,7 +309,7 @@ export default function DashboardPage() {
               }
               helper={variacionDispPct !== null ? (
                 <span className={variacionDispPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                  {variacionDispPct >= 0 ? '+' : ''}{variacionDispPct.toFixed(1)}%
+                  {disponiblePct !== null ? `${disponiblePct.toFixed(1)}% del saldo total` : `${variacionDispPct >= 0 ? '+' : ''}${variacionDispPct.toFixed(1)}%`}
                 </span>
               ) : undefined}
             />
@@ -324,7 +318,7 @@ export default function DashboardPage() {
               value={formatCurrency(liquidezConsolidada.inmovilizado, principal.divisa_principal)}
               helper={variacionInmovPct !== null && Math.abs(variacionInmovPct) >= 0.1 ? (
                 <span className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
-                  {variacionInmovPct >= 0 ? '+' : ''}{variacionInmovPct.toFixed(1)}%
+                  {principal.plazos_fijos.total_cuentas} plazo{principal.plazos_fijos.total_cuentas === 1 ? '' : 's'} fijo{principal.plazos_fijos.total_cuentas === 1 ? '' : 's'}
                 </span>
               ) : undefined}
             />
@@ -332,41 +326,87 @@ export default function DashboardPage() {
         ) : null}
       </div>
 
-      <section className="dashboard-card dashboard-plazo-card">
-        <header className="dashboard-card-header">
-          <h2>Plazos fijos</h2>
-          <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
-        </header>
-        <div className="dashboard-plazo-metrics">
-          <div>
-            <span>Monto total</span>
-            <strong>
-              <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
-                {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
-              </SignedAmount>
-            </strong>
+      <div className="dashboard-detail-grid">
+        <section className="dashboard-card dashboard-titulares-card dashboard-titulares-card--wide">
+          <header className="dashboard-card-header">
+            <h2>Saldos por titular</h2>
+            <span className="dashboard-card-meta">{principal.saldos_por_titular.length} titulares · cuota sobre el total</span>
+          </header>
+
+          {principal.saldos_por_titular.length === 0 ? (
+            <EmptyState
+              title="No hay titulares con saldo visible."
+              subtitle="Importa movimientos o revisa permisos para poblar este resumen."
+            />
+          ) : (
+            <div className="dashboard-titular-groups">
+              {saldosPorTipo.map((group) => (
+                <article className="dashboard-titular-group" key={group.tipo}>
+                  <h3>{TIPO_TITULAR_LABELS[group.tipo]}</h3>
+                  <div className="dashboard-titular-list">
+                    {group.items.map((item) => (
+                      <Link
+                        key={item.titular_id}
+                        className="dashboard-titular-item"
+                        to={`/dashboard/titular/${item.titular_id}?periodo=${periodo}&divisa=${principal.divisa_principal}`}
+                      >
+                        <span>{item.titular_nombre}</span>
+                        <strong>
+                          <SignedAmount value={item.total_convertido}>
+                            {formatCurrency(item.total_convertido, principal.divisa_principal)}
+                          </SignedAmount>
+                        </strong>
+                        <small>
+                          Disponible {formatCurrency(item.saldo_disponible_convertido ?? item.total_convertido, principal.divisa_principal)}
+                          {' · '}
+                          Inmovilizado {formatCurrency(item.saldo_inmovilizado_convertido ?? 0, principal.divisa_principal)}
+                        </small>
+                      </Link>
+                    ))}
+                    {group.items.length === 0 ? <div className="dashboard-titular-empty">Sin saldos visibles</div> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="dashboard-card dashboard-plazo-card">
+          <header className="dashboard-card-header">
+            <h2>Plazos fijos</h2>
+            <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
+          </header>
+          <div className="dashboard-plazo-metrics">
+            <div>
+              <span>Monto total</span>
+              <strong>
+                <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
+                  {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
+                </SignedAmount>
+              </strong>
+            </div>
+            <div>
+              <span>Intereses aprox.</span>
+              <strong>
+                <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
+                  {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
+                </SignedAmount>
+              </strong>
+            </div>
+            <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
+              <span>Próximo vencimiento</span>
+              <strong>
+                {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
+                  ? 'Sin fecha'
+                  : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} días`}
+              </strong>
+              {principal.plazos_fijos.proximo_vencimiento ? (
+                <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
+              ) : null}
+            </div>
           </div>
-          <div>
-            <span>Intereses aprox.</span>
-            <strong>
-              <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
-                {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
-              </SignedAmount>
-            </strong>
-          </div>
-          <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento !== null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
-            <span>Próximo vencimiento</span>
-            <strong>
-              {principal.plazos_fijos.dias_hasta_proximo_vencimiento === null
-                ? 'Sin fecha'
-                : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} dias`}
-            </strong>
-            {principal.plazos_fijos.proximo_vencimiento ? (
-              <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
-            ) : null}
-          </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
       {principal.saldos_por_pais?.length ? (
         <section className="dashboard-card">
@@ -397,49 +437,20 @@ export default function DashboardPage() {
           />
         </section>
       ) : null}
-
-      <section className="dashboard-card dashboard-titulares-card dashboard-titulares-card--wide">
-        <header className="dashboard-card-header">
-          <h2>Saldos por titular</h2>
-        </header>
-
-        {principal.saldos_por_titular.length === 0 ? (
-          <EmptyState
-            title="No hay titulares con saldo visible."
-            subtitle="Importa movimientos o revisa permisos para poblar este resumen."
-          />
-        ) : (
-          <div className="dashboard-titular-groups">
-            {saldosPorTipo.map((group) => (
-              <article className="dashboard-titular-group" key={group.tipo}>
-                <h3>{TIPO_TITULAR_LABELS[group.tipo]}</h3>
-                <div className="dashboard-titular-list">
-                  {group.items.map((item) => (
-                    <Link
-                      key={item.titular_id}
-                      className="dashboard-titular-item"
-                      to={`/dashboard/titular/${item.titular_id}?periodo=${periodo}&divisa=${principal.divisa_principal}`}
-                    >
-                      <span>{item.titular_nombre}</span>
-                      <strong>
-                        <SignedAmount value={item.total_convertido}>
-                          {formatCurrency(item.total_convertido, principal.divisa_principal)}
-                        </SignedAmount>
-                      </strong>
-                      <small>
-                        Disponible {formatCurrency(item.saldo_disponible_convertido ?? item.total_convertido, principal.divisa_principal)}
-                        {' · '}
-                        Inmovilizado {formatCurrency(item.saldo_inmovilizado_convertido ?? 0, principal.divisa_principal)}
-                      </small>
-                    </Link>
-                  ))}
-                  {group.items.length === 0 ? <div className="dashboard-titular-empty">Sin saldos visibles</div> : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
     </section>
   );
+}
+
+function formatPeriodoLabel(periodo: PeriodoDashboard): string {
+  const labels: Record<PeriodoDashboard, string> = {
+    '1m': 'último mes',
+    '3m': 'últimos 3 meses',
+    '6m': 'últimos 6 meses',
+    '9m': 'últimos 9 meses',
+    '12m': 'últimos 12 meses',
+    '18m': 'últimos 18 meses',
+    '24m': 'últimos 24 meses',
+  };
+
+  return labels[periodo];
 }

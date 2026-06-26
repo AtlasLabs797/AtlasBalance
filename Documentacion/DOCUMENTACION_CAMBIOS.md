@@ -8,6 +8,50 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-26 - V-02-02 - Dashboard alineado con referencia bancaria
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se reajusto el dashboard principal para parecerse mas a la referencia aportada: panel unico superior, saldo consolidado dominante, tarjetas compactas por divisa, grafica de area azul y KPIs secundarios sobrios.
+- `EvolucionChart` ahora permite variante `saldoArea`, con dominio Y basado solo en saldo y animacion desactivada para evitar capturas/render a medio pintar.
+- `Saldos por titular` y `Plazos fijos` quedan en la misma fila en desktop; `Saldos por pais` y `Concentracion` bajan de prioridad.
+- Se compacto el layout movil de divisas en dos columnas y se mantuvo el selector de divisa como control discreto para no perder funcionalidad.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Decisiones visuales tomadas:**
+- No se oculto el selector de divisa aunque no aparezca en la referencia: quitarlo seria una regresion funcional.
+- La hero usa una sola serie de saldo porque la referencia comunica tendencia consolidada, no desglose contable.
+- Se mantuvieron pais y concentracion debajo del bloque principal para no saturar la primera lectura.
+
+**Comandos ejecutados:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- `npm.cmd run lint`.
+- `npm.cmd exec tsc -- --noEmit`.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-dashboard-reference-v02-02 --emptyOutDir` (fallo por `EPERM` al crear carpeta).
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-dashboard-reference-v02-02 --emptyOutDir`.
+- QA Playwright finita con Chrome local, servidor temporal cerrado en el mismo proceso y APIs mockeadas.
+
+**Resultado de verificacion:**
+- Frontend lint: OK.
+- TypeScript: OK.
+- Vite build: OK con salida temporal dentro del workspace.
+- Playwright mock `/dashboard`: desktop `1198px` y mobile `390px` sin overflow horizontal, consola sin errores y grafica de area presente.
+- Capturas: `output/playwright/dashboard-reference-desktop-v02-02.png` y `output/playwright/dashboard-reference-mobile-v02-02.png`.
+
+**Pendientes:**
+- Revisar con datos reales si las cifras extremas de divisas largas siguen entrando limpias en las mini tarjetas.
+
+---
 ## 2026-06-23 - V-02-02 - Interactividad responsive y accesibilidad operativa
 
 **Version:** V-02-02
@@ -15715,3 +15759,59 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 
 **Pendientes:**
 - `npm.cmd run build` estandar sigue bloqueado por `EPERM` en `frontend/dist/assets`; liberar esa carpeta antes de empaquetar release.
+
+## 2026-06-26 - Sidebar cambia con modo claro/oscuro
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se elimino `data-theme="dark"` del `Sidebar`, que era la razon por la que el menu lateral ignoraba el modo claro.
+- Se anadieron tokens `--color-sidebar-*` diferenciados para tema claro y oscuro: fondo, texto, muted, borde, hover, scope, activo, ring y sombra.
+- `shell.css` usa esos tokens en marca, selector de organizacion, hover, activo y sombra del rail lateral.
+- Decision visual: en claro el sidebar usa superficies claras y activo azul suave; en oscuro conserva el rail grafito original.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
+- `Atlas Balance/frontend/src/styles/variables.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: primer intento con fallo transitorio en `EvolucionChart.tsx`; segundo intento OK.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-sidebar-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+
+**Pendientes:**
+- Sin QA visual con navegador/app real; no se levanto servidor dev por protocolo anti-encallamiento.
+
+## 2026-06-26 - Login redisenado segun referencia
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se ajusto `LoginPage` al mockup de referencia: fondo oscuro completo, layout partido 52/48, separador vertical, marca superior compacta, titular `Tesoreria local, control real.`, copy operativo y chips `Multi-banco`, `Multi-divisa`, `Red local`.
+- `auth.css` redefine la pantalla de acceso con tarjeta compacta, controles oscuros, boton azul, logos filtrados para fondo oscuro, responsive de una columna y tarjeta centrada en mobile.
+- El control de mostrar contrasena pasa de texto visible a icono `Eye/EyeOff` de `lucide-react`, manteniendo accesibilidad con `aria-label`.
+- Se elimino una variable muerta `lastEvolutionPoint` en `DashboardPage` que bloqueaba lint y TypeScript.
+- Decision visual: no se anadio checkbox de "recordar dispositivo" al login normal porque el backend solo lo usa durante MFA; mostrarlo sin contrato real seria una mentira de UI.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-reference-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright finita con Chrome local y servidor estatico cerrado en el mismo script: `/login` desktop 1580x835 y mobile 390x844 OK, consola sin errores, `scrollWidth=clientWidth`.
+- Capturas: `output/playwright/login-reference-desktop-v02-02.png` y `output/playwright/login-reference-mobile-v02-02.png`.
+
+**Pendientes:**
+- La captura mantiene una desviacion deliberada frente a la referencia: no aparece "Recordar este dispositivo" hasta el flujo MFA, porque en login normal no hay soporte backend para esa accion.

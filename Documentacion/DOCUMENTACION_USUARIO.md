@@ -43,13 +43,13 @@ En movil, la barra inferior muestra los accesos que mas se usan: Inicio si tiene
 
 El dashboard principal prioriza la lectura financiera:
 
-- Saldo total en la divisa base.
-- Porcentajes de variacion compactos bajo los KPIs principales, sin texto comparativo adicional.
-- Saldos por divisa, separando disponible e inmovilizado. La divisa base aparece siempre primero.
+- Saldo total en la divisa base dentro de un panel superior amplio.
+- Variacion del saldo junto al periodo comparado.
+- Saldos por divisa en tarjetas compactas. La divisa base aparece siempre primero.
 - Filtro por pais y bloque `Saldos por pais` cuando las cuentas tienen pais asociado.
-- Plazos fijos debajo del resumen de saldo, ingresos y egresos.
-- Evolucion del periodo en una grafica ancha para leer la tendencia sin pelearse con tarjetas laterales.
-- Saldos por titular en la parte inferior, agrupados en tres columnas: Empresa, Autonomo y Particular.
+- Evolucion del saldo en una grafica ancha de area azul para leer tendencia.
+- KPIs de ingresos, egresos, disponible e inmovilizado debajo del panel principal.
+- Saldos por titular y plazos fijos juntos en desktop; en movil se apilan.
 
 ## Desglose de cuenta
 
@@ -401,15 +401,15 @@ En `Usuarios`, un administrador puede marcar `Puede usar IA` para cada usuario. 
 
 El dashboard principal muestra:
 
-- Saldo consolidado en la tarjeta principal.
-- Saldos por divisa dentro del resumen superior; la divisa base aparece primero.
-- Grafica de evolucion en la misma zona principal del dashboard.
+- Saldo consolidado en el panel principal.
+- Saldos por divisa dentro del panel superior; la divisa base aparece primero.
+- Grafica de evolucion de saldo en la misma zona principal del dashboard.
 - KPIs de ingresos, egresos, disponible e inmovilizado cuando hay datos suficientes.
 - Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento.
 - Saldos por pais, concentracion por banco/titular y saldos por titular.
 - En `Cuentas > Saldos y evolucion`, la grafica de `Evolucion` se muestra antes del listado de cuentas.
 
-Los saldos por titular ocupan la parte inferior completa del dashboard y se agrupan en tres columnas: Empresa, Autonomo y Particular.
+En desktop, los saldos por titular aparecen junto a `Plazos fijos`; en movil se apilan. Los titulares se agrupan en Empresa, Autonomo y Particular.
 
 El periodo se elige con tabs (`1m`, `3m`, `6m`, `9m`, `12m`, `18m`, `24m`) y la divisa principal con el selector de divisa. Ambos siguen quedando reflejados en la URL del dashboard.
 

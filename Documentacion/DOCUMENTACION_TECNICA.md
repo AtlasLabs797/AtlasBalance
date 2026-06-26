@@ -1,5 +1,34 @@
 # Documentacion tecnica
 
+## 2026-06-26 - V-02-02 - Dashboard estilo referencia bancaria
+
+### Que cambio
+
+- `DashboardPage` cambia la primera lectura a un panel unico: saldo consolidado, resumen de cuentas/bancos/divisas, tarjetas compactas por divisa y grafica principal dentro del mismo borde.
+- El titulo visible vuelve a `Dashboard` para coincidir con la referencia y reducir ruido.
+- `Saldos por titular` y `Plazos fijos` se agrupan en `dashboard-detail-grid` en desktop. `Saldos por pais` y `Concentracion` quedan debajo.
+- `EvolucionChart` acepta `variant="saldoArea"` y `xAxisMode="month"`.
+- En la variante `saldoArea`, el dominio del eje Y se calcula solo con `saldo`, las etiquetas del eje se compactan sin moneda y la animacion queda desactivada.
+- `dashboard.css` reduce sombras, usa bordes finos, baja radios al sistema de 8px, refuerza numeros monoespaciados y hace el selector de periodo mas parecido a control segmentado.
+
+### Por que
+
+La referencia no era "mas bonita"; era mas clara. El dashboard anterior mezclaba saldo, divisas, ingresos, egresos y grafica como piezas competidoras. La nueva composicion fuerza una lectura bancaria: primero patrimonio consolidado, despues tendencia, luego movimiento del periodo y exposicion.
+
+Se mantiene el selector de divisa aunque no salga en la captura de referencia. Quitar control funcional para copiar una imagen seria una mala decision.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-dashboard-reference-v02-02 --emptyOutDir`: OK.
+- QA Playwright finita con Chrome local, servidor temporal cerrado y APIs mockeadas: desktop `1198px` y mobile `390px`, sin overflow horizontal, consola sin errores, grafica `saldoArea` renderizada.
+- Capturas revisadas con `view_image`: referencia del usuario, `output/playwright/dashboard-reference-desktop-v02-02.png` y `output/playwright/dashboard-reference-mobile-v02-02.png`.
+
+### Limite real
+
+La QA uso datos mockeados para no depender de login/API local. Antes de release conviene abrir con datos reales y comprobar divisas con codigos/importes largos.
+
 ## 2026-06-23 - V-02-02 - Interactividad responsive y accesibilidad operativa
 
 ### Que cambio
@@ -3946,7 +3975,7 @@ Estas clases son una capa visual; no contienen lógica de negocio ni sustituyen 
 
 ### Shell y login
 
-`Sidebar` fuerza `data-theme="dark"` para que el rail sea oscuro en tema claro y oscuro. Conserva `PaisScopeSelect`, conteos de alertas/exportaciones, badge de update y filtrado de items por permisos/IA.
+`Sidebar` hereda el `data-theme` global. Los tokens `--color-sidebar-*` definen una variante clara y otra oscura para que el rail lateral cambie junto con el modo claro/oscuro sin duplicar logica en React. Conserva `PaisScopeSelect`, conteos de alertas/exportaciones, badge de update y filtrado de items por permisos/IA.
 
 `TopBar` conserva logout, toggle de tema, colapso de sidebar y chat IA flotante; solo cambia la representacion del usuario a pill con iniciales y rol.
 
@@ -3998,3 +4027,41 @@ Validacion adicional:
 - `git diff --check`: OK.
 - Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02-qa3 --emptyOutDir`: OK fuera del sandbox.
 - QA Playwright finita con Chrome local y API mock: login, cambio obligatorio de password, dashboard, periodo, extractos, backups y mobile OK; consola sin errores.
+
+## 2026-06-26 - V-02-02 - Sidebar sensible al tema
+
+`Sidebar` deja de fijar `data-theme="dark"` en el `<aside>`. El rail lateral toma el tema activo desde `document.documentElement`, igual que el resto del shell.
+
+`variables.css` separa tokens de sidebar para claro y oscuro:
+
+- Claro: fondo de superficie, texto secundario, borde suave, hover de superficie y activo con `accent-primary-soft`.
+- Oscuro: mantiene el rail grafito original con texto claro, hover translucido y sombra mas marcada.
+
+`shell.css` usa esos tokens para marca, selector de organizacion, hover, estado activo y sombra del rail. La navegacion inferior sigue aprovechando `--color-sidebar-active-text`, por lo que su estado activo tambien respeta el tema.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK tras repetir una vez por ruido transitorio durante cambios no relacionados en `EvolucionChart.tsx`.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-sidebar-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+
+Pendiente: no se hizo QA visual con navegador porque el cambio es acotado a tokens/CSS y no se arranco servidor dev por la regla anti-encallamiento.
+
+## 2026-06-26 - V-02-02 - Login segun referencia oscura
+
+`LoginPage` mantiene el flujo existente de autenticacion, MFA, QR de enrolamiento, `returnTo` seguro y mensaje post-update. El cambio es visual y de microinteraccion:
+
+- panel izquierdo oscuro con marca superior, claim `Tesoreria local, control real.`, descripcion operativa y chips de capacidades;
+- panel derecho con separador vertical y tarjeta de login compacta;
+- logos filtrados por CSS para conservar contraste sobre fondo oscuro sin crear nuevos assets;
+- boton de mostrar contrasena con icono `Eye/EyeOff` y etiquetas accesibles;
+- responsive de una columna en tablet/mobile, sin overflow horizontal.
+
+No se muestra "Recordar este dispositivo" en el estado base de login porque esa opcion solo se envia al backend durante el challenge MFA (`/auth/mfa/verify`). Exponerla antes seria un control sin efecto real.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-reference-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA visual con Chrome local via Playwright sobre servidor estatico temporal: `/login` desktop 1580x835 y mobile 390x844, consola sin errores y sin overflow horizontal.
