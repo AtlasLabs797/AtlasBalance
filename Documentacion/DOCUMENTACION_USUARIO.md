@@ -69,6 +69,10 @@ La vista `Extractos` usa una reticula de celdas tipo hoja de calculo. Las column
 
 Si falla la carga de movimientos, preferencias de columnas o auditoria de una celda, la pantalla muestra el error y permite reintentar. Si intentas ocultar columnas, siempre queda al menos una visible.
 
+En la columna `Alerta`, marca o desmarca el checkbox y escribe la nota si hace falta. La tabla ya no muestra el texto `Marcada/Sin marca` porque era redundante.
+
+El boton `Historial` aparece en la columna `Fila`, no repetido por toda la tabla.
+
 Con teclado, la tabla de Extractos permite moverse por celdas con flechas, Home/End y PageUp/PageDown. Enter o F2 abre la edicion de una celda editable. En movil y tablet tactil conserva scroll local para no romper la comparacion por columnas.
 
 ## Acceso con Google Authenticator

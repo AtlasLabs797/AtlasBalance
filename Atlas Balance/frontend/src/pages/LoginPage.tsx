@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
@@ -177,7 +178,7 @@ export default function LoginPage() {
         {theme === 'light' ? <IconMoon /> : <IconSun />}
       </button>
 
-      <aside className="auth-brand-panel" data-theme="dark" aria-label="Atlas Balance">
+      <aside className="auth-brand-panel" aria-label="Atlas Balance">
         <div className="auth-brand-lockup">
           <img
             src="/logos/Atlas Balance.png"
@@ -186,14 +187,17 @@ export default function LoginPage() {
           />
           <div className="auth-branding">
             <h1>Atlas Balance</h1>
-            <p>Control financiero interno</p>
           </div>
         </div>
 
         <div className="auth-brand-copy">
-          <span className="auth-brand-eyebrow">Operación privada</span>
-          <strong>Una consola sobria para revisar dinero real.</strong>
-          <p>Acceso protegido para equipos que no pueden permitirse una pantalla confusa.</p>
+          <strong>Tesorería local, control real.</strong>
+          <p>Saldos, extractos y previsiones de todos tus bancos, titulares y divisas — centralizados en tu propia red, sin salir de ella.</p>
+          <div className="auth-brand-tags" aria-label="Capacidades principales">
+            <span>Multi-banco</span>
+            <span>Multi-divisa</span>
+            <span>Red local</span>
+          </div>
         </div>
 
         <div className="auth-brand-footer">
@@ -221,7 +225,6 @@ export default function LoginPage() {
               <input
                 id="email"
                 type="email"
-                autoFocus
                 autoComplete="username"
                 className="auth-input"
                 placeholder="tu@email.com"
@@ -250,8 +253,10 @@ export default function LoginPage() {
                   className="auth-password-toggle"
                   onClick={() => setShowPassword((current) => !current)}
                   aria-pressed={showPassword}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 >
-                  {showPassword ? 'Ocultar' : 'Mostrar'}
+                  {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
                 </button>
               </div>
               {errors.password && <p id="password-error" className="auth-error" role="alert">{errors.password.message}</p>}

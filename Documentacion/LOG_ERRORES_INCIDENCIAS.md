@@ -27,6 +27,39 @@
   - Se valido con lint, TypeScript y build temporal fuera del sandbox.
 - Regla: si un componente fija `data-theme`, deja de ser tema global; usalo solo para islas deliberadas como paneles de marca.
 
+## 2026-06-26 - V-02-02 - Login bloqueado en oscuro por CSS hardcodeado
+
+- Contexto: el usuario reporto que el modo claro/oscuro del menu de inicio no funcionaba.
+- Incidencias:
+  - `LoginPage` y `ChangePasswordPage` todavia fijaban `data-theme="dark"` en `.auth-brand-panel`.
+  - `auth.css` habia quedado con colores oscuros hardcodeados, asi que el toggle cambiaba `document.documentElement[data-theme]` pero no la superficie visible.
+- Solucion:
+  - Se elimino el `data-theme` local de las pantallas de auth.
+  - Se crearon tokens locales `--auth-*` con valores claros por defecto y override oscuro en `[data-theme="dark"] .auth-page`.
+  - Se conectaron pagina, paneles, tarjeta, inputs, chips, logos, toggle y boton a esos tokens.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build temporal fuera del sandbox: OK.
+  - QA Playwright con Chrome local: click en toggle cambia `theme=light` a `theme=dark`, los colores computados cambian y no hay overflow en desktop/mobile.
+- Regla: redisenar una pantalla en oscuro no justifica hardcodear oscuro. Si hay toggle global, cada superficie debe consumir tokens o declarar explicitamente que es una isla fija.
+
+## 2026-06-26 - V-02-02 - Toggle de tema del login descentrado
+
+- Contexto: tras corregir claro/oscuro del login, el icono de modo claro/oscuro se veia descentrado dentro del boton.
+- Causa:
+  - `.auth-theme-toggle` heredaba padding/min-height de estilos globales de boton, por lo que el control medido era mas alto que ancho.
+  - El icono de luna tiene peso visual hacia la derecha aunque el SVG use un `viewBox` centrado.
+- Solucion:
+  - Se anulo la herencia nativa/global con `appearance: none`, `padding: 0`, `min-width`, `min-height`, `box-sizing` y `line-height`.
+  - Se fijo tamano del SVG interno y se aplico ajuste optico horizontal solo a la luna.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build temporal fuera del sandbox: OK.
+  - QA Playwright con Chrome local: boton `38x38`, sin overflow horizontal y sin errores de consola.
+- Regla: para icon buttons no basta con `place-items: center`; hay que neutralizar padding/min-height heredados y revisar el peso optico del glyph.
+
 ## 2026-06-23 - V-02-02 - Lint en BottomNav por reactividad falsa
 
 - Contexto: implementacion de navegacion inferior movil dependiente de permiso de Dashboard.

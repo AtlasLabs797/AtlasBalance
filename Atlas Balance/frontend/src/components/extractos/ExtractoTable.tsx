@@ -399,7 +399,7 @@ export default function ExtractoTable({
                           onToggleFlag,
                           isActive: isFocusedCell
                         })}
-                        {!ACTION_COLUMNS.has(column) ? (
+                        {column === 'fila_numero' ? (
                           <button
                             type="button"
                             className="cell-audit-button"
@@ -487,7 +487,6 @@ function renderCell({
           aria-label={`Marcar fila ${row.fila_numero} con alerta`}
           onChange={(e) => void onToggleFlag(row, e.target.checked, note)}
         />
-        <span className="flag-label">{row.flagged ? 'Marcada' : 'Sin marca'}</span>
         <input
           value={note}
           placeholder="Nota de alerta"
@@ -566,7 +565,7 @@ function getColumnTrack(column: string): string {
 function getColumnWidth(column: string): number {
   if (column === 'fila_numero') return 88;
   if (column === 'checked') return 112;
-  if (column === 'flagged') return 210;
+  if (column === 'flagged') return 176;
   if (column === 'fecha') return 124;
   if (column === 'concepto') return 420;
   if (column === 'comentarios') return 316;

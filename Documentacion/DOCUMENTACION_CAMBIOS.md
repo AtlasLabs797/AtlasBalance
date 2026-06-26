@@ -8,6 +8,34 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-26 - V-02-02 - Flag de extractos simplificado
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- En la columna `Alerta` de `Extractos` se elimino el texto `Marcada/Sin marca`.
+- La celda mantiene solo checkbox y campo `Nota de alerta`.
+- Se ajusto el grid interno del flag y el ancho de columna de `210px` a `176px`.
+- El boton `Historial` queda visible solo en la columna `Fila`, evitando que se repita en toda la tabla.
+- En tactil, el espacio reservado para ese boton tambien queda limitado a `Fila`.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+
+**Pendientes:**
+- Sin QA visual con navegador real; revisar manualmente notas largas de alerta antes de release.
+
+---
 ## 2026-06-26 - V-02-02 - Dashboard alineado con referencia bancaria
 
 **Version:** V-02-02
@@ -15816,29 +15844,60 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 **Pendientes:**
 - La captura mantiene una desviacion deliberada frente a la referencia: no aparece "Recordar este dispositivo" hasta el flujo MFA, porque en login normal no hay soporte backend para esa accion.
 
-## 2026-06-26 - Sidebar cambia con modo claro/oscuro
+## 2026-06-26 - Login respeta modo claro/oscuro
 
 **Version:** V-02-02
 
 **Trabajo realizado:**
-- Se elimino `data-theme="dark"` del `Sidebar`, que era la razon por la que el menu lateral ignoraba el modo claro.
-- Se anadieron tokens `--color-sidebar-*` diferenciados para tema claro y oscuro: fondo, texto, muted, borde, hover, scope, activo, ring y sombra.
-- `shell.css` usa esos tokens en marca, selector de organizacion, hover, activo y sombra del rail lateral.
-- Decision visual: en claro el sidebar usa superficies claras y activo azul suave; en oscuro conserva el rail grafito original.
+- Se corrigio la regresion del menu de inicio: el toggle de tema cambiaba estado, pero `auth.css` seguia pintando la pantalla con colores oscuros hardcodeados.
+- `LoginPage` y `ChangePasswordPage` dejan de fijar `data-theme="dark"` en el panel de marca.
+- `auth.css` introduce tokens locales `--auth-*` con variante clara por defecto y variante oscura bajo `[data-theme="dark"] .auth-page`.
+- El modo oscuro conserva la referencia visual anterior; el modo claro usa superficie clara, tarjeta blanca, texto oscuro, chips azules suaves y boton primario azul.
 
 **Archivos tocados:**
-- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
-- `Atlas Balance/frontend/src/styles/variables.css`
-- `Atlas Balance/frontend/src/styles/layout/shell.css`
-- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/pages/ChangePasswordPage.tsx`
+- `Atlas Balance/frontend/src/styles/auth.css`
 - `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
 - `Documentacion/REGISTRO_BUGS.md`
 - `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-02-02.md`
 
 **Comandos ejecutados y verificacion:**
 - `npm.cmd run lint`: OK.
-- `npm.cmd exec tsc -- --noEmit`: primer intento con fallo transitorio en `EvolucionChart.tsx`; segundo intento OK.
-- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-sidebar-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Busqueda de `data-theme="dark"` en `LoginPage`/`ChangePasswordPage`: sin resultados.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright finita con Chrome local: `/login` carga en claro, click en toggle cambia a oscuro, colores computados cambian (`cardBg` blanco -> grafito), consola sin errores, desktop y mobile sin overflow horizontal.
+- Capturas: `C:\tmp\atlas-login-theme-light-v02-02.png`, `C:\tmp\atlas-login-theme-dark-v02-02.png`, `C:\tmp\atlas-login-theme-mobile-dark-v02-02.png`.
 
 **Pendientes:**
-- Sin QA visual con navegador/app real; no se levanto servidor dev por protocolo anti-encallamiento.
+- Ninguno para esta correccion. No se ejecuto `npm.cmd run build` estandar para no chocar con el bloqueo conocido de `frontend/dist/assets`; se uso build temporal finito.
+
+## 2026-06-26 - Toggle de tema centrado en login
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se corrigio el centrado visual del boton de modo claro/oscuro en el login.
+- `.auth-theme-toggle` ahora anula padding/min-height nativos de boton (`appearance`, `padding: 0`, `min-width/min-height`) para que el control sea realmente cuadrado.
+- El SVG del toggle define tamano fijo y la luna recibe un pequeno ajuste optico horizontal porque su trazo pesa hacia la derecha.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-toggle-center-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright finita con Chrome local en 390x844: boton medido como `38x38`, centro vertical del SVG coincide con el boton, modo claro/oscuro sin errores de consola ni overflow horizontal.
+- Capturas: `C:\tmp\atlas-login-toggle-centered-light-v02-02.png`, `C:\tmp\atlas-login-toggle-centered-dark-v02-02.png`.
+
+**Pendientes:**
+- Ninguno para esta correccion.

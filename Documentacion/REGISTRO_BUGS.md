@@ -1119,3 +1119,19 @@
 - Solucion: eliminar el tema forzado del componente y definir tokens separados para sidebar claro/oscuro.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK y build Vite temporal OK fuera del sandbox.
 - Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Login no respetaba modo claro
+
+- Contexto: el menu de inicio/login seguia viendose oscuro al alternar modo claro/oscuro.
+- Causa: `LoginPage`/`ChangePasswordPage` fijaban `data-theme="dark"` en el panel de marca y `auth.css` tenia colores hardcodeados para oscuro en pagina, tarjeta, inputs, chips y toggle.
+- Solucion: eliminar el tema forzado y migrar la pantalla a tokens locales `--auth-*` con variante clara/oscura gobernada por `document.documentElement[data-theme]`.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, build Vite temporal OK y QA Playwright con Chrome local confirmando cambio visual claro -> oscuro sin errores de consola ni overflow.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Toggle de tema del login descentrado
+
+- Contexto: el usuario detecto que el icono de modo claro/oscuro del login no estaba centrado dentro del boton.
+- Causa: `.auth-theme-toggle` no anulaba padding/min-height global de botones y el icono de luna necesitaba compensacion optica.
+- Solucion: normalizar el boton como cuadrado real (`padding: 0`, `min-width/min-height`, `line-height`, `appearance`) y fijar tamano del SVG con ajuste optico para la luna.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, build Vite temporal OK y QA Playwright con Chrome local midiendo boton `38x38` sin overflow ni errores de consola.
+- Estado: cerrado.

@@ -59,7 +59,7 @@ export default function ChangePasswordPage() {
         {theme === 'light' ? <IconMoon /> : <IconSun />}
       </button>
 
-      <aside className="auth-brand-panel" data-theme="dark" aria-label="Atlas Balance">
+      <aside className="auth-brand-panel" aria-label="Atlas Balance">
         <div className="auth-brand-lockup">
           <img
             src="/logos/Atlas Balance.png"

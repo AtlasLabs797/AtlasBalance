@@ -1,5 +1,31 @@
 # Documentacion tecnica
 
+## 2026-06-26 - V-02-02 - Flag de extractos simplificado
+
+### Que cambio
+
+- `ExtractoTable` deja de renderizar el texto `Marcada/Sin marca` dentro de la columna `Alerta`.
+- La celda de flag conserva solo checkbox y campo `Nota de alerta`.
+- `extractos.css` elimina la columna interna y estilos muertos de `.flag-label`.
+- El ancho de la columna `flagged` baja de `210px` a `176px` para recuperar espacio horizontal.
+- El boton visible `Historial` se renderiza solo en `fila_numero`, no en cada celda no operativa.
+- En tactil, el padding reservado para `Historial` queda limitado a la columna `Fila`.
+
+### Por que
+
+El texto de estado repetia lo que ya comunica el checkbox y ensuciaba una tabla financiera densa. Checkbox + nota es suficiente; meter una etiqueta intermedia era ruido, no informacion.
+
+El `Historial` repetido en toda la fila era otra forma de ruido: parecia una accion distinta por celda, cuando visualmente debe actuar como acceso de fila desde la primera columna.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+
+### Limite real
+
+No se hizo QA visual con navegador real. El cambio es estatico y focalizado en render/CSS; antes de release conviene revisar una cuenta con notas de alerta largas.
+
 ## 2026-06-26 - V-02-02 - Dashboard estilo referencia bancaria
 
 ### Que cambio
@@ -4065,3 +4091,35 @@ Validacion:
 - `npm.cmd exec tsc -- --noEmit`: OK.
 - Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-reference-v02-02 --emptyOutDir`: OK fuera del sandbox.
 - QA visual con Chrome local via Playwright sobre servidor estatico temporal: `/login` desktop 1580x835 y mobile 390x844, consola sin errores y sin overflow horizontal.
+
+## 2026-06-26 - V-02-02 - Login con tokens claro/oscuro
+
+El login y el cambio obligatorio de contrasena ya no fijan `data-theme="dark"` en el panel de marca. La pantalla de autenticacion usa tokens locales `--auth-*` definidos en `.auth-page`:
+
+- variante clara por defecto: fondo azul muy claro, panel de marca claro, tarjeta blanca, texto oscuro y primario azul;
+- variante oscura bajo `[data-theme="dark"] .auth-page`: conserva el aspecto grafito de la referencia anterior;
+- controles, chips, logos filtrados, separador, sombras, boton y toggle consumen esos tokens en vez de valores hardcodeados.
+
+Esto mantiene el mecanismo global existente (`document.documentElement[data-theme]` desde `uiStore`) y evita otra isla visual bloqueada en oscuro.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright con Chrome local: el login carga en `light`, el boton de tema cambia a `dark`, los colores computados de pagina/tarjeta/texto cambian y no hay overflow horizontal en 1580x835 ni 390x844.
+
+## 2026-06-26 - V-02-02 - Centrado del toggle de tema en login
+
+El boton `.auth-theme-toggle` hereda estilos globales de boton si no se anulan explicitamente. Para evitar que el control de modo claro/oscuro quede visualmente descentrado:
+
+- se normaliza con `appearance: none`, `box-sizing: border-box`, `padding: 0`, `line-height: 1`, `min-width` y `min-height` iguales al tamano declarado;
+- el SVG interno usa tamano fijo y `display: block`;
+- la luna se desplaza levemente a la izquierda solo cuando `aria-pressed="false"` porque su geometria visual pesa hacia la derecha aunque el `viewBox` este centrado.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-toggle-center-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright con Chrome local: boton `38x38`, sin overflow mobile y sin errores de consola.
