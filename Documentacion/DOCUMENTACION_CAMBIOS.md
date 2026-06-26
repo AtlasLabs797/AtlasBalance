@@ -15815,3 +15815,30 @@ La primera ronda corrigió timing y animaciones no funcionales, pero el icono se
 
 **Pendientes:**
 - La captura mantiene una desviacion deliberada frente a la referencia: no aparece "Recordar este dispositivo" hasta el flujo MFA, porque en login normal no hay soporte backend para esa accion.
+
+## 2026-06-26 - Sidebar cambia con modo claro/oscuro
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se elimino `data-theme="dark"` del `Sidebar`, que era la razon por la que el menu lateral ignoraba el modo claro.
+- Se anadieron tokens `--color-sidebar-*` diferenciados para tema claro y oscuro: fondo, texto, muted, borde, hover, scope, activo, ring y sombra.
+- `shell.css` usa esos tokens en marca, selector de organizacion, hover, activo y sombra del rail lateral.
+- Decision visual: en claro el sidebar usa superficies claras y activo azul suave; en oscuro conserva el rail grafito original.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/layout/Sidebar.tsx`
+- `Atlas Balance/frontend/src/styles/variables.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: primer intento con fallo transitorio en `EvolucionChart.tsx`; segundo intento OK.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-sidebar-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+
+**Pendientes:**
+- Sin QA visual con navegador/app real; no se levanto servidor dev por protocolo anti-encallamiento.

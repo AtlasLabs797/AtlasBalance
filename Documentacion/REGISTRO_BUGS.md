@@ -1111,3 +1111,11 @@
 - Solucion: huella de importacion estable por contenido con ordinal de duplicado, `finally` para transacciones de importacion/plazo fijo, saldo actual por `fila_numero` en resumen de cuenta y OpenClaw, rechazo controlado de JSON nulo en configuracion. Cooldown SMTP ya estaba correcto y se mantuvo.
 - Verificacion: tests nuevos fallaron en rojo antes del fix; despues `CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests` 52/52 OK, `ConfiguracionControllerTests` 8/8 OK y suite backend sin Docker/Testcontainers 254/254 OK.
 - Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Sidebar no respetaba modo claro
+
+- Contexto: el usuario detecto que el menu lateral no cambiaba al alternar modo claro/oscuro.
+- Causa: `Sidebar` fijaba `data-theme="dark"` en el `<aside>` y los tokens `--color-sidebar-*` tenian los mismos valores en root y `[data-theme="dark"]`.
+- Solucion: eliminar el tema forzado del componente y definir tokens separados para sidebar claro/oscuro.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK y build Vite temporal OK fuera del sandbox.
+- Estado: cerrado.

@@ -90,7 +90,6 @@ export function Sidebar() {
   return (
     <aside
       className={`app-sidebar${sidebarCollapsed ? ' app-sidebar--collapsed' : ''}`}
-      data-theme="dark"
       aria-label="Navegación principal"
     >
       <div className="app-brand" aria-label="Atlas Balance">
