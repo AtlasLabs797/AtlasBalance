@@ -40,6 +40,7 @@ La QA fue mockeada para aislar el componente. Antes de release conviene validar 
   - titular sin cuenta: `titular_id`;
   - pais/global sin cuenta: `pais_id` o scope global.
 - `ExtractosController.SaveColumnasVisibles` deja de rechazar `CuentaId = null`; ahora usa `ResolvePreferenciaScope`, igual que el `GET`.
+- `GetColumnasVisibles` y `SaveColumnasVisibles` consultan preferencias con comparacion explicita de nulos por `pais_id`, `titular_id` y `cuenta_id`, para que los scopes globales no dependan de igualdad contra `NULL`.
 - `ExtractosControllerTests` cambia el test que esperaba `BadRequest` por una regresion que exige guardar preferencias globales sin cuenta.
 
 ### Por que
@@ -50,13 +51,12 @@ El bug era de contrato, no de CSS. La lectura de preferencias ya aceptaba scope 
 
 - `npm.cmd run lint`: OK.
 - `npm.cmd exec tsc -- --noEmit`: OK.
-- `dotnet test ...ExtractosControllerTests --no-restore`: bloqueado por `project.assets.json` faltante.
-- `dotnet test ...ExtractosControllerTests`: restore OK, build bloqueado por `Access denied` en `bin/obj`.
-- Reintento con salidas en `C:\tmp`: bloqueado por atributos duplicados de MSBuild.
+- `dotnet build ...AtlasBalance.API.csproj --no-restore -p:UseAppHost=false`: OK, con warning obsoleto de Hangfire PostgreSQL ya existente.
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 16/16 OK.
 
 ### Limite real
 
-No se pudo ejecutar el test backend focalizado por bloqueo de entorno. Antes de release, repetir `ExtractosControllerTests` cuando `bin/obj` no este bloqueado.
+No se hizo QA visual con navegador real ni servidor dev. La validacion cubre contrato backend, lint y tipos frontend.
 
 ## 2026-06-26 - V-02-02 - Flag de extractos simplificado
 

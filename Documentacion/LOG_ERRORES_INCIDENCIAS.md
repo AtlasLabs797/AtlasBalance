@@ -30,12 +30,14 @@
   - El frontend ademas calculaba columnas por defecto desde `rows`, no desde la lista real que renderizaba la tabla.
 - Solucion:
   - Backend: `SaveColumnasVisibles` usa `ResolvePreferenciaScope` tambien cuando no hay cuenta.
+  - Backend: `GetColumnasVisibles` y `SaveColumnasVisibles` consultan preferencias con comparacion explicita de nulos para scopes globales/titular/pais.
   - Frontend: `ExtractoTable` pasa `allColumns` al toggle y `ExtractosPage` guarda scope global/titular/pais/cuenta segun filtros.
   - Test actualizado: la regresion ahora exige guardar preferencias globales sin cuenta.
 - Verificacion:
   - Frontend lint OK.
   - TypeScript OK.
-  - Test backend focalizado bloqueado por entorno .NET: primer intento sin restore fallo por `project.assets.json`; segundo con restore fallo por `Access denied` en `bin/obj`; salida a `C:\tmp` fallo por atributos duplicados de MSBuild.
+  - API build OK.
+  - `ExtractosControllerTests`: 16/16 OK.
 - Regla: si lectura y escritura comparten recurso de preferencias, no les inventes contratos distintos. Eso no es defensa, es sabotaje de UX.
 
 ## 2026-06-26 - V-02-02 - Test backend focalizado bloqueado por `bin/obj`
@@ -45,9 +47,9 @@
   - `--no-restore` fallo porque faltaba `project.assets.json` de API.
   - Con restore, NuGet/restauracion paso, pero el build fallo con `Access denied` al escribir `AtlasBalance.API.staticwebassets.runtime.json`, `AtlasBalance.API.csproj.FileListAbsolute.txt` y cache de Watchdog.
   - Redirigir `BaseIntermediateOutputPath`/`OutputPath` a `C:\tmp` cambio el fallo a atributos duplicados generados por MSBuild.
-- Decision:
-  - Se corto tras cambiar de estrategia y no se siguio golpeando `bin/obj`.
-  - Queda pendiente repetir el test focalizado cuando no haya locks/permisos rotos en el entorno .NET.
+- Resolucion posterior:
+  - Tras compilar API con `dotnet build ...AtlasBalance.API.csproj --no-restore -p:UseAppHost=false`, el test focalizado pudo ejecutarse.
+  - `ExtractosControllerTests`: 16/16 OK.
 - Regla: si `bin/obj` esta bloqueado y el workaround de salida temporal tambien rompe MSBuild, para. El codigo no mejora por mirar otro error de build.
 
 ## 2026-06-26 - V-02-02 - Build Vite temporal en `C:\tmp` bloqueado por `EPERM`

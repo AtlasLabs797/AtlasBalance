@@ -49,8 +49,8 @@
 - Contexto: en `Extractos`, el panel `Columnas` no funcionaba correctamente cuando no habia cuenta seleccionada.
 - Causa: `SaveColumnasVisibles` rechazaba `CuentaId = null`, aunque `GetColumnasVisibles` y `ResolvePreferenciaScope` ya soportaban scopes globales, por pais y por titular. El frontend tambien construia el toggle con una lista de columnas calculada aparte de la tabla.
 - Impacto: el usuario podia marcar/desmarcar columnas, pero el guardado fallaba o se revertia en la vista general.
-- Solucion: backend permite guardar preferencias sin cuenta y frontend usa la lista real de columnas disponibles, conservando scope global/titular/pais/cuenta.
-- Verificacion: frontend lint OK y TypeScript OK. Test backend focalizado pendiente por bloqueo de entorno .NET documentado en incidencias.
+- Solucion: backend permite guardar preferencias sin cuenta, lee/escribe scopes nulos con comparacion explicita y frontend usa la lista real de columnas disponibles, conservando scope global/titular/pais/cuenta.
+- Verificacion: frontend lint OK, TypeScript OK, API build OK y `ExtractosControllerTests` 16/16 OK.
 - Estado: cerrado.
 
 ### 2026-06-09 - V-02-02 - Cerrado - Permisos por pais/titular/cuenta se podian expandir como union

@@ -68,6 +68,13 @@ public sealed class ExtractosControllerTests
         pref.TitularId.Should().BeNull();
         pref.CuentaId.Should().BeNull();
         pref.ColumnasVisibles.Should().Contain("monto");
+
+        var readResult = await controller.GetColumnasVisibles(ct: CancellationToken.None);
+        readResult.Should().BeOfType<OkObjectResult>();
+        var readPayload = readResult.As<OkObjectResult>().Value;
+        readPayload.Should().NotBeNull();
+        readPayload!.GetType().GetProperty("columnas_visibles")!.GetValue(readPayload)
+            .Should().BeEquivalentTo(new[] { "fecha", "monto" });
     }
 
     [Fact]

@@ -52,6 +52,7 @@ Regla de trabajo desde ahora:
 - `ExtractosPage` calcula el toggle con la lista real de columnas disponibles de la tabla, incluidas columnas extra.
 - El guardado conserva scope de cuenta, titular, pais o global segun los filtros activos.
 - `ExtractosController.SaveColumnasVisibles` ya no rechaza `CuentaId = null`; usa la misma resolucion de scope que el endpoint de lectura.
+- La busqueda de preferencias ahora compara nulos de forma explicita para que los scopes globales/titular/pais se lean despues de guardarse.
 - Se actualizo la regresion backend que antes esperaba el comportamiento roto.
 
 **Archivos tocados:**
@@ -74,9 +75,10 @@ Regla de trabajo desde ahora:
 - `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: bloqueado por `project.assets.json` faltante.
 - Reintento con restore: restore OK, build bloqueado por `Access denied` en `bin/obj`.
 - Reintento con `BaseIntermediateOutputPath`/`OutputPath` en `C:\tmp`: bloqueado por atributos duplicados de MSBuild.
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false`: OK, con warning obsoleto de Hangfire PostgreSQL.
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 16/16 OK.
 
 **Pendientes:**
-- Repetir `ExtractosControllerTests` cuando el entorno .NET no tenga `bin/obj` bloqueado.
 - QA visual real pendiente; no se levanto servidor dev por protocolo anti-encallamiento.
 
 ---

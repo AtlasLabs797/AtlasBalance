@@ -508,13 +508,7 @@ public sealed class ExtractosController : ControllerBase
         if (scope.Forbidden) return Forbid();
         if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
-        var pref = await _db.PreferenciasUsuarioCuenta
-            .Where(p =>
-                p.UsuarioId == actor.Id &&
-                p.PaisId == scope.PaisId &&
-                p.TitularId == scope.TitularId &&
-                p.CuentaId == scope.CuentaId)
-            .FirstOrDefaultAsync(ct);
+        var pref = await QueryPreferenciaUsuarioCuenta(actor.Id, scope).FirstOrDefaultAsync(ct);
 
         return Ok(new { columnas_visibles = ParseArray(pref?.ColumnasVisibles) });
     }
@@ -527,13 +521,7 @@ public sealed class ExtractosController : ControllerBase
         if (scope.Forbidden) return Forbid();
         if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
-        var pref = await _db.PreferenciasUsuarioCuenta
-            .Where(p =>
-                p.UsuarioId == actor.Id &&
-                p.PaisId == scope.PaisId &&
-                p.TitularId == scope.TitularId &&
-                p.CuentaId == scope.CuentaId)
-            .FirstOrDefaultAsync(ct);
+        var pref = await QueryPreferenciaUsuarioCuenta(actor.Id, scope).FirstOrDefaultAsync(ct);
 
         if (pref is null)
         {
@@ -822,6 +810,25 @@ public sealed class ExtractosController : ControllerBase
         }
 
         return new PreferenciaScope(cuenta.PaisId, cuenta.TitularId, cuenta.Id, false, false);
+    }
+
+    private IQueryable<PreferenciaUsuarioCuenta> QueryPreferenciaUsuarioCuenta(Guid usuarioId, PreferenciaScope scope)
+    {
+        var query = _db.PreferenciasUsuarioCuenta.Where(p => p.UsuarioId == usuarioId);
+
+        query = scope.PaisId.HasValue
+            ? query.Where(p => p.PaisId == scope.PaisId.Value)
+            : query.Where(p => p.PaisId == null);
+
+        query = scope.TitularId.HasValue
+            ? query.Where(p => p.TitularId == scope.TitularId.Value)
+            : query.Where(p => p.TitularId == null);
+
+        query = scope.CuentaId.HasValue
+            ? query.Where(p => p.CuentaId == scope.CuentaId.Value)
+            : query.Where(p => p.CuentaId == null);
+
+        return query;
     }
 
     private static HashSet<string>? ResolveEditableColumns(
