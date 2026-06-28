@@ -8,6 +8,57 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-27 - V-02-02 - Cierre de vulnerabilidades npm y hardening del dev server
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se analizo `GHSA-fx2h-pf6j-xcff` / `CVE-2026-53571`: Vite podia servir ficheros denegados por `server.fs.deny` en Windows mediante NTFS ADS o nombres 8.3 si el dev server estaba expuesto por red.
+- Atlas Balance tenia `vite@8.0.8`, dentro del rango vulnerable `>=8.0.0 <8.0.16`; el lockfile queda resuelto a `vite@8.1.0`.
+- `npm audit` detecto ademas `form-data@4.0.5` high y `js-yaml@4.1.1` moderate.
+- `form-data` queda resuelto a `4.0.6` y `js-yaml` a `4.3.0`; ambos quedan fijados con `overrides` para evitar que npm vuelva a resolver versiones vulnerables.
+- `vite.config.ts` limita el dev server a loopback (`host: 127.0.0.1`, `strictPort`, `allowedHosts`) y conserva hardening de `/__open-in-editor` contra UNC, `file://host/...` remoto y rutas fuera del root del frontend.
+- Se mantuvo el alcance en dependencias npm y hardening del dev server; no se cambio funcionalidad de producto.
+
+**Archivos tocados:**
+- `.gitignore`
+- `Atlas Balance/frontend/.eslintrc.cjs`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Atlas Balance/frontend/vite.config.ts`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura obligatoria de `CLAUDE.md`, `Atlas Balance/AGENTS.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-02.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/SKILLS_LOCALES.md`.
+- Skills usadas: `codex-security:fix-finding`; `cyber-neo` se reviso como criterio local de seguridad, pero no se ejecuto como auditoria completa porque su contrato es read-only y esta tarea exigia remediar.
+- `npm.cmd install vite@8.0.16 --save-dev --ignore-scripts --no-audit --fund=false`: bloqueado por `EPERM` sobre `node_modules\.bin\nanoid`.
+- `npm.cmd install vite@8.0.16 --save-dev --package-lock-only --ignore-scripts --no-audit --fund=false`: bloqueado por `EPERM` sobre `node_modules\.package-lock.json`.
+- Intento de temporal en `C:\tmp`: bloqueado por `Access denied`; se cambio a temporal dentro del workspace creado por el mismo usuario que ejecuta npm.
+- `npm.cmd audit fix --package-lock-only --ignore-scripts --fund=false` en temporal: OK, 0 vulnerabilidades.
+- `npm.cmd audit --audit-level=moderate` en el proyecto real: OK, `found 0 vulnerabilities`.
+- Instalacion limpia temporal con `npm.cmd ci --ignore-scripts --no-audit --fund=false`: OK.
+- `npm.cmd exec vite -- --version` en instalacion limpia: `vite/8.1.0`.
+- `npm.cmd run lint` en instalacion limpia: OK.
+- `npm.cmd exec tsc -- --noEmit` en instalacion limpia: OK.
+- `npm.cmd exec vite -- build --outDir dist-security-verify --emptyOutDir` en instalacion limpia: OK.
+- Se aparto `node_modules` bloqueado a `Atlas Balance/frontend/node_modules.blocked-20260627183808` y se ejecuto `npm.cmd ci --ignore-scripts` en el checkout real: OK, `found 0 vulnerabilities`.
+- `npm.cmd ls form-data js-yaml vite --all` en el checkout real: OK, `form-data@4.0.6`, `js-yaml@4.3.0`, `vite@8.1.0`.
+- `npm.cmd audit --audit-level=moderate` en el checkout real: OK, `found 0 vulnerabilities`.
+- `npm.cmd exec vite -- --version` en el checkout real: `vite/8.1.0 win32-x64 node-v24.15.0`.
+- `npm.cmd run lint` en el checkout real tras ignorar `node_modules.blocked-*`: OK.
+- `npm.cmd exec tsc -- --noEmit` en el checkout real: OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-security-real-node-modules-v02-02 --emptyOutDir`: OK.
+- `npm.cmd run lint` en el checkout real tras ignorar `node_modules.blocked-*`: OK.
+
+**Pendientes:**
+- La instalacion activa `node_modules` ya esta alineada con el lockfile corregido.
+- Los artefactos bloqueados se movieron fuera del workspace a `C:\tmp\atlas-balance-blocked-node-modules\` y `C:\tmp\atlas-balance-blocked-artifacts\`; no quedan dentro del proyecto.
+
+---
 ## 2026-06-26 - V-02-02 - Auditoria auth/RLS de acceso a datos
 
 **Version:** V-02-02
@@ -36,10 +87,13 @@ Regla de trabajo desde ahora:
 - Preflight `codex-security` para `security_scan`: `incomplete` por modo/capacidad multi-agent desconocidos; se hizo auditoria focalizada de auth/RLS, no escaneo exhaustivo multiagente.
 - `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false`: OK, 1 warning obsoleto de Hangfire/PostgreSQL ya existente.
 - `dotnet test "...AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~DashboardServiceTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~IntegrationOpenClawControllerTests|FullyQualifiedName~ExtractosControllerTests|FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~AlertaServiceTests|FullyQualifiedName~RevisionServiceTests|FullyQualifiedName~ExportacionesControllerTests|FullyQualifiedName~UsuariosControllerTests" -p:UseAppHost=false`: 116/116 OK.
-- `dotnet test "...AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~RowLevelSecurityTests" -p:UseAppHost=false`: bloqueado por Docker/Testcontainers no disponible.
+- `docker info`: OK; Docker Desktop activo.
+- Primer reintento de `RowLevelSecurityTests` fallo antes de ejecutar por `Access denied` en `bin/obj`; se cambio a artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
+- `dotnet restore "...AtlasBalance.API.Tests.csproj" --artifacts-path "C:\tmp\atlas-rls-artifacts"`: OK.
+- `dotnet test "...AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~RowLevelSecurityTests" -p:UseAppHost=false --artifacts-path "C:\tmp\atlas-rls-artifacts"`: 1/1 OK contra PostgreSQL real/Testcontainers.
+- `dotnet test "...AtlasBalance.API.Tests.csproj" --no-restore --filter "FullyQualifiedName~DashboardServiceTests|FullyQualifiedName~UserAccessServiceTests|FullyQualifiedName~IntegrationAuthorizationServiceTests|FullyQualifiedName~IntegrationOpenClawControllerTests|FullyQualifiedName~ExtractosControllerTests|FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~AlertaServiceTests|FullyQualifiedName~RevisionServiceTests|FullyQualifiedName~ExportacionesControllerTests|FullyQualifiedName~UsuariosControllerTests" -p:UseAppHost=false --artifacts-path "C:\tmp\atlas-rls-artifacts"`: 116/116 OK.
 
 **Pendientes:**
-- Ejecutar `RowLevelSecurityTests` con Docker/Testcontainers activo antes de vender RLS como runtime-verificado.
 - La auditoria fue focalizada en acceso a informacion y RLS; no sustituye un escaneo exhaustivo SCA/SAST/secrets de todo el repo.
 
 ---
@@ -700,10 +754,9 @@ Regla de trabajo desde ahora:
 - Tests focalizados backend no Docker: 32/32 OK.
 - Frontend lint: OK.
 - Frontend build (`tsc && vite build`): OK.
-- `RowLevelSecurityTests`: bloqueado por Docker/Testcontainers no disponible (`Docker is either not running or misconfigured`).
+- Revalidacion 2026-06-26: `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
 
 **Pendientes:**
-- Ejecutar `RowLevelSecurityTests` con Docker operativo; el test ya contiene escenarios por pais, pero no se pudo validar contra PostgreSQL real en esta maquina.
 - No se ejecuto suite backend completa; ya existia deuda de suite amplia documentada en `ConfiguracionControllerTests`.
 
 ---

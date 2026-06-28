@@ -35,14 +35,23 @@
 
 ## Cerrados
 
+### 2026-06-27 - V-02-02 - Cerrado - Vite vulnerable y dependencias npm rojas
+
+- Contexto: se recibio aviso de Vite `GHSA-fx2h-pf6j-xcff` / `CVE-2026-53571` y la auditoria npm saco mas deuda.
+- Causa: `package-lock.json` resolvia `vite@8.0.8`, vulnerable al bypass de `server.fs.deny` en Windows; ademas `npm audit` detecto `form-data@4.0.5` high y `js-yaml@4.1.1` moderate.
+- Impacto: Vite podia exponer `.env` u otros ficheros denegados si el dev server se levantaba con `--host`; `form-data` y `js-yaml` mantenian el arbol SCA rojo.
+- Solucion: lockfile actualizado a `form-data@4.0.6`, `vite@8.1.0`, `js-yaml@4.3.0`; `package.json` fija `form-data` y `js-yaml` con `overrides`; `vite.config.ts` cierra el dev server por defecto a loopback/hosts locales y mantiene hardening de `/__open-in-editor`.
+- Verificacion: `npm audit --audit-level=moderate` OK, instalacion limpia con `npm ci` OK, Vite `8.1.0`, frontend lint/TypeScript/build temporal OK.
+- Estado: cerrado.
+
 ### 2026-06-26 - V-02-02 - Cerrado - RLS de dashboard desalineado con roles
 
 - Contexto: auditoria auth/RLS tras el cambio a tres roles.
 - Causa: la politica RLS de lectura mantenia `PuedeVerCuentas` como lectura general tambien para scope `dashboard` y no reflejaba que `GERENTE` puede ver dashboard con cualquier permiso de datos.
 - Impacto: defensa en profundidad inconsistente. Un empleado con permiso de cuentas pero sin dashboard podia leer datos financieros si una ruta/query llegaba a PostgreSQL con `atlas.request_scope = dashboard`; un gerente valido podia quedar bloqueado en la base.
 - Solucion: migracion `20260626193000_AlignRlsDashboardAccessWithRoles` con funcion `current_user_is_manager()` y ramas de lectura diferenciadas para `dashboard`.
-- Verificacion: backend build OK y tests focalizados no Docker de permisos/datos 116/116 OK. `RowLevelSecurityTests` queda pendiente por Docker/Testcontainers no disponible.
-- Estado: cerrado a nivel codigo; validacion runtime RLS pendiente por infraestructura.
+- Verificacion: backend build OK, tests focalizados de permisos/datos 116/116 OK y `RowLevelSecurityTests` 1/1 OK contra PostgreSQL real/Testcontainers usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
+- Estado: cerrado.
 
 ### 2026-06-26 - V-02-02 - Cerrado - Selector de columnas pedia `cuenta_id` en vista general
 

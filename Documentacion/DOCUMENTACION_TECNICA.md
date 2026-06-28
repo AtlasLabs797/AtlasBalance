@@ -1,5 +1,43 @@
 # Documentacion tecnica
 
+## 2026-06-27 - V-02-02 - Vite y dependencias npm vulnerables corregidas
+
+### Que cambio
+
+- `Atlas Balance/frontend/package-lock.json` resuelve `form-data` a `4.0.6`.
+- `Atlas Balance/frontend/package.json` fija `form-data@4.0.6` y `js-yaml@4.3.0` con `overrides`.
+- La validacion SCA saco mas deuda del mismo arbol y se cerro en la misma pasada:
+  - `vite` pasa del rango vulnerable `8.0.0 - 8.0.15` a resolucion `8.1.0`; `package.json` exige como minimo `^8.0.16`.
+  - `js-yaml` pasa de `4.1.1` a `4.3.0`.
+- `vite.config.ts` anade `atlas-open-in-editor-guard`, un middleware `configureServer` que intercepta `/__open-in-editor` antes del middleware interno de Vite.
+- El guard rechaza rutas UNC, `file://host/...` remotas y rutas resueltas fuera de `Atlas Balance/frontend`.
+- El dev server queda limitado a `127.0.0.1`, puerto estricto y `allowedHosts` de loopback.
+- No cambia codigo runtime de la aplicacion ni contratos API; el cambio afecta dependencias y servidor de desarrollo.
+
+### Por que
+
+El advisory de Vite permite leer archivos bloqueados por `server.fs.deny` en Windows usando NTFS ADS (`.env::$DATA?raw`) o nombres 8.3 cuando el dev server esta expuesto con `--host`/`server.host`. Produccion no sirve Vite: sirve estaticos desde ASP.NET Core. El riesgo aqui era de desarrollo/local LAN, pero dejar `vite@8.0.8` en el lock era una puerta tonta.
+
+`npm audit` saco ademas `form-data` high y `js-yaml` moderate. La correccion sensata es cerrar el arbol de dependencias, fijar las transitivas vulnerables con overrides y dejar el dev server cerrado a loopback por defecto. El guard de `/__open-in-editor` queda como defensa adicional de servidor de desarrollo, no como sustituto del parche de Vite.
+
+### Verificacion
+
+- `npm.cmd ls form-data --all`: confirmo `form-data@4.0.5` antes del cambio.
+- `npm.cmd view form-data@4.0.6 version dist.integrity --json`: OK.
+- `npm.cmd audit --audit-level=moderate`: OK final, `found 0 vulnerabilities`.
+- Check Node del lockfile: `form-data 4.0.6`, `js-yaml 4.3.0`, `vite 8.1.0`.
+- Instalacion limpia temporal con `npm.cmd ci --ignore-scripts --no-audit --fund=false`: OK.
+- Se aparto el `node_modules` real bloqueado a `node_modules.blocked-20260627183808` y se ejecuto `npm.cmd ci --ignore-scripts` en el checkout real: OK.
+- `npm.cmd ls form-data js-yaml vite --all`: OK, `form-data@4.0.6`, `js-yaml@4.3.0`, `vite@8.1.0`.
+- `npm.cmd exec vite -- --version`: `vite/8.1.0 win32-x64 node-v24.15.0`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal Vite con `--outDir ..\..\tmp-vite-security-real-node-modules-v02-02`: OK.
+
+### Limite real
+
+La instalacion activa `node_modules` ya esta alineada con el lock corregido. Los residuos locales que Windows no dejaba borrar se movieron fuera del workspace a `C:\tmp\atlas-balance-blocked-node-modules\` y `C:\tmp\atlas-balance-blocked-artifacts\`; no forman parte del proyecto ni del artefacto versionable.
+
 ## 2026-06-26 - V-02-02 - RLS alineado con roles de dashboard
 
 ### Que cambio
@@ -19,8 +57,10 @@ El modelo de tres roles permitio dashboard a `GERENTE` con cualquier permiso de 
 ### Verificacion
 
 - `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false`: OK.
-- Tests focalizados no Docker de permisos/datos: 116/116 OK.
-- `RowLevelSecurityTests` no se pudo ejecutar porque Docker/Testcontainers no esta disponible en esta maquina. Queda pendiente de validacion runtime PostgreSQL real.
+- `docker info`: OK; Docker Desktop activo.
+- `dotnet restore "...AtlasBalance.API.Tests.csproj" --artifacts-path "C:\tmp\atlas-rls-artifacts"`: OK tras aislar artefactos por `Access denied` en `bin/obj`.
+- `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK.
+- Tests focalizados de permisos/datos con artefactos en `C:\tmp\atlas-rls-artifacts`: 116/116 OK.
 
 ## 2026-06-26 - V-02-02 - Guardado de columnas de Extractos sin cuenta
 
@@ -425,7 +465,7 @@ El selector global de pais era solo scope operativo. Eso no era seguridad. La se
 - Tests focalizados backend no Docker: `ExtractosControllerTests|UserAccessServiceTests|IntegrationAuthorizationServiceTests`: 32/32 OK.
 - Frontend `npm.cmd run lint`: OK.
 - Frontend `npm.cmd run build`: OK.
-- `RowLevelSecurityTests`: bloqueado por Docker/Testcontainers no disponible (`Docker is either not running or misconfigured`).
+- Revalidacion 2026-06-26: `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
 
 ### Limite real
 
@@ -674,11 +714,11 @@ El bug de MFA era sutil y peligroso: el cambio de password marcaba el nuevo refr
 - `AuthServiceTests|AuthControllerTests|ManualProcessResponseTests`: 27/27 OK.
 - Bloque autorizacion/integracion/import-export/update/watchdog: 88/88 OK.
 - Suite backend sin Docker/Testcontainers: 269/269 OK.
-- `RowLevelSecurityTests` compila, pero no se ejecuto porque Testcontainers falla antes de crear PostgreSQL: Docker no esta disponible/configurado en esta maquina.
+- Revalidacion 2026-06-26: `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
 
 ### Limite real
 
-RLS con PostgreSQL real sigue siendo gate de release. Compilar la migracion no prueba las politicas con el motor; sin Docker, vender esto como "validado completo" seria hacerse trampas.
+RLS con PostgreSQL real era gate de release y quedo revalidado el 2026-06-26. Compilar la migracion no prueba las politicas con el motor; la prueba runtime si.
 
 ## 2026-05-20 - V-01.09 - Threat model: soft-delete heredado en importacion/exportacion
 

@@ -1,5 +1,28 @@
 # Log de errores e incidencias
 
+## 2026-06-27 - V-02-02 - Vite `server.fs.deny` vulnerable y `package-lock` bloqueado por EPERM
+
+- Contexto: remediacion de `GHSA-fx2h-pf6j-xcff` / `CVE-2026-53571` en Vite y validacion SCA npm.
+- Causa:
+  - `package-lock.json` resolvia `vite@8.0.8`, vulnerable en Windows a bypass de `server.fs.deny` via NTFS ADS o nombres 8.3 si el dev server se exponia por red.
+  - `npm audit` detecto tambien `form-data@4.0.5` high y `js-yaml@4.1.1` moderate.
+  - `npm install` fallo por `EPERM` al tocar `node_modules\.bin\nanoid`; `npm install --package-lock-only` fallo por `EPERM` al tocar `node_modules\.package-lock.json`.
+  - La limpieza posterior de `node_modules.blocked-20260627183808` fallo por `Access denied` masivo.
+- Solucion:
+  - Se corto la via de npm tras dos fallos y se dejo el lockfile en estado corregido y validado.
+  - `form-data` queda en `4.0.6`, `vite` en `8.1.0` y `js-yaml` en `4.3.0`.
+  - `package.json` fija `form-data@4.0.6` y `js-yaml@4.3.0` con `overrides`.
+  - `vite.config.ts` limita el dev server a loopback/hosts locales y conserva hardening de `/__open-in-editor`.
+  - `.gitignore` ignora `Atlas Balance/frontend/node_modules.blocked-*/` y ESLint ignora `node_modules.blocked-*` para que los restos locales de npm bloqueado no ensucien Git/lint.
+  - Se aparto `node_modules` bloqueado y se regenero una instalacion real limpia con `npm ci --ignore-scripts`.
+- Verificacion:
+  - `npm audit --audit-level=moderate`: OK, `found 0 vulnerabilities`.
+  - `npm ls form-data js-yaml vite --all`: OK, `form-data@4.0.6`, `js-yaml@4.3.0`, `vite@8.1.0`.
+  - Vite real: `8.1.0`.
+  - Frontend lint, TypeScript y build temporal OK.
+- Pendiente local: los residuos bloqueados se movieron fuera del workspace a `C:\tmp\atlas-balance-blocked-node-modules\` y `C:\tmp\atlas-balance-blocked-artifacts\`.
+- Regla: cuando npm se estrella con `EPERM`, no reintentes hasta aburrir a Windows. Aparta el arbol bloqueado, reinstala limpio y valida contra la instalacion real.
+
 ## 2026-06-26 - V-02-02 - RLS `dashboard` no seguia el modelo real de tres roles
 
 - Contexto: comprobacion de seguridad/RLS tras reducir usuarios a `ADMIN`, `GERENTE` y `EMPLEADO`.
@@ -15,7 +38,8 @@
 - Verificacion:
   - Backend build OK.
   - Tests focalizados no Docker de permisos/datos: 116/116 OK.
-  - `RowLevelSecurityTests` bloqueado por Docker/Testcontainers no disponible.
+  - `docker info` OK; Docker Desktop activo.
+  - `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
 - Regla: cuando cambias semantica de roles, actualiza tambien el backstop RLS. Si backend y base no dicen lo mismo, el atacante escucha a la capa mas floja.
 
 ## 2026-06-26 - V-02-02 - Selector de columnas seguia fallando con `cuenta_id es requerido`
@@ -266,7 +290,7 @@
   - Auditoria subagente detecto columnas por scope mezcladas por falta de `pais_id`/`titular_id` en preferencias. Solucion: extender `PREFERENCIAS_USUARIO_CUENTA` y resolver preferencias por scope exacto.
   - Revalidacion detecto que una preferencia visual de extractos con `ColumnasEditables = null` podia abrir todas las columnas editables al mezclarse con una regla de edicion scopeada. Solucion: resolver columnas editables solo desde filas `PermisoUsuario` que conceden edicion y con preferencia de scope exacto.
   - Auditoria subagente detecto dashboard-only inconsistente entre frontend/backend/RLS. Solucion: frontend y RLS exigen `PuedeVerDashboard` mas permiso operativo de datos, igual que backend.
-  - `RowLevelSecurityTests` no pudo validar PostgreSQL real porque Docker/Testcontainers no esta disponible. Solucion aplicada: no reintentar; dejar el gate RLS pendiente para entorno con Docker operativo.
+  - `RowLevelSecurityTests` no pudo validar PostgreSQL real en ese momento porque Docker/Testcontainers no estaba disponible. Revalidacion 2026-06-26: 1/1 OK con PostgreSQL real/Testcontainers usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
 - Resultado:
   - Backend build OK.
   - Tests focalizados backend no Docker 32/32 OK.

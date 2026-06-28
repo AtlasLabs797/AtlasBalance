@@ -28,6 +28,7 @@ Atlas Balance/backend/src/AtlasBalance.API/wwwroot/logos/
 
 # Frontend
 Atlas Balance/frontend/node_modules/
+Atlas Balance/frontend/node_modules.blocked-*/
 Atlas Balance/frontend/dist/
 
 # IDE
