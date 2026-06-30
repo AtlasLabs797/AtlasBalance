@@ -165,6 +165,7 @@ public class Extracto : ISoftDelete
     public int FilaNumero { get; set; }
     public string? ImportacionFingerprint { get; set; }
     public string? ImportacionLoteHash { get; set; }
+    public Guid? ImportacionLoteId { get; set; }
     public int? ImportacionFilaOrigen { get; set; }
     public DateTime? FechaImportacion { get; set; }
     public bool Checked { get; set; }
@@ -180,6 +181,47 @@ public class Extracto : ISoftDelete
     public DateTime? FechaModificacion { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
+}
+
+public class ImportacionLote
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public Guid UsuarioCreadorId { get; set; }
+    public string TipoOrigen { get; set; } = "PEGADO";
+    public string? NombreArchivo { get; set; }
+    public long TamanioBytes { get; set; }
+    public string Sha256 { get; set; } = string.Empty;
+    public string Separador { get; set; } = string.Empty;
+    public string MapeoJson { get; set; } = "{}";
+    public string ResumenJson { get; set; } = "{}";
+    public string ContenidoOriginal { get; set; } = string.Empty;
+    public string LoteHash { get; set; } = string.Empty;
+    public string Estado { get; set; } = "validado";
+    public int FilasTotal { get; set; }
+    public int FilasValidas { get; set; }
+    public int FilasError { get; set; }
+    public int FilasAdvertencia { get; set; }
+    public bool AdvertenciasAceptadas { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaConfirmacion { get; set; }
+    public Guid? ConfirmadoPorId { get; set; }
+    public DateTime? FechaReversion { get; set; }
+    public Guid? RevertidoPorId { get; set; }
+}
+
+public class ImportacionLoteFila
+{
+    public Guid Id { get; set; }
+    public Guid LoteId { get; set; }
+    public int Indice { get; set; }
+    public bool Valida { get; set; }
+    public bool SeleccionadaDefault { get; set; }
+    public string Estado { get; set; } = "validada";
+    public string DatosJson { get; set; } = "{}";
+    public string ErroresJson { get; set; } = "[]";
+    public string AdvertenciasJson { get; set; } = "[]";
+    public string? Fingerprint { get; set; }
 }
 
 public class ExtractoColumnaExtra
@@ -213,6 +255,10 @@ public class PermisoUsuario
     public bool PuedeEliminarLineas { get; set; }
     public bool PuedeImportar { get; set; }
     public bool PuedeVerDashboard { get; set; }
+    public bool PuedeRevisarLineas { get; set; }
+    public bool PuedeAprobarImportaciones { get; set; }
+    public bool PuedeConciliar { get; set; }
+    public bool PuedeCerrarConciliacion { get; set; }
 }
 
 public class PreferenciaUsuarioCuenta
@@ -287,8 +333,12 @@ public class IntegrationToken : ISoftDelete
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaExpiracion { get; set; }
     public DateTime? FechaUltimaUso { get; set; }
     public DateTime? FechaRevocacion { get; set; }
+    public Guid? RotatedFromTokenId { get; set; }
+    public string EndpointScopesJson { get; set; } = "[]";
+    public string? LastUsedIpAddress { get; set; }
     public Guid UsuarioCreadorId { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
@@ -326,6 +376,48 @@ public class TipoCambio
     public decimal Tasa { get; set; }
     public DateTime FechaActualizacion { get; set; } = DateTime.UtcNow;
     public FuenteTipoCambio Fuente { get; set; }
+}
+
+public class MovimientoEsperado : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public DateOnly FechaEsperada { get; set; }
+    public decimal Monto { get; set; }
+    public string Divisa { get; set; } = string.Empty;
+    public string? Referencia { get; set; }
+    public string? Concepto { get; set; }
+    public string Estado { get; set; } = "pendiente";
+    public string Origen { get; set; } = "manual";
+    public Guid? UsuarioCreacionId { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public Guid? UsuarioModificacionId { get; set; }
+    public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class Conciliacion
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public Guid MovimientoEsperadoId { get; set; }
+    public Guid? ExtractoId { get; set; }
+    public string Estado { get; set; } = "sugerida";
+    public int Score { get; set; }
+    public string Regla { get; set; } = "deterministica-v1";
+    public int DiferenciaDias { get; set; }
+    public string? ReferenciaNormalizada { get; set; }
+    public string? ConceptoNormalizado { get; set; }
+    public Guid? UsuarioSugerenciaId { get; set; }
+    public DateTime FechaSugerencia { get; set; } = DateTime.UtcNow;
+    public Guid? UsuarioConfirmacionId { get; set; }
+    public DateTime? FechaConfirmacion { get; set; }
+    public Guid? UsuarioResolucionId { get; set; }
+    public DateTime? FechaResolucion { get; set; }
+    public string? Observacion { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaModificacion { get; set; }
 }
 
 public class DivisaActiva

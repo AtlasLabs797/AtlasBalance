@@ -244,7 +244,7 @@ public sealed class RevisionService : IRevisionService
             throw new InvalidOperationException("Extracto no encontrado.");
         }
 
-        if (!await _userAccessService.CanEditCuentaAsync(extracto.CuentaId, scope, cancellationToken))
+        if (!await _userAccessService.CanReviewCuentaAsync(extracto.CuentaId, scope, cancellationToken))
         {
             throw new UnauthorizedAccessException();
         }

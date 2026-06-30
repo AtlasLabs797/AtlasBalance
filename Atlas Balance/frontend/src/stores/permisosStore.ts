@@ -11,6 +11,7 @@ interface PermisosState {
   canEditCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
   canDeleteInCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
   canImportInCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
+  canConciliarCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
   canViewDashboard: () => boolean;
   getColumnasVisibles: (cuentaId: string, titularId?: string | null, paisId?: string | null) => string[] | null;
   getColumnasEditables: (cuentaId: string, titularId?: string | null, paisId?: string | null) => string[] | null;
@@ -23,7 +24,11 @@ const grantsAccountAccess = (permiso: PermisoUsuario) =>
   permiso.puede_agregar_lineas ||
   permiso.puede_editar_lineas ||
   permiso.puede_eliminar_lineas ||
-  permiso.puede_importar;
+  permiso.puede_importar ||
+  permiso.puede_revisar_lineas ||
+  permiso.puede_aprobar_importaciones ||
+  permiso.puede_conciliar ||
+  permiso.puede_cerrar_conciliacion;
 
 const getMatchingPermisos = (
   permisos: PermisoUsuario[],
@@ -91,6 +96,11 @@ export const usePermisosStore = create<PermisosState>((set, get) => ({
   canImportInCuenta: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return true;
     return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_importar);
+  },
+
+  canConciliarCuenta: (cuentaId, titularId, paisId) => {
+    if (isAdmin()) return true;
+    return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_conciliar);
   },
 
   canViewDashboard: () => {

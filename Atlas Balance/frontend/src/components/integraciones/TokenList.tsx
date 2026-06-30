@@ -23,10 +23,11 @@ interface TokenListProps {
   tokens: IntegrationTokenListItem[];
   busy: boolean;
   onRevocar: (id: string) => Promise<void>;
+  onRotar: (id: string) => Promise<void>;
   onEliminar: (id: string) => Promise<void>;
 }
 
-export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProps) {
+export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: TokenListProps) {
   const [metrics, setMetrics] = useState<Record<string, TokenMetricState>>({});
   const [confirmTarget, setConfirmTarget] = useState<{ token: IntegrationTokenListItem; action: 'revocar' | 'eliminar' } | null>(null);
 
@@ -81,10 +82,11 @@ export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProp
           <tr>
             <th>Nombre</th>
             <th>Estado</th>
-            <th>Creación</th>
-            <th>Último uso</th>
+            <th>Expira</th>
+            <th>Ultimo uso</th>
+            <th>Scopes</th>
             <th>Peticiones</th>
-            <th>Éxito</th>
+            <th>Exito</th>
             <th>Tiempo medio (ms)</th>
             <th>Acciones</th>
           </tr>
@@ -101,11 +103,25 @@ export function TokenList({ tokens, busy, onRevocar, onEliminar }: TokenListProp
                 </td>
                 <td>{formatTokenEstado(token.estado)}</td>
                 <td>{formatDateTime(token.fecha_creacion)}</td>
-                <td>{token.fecha_ultima_uso ? formatDateTime(token.fecha_ultima_uso) : 'Sin uso'}</td>
+                <td>{token.fecha_expiracion ? formatDateTime(token.fecha_expiracion) : 'Sin expiracion'}</td>
+                <td>
+                  {token.fecha_ultima_uso ? formatDateTime(token.fecha_ultima_uso) : 'Sin uso'}
+                  {token.last_used_ip_address ? <div className="import-muted">{token.last_used_ip_address}</div> : null}
+                </td>
+                <td>{token.scopes.length > 0 ? token.scopes.join(', ') : 'Legacy'}</td>
                 <td>{metricState.status === 'ready' ? metricState.data.total_requests : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td>{metricState.status === 'ready' ? `${formatNumber(metricState.data.porcentaje_exito)}%` : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td>{metricState.status === 'ready' ? formatNumber(metricState.data.tiempo_promedio_ms) : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td className="users-row-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void onRotar(token.id)}
+                    disabled={busy || token.estado === 'revocado'}
+                    aria-label={`Rotar token ${token.nombre}`}
+                  >
+                    Rotar
+                  </button>
                   <button
                     type="button"
                     className="button-danger"

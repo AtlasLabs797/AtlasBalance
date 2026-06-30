@@ -19,8 +19,12 @@ public sealed class IntegrationTokenListItemResponse
     public bool PermisoLectura { get; set; }
     public bool PermisoEscritura { get; set; }
     public DateTime FechaCreacion { get; set; }
+    public DateTime? FechaExpiracion { get; set; }
     public DateTime? FechaUltimaUso { get; set; }
     public DateTime? FechaRevocacion { get; set; }
+    public Guid? RotatedFromTokenId { get; set; }
+    public IReadOnlyList<string> Scopes { get; set; } = [];
+    public string? LastUsedIpAddress { get; set; }
     public Guid UsuarioCreadorId { get; set; }
     public DateTime? DeletedAt { get; set; }
 }
@@ -37,6 +41,9 @@ public sealed class CreateIntegrationTokenRequest
     public string? Descripcion { get; set; }
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
+    public DateTime? FechaExpiracion { get; set; }
+    public bool SinExpiracionConfirmada { get; set; }
+    public IReadOnlyList<string> Scopes { get; set; } = [];
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
 
@@ -46,6 +53,9 @@ public sealed class SaveIntegrationTokenRequest
     public string? Descripcion { get; set; }
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
+    public DateTime? FechaExpiracion { get; set; }
+    public bool SinExpiracionConfirmada { get; set; }
+    public IReadOnlyList<string> Scopes { get; set; } = [];
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
 
@@ -61,6 +71,13 @@ public sealed class CreateIntegrationTokenResponse
 {
     public IntegrationTokenDetailResponse Token { get; set; } = new();
     public string TokenPlano { get; set; } = string.Empty;
+    public IReadOnlyList<string> Advertencias { get; set; } = [];
+}
+
+public sealed class RotarIntegrationTokenRequest
+{
+    public DateTime? FechaExpiracion { get; set; }
+    public bool SinExpiracionConfirmada { get; set; }
 }
 
 public sealed class IntegrationAuditItemResponse

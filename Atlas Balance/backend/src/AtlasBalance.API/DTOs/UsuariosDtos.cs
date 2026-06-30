@@ -46,6 +46,10 @@ public sealed class SavePermisoUsuarioRequest
     public bool PuedeEliminarLineas { get; set; }
     public bool PuedeImportar { get; set; }
     public bool PuedeVerDashboard { get; set; }
+    public bool PuedeRevisarLineas { get; set; }
+    public bool PuedeAprobarImportaciones { get; set; }
+    public bool PuedeConciliar { get; set; }
+    public bool PuedeCerrarConciliacion { get; set; }
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
     public IReadOnlyList<string>? ColumnasEditables { get; set; }
 }

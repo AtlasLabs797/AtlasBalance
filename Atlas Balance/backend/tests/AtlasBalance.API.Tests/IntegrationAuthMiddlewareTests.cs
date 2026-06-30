@@ -226,6 +226,9 @@ public sealed class IntegrationAuthMiddlewareTests
             return Task.FromResult<IntegrationToken?>(null);
         }
 
+        public DateTime? ResolveExpiration(DateTime? requestedExpiration, bool noExpirationConfirmed)
+            => requestedExpiration ?? (noExpirationConfirmed ? null : DateTime.UtcNow.AddDays(90));
+
         public Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)
             => Task.FromResult(false);
     }

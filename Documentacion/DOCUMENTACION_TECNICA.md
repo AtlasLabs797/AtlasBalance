@@ -4354,3 +4354,78 @@ Validacion:
 - `npm.cmd exec tsc -- --noEmit`: OK.
 - Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-toggle-center-v02-02 --emptyOutDir`: OK fuera del sandbox.
 - QA Playwright con Chrome local: boton `38x38`, sin overflow mobile y sin errores de consola.
+
+## 2026-06-29 - V-02-02 - Hardening financiero post-reporte
+
+Backend:
+
+- Nuevas entidades persistentes: `ImportacionLote`, `ImportacionLoteFila`, `MovimientoEsperado` y `Conciliacion`.
+- `Extracto` incorpora `ImportacionLoteId` manteniendo `ImportacionLoteHash` por compatibilidad.
+- `AppDbContext` declara tablas, indices, FK y configuracion para lotes, filas, movimientos esperados y conciliaciones.
+- Migracion EF Core: `20260629090000_FinancialHardeningV0202`.
+- Importacion expone `/api/importacion/lotes`, detalle/filas, confirmacion y reversion. El contenido original queda guardado en BD hasta 5 MB con SHA-256 y mapeo usado.
+- `ConfirmarLoteAsync` no selecciona filas con advertencias por defecto y exige `acepta_advertencias=true` si se eligen.
+- Conciliacion expone `/api/conciliacion/*`, crea movimientos esperados internos, genera sugerencias deterministas y permite confirmar, marcar excepcion y resolver.
+- Permisos agregados a `PERMISOS_USUARIO`: revisar lineas, aprobar importaciones, conciliar y cerrar conciliacion.
+- Maker-checker no bloquea; registra auditoria y `NotificacionAdmin` si el mismo usuario importa/crea y aprueba/cierra.
+- OpenClaw valida expiracion en `IntegrationTokenService`, aplica scopes en middleware, registra ultima IP, notifica rate limit/nueva IP y agrega rotacion en `POST /api/integraciones/tokens/{id}/rotar`.
+- API y Watchdog cargan configuracion externa local desde `%APPDATA%\AtlasBalance\dev-secrets` solo en Development.
+
+Frontend:
+
+- `/importacion` usa tabs `Nueva`, `Historial` y `Lote` con lote formal y confirmacion por advertencias.
+- Nueva ruta `/conciliacion` para libro esperado, sugerencias, confirmacion y excepciones.
+- `ExtractosPage` separa `Revision` y `Edicion avanzada`; la edicion inline queda cerrada hasta entrar en modo avanzado.
+- `AppSelect` vuelve a `<select>` nativo estilizado para accesibilidad robusta.
+- `DashboardPage` agrega CTAs operativos: importar, revisar alertas y conciliar pendientes.
+- Navegacion mobile prioriza `Alertas` cuando hay alertas activas.
+- UI de tokens OpenClaw muestra expiracion, scopes, ultimo uso/IP, revocacion y rotacion.
+
+Release y seguridad:
+
+- `Build-Release.ps1` valida version `^V-\d{2}[-.]\d{2}$`, runtime `win-x64` y ejecuta scanner Atlas antes de empaquetar.
+- `.github/workflows/release.yml` usa default `V-02-02`, permisos por job y `environment: release-signing`.
+- `.github/workflows/ci.yml` ejecuta `scripts/Test-AtlasSecrets.ps1`.
+- El scanner Atlas revisa codigo, scripts, workflows y documentacion versionable; excluye artefactos pesados y no imprime valores.
+
+Validacion inicial 2026-06-29:
+
+- `dotnet build AtlasBalance.API.Tests.csproj --no-restore -c Debug` desde `C:\tmp`: OK.
+- Tests focalizados impactados: 59/59 OK.
+- `npm.cmd run lint`, `npm.cmd exec tsc -- --noEmit` y build Vite temporal: OK.
+- `Test-AtlasSecrets.ps1`: OK.
+- `npm audit --audit-level=moderate`: OK.
+- `dotnet list package --vulnerable --include-transitive`: OK.
+- Suite completa backend inicial del 2026-06-29: no verde; 306 OK y 5 fallos por deuda preexistente/sensible a fecha y Docker/Testcontainers sin Docker. Estado actualizado final el 2026-06-30: 317/317 OK con Docker Desktop operativo.
+
+## 2026-06-30 - V-02-02 - Cierre tecnico de validacion post-hardening
+
+Correcciones posteriores:
+
+- `AiConfiguration.NormalizeGlobalConfigModel` normaliza configuracion global por proveedor. En OpenRouter solo conserva modelos sugeridos conocidos y convierte ids desconocidos a `openrouter/auto`; el chat IA sigue pudiendo usar modelos OpenRouter arbitrarios por su ruta especifica.
+- `ConfiguracionController.Update` usa esa normalizacion para guardar `ai_model`.
+- `AuthService.IsMfaRememberDeviceEnabledAsync` queda fail-closed: valor ausente/invalido equivale a `false`.
+- `ConfiguracionController.Get` devuelve `mfa_remember_device_enabled=false` si no hay configuracion explicita.
+- `AtlasAiServiceTests.AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking` declara permiso real sobre la cuenta del fixture para probar el scope aplicado por `UserAccessService`, no un bypass artificial.
+
+QA visual:
+
+- Browser in-app se intento primero y se descarto tras timeout de attach, bloqueo de `file://` y timeout/reset al levantar localhost mock.
+- Playwright finito con Chrome local sirvio `C:\tmp\atlas-balance-vite-v0202-qa`, API mock y cierre obligatorio de browser/servidor.
+- Flujos cubiertos: dashboard CTAs, `/importacion` con lote formal y advertencias no seleccionadas, historial de lote, `/conciliacion`, tokens OpenClaw con rotacion, `Extractos` revision/edicion avanzada y mobile con `Alertas` como acceso primario.
+- Capturas generadas en `qa-artifacts/atlas-v0202-qa-*.png`.
+
+Validacion final:
+
+- Backend no Docker: 315/315 OK.
+- Testcontainers: `RowLevelSecurityTests|ExtractosConcurrencyTests` 2/2 OK con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine` en contexto elevado.
+- Backend completo: 317/317 OK.
+- Frontend: lint OK, TypeScript OK, build Vite temporal OK.
+- Seguridad/SCA: scanner Atlas OK, `npm audit --audit-level=moderate` OK, NuGet vulnerable OK desde `C:\tmp`.
+- Docker: Docker Desktop debe estar arrancado. El CLI elevado detecta el daemon por `npipe:////./pipe/dockerDesktopLinuxEngine`; Testcontainers/Docker.DotNet necesita `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+
+Empaquetado local:
+
+- `Build-Release.ps1` ya no decide el resultado del scanner de secretos por `$LASTEXITCODE`, porque un `.ps1` exitoso puede dejar ese valor heredado de comandos internos. Usa `$?`.
+- `Build-Release.ps1` usa `npm ci` solo si se pide `-CleanNpmInstall` o falta `node_modules`. Si existe `node_modules` pero esta incompleto, ejecuta `npm install --ignore-scripts --no-audit --fund=false` para reparar sin borrar arboles bloqueados.
+- Validacion local: `Build-Release.ps1 -Version V-02-02 -Runtime win-x64 -AllowUnsignedLocal` genera `AtlasBalance-V-02-02-win-x64.zip`. Al usar `-AllowUnsignedLocal` no genera firma y no es publicable.

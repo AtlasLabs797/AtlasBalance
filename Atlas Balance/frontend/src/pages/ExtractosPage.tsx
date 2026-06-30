@@ -47,6 +47,7 @@ export default function ExtractosPage() {
   const [titularFiltro, setTitularFiltro] = useState<string>(() => searchParams.get('titularId') ?? '');
   const [fechaDesde, setFechaDesde] = useState<string>(() => searchParams.get('fechaDesde') ?? '');
   const [fechaHasta, setFechaHasta] = useState<string>(() => searchParams.get('fechaHasta') ?? '');
+  const [modo, setModo] = useState<'revision' | 'edicion'>('revision');
   const [titularesResumen, setTitularesResumen] = useState<TitularConCuentas[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[] | null>(null);
   const [availableExtraColumns, setAvailableExtraColumns] = useState<string[]>([]);
@@ -335,6 +336,7 @@ export default function ExtractosPage() {
   };
 
   const canEditCell = (row: Extracto, column: string) => {
+    if (modo !== 'edicion') return false;
     if (!row.cuenta_id) return false;
     if (!canEditCuenta(row.cuenta_id, row.titular_id, row.pais_id)) return false;
     const cols = getColumnasEditables(row.cuenta_id, row.titular_id, row.pais_id);
@@ -347,6 +349,22 @@ export default function ExtractosPage() {
         <div className="extractos-heading">
           <h1>Extractos</h1>
           <p>Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
+        </div>
+        <div className="extractos-mode-toggle" role="group" aria-label="Modo de extractos">
+          <button
+            type="button"
+            className={modo === 'revision' ? 'active' : ''}
+            onClick={() => setModo('revision')}
+          >
+            Revision
+          </button>
+          <button
+            type="button"
+            className={modo === 'edicion' ? 'active' : ''}
+            onClick={() => setModo('edicion')}
+          >
+            Edicion avanzada
+          </button>
         </div>
         <div className="extractos-filters">
           <AppSelect

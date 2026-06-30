@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Security.Claims;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
@@ -14,6 +15,10 @@ public interface IUserAccessService
     Task<bool> CanAccessCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanWriteCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanEditCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
+    Task<bool> CanReviewCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
+    Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
+    Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
+    Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
 }
 
 public sealed class UserAccessScope
@@ -71,7 +76,11 @@ public sealed class UserAccessService : IUserAccessService
                 p.PuedeEditarLineas,
                 p.PuedeEliminarLineas,
                 p.PuedeImportar,
-                p.PuedeVerDashboard
+                p.PuedeVerDashboard,
+                p.PuedeRevisarLineas,
+                p.PuedeAprobarImportaciones,
+                p.PuedeConciliar,
+                p.PuedeCerrarConciliacion
             })
             .ToListAsync(cancellationToken);
 
@@ -258,6 +267,69 @@ public sealed class UserAccessService : IUserAccessService
                 join cuenta in ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()) on cuentaId equals cuenta.Id
                 where permiso.UsuarioId == scope.UserId &&
                       permiso.PuedeEditarLineas &&
+                      (permiso.PaisId == null || permiso.PaisId == cuenta.PaisId) &&
+                      (permiso.TitularId == null || permiso.TitularId == cuenta.TitularId) &&
+                      (permiso.CuentaId == null || permiso.CuentaId == cuenta.Id)
+                select permiso.Id)
+            .AnyAsync(cancellationToken);
+    }
+
+    public Task<bool> CanReviewCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+    {
+        return HasCuentaPermissionAsync(
+            cuentaId,
+            scope,
+            permiso => permiso.PuedeRevisarLineas || permiso.PuedeEditarLineas,
+            cancellationToken);
+    }
+
+    public Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+    {
+        return HasCuentaPermissionAsync(
+            cuentaId,
+            scope,
+            permiso => permiso.PuedeAprobarImportaciones || permiso.PuedeImportar,
+            cancellationToken);
+    }
+
+    public Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+    {
+        return HasCuentaPermissionAsync(
+            cuentaId,
+            scope,
+            permiso => permiso.PuedeConciliar || permiso.PuedeEditarLineas || permiso.PuedeImportar,
+            cancellationToken);
+    }
+
+    public Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+    {
+        return HasCuentaPermissionAsync(
+            cuentaId,
+            scope,
+            permiso => permiso.PuedeCerrarConciliacion || permiso.PuedeConciliar,
+            cancellationToken);
+    }
+
+    private async Task<bool> HasCuentaPermissionAsync(
+        Guid cuentaId,
+        UserAccessScope scope,
+        Expression<Func<PermisoUsuario, bool>> permissionPredicate,
+        CancellationToken cancellationToken)
+    {
+        if (scope.IsAdmin)
+        {
+            return true;
+        }
+
+        if (!scope.HasPermissions || scope.UserId == Guid.Empty)
+        {
+            return false;
+        }
+
+        return await (
+                from permiso in _dbContext.PermisosUsuario.AsNoTracking().Where(permissionPredicate)
+                join cuenta in ApplyActiveTitularCuentaScope(_dbContext.Cuentas.AsNoTracking()) on cuentaId equals cuenta.Id
+                where permiso.UsuarioId == scope.UserId &&
                       (permiso.PaisId == null || permiso.PaisId == cuenta.PaisId) &&
                       (permiso.TitularId == null || permiso.TitularId == cuenta.TitularId) &&
                       (permiso.CuentaId == null || permiso.CuentaId == cuenta.Id)

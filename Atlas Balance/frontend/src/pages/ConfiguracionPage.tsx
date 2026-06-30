@@ -508,6 +508,22 @@ export default function ConfiguracionPage() {
     }
   };
 
+  const rotateToken = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      const { data } = await api.post<{ token_plano: string }>(`/integraciones/tokens/${id}/rotar`, {});
+      setTokenPlano(data.token_plano);
+      setFeedback('Token rotado. Copia el nuevo valor ahora.');
+      await load();
+    } catch (err) {
+      setError(extractErrorMessage(err, 'No se pudo rotar token.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const deleteToken = async (id: string) => {
     setBusy(true);
     setError(null);
@@ -1217,7 +1233,7 @@ export default function ConfiguracionPage() {
 
           <section className="config-card">
             <h2>Tokens existentes</h2>
-            <TokenList tokens={tokens} busy={busy} onRevocar={revokeToken} onEliminar={deleteToken} />
+            <TokenList tokens={tokens} busy={busy} onRevocar={revokeToken} onRotar={rotateToken} onEliminar={deleteToken} />
           </section>
         </div>
       )}

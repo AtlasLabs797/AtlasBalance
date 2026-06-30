@@ -43,6 +43,16 @@ public static class AiConfiguration
         return IsValidOpenRouterModelId(model);
     }
 
+    public static bool IsSuggestedOpenRouterModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return false;
+        }
+
+        return SuggestedOpenRouterModels.Any(x => string.Equals(x, model.Trim(), StringComparison.Ordinal));
+    }
+
     public static bool IsAllowedOpenAiModel(string? model)
     {
         if (string.IsNullOrWhiteSpace(model))
@@ -91,6 +101,17 @@ public static class AiConfiguration
             "OPENAI" => IsAllowedOpenAiModel(normalizedModel) ? normalizedModel : DefaultOpenAiModel,
             "MINIMAX" => IsAllowedMiniMaxModel(normalizedModel) ? normalizedModel : DefaultMiniMaxModel,
             _ => normalizedModel
+        };
+    }
+
+    public static string NormalizeGlobalConfigModel(string? provider, string? model)
+    {
+        var normalizedProvider = NormalizeProvider(provider);
+        var normalizedModel = model?.Trim() ?? string.Empty;
+        return normalizedProvider switch
+        {
+            "OPENROUTER" => IsSuggestedOpenRouterModel(normalizedModel) ? normalizedModel : OpenRouterAutoModel,
+            _ => NormalizeModel(normalizedProvider, normalizedModel)
         };
     }
 

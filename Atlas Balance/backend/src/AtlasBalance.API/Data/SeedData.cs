@@ -678,7 +678,11 @@ public static class SeedData
             PuedeEditarLineas = true,
             PuedeEliminarLineas = true,
             PuedeImportar = true,
-            PuedeVerDashboard = true
+            PuedeVerDashboard = true,
+            PuedeRevisarLineas = true,
+            PuedeAprobarImportaciones = true,
+            PuedeConciliar = true,
+            PuedeCerrarConciliacion = true
         });
     }
 

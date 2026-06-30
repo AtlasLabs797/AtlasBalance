@@ -16,6 +16,17 @@ namespace AtlasBalance.API.Controllers;
 [Route("api/integraciones/tokens")]
 public sealed class IntegracionesController : ControllerBase
 {
+    private static readonly string[] DefaultOpenClawScopes =
+    [
+        "titulares",
+        "saldos",
+        "extractos",
+        "evolucion",
+        "alertas",
+        "vencimientos",
+        "auditoria"
+    ];
+
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
     private readonly IIntegrationTokenService _integrationTokenService;
@@ -111,6 +122,8 @@ public sealed class IntegracionesController : ControllerBase
         }
 
         var tokenPlano = _integrationTokenService.GeneratePlainToken();
+        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada);
+        var scopes = NormalizeEndpointScopes(request.Scopes);
         var token = new IntegrationToken
         {
             Id = Guid.NewGuid(),
@@ -122,6 +135,8 @@ public sealed class IntegracionesController : ControllerBase
             Estado = EstadoTokenIntegracion.Activo,
             TokenHash = _integrationTokenService.ComputeSha256(tokenPlano),
             FechaCreacion = DateTime.UtcNow,
+            FechaExpiracion = expiration,
+            EndpointScopesJson = JsonSerializer.Serialize(scopes),
             UsuarioCreadorId = creatorId.Value
         };
 
@@ -141,6 +156,9 @@ public sealed class IntegracionesController : ControllerBase
                 token.Estado,
                 token.PermisoLectura,
                 token.PermisoEscritura,
+                token.FechaExpiracion,
+                scopes,
+                sin_expiracion = expiration is null,
                 permisos = request.Permisos
             }),
             cancellationToken);
@@ -149,7 +167,10 @@ public sealed class IntegracionesController : ControllerBase
         return CreatedAtAction(nameof(Obtener), new { id = token.Id }, new CreateIntegrationTokenResponse
         {
             Token = detail,
-            TokenPlano = tokenPlano
+            TokenPlano = tokenPlano,
+            Advertencias = expiration is null
+                ? ["Token sin expiracion. Revisa que esto sea intencionado."]
+                : []
         });
     }
 
@@ -179,13 +200,19 @@ public sealed class IntegracionesController : ControllerBase
             token.Descripcion,
             token.Estado,
             token.PermisoLectura,
-            token.PermisoEscritura
+            token.PermisoEscritura,
+            token.FechaExpiracion,
+            token.EndpointScopesJson
         };
 
+        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada);
+        var scopes = NormalizeEndpointScopes(request.Scopes);
         token.Nombre = request.Nombre.Trim();
         token.Descripcion = request.Descripcion?.Trim();
         token.PermisoLectura = request.PermisoLectura;
         token.PermisoEscritura = request.PermisoEscritura;
+        token.FechaExpiracion = expiration;
+        token.EndpointScopesJson = JsonSerializer.Serialize(scopes);
 
         var currentPermissions = await _dbContext.IntegrationPermissions.Where(x => x.TokenId == id).ToListAsync(cancellationToken);
         _dbContext.IntegrationPermissions.RemoveRange(currentPermissions);
@@ -224,6 +251,91 @@ public sealed class IntegracionesController : ControllerBase
             cancellationToken);
 
         return Ok(new { message = "Token revocado" });
+    }
+
+    [HttpPost("{id:guid}/rotar")]
+    public async Task<IActionResult> Rotar(Guid id, [FromBody] RotarIntegrationTokenRequest request, CancellationToken cancellationToken)
+    {
+        var oldToken = await _dbContext.IntegrationTokens.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (oldToken is null)
+        {
+            return NotFound(new { error = "Token no encontrado" });
+        }
+
+        var creatorId = GetCurrentUserId();
+        if (!creatorId.HasValue)
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        var tokenPlano = _integrationTokenService.GeneratePlainToken();
+        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada);
+        var now = DateTime.UtcNow;
+        oldToken.Estado = EstadoTokenIntegracion.Revocado;
+        oldToken.FechaRevocacion = now;
+
+        var newToken = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = $"{oldToken.Nombre} (rotado)",
+            Descripcion = oldToken.Descripcion,
+            Tipo = oldToken.Tipo,
+            PermisoLectura = oldToken.PermisoLectura,
+            PermisoEscritura = oldToken.PermisoEscritura,
+            Estado = EstadoTokenIntegracion.Activo,
+            TokenHash = _integrationTokenService.ComputeSha256(tokenPlano),
+            FechaCreacion = now,
+            FechaExpiracion = expiration,
+            RotatedFromTokenId = oldToken.Id,
+            EndpointScopesJson = string.IsNullOrWhiteSpace(oldToken.EndpointScopesJson)
+                ? JsonSerializer.Serialize(DefaultOpenClawScopes)
+                : oldToken.EndpointScopesJson,
+            UsuarioCreadorId = creatorId.Value
+        };
+
+        _dbContext.IntegrationTokens.Add(newToken);
+        var oldPermissions = await _dbContext.IntegrationPermissions
+            .AsNoTracking()
+            .Where(x => x.TokenId == oldToken.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var permiso in oldPermissions)
+        {
+            _dbContext.IntegrationPermissions.Add(new IntegrationPermission
+            {
+                Id = Guid.NewGuid(),
+                TokenId = newToken.Id,
+                TitularId = permiso.TitularId,
+                CuentaId = permiso.CuentaId,
+                PaisId = permiso.PaisId,
+                AccesoTipo = permiso.AccesoTipo,
+                FechaCreacion = now
+            });
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync(
+            creatorId,
+            "ROTATE_INTEGRATION_TOKEN",
+            "INTEGRATION_TOKENS",
+            newToken.Id,
+            HttpContext,
+            JsonSerializer.Serialize(new
+            {
+                token_anterior_id = oldToken.Id,
+                token_nuevo_id = newToken.Id,
+                fecha_expiracion = newToken.FechaExpiracion,
+                sin_expiracion = newToken.FechaExpiracion is null
+            }),
+            cancellationToken);
+
+        return Ok(new CreateIntegrationTokenResponse
+        {
+            Token = await BuildDetailAsync(newToken, cancellationToken),
+            TokenPlano = tokenPlano,
+            Advertencias = expiration is null
+                ? ["Token rotado sin expiracion. Revisa que esto sea intencionado."]
+                : []
+        });
     }
 
     [HttpDelete("{id:guid}")]
@@ -482,6 +594,36 @@ public sealed class IntegracionesController : ControllerBase
         return normalized is "lectura" or "escritura" ? normalized : null;
     }
 
+    private static IReadOnlyList<string> NormalizeEndpointScopes(IReadOnlyList<string>? scopes)
+    {
+        var allowed = DefaultOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var normalized = (scopes is null || scopes.Count == 0 ? DefaultOpenClawScopes : scopes)
+            .Where(scope => !string.IsNullOrWhiteSpace(scope))
+            .Select(scope => scope.Trim().ToLowerInvariant())
+            .Where(scope => allowed.Contains(scope))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return normalized.Count == 0 ? DefaultOpenClawScopes : normalized;
+    }
+
+    private static IReadOnlyList<string> ParseEndpointScopes(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(rawJson) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     private async Task<IntegrationTokenDetailResponse> BuildDetailAsync(IntegrationToken token, CancellationToken cancellationToken)
     {
         var permisos = await _dbContext.IntegrationPermissions
@@ -518,8 +660,12 @@ public sealed class IntegracionesController : ControllerBase
             PermisoLectura = token.PermisoLectura,
             PermisoEscritura = token.PermisoEscritura,
             FechaCreacion = token.FechaCreacion,
+            FechaExpiracion = token.FechaExpiracion,
             FechaUltimaUso = token.FechaUltimaUso,
             FechaRevocacion = token.FechaRevocacion,
+            RotatedFromTokenId = token.RotatedFromTokenId,
+            Scopes = ParseEndpointScopes(token.EndpointScopesJson),
+            LastUsedIpAddress = token.LastUsedIpAddress,
             UsuarioCreadorId = token.UsuarioCreadorId,
             DeletedAt = token.DeletedAt
         };

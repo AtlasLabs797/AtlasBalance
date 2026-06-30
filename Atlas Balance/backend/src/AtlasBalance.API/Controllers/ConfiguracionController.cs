@@ -70,7 +70,7 @@ public sealed class ConfiguracionController : ControllerBase
                 AppUpdateAutoLastCheckedUtc = GetValue(config, "app_update_auto_last_checked_utc"),
                 AppUpdateAutoLastStartedUtc = GetValue(config, "app_update_auto_last_started_utc"),
                 AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
-                MfaRememberDeviceEnabled = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey), fallback: true),
+                MfaRememberDeviceEnabled = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey), fallback: false),
                 MfaRememberDeviceDays = SecurityConfigurationDefaults.MfaRememberDeviceDays,
                 BackupPath = GetValue(config, "backup_path"),
                 ExportPath = GetValue(config, "export_path")
@@ -167,7 +167,7 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "Modelo de IA invalido para el proveedor seleccionado." });
         }
 
-        var aiModel = AiConfiguration.NormalizeModel(aiProvider, aiRequest.Model);
+        var aiModel = AiConfiguration.NormalizeGlobalConfigModel(aiProvider, aiRequest.Model);
         if (!AiConfiguration.IsAllowedModel(aiProvider, aiModel))
         {
             return BadRequest(new { error = "Modelo de IA invalido para el proveedor seleccionado." });

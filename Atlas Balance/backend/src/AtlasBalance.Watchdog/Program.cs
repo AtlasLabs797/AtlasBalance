@@ -4,6 +4,7 @@ using AtlasBalance.Watchdog.Services;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+AddExternalDevelopmentSecrets(builder.Configuration, builder.Environment, "AtlasBalance.Watchdog.Development.json");
 
 builder.Host.UseWindowsService();
 builder.WebHost.ConfigureKestrel(options =>
@@ -102,4 +103,21 @@ static bool LooksLikePlaceholder(string value)
            normalized.Contains("generar", StringComparison.Ordinal) ||
            normalized.Contains("placeholder", StringComparison.Ordinal) ||
            normalized.Contains("aqui", StringComparison.Ordinal);
+}
+
+static void AddExternalDevelopmentSecrets(IConfigurationBuilder configuration, IWebHostEnvironment environment, string fileName)
+{
+    if (!environment.IsDevelopment())
+    {
+        return;
+    }
+
+    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    if (string.IsNullOrWhiteSpace(appData))
+    {
+        return;
+    }
+
+    var path = Path.Combine(appData, "AtlasBalance", "dev-secrets", fileName);
+    configuration.AddJsonFile(path, optional: true, reloadOnChange: true);
 }

@@ -17,6 +17,7 @@ const AuditoriaPage          = lazy(() => import('@/pages/AuditoriaPage'));
 const BackupsPage            = lazy(() => import('@/pages/BackupsPage'));
 const ChangePasswordPage     = lazy(() => import('@/pages/ChangePasswordPage'));
 const ConfiguracionPage      = lazy(() => import('@/pages/ConfiguracionPage'));
+const ConciliacionPage       = lazy(() => import('@/pages/ConciliacionPage'));
 const CuentaDetailPage       = lazy(() => import('@/pages/CuentaDetailPage'));
 const CuentasPage            = lazy(() => import('@/pages/CuentasPage'));
 const DashboardPage          = lazy(() => import('@/pages/DashboardPage'));
@@ -143,6 +144,7 @@ export default function App() {
         <Route path="/cuentas/:id" element={section(<CuentaDetailPage />)} />
         <Route path="/extractos" element={section(<ExtractosPage />)} />
         <Route path="/importacion" element={section(<ImportacionPage />)} />
+        <Route path="/conciliacion" element={section(<ConciliacionPage />)} />
         <Route path="/revision" element={section(<RevisionPage />)} />
         <Route path="/ia" element={section(<IaPage />)} />
         <Route

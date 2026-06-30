@@ -250,6 +250,10 @@ public sealed class UsuariosController : ControllerBase
             PuedeEliminarLineas = request.PuedeEliminarLineas,
             PuedeImportar = request.PuedeImportar,
             PuedeVerDashboard = request.PuedeVerDashboard,
+            PuedeRevisarLineas = request.PuedeRevisarLineas,
+            PuedeAprobarImportaciones = request.PuedeAprobarImportaciones,
+            PuedeConciliar = request.PuedeConciliar,
+            PuedeCerrarConciliacion = request.PuedeCerrarConciliacion,
             ColumnasVisibles = request.ColumnasVisibles,
             ColumnasEditables = request.ColumnasEditables
         };
@@ -836,7 +840,11 @@ public sealed class UsuariosController : ControllerBase
         permiso.PuedeAgregarLineas ||
         permiso.PuedeEditarLineas ||
         permiso.PuedeEliminarLineas ||
-        permiso.PuedeImportar;
+        permiso.PuedeImportar ||
+        permiso.PuedeRevisarLineas ||
+        permiso.PuedeAprobarImportaciones ||
+        permiso.PuedeConciliar ||
+        permiso.PuedeCerrarConciliacion;
 
     private async Task<bool> UsuarioExisteAsync(Guid id, bool includeDeleted, CancellationToken cancellationToken)
     {
@@ -940,6 +948,10 @@ public sealed class UsuariosController : ControllerBase
                 permiso.PuedeEliminarLineas,
                 permiso.PuedeImportar,
                 permiso.PuedeVerDashboard,
+                permiso.PuedeRevisarLineas,
+                permiso.PuedeAprobarImportaciones,
+                permiso.PuedeConciliar,
+                permiso.PuedeCerrarConciliacion,
                 ColumnasVisibles = preferencia?.ColumnasVisibles,
                 ColumnasEditables = preferencia?.ColumnasEditables
             };
@@ -1011,7 +1023,11 @@ public sealed class UsuariosController : ControllerBase
             PuedeEditarLineas = item.PuedeEditarLineas,
             PuedeEliminarLineas = item.PuedeEliminarLineas,
             PuedeImportar = item.PuedeImportar,
-            PuedeVerDashboard = item.PuedeVerDashboard
+            PuedeVerDashboard = item.PuedeVerDashboard,
+            PuedeRevisarLineas = item.PuedeRevisarLineas,
+            PuedeAprobarImportaciones = item.PuedeAprobarImportaciones,
+            PuedeConciliar = item.PuedeConciliar,
+            PuedeCerrarConciliacion = item.PuedeCerrarConciliacion
         });
 
         return Task.CompletedTask;
@@ -1072,6 +1088,10 @@ public sealed class UsuariosController : ControllerBase
             PuedeEliminarLineas = permiso.PuedeEliminarLineas,
             PuedeImportar = permiso.PuedeImportar,
             PuedeVerDashboard = permiso.PuedeVerDashboard,
+            PuedeRevisarLineas = permiso.PuedeRevisarLineas,
+            PuedeAprobarImportaciones = permiso.PuedeAprobarImportaciones,
+            PuedeConciliar = permiso.PuedeConciliar,
+            PuedeCerrarConciliacion = permiso.PuedeCerrarConciliacion,
             ColumnasVisibles = ParseJsonArray(preferencia?.ColumnasVisibles),
             ColumnasEditables = ParseJsonArray(preferencia?.ColumnasEditables)
         };

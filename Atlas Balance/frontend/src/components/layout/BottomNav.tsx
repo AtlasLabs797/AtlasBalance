@@ -36,10 +36,16 @@ export function BottomNav() {
   );
   const primaryItemPaths = useMemo(() => {
     const dashboardVisible = usuario?.rol === 'ADMIN' || canViewDashboard;
+    if (alertCount > 0) {
+      return dashboardVisible
+        ? ['/dashboard', '/alertas', '/extractos', '/importacion']
+        : ['/alertas', '/extractos', '/importacion', '/revision'];
+    }
+
     return dashboardVisible
       ? ['/dashboard', '/cuentas', '/extractos', '/importacion']
       : ['/extractos', '/cuentas', '/importacion', '/revision'];
-  }, [canViewDashboard, usuario?.rol]);
+  }, [alertCount, canViewDashboard, usuario?.rol]);
   const primaryItems = useMemo(
     () => primaryItemPaths
       .map((path) => visibleNavItems.find((item) => item.to === path))

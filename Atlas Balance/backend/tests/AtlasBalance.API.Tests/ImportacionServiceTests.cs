@@ -1656,6 +1656,112 @@ public class ImportacionServiceTests
         (await db.ExtractosColumnasExtra.ToListAsync()).Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task CrearLoteAsync_Should_Not_Select_Warning_Rows_By_Default_And_Require_OptIn()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var lote = await service.CrearLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            new ImportacionLoteCrearRequest
+            {
+                CuentaId = cuentaId,
+                RawData = string.Join('\n', [
+                    "22/04/2026\tMovimiento completo\t100\t500",
+                    "\tEGARARECYCLING\t\t"
+                ]),
+                Separador = "tab",
+                Mapeo = DefaultMapeo()
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        lote.Lote.FilasValidas.Should().Be(2);
+        lote.Lote.FilasAdvertencia.Should().Be(1);
+
+        var filas = await service.ListarLoteFilasAsync(userId, RolUsuario.EMPLEADO.ToString(), lote.Lote.Id, CancellationToken.None);
+        filas[0].SeleccionadaDefault.Should().BeTrue();
+        filas[1].SeleccionadaDefault.Should().BeFalse();
+        filas[1].Advertencias.Should().NotBeEmpty();
+
+        var act = () => service.ConfirmarLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            lote.Lote.Id,
+            new ImportacionLoteConfirmarRequest
+            {
+                FilasAImportar = [1, 2],
+                AceptaAdvertencias = false
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ImportacionException>();
+        ex.Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        ex.Which.Message.Should().Contain("acepta_advertencias");
+    }
+
+    [Fact]
+    public async Task ConfirmarLoteAsync_And_RevertirLoteAsync_Should_Link_And_SoftDelete_Imported_Extractos()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var lote = await service.CrearLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            new ImportacionLoteCrearRequest
+            {
+                CuentaId = cuentaId,
+                RawData = string.Join('\n', [
+                    "01/04/2026\tIngreso cliente\t100\t100",
+                    "02/04/2026\tPago proveedor\t-25\t75"
+                ]),
+                Separador = "tab",
+                TipoOrigen = "ARCHIVO",
+                NombreArchivo = "banco.tsv",
+                TamanioBytes = 4096,
+                Mapeo = DefaultMapeo()
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        lote.Lote.TipoOrigen.Should().Be("ARCHIVO");
+        lote.Lote.NombreArchivo.Should().Be("banco.tsv");
+        lote.Lote.TamanioBytes.Should().Be(4096);
+
+        var confirmacion = await service.ConfirmarLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            lote.Lote.Id,
+            new ImportacionLoteConfirmarRequest(),
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        confirmacion.FilasImportadas.Should().Be(2);
+        var imported = await db.Extractos.IgnoreQueryFilters().Where(x => x.ImportacionLoteId == lote.Lote.Id).ToListAsync();
+        imported.Should().HaveCount(2);
+        imported.Should().OnlyContain(x => x.ImportacionLoteHash == lote.Lote.LoteHash);
+
+        var revertido = await service.RevertirLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            lote.Lote.Id,
+            new ImportacionLoteRevertirRequest { Motivo = "test" },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        revertido.Estado.Should().Be("revertido");
+        var softDeleted = await db.Extractos.IgnoreQueryFilters().Where(x => x.ImportacionLoteId == lote.Lote.Id).ToListAsync();
+        softDeleted.Should().OnlyContain(x => x.DeletedAt != null && x.DeletedById == userId);
+        var filas = await db.ImportacionLoteFilas.Where(x => x.LoteId == lote.Lote.Id && x.Estado == "revertida").ToListAsync();
+        filas.Should().HaveCount(2);
+    }
+
     private static async Task<(Guid UserId, Guid CuentaId)> SeedImportableCuentaAsync(AppDbContext db)
     {
         var userId = Guid.NewGuid();
@@ -1668,7 +1774,8 @@ public class ImportacionServiceTests
             Id = Guid.NewGuid(),
             UsuarioId = userId,
             CuentaId = cuenta.Id,
-            PuedeImportar = true
+            PuedeImportar = true,
+            PuedeAprobarImportaciones = true
         });
         await db.SaveChangesAsync();
         return (userId, cuenta.Id);

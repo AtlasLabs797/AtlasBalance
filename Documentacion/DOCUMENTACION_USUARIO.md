@@ -493,7 +493,9 @@ En la parte inferior del menu lateral veras la version activa y la hora local. S
 
 La pantalla de login y el cambio obligatorio de password usan el mismo layout visual: panel de marca y tarjeta de accion. El flujo no cambia: email, password, MFA, QR de configuracion, recordar dispositivo y primer cambio de password siguen funcionando igual.
 
-Los desplegables de la app usan el estilo visual de Atlas Balance. Funcionan como antes, pero se abren como menus propios para que filtros, configuracion y backups no parezcan controles del navegador pegados con cinta.
+Si `recordar dispositivo MFA` no esta configurado explicitamente, Atlas Balance lo trata como desactivado. Es la opcion correcta: recordar dispositivos por accidente es una mala idea.
+
+Los desplegables de la app usan `<select>` nativo estilizado. Funcionan con teclado, lector de pantalla y controles del sistema operativo; menos teatro visual, mas fiabilidad.
 
 En movil el dashboard no debe crear scroll horizontal. Las tablas ocultas usadas para accesibilidad de graficas no ocupan ancho visible.
 
@@ -504,3 +506,47 @@ En `Backups`, los campos de frecuencia, dia y destino usan los mismos desplegabl
 El resumen muestra `Ultima copia correcta en esta pagina` porque ese dato se calcula sobre la pagina cargada. Si necesitas una verdad global, revisa el listado completo o cambia la paginacion; la app no debe fingir precision que no tiene.
 
 Si un codigo de vinculacion de Google Drive expira o falla, Atlas Balance deja de mostrar ese codigo viejo y ofrece generar uno nuevo.
+
+## Importacion por lotes V-02-02
+
+La pantalla `Importacion` se divide en `Nueva`, `Historial` y `Lote`.
+
+- `Nueva`: elige cuenta, pega datos o carga archivo, revisa mapeo, valida y confirma.
+- `Historial`: lista lotes importados, validados o revertidos.
+- `Lote`: muestra evidencia del lote, SHA-256, resumen de filas, advertencias y acciones.
+
+Las filas con advertencias no se seleccionan por defecto. Si decides importarlas, tienes que marcar la aceptacion de advertencias. Esto no es burocracia: evita meter lineas dudosas por accidente.
+
+Revertir un lote borra logicamente los extractos importados por ese lote. La evidencia original queda en la base de datos para auditoria y backups.
+
+## Conciliacion V-02-02
+
+La nueva pantalla `Conciliacion` compara movimientos esperados contra extractos reales.
+
+- Crea movimientos esperados con cuenta, fecha, importe, divisa, referencia y concepto.
+- Genera sugerencias con ventana configurable, por defecto mas/menos 3 dias.
+- Atlas Balance solo sugiere matches de misma cuenta, importe exacto y score suficiente.
+- Puedes confirmar, marcar excepcion o resolver conciliaciones.
+
+Estados disponibles: `pendiente`, `sugerida`, `conciliada`, `excepcion` y `resuelta`.
+
+## Extractos
+
+`Extractos` tiene dos modos:
+
+- `Revision`: modo por defecto para revisar sin editar accidentalmente.
+- `Edicion avanzada`: habilita la edicion inline de celdas.
+
+Si vas con prisa y editas en caliente, ese modo separado existe para salvarte de ti mismo.
+
+## Tokens OpenClaw
+
+Los tokens de integracion tienen expiracion por defecto de 90 dias. Tambien muestran scopes, ultimo uso, IP reciente, rotacion y revocacion.
+
+Un token sin expiracion requiere confirmacion explicita y queda auditado. Es comodo, pero tambien es peor seguridad; usalo solo si tienes un motivo real.
+
+## Secretos locales de desarrollo
+
+Los secretos reales de desarrollo ya no viven en el repo ni en `Documentacion`. Deben estar en `%APPDATA%\AtlasBalance\dev-secrets`.
+
+No pegues valores de tokens, passwords ni connection strings reales en capturas, tickets, documentos o logs. Si alguien te pide hacerlo, esa persona esta pidiendo crear una incidencia.

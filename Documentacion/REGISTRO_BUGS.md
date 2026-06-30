@@ -2,13 +2,6 @@
 
 ## Abiertos
 
-### 2026-06-21 - V-02-02 - Test determinista IA sensible a la fecha actual
-
-- Contexto: al validar MiniMax, el filtro amplio `AtlasAiServiceTests|ConfiguracionControllerTests` fallo tambien en `AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking`.
-- Causa probable: el test depende de la fecha actual. El entorno esta en 2026-06-21 y la consulta de "este trimestre" resuelve `01/04/2026 a 21/06/2026`, pero el fixture no tiene gastos en ese periodo.
-- Impacto: la suite IA amplia no puede considerarse verde aunque la cobertura MiniMax focalizada pase.
-- Estado: abierto. Hay que fijar reloj/fixture o hacer el test independiente de la fecha real.
-
 ### 2026-05-22 - V-01.09 - Bootstrap desde Watchdog antiguo pendiente
 
 - Contexto: tras implementar el update online de paquete completo, quedan dos bloqueos fuera del codigo nuevo.
@@ -34,6 +27,56 @@
 - Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
 
 ## Cerrados
+
+### 2026-06-30 - V-02-02 - Cerrado - Build-Release fallaba aunque el scanner pasara
+
+- Contexto: al validar empaquetado local, `Build-Release.ps1` abortaba despues de `Scanner Atlas sin hallazgos`.
+- Causa: el script comprobaba `$LASTEXITCODE` despues de invocar un `.ps1`; ese valor podia venir sucio de comandos internos.
+- Solucion: comprobar el scanner con `$?`.
+- Verificacion: el empaquetado avanzo al siguiente gate.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Build-Release usaba `npm ci` destructivo sobre `node_modules` bloqueado
+
+- Contexto: el empaquetado local fallaba con `EPERM` al borrar `frontend\node_modules\.vite-temp`.
+- Causa: `Build-Release.ps1` ejecutaba `npm ci` siempre, aunque el arbol local ya existiera y Windows tuviera carpetas bloqueadas. Ademas, un intento fallido podia dejar `node_modules` incompleto.
+- Solucion: `npm ci` solo se ejecuta con `-CleanNpmInstall` o si falta `node_modules`; si existe pero falta `tsc.cmd`, se repara con `npm install --ignore-scripts --no-audit --fund=false`.
+- Verificacion: `Build-Release.ps1 -Version V-02-02 -Runtime win-x64 -AllowUnsignedLocal` OK, ZIP local generado.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Docker/Testcontainers no disponible para cierre de release
+
+- Contexto: la suite completa V-02-02 quedaba en 315/317 porque `ExtractosConcurrencyTests` y `RowLevelSecurityTests` no conectaban con Docker.
+- Causa: Docker Desktop estaba detenido y Testcontainers no descubria el endpoint por permisos/contexto. La URI aceptada por Docker CLI (`npipe:////./pipe/dockerDesktopLinuxEngine`) no es la misma forma que acepta Docker.DotNet/Testcontainers.
+- Solucion operativa: arrancar Docker Desktop y ejecutar tests en contexto elevado con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+- Verificacion: pruebas Testcontainers 2/2 OK y suite backend completa 317/317 OK.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Fallos backend no Docker tras hardening
+
+- Contexto: la primera suite completa posterior al hardening tenia tres fallos no dependientes de Docker.
+- Causas:
+  - configuracion global OpenRouter aceptaba un modelo desconocido en vez de normalizarlo a `openrouter/auto`;
+  - MFA trusted-device quedaba habilitado por fallback cuando faltaba configuracion;
+  - el test de ranking IA por cuenta no declaraba permiso real en `PERMISOS_USUARIO`.
+- Solucion: normalizacion global por proveedor, MFA remember-device fail-closed y fixture de test alineado con `UserAccessService`.
+- Verificacion: `ConfiguracionControllerTests|AtlasAiServiceTests|AuthServiceTests` 101/101 OK; suite backend sin Testcontainers 315/315 OK.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - QA visual completa de nuevos flujos pendiente
+
+- Contexto: quedaba sin validar visualmente importacion, historial de lote, conciliacion, OpenClaw tokens, mobile alertas y modos de Extractos.
+- Solucion: QA Playwright finita con Chrome local, build Vite temporal y API mock cerrada en el mismo proceso.
+- Verificacion: dashboard CTAs, importacion con advertencias desmarcadas, historial, conciliacion, OpenClaw rotacion, Extractos revision/edicion y mobile alertas OK; consola sin errores.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Test determinista IA sensible a la fecha actual
+
+- Contexto: el test `AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking` habia fallado en pasadas amplias.
+- Causa real en esta validacion: el fixture usaba `scope.CuentaIds`, pero `UserAccessService.ApplyCuentaScope` aplica permisos persistidos en BD.
+- Solucion: el test crea `PermisoUsuario` con `PuedeVerCuentas=true` sobre la cuenta permitida.
+- Verificacion: `AtlasAiServiceTests` incluido en 101/101 OK.
+- Estado: cerrado.
 
 ### 2026-06-27 - V-02-02 - Cerrado - Vite vulnerable y dependencias npm rojas
 
@@ -1206,4 +1249,42 @@
 - Causa: `.auth-theme-toggle` no anulaba padding/min-height global de botones y el icono de luna necesitaba compensacion optica.
 - Solucion: normalizar el boton como cuadrado real (`padding: 0`, `min-width/min-height`, `line-height`, `appearance`) y fijar tamano del SVG con ajuste optico para la luna.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, build Vite temporal OK y QA Playwright con Chrome local midiendo boton `38x38` sin overflow ni errores de consola.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado - Importacion sin lote formal ni reversion trazable
+
+- Contexto: el reporte post-revision pedia trazabilidad real de importaciones, origen, archivo, hash, filas y reversibilidad.
+- Causa: la app ya tenia huellas por fila/lote hash, pero no tenia entidad formal de lote con contenido original, filas persistidas, confirmacion y reversion.
+- Solucion: tablas `IMPORTACION_LOTES` e `IMPORTACION_LOTE_FILAS`, `EXTRACTOS.importacion_lote_id`, endpoints de lote, confirmacion opt-in de advertencias y reversion con borrado logico de extractos.
+- Verificacion: tests focalizados de importacion/lotes incluidos en 59/59 OK; build backend OK.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado - Conciliacion no comparaba contra libro esperado interno
+
+- Contexto: la revision exigia conciliacion real, no solo revision visual de extractos.
+- Causa: faltaba modelo de movimientos esperados y matching auditable.
+- Solucion: `MOVIMIENTOS_ESPERADOS`, `CONCILIACIONES`, servicio/controlador `/api/conciliacion/*` y pantalla `/conciliacion` con sugerencias, confirmacion, excepciones y resolucion.
+- Verificacion: test focalizado de matching determinista y confirmacion incluido en 59/59 OK.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado - OpenClaw sin expiracion, scopes y rotacion suficientes
+
+- Contexto: tokens de integracion necesitaban vencimiento, rotacion y restriccion por endpoint.
+- Causa: token activo bastaba para llamar a la integracion mientras no estuviera revocado.
+- Solucion: expiracion por defecto 90 dias, scopes por endpoint, rotacion, bloqueo de expirados, ultimo uso/IP y notificaciones admin por anomalias simples.
+- Verificacion: tests focalizados de token expirado/default de expiracion y middleware incluidos en 59/59 OK.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado 2026-06-30 - Suite completa backend no verde por deuda mixta
+
+- Contexto: tras el hardening se ejecuto `dotnet test` completo desde `C:\tmp`.
+- Resultado: 306 tests OK, 5 fallos.
+- Fallos observados: Configuracion/OpenRouter con modelo desconocido, MFA remember-device default, ranking IA sensible a fecha actual y dos pruebas PostgreSQL/Testcontainers con Docker no disponible.
+- Solucion 2026-06-30: se corrigieron los tres fallos no Docker y se confirmo suite sin Testcontainers 315/315 OK.
+- Estado: cerrado como bug mixto original. El bloqueo restante de Docker/Testcontainers queda abierto en entrada separada.
+
+### 2026-06-29 - V-02-02 - Cerrado 2026-06-30 - QA visual completa de nuevos flujos pendiente
+
+- Contexto: se valido build/lint/TypeScript, pero no se completo navegador para importacion, historial de lote, conciliacion, OpenClaw tokens, mobile alertas y modos de Extractos.
+- Solucion 2026-06-30: QA Playwright finita con Chrome local cubrio todos esos flujos sin errores de consola.
 - Estado: cerrado.

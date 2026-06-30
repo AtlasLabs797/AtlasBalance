@@ -8,6 +8,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($Version -notmatch '^V-\d{2}[-.]\d{2}$') {
+    throw "Version invalida '$Version'. Usa formato V-02-02 o V-02.02."
+}
+
+if ($Runtime -ne "win-x64") {
+    throw "Runtime invalido '$Runtime'. La release publicada solo permite win-x64."
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $workspaceRoot = Split-Path -Parent $repoRoot
 $documentationRoot = Join-Path $workspaceRoot "Documentacion"
@@ -18,6 +26,7 @@ $releaseRoot = Join-Path $repoRoot "Atlas Balance Release"
 $packageName = "AtlasBalance-$Version-$Runtime"
 $packageRoot = Join-Path $releaseRoot $packageName
 $frontendBuildDist = Join-Path $releaseRoot ".frontend-dist-$Version-$Runtime"
+$secretScanner = Join-Path $PSScriptRoot "Test-AtlasSecrets.ps1"
 
 function Copy-DirectoryContents {
     param([string]$Source, [string]$Target)
@@ -105,6 +114,11 @@ if (-not (Test-Path $apiProject) -or -not (Test-Path $watchdogProject)) {
 
 $dotnetPath = Resolve-DotnetPath
 
+if (Test-Path -LiteralPath $secretScanner) {
+    & $secretScanner -Root $workspaceRoot
+    if (-not $?) { throw "Scanner de secretos Atlas fallo." }
+}
+
 Remove-Item -LiteralPath $packageRoot -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $frontendBuildDist -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
@@ -115,8 +129,18 @@ try {
         throw "package-lock.json es obligatorio para generar releases reproducibles."
     }
 
-    & npm.cmd ci
-    if ($LASTEXITCODE -ne 0) { throw "npm ci fallo." }
+    $nodeModulesPath = Join-Path $frontendPath "node_modules"
+    $typescriptBin = Join-Path $frontendPath "node_modules\.bin\tsc.cmd"
+    if ($CleanNpmInstall -or -not (Test-Path -LiteralPath $nodeModulesPath)) {
+        & npm.cmd ci
+        if ($LASTEXITCODE -ne 0) { throw "npm ci fallo." }
+    } elseif (-not (Test-Path -LiteralPath $typescriptBin)) {
+        Write-Host "node_modules incompleto detectado; reparando dependencias sin limpieza destructiva." -ForegroundColor Yellow
+        & npm.cmd install --ignore-scripts --no-audit --fund=false
+        if ($LASTEXITCODE -ne 0) { throw "npm install fallo." }
+    } else {
+        Write-Host "node_modules existente detectado; omitiendo npm ci. Usa -CleanNpmInstall para reinstalacion limpia." -ForegroundColor Yellow
+    }
 
     & npm.cmd exec tsc -- --noEmit
     if ($LASTEXITCODE -ne 0) { throw "tsc --noEmit fallo." }

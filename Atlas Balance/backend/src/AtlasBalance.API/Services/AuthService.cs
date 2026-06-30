@@ -732,6 +732,10 @@ public sealed class AuthService : IAuthService
                 PuedeEliminarLineas = p.PuedeEliminarLineas,
                 PuedeImportar = p.PuedeImportar,
                 PuedeVerDashboard = p.PuedeVerDashboard,
+                PuedeRevisarLineas = p.PuedeRevisarLineas,
+                PuedeAprobarImportaciones = p.PuedeAprobarImportaciones,
+                PuedeConciliar = p.PuedeConciliar,
+                PuedeCerrarConciliacion = p.PuedeCerrarConciliacion,
                 ColumnasVisibles = ParseJsonArray(preferencia?.ColumnasVisibles),
                 ColumnasEditables = ParseJsonArray(preferencia?.ColumnasEditables)
             };
@@ -1045,7 +1049,7 @@ public sealed class AuthService : IAuthService
             .Select(x => x.Valor)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return string.IsNullOrWhiteSpace(value) || !bool.TryParse(value, out var enabled) || enabled;
+        return !string.IsNullOrWhiteSpace(value) && bool.TryParse(value, out var enabled) && enabled;
     }
 
     private async Task<bool> TryUseTrustedMfaDeviceAsync(

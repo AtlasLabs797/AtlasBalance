@@ -1,5 +1,43 @@
 # Log de errores e incidencias
 
+## 2026-06-30 - V-02-02 - Build-Release bloqueado por scanner OK con `$LASTEXITCODE` sucio y `npm ci` destructivo
+
+- Contexto: validacion local de empaquetado V-02-02 con `Build-Release.ps1 -AllowUnsignedLocal`.
+- Incidencias:
+  - El scanner Atlas imprimia `Scanner Atlas sin hallazgos`, pero `Build-Release.ps1` fallaba porque miraba `$LASTEXITCODE` heredado.
+  - `npm ci` fallo con `EPERM` al intentar borrar `frontend\node_modules\.vite-temp`.
+  - El intento fallido dejo `node_modules` incompleto y faltaba `node_modules\.bin\tsc.cmd`.
+- Solucion:
+  - `Build-Release.ps1` comprueba el scanner con `$?`.
+  - `npm ci` queda limitado a `-CleanNpmInstall` o ausencia de `node_modules`.
+  - Si `node_modules` existe pero esta incompleto, el script repara con `npm install --ignore-scripts --no-audit --fund=false`.
+- Verificacion: empaquetado local unsigned OK; `AtlasBalance-V-02-02-win-x64.zip` generado. No se genera `.sig` sin clave privada.
+
+## 2026-06-30 - V-02-02 - Docker/Testcontainers no disponible en cierre de hardening, resuelto
+
+- Contexto: validacion final backend posterior a correcciones V-02-02.
+- Incidencia inicial: `dotnet test` completo quedaba en 315/317; fallaban solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests`.
+- Causa observada: Docker Desktop estaba detenido y, una vez arrancado, el usuario normal recibia `permission denied` contra los pipes. Docker CLI elevado funciona con `npipe:////./pipe/dockerDesktopLinuxEngine`, pero Docker.DotNet/Testcontainers exige `npipe://./pipe/dockerDesktopLinuxEngine`.
+- Solucion: arrancar Docker Desktop y ejecutar las pruebas en contexto elevado con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+- Verificacion: pruebas Testcontainers 2/2 OK y suite backend completa 317/317 OK.
+
+## 2026-06-30 - V-02-02 - Browser in-app no usable para QA visual completa
+
+- Contexto: QA de `/importacion`, historial de lote, `/conciliacion`, tokens OpenClaw, `Extractos` y mobile alertas.
+- Incidencias:
+  - Browser in-app fallo esperando attach del webview.
+  - La ruta `file://` del build fue bloqueada por politica de la herramienta.
+  - El intento con localhost mock hizo timeout y reseteo el runtime.
+- Decision: se corto Browser tras intentos suficientes y se uso Playwright finito con Chrome local, build Vite temporal y servidor/API mock cerrados en el mismo proceso.
+- Verificacion: QA Playwright OK, consola sin errores, capturas en `qa-artifacts/atlas-v0202-qa-*.png`.
+
+## 2026-06-30 - V-02-02 - NuGet vulnerable bloqueado por `global.json` desde repo
+
+- Contexto: ejecucion de `dotnet list package --vulnerable --include-transitive`.
+- Incidencia: desde la raiz del repo falla porque `global.json` pide SDK `8.0.419` y la maquina tiene `8.0.421`.
+- Solucion: ejecutar desde `C:\tmp` apuntando al `.csproj` absoluto.
+- Verificacion: NuGet vulnerable OK, sin paquetes vulnerables.
+
 ## 2026-06-27 - V-02-02 - Vite `server.fs.deny` vulnerable y `package-lock` bloqueado por EPERM
 
 - Contexto: remediacion de `GHSA-fx2h-pf6j-xcff` / `CVE-2026-53571` en Vite y validacion SCA npm.
@@ -1988,3 +2026,34 @@
   - `npm.cmd exec tsc -- --noEmit`: OK.
   - Build temporal fuera del sandbox: OK.
   - QA Playwright con Chrome local: capturas desktop/mobile, consola sin errores y sin overflow horizontal.
+
+## 2026-06-29 - V-02-02 - Scanner Atlas encallado por recorrido demasiado amplio
+
+- Contexto: durante el hardening financiero se agrego `scripts/Test-AtlasSecrets.ps1` y se ejecuto contra el workspace local.
+- Incidencia: los dos primeros recorridos tardaron demasiado porque `Get-ChildItem -Recurse` entraba en arboles pesados antes de que los filtros excluyeran artefactos.
+- Solucion: se corto el proceso encallado, se cambio a recorrido manual que evita directorios excluidos antes de descender y se limito la lista positiva a workflows, backend, frontend, scripts y documentacion versionable.
+- Ajuste adicional: el scanner exige valores plausibles, no simples prefijos de token ni placeholders.
+- Verificacion: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Atlas Balance\scripts\Test-AtlasSecrets.ps1"` OK, sin hallazgos.
+
+## 2026-06-29 - V-02-02 - Build Vite temporal requiere ejecucion fuera del sandbox
+
+- Contexto: validacion frontend posterior a cambios en importacion, conciliacion, OpenClaw y select nativo.
+- Incidencia: Vite/Rolldown ya habia fallado en sandbox con `EPERM` al usar salida temporal. Es una incidencia conocida del proyecto.
+- Solucion: no se reintento dentro del sandbox; se ejecuto build finito fuera del sandbox con `--outDir C:\tmp\atlas-balance-vite-v0202`.
+- Verificacion: build OK.
+
+## 2026-06-29 - V-02-02 - Suite completa backend sigue bloqueada para release
+
+- Contexto: se ejecuto suite completa tras el hardening.
+- Resultado: 306 tests pasaron y 5 fallaron.
+- Fallos: deuda preexistente/sensible a fecha en Configuracion/OpenRouter, MFA remember-device default y ranking IA; dos pruebas PostgreSQL/Testcontainers fallan porque Docker no esta disponible/configurado.
+- Decision inicial: se valido el cambio con build backend y tests focalizados impactados 59/59 OK, pero no se declaro release verde.
+- Actualizacion 2026-06-30: la deuda no Docker quedo corregida y validada; despues se arranco Docker Desktop y la suite completa paso 317/317 con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+- Pendiente: ninguno en este gate.
+
+## 2026-06-29 - V-02-02 - QA visual completa pendiente, cerrada 2026-06-30
+
+- Contexto: el plan pedia Browser/Playwright para importacion, historial de lote, conciliacion, OpenClaw tokens, mobile alertas y Extractos revision/edicion.
+- Resultado inicial: no se completo QA visual de esos flujos en esta pasada. Si se firmaba release sin esto, se asumia riesgo UI.
+- Actualizacion 2026-06-30: QA Playwright finita con Chrome local cubrio esos flujos sin errores de consola. Capturas en `qa-artifacts/atlas-v0202-qa-*.png`.
+- Decision: cerrado como pendiente de UI; Browser in-app queda registrado aparte como incidencia de herramienta.

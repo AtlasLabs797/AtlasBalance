@@ -11,6 +11,7 @@ public interface IIntegrationTokenService
     string GeneratePlainToken();
     string ComputeSha256(string value);
     Task<IntegrationToken?> ValidateActiveTokenAsync(string? plainToken, CancellationToken cancellationToken);
+    DateTime? ResolveExpiration(DateTime? requestedExpiration, bool noExpirationConfirmed);
     Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken);
 }
 
@@ -55,8 +56,21 @@ public sealed class IntegrationTokenService : IIntegrationTokenService
             .FirstOrDefaultAsync(x =>
                 x.TokenHash == tokenHash &&
                 x.Estado == EstadoTokenIntegracion.Activo &&
+                (x.FechaExpiracion == null || x.FechaExpiracion > _clock.UtcNow) &&
                 x.DeletedAt == null,
                 cancellationToken);
+    }
+
+    public DateTime? ResolveExpiration(DateTime? requestedExpiration, bool noExpirationConfirmed)
+    {
+        if (requestedExpiration.HasValue)
+        {
+            return requestedExpiration.Value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(requestedExpiration.Value, DateTimeKind.Utc)
+                : requestedExpiration.Value.ToUniversalTime();
+        }
+
+        return noExpirationConfirmed ? null : _clock.UtcNow.AddDays(90);
     }
 
     public async Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)

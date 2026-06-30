@@ -8,6 +8,55 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-06-30 - V-02-02 - Cierre de validacion post-hardening
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se corrigieron los tres fallos backend no dependientes de Docker detectados tras el hardening:
+  - configuracion global IA/OpenRouter ya no persiste modelos desconocidos como `random/expensive-model`; cae a `openrouter/auto` salvo modelos sugeridos permitidos;
+  - MFA trusted-device queda fail-closed: si falta o es invalida la configuracion `mfa_remember_device_enabled`, no se permite recordar dispositivo;
+  - el test determinista IA de scope por cuenta ahora declara permiso real en BD, alineado con `UserAccessService`.
+- Se valido visualmente V-02-02 con Playwright finito, Chrome local, build Vite temporal y API mock cerrada en el mismo proceso.
+- Browser in-app se intento primero, pero fallo por timeout de attach, bloqueo de `file://` y timeout/reset al probar localhost; se corto la via y se uso Playwright, como indican las reglas del proyecto.
+
+**Archivos tocados en esta pasada:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-02-02.md`
+
+**Comandos ejecutados y verificacion:**
+- `dotnet test ... --filter "FullyQualifiedName~ConfiguracionControllerTests|FullyQualifiedName~AtlasAiServiceTests|FullyQualifiedName~AuthServiceTests"` desde `C:\tmp`: 101/101 OK.
+- `dotnet test ... --filter "FullyQualifiedName!~RowLevelSecurityTests&FullyQualifiedName!~ExtractosConcurrencyTests"` desde `C:\tmp`: 315/315 OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --no-restore`: primer intento 315 OK y 2 fallos por endpoint Docker/Testcontainers no configurado.
+- Docker Desktop se pudo arrancar. Las pruebas Testcontainers requieren contexto elevado y `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+- `dotnet test ... --filter "FullyQualifiedName~RowLevelSecurityTests|FullyQualifiedName~ExtractosConcurrencyTests"` con Docker operativo: 2/2 OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --no-restore` con Docker operativo: 317/317 OK.
+- `Build-Release.ps1 -Version V-02-02 -Runtime win-x64 -AllowUnsignedLocal`: OK; genera ZIP local unsigned para validar empaquetado. No genera `.sig` y no debe publicarse sin `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+- ZIP local generado: `Atlas Balance/Atlas Balance Release/AtlasBalance-V-02-02-win-x64.zip`, SHA-256 `1EC70A4B0BC61544CF4D218B7F17724BB1CBD349AC7C60528CBB0D20D9580490`.
+- Revalidacion tras reparar `node_modules`: `package.json`/`package-lock.json` sin cambios y `npm audit --audit-level=moderate` OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build -- --outDir C:\tmp\atlas-balance-vite-v0202-final --emptyOutDir`: OK fuera del sandbox.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Atlas Balance\scripts\Test-AtlasSecrets.ps1"`: OK, sin hallazgos.
+- `npm.cmd audit --audit-level=moderate`: OK, `found 0 vulnerabilities`.
+- `dotnet list ... package --vulnerable --include-transitive` desde `C:\tmp`: OK, sin paquetes vulnerables.
+- `git diff --check`: OK; solo avisos de finales de linea.
+- QA Playwright final: dashboard CTAs, importacion por lote con advertencias desmarcadas, historial de lote, conciliacion, OpenClaw tokens/rotacion, Extractos revision/edicion y mobile alertas OK, consola sin errores.
+- Capturas QA: `qa-artifacts/atlas-v0202-qa-dashboard.png`, `qa-artifacts/atlas-v0202-qa-importacion.png`, `qa-artifacts/atlas-v0202-qa-conciliacion.png`, `qa-artifacts/atlas-v0202-qa-openclaw.png`, `qa-artifacts/atlas-v0202-qa-extractos.png`, `qa-artifacts/atlas-v0202-qa-mobile-dashboard.png`.
+
+**Pendiente real:**
+- Ninguno para esta validacion. La suite completa backend, frontend, seguridad y QA visual quedan verdes. Nota operativa: en esta maquina Testcontainers necesita Docker Desktop arrancado y `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine` en contexto elevado.
+- Para publicar release firmada, usar GitHub Actions con environment `release-signing` o ejecutar localmente con `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` fuera del repo. El ZIP unsigned local es solo evidencia de empaquetado.
+
+---
 ## 2026-06-27 - V-02-02 - Cierre de vulnerabilidades npm y hardening del dev server
 
 **Version:** V-02-02
@@ -274,6 +323,41 @@ Regla de trabajo desde ahora:
 
 **Pendientes:**
 - Ninguno para esta correccion.
+
+## 2026-06-29 - Hardening financiero y UX post-reporte
+
+**Version:** V-02-02
+
+**Trabajo realizado:**
+- Se movio la configuracion local real de desarrollo de API a `%APPDATA%\AtlasBalance\dev-secrets\AtlasBalance.API.Development.json`. El repo conserva plantillas, no valores.
+- API y Watchdog cargan secretos externos solo en Development, sin imprimirlos.
+- `Build-Release.ps1`, CI y release workflow validan version `^V-\d{2}[-.]\d{2}$`, fijan `V-02-02`, limitan runtime a `win-x64`, usan `environment: release-signing` y ejecutan `Test-AtlasSecrets.ps1`.
+- Importacion queda formalizada por lotes con evidencia original en BD, SHA-256, mapeo, resumen, filas, confirmacion, reversion y enlace de extractos al lote.
+- Conciliacion agrega libro esperado interno, matching determinista, estados `pendiente/sugerida/conciliada/excepcion/resuelta` y pantalla `/conciliacion`.
+- Permisos nuevos: `puede_revisar_lineas`, `puede_aprobar_importaciones`, `puede_conciliar`, `puede_cerrar_conciliacion`.
+- Maker-checker queda como aviso auditado y notificacion admin cuando el mismo usuario crea/importa y aprueba/cierra.
+- OpenClaw incorpora expiracion por defecto de 90 dias, scopes por endpoint, rotacion, bloqueo de expirados, ultimo uso/IP y notificaciones ante rate limit o nueva IP.
+- UI: `/importacion` pasa a tabs `Nueva/Historial/Lote`, `Extractos` separa `Revision` y `Edicion avanzada`, `AppSelect` usa `<select>` nativo estilizado, dashboard agrega CTAs e `Alertas` gana prioridad en mobile cuando hay alertas activas.
+
+**Archivos principales tocados:**
+- Backend: entidades, `AppDbContext`, servicios/controladores de importacion, conciliacion, integraciones, usuarios, permisos y migracion `20260629090000_FinancialHardeningV0202`.
+- Frontend: `ImportacionPage`, `ConciliacionPage`, `ExtractosPage`, `DashboardPage`, Configuracion/OpenClaw, `AppSelect`, navegacion y CSS de layout.
+- Release/seguridad: `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `scripts/Build-Release.ps1`, `scripts/Test-AtlasSecrets.ps1`.
+
+**Comandos ejecutados y verificacion:**
+- `dotnet build AtlasBalance.API.Tests.csproj --no-restore -c Debug` desde `C:\tmp`: OK.
+- `dotnet test AtlasBalance.API.Tests.csproj --no-restore -c Debug --filter "FullyQualifiedName~ImportacionServiceTests|FullyQualifiedName~IntegrationTokenServiceTests|FullyQualifiedName~ConciliacionServiceTests|FullyQualifiedName~IntegrationAuthMiddlewareTests"`: 59/59 OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build -- --outDir C:\tmp\atlas-balance-vite-v0202`: OK fuera del sandbox por bloqueo Vite/EPERM conocido.
+- `powershell.exe -File Atlas Balance\scripts\Test-AtlasSecrets.ps1`: OK, sin hallazgos.
+- `npm audit --audit-level=moderate`: OK, 0 vulnerabilidades.
+- `dotnet list package --vulnerable --include-transitive`: OK para API, Watchdog y tests.
+
+**Bloqueos y pendientes:**
+- Estado inicial del 2026-06-29: `dotnet test` completo no quedo verde; 306 tests pasaron y 5 fallaron.
+- Estado actualizado el 2026-06-30: los tres fallos no Docker quedaron corregidos, la suite sin Testcontainers queda 315/315 OK y la QA visual completa de nuevos flujos queda OK.
+- Estado final del 2026-06-30: Docker Desktop arranco, Testcontainers se ejecuto con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine` en contexto elevado y la suite completa queda 317/317 OK.
 
 ---
 ## 2026-06-26 - V-02-02 - Dashboard principal muestra ingresos y egresos en la grafica

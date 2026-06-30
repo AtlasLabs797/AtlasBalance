@@ -491,6 +491,13 @@ public class AtlasAiServiceTests
         db.Cuentas.AddRange(
             new Cuenta { Id = allowedCuentaId, TitularId = titularId, Nombre = "Cuenta Permitida", Divisa = "ARS", Activa = true },
             new Cuenta { Id = hiddenCuentaId, TitularId = titularId, Nombre = "Cuenta Oculta", Divisa = "ARS", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = allowedCuentaId,
+            PuedeVerCuentas = true
+        });
         db.Extractos.AddRange(
             new Extracto { Id = Guid.NewGuid(), CuentaId = allowedCuentaId, Fecha = today, Concepto = "Gasto permitido", Monto = -100m, Saldo = 900m, FilaNumero = 1 },
             new Extracto { Id = Guid.NewGuid(), CuentaId = hiddenCuentaId, Fecha = today, Concepto = "Gasto oculto", Monto = -9999m, Saldo = 1m, FilaNumero = 1 });

@@ -96,9 +96,29 @@ public sealed class IntegrationAuthMiddleware
         ClearInvalidAuthFailures(context);
         context.Items[IntegrationHttpContextItemKeys.CurrentIntegrationToken] = integrationToken;
 
+        if (!TokenAllowsEndpoint(integrationToken, context.Request.Path))
+        {
+            await SaveIntegrationAuditAsync(
+                dbContext,
+                integrationToken.Id,
+                context,
+                StatusCodes.Status403Forbidden,
+                0,
+                null,
+                _clock.UtcNow);
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("FORBIDDEN: El token no tiene scope para este endpoint"));
+            return;
+        }
+
         var limit = await ResolveRateLimitAsync(dbContext, CancellationToken.None);
         if (!TryConsumeRateLimit(integrationToken.Id, limit))
         {
+            AddAdminNotification(
+                dbContext,
+                "integration_rate_limit",
+                "Token OpenClaw bloqueado por rate limit.",
+                new { token_id = integrationToken.Id, endpoint = context.Request.Path.Value, limit });
             await SaveIntegrationAuditAsync(
                 dbContext,
                 integrationToken.Id,
@@ -128,6 +148,27 @@ public sealed class IntegrationAuthMiddleware
         {
             stopwatch.Stop();
             integrationToken.FechaUltimaUso = _clock.UtcNow;
+            var remoteIp = context.Connection.RemoteIpAddress?.ToString();
+            if (!string.IsNullOrWhiteSpace(remoteIp) &&
+                !string.Equals(integrationToken.LastUsedIpAddress, remoteIp, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(integrationToken.LastUsedIpAddress))
+                {
+                    AddAdminNotification(
+                        dbContext,
+                        "integration_new_origin",
+                        "Token OpenClaw usado desde un nuevo origen/IP.",
+                        new
+                        {
+                            token_id = integrationToken.Id,
+                            previous_ip = integrationToken.LastUsedIpAddress,
+                            new_ip = remoteIp,
+                            endpoint = context.Request.Path.Value
+                        });
+                }
+
+                integrationToken.LastUsedIpAddress = remoteIp;
+            }
 
             var statusCode = caught is null
                 ? context.Response.StatusCode
@@ -173,6 +214,72 @@ public sealed class IntegrationAuthMiddleware
         });
 
         await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    private static bool TokenAllowsEndpoint(IntegrationToken token, PathString path)
+    {
+        var scopes = ParseEndpointScopes(token.EndpointScopesJson);
+        if (scopes.Count == 0)
+        {
+            return true;
+        }
+
+        var endpoint = ResolveEndpointScope(path);
+        return endpoint is null || scopes.Contains(endpoint, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string? ResolveEndpointScope(PathString path)
+    {
+        var value = path.Value;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        const string prefix = "/api/integration/openclaw/";
+        if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var tail = value[prefix.Length..].Trim('/');
+        var firstSegment = tail.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(firstSegment))
+        {
+            return null;
+        }
+
+        var normalized = firstSegment.ToLowerInvariant();
+        return normalized == "grafica-evolucion" ? "evolucion" : normalized;
+    }
+
+    private static IReadOnlyList<string> ParseEndpointScopes(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(rawJson) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static void AddAdminNotification(AppDbContext dbContext, string tipo, string mensaje, object details)
+    {
+        dbContext.NotificacionesAdmin.Add(new NotificacionAdmin
+        {
+            Id = Guid.NewGuid(),
+            Tipo = tipo,
+            Mensaje = mensaje,
+            Fecha = DateTime.UtcNow,
+            DetallesJson = JsonSerializer.Serialize(details)
+        });
     }
 
     private static string? ExtractBearerToken(string authHeader)

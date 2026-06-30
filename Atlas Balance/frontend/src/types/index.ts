@@ -173,6 +173,10 @@ export interface PermisoUsuario {
   puede_eliminar_lineas: boolean;
   puede_importar: boolean;
   puede_ver_dashboard: boolean;
+  puede_revisar_lineas: boolean;
+  puede_aprobar_importaciones: boolean;
+  puede_conciliar: boolean;
+  puede_cerrar_conciliacion: boolean;
   columnas_visibles: string[] | null;
   columnas_editables: string[] | null;
 }
@@ -619,8 +623,12 @@ export interface IntegrationTokenListItem {
   permiso_lectura: boolean;
   permiso_escritura: boolean;
   fecha_creacion: string;
+  fecha_expiracion: string | null;
   fecha_ultima_uso: string | null;
   fecha_revocacion: string | null;
+  rotated_from_token_id: string | null;
+  scopes: string[];
+  last_used_ip_address: string | null;
   usuario_creador_id: string;
   deleted_at: string | null;
 }
@@ -635,6 +643,9 @@ export interface CreateIntegrationTokenRequest {
   descripcion?: string;
   permiso_lectura: boolean;
   permiso_escritura: boolean;
+  fecha_expiracion?: string | null;
+  sin_expiracion_confirmada?: boolean;
+  scopes: string[];
   permisos: Array<{
     titular_id: string | null;
     cuenta_id: string | null;
@@ -648,6 +659,7 @@ export interface SaveIntegrationTokenRequest extends CreateIntegrationTokenReque
 export interface CreateIntegrationTokenResponse {
   token: IntegrationTokenDetail;
   token_plano: string;
+  advertencias: string[];
 }
 
 export interface IntegrationTokenMetrics {
@@ -866,11 +878,95 @@ export interface ImportContextoResponse {
 export interface ImportConfirmResult {
   filas_procesadas: number;
   filas_importadas: number;
+  filas_duplicadas: number;
   filas_con_error: number;
   errores: {
     fila_indice: number;
     mensajes: string[];
   }[];
+  advertencias: string[];
+}
+
+export interface ImportacionLote {
+  id: string;
+  cuenta_id: string;
+  cuenta_nombre: string | null;
+  usuario_creador_id: string;
+  tipo_origen: 'PEGADO' | 'ARCHIVO' | string;
+  nombre_archivo: string | null;
+  tamanio_bytes: number;
+  sha256: string;
+  separador: string;
+  lote_hash: string;
+  estado: string;
+  filas_total: number;
+  filas_validas: number;
+  filas_error: number;
+  filas_advertencia: number;
+  advertencias_aceptadas: boolean;
+  fecha_creacion: string;
+  fecha_confirmacion: string | null;
+  confirmado_por_id: string | null;
+  fecha_reversion: string | null;
+  revertido_por_id: string | null;
+}
+
+export interface ImportacionLoteFila extends ImportRowResult {
+  id: string;
+  lote_id: string;
+  seleccionada_default: boolean;
+  estado: string;
+  fingerprint: string | null;
+}
+
+export interface ImportacionLoteDetalle {
+  lote: ImportacionLote;
+  mapeo: ImportMapColumns;
+  validacion: ImportValidationResult;
+}
+
+export interface MovimientoEsperado {
+  id: string;
+  cuenta_id: string;
+  cuenta_nombre: string | null;
+  fecha_esperada: string;
+  monto: number;
+  divisa: string;
+  referencia: string | null;
+  concepto: string | null;
+  estado: string;
+  origen: string;
+  usuario_creacion_id: string | null;
+  fecha_creacion: string;
+}
+
+export interface ExtractoConciliacion {
+  id: string;
+  fecha: string;
+  concepto: string | null;
+  monto: number;
+  saldo: number;
+  fila_numero: number;
+}
+
+export interface Conciliacion {
+  id: string;
+  cuenta_id: string;
+  cuenta_nombre: string | null;
+  movimiento_esperado_id: string;
+  extracto_id: string | null;
+  estado: string;
+  score: number;
+  regla: string;
+  diferencia_dias: number;
+  referencia_normalizada: string | null;
+  concepto_normalizado: string | null;
+  observacion: string | null;
+  fecha_creacion: string;
+  fecha_confirmacion: string | null;
+  fecha_resolucion: string | null;
+  movimiento_esperado: MovimientoEsperado | null;
+  extracto: ExtractoConciliacion | null;
 }
 
 export interface ImportPlazoFijoMovimientoResult {

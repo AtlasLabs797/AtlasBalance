@@ -5,6 +5,8 @@ import { TokenPermissionsEditor, type TokenPermisoDraft } from '@/components/int
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
+const OPENCLAW_SCOPES = ['titulares', 'saldos', 'extractos', 'evolucion', 'alertas', 'auditoria'] as const;
+
 interface CatalogoPermisos {
   paises: Array<{ id: string; nombre: string }>;
   titulares: Array<{ id: string; nombre: string }>;
@@ -26,6 +28,9 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   const [tokenDescripcion, setTokenDescripcion] = useState('');
   const [tokenLectura, setTokenLectura] = useState(true);
   const [tokenEscritura, setTokenEscritura] = useState(false);
+  const [tokenExpiracion, setTokenExpiracion] = useState('');
+  const [sinExpiracion, setSinExpiracion] = useState(false);
+  const [tokenScopes, setTokenScopes] = useState<string[]>([...OPENCLAW_SCOPES]);
   const [tokenPermisos, setTokenPermisos] = useState<TokenPermisoDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const formErrorId = useId();
@@ -80,12 +85,18 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
         descripcion: tokenDescripcion.trim() || null,
         permiso_lectura: tokenLectura,
         permiso_escritura: tokenEscritura,
+        fecha_expiracion: sinExpiracion || !tokenExpiracion ? null : `${tokenExpiracion}T23:59:59.000Z`,
+        sin_expiracion_confirmada: sinExpiracion,
+        scopes: tokenScopes,
         permisos: tokenPermisos,
       });
       setTokenNombre('');
       setTokenDescripcion('');
       setTokenLectura(true);
       setTokenEscritura(false);
+      setTokenExpiracion('');
+      setSinExpiracion(false);
+      setTokenScopes([...OPENCLAW_SCOPES]);
       setTokenPermisos([]);
       closeModal();
       onCreated(data.token_plano);
@@ -128,6 +139,44 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
             <label><input type="checkbox" checked={tokenLectura} onChange={(event) => setTokenLectura(event.target.checked)} /> Lectura</label>
             <label><input type="checkbox" checked={tokenEscritura} onChange={(event) => setTokenEscritura(event.target.checked)} /> Escritura</label>
           </div>
+          <div className="config-grid-3">
+            <label>
+              Expira el
+              <input
+                type="date"
+                value={tokenExpiracion}
+                disabled={sinExpiracion}
+                onChange={(event) => setTokenExpiracion(event.target.value)}
+              />
+            </label>
+            <label className="users-check-row">
+              <input
+                type="checkbox"
+                checked={sinExpiracion}
+                onChange={(event) => setSinExpiracion(event.target.checked)}
+              />
+              Sin expiracion
+            </label>
+            <p className="import-muted">Si no eliges fecha, la API usa 90 dias.</p>
+          </div>
+          <fieldset className="config-token-scopes">
+            <legend>Scopes OpenClaw</legend>
+            {OPENCLAW_SCOPES.map((scope) => (
+              <label key={scope}>
+                <input
+                  type="checkbox"
+                  checked={tokenScopes.includes(scope)}
+                  onChange={(event) => {
+                    setTokenScopes((current) =>
+                      event.target.checked
+                        ? [...new Set([...current, scope])]
+                        : current.filter((item) => item !== scope));
+                  }}
+                />
+                {scope}
+              </label>
+            ))}
+          </fieldset>
           <TokenPermissionsEditor permisos={tokenPermisos} onChange={setTokenPermisos} catalogos={catalogos} />
           <div className="import-actions">
             <button type="button" className="button-secondary" onClick={closeModal} disabled={busy || submitting}>Cancelar</button>

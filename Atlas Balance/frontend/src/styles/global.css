@@ -911,6 +911,7 @@ th {
 
 .app-select-native-wrap {
   position: relative;
+  display: block;
   min-width: 0;
 }
 
@@ -919,6 +920,18 @@ th {
   appearance: none;
   background-image: none;
   padding-right: calc(var(--space-3) * 2 + 0.9rem);
+}
+
+.app-select-native-wrap > .app-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  transform: translateY(-62%) rotate(45deg);
+  pointer-events: none;
+}
+
+.app-select-native:focus-visible + .app-select-chevron {
+  opacity: 1;
 }
 
 .app-select-chevron--native {

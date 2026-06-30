@@ -19,6 +19,7 @@ using System.Security.Cryptography;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+AddExternalDevelopmentSecrets(builder.Configuration, builder.Environment, "AtlasBalance.API.Development.json");
 
 builder.Host.UseWindowsService();
 
@@ -211,6 +212,7 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<ITiposCambioService, TiposCambioService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IImportacionService, ImportacionService>();
+builder.Services.AddScoped<IConciliacionService, ConciliacionService>();
 builder.Services.AddScoped<IUserAccessService, UserAccessService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
@@ -773,6 +775,23 @@ static void RejectUnsafeAllowedHosts(string? allowedHosts)
     {
         throw new InvalidOperationException("AllowedHosts must list explicit host names outside Development.");
     }
+}
+
+static void AddExternalDevelopmentSecrets(IConfigurationBuilder configuration, IWebHostEnvironment environment, string fileName)
+{
+    if (!environment.IsDevelopment())
+    {
+        return;
+    }
+
+    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    if (string.IsNullOrWhiteSpace(appData))
+    {
+        return;
+    }
+
+    var path = Path.Combine(appData, "AtlasBalance", "dev-secrets", fileName);
+    configuration.AddJsonFile(path, optional: true, reloadOnChange: true);
 }
 
 static void ProtectExistingConfigurationSecrets(AppDbContext dbContext, ISecretProtector secretProtector)

@@ -18,6 +18,8 @@ public class AppDbContext : DbContext
     public DbSet<PlazoFijo> PlazosFijos => Set<PlazoFijo>();
     public DbSet<FormatoImportacion> FormatosImportacion => Set<FormatoImportacion>();
     public DbSet<Extracto> Extractos => Set<Extracto>();
+    public DbSet<ImportacionLote> ImportacionLotes => Set<ImportacionLote>();
+    public DbSet<ImportacionLoteFila> ImportacionLoteFilas => Set<ImportacionLoteFila>();
     public DbSet<ExtractoColumnaExtra> ExtractosColumnasExtra => Set<ExtractoColumnaExtra>();
     public DbSet<RevisionExtractoEstado> RevisionExtractoEstados => Set<RevisionExtractoEstado>();
     public DbSet<PermisoUsuario> PermisosUsuario => Set<PermisoUsuario>();
@@ -30,6 +32,8 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationPermission> IntegrationPermissions => Set<IntegrationPermission>();
     public DbSet<AuditoriaIntegracion> AuditoriaIntegraciones => Set<AuditoriaIntegracion>();
     public DbSet<TipoCambio> TiposCambio => Set<TipoCambio>();
+    public DbSet<MovimientoEsperado> MovimientosEsperados => Set<MovimientoEsperado>();
+    public DbSet<Conciliacion> Conciliaciones => Set<Conciliacion>();
     public DbSet<DivisaActiva> DivisasActivas => Set<DivisaActiva>();
     public DbSet<Configuracion> Configuraciones => Set<Configuracion>();
     public DbSet<Backup> Backups => Set<Backup>();
@@ -186,17 +190,56 @@ public class AppDbContext : DbContext
                 .HasDatabaseName("ix_extractos_cuenta_id_importacion_fingerprint")
                 .HasFilter("\"importacion_fingerprint\" IS NOT NULL");
             entity.HasIndex(e => e.ImportacionLoteHash);
+            entity.HasIndex(e => e.ImportacionLoteId);
             entity.HasIndex(e => new { e.CuentaId, e.Fecha });
             entity.HasIndex(e => new { e.CuentaId, e.DeletedAt });
             entity.HasIndex(e => e.Fecha);
             entity.HasIndex(e => e.Flagged);
             entity.HasIndex(e => e.Checked);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ImportacionLote>().WithMany().HasForeignKey(e => e.ImportacionLoteId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.CheckedById).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.FlaggedById).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreacionId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ImportacionLote>(entity =>
+        {
+            entity.ToTable("IMPORTACION_LOTES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TipoOrigen).HasMaxLength(16).IsRequired();
+            entity.Property(e => e.NombreArchivo).HasMaxLength(260);
+            entity.Property(e => e.Sha256).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.Separador).HasMaxLength(16).IsRequired();
+            entity.Property(e => e.MapeoJson).HasColumnType("jsonb");
+            entity.Property(e => e.ResumenJson).HasColumnType("jsonb");
+            entity.Property(e => e.LoteHash).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.HasIndex(e => e.CuentaId);
+            entity.HasIndex(e => e.LoteHash);
+            entity.HasIndex(e => e.Sha256);
+            entity.HasIndex(e => e.Estado);
+            entity.HasIndex(e => e.FechaCreacion);
+            entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreadorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.ConfirmadoPorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.RevertidoPorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ImportacionLoteFila>(entity =>
+        {
+            entity.ToTable("IMPORTACION_LOTE_FILAS");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.Property(e => e.DatosJson).HasColumnType("jsonb");
+            entity.Property(e => e.ErroresJson).HasColumnType("jsonb");
+            entity.Property(e => e.AdvertenciasJson).HasColumnType("jsonb");
+            entity.Property(e => e.Fingerprint).HasMaxLength(64);
+            entity.HasIndex(e => new { e.LoteId, e.Indice }).IsUnique();
+            entity.HasIndex(e => e.Fingerprint);
+            entity.HasOne<ImportacionLote>().WithMany().HasForeignKey(e => e.LoteId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ExtractoColumnaExtra>(entity =>
@@ -303,8 +346,12 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.TokenHash).IsUnique();
             entity.HasIndex(e => e.Estado);
+            entity.HasIndex(e => e.FechaExpiracion);
+            entity.HasIndex(e => e.RotatedFromTokenId);
+            entity.Property(e => e.EndpointScopesJson).HasColumnType("jsonb");
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreadorId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<IntegrationToken>().WithMany().HasForeignKey(e => e.RotatedFromTokenId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<IntegrationPermission>(entity =>
@@ -339,6 +386,47 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Tasa).HasPrecision(18, 8);
             entity.HasIndex(e => new { e.DivisaOrigen, e.DivisaDestino }).IsUnique();
+        });
+
+        modelBuilder.Entity<MovimientoEsperado>(entity =>
+        {
+            entity.ToTable("MOVIMIENTOS_ESPERADOS");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Monto).HasPrecision(18, 4);
+            entity.Property(e => e.Divisa).HasMaxLength(8).IsRequired();
+            entity.Property(e => e.Referencia).HasMaxLength(128);
+            entity.Property(e => e.Concepto).HasMaxLength(512);
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.Property(e => e.Origen).HasMaxLength(32).IsRequired();
+            entity.HasIndex(e => new { e.CuentaId, e.Estado });
+            entity.HasIndex(e => new { e.CuentaId, e.FechaEsperada, e.Monto });
+            entity.HasIndex(e => e.Referencia);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Conciliacion>(entity =>
+        {
+            entity.ToTable("CONCILIACIONES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.Property(e => e.Regla).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.ReferenciaNormalizada).HasMaxLength(256);
+            entity.Property(e => e.ConceptoNormalizado).HasMaxLength(512);
+            entity.Property(e => e.Observacion).HasMaxLength(1000);
+            entity.HasIndex(e => new { e.CuentaId, e.Estado });
+            entity.HasIndex(e => e.MovimientoEsperadoId);
+            entity.HasIndex(e => e.ExtractoId);
+            entity.HasIndex(e => new { e.MovimientoEsperadoId, e.ExtractoId }).IsUnique();
+            entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<MovimientoEsperado>().WithMany().HasForeignKey(e => e.MovimientoEsperadoId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioSugerenciaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioConfirmacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioResolucionId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<DivisaActiva>(entity =>
