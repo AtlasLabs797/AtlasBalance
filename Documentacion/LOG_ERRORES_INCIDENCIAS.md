@@ -1,5 +1,16 @@
 # Log de errores e incidencias
 
+## 2026-07-01 - V-02-03 - Render PNG de logo bloqueado por Playwright sin navegador instalado
+
+- Contexto: sustitucion del logo Atlas Balance y regeneracion del PNG fallback desde el SVG.
+- Incidencia: `chromium.launch()` de Playwright fallo porque no existia `chromium_headless_shell` en `%LOCALAPPDATA%\ms-playwright`.
+- Incidencia adicional: build Vite temporal contra `C:\tmp\atlas-balance-logo-v0203` fallo con `EPERM` al crear la carpeta de salida.
+- Causa: dependencia de navegador de Playwright no instalada en esta maquina.
+- Solucion aplicada: usar el ejecutable local de Chrome (`C:\Program Files\Google\Chrome\Application\chrome.exe`) con Playwright y cerrar el proceso al terminar.
+- Solucion adicional: cambiar el build temporal a `.tmp-logo-build` dentro de `frontend` y limpiar esa carpeta tras validar.
+- Verificacion: PNG nuevo generado en `frontend/public/logos/Atlas Balance.png` y copiado a `backend/src/AtlasBalance.API/wwwroot/logos/Atlas Balance.png`; `npm.cmd run lint` OK; build Vite temporal en `.tmp-logo-build` OK.
+- Regla: no descargues navegadores para renderizar un asset si Chrome/Edge local ya existe. Mas instalacion para un PNG es una forma elegante de perder tiempo.
+
 ## 2026-07-01 - V-02-03 - ACL de servicios bloqueados resuelta sin tocar archivos mediante wrappers
 
 - Contexto: `ConciliacionService.cs`, `GoogleDriveBackupService.cs` y `BackupConfigurationService.cs` seguian sin permitir escritura directa.

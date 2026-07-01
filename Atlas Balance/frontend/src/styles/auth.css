@@ -18,6 +18,7 @@
   --auth-accent-hover: #214cad;
   --auth-accent-soft: rgba(40, 91, 217, 0.12);
   --auth-button-text: #ffffff;
+  --auth-logo-color: #285bd9;
   --auth-logo-filter: invert(37%) sepia(83%) saturate(1684%) hue-rotate(214deg) brightness(89%) contrast(94%);
   --auth-tag-bg: rgba(40, 91, 217, 0.10);
   --auth-tag-border: rgba(40, 91, 217, 0.18);
@@ -55,6 +56,7 @@
   --auth-accent-hover: #99b4ff;
   --auth-accent-soft: rgba(130, 164, 255, 0.14);
   --auth-button-text: #07111f;
+  --auth-logo-color: #82a4ff;
   --auth-logo-filter: invert(69%) sepia(94%) saturate(1302%) hue-rotate(194deg) brightness(102%) contrast(103%);
   --auth-tag-bg: rgba(87, 113, 171, 0.28);
   --auth-tag-border: rgba(158, 180, 220, 0.18);
@@ -121,10 +123,13 @@
 }
 
 .auth-logo-image {
+  display: block;
   width: 1.72rem;
   height: 1.72rem;
-  object-fit: contain;
-  filter: var(--auth-logo-filter);
+  flex: 0 0 auto;
+  background: var(--auth-logo-color);
+  mask: url('/logos/Atlas Balance.svg') center / contain no-repeat;
+  -webkit-mask: url('/logos/Atlas Balance.svg') center / contain no-repeat;
 }
 
 .auth-branding {

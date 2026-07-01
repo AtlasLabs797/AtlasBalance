@@ -4496,3 +4496,14 @@ Empaquetado local:
 - `Build-Release.ps1` ya no decide el resultado del scanner de secretos por `$LASTEXITCODE`, porque un `.ps1` exitoso puede dejar ese valor heredado de comandos internos. Usa `$?`.
 - `Build-Release.ps1` usa `npm ci` solo si se pide `-CleanNpmInstall` o falta `node_modules`. Si existe `node_modules` pero esta incompleto, ejecuta `npm install --ignore-scripts --no-audit --fund=false` para reparar sin borrar arboles bloqueados.
 - Validacion local: `Build-Release.ps1 -Version V-02-02 -Runtime win-x64 -AllowUnsignedLocal` genera `AtlasBalance-V-02-02-win-x64.zip`. Al usar `-AllowUnsignedLocal` no genera firma y no es publicable.
+
+## 2026-07-01 - V-02-03 - Logo Atlas Balance
+
+- El activo principal de marca de Atlas Balance pasa a `frontend/public/logos/Atlas Balance.svg`.
+- El SVG usa `fill="currentColor"` y una regla interna `prefers-color-scheme` para funcionar tambien como favicon directo.
+- `LoginPage`, `ChangePasswordPage` y el sidebar renderizan el simbolo como mascara CSS, no como imagen filtrada.
+- `auth.css` define `--auth-logo-color` para claro (`#285bd9`) y oscuro (`#82a4ff`).
+- `frontend/public/logos/Atlas Balance.png` se regenera desde el SVG solo como fallback para `apple-touch-icon` e instalador.
+- La copia de `wwwroot/logos` queda actualizada para ejecuciones servidas por backend.
+
+Esto elimina la dependencia visual del PNG anterior. Usar mascara CSS aqui es la opcion correcta: un filtro sobre un PNG negro parece rapido, pero es deuda visual disfrazada de solucion.

@@ -201,11 +201,7 @@ export default function LoginPage() {
 
       <aside className="auth-brand-panel" aria-label="Atlas Balance">
         <div className="auth-brand-lockup">
-          <img
-            src="/logos/Atlas Balance.png"
-            alt="Atlas Balance"
-            className="auth-logo-image"
-          />
+          <span className="auth-logo-image" aria-hidden="true" />
           <div className="auth-branding">
             <h1>Atlas Balance</h1>
           </div>

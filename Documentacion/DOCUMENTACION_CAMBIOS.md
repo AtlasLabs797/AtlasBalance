@@ -16504,3 +16504,48 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 3. Correr `dotnet build` y `dotnet test` y reportar.
 4. Correr `npm.cmd run lint` + `npm.cmd run build` y sincronizar `wwwroot`.
 5. Abordar H7, H8 y los MEDIUM restantes priorizados.
+
+---
+## 2026-07-01 - V-02-03 - Sustitucion del logo Atlas Balance
+
+**Version:** V-02-03
+
+**Trabajo realizado:**
+- Sustituido el logo anterior de Atlas Balance por el SVG nuevo entregado por el usuario.
+- El logo del login, cambio obligatorio de password y sidebar usa ahora mascara CSS sobre `Atlas Balance.svg`, con color controlado por variables para modo claro y oscuro.
+- El favicon pasa a SVG y el SVG incluye color interno compatible con `prefers-color-scheme`.
+- Regenerado `frontend/public/logos/Atlas Balance.png` con el nuevo simbolo para compatibilidad con apple-touch-icon e instalador.
+- Actualizada la copia runtime en `backend/src/AtlasBalance.API/wwwroot/logos` para que la app servida no conserve el PNG viejo.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/public/logos/Atlas Balance.svg`
+- `Atlas Balance/frontend/public/logos/Atlas Balance.png`
+- `Atlas Balance/frontend/index.html`
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+- `Atlas Balance/frontend/src/pages/ChangePasswordPage.tsx`
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/logos/Atlas Balance.svg`
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/logos/Atlas Balance.png`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-02-03.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados y verificacion:**
+- `Get-Content` sobre instrucciones, version actual, version V-02-03, incidencias y catalogo de skills.
+- `rg` para localizar usos de logos y referencias a `Atlas Balance.png`.
+- Render PNG temporal con Playwright usando Chrome local: OK.
+- Barrido `rg` final: el sidebar/login ya usan `Atlas Balance.svg`; `Atlas Balance.png` queda solo como compatibilidad para apple-touch-icon e instalador.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-logo-v0203 --emptyOutDir`: bloqueado por `EPERM` al crear la carpeta en `C:\tmp`.
+- `npm.cmd exec vite -- build --outDir .tmp-logo-build --emptyOutDir`: OK.
+- Limpieza verificada de `.tmp-logo-build`: OK.
+
+**Decisiones visuales:**
+- Logo monocromo como mascara para respetar el tema real de la UI, no filtros fragiles sobre bitmap.
+- Color claro `#285bd9` y oscuro `#82a4ff`, alineado con los acentos existentes de la pantalla de autenticacion.
+
+**Pendientes:**
+- Ninguno para este cambio de logo.

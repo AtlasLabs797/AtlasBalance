@@ -550,3 +550,9 @@ Un token sin expiracion requiere confirmacion explicita y queda auditado. Es com
 Los secretos reales de desarrollo ya no viven en el repo ni en `Documentacion`. Deben estar en `%APPDATA%\AtlasBalance\dev-secrets`.
 
 No pegues valores de tokens, passwords ni connection strings reales en capturas, tickets, documentos o logs. Si alguien te pide hacerlo, esa persona esta pidiendo crear una incidencia.
+
+## Logo Atlas Balance V-02-03
+
+Atlas Balance usa el nuevo simbolo de marca en login, cambio obligatorio de password, menu lateral, favicon y activos de instalacion.
+
+El logo se adapta automaticamente a modo claro y oscuro. No cambia ningun flujo de uso.
