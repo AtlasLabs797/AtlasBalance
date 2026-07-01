@@ -6,6 +6,7 @@ import { AppSelect } from '@/components/common/AppSelect';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import EditableCell from '@/components/extractos/EditableCell';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import type { Extracto } from '@/types';
 import { formatCurrency, formatDate, getAmountTone } from '@/utils/formatters';
 
@@ -51,6 +52,10 @@ export default function ExtractoTable({
   canEditCell
 }: ExtractoTableProps) {
   const [filters, setFilters] = useState<Record<string, string>>({});
+  // F-NEW-11 (V-02-03): debounce del input para no re-virtualizar
+  // 200 filas en cada pulsacion. 250 ms es suficiente para escritura
+  // natural y mantiene la sensacion de respuesta inmediata.
+  const debouncedFilters = useDebouncedValue(filters, 250);
   const [flagNotes, setFlagNotes] = useState<Record<string, string>>({});
   const [showColumns, setShowColumns] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -87,13 +92,13 @@ export default function ExtractoTable({
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
       return activeColumns.every((column) => {
-        const term = (filters[column] ?? '').trim().toLowerCase();
+        const term = (debouncedFilters[column] ?? '').trim().toLowerCase();
         if (!term) return true;
         const value = getCellValue(row, column);
         return value.toLowerCase().includes(term);
       });
     });
-  }, [rows, filters, activeColumns]);
+  }, [rows, debouncedFilters, activeColumns]);
 
   const headerOffset = density === 'compact' ? 40 : 46;
   const rowVirtualizer = useVirtualizer({

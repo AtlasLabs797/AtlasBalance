@@ -1762,6 +1762,28 @@ public class ImportacionServiceTests
         filas.Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task ValidarAsync_Should_Strip_UTF8_BOM_From_First_Line()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuentaId,
+            RawData = "\uFEFF01/01/2026\tConcepto\t100,00\t100,00\n02/01/2026\tOtro\t200,00\t300,00",
+            Separador = "tab",
+            Mapeo = DefaultMapeo()
+        };
+
+        var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        result.Filas.Should().HaveCount(2);
+        result.Filas.Should().OnlyContain(f => f.Valida);
+        result.Filas[0].Datos["fecha"].Should().Be("01/01/2026");
+    }
+
     private static async Task<(Guid UserId, Guid CuentaId)> SeedImportableCuentaAsync(AppDbContext db)
     {
         var userId = Guid.NewGuid();

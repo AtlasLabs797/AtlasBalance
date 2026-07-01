@@ -93,9 +93,20 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
-        await _stateStore.SetAsync(
-            CreateState("RUNNING", "RESTORE_BACKUP", "Restauracion en progreso"),
-            cancellationToken);
+        // SECURITY (C3, V-02-03): si la escritura del estado falla ANTES
+        // de lanzar la Task.Run, el lock se queda tomado para siempre.
+        // Soltarlo explicitamente para no dejar el Watchdog muerto.
+        try
+        {
+            await _stateStore.SetAsync(
+                CreateState("RUNNING", "RESTORE_BACKUP", "Restauracion en progreso"),
+                cancellationToken);
+        }
+        catch
+        {
+            _operationLock.Release();
+            throw;
+        }
 
         _ = Task.Run(async () =>
         {
@@ -148,9 +159,20 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
-        await _stateStore.SetAsync(
-            CreateState("RUNNING", "UPDATE_APP", "Actualizacion en progreso"),
-            cancellationToken);
+        // SECURITY (C3, V-02-03): si la escritura del estado falla ANTES
+        // de lanzar la Task.Run, el lock se queda tomado para siempre.
+        // Soltarlo explicitamente para no dejar el Watchdog muerto.
+        try
+        {
+            await _stateStore.SetAsync(
+                CreateState("RUNNING", "UPDATE_APP", "Actualizacion en progreso"),
+                cancellationToken);
+        }
+        catch
+        {
+            _operationLock.Release();
+            throw;
+        }
 
         _ = Task.Run(async () =>
         {

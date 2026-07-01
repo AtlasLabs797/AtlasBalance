@@ -1,5 +1,72 @@
 # Documentacion tecnica
 
+## 2026-07-01 - V-02-03 - Wrappers de hardening para servicios bloqueados por ACL
+
+### Que cambio
+
+- `IConciliacionService` apunta ahora a `HardenedConciliacionService`, que delega operaciones normales al servicio original y aplica tolerancia configurable en sugerencias.
+- `IGoogleDriveBackupService` apunta a `HardenedGoogleDriveBackupService`, que verifica el SHA-256 registrado del backup cifrado descargado antes de llamar a la importacion original.
+- `IBackupConfigurationService` apunta a `HardenedBackupConfigurationService`, que asegura `EsSecreto=true` para secretos de backup tras guardar configuracion.
+- Las clases originales quedan registradas como concretas para que los wrappers las usen como delegados internos.
+
+### Verificacion
+
+- Backend build OK.
+- Suite backend completa: 321/321 OK.
+- Frontend lint/build OK.
+
+### Nota tecnica
+
+- Esta aproximacion evita duplicar servicios completos y evita modificar archivos bloqueados por ACL. El punto critico de Google Drive se verifica antes de la importacion real mediante descarga temporal y hash del `.enc` cuando existe checksum local registrado.
+
+## 2026-07-01 - V-02-03 - Correcciones finales aplicables de hardening
+
+### Que cambio
+
+- Las claves sensibles escritas desde `ConfiguracionController` quedan cifradas de forma idempotente y marcadas con `EsSecreto`.
+- La migracion de secretos en arranque marca secretos existentes como `EsSecreto` e incluye `github_update_token`.
+- El cooldown de alertas de saldo bajo pasa a ser por cuenta, evitando que una alerta global silencie otras cuentas. Para compatibilidad, `FechaUltimaAlerta` se respeta si la alerta ya era especifica de esa misma cuenta.
+- Dashboard separa ingresos y egresos por divisa antes de convertir, evitando netear flujos contrarios.
+- Frontend mejora recuperacion de sesion y UX IA: 419/440 fuerzan relogin claro, cambio de password recarga alertas y chat IA permite reintentar la ultima pregunta.
+
+### Verificacion
+
+- Backend build OK.
+- Tests focalizados dashboard/alertas/configuracion: 24/24 OK.
+- Suite backend completa: 320/320 OK.
+- Frontend lint OK.
+- Build Vite temporal OK.
+
+### Limites
+
+- No se pudo editar `ConciliacionService.cs`, `GoogleDriveBackupService.cs` ni `BackupConfigurationService.cs` por ACL local heredada. Los pendientes asociados quedan documentados en incidencias.
+
+## 2026-07-01 - V-02-03 - Hardening backend/frontend y migracion minima
+
+### Que cambio
+
+- `BackupEncryptionService` deja de regenerar silenciosamente claves cifradas corruptas de backups cloud.
+- Los tokens de integracion sin expiracion requieren confirmacion textual exacta `NO_EXPIRAR`.
+- En produccion las cookies auth/CSRF usan prefijo `__Host-atlas-*`; desarrollo conserva nombres legacy.
+- `ImportacionService.ParseRows` elimina BOM UTF-8 inicial (`\uFEFF`) antes de validar filas pegadas.
+- `ConfirmarLoteAsync` marca el lote como `error`, guarda `Notas` y audita si falla la confirmacion interna.
+- `Configuracion.EsSecreto` y `ConfiguracionRepository` preparan el modelo para secretos configurables; el cifrado real queda pendiente.
+- La migracion `20260701115326_V0203_Hardening` es manual y minima: `IMPORTACION_LOTES.notas`, `CONFIGURACION.es_secreto`, indices nuevos y FKs `Restrict`; no crea/elimina `xmin`.
+- Frontend: email recordado en login, filtros de extractos con debounce, cancelacion de auditoria al cerrar modal y telemetria basica de error boundary.
+
+### Verificacion
+
+- Backend build en copia temporal: OK.
+- Backend tests directos en copia temporal: 319/320 OK; unico fallo conocido en dashboard (`252M` esperado vs `204.00M`).
+- Testcontainers focalizado: 2/2 OK.
+- `npm.cmd run lint`: OK.
+- Build Vite con `VITE_BUILD_OUT_DIR` temporal: OK.
+
+### Pendiente tecnico
+
+- Implementar tolerancia configurable de conciliacion cuando `ConciliacionService.cs` no este bloqueado por ACL.
+- Resolver el test time-sensitive de dashboard antes de promocionar la suite completa como verde.
+
 ## 2026-06-27 - V-02-02 - Vite y dependencias npm vulnerables corregidas
 
 ### Que cambio

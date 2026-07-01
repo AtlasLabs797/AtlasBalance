@@ -1,5 +1,53 @@
 # Log de errores e incidencias
 
+## 2026-07-01 - V-02-03 - ACL de servicios bloqueados resuelta sin tocar archivos mediante wrappers
+
+- Contexto: `ConciliacionService.cs`, `GoogleDriveBackupService.cs` y `BackupConfigurationService.cs` seguian sin permitir escritura directa.
+- Decision: no insistir con ACL ni duplicar servicios completos. Se agregaron wrappers registrados en DI:
+  - `HardenedConciliacionService` para tolerancia configurable de conciliacion.
+  - `HardenedGoogleDriveBackupService` para verificacion SHA-256 del `.enc` antes de importacion Google Drive.
+  - `HardenedBackupConfigurationService` para marcar secretos de backup como `EsSecreto`.
+- Verificacion:
+  - Backend build OK.
+  - Suite backend completa: 321/321 OK.
+  - Frontend lint/build OK.
+- Pendiente no bloqueante: limpiar `.bak` con permisos elevados si se quiere dejar el workspace sin basura local.
+
+## 2026-07-01 - V-02-03 - Pendientes no cerrables por ACL en servicios criticos
+
+- Contexto: intento de cerrar todos los pendientes restantes de V-02-03.
+- Incidencias:
+  - `ConciliacionService.cs` sigue rechazando escritura con `FileSystem.writeFile`; bloquea tolerancia configurable de conciliacion.
+  - `GoogleDriveBackupService.cs` rechaza escritura con `FileSystem.writeFile`; bloquea verificacion SHA-256 en importacion desde Google Drive.
+  - `BackupConfigurationService.cs` rechaza escritura con `FileSystem.writeFile`; bloquea marcar `EsSecreto` desde ese writer concreto.
+- Decision:
+  - Se corto la via tras el primer fallo por archivo, siguiendo el protocolo anti-encallamiento.
+  - Se aplicaron solo pendientes en archivos escribibles y se validaron con build/tests/lint/build.
+- Verificacion de lo aplicado:
+  - Backend build OK.
+  - Tests focalizados dashboard/alertas/configuracion: 24/24 OK.
+  - Suite backend completa: 320/320 OK.
+  - Frontend lint/build OK.
+
+## 2026-07-01 - V-02-03 - Validacion backend en workspace bloqueada por ACL y wrapper de tests no fiable
+
+- Contexto: cierre de hardening V-02-03 con migracion, importacion BOM, cookies `__Host-`, tokens sin expiracion y frontend.
+- Incidencias:
+  - `ConciliacionService.cs` no se pudo editar: `FileSystem.writeFile` denegado por ACL heredada.
+  - `.bak` locales de sesiones previas no se pudieron borrar: `FileSystem.remove` denegado.
+  - `atlas-build.ps1 -Action test` fallo con errores masivos falsos de namespaces (`MigrationBuilder`, `DbContext`, `MimeMessage`) por el modo de salida/intermediate path del wrapper.
+  - La suite backend directa quedo 319/320 por el fallo conocido `DashboardServiceTests.GetPrincipalAsync_Should_Aggregate_CurrentBalances_And_PeriodFlows_In_TargetCurrency`: esperaba `252M`, obtuvo `204.00M`.
+- Solucion/decision:
+  - No insistir en editar/borrar rutas bloqueadas; documentar H3 conciliacion pendiente.
+  - Usar el wrapper solo para sincronizar/build y ejecutar `dotnet test` directamente dentro de `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build`.
+  - Mantener la migracion V0203 manual minima para evitar DDL duplicado y no tocar `xmin` como columna ordinaria.
+- Verificacion:
+  - Backend build en copia temporal OK.
+  - Backend suite directa: 319/320 OK, unico fallo dashboard conocido.
+  - Testcontainers focalizado `ExtractosConcurrencyTests|RowLevelSecurityTests`: 2/2 OK con Docker disponible.
+  - Frontend `npm.cmd run lint`: OK.
+  - Frontend build temporal con `VITE_BUILD_OUT_DIR`: OK.
+
 ## 2026-06-30 - V-02-02 - Build-Release bloqueado por scanner OK con `$LASTEXITCODE` sucio y `npm ci` destructivo
 
 - Contexto: validacion local de empaquetado V-02-02 con `Build-Release.ps1 -AllowUnsignedLocal`.

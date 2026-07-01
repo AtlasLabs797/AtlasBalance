@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -39,15 +39,25 @@ function normalizeReturnTo(value: string | null): string | null {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
+  // F-NEW-1 (V-02-03): ProtectedRoute redirige con state.from cuando el usuario
+  // intenta entrar a una ruta protegida sin sesion. Asi, tras hacer login
+  // lo mandamos de vuelta a donde queria ir, no siempre a /dashboard.
+  const stateFrom = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+  const fromReturnTo = stateFrom?.pathname ? `${stateFrom.pathname ?? ''}${stateFrom.search ?? ''}` : null;
+  const returnTo = normalizeReturnTo(searchParams.get('returnTo')) ?? normalizeReturnTo(fromReturnTo);
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
-  const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>();
+  const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>({
+    defaultValues: {
+      email: (typeof window !== 'undefined' ? window.localStorage.getItem('atlas_last_email') ?? '' : ''),
+    },
+  });
   const [error, setError] = useState<string | null>(null);
   const [postUpdateMessage, setPostUpdateMessage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -126,6 +136,17 @@ export default function LoginPage() {
 
   const onSubmit = handleSubmit(async (values) => {
     setError(null);
+    // F-NEW-5 (V-02-03): recordar el email para reducir friccion. Nunca
+    // guardar la contrasena. El localStorage del navegador se mantiene en
+    // sandbox del origen (no se envia al backend).
+    if (typeof window !== 'undefined' && values.email) {
+      try {
+        window.localStorage.setItem('atlas_last_email', values.email);
+      } catch {
+        // Si el storage esta bloqueado (modo privado, etc.) seguimos sin
+        // guardar, no es bloqueante.
+      }
+    }
     try {
       if (mfaChallenge) {
         const { data } = await api.post<LoginResponse>('/auth/mfa/verify', {

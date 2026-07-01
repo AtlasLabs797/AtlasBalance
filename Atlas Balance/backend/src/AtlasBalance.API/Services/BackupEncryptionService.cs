@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Services;
 
+// Modificaciones V-02-03 — ver Documentacion/DOCUMENTACION_CAMBIOS.md.
+// C2: ResolveKeyAsync nunca regenera una clave existente (anti-pérdida de backups cifrados).
+
 public interface IBackupEncryptionService
 {
     Task<EncryptedBackupFile> EncryptAsync(string sourcePath, CancellationToken cancellationToken);
@@ -129,46 +132,63 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
     {
         var row = await _dbContext.Configuraciones
             .FirstOrDefaultAsync(x => x.Clave == "backup_cloud_encryption_key", cancellationToken);
+
+        // SECURITY (C2, V-02-03): si existe una clave previa, se usa SIEMPRE,
+        // aunque parezca corrupta. Regenerar automaticamente destruiria todos
+        // los backups cifrados subidos a la nube con la clave anterior.
+        // La rotacion de claves debe ser una operacion manual y consciente.
         if (row is not null && !string.IsNullOrWhiteSpace(row.Valor))
         {
             var unprotected = _secretProtector.UnprotectFromStorage(row.Valor);
             if (!string.IsNullOrWhiteSpace(unprotected))
             {
+                byte[] key;
                 try
                 {
-                    var key = Convert.FromBase64String(unprotected);
-                    if (key.Length == 32)
-                    {
-                        return key;
-                    }
+                    key = Convert.FromBase64String(unprotected);
                 }
                 catch (FormatException ex)
                 {
-                    _logger.LogWarning(ex, "La clave de cifrado de backups en nube no es Base64 valida.");
+                    _logger.LogError(ex, "La clave de cifrado de backups en nube esta corrupta (no es Base64 valido). NO se regenera para no perder backups cifrados.");
+                    throw new InvalidOperationException(
+                        "La clave de cifrado de backups en nube esta corrupta. NO se regenera automaticamente para no perder backups cifrados. " +
+                        "Intervencion manual requerida: contacte con soporte para recuperar la clave o restaurar desde una copia de seguridad.", ex);
                 }
+
+                if (key.Length != 32)
+                {
+                    _logger.LogError("La clave de cifrado de backups en nube tiene una longitud invalida ({Length} bytes; se requieren 32). NO se regenera para no perder backups cifrados.", key.Length);
+                    throw new InvalidOperationException(
+                        $"La clave de cifrado de backups en nube tiene longitud invalida ({key.Length} bytes; se requieren 32). " +
+                        "NO se regenera automaticamente para no perder backups cifrados. Intervencion manual requerida.");
+                }
+
+                return key;
             }
         }
 
-        var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        // Solo generamos una clave nueva cuando NO existe ninguna previa.
+        // Esto cubre el primer arranque de la aplicacion.
         if (row is null)
         {
+            var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
             _dbContext.Configuraciones.Add(new Configuracion
             {
                 Clave = "backup_cloud_encryption_key",
                 Valor = _secretProtector.ProtectForStorage(generated),
                 Tipo = "string",
-                Descripcion = "Clave de cifrado para copias subidas a nube",
+                Descripcion = "Clave de cifrado para copias subidas a nube (rotacion manual)",
                 FechaModificacion = DateTime.UtcNow
             });
-        }
-        else
-        {
-            row.Valor = _secretProtector.ProtectForStorage(generated);
-            row.FechaModificacion = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return Convert.FromBase64String(generated);
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Convert.FromBase64String(generated);
+        // La fila existe pero no tiene valor util: tampoco sobreescribir.
+        _logger.LogError("La fila backup_cloud_encryption_key existe pero esta vacia o solo contiene espacios en blanco. NO se regenera para no perder backups cifrados.");
+        throw new InvalidOperationException(
+            "La clave de cifrado de backups en nube esta vacia. NO se regenera automaticamente para no perder backups cifrados. " +
+            "Intervencion manual requerida.");
     }
 
     private static byte[] BuildChunkNonce(byte[] baseNonce, ulong counter)

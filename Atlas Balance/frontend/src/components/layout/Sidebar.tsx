@@ -10,7 +10,15 @@ import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useUpdateStore } from '@/stores/updateStore';
 
-const APP_VERSION_LABEL = 'V-02-02';
+// V-02-03: version unica inyectada por Vite desde package.json (appVersion).
+// Antes estaba hardcodeada y se desincronizaba de VERSION / Directory.Build.props.
+// V-02-03 cierre: el reloj se refresca solo al cambiar de pestaña para no
+// molestar a los usuarios que miran la sidebar fijamente.
+const APP_VERSION_LABEL = (
+  (import.meta.env.VITE_APP_VERSION as string | undefined)?.trim()
+  ?? (import.meta.env.PACKAGE_VERSION as string | undefined)?.trim()
+  ?? 'desarrollo'
+);
 
 function formatSidebarClock(value: Date) {
   return new Intl.DateTimeFormat('es-ES', {

@@ -333,20 +333,24 @@ public sealed class ConfiguracionController : ControllerBase
         Guid? userId,
         DateTime now)
     {
+        var esSecreto = IsSensitiveConfigKey(key);
+        var storedValue = esSecreto ? _secretProtector.ProtectForStorage(value) : value;
         var item = existing.FirstOrDefault(x => x.Clave.Equals(key, StringComparison.OrdinalIgnoreCase));
         if (item is null)
         {
             _dbContext.Configuraciones.Add(new AtlasBalance.API.Models.Configuracion
             {
                 Clave = key,
-                Valor = value,
+                Valor = storedValue,
+                EsSecreto = esSecreto,
                 FechaModificacion = now,
                 UsuarioModificacionId = userId
             });
             return;
         }
 
-        item.Valor = value;
+        item.Valor = storedValue;
+        item.EsSecreto = esSecreto;
         item.FechaModificacion = now;
         item.UsuarioModificacionId = userId;
     }

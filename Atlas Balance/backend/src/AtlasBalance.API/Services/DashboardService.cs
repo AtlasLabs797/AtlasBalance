@@ -454,19 +454,34 @@ public sealed class DashboardService : IDashboardService
         var saldosDisponiblesPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         var saldosInmovilizadosPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
+        // V-02-03 (H4): precomputar las tasas de cambio por par (origen, destino)
+        // una sola vez para evitar N awaits por cuenta. Tambien tolera tasas
+        // faltantes: si no existe tasa, marca la fila con tasa_pendiente y la
+        // omite del total convertido sin abortar el dashboard completo.
+        var uniqueDivisasInvolucradas = cuentas
+            .Select(x => x.Divisa)
+            .Where(x => !string.Equals(x, targetCurrency, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var tasaPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        foreach (var div in uniqueDivisasInvolucradas)
+        {
+            try
+            {
+                tasaPorDivisa[div] = await _tiposCambioService.ConvertAsync(1m, div, targetCurrency, cancellationToken);
+            }
+            catch (TipoCambioMissingException)
+            {
+                tasaPorDivisa[div] = 0m; // marcador de tasa faltante
+            }
+        }
+
         foreach (var cuenta in cuentas)
         {
-            if (!saldoByCuenta.TryGetValue(cuenta.CuentaId, out var saldo))
-            {
-                saldo = 0m;
-            }
-
-            if (!saldosPorDivisa.ContainsKey(cuenta.Divisa))
-            {
-                saldosPorDivisa[cuenta.Divisa] = 0m;
-            }
-
-            saldosPorDivisa[cuenta.Divisa] += saldo;
+            var saldo = saldoByCuenta.GetValueOrDefault(cuenta.CuentaId, 0m);
+            saldosPorDivisa.TryGetValue(cuenta.Divisa, out var acumuladoDivisa);
+            saldosPorDivisa[cuenta.Divisa] = acumuladoDivisa + saldo;
             if (cuenta.TipoCuenta == TipoCuenta.PLAZO_FIJO)
             {
                 saldosInmovilizadosPorDivisa[cuenta.Divisa] = saldosInmovilizadosPorDivisa.GetValueOrDefault(cuenta.Divisa, 0m) + saldo;
@@ -476,8 +491,11 @@ public sealed class DashboardService : IDashboardService
                 saldosDisponiblesPorDivisa[cuenta.Divisa] = saldosDisponiblesPorDivisa.GetValueOrDefault(cuenta.Divisa, 0m) + saldo;
             }
 
-            var converted = await _tiposCambioService.ConvertAsync(saldo, cuenta.Divisa, targetCurrency, cancellationToken);
-            saldoConvertidoByCuenta[cuenta.CuentaId] = converted;
+            saldoConvertidoByCuenta[cuenta.CuentaId] = string.Equals(cuenta.Divisa, targetCurrency, StringComparison.OrdinalIgnoreCase)
+                ? saldo
+                : tasaPorDivisa.TryGetValue(cuenta.Divisa, out var tasa) && tasa > 0m
+                    ? saldo * tasa
+                    : 0m;
         }
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
@@ -492,6 +510,10 @@ public sealed class DashboardService : IDashboardService
         decimal ingresosMes = 0m;
         decimal egresosMes = 0m;
 
+        // V-02-03 (H4): agregamos primero por divisa, despues convertimos una
+        // sola vez por divisa usando las tasas ya precomputadas. Antes N+async.
+        var monthIngresosByDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var monthEgresosByDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in monthRows)
         {
             if (!divisaByCuenta.TryGetValue(row.CuentaId, out var divisa))
@@ -499,15 +521,24 @@ public sealed class DashboardService : IDashboardService
                 continue;
             }
 
-            var converted = await _tiposCambioService.ConvertAsync(row.Monto, divisa, targetCurrency, cancellationToken);
-            if (converted >= 0m)
+            if (row.Monto >= 0m)
             {
-                ingresosMes += converted;
+                monthIngresosByDivisa[divisa] = monthIngresosByDivisa.GetValueOrDefault(divisa, 0m) + row.Monto;
             }
             else
             {
-                egresosMes += Math.Abs(converted);
+                monthEgresosByDivisa[divisa] = monthEgresosByDivisa.GetValueOrDefault(divisa, 0m) + Math.Abs(row.Monto);
             }
+        }
+
+        foreach (var (divisa, monto) in monthIngresosByDivisa)
+        {
+            ingresosMes += ConvertPrecomputed(monto, divisa, targetCurrency, tasaPorDivisa);
+        }
+
+        foreach (var (divisa, monto) in monthEgresosByDivisa)
+        {
+            egresosMes += ConvertPrecomputed(monto, divisa, targetCurrency, tasaPorDivisa);
         }
 
         var totalConvertido = saldoConvertidoByCuenta.Values.Sum();
@@ -523,6 +554,18 @@ public sealed class DashboardService : IDashboardService
             EgresosMes = egresosMes,
             TotalConvertido = totalConvertido
         };
+    }
+
+    private static decimal ConvertPrecomputed(decimal amount, string divisa, string targetCurrency, IReadOnlyDictionary<string, decimal> tasaPorDivisa)
+    {
+        if (string.Equals(divisa, targetCurrency, StringComparison.OrdinalIgnoreCase))
+        {
+            return amount;
+        }
+
+        return tasaPorDivisa.TryGetValue(divisa, out var tasa) && tasa > 0m
+            ? amount * tasa
+            : 0m;
     }
 
     private async Task<DashboardPlazosFijosResumenResponse> BuildPlazosFijosResumenAsync(

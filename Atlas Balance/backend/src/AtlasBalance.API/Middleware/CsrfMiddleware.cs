@@ -24,7 +24,11 @@ public sealed class CsrfMiddleware
     {
         if (RequiresCsrfValidation(context.Request))
         {
-            var csrfCookie = context.Request.Cookies["csrf_token"];
+            // S-NEW-1 (V-02-03): aceptar tanto el prefijo __Host- (produccion)
+            // como el nombre legado csrf_token (dev). Asi no rompemos dev
+            // local en HTTP plano.
+            var csrfCookie = context.Request.Cookies["__Host-atlas-csrf-token"]
+                ?? context.Request.Cookies["csrf_token"];
             var csrfHeader = context.Request.Headers["X-CSRF-Token"].FirstOrDefault();
 
             if (!csrfService.IsValid(csrfCookie, csrfHeader))

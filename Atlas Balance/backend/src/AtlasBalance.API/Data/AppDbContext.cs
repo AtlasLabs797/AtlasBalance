@@ -180,6 +180,9 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("EXTRACTOS");
             entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista via xmin de Postgres.
+            // Devuelve 409 DbUpdateConcurrencyException ante updates perdidos.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.Monto).HasPrecision(18, 4);
             entity.Property(e => e.Saldo).HasPrecision(18, 4);
             entity.Property(e => e.ImportacionFingerprint).HasMaxLength(64);
@@ -191,6 +194,8 @@ public class AppDbContext : DbContext
                 .HasFilter("\"importacion_fingerprint\" IS NOT NULL");
             entity.HasIndex(e => e.ImportacionLoteHash);
             entity.HasIndex(e => e.ImportacionLoteId);
+            // V-02-03 (H5): indice cubriente para busqueda de conciliacion.
+            entity.HasIndex(e => new { e.CuentaId, e.Fecha, e.Monto });
             entity.HasIndex(e => new { e.CuentaId, e.Fecha });
             entity.HasIndex(e => new { e.CuentaId, e.DeletedAt });
             entity.HasIndex(e => e.Fecha);
@@ -239,7 +244,10 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Fingerprint).HasMaxLength(64);
             entity.HasIndex(e => new { e.LoteId, e.Indice }).IsUnique();
             entity.HasIndex(e => e.Fingerprint);
-            entity.HasOne<ImportacionLote>().WithMany().HasForeignKey(e => e.LoteId).OnDelete(DeleteBehavior.Cascade);
+            // V-02-03 (MEDIUM): cascade a restrict para que un borrado
+            // accidental de lote (saltandose el soft-delete) no queme las filas
+            // hijas todavia necesarias para auditoria.
+            entity.HasOne<ImportacionLote>().WithMany().HasForeignKey(e => e.LoteId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<ExtractoColumnaExtra>(entity =>
@@ -248,19 +256,24 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.ExtractoId);
             entity.HasIndex(e => e.NombreColumna);
-            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Cascade);
+            // V-02-03 (MEDIUM): cascade a restrict por la misma razon.
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<RevisionExtractoEstado>(entity =>
         {
             entity.ToTable("REVISION_EXTRACTO_ESTADOS");
             entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista xmin.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.Tipo).HasMaxLength(24).IsRequired();
             entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
             entity.HasIndex(e => new { e.ExtractoId, e.Tipo }).IsUnique();
             entity.HasIndex(e => e.Tipo);
             entity.HasIndex(e => e.Estado);
-            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Cascade);
+            // V-02-03 (MEDIUM): cambiar cascade a restrict para no quemar historial
+            // cuando se borra un extracto (que ya es soft-delete).
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -392,6 +405,8 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("MOVIMIENTOS_ESPERADOS");
             entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista xmin.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.Monto).HasPrecision(18, 4);
             entity.Property(e => e.Divisa).HasMaxLength(8).IsRequired();
             entity.Property(e => e.Referencia).HasMaxLength(128);
@@ -412,6 +427,8 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("CONCILIACIONES");
             entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista xmin.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
             entity.Property(e => e.Regla).HasMaxLength(64).IsRequired();
             entity.Property(e => e.ReferenciaNormalizada).HasMaxLength(256);
@@ -422,7 +439,9 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.ExtractoId);
             entity.HasIndex(e => new { e.MovimientoEsperadoId, e.ExtractoId }).IsUnique();
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne<MovimientoEsperado>().WithMany().HasForeignKey(e => e.MovimientoEsperadoId).OnDelete(DeleteBehavior.Cascade);
+            // V-02-03 (MEDIUM): cascade a restrict. Borrar un movimiento esperado
+            // NO debe destruir su historial de conciliacion.
+            entity.HasOne<MovimientoEsperado>().WithMany().HasForeignKey(e => e.MovimientoEsperadoId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioSugerenciaId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioConfirmacionId).OnDelete(DeleteBehavior.Restrict);
@@ -439,6 +458,8 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("CONFIGURACION");
             entity.HasKey(e => e.Clave);
+            entity.Property(e => e.EsSecreto).HasDefaultValue(false);
+            entity.HasIndex(e => e.EsSecreto);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
         });
 

@@ -43,6 +43,7 @@ public sealed class CreateIntegrationTokenRequest
     public bool PermisoEscritura { get; set; }
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
+    public string? SinExpiracionTextoConfirmacion { get; set; }
     public IReadOnlyList<string> Scopes { get; set; } = [];
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
@@ -55,6 +56,7 @@ public sealed class SaveIntegrationTokenRequest
     public bool PermisoEscritura { get; set; }
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
+    public string? SinExpiracionTextoConfirmacion { get; set; }
     public IReadOnlyList<string> Scopes { get; set; } = [];
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
@@ -78,6 +80,7 @@ public sealed class RotarIntegrationTokenRequest
 {
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
+    public string? SinExpiracionTextoConfirmacion { get; set; }
 }
 
 public sealed class IntegrationAuditItemResponse

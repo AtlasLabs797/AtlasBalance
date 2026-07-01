@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
+import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import { IconMoon, IconSun } from '@/components/Icons';
@@ -19,6 +21,8 @@ export default function ChangePasswordPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +44,7 @@ export default function ChangePasswordPage() {
       } else if (usuario) {
         setUsuario({ ...usuario, primer_login: false });
       }
+      await loadAlertasActivas(selectedPaisId || undefined);
       navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo cambiar la contraseña.'));

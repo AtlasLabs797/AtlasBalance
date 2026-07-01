@@ -1,15 +1,15 @@
 # Version actual
 
-Version actual del proyecto: `V-02-02`
+Version actual del proyecto: `V-02-03`
 
-Fecha de registro: 2026-06-08
+Fecha de registro: 2026-07-01
 
 ## Fuentes de version
 
 - Runtime backend: `Atlas Balance/Directory.Build.props`
 - Runtime frontend: `Atlas Balance/frontend/package.json`
 - Trazabilidad de paquete: `Atlas Balance/VERSION`
-- Documentacion de version: `Documentacion/Versiones/v-02-02.md`
+- Documentacion de version: `Documentacion/Versiones/v-02-03.md`
 
 ## Base anterior
 

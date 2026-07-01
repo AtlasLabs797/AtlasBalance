@@ -203,6 +203,7 @@ public class ImportacionLote
     public int FilasError { get; set; }
     public int FilasAdvertencia { get; set; }
     public bool AdvertenciasAceptadas { get; set; }
+    public string? Notas { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
     public DateTime? FechaConfirmacion { get; set; }
     public Guid? ConfirmadoPorId { get; set; }
@@ -437,6 +438,7 @@ public class Configuracion
     public string? Descripcion { get; set; }
     public DateTime? FechaModificacion { get; set; }
     public Guid? UsuarioModificacionId { get; set; }
+    public bool EsSecreto { get; set; }
 }
 
 public class Backup : ISoftDelete

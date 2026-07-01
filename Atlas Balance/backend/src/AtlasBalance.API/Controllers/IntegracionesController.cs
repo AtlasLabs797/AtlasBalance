@@ -122,7 +122,7 @@ public sealed class IntegracionesController : ControllerBase
         }
 
         var tokenPlano = _integrationTokenService.GeneratePlainToken();
-        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada);
+        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada, request.SinExpiracionTextoConfirmacion);
         var scopes = NormalizeEndpointScopes(request.Scopes);
         var token = new IntegrationToken
         {
@@ -205,7 +205,7 @@ public sealed class IntegracionesController : ControllerBase
             token.EndpointScopesJson
         };
 
-        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada);
+        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada, request.SinExpiracionTextoConfirmacion);
         var scopes = NormalizeEndpointScopes(request.Scopes);
         token.Nombre = request.Nombre.Trim();
         token.Descripcion = request.Descripcion?.Trim();
@@ -269,7 +269,7 @@ public sealed class IntegracionesController : ControllerBase
         }
 
         var tokenPlano = _integrationTokenService.GeneratePlainToken();
-        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada);
+        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada, request.SinExpiracionTextoConfirmacion);
         var now = DateTime.UtcNow;
         oldToken.Estado = EstadoTokenIntegracion.Revocado;
         oldToken.FechaRevocacion = now;

@@ -98,7 +98,35 @@ public class IntegrationTokenServiceTests
         var service = new IntegrationTokenService(db, new FakeClock(now));
 
         service.ResolveExpiration(null, noExpirationConfirmed: false).Should().Be(now.AddDays(90));
-        service.ResolveExpiration(null, noExpirationConfirmed: true).Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveExpiration_Should_Return_Null_When_NoExpiration_Confirmed_With_Magic_Phrase()
+    {
+        // C-NEW-2 (V-02-03): un token sin expiracion exige el texto magico
+        // "NO_EXPIRAR" para evitar que un checkbox olvidado cree tokens eternos.
+        using var db = BuildDbContext();
+        var now = new DateTime(2026, 6, 29, 12, 0, 0, DateTimeKind.Utc);
+        var service = new IntegrationTokenService(db, new FakeClock(now));
+
+        service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: "NO_EXPIRAR").Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveExpiration_Should_Throw_When_NoExpiration_Confirmed_Without_Magic_Phrase()
+    {
+        using var db = BuildDbContext();
+        var service = new IntegrationTokenService(db);
+
+        Action actNoText = () => service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: null);
+        Action actEmpty = () => service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: "");
+        Action actWrongCase = () => service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: "no_expirar");
+        Action actWrongText = () => service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: "TOTALLY DIFFERENT");
+
+        actNoText.Should().Throw<ArgumentException>();
+        actEmpty.Should().Throw<ArgumentException>();
+        actWrongCase.Should().Throw<ArgumentException>();
+        actWrongText.Should().Throw<ArgumentException>();
     }
 
     [Fact]

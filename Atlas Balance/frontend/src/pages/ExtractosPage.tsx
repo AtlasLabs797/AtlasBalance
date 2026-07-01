@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
@@ -54,6 +55,18 @@ export default function ExtractosPage() {
 
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditData, setAuditData] = useState<AuditCellEntry[]>([]);
+  const auditAbortRef = useRef<AbortController | null>(null);
+
+  const closeAudit = () => {
+    // F-NEW-14: cancelar peticion pendiente al cerrar el modal.
+    auditAbortRef.current?.abort();
+    auditAbortRef.current = null;
+    setAuditOpen(false);
+    setAuditData([]);
+    setAuditError(null);
+    setAuditColumn(null);
+    setAuditExtractoId(null);
+  };
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditColumn, setAuditColumn] = useState<string | null>(null);
@@ -325,13 +338,28 @@ export default function ExtractosPage() {
     setAuditData([]);
     setAuditColumn(column);
     setAuditExtractoId(row.id);
+    // F-NEW-14 (V-02-03): cancelar peticion pendiente si el usuario abre
+    // otra celda antes de que llegue la primera. Evita que la respuesta
+    // tardia se cargue en el modal equivocado.
+    const ac = new AbortController();
+    auditAbortRef.current = ac;
     try {
-      const { data } = await api.get<AuditCellEntry[]>(`/extractos/${row.id}/audit-celda`, { params: { columna: column } });
+      const { data } = await api.get<AuditCellEntry[]>(`/extractos/${row.id}/audit-celda`, {
+        params: { columna: column },
+        signal: ac.signal,
+      });
+      if (ac.signal.aborted) return;
       setAuditData(data);
     } catch (err) {
+      if (axios.isAxiosError(err) && err.name === 'CanceledError') {
+        return;
+      }
+      if (ac.signal.aborted) return;
       setAuditError(extractErrorMessage(err, 'No se pudo cargar la auditoría de la celda.'));
     } finally {
-      setAuditLoading(false);
+      if (!ac.signal.aborted) {
+        setAuditLoading(false);
+      }
     }
   };
 
@@ -496,13 +524,7 @@ export default function ExtractosPage() {
         data={auditData}
         loading={auditLoading}
         error={auditError}
-        onClose={() => {
-          setAuditOpen(false);
-          setAuditData([]);
-          setAuditError(null);
-          setAuditColumn(null);
-          setAuditExtractoId(null);
-        }}
+        onClose={closeAudit}
       />
       {auditExtractoId && <span className="sr-only">{auditExtractoId}</span>}
     </section>

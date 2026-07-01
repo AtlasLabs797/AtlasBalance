@@ -398,20 +398,45 @@ public sealed class ImportacionService : IImportacionService
         }
 
         var mapeo = ParseMapeoJson(lote.MapeoJson) ?? throw new ImportacionException("El mapeo guardado del lote no es valido", StatusCodes.Status409Conflict);
-        var response = await ConfirmarAsync(
-            usuarioId,
-            rol,
-            new ImportacionConfirmarRequest
-            {
-                CuentaId = lote.CuentaId,
-                RawData = lote.ContenidoOriginal,
-                Separador = lote.Separador,
-                Mapeo = mapeo,
-                FilasAImportar = filasAImportar.ToList(),
-                LoteId = lote.Id
-            },
-            httpContext,
-            cancellationToken);
+        ImportacionConfirmarResponse response;
+        try
+        {
+            response = await ConfirmarAsync(
+                usuarioId,
+                rol,
+                new ImportacionConfirmarRequest
+                {
+                    CuentaId = lote.CuentaId,
+                    RawData = lote.ContenidoOriginal,
+                    Separador = lote.Separador,
+                    Mapeo = mapeo,
+                    FilasAImportar = filasAImportar.ToList(),
+                    LoteId = lote.Id
+                },
+                httpContext,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // H-OPEN-4 (V-02-03): si la confirmacion interna revienta (colision
+            // de fingerprint, etc.), el lote debe quedar marcado como "error"
+            // para que el usuario sepa que algo fallo, no en "validado" con
+            // extractos a medias.
+            lote.Estado = "error";
+            lote.Notas = $"ConfirmarAsync fallo: {Truncate(ex.Message, 500)}";
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(
+                usuarioId,
+                "importacion_lote_error",
+                "IMPORTACION_LOTES",
+                lote.Id,
+                httpContext,
+                JsonSerializer.Serialize(new { lote.CuentaId, mensaje = ex.Message }, SnakeCaseJsonOptions),
+                cancellationToken);
+            throw new ImportacionException(
+                "La confirmacion fallo. El lote quedo marcado como 'error'. Revisa la causa y reintenta.",
+                StatusCodes.Status409Conflict);
+        }
 
         lote.Estado = "confirmado";
         lote.FechaConfirmacion = DateTime.UtcNow;
@@ -1337,7 +1362,9 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("El archivo pegado supera el limite de 5 MB", StatusCodes.Status413PayloadTooLarge);
         }
 
-        var lines = rawData
+        var normalizedRawData = rawData.TrimStart('\uFEFF');
+
+        var lines = normalizedRawData
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Where(line => !string.IsNullOrWhiteSpace(line))
@@ -1836,6 +1863,9 @@ public sealed class ImportacionService : IImportacionService
     }
 
     private static bool HasDigitsOnly(string value) => value.All(char.IsDigit);
+
+    private static string Truncate(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
 
     private sealed record ImportRowCandidate(FilaValidacionResponse Row, string Fingerprint);
 }

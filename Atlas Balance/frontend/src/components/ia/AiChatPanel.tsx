@@ -48,6 +48,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const [openRouterModels, setOpenRouterModels] = useState<IaModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailedPrompt, setLastFailedPrompt] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
@@ -162,6 +163,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
 
     setInput('');
     setError(null);
+    setLastFailedPrompt(null);
     setMessages((current) => [...current, { role: 'user', content: prompt }]);
     setLoading(true);
 
@@ -187,6 +189,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
       ]);
     } catch (err) {
       setError(extractErrorMessage(err, 'La IA no pudo responder con los datos actuales.'));
+      setLastFailedPrompt(prompt);
     } finally {
       setLoading(false);
     }
@@ -335,7 +338,16 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
             ) : null}
           </div>
 
-          {error ? <p className="auth-error" role="alert">{error}</p> : null}
+          {error ? (
+            <div className="auth-error" role="alert">
+              <p>{error}</p>
+              {lastFailedPrompt ? (
+                <button type="button" className="button-secondary" onClick={() => void ask(lastFailedPrompt)} disabled={loading}>
+                  Reintentar última pregunta
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <form className="ai-chat-form" onSubmit={submit}>
             <label className="sr-only" htmlFor={compact ? 'ai-chat-floating-question' : 'ai-chat-page-question'}>

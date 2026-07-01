@@ -88,6 +88,13 @@ api.interceptors.response.use(
       );
     }
 
+    if (status === 419 || status === 440) {
+      clearSessionState();
+      pushErrorToast('Sesión caducada. Vuelve a iniciar sesión para continuar.');
+      window.location.href = '/login';
+      return Promise.reject(error);
+    }
+
     if (
       !originalRequest ||
       status !== 401 ||

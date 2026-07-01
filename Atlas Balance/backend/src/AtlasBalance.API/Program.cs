@@ -84,7 +84,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     return Task.CompletedTask;
                 }
 
-                context.Token = context.Request.Cookies["access_token"];
+                context.Token = context.Request.Cookies["__Host-atlas-access-token"]
+                    ?? context.Request.Cookies["access_token"];
                 return Task.CompletedTask;
             }
         };
@@ -212,7 +213,8 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<ITiposCambioService, TiposCambioService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IImportacionService, ImportacionService>();
-builder.Services.AddScoped<IConciliacionService, ConciliacionService>();
+builder.Services.AddScoped<ConciliacionService>();
+builder.Services.AddScoped<IConciliacionService, HardenedConciliacionService>();
 builder.Services.AddScoped<IUserAccessService, UserAccessService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
@@ -220,9 +222,12 @@ builder.Services.AddScoped<IPlazoFijoService, PlazoFijoService>();
 builder.Services.AddScoped<IRevisionService, RevisionService>();
 builder.Services.AddScoped<IAtlasAiService, AtlasAiService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
-builder.Services.AddScoped<IBackupConfigurationService, BackupConfigurationService>();
+builder.Services.AddScoped<BackupConfigurationService>();
+builder.Services.AddScoped<IBackupConfigurationService, HardenedBackupConfigurationService>();
 builder.Services.AddScoped<IBackupEncryptionService, BackupEncryptionService>();
-builder.Services.AddScoped<IGoogleDriveBackupService, GoogleDriveBackupService>();
+builder.Services.AddScoped<GoogleDriveBackupService>();
+builder.Services.AddScoped<IGoogleDriveBackupService, HardenedGoogleDriveBackupService>();
+builder.Services.AddScoped<IConfiguracionRepository, ConfiguracionRepository>();
 builder.Services.AddScoped<IExportacionService, ExportacionService>();
 builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
 builder.Services.AddScoped<IActualizacionService, ActualizacionService>();
@@ -804,12 +809,19 @@ static void ProtectExistingConfigurationSecrets(AppDbContext dbContext, ISecretP
         "openai_api_key",
         "minimax_api_key",
         "google_drive_oauth_client_secret",
-        "backup_cloud_encryption_key"
+        "backup_cloud_encryption_key",
+        "github_update_token"
     };
 
     var changed = false;
     foreach (var item in dbContext.Configuraciones.Where(c => secretKeys.Contains(c.Clave)))
     {
+        if (!item.EsSecreto)
+        {
+            item.EsSecreto = true;
+            changed = true;
+        }
+
         if (string.IsNullOrWhiteSpace(item.Valor) || secretProtector.IsProtected(item.Valor))
         {
             continue;

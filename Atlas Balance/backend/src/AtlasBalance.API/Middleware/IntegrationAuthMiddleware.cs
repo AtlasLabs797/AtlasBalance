@@ -219,9 +219,15 @@ public sealed class IntegrationAuthMiddleware
     private static bool TokenAllowsEndpoint(IntegrationToken token, PathString path)
     {
         var scopes = ParseEndpointScopes(token.EndpointScopesJson);
+
+        // SECURITY (C1): deny-by-default para tokens sin scopes asignados.
+        // Un token recien creado o sin configuracion NO debe ser un wildcard.
+        // Esto cierra el caso en el que una integracion comprometia podia
+        // alcanzar cualquier endpoint /api/integration/openclaw/* sin
+        // haberle concedido scopes explicitamente.
         if (scopes.Count == 0)
         {
-            return true;
+            return false;
         }
 
         var endpoint = ResolveEndpointScope(path);

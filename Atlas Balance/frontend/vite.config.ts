@@ -2,6 +2,15 @@ import { createLogger, defineConfig, type Logger, type LogErrorOptions, type Log
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+
+// V-02-03: leemos la version del package.json para inyectarla como
+// VITE_APP_VERSION (y la fuente sigue siendo appVersion). Asi sidebar /
+// topbar ya no divergen del backend (VERSION, Directory.Build.props).
+const packageJson = JSON.parse(
+  readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'),
+) as { version?: string; appVersion?: string };
+const injectAppVersion = packageJson.appVersion ?? packageJson.version ?? 'desarrollo';
 
 const baseLogger = createLogger();
 
@@ -143,8 +152,12 @@ export default defineConfig({
       },
     },
   },
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(injectAppVersion),
+  },
   build: {
-    outDir: 'dist',
+    outDir: process.env.VITE_BUILD_OUT_DIR ?? 'dist',
+    emptyOutDir: process.env.VITE_BUILD_OUT_DIR ? true : false,
     sourcemap: false,
     reportCompressedSize: false,
     rollupOptions: {

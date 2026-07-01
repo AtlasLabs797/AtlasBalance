@@ -38,6 +38,7 @@ public sealed class IntegrationAuthMiddlewareTests
             TokenHash = tokenService.ComputeSha256(plainToken),
             Estado = EstadoTokenIntegracion.Activo,
             PermisoLectura = true,
+            EndpointScopesJson = "[\"saldos\"]",
             UsuarioCreadorId = Guid.NewGuid()
         });
         await db.SaveChangesAsync();
@@ -78,6 +79,7 @@ public sealed class IntegrationAuthMiddlewareTests
             TokenHash = tokenService.ComputeSha256(plainToken),
             Estado = EstadoTokenIntegracion.Activo,
             PermisoLectura = true,
+            EndpointScopesJson = "[\"saldos\"]",
             UsuarioCreadorId = Guid.NewGuid()
         };
         db.IntegrationTokens.Add(token);
@@ -122,6 +124,7 @@ public sealed class IntegrationAuthMiddlewareTests
             TokenHash = tokenService.ComputeSha256(plainToken),
             Estado = EstadoTokenIntegracion.Activo,
             PermisoLectura = true,
+            EndpointScopesJson = "[\"saldos\"]",
             UsuarioCreadorId = Guid.NewGuid()
         };
         db.IntegrationTokens.Add(token);
@@ -226,7 +229,7 @@ public sealed class IntegrationAuthMiddlewareTests
             return Task.FromResult<IntegrationToken?>(null);
         }
 
-        public DateTime? ResolveExpiration(DateTime? requestedExpiration, bool noExpirationConfirmed)
+        public DateTime? ResolveExpiration(DateTime? requestedExpiration, bool noExpirationConfirmed, string? noExpirationConfirmationText = null)
             => requestedExpiration ?? (noExpirationConfirmed ? null : DateTime.UtcNow.AddDays(90));
 
         public Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)

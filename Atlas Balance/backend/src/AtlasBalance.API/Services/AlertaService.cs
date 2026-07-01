@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
@@ -82,8 +83,14 @@ public sealed class AlertaService : IAlertaService
 
         var now = DateTime.UtcNow;
         var cooldownHours = await GetSaldoBajoCooldownHoursAsync(cancellationToken);
-        if (alertaAplicable.FechaUltimaAlerta.HasValue &&
-            alertaAplicable.FechaUltimaAlerta.Value > now.AddHours(-cooldownHours))
+        var cooldownKey = $"alerta_saldo_last_sent_utc:{cuenta.Id:N}";
+        var lastSentAt = await GetCuentaCooldownAsync(cooldownKey, cancellationToken);
+        if (!lastSentAt.HasValue && alertaAplicable.CuentaId == cuenta.Id)
+        {
+            lastSentAt = alertaAplicable.FechaUltimaAlerta;
+        }
+
+        if (lastSentAt.HasValue && lastSentAt.Value > now.AddHours(-cooldownHours))
         {
             _logger.LogInformation(
                 "No se envia alerta por saldo bajo duplicada. alerta_id={AlertaId}, cuenta_id={CuentaId}, cooldown_horas={CooldownHours}",
@@ -141,6 +148,7 @@ public sealed class AlertaService : IAlertaService
         }
 
         alertaAplicable.FechaUltimaAlerta = now;
+        await UpsertCuentaCooldownAsync(cooldownKey, now, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(
@@ -317,5 +325,39 @@ public sealed class AlertaService : IAlertaService
         return int.TryParse(raw, out var parsed)
             ? Math.Clamp(parsed, 1, 720)
             : 24;
+    }
+
+    private async Task<DateTime?> GetCuentaCooldownAsync(string key, CancellationToken cancellationToken)
+    {
+        var raw = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Where(x => x.Clave == key)
+            .Select(x => x.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private async Task UpsertCuentaCooldownAsync(string key, DateTime utcNow, CancellationToken cancellationToken)
+    {
+        var value = utcNow.ToString("O", CultureInfo.InvariantCulture);
+        var row = await _dbContext.Configuraciones.FirstOrDefaultAsync(x => x.Clave == key, cancellationToken);
+        if (row is null)
+        {
+            _dbContext.Configuraciones.Add(new Configuracion
+            {
+                Clave = key,
+                Valor = value,
+                Tipo = "datetime",
+                Descripcion = "Ultimo envio de alerta de saldo bajo por cuenta",
+                FechaModificacion = utcNow
+            });
+            return;
+        }
+
+        row.Valor = value;
+        row.FechaModificacion = utcNow;
     }
 }
