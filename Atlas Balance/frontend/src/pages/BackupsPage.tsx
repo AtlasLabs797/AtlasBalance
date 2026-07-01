@@ -5,6 +5,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { useBlockingOverlay } from '@/hooks/useBlockingOverlay';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
@@ -20,7 +21,7 @@ import type {
   WatchdogState,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatDateTime, formatNumber } from '@/utils/formatters';
+import { formatBytes, formatDateTime } from '@/utils/formatters';
 
 const pageSizeOptions = [10, 20, 50];
 const dayOptions = [
@@ -58,12 +59,6 @@ const cloudEstadoLabels: Record<string, string> = {
   FAILED: 'Fallida',
   IMPORTED: 'Importada',
 };
-
-function formatBytes(value: number | null): string {
-  if (!value || value <= 0) return 'Sin tamano';
-  const mb = value / (1024 * 1024);
-  return `${formatNumber(mb)} MB`;
-}
 
 function formatEstadoCopia(value: string) {
   return estadoCopiaLabels[value.toUpperCase()] ?? value;
@@ -114,6 +109,7 @@ export default function BackupsPage() {
   const [savingConfig, setSavingConfig] = useState(false);
 
   const [cloudBusy, setCloudBusy] = useState(false);
+  const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [linkStart, setLinkStart] = useState<GoogleDriveLinkStart | null>(null);
   const [linkStatus, setLinkStatus] = useState<GoogleDriveLinkStatus | null>(null);
   const [driveFiles, setDriveFiles] = useState<GoogleDriveBackupFile[]>([]);
@@ -268,6 +264,15 @@ export default function BackupsPage() {
   };
 
   const disconnectDrive = async () => {
+    const confirmed = await confirm({
+      title: 'Desvincular Google Drive',
+      message: 'Se cerrará la conexión con Google Drive. Las copias dejarán de subirse a la nube hasta que vuelvas a vincular la cuenta. ¿Continuar?',
+      confirmLabel: 'Desvincular',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setCloudBusy(true);
     setError(null);
     try {
@@ -814,6 +819,7 @@ export default function BackupsPage() {
           </div>
         </div>
       ) : null}
+      <ConfirmDialog {...confirmDialogProps} />
     </section>
   );
 }

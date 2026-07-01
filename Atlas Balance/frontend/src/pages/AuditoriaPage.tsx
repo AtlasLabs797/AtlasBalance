@@ -330,7 +330,7 @@ export default function AuditoriaPage() {
                                   <div>
                                     <strong>Valor anterior:</strong>{' '}
                                     {isAmountColumn(row.columna_nombre) && row.valor_anterior !== null ? (
-                                      <SignedAmount value={row.valor_anterior}>{row.valor_anterior}</SignedAmount>
+                                      <SignedAmount value={row.valor_anterior} showSign>{row.valor_anterior}</SignedAmount>
                                     ) : (
                                       row.valor_anterior ?? 'Sin valor'
                                     )}
@@ -338,7 +338,7 @@ export default function AuditoriaPage() {
                                   <div>
                                     <strong>Valor nuevo:</strong>{' '}
                                     {isAmountColumn(row.columna_nombre) && row.valor_nuevo !== null ? (
-                                      <SignedAmount value={row.valor_nuevo}>{row.valor_nuevo}</SignedAmount>
+                                      <SignedAmount value={row.valor_nuevo} showSign>{row.valor_nuevo}</SignedAmount>
                                     ) : (
                                       row.valor_nuevo ?? 'Sin valor'
                                     )}

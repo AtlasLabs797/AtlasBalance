@@ -1,7 +1,10 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
@@ -165,8 +168,13 @@ export default function UsuarioModal({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Snapshot del formulario base para detectar cambios sin guardar.
+  const baselineRef = useRef<string | null>(null);
+  const { confirm, dialogProps: discardDialogProps } = useConfirmDialog();
+  const isDirty = open && baselineRef.current !== null && JSON.stringify(form) !== baselineRef.current;
+  useUnsavedChanges(isDirty);
   const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    onEscape: submitting ? undefined : onClose,
+    onEscape: submitting ? undefined : () => void closeModal(),
   });
 
   const title = useMemo(
@@ -183,7 +191,9 @@ export default function UsuarioModal({
     }
 
     if (!editingId) {
-      setForm(emptyForm());
+      const fresh = emptyForm();
+      setForm(fresh);
+      baselineRef.current = JSON.stringify(fresh);
       setError(null);
       return;
     }
@@ -215,7 +225,7 @@ export default function UsuarioModal({
           columnas_editables: (permiso.columnas_editables ?? []).join(', '),
         }));
 
-        setForm({
+        const loadedForm: UserFormState = {
           email: data.usuario.email,
           nombre_completo: data.usuario.nombre_completo,
           rol: data.usuario.rol,
@@ -225,7 +235,9 @@ export default function UsuarioModal({
           password: '',
           emails: (data.emails ?? []).join('\n'),
           permisos: mappedPermisos.length > 0 ? mappedPermisos : [emptyPermiso()],
-        });
+        };
+        setForm(loadedForm);
+        baselineRef.current = JSON.stringify(loadedForm);
       } catch (err) {
         if (!cancelled) {
           setError(extractErrorMessage(err, 'No se pudo cargar el usuario'));
@@ -358,8 +370,19 @@ export default function UsuarioModal({
     });
   };
 
-  const closeModal = () => {
+  const closeModal = async () => {
     if (submitting) return;
+    if (isDirty) {
+      const discard = await confirm({
+        title: 'Descartar cambios',
+        message: 'Tienes cambios sin guardar en este usuario. Si cierras, se perderán. ¿Descartar?',
+        confirmLabel: 'Descartar',
+        cancelLabel: 'Seguir editando',
+      });
+      if (!discard) {
+        return;
+      }
+    }
     onClose();
   };
 
@@ -416,7 +439,7 @@ export default function UsuarioModal({
   }
 
   return (
-    <div className="modal-backdrop users-modal-backdrop" onClick={closeModal}>
+    <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeModal()}>
       <div
         ref={dialogRef}
         className="users-modal"
@@ -433,7 +456,7 @@ export default function UsuarioModal({
           </div>
           <CloseIconButton
             className="users-modal-close"
-            onClick={closeModal}
+            onClick={() => void closeModal()}
             disabled={submitting}
             ariaLabel="Cerrar modal de usuario"
           />
@@ -783,7 +806,7 @@ export default function UsuarioModal({
             </section>
 
             <div className="users-form-actions users-form-actions--sticky">
-              <button type="button" className="button-secondary" onClick={closeModal} disabled={submitting}>
+              <button type="button" className="button-secondary" onClick={() => void closeModal()} disabled={submitting}>
                 Cancelar
               </button>
               <button type="submit" className="button-primary" disabled={submitting}>
@@ -793,6 +816,7 @@ export default function UsuarioModal({
           </form>
         )}
       </div>
+      <ConfirmDialog {...discardDialogProps} />
     </div>
   );
 }

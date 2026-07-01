@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-02-02",
+    [string]$Version = "V-02-03",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall,
@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($Version -notmatch '^V-\d{2}[-.]\d{2}$') {
-    throw "Version invalida '$Version'. Usa formato V-02-02 o V-02.02."
+    throw "Version invalida '$Version'. Usa formato V-02-03 o V-02.03."
 }
 
 if ($Runtime -ne "win-x64") {

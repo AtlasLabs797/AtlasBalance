@@ -1509,6 +1509,8 @@ public sealed class ImportacionService : IImportacionService
                 else if (TryBuildSignedMonto(data["ingreso"], data["egreso"], errors, out var signedMonto))
                 {
                     data["monto"] = signedMonto.ToString(CultureInfo.InvariantCulture);
+                    AddAmbiguousAmountWarning(data["ingreso"], "Ingreso", warnings);
+                    AddAmbiguousAmountWarning(data["egreso"], "Egreso", warnings);
                     if (map.TipoMonto == "tres_columnas")
                     {
                         data["monto_banco"] = GetCell(row, map.Monto!.Value);
@@ -1540,6 +1542,10 @@ public sealed class ImportacionService : IImportacionService
                 else if (!TryParseDecimalSmart(data["monto"], out _))
                 {
                     errors.Add(BuildDecimalError("Monto", data["monto"]));
+                }
+                else
+                {
+                    AddAmbiguousAmountWarning(data["monto"], "Monto", warnings);
                 }
             }
 
@@ -1580,6 +1586,7 @@ public sealed class ImportacionService : IImportacionService
             else
             {
                 lastValidSaldoRaw = data["saldo"];
+                AddAmbiguousAmountWarning(data["saldo"], "Saldo", warnings);
             }
 
             validation.Add(new FilaValidacionResponse
@@ -1854,6 +1861,65 @@ public sealed class ImportacionService : IImportacionService
         }
 
         return parts.Skip(1).All(part => part.Length == 3 && HasDigitsOnly(part));
+    }
+
+    // V-02-04 (1.3): un valor con un unico separador y exactamente un grupo de 3
+    // digitos (ej. "1,234") es ambiguo: puede ser 1234 (agrupacion de miles) o
+    // 1.234 (decimal con 3 decimales). TryParseDecimalSmart elige miles, que suele
+    // ser correcto para importes de 2 decimales, pero en modos una_columna/dos_columnas
+    // no hay columna de control que lo verifique. Devolvemos un aviso (no bloqueante)
+    // para que el usuario revise el formato antes de confirmar. Devuelve null si no
+    // hay ambiguedad.
+    private static string? BuildAmbiguousAmountWarning(string? raw, string fieldLabel)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var text = raw.Trim()
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace(" ", string.Empty, StringComparison.Ordinal);
+
+        if (text.StartsWith('(') && text.EndsWith(')'))
+        {
+            text = text[1..^1];
+        }
+
+        text = text.Replace("MX$", string.Empty, StringComparison.Ordinal)
+            .Replace("RD$", string.Empty, StringComparison.Ordinal)
+            .Replace("€", string.Empty, StringComparison.Ordinal)
+            .Replace("$", string.Empty, StringComparison.Ordinal);
+
+        var hasComma = text.Contains(',');
+        var hasDot = text.Contains('.');
+        if (hasComma == hasDot)
+        {
+            // Ni un solo tipo de separador, o ambos presentes: en esos casos la
+            // interpretacion es deterministica y no ambigua.
+            return null;
+        }
+
+        var separator = hasComma ? ',' : '.';
+        var parts = text.Split(separator);
+        if (parts.Length != 2 || parts[1].Length != 3 || !IsThousandsGrouped(text, separator))
+        {
+            return null;
+        }
+
+        var comoMiles = text.Replace(separator.ToString(), string.Empty, StringComparison.Ordinal);
+        var comoDecimal = text.Replace(separator, '.');
+        return $"{fieldLabel} '{raw.Trim()}' es ambiguo: se importara como {comoMiles} (agrupacion de miles). " +
+               $"Si el valor real es {comoDecimal}, ajusta el separador decimal del formato.";
+    }
+
+    private static void AddAmbiguousAmountWarning(string? raw, string fieldLabel, List<string> warnings)
+    {
+        var warning = BuildAmbiguousAmountWarning(raw, fieldLabel);
+        if (warning is not null)
+        {
+            warnings.Add(warning);
+        }
     }
 
     private static bool HasDigitsOnlyIgnoringSign(string value)

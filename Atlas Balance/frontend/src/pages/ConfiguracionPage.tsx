@@ -1,8 +1,11 @@
-﻿import { FormEvent, useEffect, useMemo, useState } from 'react';
+﻿import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Coins, KeyRound, Mail, ServerCog } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useUpdateStore } from '@/stores/updateStore';
@@ -59,6 +62,7 @@ export default function ConfiguracionPage() {
   const [tab, setTab] = useState<TabKey>('general');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -115,6 +119,12 @@ export default function ConfiguracionPage() {
     },
   });
   const [smtpTo, setSmtpTo] = useState('');
+  // Snapshot de la configuracion cargada para avisar de cambios sin guardar al
+  // refrescar/cerrar el navegador. Los tabs son render condicional sobre este
+  // estado, asi que cambiar de pestana NO pierde datos (no necesita guardia).
+  const configBaselineRef = useRef<string | null>(null);
+  const isConfigDirty = configBaselineRef.current !== null && JSON.stringify(config) !== configBaselineRef.current;
+  useUnsavedChanges(isConfigDirty);
 
   const [tipos, setTipos] = useState<TipoCambio[]>([]);
   const [divisas, setDivisas] = useState<DivisaActiva[]>([]);
@@ -206,7 +216,7 @@ export default function ConfiguracionPage() {
       };
       const loadedIa = cfg.data.ia ?? fallbackIa;
       const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
-      setConfig({
+      const nextConfig: ConfiguracionSistema = {
         ...cfg.data,
         general: {
           ...cfg.data.general,
@@ -223,7 +233,9 @@ export default function ConfiguracionPage() {
           openai_api_key: '',
           minimax_api_key: '',
         },
-      });
+      };
+      setConfig(nextConfig);
+      configBaselineRef.current = JSON.stringify(nextConfig);
       setSmtpTo(cfg.data.smtp.from);
       setTipos(tiposRes.data ?? []);
       setDivisas(nextDivisas);
@@ -288,24 +300,27 @@ export default function ConfiguracionPage() {
     };
     await api.put('/configuracion', payload);
     const refreshed = await api.get<ConfiguracionSistema>('/configuracion');
-    setConfig((prev) => ({
+    const merged: ConfiguracionSistema = {
       ...refreshed.data,
       general: {
-        ...(refreshed.data.general ?? prev.general),
-        mfa_remember_device_enabled: refreshed.data.general?.mfa_remember_device_enabled ?? prev.general.mfa_remember_device_enabled,
-        mfa_remember_device_days: refreshed.data.general?.mfa_remember_device_days ?? prev.general.mfa_remember_device_days,
+        ...(refreshed.data.general ?? config.general),
+        mfa_remember_device_enabled: refreshed.data.general?.mfa_remember_device_enabled ?? config.general.mfa_remember_device_enabled,
+        mfa_remember_device_days: refreshed.data.general?.mfa_remember_device_days ?? config.general.mfa_remember_device_days,
       },
-      exchange: refreshed.data.exchange ?? prev.exchange,
+      exchange: refreshed.data.exchange ?? config.exchange,
       ia: {
-        ...(refreshed.data.ia ?? prev.ia),
-        provider: normalizeAiProvider(refreshed.data.ia?.provider ?? prev.ia.provider),
-        model: normalizeAiModel(refreshed.data.ia?.provider ?? prev.ia.provider, refreshed.data.ia?.model ?? prev.ia.model),
+        ...(refreshed.data.ia ?? config.ia),
+        provider: normalizeAiProvider(refreshed.data.ia?.provider ?? config.ia.provider),
+        model: normalizeAiModel(refreshed.data.ia?.provider ?? config.ia.provider, refreshed.data.ia?.model ?? config.ia.model),
         openrouter_api_key: '',
         openai_api_key: '',
         minimax_api_key: '',
       },
-      smtp: { ...(refreshed.data.smtp ?? prev.smtp), password: '' },
-    }));
+      smtp: { ...(refreshed.data.smtp ?? config.smtp), password: '' },
+    };
+    setConfig(merged);
+    // Tras guardar, la configuracion vuelve a estar limpia: reseteamos la linea base.
+    configBaselineRef.current = JSON.stringify(merged);
     setFeedback(message);
   };
 
@@ -353,6 +368,15 @@ export default function ConfiguracionPage() {
   };
 
   const updateNow = async () => {
+    const confirmed = await confirm({
+      title: 'Actualizar ahora',
+      message: 'Se instalará la nueva versión y la aplicación se reiniciará. Tu sesión se cerrará y el servicio no estará disponible unos minutos. Esta acción no se puede deshacer. ¿Continuar?',
+      confirmLabel: 'Actualizar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -448,6 +472,22 @@ export default function ConfiguracionPage() {
       return;
     }
 
+    // Confirmar solo los cambios con impacto global: fijar una nueva divisa base
+    // (recalcula todas las conversiones) o desactivar una divisa (deja de estar
+    // disponible en toda la aplicacion).
+    if (divisa.es_base || !divisa.activa) {
+      const confirmed = await confirm({
+        title: divisa.es_base ? 'Cambiar divisa base' : 'Desactivar divisa',
+        message: divisa.es_base
+          ? `Vas a fijar ${codigo} como divisa base. Todas las conversiones y totales pasarán a calcularse en ${codigo}. ¿Continuar?`
+          : `Vas a desactivar la divisa ${codigo}. Dejará de estar disponible en la aplicación. ¿Continuar?`,
+        confirmLabel: divisa.es_base ? 'Fijar como base' : 'Desactivar',
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -494,6 +534,15 @@ export default function ConfiguracionPage() {
   };
 
   const revokeToken = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Revocar token',
+      message: 'El token dejará de funcionar de inmediato y cualquier integración que lo use dejará de tener acceso. ¿Revocar?',
+      confirmLabel: 'Revocar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -509,6 +558,15 @@ export default function ConfiguracionPage() {
   };
 
   const rotateToken = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Rotar token',
+      message: 'Se generará un token nuevo y el actual dejará de funcionar. Las integraciones que usen el valor anterior deberán actualizarse. ¿Rotar?',
+      confirmLabel: 'Rotar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -525,6 +583,15 @@ export default function ConfiguracionPage() {
   };
 
   const deleteToken = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Eliminar token',
+      message: 'El token se eliminará de forma permanente y cualquier integración que lo use dejará de tener acceso. ¿Eliminar?',
+      confirmLabel: 'Eliminar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -842,6 +909,21 @@ export default function ConfiguracionPage() {
                   options={aiProviderOptions}
                   onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value) } }))}
                 />
+                {aiUsesOpenRouter ? (
+                  <p className="import-muted">
+                    Con OpenRouter, Atlas Balance solicita retención cero de datos (zdr) y deniega
+                    la recopilación en cada consulta. El contexto financiero se envía a la nube para
+                    responder, pero el proveedor no debe conservarlo.
+                  </p>
+                ) : (
+                  <p className="auth-error" role="status">
+                    Aviso: con {aiProviderLabel} la aplicación no puede exigir retención cero por
+                    consulta (solo OpenRouter lo soporta). El contexto financiero se envía a {aiProviderLabel}
+                    y su conservación depende de la configuración/contrato de tu cuenta con ese proveedor.
+                    Para datos financieros reales on-premise, usa OpenRouter o confirma la retención cero
+                    a nivel de cuenta antes de activarlo.
+                  </p>
+                )}
                 <label className="config-field">
                   <span>Clave API de {aiProviderLabel}</span>
                   <input
@@ -1250,6 +1332,7 @@ export default function ConfiguracionPage() {
         onError={setError}
       />
       <TokenCreatedModal tokenPlano={tokenPlano} onClose={() => setTokenPlano(null)} />
+      <ConfirmDialog {...confirmDialogProps} />
     </section>
   );
 }

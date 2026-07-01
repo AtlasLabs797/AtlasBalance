@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
@@ -9,8 +9,10 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
@@ -108,6 +110,10 @@ export default function TitularesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TitularFormState>(emptyForm);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const formBaselineRef = useRef<string | null>(null);
+  const { confirm: confirmDiscard, dialogProps: discardDialogProps } = useConfirmDialog();
+  const isFormDirty = isFormModalOpen && formBaselineRef.current !== null && JSON.stringify(form) !== formBaselineRef.current;
+  useUnsavedChanges(isFormDirty);
   const [saving, setSaving] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
 
@@ -227,23 +233,38 @@ export default function TitularesPage() {
   };
 
   const openCreateModal = () => {
-    resetForm();
+    setEditingId(null);
+    setForm(emptyForm);
+    formBaselineRef.current = JSON.stringify(emptyForm);
     setFormError(null);
     setIsFormModalOpen(true);
   };
 
-  const closeFormModal = () => {
+  const closeFormModal = async () => {
     if (saving) {
       return;
     }
 
+    if (isFormDirty) {
+      const discard = await confirmDiscard({
+        title: 'Descartar cambios',
+        message: 'Tienes cambios sin guardar en este titular. Si cierras, se perderán. ¿Descartar?',
+        confirmLabel: 'Descartar',
+        cancelLabel: 'Seguir editando',
+      });
+      if (!discard) {
+        return;
+      }
+    }
+
+    formBaselineRef.current = null;
     setIsFormModalOpen(false);
     setFormError(null);
     resetForm();
   };
 
   const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
-    onEscape: saving ? undefined : closeFormModal,
+    onEscape: saving ? undefined : () => void closeFormModal(),
   });
 
   const startEdit = async (id: string) => {
@@ -255,11 +276,13 @@ export default function TitularesPage() {
         params: { incluirEliminados: true },
       });
       setEditingId(id);
-      setForm({
+      const loadedForm: TitularFormState = {
         nombre: data.nombre ?? '',
         tipo: (data.tipo ?? 'EMPRESA') as TipoTitular,
         notas: data.notas ?? '',
-      });
+      };
+      setForm(loadedForm);
+      formBaselineRef.current = JSON.stringify(loadedForm);
       setIsFormModalOpen(true);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo cargar titular'));
@@ -551,7 +574,7 @@ export default function TitularesPage() {
       </div>
 
       {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop users-modal-backdrop" onClick={closeFormModal}>
+        <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeFormModal()}>
           <div
             ref={formDialogRef}
             className="users-modal phase2-form-modal"
@@ -568,7 +591,7 @@ export default function TitularesPage() {
               </div>
               <CloseIconButton
                 className="users-modal-close"
-                onClick={closeFormModal}
+                onClick={() => void closeFormModal()}
                 disabled={saving}
                 ariaLabel="Cerrar modal de titular"
               />
@@ -610,7 +633,7 @@ export default function TitularesPage() {
               </section>
 
               <div className="users-form-actions phase2-modal-actions">
-                <button type="button" onClick={closeFormModal} disabled={saving}>Cancelar</button>
+                <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
                 <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
               </div>
             </form>
@@ -632,6 +655,7 @@ export default function TitularesPage() {
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={remove}
       />
+      <ConfirmDialog {...discardDialogProps} />
     </section>
   );
 }

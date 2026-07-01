@@ -433,6 +433,10 @@ public sealed class IntegrationOpenClawController : ControllerBase
         var buckets = BuildBuckets(start, today, isDaily);
         var currencyByCuenta = cuentas.ToDictionary(x => x.CuentaId, x => x.Divisa);
 
+        // Convencion de saldo (V-02-04): snapshot "a fecha de corte" ordena por Fecha DESC
+        // primario (fila con fecha mas reciente antes del corte). Coincide con
+        // DashboardService.GetEvolucionAsync. El saldo "ahora" usa FilaNumero primario
+        // (ver GetLatestExtractsByCuentaAsync).
         var baselineRows = await _dbContext.Extractos
             .AsNoTracking()
             .Where(x => cuentaIds.Contains(x.CuentaId) && x.Fecha < start)

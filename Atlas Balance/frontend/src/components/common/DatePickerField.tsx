@@ -154,6 +154,19 @@ export function DatePickerField({
     }
   }, [isOpen, selectedDate]);
 
+  // Al abrir, llevar el foco al dia seleccionado (o a hoy) para que el teclado
+  // pueda navegar la rejilla directamente. Es un popover no modal: NO atrapa el
+  // foco (se cierra con Escape o click fuera), por eso no usa useDialogFocus.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (isOpen && !wasOpenRef.current) {
+      focusDate(selectedDate ?? new Date());
+    }
+    wasOpenRef.current = isOpen;
+    // focusDate es estable en la practica; solo nos interesa el flanco de apertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   useEffect(() => {
     if (prefersNativeDateInput) {
       setIsOpen(false);

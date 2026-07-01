@@ -79,6 +79,27 @@ El boton `Historial` aparece en la columna `Fila`, no repetido por toda la tabla
 
 Con teclado, la tabla de Extractos permite moverse por celdas con flechas, Home/End y PageUp/PageDown. Enter o F2 abre la edicion de una celda editable. En movil y tablet tactil conserva scroll local para no romper la comparacion por columnas.
 
+## Novedades de uso (V-02-04)
+
+- **Confirmaciones antes de acciones importantes.** Ahora se pide confirmar antes de:
+  confirmar una importacion, conciliar un movimiento, pulsar "Actualizar ahora",
+  revocar/rotar/eliminar un token de integracion, fijar la divisa base o desactivar
+  una divisa, y desvincular Google Drive. Evita clics accidentales con consecuencias.
+- **Aviso de cambios sin guardar.** Si intentas recargar o cerrar el navegador con una
+  importacion pegada sin confirmar, o cerrar el formulario de usuario con cambios sin
+  guardar, la aplicacion te avisa antes de perderlos.
+- **Importes ambiguos al importar.** Si un importe con un unico separador puede leerse de
+  dos formas (por ejemplo `1,234` como 1234 o como 1.234), la validacion muestra un aviso
+  en esa fila para que revises el formato antes de confirmar. No bloquea, solo avisa.
+- **Edicion de celdas mas fluida.** Al editar una celda del extracto ya no se recarga toda
+  la tabla; solo se actualiza esa fila (salvo si cambias la fecha). Si otra persona edito
+  la misma fila a la vez, veras un aviso y la fila se recargara con el dato actualizado en
+  lugar de un error generico.
+- **Caducidad de tokens en tu hora local.** La fecha de expiracion que eliges para un token
+  se interpreta como el final de ese dia en tu zona horaria.
+- **Integracion OpenClaw.** Hoy es de solo lectura; el permiso de escritura de un token no
+  habilita ninguna operacion todavia (se indica en la pantalla de creacion de tokens).
+
 ## Acceso con Google Authenticator
 
 Atlas Balance usa MFA con aplicaciones compatibles tipo Google Authenticator.
@@ -153,7 +174,7 @@ Los paquetes de release estan en:
 Atlas Balance/Atlas Balance Release
 ```
 
-Ultimo paquete publicado documentado antes de `V-02-02`:
+Ultimo paquete publicado documentado antes de `V-02-03`:
 
 ```text
 AtlasBalance-V-01.09-win-x64.zip
@@ -166,13 +187,13 @@ SHA256 del ZIP firmado de `V-01.09`:
 4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128
 ```
 
-No reutilices hashes ni paquetes de `V-01.09` para publicar `V-02-02`. Cuando se genere `V-02-02`, debe tener ZIP y `.sig` propios.
+No reutilices hashes ni paquetes de `V-01.09` para publicar `V-02-03`. Cuando se genere `V-02-03`, debe tener ZIP y `.sig` propios.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
-No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-01.09-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
+No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-02-03-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
 
-Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.09-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
+Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02-03-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
 Nota dura de `V-01.09`: el codigo ya prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este cambio puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
 
@@ -238,7 +259,7 @@ El prompt pedira la password en consola segura. No la pegues en comandos, chats 
 Si la instalacion ya tiene los scripts actualizados, tambien vale:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.09-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-02-03-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 La distribucion oficial de paquetes se publica como asset en GitHub Releases:
@@ -257,7 +278,7 @@ Tambien puedes actualizar desde la propia app:
 
 Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
 
-La app descarga el ZIP oficial `win-x64`, verifica digest y firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si falta ZIP, firma, digest, clave publica o Watchdog disponible, el boton queda bloqueado con el motivo. En `V-02-02`, `Actualizacion disponible` no significa `Instalable`; esa diferencia evita actualizaciones a medias.
+La app descarga el ZIP oficial `win-x64`, verifica digest y firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si falta ZIP, firma, digest, clave publica o Watchdog disponible, el boton queda bloqueado con el motivo. En `V-02-03`, `Actualizacion disponible` no significa `Instalable`; esa diferencia evita actualizaciones a medias.
 
 El limite maximo de descarga del paquete es 300 MB. Si una instalacion necesita un limite mas bajo, configura `UpdateSecurity:MaxUpdatePackageBytes`; no sirve para subir el maximo por encima de 300 MB. Si el servidor no declara tamano, Atlas Balance corta igualmente la descarga al superar el limite.
 

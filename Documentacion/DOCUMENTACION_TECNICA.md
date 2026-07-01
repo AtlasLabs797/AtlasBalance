@@ -1,5 +1,81 @@
 # Documentacion tecnica
 
+## 2026-07-01 - V-02-04 - Correcciones post-review, UX de seguridad, a11y y limpieza
+
+### Que cambio
+
+- **Concurrencia optimista -> 409.** El handler global de `Program.cs` mapea
+  `DbUpdateConcurrencyException` a `409 Conflict` con `{ error, code: "concurrency_conflict" }`,
+  siguiendo el patron de `TipoCambioMissingException`. El token `xmin` de `Extracto`,
+  `MovimientoEsperado`, `Conciliacion` y `RevisionExtractoEstado` ya detectaba el
+  conflicto; antes caia al `500` generico. `ExtractosPage.onSaveCell` recarga la fila al
+  recibir 409. Test: `ExtractosConcurrencyTests.Editar_Fila_En_Dos_Contextos_Debe_Lanzar_DbUpdateConcurrencyException`.
+- **Aviso de importe ambiguo.** `ImportacionService` incorpora `BuildAmbiguousAmountWarning`/
+  `AddAmbiguousAmountWarning`: cuando un importe con separador unico tiene exactamente un
+  grupo de 3 digitos (miles vs decimal ambiguo), se anade una advertencia por fila
+  (`FilaValidacionResponse.Advertencias`) para monto/ingreso/egreso/saldo. No bloquea.
+- **Convencion de ordenacion de saldo (documentada, sin cambio funcional).** Se verifico que
+  la doble ordenacion NO era un bug: saldo "ahora" (sin filtro de fecha) usa `FilaNumero DESC`
+  primario; saldo "a fecha de corte" (`Fecha < inicio`) usa `Fecha DESC` primario. Comentarios
+  anadidos en `DashboardService` (BuildMetrics/GetEvolucion) e `IntegrationOpenClawController`.
+- **Cookies de sesion en `UserStateMiddleware.RejectAsync`.** Ahora borra los nombres reales
+  segun entorno (`__Host-atlas-*` en produccion) mas las variantes legacy, con `Path=/` y
+  `Secure` (requisito del prefijo `__Host-`). Antes solo borraba `access_token`/`refresh_token`/
+  `csrf_token`, dejando viva la cookie real en produccion.
+- **Frontend UX:** hooks `useConfirmDialog` (promesa sobre `ConfirmDialog`) y `useUnsavedChanges`
+  (`beforeunload`). Confirmaciones en importar/conciliar/actualizar/tokens/divisas/Drive.
+  `UsuarioModal` detecta cambios por snapshot y confirma el descarte al cerrar. `ExtractosPage`
+  parchea la fila editada en local en vez de recargar la pagina (salvo cambio de fecha).
+- **Frontend a11y/hardening:** `SignedAmount` con `showSign`; `ToastViewport` sin live region
+  anidada; `useDialogFocus` cancela el `setTimeout` de foco en cleanup; `DatePickerField`
+  enfoca el dia al abrir (popover no modal, sin `useDialogFocus` a proposito); `ChangePasswordPage`
+  valida la confirmacion via RHF (`aria-describedby`); `formatDateTime` con guard de fecha
+  invalida; `CreateTokenModal` calcula la expiracion como fin de dia local -> UTC y avisa de que
+  OpenClaw es solo lectura.
+- **Limpieza:** eliminado `stores/divisaStore.ts` (sin referencias) y 10 `.gitkeep` redundantes;
+  `formatBytes` consolidado en `utils/formatters.ts` (+ tilde en "Sin tamaño").
+- **Version:** `V-02-04` / `2.4.0` en `VERSION`, `Directory.Build.props`, `frontend/package.json`
+  (+`appVersion`), `package-lock.json` y seed `app_version`.
+
+### Verificacion
+
+- Frontend: `npx tsc --noEmit` OK; `npm run lint` (`--max-warnings 0`) OK.
+- Backend: fuentes compilan sin `error CS` (`dotnet build -p:UseAppHost=false`). El paso de
+  copia a `bin` fallo con `MSB3021 Access denied` por `bin` bloqueado por una instancia en
+  ejecucion; bloqueo de entorno, no de codigo. Tests con Postgres (fixture): no ejecutados.
+
+### Seguimiento de pendientes
+
+- **Modales restantes: HECHO.** `useUnsavedChanges` + confirmacion de descarte cableados en
+  `CuentasPage`, `TitularesPage` y (guard `beforeunload` sobre `config`) `ConfiguracionPage`.
+  Los tabs de Configuracion son render condicional sobre estado de pagina: cambiar de pestana no
+  pierde datos.
+- **Retencion IA: VERIFICADO en codigo.** Solo OpenRouter envia directiva de retencion cero
+  (`zdr`/`data_collection: deny`); OpenAI/MiniMax no. Aviso anadido en la UI de la pestana IA.
+  Queda accion contractual si se usan esos proveedores con datos reales.
+- **Test 409 con Postgres: BLOQUEADO por ACL (requiere elevacion).** Docker OK. No hay app en
+  ejecucion (unico `dotnet` = VBCSCompiler). Los `bin/Debug`/`obj` de API/Watchdog tienen ACL creada
+  por identidad de sandbox: `BUILTIN\Usuarios` (incl. `TRAKERIA\usuario`) solo lectura, sin escritura
+  ni borrado. La recompilacion falla con `Access denied` (`GenerateDepsFile`/staticwebassets). Fix:
+  `icacls ... /grant "TRAKERIA\usuario:(OI)(CI)M" /T` sobre esos bin/obj como administrador (o
+  borrarlos elevado) y reconstruir. Detalle en `Documentacion/Versiones/v-02-04.md`.
+
+## 2026-07-01 - V-02-03 - Alineacion completa de fuentes de version
+
+### Que cambio
+
+- `Build-Release.ps1`, workflow de release, instalador y wrapper `install.ps1` apuntan por defecto a `V-02-03`.
+- `SeedData` inicializa `app_version` como `V-02-03`.
+- `package-lock.json` queda alineado con `package.json` en `2.3.0`.
+- `README_RELEASE.md`, `CLAUDE.md` y `AGENTS.md` usan ejemplos de release `V-02-03`.
+- La documentacion de usuario de paquetes instalables apunta al ZIP y firma `AtlasBalance-V-02-03-win-x64`.
+
+### Verificacion
+
+- Barrido `rg` de referencias activas fuera de documentacion historica.
+- Parser PowerShell de scripts de release/instalacion: OK.
+- `npm.cmd run lint`: OK.
+
 ## 2026-07-01 - V-02-03 - Wrappers de hardening para servicios bloqueados por ACL
 
 ### Que cambio

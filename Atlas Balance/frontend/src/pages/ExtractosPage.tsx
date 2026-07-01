@@ -304,8 +304,36 @@ export default function ExtractosPage() {
 
     try {
       await api.put(`/extractos/${row.id}`, payload);
-      await loadRows();
+      // La edicion solo afecta a esta fila (el saldo es un valor almacenado, no
+      // recalculado en cascada). Para evitar recargar toda la pagina virtualizada
+      // en cada celda (coste y salto de scroll con 50k filas), parcheamos la fila
+      // localmente. Excepcion: cambiar la fecha puede reordenar/reformatear, asi
+      // que ahi si recargamos.
+      if (column === 'fecha') {
+        await loadRows();
+      } else {
+        setRows((prev) =>
+          prev.map((r) => {
+            if (r.id !== row.id) return r;
+            if (payload.columnas_extra) {
+              return { ...r, columnas_extra: { ...(r.columnas_extra ?? {}), ...payload.columnas_extra } };
+            }
+            const patch: Partial<Extracto> = {};
+            if (payload.concepto !== undefined) patch.concepto = payload.concepto;
+            if (payload.comentarios !== undefined) patch.comentarios = payload.comentarios;
+            if (payload.monto !== undefined) patch.monto = payload.monto;
+            if (payload.saldo !== undefined) patch.saldo = payload.saldo;
+            return { ...r, ...patch };
+          })
+        );
+      }
     } catch (err) {
+      // Conflicto de concurrencia (otro usuario edito la fila): recargamos para
+      // que el usuario vea el dato fresco antes de reintentar. El interceptor ya
+      // muestra el mensaje del backend.
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        await loadRows();
+      }
       setError(extractErrorMessage(err, 'No se pudo guardar la celda.'));
       throw err;
     }

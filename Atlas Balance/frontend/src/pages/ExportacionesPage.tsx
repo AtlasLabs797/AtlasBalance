@@ -8,7 +8,7 @@ import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { Cuenta, ExportacionItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatDateTime, formatNumber } from '@/utils/formatters';
+import { formatBytes, formatDateTime } from '@/utils/formatters';
 
 const pageSizeOptions = [10, 20, 50];
 const estadoExportacionLabels: Record<string, string> = {
@@ -20,12 +20,6 @@ const tipoExportacionLabels: Record<string, string> = {
   AUTO: 'Automática',
   MANUAL: 'Manual',
 };
-
-function formatBytes(value: number | null): string {
-  if (!value || value <= 0) return 'Sin tamaño';
-  const mb = value / (1024 * 1024);
-  return `${formatNumber(mb)} MB`;
-}
 
 function formatEstadoExportacion(value: string) {
   return estadoExportacionLabels[value.toUpperCase()] ?? value;

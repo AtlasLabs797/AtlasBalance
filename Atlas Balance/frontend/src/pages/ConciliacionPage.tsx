@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { SignedAmount } from '@/components/common/SignedAmount';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -28,6 +30,7 @@ export default function ConciliacionPage() {
   const [ventanaDias, setVentanaDias] = useState(3);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -126,6 +129,17 @@ export default function ConciliacionPage() {
   };
 
   const cambiarEstado = async (id: string, action: 'confirmar' | 'excepcion' | 'resolver') => {
+    if (action === 'confirmar') {
+      const confirmed = await confirm({
+        title: 'Conciliar movimiento',
+        message: 'Vas a conciliar este movimiento con su extracto. Es una acción de cierre contable. ¿Continuar?',
+        confirmLabel: 'Conciliar',
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setSubmitting(true);
     setError(null);
     setSuccess(null);
@@ -295,6 +309,7 @@ export default function ConciliacionPage() {
           </table>
         </div>
       </section>
+      <ConfirmDialog {...confirmDialogProps} />
     </section>
   );
 }

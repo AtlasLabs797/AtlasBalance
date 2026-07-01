@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
@@ -10,8 +10,10 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
@@ -181,6 +183,10 @@ export default function CuentasPage() {
   const [renewingId, setRenewingId] = useState<string | null>(null);
   const [form, setForm] = useState<CuentaFormState>(emptyForm);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const formBaselineRef = useRef<string | null>(null);
+  const { confirm: confirmDiscard, dialogProps: discardDialogProps } = useConfirmDialog();
+  const isFormDirty = isFormModalOpen && formBaselineRef.current !== null && JSON.stringify(form) !== formBaselineRef.current;
+  useUnsavedChanges(isFormDirty);
   const [saving, setSaving] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
   const formatosDisponibles = useMemo(
@@ -354,15 +360,17 @@ export default function CuentasPage() {
     };
   }, [canSeeDashboard, divisaPrincipal, periodo, selectedPaisId]);
 
+  const buildFormDefaults = (): CuentaFormState => ({
+    ...emptyForm,
+    titular_id: titulares[0]?.id ?? '',
+    divisa: divisas[0]?.codigo ?? 'EUR',
+    pais_id: '',
+  });
+
   const resetForm = () => {
     setEditingId(null);
     setRenewingId(null);
-    setForm(() => ({
-      ...emptyForm,
-      titular_id: titulares[0]?.id ?? '',
-      divisa: divisas[0]?.codigo ?? 'EUR',
-      pais_id: '',
-    }));
+    setForm(buildFormDefaults());
   };
 
   const openCreateModal = () => {
@@ -371,23 +379,40 @@ export default function CuentasPage() {
       return;
     }
 
-    resetForm();
+    const defaults = buildFormDefaults();
+    setEditingId(null);
+    setRenewingId(null);
+    setForm(defaults);
+    formBaselineRef.current = JSON.stringify(defaults);
     setFormError(null);
     setIsFormModalOpen(true);
   };
 
-  const closeFormModal = () => {
+  const closeFormModal = async () => {
     if (saving) {
       return;
     }
 
+    if (isFormDirty) {
+      const discard = await confirmDiscard({
+        title: 'Descartar cambios',
+        message: 'Tienes cambios sin guardar en esta cuenta. Si cierras, se perderán. ¿Descartar?',
+        confirmLabel: 'Descartar',
+        cancelLabel: 'Seguir editando',
+      });
+      if (!discard) {
+        return;
+      }
+    }
+
+    formBaselineRef.current = null;
     setIsFormModalOpen(false);
     setFormError(null);
     resetForm();
   };
 
   const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
-    onEscape: saving ? undefined : closeFormModal,
+    onEscape: saving ? undefined : () => void closeFormModal(),
   });
 
   useEffect(() => {
@@ -428,7 +453,7 @@ export default function CuentasPage() {
       const { data } = await api.get<CuentaRow>(`/cuentas/${id}`, { params: { incluirEliminados: true } });
       setEditingId(id);
       setRenewingId(null);
-      setForm({
+      const loadedForm: CuentaFormState = {
         titular_id: data.titular_id,
         nombre: data.nombre,
         numero_cuenta: data.numero_cuenta ?? '',
@@ -446,7 +471,9 @@ export default function CuentasPage() {
         renovable: data.plazo_fijo?.renovable ?? false,
         cuenta_referencia_id: data.plazo_fijo?.cuenta_referencia_id ?? '',
         plazo_fijo_notas: data.plazo_fijo?.notas ?? '',
-      });
+      };
+      setForm(loadedForm);
+      formBaselineRef.current = JSON.stringify(loadedForm);
       setIsFormModalOpen(true);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo cargar cuenta'));
@@ -882,7 +909,7 @@ export default function CuentasPage() {
       </div>
 
       {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop users-modal-backdrop" onClick={closeFormModal}>
+        <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeFormModal()}>
           <div
             ref={formDialogRef}
             className="users-modal phase2-form-modal phase2-form-modal--wide"
@@ -899,7 +926,7 @@ export default function CuentasPage() {
               </div>
               <CloseIconButton
                 className="users-modal-close"
-                onClick={closeFormModal}
+                onClick={() => void closeFormModal()}
                 disabled={saving}
                 ariaLabel="Cerrar modal de cuenta"
               />
@@ -1082,7 +1109,7 @@ export default function CuentasPage() {
               ) : null}
 
               <div className="users-form-actions phase2-modal-actions">
-                <button type="button" onClick={closeFormModal} disabled={saving}>Cancelar</button>
+                <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
                 <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
               </div>
             </form>
@@ -1104,6 +1131,7 @@ export default function CuentasPage() {
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={remove}
       />
+      <ConfirmDialog {...discardDialogProps} />
     </section>
   );
 }

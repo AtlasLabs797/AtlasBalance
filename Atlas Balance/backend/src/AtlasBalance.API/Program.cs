@@ -333,6 +333,21 @@ app.UseExceptionHandler(errorApp =>
             return;
         }
 
+        // Conflicto de concurrencia optimista (token xmin): otro usuario modifico
+        // el registro entre la lectura y el guardado. Se devuelve 409 para que el
+        // frontend recargue el dato en vez de reintentar a ciegas (evita lost updates).
+        if (feature?.Error is DbUpdateConcurrencyException)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            context.Response.ContentType = "application/json; charset=utf-8";
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "El registro fue modificado por otro usuario. Recarga los datos y vuelve a intentarlo.",
+                code = "concurrency_conflict"
+            });
+            return;
+        }
+
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         context.Response.ContentType = "application/json; charset=utf-8";
         await context.Response.WriteAsJsonAsync(new { error = "Error interno del servidor." });

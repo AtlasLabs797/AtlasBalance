@@ -230,6 +230,12 @@ public sealed class DashboardService : IDashboardService
 
         var accountCurrency = cuentas.ToDictionary(x => x.CuentaId, x => x.Divisa);
 
+        // Convencion de saldo (V-02-04): saldo "a fecha de corte" (snapshot historico
+        // con filtro Fecha < start) ordena por Fecha DESC como criterio primario, para
+        // tomar la fila con la fecha mas reciente antes del corte. NO usar FilaNumero
+        // primario aqui: una correccion retroactiva (fecha vieja, fila_numero alto)
+        // pasaria a considerarse el saldo del corte por error. El saldo "ahora" (sin
+        // filtro de fecha) si usa FilaNumero DESC primario (ver BuildMetricsAsync).
         var baselineRows = await _dbContext.Extractos
             .AsNoTracking()
             .Where(x => cuentaIds.Contains(x.CuentaId) && x.Fecha < start)
@@ -437,6 +443,10 @@ public sealed class DashboardService : IDashboardService
         var cuentaIds = cuentas.Select(x => x.CuentaId).ToHashSet();
         var divisaByCuenta = cuentas.ToDictionary(x => x.CuentaId, x => x.Divisa);
 
+        // Convencion de saldo (V-02-04): saldo "ahora" = ultima fila fisica (FilaNumero
+        // DESC primario), porque FilaNumero es el orden de insercion autoritativo del
+        // extracto. Fecha rompe empates. Difiere a proposito del snapshot a-fecha-de-corte
+        // (que ordena por Fecha primario). Ver GetEvolucionAsync.
         var latestRows = await _dbContext.Extractos
             .AsNoTracking()
             .Where(x => cuentaIds.Contains(x.CuentaId))

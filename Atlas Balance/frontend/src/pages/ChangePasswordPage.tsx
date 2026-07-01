@@ -26,15 +26,10 @@ export default function ChangePasswordPage() {
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const [error, setError] = useState<string | null>(null);
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<ChangePasswordForm>();
+  const { register, handleSubmit, getValues, formState: { errors, isSubmitting } } = useForm<ChangePasswordForm>();
 
-  const onSubmit = handleSubmit(async ({ passwordActual, passwordNueva, confirmacion }) => {
+  const onSubmit = handleSubmit(async ({ passwordActual, passwordNueva }) => {
     setError(null);
-
-    if (passwordNueva !== confirmacion) {
-      setError('La confirmación no coincide.');
-      return;
-    }
 
     try {
       const { data } = await api.put('/auth/cambiar-password', { password_actual: passwordActual, password_nueva: passwordNueva });
@@ -139,7 +134,10 @@ export default function ChangePasswordPage() {
             className="auth-input"
             aria-invalid={errors.confirmacion ? true : undefined}
             aria-describedby={errors.confirmacion ? 'confirmacion-error' : undefined}
-            {...register('confirmacion', { required: 'Repite la contraseña nueva.' })}
+            {...register('confirmacion', {
+              required: 'Repite la contraseña nueva.',
+              validate: (value) => value === getValues('passwordNueva') || 'La confirmación no coincide.',
+            })}
           />
           {errors.confirmacion ? (
             <p id="confirmacion-error" className="auth-error" role="alert">{errors.confirmacion.message}</p>

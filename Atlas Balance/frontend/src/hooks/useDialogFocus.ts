@@ -32,7 +32,7 @@ export function useDialogFocus<T extends HTMLElement>(
 
     triggerRef.current = document.activeElement;
 
-    window.setTimeout(() => {
+    const focusTimeoutId = window.setTimeout(() => {
       const target =
         initialFocusRef.current?.() ??
         dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ??
@@ -70,6 +70,9 @@ export function useDialogFocus<T extends HTMLElement>(
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      // Cancela el foco inicial pendiente para no llamar .focus() sobre un nodo
+      // ya desmontado si el dialogo se abre y cierra muy rapido.
+      window.clearTimeout(focusTimeoutId);
       window.removeEventListener('keydown', handleKeyDown);
       if (triggerRef.current instanceof HTMLElement) {
         triggerRef.current.focus();

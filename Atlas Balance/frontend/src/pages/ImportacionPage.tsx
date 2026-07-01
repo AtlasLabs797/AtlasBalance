@@ -2,9 +2,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { SignedAmount } from '@/components/common/SignedAmount';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
@@ -177,6 +180,7 @@ export default function ImportacionPage() {
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [closeAttempted, setCloseAttempted] = useState(false);
   const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
   const [plazoMonto, setPlazoMonto] = useState('');
@@ -335,6 +339,8 @@ export default function ImportacionPage() {
     : 0;
   const canManageFormatos = usuario?.rol === 'ADMIN';
   const importAlreadyConfirmed = confirmResult !== null;
+  // Aviso al refrescar/cerrar el navegador con datos pegados sin confirmar.
+  useUnsavedChanges(rawData.trim().length > 0 && !importAlreadyConfirmed);
 
   useEffect(() => {
     if (!autoCloseOnSuccess || !importAlreadyConfirmed || !cuentaId) {
@@ -441,6 +447,15 @@ export default function ImportacionPage() {
 
     if (selectedWarningRowsCount > 0 && !acceptWarnings) {
       setError('Hay filas seleccionadas con avisos. Marca la aceptación explícita para confirmarlas.');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: 'Confirmar importación',
+      message: `Se importarán ${selectedValidRowsCount} ${selectedValidRowsCount === 1 ? 'fila' : 'filas'} a la cuenta seleccionada. Esta acción escribe movimientos en el extracto. ¿Continuar?`,
+      confirmLabel: 'Importar',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -1023,6 +1038,7 @@ export default function ImportacionPage() {
         )}
       </div>
       )}
+      <ConfirmDialog {...confirmDialogProps} />
     </section>
   );
 }

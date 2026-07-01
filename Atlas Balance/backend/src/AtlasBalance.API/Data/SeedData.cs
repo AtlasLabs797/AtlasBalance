@@ -133,7 +133,7 @@ public static class SeedData
             ["google_drive_folder_id"] = ("", "string", "Carpeta de Google Drive para backups"),
             ["backup_cloud_encryption_key"] = ("", "string", "Clave protegida de cifrado para backups en nube"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
-            ["app_version"] = ("V-02-02", "string", "Version instalada"),
+            ["app_version"] = ("V-02-04", "string", "Version instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["app_update_auto_enabled"] = ("false", "bool", "Aplicar automaticamente releases firmados de GitHub"),
             ["app_update_auto_hour_utc"] = ("3", "int", "Hora UTC minima para la comprobacion automatica diaria"),

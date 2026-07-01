@@ -8,6 +8,109 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-01 - V-02-04 - Cierre de pendientes: guard en modales restantes y verificacion IA
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Cableado `useUnsavedChanges` + confirmacion de descarte en los formularios modales de
+  `CuentasPage` y `TitularesPage` (snapshot del formulario para detectar cambios; confirmacion
+  al cerrar/Escape/cancelar/backdrop). En `ConfiguracionPage` se anadio guard `beforeunload`
+  sobre el objeto `config` (linea base tras `load()` y tras `saveConfig`); se documento que
+  cambiar de pestana NO pierde datos (render condicional sobre estado de pagina).
+- Verificacion de retencion de datos IA (`AtlasAiService.BuildProviderRequest`): solo OpenRouter
+  envia `provider: { zdr: true, data_collection: "deny" }`; OpenAI/MiniMax no envian directiva de
+  retencion por consulta. El flag de auditoria `zero_data_retention` es honesto (false para no-OpenRouter).
+  Anadido aviso en la pestana IA de `ConfiguracionPage` cuando el proveedor no es OpenRouter.
+
+**Archivos tocados:**
+- `frontend/src/pages/CuentasPage.tsx`, `frontend/src/pages/TitularesPage.tsx`, `frontend/src/pages/ConfiguracionPage.tsx`.
+
+**Comandos ejecutados y verificacion:**
+- Frontend: `npx tsc --noEmit` OK; `npm run lint` (`--max-warnings 0`) OK.
+- Intento de ejecutar `ExtractosConcurrencyTests` con Testcontainers: Docker disponible. Diagnostico
+  final (corrige hipotesis previa): NO hay app en ejecucion; el bloqueo es de ACL. Los `bin/Debug`/`obj`
+  de API/Watchdog fueron creados por identidad de sandbox y `TRAKERIA\usuario` solo tiene lectura, sin
+  poder escribir/borrar/cambiar ACL. Falla con `Access denied` en Debug y Release. Requiere `icacls /grant`
+  como administrador (o borrar bin/obj elevado) y reconstruir. No se ejecuto el test.
+
+**Pendientes:**
+- Ejecutar el test 409 con Postgres tras detener la instancia dev.
+- Accion de negocio: confirmar retencion cero a nivel de cuenta si se usa OpenAI/MiniMax con datos reales.
+
+---
+## 2026-07-01 - V-02-04 - Correcciones post-review: concurrencia, UX de seguridad, a11y y limpieza
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- **Concurrencia 409:** `Program.cs` mapea `DbUpdateConcurrencyException` a 409 (`code: concurrency_conflict`). El frontend (`ExtractosPage`) recarga la fila al recibirlo. Test `ExtractosConcurrencyTests.Editar_Fila_En_Dos_Contextos_Debe_Lanzar_DbUpdateConcurrencyException`.
+- **Importacion:** aviso por fila cuando un importe con separador unico es ambiguo (miles vs decimal) en `ImportacionService.ValidateRows` (monto/ingreso/egreso/saldo).
+- **Orden de saldo:** verificado que NO era bug; documentada la convencion (saldo "ahora" = `FilaNumero DESC`; saldo "a fecha de corte" = `Fecha DESC`) con comentarios en `DashboardService` e `IntegrationOpenClawController`.
+- **Confirmaciones:** nuevo hook `useConfirmDialog`; cableadas en importar, conciliar, "Actualizar ahora", revocar/rotar/eliminar token, fijar divisa base/desactivar divisa y desvincular Google Drive.
+- **Cambios sin guardar:** nuevo hook `useUnsavedChanges` (`beforeunload`); en `ImportacionPage` y `UsuarioModal` (con confirmacion de descarte al cerrar).
+- **ExtractosPage:** parcheo local de la fila editada en vez de recargar toda la pagina (salvo cambio de fecha).
+- **Accesibilidad:** `SignedAmount` con `showSign` (usado en `AuditoriaPage`); `ToastViewport` sin live region anidada; `useDialogFocus` cancela el timeout de foco; `DatePickerField` enfoca el dia al abrir; `ChangePasswordPage` valida la confirmacion via RHF (asociada por `aria-describedby`).
+- **Hardening:** `formatDateTime` con guard de fecha invalida; `CreateTokenModal` calcula la expiracion como fin de dia local -> UTC; `UserStateMiddleware` borra las cookies `__Host-atlas-*` reales (y legacy) con `Path=/`+`Secure`; aviso en UI de que OpenClaw es solo lectura.
+- **Limpieza:** eliminado `stores/divisaStore.ts`; eliminados 10 `.gitkeep` redundantes (se conserva el de `Atlas Balance Release/`); `formatBytes` consolidado en `utils/formatters.ts` (+ tilde corregida en "Sin tamaño").
+- **Version:** bump a `V-02-04` / `2.4.0` en `VERSION`, `Directory.Build.props`, `frontend/package.json` (+`appVersion`), `package-lock.json` y seed `app_version`.
+
+**Archivos tocados (principales):**
+- Backend: `Program.cs`, `Services/ImportacionService.cs`, `Services/DashboardService.cs`, `Controllers/IntegrationOpenClawController.cs`, `Middleware/UserStateMiddleware.cs`, `Data/SeedData.cs`, `tests/.../ExtractosConcurrencyTests.cs`.
+- Frontend: `hooks/useConfirmDialog.ts`, `hooks/useUnsavedChanges.ts`, `hooks/useDialogFocus.ts`, `utils/formatters.ts`, `components/common/SignedAmount.tsx`, `components/common/ToastViewport.tsx`, `components/common/DatePickerField.tsx`, `components/integraciones/CreateTokenModal.tsx`, `components/usuarios/UsuarioModal.tsx`, `pages/ImportacionPage.tsx`, `pages/ConciliacionPage.tsx`, `pages/ConfiguracionPage.tsx`, `pages/BackupsPage.tsx`, `pages/ExtractosPage.tsx`, `pages/ExportacionesPage.tsx`, `pages/AuditoriaPage.tsx`, `pages/ChangePasswordPage.tsx`. Eliminado: `stores/divisaStore.ts` + 10 `.gitkeep`.
+- Docs: `Documentacion/Versiones/v-02-04.md` (nuevo), `DOCUMENTACION_TECNICA.md`, `DOCUMENTACION_USUARIO.md`, `DOCUMENTACION_CAMBIOS.md`.
+
+**Comandos ejecutados y verificacion:**
+- Frontend: `npx tsc --noEmit` OK; `npm run lint` (`--max-warnings 0`) OK.
+- Backend: `dotnet build -p:UseAppHost=false` compila las fuentes sin `error CS`. El paso de copia a `bin` fallo con `MSB3021 Access denied` por `bin` bloqueado por una instancia en ejecucion (bloqueo de entorno, no de codigo). Tests con Postgres via fixture: no ejecutados en esta pasada.
+
+**Decisiones de diseno (frontend):**
+- Se reutiliza el `ConfirmDialog` controlado ya existente via un hook imperativo (`useConfirmDialog`) para no duplicar estado en cada pagina.
+- El "+" de `SignedAmount` es opt-in (`showSign`) para no ensuciar visualmente los KPIs; los negativos ya muestran el "-" del formato.
+- `DatePickerField` se mantiene como popover NO modal (no se le pone `useDialogFocus` a proposito: bloquearia la pagina y atraparia el foco de forma incorrecta).
+
+**Pendientes:**
+- Cablear el aviso de cambios sin guardar en el resto de modales (Cuentas, Titulares) y pestanas de `ConfiguracionPage` con los hooks ya creados.
+- Ejecutar la suite backend con Postgres disponible (409 de concurrencia end-to-end).
+- Confirmar retencion de datos en rutas OpenAI/MiniMax de la IA.
+
+---
+## 2026-07-01 - V-02-03 - Alineacion completa de version runtime, instalacion y release
+
+**Version:** V-02-03
+
+**Trabajo realizado:**
+- Se alinearon fuentes activas que seguian apuntando a `V-02-02` o `V-01.09`: workflow de release, build de release, instalador, wrapper `install.ps1`, seed `app_version`, `README_RELEASE.md`, ejemplos operativos en `CLAUDE.md`/`AGENTS.md` y documentacion de usuario.
+- Se corrigio `frontend/package-lock.json` de `2.2.0` a `2.3.0` para que coincida con `frontend/package.json`.
+- Se conservaron referencias historicas y fixtures de tests que simulan actualizaciones desde versiones antiguas.
+
+**Archivos tocados:**
+- `.github/workflows/release.yml`
+- `CLAUDE.md`
+- `Atlas Balance/AGENTS.md`
+- `Atlas Balance/CLAUDE.md`
+- `Atlas Balance/README_RELEASE.md`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/install.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `Atlas Balance/frontend/package-lock.json`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-02-03.md`
+
+**Comandos ejecutados y verificacion:**
+- Lectura de `CLAUDE.md`, `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02-03.md` y `Documentacion/LOG_ERRORES_INCIDENCIAS.md`.
+- Barridos `rg` de referencias activas a `V-02-02`, `V-01.09`, `2.2.0` y `app_version`.
+- Parser PowerShell de `Build-Release.ps1`, `Instalar-AtlasBalance.ps1` e `install.ps1`: OK.
+- `npm.cmd run lint`: OK.
+
+**Pendientes:**
+- No se ejecuto build completo ni empaquetado de release en esta pasada; el cambio fue de metadatos/versionado y validacion estatica.
+
+---
+
 ## 2026-07-01 - V-02-03 - Cierre de bloqueos mediante wrappers DI
 
 **Version:** V-02-03

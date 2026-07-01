@@ -78,6 +78,21 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
       return;
     }
 
+    // La fecha elegida en el date picker es local (YYYY-MM-DD). La convertimos al
+    // fin de ese dia en hora LOCAL y luego a UTC, para que la expiracion caiga en
+    // el dia correcto del usuario (antes se forzaba 23:59:59Z, desplazando el
+    // vencimiento a traves de la frontera de dia segun la zona horaria).
+    const buildExpiracionIso = (): string | null => {
+      if (sinExpiracion || !tokenExpiracion) {
+        return null;
+      }
+      const [year, month, day] = tokenExpiracion.split('-').map(Number);
+      if (!year || !month || !day) {
+        return null;
+      }
+      return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
+    };
+
     try {
       setSubmitting(true);
       const { data } = await api.post<CreateIntegrationTokenResponse>('/integraciones/tokens', {
@@ -85,7 +100,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
         descripcion: tokenDescripcion.trim() || null,
         permiso_lectura: tokenLectura,
         permiso_escritura: tokenEscritura,
-        fecha_expiracion: sinExpiracion || !tokenExpiracion ? null : `${tokenExpiracion}T23:59:59.000Z`,
+        fecha_expiracion: buildExpiracionIso(),
         sin_expiracion_confirmada: sinExpiracion,
         scopes: tokenScopes,
         permisos: tokenPermisos,
@@ -139,6 +154,10 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
             <label><input type="checkbox" checked={tokenLectura} onChange={(event) => setTokenLectura(event.target.checked)} /> Lectura</label>
             <label><input type="checkbox" checked={tokenEscritura} onChange={(event) => setTokenEscritura(event.target.checked)} /> Escritura</label>
           </div>
+          <p className="import-muted">
+            La integración OpenClaw es de solo lectura por ahora: los endpoints disponibles
+            solo consultan datos. El permiso de escritura no habilita ninguna operación todavía.
+          </p>
           <div className="config-grid-3">
             <label>
               Expira el
