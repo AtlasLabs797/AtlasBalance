@@ -1,5 +1,32 @@
 # Documentacion tecnica
 
+## 2026-07-02 - V-02-04 - Auditoria de seguridad completa y cierre de logout en produccion
+
+### Que cambio
+
+- **`AuthController.DeleteCookie` borra el nombre real por entorno.** El logout (y el borrado
+  de `mfa_trusted` en `AttachCookiesAndBuildAuthResponse`/`RevokeCurrentTrustedDevice`) borraba
+  solo los nombres legacy (`access_token`, `refresh_token`, `csrf_token`, `mfa_trusted`). En
+  produccion las cookies reales llevan prefijo `__Host-atlas-*` (V-02-03), asi que el logout
+  revocaba el refresh token en servidor pero dejaba en el navegador un access token valido
+  hasta ~1h y la cookie CSRF viva (CWE-613). Ahora `DeleteCookie` replica el criterio de
+  `UserStateMiddleware.DeleteAuthCookies`: borra el nombre real segun entorno mas la variante
+  legacy, con `Path=/` y `Secure` (requisito del prefijo `__Host-`). La politica de conservar
+  `mfa_trusted` tras logout (V-01.07) se mantiene intacta.
+- **Guard de null en `UserStateMiddleware.DeleteAuthCookies`.** `context.RequestServices` puede
+  ser null fuera del pipeline real (tests unitarios con `DefaultHttpContext`); se usa `?.` y
+  fallback a comportamiento no-dev. Corrige el NRE del test
+  `InvokeAsync_Should_Reject_Token_When_SecurityStamp_Is_Stale`.
+
+### Verificacion
+
+- Backend: build OK (API y Watchdog, `OutDir` redirigido a scratchpad por ACL de `bin`).
+- Tests: suite completa **323/323 OK** (tras arrancar Docker Desktop), incluido el nuevo
+  `AuthControllerTests.Logout_Should_Delete_HostPrefixed_Cookies_In_Production`, los
+  `ExtractosConcurrencyTests` (409 de concurrencia) y `RowLevelSecurityTests` con Testcontainers.
+- Auditoria completa documentada en `SEGURIDAD_AUDITORIA_V-02-04.md` (npm audit 0 vulnerabilidades,
+  NuGet 0 paquetes vulnerables, sin secretos versionados).
+
 ## 2026-07-01 - V-02-04 - Correcciones post-review, UX de seguridad, a11y y limpieza
 
 ### Que cambio

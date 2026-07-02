@@ -1,5 +1,28 @@
 # Log de errores e incidencias
 
+## 2026-07-02 - V-02-04 - Logout no borraba las cookies __Host-atlas-* en produccion (CERRADO)
+
+- Contexto: auditoria de seguridad completa de V-02-04.
+- Error: `AuthController.DeleteCookie` borraba solo los nombres legacy (`access_token`, etc.). En produccion las cookies reales llevan prefijo `__Host-atlas-` (V-02-03), asi que el logout dejaba el access token (~1h de validez) y la cookie CSRF vivos en el navegador. CWE-613.
+- Causa: al introducir el prefijo `__Host-` en V-02-03 se corrigio `UserStateMiddleware.DeleteAuthCookies` pero se olvido el mismo patron en `AuthController`.
+- Solucion: `DeleteCookie` borra el nombre real por entorno (`CookieName`) mas la variante legacy, con `Path=/` y `Secure`. Test de regresion `Logout_Should_Delete_HostPrefixed_Cookies_In_Production`.
+- Regla: si una convencion de nombres de cookie cambia, grep de TODOS los puntos que las borran/leen (`DeleteCookie`, `Cookies.Delete`, `ReadCookie`), no solo donde aparecio el bug.
+
+## 2026-07-02 - V-02-04 - NRE en UserStateMiddleware.DeleteAuthCookies con DefaultHttpContext (CERRADO)
+
+- Contexto: suite de tests durante la auditoria de seguridad; fallaba `InvokeAsync_Should_Reject_Token_When_SecurityStamp_Is_Stale`.
+- Error: `context.RequestServices.GetService(...)` lanza `NullReferenceException` cuando el `HttpContext` no viene del pipeline real (tests con `DefaultHttpContext` sin service provider).
+- Solucion: acceso null-conditional (`context.RequestServices?.GetService(...)`); con null se asume produccion (borra ambas variantes), el fallback mas seguro.
+- Verificacion: 320/320 tests no-Docker OK.
+
+## 2026-07-02 - V-02-04 - bin/obj bloqueados por ACL: build y tests via OutDir redirigido
+
+- Contexto: `dotnet build`/`dotnet test` fallaban con `UnauthorizedAccessException`/`MSB3021` sobre `bin\Debug` de API y Watchdog.
+- Causa: los archivos de `bin` fueron creados por la identidad `TRAKERIA\CodexSandboxUsers` y el usuario actual solo tiene lectura (misma ACL documentada el 2026-07-01). No habia procesos bloqueando (solo workers MSBuild).
+- Solucion aplicada: compilar y testear con `-p:OutDir=<scratchpad>\build-*\` sin tocar `bin`. Funciona para build y para `dotnet test`, incluida la suite completa con Testcontainers (323/323 tras arrancar Docker Desktop, que estaba parado y subio en ~4s).
+- Verificado que la ACL NO es arreglable sin elevacion: `trakeria\usuario` no es admin, no es owner (`TRAKERIA\CodexSandboxOffline`) y no pertenece a los grupos con Modify. Queda solo como limpieza opcional con consola elevada (comandos en `Versiones/v-02-04.md`).
+- Regla: si `bin/obj` estan bloqueados por ACL, no insistas ni pidas elevacion para validar codigo; `-p:OutDir` a una ruta escribible desbloquea build y tests completos.
+
 ## 2026-07-01 - V-02-03 - Render PNG de logo bloqueado por Playwright sin navegador instalado
 
 - Contexto: sustitucion del logo Atlas Balance y regeneracion del PNG fallback desde el SVG.

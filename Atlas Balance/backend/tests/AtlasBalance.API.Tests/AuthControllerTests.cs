@@ -41,6 +41,34 @@ public sealed class AuthControllerTests
         setCookie.Should().NotContain("mfa_trusted=");
     }
 
+    [Fact]
+    public async Task Logout_Should_Delete_HostPrefixed_Cookies_In_Production()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+
+        var controller = new AuthController(
+            new LogoutOnlyAuthService(),
+            new CsrfService(),
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            new AuditService(db));
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Cookie =
+            "__Host-atlas-access-token=a; __Host-atlas-refresh-token=r; __Host-atlas-csrf-token=c; __Host-atlas-mfa-trusted=trusted";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var result = await controller.Logout(CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var setCookie = httpContext.Response.Headers.SetCookie.ToString();
+        setCookie.Should().Contain("__Host-atlas-access-token=");
+        setCookie.Should().Contain("__Host-atlas-refresh-token=");
+        setCookie.Should().Contain("__Host-atlas-csrf-token=");
+        setCookie.Should().NotContain("__Host-atlas-mfa-trusted=");
+    }
+
     private sealed class LogoutOnlyAuthService : IAuthService
     {
         public Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null, string? userAgent = null) =>

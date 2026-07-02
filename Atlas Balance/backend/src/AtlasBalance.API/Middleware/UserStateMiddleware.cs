@@ -137,7 +137,7 @@ public sealed class UserStateMiddleware
     // por si quedaran cookies antiguas de una version anterior.
     private static void DeleteAuthCookies(HttpContext context)
     {
-        var env = context.RequestServices.GetService(typeof(IWebHostEnvironment)) as IWebHostEnvironment;
+        var env = context.RequestServices?.GetService(typeof(IWebHostEnvironment)) as IWebHostEnvironment;
         var isDev = env?.IsDevelopment() ?? false;
         var secure = !isDev;
 

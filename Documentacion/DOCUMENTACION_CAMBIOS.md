@@ -8,6 +8,50 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-02 - V-02-04 - Auditoria de seguridad completa (backend, frontend, watchdog, dependencias) y fixes
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Auditoria de seguridad de todo el codigo siguiendo la metodologia cyber-neo (OWASP Top 10 / CWE):
+  auth/JWT/CSRF, permisos y cobertura `[Authorize]` en los 22 controladores, middleware
+  (`CsrfMiddleware`, `IntegrationAuthMiddleware`, `UserStateMiddleware`, `PrimerLoginMiddleware`),
+  manejo de ficheros (backups, exportaciones, importacion, actualizaciones con firma RSA y anti
+  zip-slip), watchdog, SSRF/inyeccion en emails e IA, secretos versionados, XSS/SQLi y frontend
+  (cookies httpOnly, CSRF en memoria). Informe completo: `Documentacion/SEGURIDAD_AUDITORIA_V-02-04.md`.
+- **Fix (MEDIUM-HIGH, CWE-613):** `AuthController.DeleteCookie` borraba solo los nombres legacy;
+  en produccion el logout no eliminaba las cookies `__Host-atlas-*` del navegador (access token
+  seguia valido ~1h en equipos compartidos). Ahora borra el nombre real por entorno + legacy con
+  `Path=/` y `Secure`, mismo criterio que `UserStateMiddleware.DeleteAuthCookies` (V-02-04 previo).
+- **Fix (LOW, robustez):** guard de null en `UserStateMiddleware.DeleteAuthCookies` sobre
+  `context.RequestServices` (NRE en test unitario preexistente).
+- Test de regresion nuevo: `AuthControllerTests.Logout_Should_Delete_HostPrefixed_Cookies_In_Production`.
+
+**Archivos tocados:**
+- `backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `backend/src/AtlasBalance.API/Middleware/UserStateMiddleware.cs`
+- `backend/tests/AtlasBalance.API.Tests/AuthControllerTests.cs`
+- `Documentacion/SEGURIDAD_AUDITORIA_V-02-04.md` (nuevo), `DOCUMENTACION_TECNICA.md`,
+  `LOG_ERRORES_INCIDENCIAS.md`, `Versiones/v-02-04.md`.
+
+**Comandos ejecutados y verificacion:**
+- `npm audit`: 0 vulnerabilidades (292 dependencias).
+- `dotnet list package --vulnerable --include-transitive`: 0 paquetes vulnerables (API, Watchdog, Tests).
+- `git ls-files` filtrado por secretos: sin `.env`/certificados/credenciales versionados.
+- Build API + Watchdog OK con `OutDir` redirigido a scratchpad (ACL de `bin` bloqueada por identidad
+  sandbox previa, mismo bloqueo documentado el 2026-07-01; no se toco `bin`).
+- Docker estaba parado (Docker Desktop instalado, servicio `Stopped`): se arranco
+  `Docker Desktop.exe` y el daemon subio en ~4s (v29.4.3).
+- Tests: **suite completa 323/323 OK**, incluidos `ExtractosConcurrencyTests` (test 409 de
+  concurrencia pendiente desde la sesion anterior) y `RowLevelSecurityTests` con Testcontainers.
+
+**Pendientes:**
+- ACL de `bin/obj` de API/Watchdog: verificado en esta sesion que NO es arreglable sin elevacion
+  (usuario `trakeria\usuario` no es admin, no es owner y no pertenece a los grupos sandbox con
+  Modify). No bloquea nada: build y tests funcionan con `-p:OutDir`. Limpieza opcional con los
+  comandos `icacls` documentados en `Versiones/v-02-04.md` cuando alguien tenga consola elevada.
+
+---
 ## 2026-07-01 - V-02-04 - Cierre de pendientes: guard en modales restantes y verificacion IA
 
 **Version:** V-02-04

@@ -121,7 +121,7 @@ public sealed class AuthController : ControllerBase
                 cancellationToken);
         }
 
-        return Ok(new { message = "Sesión cerrada" });
+        return Ok(new { message = "Sesiï¿½n cerrada" });
     }
 
     [HttpGet("mfa/trusted-devices")]
@@ -301,15 +301,28 @@ public sealed class AuthController : ControllerBase
 
     private bool ShouldUseSecureCookie() => !_environment.IsDevelopment() || Request.IsHttps;
 
-    private void DeleteCookie(string name)
+    // Borra la cookie usando el nombre real segun entorno (en produccion llevan el
+    // prefijo __Host-atlas-, ver CookieName). Borrar solo el nombre legacy dejaba la
+    // cookie real viva en el navegador hasta caducar (el access token seguia siendo
+    // valido ~1h tras el logout). Se borra tambien la variante legacy por si quedaran
+    // cookies de una version anterior. Mismo criterio que UserStateMiddleware.
+    private void DeleteCookie(string baseName)
     {
-        Response.Cookies.Delete(name, new CookieOptions
+        var options = new CookieOptions
         {
-            HttpOnly = name is "access_token" or "refresh_token" or "mfa_trusted",
+            Path = "/",
+            HttpOnly = baseName is "access_token" or "refresh_token" or "mfa_trusted",
             Secure = ShouldUseSecureCookie(),
             SameSite = SameSiteMode.Strict,
             IsEssential = true
-        });
+        };
+
+        var realName = CookieName(baseName);
+        Response.Cookies.Delete(realName, options);
+        if (!string.Equals(realName, baseName, StringComparison.Ordinal))
+        {
+            Response.Cookies.Delete(baseName, options);
+        }
     }
 
     private bool TryGetUserId(out Guid userId)
