@@ -2,13 +2,40 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useId } from 'react';
+import { Plus } from 'lucide-react';
 import { AppSelect } from '@/components/common/AppSelect';
+import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import EditableCell from '@/components/extractos/EditableCell';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import type { Extracto } from '@/types';
-import { formatCurrency, formatDate, getAmountTone } from '@/utils/formatters';
+import { formatCurrency, formatDate, getAmountTone, parseEuropeanNumber } from '@/utils/formatters';
+
+export interface InsertExtractoDraftPayload {
+  cuenta_id: string;
+  insert_before_fila_numero: number;
+  fecha: string;
+  concepto: string;
+  comentarios: string;
+  monto: number;
+  saldo: number;
+  columnas_extra: Record<string, string>;
+}
+
+interface InsertRowDraft {
+  afterRowId: string;
+  anchorFilaNumero: number;
+  insertBeforeFilaNumero: number;
+  cuentaId: string;
+  cuentaNombre?: string;
+  fecha: string;
+  concepto: string;
+  comentarios: string;
+  monto: string;
+  saldo: string;
+  columnas_extra: Record<string, string>;
+}
 
 interface ExtractoTableProps {
   rows: Extracto[];
@@ -24,8 +51,10 @@ interface ExtractoTableProps {
   onSaveCell: (row: Extracto, column: string, value: string) => Promise<void>;
   onToggleCheck: (row: Extracto, checked: boolean) => Promise<void>;
   onToggleFlag: (row: Extracto, flagged: boolean, nota?: string) => Promise<void>;
+  onInsertRow: (anchorRow: Extracto, payload: InsertExtractoDraftPayload) => Promise<void>;
   onOpenAudit: (row: Extracto, column: string) => void;
   onOpenDesglose: (row: Extracto) => void;
+  canAddRow: (row: Extracto) => boolean;
   canEditCell: (row: Extracto, column: string) => boolean;
 }
 
@@ -49,8 +78,10 @@ export default function ExtractoTable({
   onSaveCell,
   onToggleCheck,
   onToggleFlag,
+  onInsertRow,
   onOpenAudit,
   onOpenDesglose,
+  canAddRow,
   canEditCell
 }: ExtractoTableProps) {
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -64,6 +95,9 @@ export default function ExtractoTable({
   const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
   const [selectedCell, setSelectedCell] = useState(DEFAULT_SELECTED_CELL);
   const [focusedCell, setFocusedCell] = useState(DEFAULT_FOCUSED_CELL);
+  const [insertDraft, setInsertDraft] = useState<InsertRowDraft | null>(null);
+  const [insertSaving, setInsertSaving] = useState(false);
+  const [insertError, setInsertError] = useState<string | null>(null);
   const parentRef = useRef<HTMLDivElement | null>(null);
   const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const filtersId = useId();
@@ -106,7 +140,10 @@ export default function ExtractoTable({
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (density === 'compact' ? 34 : 42),
+    estimateSize: (index) => {
+      const baseSize = density === 'compact' ? 34 : 42;
+      return insertDraft?.afterRowId === filteredRows[index]?.id ? baseSize + 214 : baseSize;
+    },
     overscan: 15,
     scrollMargin: 0,
     scrollPaddingStart: headerOffset,
@@ -115,7 +152,7 @@ export default function ExtractoTable({
 
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [density, rowVirtualizer]);
+  }, [density, insertDraft?.afterRowId, rowVirtualizer]);
 
   useEffect(() => {
     setFocusedCell((current) => ({
@@ -123,6 +160,13 @@ export default function ExtractoTable({
       colIndex: clampNumber(current.colIndex, 0, Math.max(activeColumns.length - 1, 0)),
     }));
   }, [activeColumns.length, filteredRows.length]);
+
+  useEffect(() => {
+    if (insertDraft && !rows.some((row) => row.id === insertDraft.afterRowId && canAddRow(row))) {
+      setInsertDraft(null);
+      setInsertError(null);
+    }
+  }, [canAddRow, insertDraft, rows]);
 
   const gridTemplateColumns = activeColumns.length > 0 ? activeColumns.map(getColumnTrack).join(' ') : '1fr';
   const sheetWidth = activeColumns.reduce((total, column) => total + getColumnWidth(column), 0);
@@ -161,6 +205,71 @@ export default function ExtractoTable({
     window.requestAnimationFrame(() => {
       cellRefs.current.get(getCellKey(nextCell.rowIndex, nextCell.colIndex))?.focus({ preventScroll: true });
     });
+  };
+
+  const openInsertDraftBelow = (row: Extracto) => {
+    setInsertDraft({
+      afterRowId: row.id,
+      anchorFilaNumero: row.fila_numero,
+      insertBeforeFilaNumero: row.fila_numero,
+      cuentaId: row.cuenta_id,
+      cuentaNombre: row.cuenta_nombre,
+      fecha: row.fecha ?? new Date().toISOString().slice(0, 10),
+      concepto: '',
+      comentarios: '',
+      monto: '0',
+      saldo: String(row.saldo ?? 0),
+      columnas_extra: Object.fromEntries(extraColumns.map((column) => [column, ''])),
+    });
+    setInsertError(null);
+  };
+
+  const updateInsertDraft = (patch: Partial<InsertRowDraft>) => {
+    setInsertDraft((current) => (current ? { ...current, ...patch } : current));
+  };
+
+  const updateInsertDraftExtra = (column: string, value: string) => {
+    setInsertDraft((current) =>
+      current
+        ? {
+            ...current,
+            columnas_extra: { ...current.columnas_extra, [column]: value },
+          }
+        : current,
+    );
+  };
+
+  const submitInsertDraft = async (anchorRow: Extracto) => {
+    if (!insertDraft || insertSaving) {
+      return;
+    }
+
+    const monto = parseEuropeanNumber(insertDraft.monto);
+    const saldo = parseEuropeanNumber(insertDraft.saldo);
+    if (!insertDraft.fecha || monto === null || saldo === null) {
+      setInsertError('Completa una fecha valida y usa formato 1.234,56 en Importe y Saldo.');
+      return;
+    }
+
+    setInsertSaving(true);
+    setInsertError(null);
+    try {
+      await onInsertRow(anchorRow, {
+        cuenta_id: insertDraft.cuentaId,
+        insert_before_fila_numero: insertDraft.insertBeforeFilaNumero,
+        fecha: insertDraft.fecha,
+        concepto: insertDraft.concepto,
+        comentarios: insertDraft.comentarios,
+        monto,
+        saldo,
+        columnas_extra: insertDraft.columnas_extra,
+      });
+      setInsertDraft(null);
+    } catch (err) {
+      setInsertError(err instanceof Error ? err.message : 'No se pudo insertar la fila.');
+    } finally {
+      setInsertSaving(false);
+    }
   };
 
   const handleGridCellKeyDown = (
@@ -365,17 +474,23 @@ export default function ExtractoTable({
             >
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                 const row = filteredRows[virtualRow.index];
+                const rowCanAdd = canAddRow(row);
                 return (
                   <div
                     key={row.id}
-                    className={`extracto-row ${row.flagged ? 'flagged' : ''}`}
+                    ref={rowVirtualizer.measureElement}
+                    data-index={virtualRow.index}
+                    className={`extracto-virtual-item ${insertDraft?.afterRowId === row.id ? 'extracto-virtual-item--insert-open' : ''}`}
                     style={{
-                      transform: `translateY(${virtualRow.start}px)`,
-                      gridTemplateColumns
+                      transform: `translateY(${virtualRow.start}px)`
                     }}
-                    role="row"
-                    aria-rowindex={virtualRow.index + 2}
                   >
+                    <div
+                      className={`extracto-row ${row.flagged ? 'flagged' : ''}`}
+                      style={{ gridTemplateColumns }}
+                      role="row"
+                      aria-rowindex={virtualRow.index + 2}
+                    >
                     {activeColumns.map((column, columnIndex) => {
                       const isFocusedCell =
                         focusedCell.rowIndex === virtualRow.index && focusedCell.colIndex === columnIndex;
@@ -437,9 +552,107 @@ export default function ExtractoTable({
                             Historial
                           </button>
                         ) : null}
+                        {column === 'fila_numero' && rowCanAdd ? (
+                          <button
+                            type="button"
+                            className="extracto-row-insert-trigger"
+                            disabled={insertSaving}
+                            tabIndex={isFocusedCell ? 0 : -1}
+                            aria-label={`Insertar fila debajo de ${row.fila_numero}`}
+                            title={`Insertar fila debajo de ${row.fila_numero}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openInsertDraftBelow(row);
+                            }}
+                          >
+                            <Plus size={14} aria-hidden="true" />
+                          </button>
+                        ) : null}
                       </div>
                       );
                     })}
+                    </div>
+                    {insertDraft?.afterRowId === row.id ? (
+                      <form
+                        className="extracto-insert-form"
+                        role="presentation"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void submitInsertDraft(row);
+                        }}
+                      >
+                        <div className="extracto-insert-grid">
+                          <DatePickerField
+                            label="Fecha"
+                            ariaLabel="Fecha de la nueva fila"
+                            value={insertDraft.fecha}
+                            onChange={(value) => updateInsertDraft({ fecha: value })}
+                          />
+                          <label className="add-row-field">
+                            <span>Concepto</span>
+                            <input
+                              value={insertDraft.concepto}
+                              onChange={(event) => updateInsertDraft({ concepto: event.target.value })}
+                            />
+                          </label>
+                          <label className="add-row-field">
+                            <span>Comentarios</span>
+                            <input
+                              value={insertDraft.comentarios}
+                              onChange={(event) => updateInsertDraft({ comentarios: event.target.value })}
+                            />
+                          </label>
+                          <label className="add-row-field">
+                            <span>Importe</span>
+                            <input
+                              inputMode="decimal"
+                              value={insertDraft.monto}
+                              onChange={(event) => updateInsertDraft({ monto: event.target.value })}
+                            />
+                          </label>
+                          <label className="add-row-field">
+                            <span>Saldo</span>
+                            <input
+                              inputMode="decimal"
+                              value={insertDraft.saldo}
+                              onChange={(event) => updateInsertDraft({ saldo: event.target.value })}
+                            />
+                          </label>
+                          {extraColumns.map((column) => (
+                            <label className="add-row-field" key={column}>
+                              <span>{column}</span>
+                              <input
+                                value={insertDraft.columnas_extra[column] ?? ''}
+                                onChange={(event) => updateInsertDraftExtra(column, event.target.value)}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        {insertError ? <p className="auth-error" role="alert">{insertError}</p> : null}
+                        <div className="extracto-insert-actions">
+                          <span className="dashboard-subtitle">
+                            Nueva fila debajo de Fila {insertDraft.anchorFilaNumero}
+                            {insertDraft.cuentaNombre ? ` - ${insertDraft.cuentaNombre}` : ''}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={insertSaving}
+                            onClick={() => {
+                              setInsertDraft(null);
+                              setInsertError(null);
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={insertSaving || !insertDraft.fecha || insertDraft.monto === '' || insertDraft.saldo === ''}
+                          >
+                            {insertSaving ? 'Guardando...' : 'Guardar fila'}
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
                   </div>
                 );
               })}

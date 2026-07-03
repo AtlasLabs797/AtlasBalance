@@ -77,6 +77,8 @@ En la columna `Alerta`, marca o desmarca el checkbox y escribe la nota si hace f
 
 La columna `Desglose` sirve para recibos domiciliados u otros movimientos que agrupan varias personas o terceros. Abre el modal, anade nombre, importe y notas de cada linea, y revisa el total contra el importe del extracto. Si no cuadra, la fila queda marcada como `descuadrado`; el saldo bancario no cambia.
 
+Para insertar una fila manual en `Extractos`, pasa por la columna `Fila` y pulsa el boton `+` que aparece entre esa fila y la siguiente. Se abre un formulario dentro de la tabla; al guardar, Atlas Balance inserta la fila en esa posicion y desplaza la numeracion.
+
 El boton `Historial` aparece en la columna `Fila`, no repetido por toda la tabla.
 
 Con teclado, la tabla de Extractos permite moverse por celdas con flechas, Home/End y PageUp/PageDown. Enter o F2 abre la edicion de una celda editable. En movil y tablet tactil conserva scroll local para no romper la comparacion por columnas.
@@ -507,6 +509,7 @@ La tabla de `Extractos` ahora se lee mas como una hoja de calculo:
 - El periodo elegido queda en la URL, asi que puedes recargar o compartir esa vista sin perder el rango.
 - La cabecera queda fija al desplazarte.
 - La columna `Fila` queda fija al mover la tabla horizontalmente.
+- Para insertar una fila, usa el `+` que aparece al pasar por la columna `Fila`; el borrador se abre dentro de la tabla, no en un formulario separado encima.
 - Las celdas tienen bordes mas claros y foco visible al editar.
 - Los importes y saldos usan alineacion derecha y numeros tabulares para comparar cifras rapido.
 - Las columnas tecnicas se muestran con nombres legibles, por ejemplo `Importe` en vez de `monto`.

@@ -1,5 +1,23 @@
 # Documentacion tecnica
 
+## 2026-07-03 - V-02-04 - Alta inline de filas en Extractos
+
+### Que cambio
+
+- `ExtractosPage` deja de mostrar el formulario global `Agregar fila manual` encima de la tabla.
+- Se elimina el componente frontend muerto `AddRowForm`, que ya no representa el flujo real.
+- `ExtractoTable` incorpora un boton `+` en la interseccion visual de la columna `Fila` con la fila siguiente, siguiendo el patron ya usado en el desglose de cuenta.
+- La fila virtual activa sube de `z-index` para que el `+` no quede tapado por la fila inferior; la cabecera mantiene una capa superior.
+- Al pulsar `+`, la tabla abre un borrador inline bajo la fila ancla con fecha, concepto, comentarios, importe, saldo y columnas extra.
+- El alta usa el endpoint existente `POST /api/extractos` con `insert_before_fila_numero`, por lo que el backend conserva la logica transaccional de desplazar `fila_numero`.
+- La fila virtualizada mide la altura real del borrador abierto para evitar solapes al hacer scroll.
+
+### Verificacion
+
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run lint`: OK.
+- No se arranco servidor ni navegador para QA visual por las reglas anti-encallamiento de Vite/Chromium; queda validado por tipos, lint y revision estatica del diff.
+
 ## 2026-07-03 - V-02-04 - Desglose informativo de extractos
 
 ### Que cambio

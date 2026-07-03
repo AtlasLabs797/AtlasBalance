@@ -4,11 +4,11 @@ import axios from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
-import AddRowForm from '@/components/extractos/AddRowForm';
 import AuditCellModal from '@/components/extractos/AuditCellModal';
 import DesgloseModal from '@/components/extractos/DesgloseModal';
 import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
 import ExtractoTable from '@/components/extractos/ExtractoTable';
+import type { InsertExtractoDraftPayload } from '@/components/extractos/ExtractoTable';
 import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
@@ -111,10 +111,6 @@ export default function ExtractosPage() {
     return items;
   }, [titularesResumen]);
 
-  const cuentasConAlta = useMemo(
-    () => cuentasOptions.filter((cuenta) => canAddInCuenta(cuenta.id, cuenta.titular_id, cuenta.pais_id)),
-    [canAddInCuenta, cuentasOptions]
-  );
   const selectedCuenta = useMemo(
     () => cuentasOptions.find((cuenta) => cuenta.id === cuentaFiltro) ?? null,
     [cuentaFiltro, cuentasOptions]
@@ -376,6 +372,18 @@ export default function ExtractosPage() {
     }
   };
 
+  const onInsertRow = async (_anchorRow: Extracto, payload: InsertExtractoDraftPayload) => {
+    setError(null);
+    try {
+      await api.post('/extractos', payload);
+      await loadRows();
+    } catch (err) {
+      const message = extractErrorMessage(err, 'No se pudo insertar la fila.');
+      setError(message);
+      throw new Error(message);
+    }
+  };
+
   const onOpenAudit = async (row: Extracto, column: string) => {
     setAuditOpen(true);
     setAuditLoading(true);
@@ -572,23 +580,6 @@ export default function ExtractosPage() {
 
       {error && <p className="auth-error" role="alert">{error}</p>}
 
-      {cuentasConAlta.length > 0 ? (
-        <AddRowForm
-          cuentas={cuentasConAlta}
-          extraColumns={[...new Set(rows.flatMap((r) => Object.keys(r.columnas_extra ?? {})))]}
-          onCreate={async (payload) => {
-            setError(null);
-            try {
-              await api.post('/extractos', payload);
-              await loadRows();
-            } catch (err) {
-              setError(extractErrorMessage(err, 'No se pudo agregar la fila manual.'));
-              throw err;
-            }
-          }}
-        />
-      ) : null}
-
       <ExtractoTable
         rows={rows}
         totalRows={totalRows}
@@ -603,8 +594,10 @@ export default function ExtractosPage() {
         onSaveCell={onSaveCell}
         onToggleCheck={onToggleCheck}
         onToggleFlag={onToggleFlag}
+        onInsertRow={onInsertRow}
         onOpenAudit={onOpenAudit}
         onOpenDesglose={(row) => void onOpenDesglose(row)}
+        canAddRow={(row) => canAddInCuenta(row.cuenta_id, row.titular_id, row.pais_id)}
         canEditCell={canEditCell}
       />
 

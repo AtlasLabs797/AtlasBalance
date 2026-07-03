@@ -88,25 +88,6 @@
   white-space: nowrap;
 }
 
-.add-row-form {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-card);
-  background: var(--color-bg-primary);
-  box-shadow: var(--shadow-card);
-  padding: var(--space-4);
-}
-
-.add-row-grid,
-.add-row-extra {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--space-2);
-  align-items: end;
-}
-
 .add-row-field {
   display: grid;
   gap: var(--space-1);
@@ -278,7 +259,7 @@
   min-width: var(--extracto-sheet-width);
   position: sticky;
   top: 0;
-  z-index: 6;
+  z-index: 20;
   box-shadow: 0 1px 0 var(--sheet-grid-strong);
 }
 
@@ -294,10 +275,26 @@
   min-width: var(--extracto-sheet-width);
 }
 
-.extracto-row {
+.extracto-virtual-item {
   position: absolute;
   left: 0;
   top: 0;
+  width: max(100%, var(--extracto-sheet-width));
+  min-width: var(--extracto-sheet-width);
+  z-index: 1;
+}
+
+.extracto-virtual-item:hover,
+.extracto-virtual-item:focus-within {
+  z-index: 8;
+}
+
+.extracto-virtual-item--insert-open {
+  z-index: 7;
+}
+
+.extracto-row {
+  position: relative;
   width: max(100%, var(--extracto-sheet-width));
   min-width: var(--extracto-sheet-width);
   display: grid;
@@ -489,6 +486,7 @@
   position: sticky;
   left: 0;
   z-index: 5;
+  overflow: visible;
   background: var(--sheet-head-bg);
   box-shadow: 1px 0 0 var(--sheet-grid-strong);
   font-family: var(--font-family-mono);
@@ -498,7 +496,7 @@
 }
 
 .cell.head.cell--fila_numero {
-  z-index: 8;
+  z-index: 22;
 }
 
 .cell-edit-button.signed-amount--positive {
@@ -515,6 +513,85 @@
   align-items: center;
   gap: var(--space-1);
   width: 100%;
+}
+
+.extracto-row-insert-trigger {
+  position: absolute;
+  right: -0.72rem;
+  bottom: -0.74rem;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  min-height: 1.45rem;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--accent-primary) 30%, var(--border-soft));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent-primary) 8%);
+  color: var(--text-link);
+  box-shadow: 0 0.45rem 1rem color-mix(in srgb, var(--text-primary) 12%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.1rem) scale(0.96);
+  transition:
+    opacity 140ms var(--ease-premium),
+    transform 140ms var(--ease-premium),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.extracto-row-insert-trigger:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.extracto-row-insert-trigger:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.extracto-row:hover .extracto-row-insert-trigger,
+.extracto-row:focus-within .extracto-row-insert-trigger {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.extracto-insert-form {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--sheet-grid-strong);
+  background: color-mix(in srgb, var(--accent-primary) 5%, var(--bg-surface));
+}
+
+.extracto-insert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.extracto-insert-grid .date-picker-field,
+.extracto-insert-grid input {
+  min-width: 0;
+}
+
+.extracto-insert-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.extracto-insert-actions .dashboard-subtitle {
+  margin-right: auto;
 }
 
 .desglose-cell-button {
@@ -814,6 +891,18 @@
   .cell-audit-button::before {
     content: "Hist.";
     font-size: var(--font-size-xs);
+  }
+
+  .extracto-row-insert-trigger {
+    right: -1.375rem;
+    bottom: -1.375rem;
+    width: var(--control-height);
+    min-width: var(--control-height);
+    height: var(--control-height);
+    min-height: var(--control-height);
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
   }
 
   .cell--fila_numero > span:not(.cell-edit-shell) {

@@ -1,5 +1,14 @@
 # Log de errores e incidencias
 
+## 2026-07-03 - V-02-04 - Boton `+` de alta inline quedaba tapado por la fila inferior (CERRADO)
+
+- Contexto: en `Extractos`, el nuevo boton `+` de insercion por fila debia aparecer entre la columna `Fila`, `Revisada` y la fila inferior.
+- Error: el boton existia en la celda, pero al sobresalir por debajo de la fila quedaba tapado por la siguiente fila virtualizada.
+- Causa: las filas de `@tanstack/react-virtual` se renderizan como elementos absolutos hermanos; sin `z-index` en la fila activa, la fila siguiente gana el orden de pintado.
+- Solucion: la fila virtual activa (`hover`/`focus-within`) sube de z-index, la fila con borrador abierto conserva z-index propio y la cabecera queda por encima para no ser invadida por controles de filas.
+- Verificacion: `npm.cmd exec tsc -- --noEmit` OK y `npm.cmd run lint` OK.
+- Regla: si un control sobresale entre filas virtualizadas, el z-index tiene que vivir en el contenedor virtual, no solo en el boton hijo. Poner `z-index: 9999` al boton es maquillaje malo.
+
 ## 2026-07-03 - V-02-04 - `dotnet test` con `OutDir` en `C:\tmp` devuelve Access denied (CERRADO)
 
 - Contexto: validacion focalizada de `ExtractosControllerTests` para el desglose informativo de extractos.

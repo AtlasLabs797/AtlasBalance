@@ -2847,7 +2847,7 @@ ExtractoTable/
 
   ColumnVisibilityPanel
 
-  AddRowForm
+  InlineInsertRowDraft
 
 
 

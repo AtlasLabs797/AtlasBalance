@@ -16820,3 +16820,44 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 
 **Pendientes:**
 - Si el navegador mantiene cache o sesion rara, hacer `Ctrl+F5` en `http://localhost:5173/importacion`. No deberia volver a salir el fallback para `/api/importacion/lotes`.
+
+---
+## 2026-07-03 - V-02-04 - Extractos: alta inline de filas desde la tabla
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Sustituido el formulario superior `Agregar fila manual` de `Extractos` por un flujo inline dentro de la tabla.
+- Eliminado el componente muerto `AddRowForm`.
+- Agregado boton `+` en la columna `Fila`, visible al hover/foco y siempre visible en tactil, para insertar una fila bajo la fila ancla.
+- Corregida la capa visual del `+`: la fila virtual activa ahora se pinta por encima de la fila inferior, mientras la cabecera conserva prioridad.
+- El borrador inline usa fecha, concepto, comentarios, importe, saldo y columnas extra, y envia `insert_before_fila_numero` al endpoint existente `POST /api/extractos`.
+- Ajustada la virtualizacion para medir la altura del formulario abierto y evitar solapes al hacer scroll.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/components/extractos/AddRowForm.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/src/styles/layout/system-coherence.css`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/SPEC.md`
+- `Documentacion/Versiones/v-02-04.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados y verificacion:**
+- `Get-Content` sobre instrucciones, version actual, V-02-04, incidencias y catalogo de skills.
+- `rg` para localizar componentes y patrones de insercion existentes en Extractos/CuentaDetail.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run lint`: OK.
+
+**Decisiones visuales:**
+- Se reutilizo el patron de `CuentaDetailPage`: boton circular `+` en la esquina inferior derecha de la celda `Fila`, entre filas y junto a la columna `Revisada`.
+- En escritorio el boton aparece con hover/foco para no ensuciar una tabla densa; en tactil queda visible porque no existe hover fiable.
+- El formulario se abre dentro del flujo de la tabla para mantener contexto y evitar otro bloque externo compitiendo con los filtros.
+
+**Pendientes:**
+- No se hizo QA visual con navegador autenticado. Validacion cerrada por tipos, lint y revision estatica del diff.
+- Caso de cuenta completamente vacia: al no existir fila ancla, el flujo `+` no aplica. Si ese caso importa en operacion diaria, hace falta un alta inicial especifica dentro del empty state.
