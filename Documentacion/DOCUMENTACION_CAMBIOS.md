@@ -16696,3 +16696,31 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 
 **Pendientes:**
 - Ninguno para este cambio de logo.
+
+---
+## 2026-07-03 - V-02-04 - Importacion: correccion de "Endpoint no encontrado"
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Diagnosticado el error de importacion: el texto `Endpoint no encontrado` sale del fallback `/api/{**catchAll}`.
+- Confirmado que `ImportacionController` si expone los endpoints actuales de importacion.
+- Detectado `backend/src/AtlasBalance.API/wwwroot` desincronizado: assets de importacion de mayo servidos por Kestrel, mientras el frontend actual genera el flujo de lotes.
+- Generada una build frontend actual y copiada a `backend/src/AtlasBalance.API/wwwroot` para alinear la UI local servida por la API.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/index.html` (ignorado por Git)
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/assets/*` (ignorado por Git)
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-02-04.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd run build -- --outDir "C:\tmp\atlas-balance-importacion-v0204-build" --emptyOutDir`: primer intento en sandbox fallo por `EPERM` conocido al crear el `outDir`.
+- Mismo comando fuera del sandbox con aprobacion: OK.
+- `Copy-Item -Path "C:\tmp\atlas-balance-importacion-v0204-build\*" ...\wwwroot -Recurse -Force`: OK.
+- Verificado que `wwwroot/index.html` referencia `index-CEDYqK9x.js`.
+- Verificado que `ImportacionPage-BLba2vWW.js` llama `/importacion/contexto`, `/importacion/lotes`, `/importacion/lotes/{id}/confirmar` y `/importacion/plazo-fijo/movimiento`.
+
+**Pendientes:**
+- No se arranco servidor ni navegador para QA visual por las reglas anti-encallamiento; validacion realizada por build y comprobacion estatica de assets.

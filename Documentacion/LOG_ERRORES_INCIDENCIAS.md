@@ -1,5 +1,13 @@
 # Log de errores e incidencias
 
+## 2026-07-03 - V-02-04 - Importacion mostraba "Endpoint no encontrado" por wwwroot desincronizado (CERRADO)
+
+- Contexto: al usar la pantalla de importacion aparecia el mensaje del fallback `/api/{**catchAll}`: `Endpoint no encontrado`.
+- Error: la API local servia `backend/src/AtlasBalance.API/wwwroot` con bundles de mayo, mientras el frontend actual de V-02-04 ya usaba el flujo de lotes (`/api/importacion/lotes`, `/api/importacion/lotes/{id}/confirmar`). El directorio `wwwroot` esta ignorado por Git, asi que podia quedar viejo aunque el codigo fuente estuviera correcto.
+- Causa: desincronizacion entre frontend compilado servido por Kestrel y backend actual. No era un fallo de routing de `ImportacionController`; los endpoints existen en el codigo fuente actual.
+- Solucion: build frontend finita con salida temporal fuera del sandbox por el `EPERM` conocido de Vite/Rolldown, y copia del resultado a `backend/src/AtlasBalance.API/wwwroot`. Se verifico que `index.html` referencia `index-CEDYqK9x.js` y que el bundle `ImportacionPage-BLba2vWW.js` llama `/importacion/contexto`, `/importacion/lotes`, `/importacion/lotes/{id}/confirmar` y `/importacion/plazo-fijo/movimiento`.
+- Regla: si aparece `Endpoint no encontrado` en una pantalla con endpoints presentes en controllers, comprobar primero el bundle servido por `wwwroot`. Buscar bugs en backend sin mirar el asset servido es disparar a la niebla.
+
 ## 2026-07-02 - V-02-04 - Logout no borraba las cookies __Host-atlas-* en produccion (CERRADO)
 
 - Contexto: auditoria de seguridad completa de V-02-04.
