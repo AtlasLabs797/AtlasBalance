@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="bin\**;obj\**" />
+    <Content Remove="bin\**;obj\**" />
+    <EmbeddedResource Remove="bin\**;obj\**" />
+    <None Remove="bin\**;obj\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Windows Service -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
 

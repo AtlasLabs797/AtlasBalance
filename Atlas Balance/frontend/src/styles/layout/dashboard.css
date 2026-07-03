@@ -104,7 +104,7 @@
   padding: 1.55rem;
   border: 1px solid color-mix(in srgb, var(--accent-primary) 42%, var(--border-soft));
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg-surface) 96%, var(--accent-primary) 4%);
+  background: var(--dashboard-hero-bg);
   box-shadow: none;
 }
 

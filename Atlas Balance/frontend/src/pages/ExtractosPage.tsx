@@ -23,6 +23,16 @@ interface UpdateExtractoPayload {
   columnas_extra?: Record<string, string>;
 }
 
+// BUG-COLUMNAS (V-02-04): los ids de scope pueden venir de la URL o de
+// localStorage con valores corruptos ('undefined', ids antiguos, vacios).
+// Un valor no-GUID en el payload provocaba un 400 y el toggle de columnas
+// se revertia sin feedback visible. Solo enviamos UUIDs reales.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asUuidOrUndefined(value: string | null | undefined): string | undefined {
+  return value && UUID_PATTERN.test(value) ? value : undefined;
+}
+
 function parseDecimalInput(value: string, fieldLabel: string): number {
   const parsed = parseEuropeanNumber(value);
   if (parsed === null) {
@@ -161,9 +171,9 @@ export default function ExtractosPage() {
     try {
       const { data } = await api.get('/extractos/columnas-visibles', {
         params: {
-          cuentaId: cuentaFiltro || undefined,
-          titularId: selectedCuenta?.titular_id || titularFiltro || undefined,
-          paisId: selectedCuenta?.pais_id ?? (selectedPaisId || undefined)
+          cuentaId: asUuidOrUndefined(cuentaFiltro),
+          titularId: asUuidOrUndefined(selectedCuenta?.titular_id) ?? asUuidOrUndefined(titularFiltro),
+          paisId: asUuidOrUndefined(selectedCuenta?.pais_id) ?? asUuidOrUndefined(selectedPaisId)
         }
       });
       setVisibleColumns(data.columnas_visibles ?? null);

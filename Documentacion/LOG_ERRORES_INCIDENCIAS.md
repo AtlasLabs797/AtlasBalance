@@ -1,5 +1,23 @@
 # Log de errores e incidencias
 
+## 2026-07-03 - V-02-04 - Tarjeta principal del dashboard con fondo tintado (CERRADO)
+
+- Contexto: en el dashboard principal, la tarjeta superior completa heredaba un fondo azulado leve.
+- Error: el usuario esperaba una tarjeta blanca uniforme; blanquear solo la zona de la grafica dejaba una mezcla visual rara.
+- Causa: el redisenio del hero uso un fondo tintado para el bloque consolidado completo.
+- Solucion: se anadio `--dashboard-hero-bg` con `#ffffff` en tema claro y superficie del tema en modo oscuro; `.dashboard-hero-card` usa esa superficie y la grafica hereda el mismo fondo.
+- Verificacion: `npm.cmd run lint` OK; `npm.cmd exec tsc -- --noEmit` OK; build Vite temporal OK; Browser in-app bloqueo `data:` por politica, asi que se cerro con validacion estatica del CSS fuente y compilado.
+- Regla: cuando el usuario dice "toda la tarjeta", no hagas cirugia de 20 pixeles. La superficie debe ser coherente.
+
+## 2026-07-03 - V-02-04 - Backend local seguia sin GET /api/importacion/lotes tras actualizar wwwroot (CERRADO)
+
+- Contexto: tras sincronizar `wwwroot`, importacion seguia mostrando `Endpoint no encontrado`.
+- Error: el backend vivo en `localhost:5000` era una instancia vieja: `GET /api/importacion/contexto` devolvia `401` (ruta existente), pero `GET /api/importacion/lotes` devolvia `404` con el fallback. El frontend actual llama esa ruta al cargar el historial.
+- Causa: el backend no se habia reiniciado con el codigo actual. Al intentar reiniciarlo, `Start-LocalDev.ps1` fallaba porque MSBuild incluia `backend/src/AtlasBalance.API/obj/Release/**` como codigo al compilar con `BaseIntermediateOutputPath` redirigido, generando atributos duplicados.
+- Solucion: `AtlasBalance.API.csproj` excluye explicitamente `bin\**` y `obj\**` de `Compile`, `Content`, `EmbeddedResource` y `None`. Despues `Start-LocalDev.ps1` compilo y arranco la API nueva.
+- Verificacion: `curl http://localhost:5000/api/importacion/lotes` devuelve `401 Unauthorized`, no `404 Endpoint no encontrado`. Eso confirma que la ruta existe y solo falta sesion valida.
+- Regla: si una ruta con `[Authorize]` existe, sin login debe dar `401`, no `404`. El `404` aqui era backend viejo, no permisos.
+
 ## 2026-07-03 - V-02-04 - Importacion mostraba "Endpoint no encontrado" por wwwroot desincronizado (CERRADO)
 
 - Contexto: al usar la pantalla de importacion aparecia el mensaje del fallback `/api/{**catchAll}`: `Endpoint no encontrado`.

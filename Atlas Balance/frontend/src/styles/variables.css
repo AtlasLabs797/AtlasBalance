@@ -68,6 +68,7 @@
   --bg-surface: #fbfcfe;
   --bg-surface-soft: #f1f5fa;
   --bg-surface-muted: #e9eff6;
+  --dashboard-hero-bg: #ffffff;
   --bg-input: #fbfcfe;
   --bg-hover: #e9eff6;
   --bg-selected: #e6eefc;
@@ -279,6 +280,7 @@
   --bg-surface: #1b2330;
   --bg-surface-soft: #202a38;
   --bg-surface-muted: #293545;
+  --dashboard-hero-bg: var(--bg-surface);
   --bg-input: #161d27;
   --bg-hover: #242f3e;
   --bg-selected: #233558;

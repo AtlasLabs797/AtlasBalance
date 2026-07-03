@@ -4610,3 +4610,26 @@ Empaquetado local:
 - La copia de `wwwroot/logos` queda actualizada para ejecuciones servidas por backend.
 
 Esto elimina la dependencia visual del PNG anterior. Usar mascara CSS aqui es la opcion correcta: un filtro sobre un PNG negro parece rapido, pero es deuda visual disfrazada de solucion.
+
+## 2026-07-03 - V-02-04 - Fondo blanco en tarjeta principal del dashboard
+
+- `frontend/src/styles/variables.css` define `--dashboard-hero-bg`.
+- En tema claro el valor es `#ffffff`, para que la tarjeta principal completa no herede el tinte del hero financiero.
+- En tema oscuro el valor cae a `var(--bg-surface)`, evitando una placa blanca agresiva en una pantalla oscura.
+- `frontend/src/styles/layout/dashboard.css` aplica esa superficie a `.dashboard-hero-card`; resumen, divisas y grafica comparten el mismo fondo. La grafica no necesita una placa interna propia.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir .tmp-dashboard-hero-bg-v0204 --emptyOutDir`: OK.
+- Browser in-app bloqueo la validacion con `data:` por politica; no se uso workaround externo. Se verifico el CSS fuente y el CSS compilado.
+
+## 2026-07-03 - V-02-04 - Importacion: backend local actualizado y build endurecida
+
+- Sintoma real tras sincronizar `wwwroot`: `GET http://localhost:5000/api/importacion/lotes` seguia devolviendo `404 {"error":"Endpoint no encontrado"}`.
+- Diagnostico: el backend activo era viejo. `GET /api/importacion/contexto` devolvia `401`, asi que la API estaba viva; solo faltaba la ruta nueva de lotes en el proceso cargado.
+- Bloqueo al reiniciar: `Start-LocalDev.ps1` fallaba en build con `CS0579` por atributos duplicados desde `backend/src/AtlasBalance.API/obj/Release/**`.
+- Causa tecnica: al compilar con `BaseIntermediateOutputPath` redirigido a `tools/dotnet-build/api/obj`, los restos `obj` dentro del proyecto dejaban de ser el intermediate path activo y podian entrar por globbing de items.
+- Cambio aplicado: `AtlasBalance.API.csproj` elimina `bin\**` y `obj\**` de `Compile`, `Content`, `EmbeddedResource` y `None`.
+- Verificacion: `Start-LocalDev.ps1 -TimeoutSeconds 90` compila y arranca la API; `curl.exe -i http://localhost:5000/api/importacion/lotes` devuelve `401 Unauthorized`, que es la respuesta correcta para una ruta `[Authorize]` sin cookies.

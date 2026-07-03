@@ -16724,3 +16724,66 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 
 **Pendientes:**
 - No se arranco servidor ni navegador para QA visual por las reglas anti-encallamiento; validacion realizada por build y comprobacion estatica de assets.
+
+---
+## 2026-07-03 - V-02-04 - Fondo blanco en tarjeta principal del dashboard
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- La tarjeta principal del dashboard ahora tiene superficie blanca uniforme en tema claro.
+- El resumen, las divisas y la grafica comparten el mismo fondo.
+- En modo oscuro la tarjeta usa la superficie oscura del tema; blanco puro ahi seria mala UX, no valentia.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/src/styles/variables.css`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-02-04.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados y verificacion:**
+- `Get-Content` sobre instrucciones, version actual, V-02-04, log de incidencias y archivos frontend afectados.
+- `rg` para localizar `EvolucionChart`, reglas de dashboard y comprobar CSS fuente/compilado.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir .tmp-dashboard-hero-bg-v0204 --emptyOutDir`: OK.
+- Limpieza de `.tmp-dashboard-hero-bg-v0204`: OK, con ruta resuelta dentro de `frontend`.
+- Browser in-app: bloqueado por politica al abrir `data:` para una validacion visual aislada. No se hizo bypass; se dejo como limitacion.
+
+**Decisiones visuales:**
+- Fondo blanco aplicado a `.dashboard-hero-card`, no solo al wrapper de la grafica.
+- Se elimino la placa interna de la grafica para que la tarjeta lea como una sola superficie.
+- Modo oscuro conserva superficie oscura para mantener contraste.
+
+**Pendientes:**
+- Validacion visual end-to-end con la app autenticada si se necesita captura real del dashboard con datos.
+
+---
+## 2026-07-03 - V-02-04 - Importacion: backend local reiniciado con ruta de lotes
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Verificado que el error persistente no venia ya del `wwwroot`, sino del backend vivo en `localhost:5000`.
+- `GET /api/importacion/contexto` devolvia `401`, pero `GET /api/importacion/lotes` devolvia `404 Endpoint no encontrado`; eso prueba backend viejo, no problema de permisos.
+- Reiniciado el stack local con `Start-LocalDev.ps1` tras corregir la build.
+- Endurecido `AtlasBalance.API.csproj` para excluir `bin\**` y `obj\**` de los items compilados cuando se usan rutas de build redirigidas.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-02-04.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados y verificacion:**
+- `curl.exe -i http://localhost:5000/api/importacion/contexto`: `401 Unauthorized`, ruta existente.
+- `curl.exe -i http://localhost:5000/api/importacion/lotes`: antes `404 Endpoint no encontrado`.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Atlas Balance\scripts\Start-LocalDev.ps1" -TimeoutSeconds 90`: primer intento fallo por `CS0579` desde `obj/Release`; segundo intento OK tras corregir el `.csproj`.
+- `curl.exe -i http://localhost:5000/api/importacion/lotes`: despues `401 Unauthorized`, ruta existente en backend activo.
+- `curl.exe -i -X POST http://localhost:5000/api/importacion/lotes ...`: `401 Unauthorized`, ruta existente y protegida.
+
+**Pendientes:**
+- Si el navegador mantiene cache o sesion rara, hacer `Ctrl+F5` en `http://localhost:5173/importacion`. No deberia volver a salir el fallback para `/api/importacion/lotes`.

@@ -105,15 +105,51 @@ public sealed class TitularConCuentasResponse
 
 public sealed class SaveColumnasVisiblesRequest
 {
+    // BUG-COLUMNAS (V-02-04): los ids de scope llegan de estado de cliente
+    // (URL, localStorage, bundles antiguos). Un valor vacio o no-GUID
+    // producia un 400 de model binding y el toggle de columnas se revertia
+    // en silencio. Para una preferencia de UI, un scope irreconocible debe
+    // degradar a scope global (null), no rechazar el guardado.
     [JsonPropertyName("cuenta_id")]
+    [JsonConverter(typeof(LenientNullableGuidJsonConverter))]
     public Guid? CuentaId { get; set; }
 
     [JsonPropertyName("titular_id")]
+    [JsonConverter(typeof(LenientNullableGuidJsonConverter))]
     public Guid? TitularId { get; set; }
 
     [JsonPropertyName("pais_id")]
+    [JsonConverter(typeof(LenientNullableGuidJsonConverter))]
     public Guid? PaisId { get; set; }
 
     [JsonPropertyName("columnas_visibles")]
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
+}
+
+public sealed class LenientNullableGuidJsonConverter : System.Text.Json.Serialization.JsonConverter<Guid?>
+{
+    public override Guid? Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+    {
+        if (reader.TokenType == System.Text.Json.JsonTokenType.String &&
+            Guid.TryParse(reader.GetString(), out var parsed))
+        {
+            return parsed;
+        }
+
+        // Consumir contenedores completos si llegara un objeto/array inesperado.
+        reader.Skip();
+        return null;
+    }
+
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, Guid? value, System.Text.Json.JsonSerializerOptions options)
+    {
+        if (value.HasValue)
+        {
+            writer.WriteStringValue(value.Value);
+        }
+        else
+        {
+            writer.WriteNullValue();
+        }
+    }
 }

@@ -414,6 +414,18 @@ staticFileOptions.OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.ContentType = ctx.Context.Response.ContentType + "; charset=utf-8";
     }
+
+    // BUG-COLUMNAS (V-02-04): sin cabeceras de cache el navegador podia
+    // reutilizar un index.html viejo tras un rebuild y seguir cargando
+    // bundles antiguos. El html nunca se cachea; los assets con hash si.
+    if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+    }
+    else if (ctx.Context.Request.Path.StartsWithSegments("/assets"))
+    {
+        ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+    }
 };
 app.UseStaticFiles(staticFileOptions);
 app.UseMiddleware<IntegrationAuthMiddleware>();
@@ -433,7 +445,7 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" }));
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", staticFileOptions);
 
 app.Run();
 
