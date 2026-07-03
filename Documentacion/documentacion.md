@@ -63,7 +63,7 @@ Si la base local tiene datos de prueba, limpiala antes de entregar o generar una
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Purge-DeliveryData.ps1" -ConfirmDeliveryPurge
 ```
 
-La purga borra usuarios, titulares, cuentas, extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien vacia claves SMTP, OpenRouter, OpenAI, MiniMax, Google Drive, cifrado de backups en nube y tipos de cambio externos.
+La purga borra usuarios, titulares, cuentas, extractos, desgloses de extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien vacia claves SMTP, OpenRouter, OpenAI, MiniMax, Google Drive, cifrado de backups en nube y tipos de cambio externos.
 
 No la ejecutes contra una base de cliente real salvo que quieras dejarla vacia. Esto no es un reset estetico; borra datos operativos.
 

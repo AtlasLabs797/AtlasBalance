@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<ImportacionLote> ImportacionLotes => Set<ImportacionLote>();
     public DbSet<ImportacionLoteFila> ImportacionLoteFilas => Set<ImportacionLoteFila>();
     public DbSet<ExtractoColumnaExtra> ExtractosColumnasExtra => Set<ExtractoColumnaExtra>();
+    public DbSet<ExtractoDesglose> ExtractosDesgloses => Set<ExtractoDesglose>();
     public DbSet<RevisionExtractoEstado> RevisionExtractoEstados => Set<RevisionExtractoEstado>();
     public DbSet<PermisoUsuario> PermisosUsuario => Set<PermisoUsuario>();
     public DbSet<PreferenciaUsuarioCuenta> PreferenciasUsuarioCuenta => Set<PreferenciaUsuarioCuenta>();
@@ -258,6 +259,23 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.NombreColumna);
             // V-02-03 (MEDIUM): cascade a restrict por la misma razon.
             entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ExtractoDesglose>(entity =>
+        {
+            entity.ToTable("EXTRACTOS_DESGLOSES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TerceroNombre).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Importe).HasPrecision(18, 4);
+            entity.HasIndex(e => e.ExtractoId);
+            entity.HasIndex(e => new { e.ExtractoId, e.Orden })
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL");
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<RevisionExtractoEstado>(entity =>

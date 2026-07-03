@@ -119,11 +119,24 @@ public sealed class ExtractosController : ControllerBase
         var extractoIds = pageRows.Select(x => x.Id).ToList();
         var extras = await _db.ExtractosColumnasExtra.Where(x => extractoIds.Contains(x.ExtractoId)).ToListAsync(ct);
         var extrasMap = extras.GroupBy(x => x.ExtractoId).ToDictionary(g => g.Key, g => g.ToDictionary(v => v.NombreColumna, v => v.Valor, StringComparer.OrdinalIgnoreCase));
+        var desgloseMap = await _db.ExtractosDesgloses
+            .Where(x => extractoIds.Contains(x.ExtractoId))
+            .GroupBy(x => x.ExtractoId)
+            .Select(g => new
+            {
+                ExtractoId = g.Key,
+                Count = g.Count(),
+                Total = g.Sum(x => x.Importe)
+            })
+            .ToDictionaryAsync(x => x.ExtractoId, ct);
 
         var data = pageRows.Select(x =>
         {
             var c = cuentas[x.CuentaId];
             var t = titulares[c.TitularId];
+            var hasDesglose = desgloseMap.TryGetValue(x.Id, out var desglose);
+            var desgloseCount = hasDesglose ? desglose!.Count : 0;
+            var desgloseTotal = hasDesglose ? desglose!.Total : 0m;
             return new ExtractoListItemResponse
             {
                 Id = x.Id,
@@ -149,7 +162,10 @@ public sealed class ExtractosController : ControllerBase
                 FechaCreacion = x.FechaCreacion,
                 FechaModificacion = x.FechaModificacion,
                 DeletedAt = x.DeletedAt,
-                ColumnasExtra = extrasMap.TryGetValue(x.Id, out var ex) ? ex : []
+                ColumnasExtra = extrasMap.TryGetValue(x.Id, out var ex) ? ex : [],
+                DesgloseCount = desgloseCount,
+                DesgloseTotal = desgloseTotal,
+                DesgloseEstado = GetDesgloseEstado(desgloseCount, desgloseTotal, x.Monto)
             };
         }).ToList();
 
@@ -332,6 +348,177 @@ public sealed class ExtractosController : ControllerBase
         await SaveCellAudits(ex, actor.Id, "extracto_celda_actualizada", changes, ct);
         await _alertaService.EvaluateSaldoPostAsync(ex.CuentaId, actor.Id, ct);
         return Ok(new { message = "Extracto actualizado" });
+    }
+
+    [HttpGet("{id:guid}/desglose")]
+    public async Task<IActionResult> GetDesglose(Guid id, CancellationToken ct)
+    {
+        if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
+        var ex = await _db.Extractos.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
+        if (!await CanView(actor, ex.CuentaId, ct)) return Forbid();
+
+        var lineas = await _db.ExtractosDesgloses
+            .AsNoTracking()
+            .Where(x => x.ExtractoId == id)
+            .OrderBy(x => x.Orden)
+            .Select(x => new ExtractoDesgloseResponse
+            {
+                Id = x.Id,
+                ExtractoId = x.ExtractoId,
+                Orden = x.Orden,
+                TerceroNombre = x.TerceroNombre,
+                Importe = x.Importe,
+                Notas = x.Notas,
+                FechaCreacion = x.FechaCreacion,
+                FechaModificacion = x.FechaModificacion
+            })
+            .ToListAsync(ct);
+
+        return Ok(BuildDesgloseResumen(ex, lineas));
+    }
+
+    [HttpPut("{id:guid}/desglose")]
+    public async Task<IActionResult> GuardarDesglose(Guid id, [FromBody] ExtractoDesgloseUpsertRequest req, CancellationToken ct)
+    {
+        if (req is null) return BadRequest(new { error = "La solicitud de desglose esta incompleta." });
+        if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
+        var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
+        var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
+        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        var p = await GetPermission(actor, cuenta, ct);
+        if (!p.CanEdit) return Forbid();
+
+        var normalizedLines = new List<NormalizedDesgloseLine>();
+        var seenIds = new HashSet<Guid>();
+        var requestedLines = req.Lineas ?? [];
+        if (requestedLines.Count > 500)
+        {
+            return BadRequest(new { error = "Un desglose no puede superar 500 lineas." });
+        }
+
+        for (var i = 0; i < requestedLines.Count; i++)
+        {
+            var line = requestedLines[i];
+            if (line.Id.HasValue && !seenIds.Add(line.Id.Value))
+            {
+                return BadRequest(new { error = "El desglose contiene lineas duplicadas." });
+            }
+
+            var tercero = NormalizeOptionalText(line.TerceroNombre);
+            if (tercero is null)
+            {
+                return BadRequest(new { error = $"La linea {i + 1} necesita nombre de persona o tercero." });
+            }
+
+            if (line.Importe == 0m)
+            {
+                return BadRequest(new { error = $"La linea {i + 1} necesita un importe distinto de cero." });
+            }
+
+            normalizedLines.Add(new NormalizedDesgloseLine(line.Id, i + 1, tercero, line.Importe, NormalizeOptionalText(line.Notas)));
+        }
+
+        var isRelational = _db.Database.IsRelational();
+        var tx = isRelational ? await _db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            var current = await _db.ExtractosDesgloses
+                .IgnoreQueryFilters()
+                .Where(x => x.ExtractoId == id)
+                .ToListAsync(ct);
+            var activeCurrent = current.Where(x => x.DeletedAt is null).ToList();
+            var currentById = activeCurrent.ToDictionary(x => x.Id);
+            var beforeSummary = BuildDesgloseAuditSummary(ex.Monto, activeCurrent);
+
+            foreach (var requestedId in normalizedLines.Where(x => x.Id.HasValue).Select(x => x.Id!.Value))
+            {
+                if (!currentById.ContainsKey(requestedId))
+                {
+                    return BadRequest(new { error = "El desglose contiene una linea que no pertenece a este extracto." });
+                }
+            }
+
+            var keptIds = normalizedLines.Where(x => x.Id.HasValue).Select(x => x.Id!.Value).ToHashSet();
+            foreach (var line in activeCurrent.Where(x => !keptIds.Contains(x.Id)))
+            {
+                line.DeletedAt = DateTime.UtcNow;
+                line.DeletedById = actor.Id;
+                line.UsuarioModificacionId = actor.Id;
+                line.FechaModificacion = DateTime.UtcNow;
+            }
+
+            var keptExisting = normalizedLines
+                .Where(x => x.Id.HasValue)
+                .Select((line, index) => new { Line = line, Entity = currentById[line.Id!.Value], Index = index })
+                .ToList();
+            foreach (var item in keptExisting)
+            {
+                // Evita colisiones del indice unico (extracto_id, orden) al borrar,
+                // insertar o intercambiar ordenes en un mismo reemplazo.
+                item.Entity.Orden = -100_000 - item.Index;
+            }
+
+            if (activeCurrent.Count > 0)
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+
+            foreach (var line in normalizedLines)
+            {
+                if (line.Id.HasValue && currentById.TryGetValue(line.Id.Value, out var existing))
+                {
+                    existing.Orden = line.Orden;
+                    existing.TerceroNombre = line.TerceroNombre;
+                    existing.Importe = line.Importe;
+                    existing.Notas = line.Notas;
+                    existing.UsuarioModificacionId = actor.Id;
+                    existing.FechaModificacion = DateTime.UtcNow;
+                    continue;
+                }
+
+                _db.ExtractosDesgloses.Add(new ExtractoDesglose
+                {
+                    Id = Guid.NewGuid(),
+                    ExtractoId = id,
+                    Orden = line.Orden,
+                    TerceroNombre = line.TerceroNombre,
+                    Importe = line.Importe,
+                    Notas = line.Notas,
+                    UsuarioCreacionId = actor.Id
+                });
+            }
+
+            await _db.SaveChangesAsync(ct);
+            var updated = await _db.ExtractosDesgloses
+                .Where(x => x.ExtractoId == id)
+                .OrderBy(x => x.Orden)
+                .ToListAsync(ct);
+            var afterSummary = BuildDesgloseAuditSummary(ex.Monto, updated);
+            if (!string.Equals(beforeSummary, afterSummary, StringComparison.Ordinal))
+            {
+                await SaveAudit(actor.Id, "extracto_desglose_actualizado", ex.Id, "desglose", $"DES{ex.FilaNumero}", beforeSummary, afterSummary, ct);
+            }
+
+            if (tx is not null)
+            {
+                await tx.CommitAsync(ct);
+            }
+
+            var responseLines = updated
+                .OrderBy(x => x.Orden)
+                .Select(MapDesgloseLine)
+                .ToList();
+            return Ok(BuildDesgloseResumen(ex, responseLines));
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
     }
 
     [HttpPatch("{id:guid}/check")]
@@ -657,6 +844,56 @@ public sealed class ExtractosController : ControllerBase
         return today.AddMonths(-months);
     }
 
+    private static ExtractoDesgloseResumenResponse BuildDesgloseResumen(Extracto ex, IReadOnlyList<ExtractoDesgloseResponse> lineas)
+    {
+        var total = lineas.Sum(x => x.Importe);
+        return new ExtractoDesgloseResumenResponse
+        {
+            ExtractoId = ex.Id,
+            ExtractoMonto = ex.Monto,
+            Count = lineas.Count,
+            Total = total,
+            Diferencia = ex.Monto - total,
+            Estado = GetDesgloseEstado(lineas.Count, total, ex.Monto),
+            Lineas = lineas
+        };
+    }
+
+    private static ExtractoDesgloseResponse MapDesgloseLine(ExtractoDesglose line)
+    {
+        return new ExtractoDesgloseResponse
+        {
+            Id = line.Id,
+            ExtractoId = line.ExtractoId,
+            Orden = line.Orden,
+            TerceroNombre = line.TerceroNombre,
+            Importe = line.Importe,
+            Notas = line.Notas,
+            FechaCreacion = line.FechaCreacion,
+            FechaModificacion = line.FechaModificacion
+        };
+    }
+
+    private static string GetDesgloseEstado(int count, decimal total, decimal extractoMonto)
+    {
+        if (count == 0)
+        {
+            return "sin_desglose";
+        }
+
+        return Math.Round(total, 4) == Math.Round(extractoMonto, 4)
+            ? "cuadrado"
+            : "descuadrado";
+    }
+
+    private static string BuildDesgloseAuditSummary(decimal extractoMonto, IReadOnlyCollection<ExtractoDesglose> lineas)
+    {
+        var activeLines = lineas.Where(x => x.DeletedAt is null).ToList();
+        var total = activeLines.Sum(x => x.Importe);
+        var estado = GetDesgloseEstado(activeLines.Count, total, extractoMonto);
+        return $"{activeLines.Count} lineas | total {total:0.####} | diferencia {extractoMonto - total:0.####} | {estado}";
+    }
+
     private async Task SaveCellAudits(Extracto ex, Guid? userId, string action, IReadOnlyList<(string Col, string? A, string? N)> changes, CancellationToken ct)
     {
         var extraCols = await _db.ExtractosColumnasExtra.Where(x => x.ExtractoId == ex.Id).Select(x => x.NombreColumna).ToListAsync(ct);
@@ -954,6 +1191,8 @@ public sealed class ExtractosController : ControllerBase
         public bool CanDelete { get; init; }
         public HashSet<string>? EditableCols { get; init; }
     }
+
+    private sealed record NormalizedDesgloseLine(Guid? Id, int Orden, string TerceroNombre, decimal Importe, string? Notas);
 
     private readonly record struct PreferenciaScope(Guid? PaisId, Guid? TitularId, Guid? CuentaId, bool Forbidden, bool NotFound)
     {

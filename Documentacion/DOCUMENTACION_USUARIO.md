@@ -75,6 +75,8 @@ El selector tambien muestra columnas extra disponibles en el resultado filtrado 
 
 En la columna `Alerta`, marca o desmarca el checkbox y escribe la nota si hace falta. La tabla ya no muestra el texto `Marcada/Sin marca` porque era redundante.
 
+La columna `Desglose` sirve para recibos domiciliados u otros movimientos que agrupan varias personas o terceros. Abre el modal, anade nombre, importe y notas de cada linea, y revisa el total contra el importe del extracto. Si no cuadra, la fila queda marcada como `descuadrado`; el saldo bancario no cambia.
+
 El boton `Historial` aparece en la columna `Fila`, no repetido por toda la tabla.
 
 Con teclado, la tabla de Extractos permite moverse por celdas con flechas, Home/End y PageUp/PageDown. Enter o F2 abre la edicion de una celda editable. En movil y tablet tactil conserva scroll local para no romper la comparacion por columnas.
@@ -94,7 +96,10 @@ Con teclado, la tabla de Extractos permite moverse por celdas con flechas, Home/
 - **Edicion de celdas mas fluida.** Al editar una celda del extracto ya no se recarga toda
   la tabla; solo se actualiza esa fila (salvo si cambias la fecha). Si otra persona edito
   la misma fila a la vez, veras un aviso y la fila se recargara con el dato actualizado en
-  lugar de un error generico.
+  pantalla en lugar de un error generico.
+- **Desglose de recibos domiciliados.** Cada extracto puede tener lineas informativas por
+  persona/tercero e importe. Sirve para explicar un recibo agrupado sin duplicar movimientos
+  ni alterar saldos.
 - **Caducidad de tokens en tu hora local.** La fecha de expiracion que eliges para un token
   se interpreta como el final de ese dia en tu zona horaria.
 - **Integracion OpenClaw.** Hoy es de solo lectura; el permiso de escritura de un token no

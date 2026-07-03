@@ -1,5 +1,14 @@
 # Log de errores e incidencias
 
+## 2026-07-03 - V-02-04 - `dotnet test` con `OutDir` en `C:\tmp` devuelve Access denied (CERRADO)
+
+- Contexto: validacion focalizada de `ExtractosControllerTests` para el desglose informativo de extractos.
+- Error: `dotnet test ... -p:OutDir=C:\tmp\atlas-balance-desglose-tests\ --no-restore` intento copiar dependencias a `C:\tmp\atlas-balance-desglose-tests` y fallo con `MSB3021 Access denied`.
+- Causa: esa ruta temporal no era escribible en esta sesion/ACL, aunque `C:\tmp` sea la ubicacion habitual de scratchpad.
+- Solucion: repetir el test con `OutDir` dentro del workspace (`Atlas Balance\.tmp\...`) y limpiar el artefacto al terminar.
+- Verificacion: `ExtractosControllerTests` paso 23/23 con `OutDir` en workspace.
+- Regla: si `C:\tmp` devuelve `Access denied`, no insistas; usa `.tmp` dentro del workspace con ruta verificada.
+
 ## 2026-07-03 - V-02-04 - Tarjeta principal del dashboard con fondo tintado (CERRADO)
 
 - Contexto: en el dashboard principal, la tarjeta superior completa heredaba un fondo azulado leve.

@@ -233,6 +233,22 @@ public class ExtractoColumnaExtra
     public string? Valor { get; set; }
 }
 
+public class ExtractoDesglose : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid ExtractoId { get; set; }
+    public int Orden { get; set; }
+    public string TerceroNombre { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public string? Notas { get; set; }
+    public Guid? UsuarioCreacionId { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public Guid? UsuarioModificacionId { get; set; }
+    public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
 public class RevisionExtractoEstado
 {
     public Guid Id { get; set; }

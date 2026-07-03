@@ -8,6 +8,39 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-03 - V-02-04 - Desglose informativo de recibos domiciliados en extractos
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Nueva entidad/tabla `EXTRACTOS_DESGLOSES` para desglosar un extracto en lineas informativas por tercero, importe y notas, con soft delete, auditoria basica, FK restrict, snapshot EF y migracion `20260703120000_AddExtractoDesgloses`.
+- API nueva: `GET /api/extractos/{id}/desglose` y `PUT /api/extractos/{id}/desglose`. El `PUT` reemplaza el conjunto completo, normaliza `orden`, valida nombre/importe y marca omitidas con soft delete.
+- El guardado usa reordenacion en dos fases dentro de transaccion para evitar colisiones del indice unico `(extracto_id, orden)` cuando se omiten, insertan o intercambian lineas.
+- Resumen en `GET /api/extractos`: `desglose_count`, `desglose_total`, `desglose_estado`.
+- RLS en la nueva tabla con `atlas_security.can_read_extracto` / `can_write_extracto`.
+- Frontend: columna fija `Desglose` en `ExtractoTable`, modal manual `DesgloseModal`, totales/diferencia y guardado sin tocar `monto`, `saldo`, `fila_numero`, dashboard ni conciliacion.
+- Tests backend focalizados para creacion, resumen, soft delete de omitidas, validacion y permisos.
+
+**Archivos tocados:**
+- Backend: `Models/Entities.cs`, `Data/AppDbContext.cs`, `DTOs/ExtractosDtos.cs`, `Controllers/ExtractosController.cs`, `Migrations/*AddExtractoDesgloses*`, `AppDbContextModelSnapshot.cs`, `ExtractosControllerTests.cs`.
+- Scripts: `scripts/purge-delivery-data.sql`.
+- Frontend: `types/index.ts`, `pages/ExtractosPage.tsx`, `components/extractos/ExtractoTable.tsx`, `components/extractos/DesgloseModal.tsx`, `styles/layout/extractos.css`.
+- Docs: `SPEC.md`, `DOCUMENTACION_TECNICA.md`, `DOCUMENTACION_USUARIO.md`, `documentacion.md`, `Versiones/v-02-04.md`, `LOG_ERRORES_INCIDENCIAS.md`, `DOCUMENTACION_CAMBIOS.md`.
+
+**Comandos ejecutados y verificacion:**
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName~ExtractosControllerTests -p:OutDir=C:\\tmp\\atlas-balance-desglose-tests\\ --no-restore`: bloqueado por `Access denied` en `C:\tmp`.
+- `dotnet test "Atlas Balance\\backend\\tests\\AtlasBalance.API.Tests\\AtlasBalance.API.Tests.csproj" --filter FullyQualifiedName~ExtractosControllerTests -p:OutDir="<workspace>\\.tmp\\desglose-tests" --no-restore`: OK, 23/23.
+- `npm.cmd run lint`: OK.
+
+**Decisiones de diseno:**
+- El desglose se abre en modal desde la fila, no como filas expandibles dentro de la tabla virtualizada, para no romper altura fija, foco ni scroll.
+- El estado `cuadrado/descuadrado` se calcula desde lineas activas y `EXTRACTOS.monto`; no se persiste duplicado.
+
+**Pendientes:**
+- No se hizo QA visual con navegador real por alcance; queda cubierto por TypeScript/lint y pruebas backend focalizadas.
+
+---
 ## 2026-07-02 - V-02-04 - Auditoria de seguridad completa (backend, frontend, watchdog, dependencias) y fixes
 
 **Version:** V-02-04

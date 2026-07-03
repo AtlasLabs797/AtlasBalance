@@ -1906,6 +1906,55 @@ valor           TEXT
 
 
 
+### EXTRACTOS_DESGLOSES
+
+Desglose informativo 1:N para recibos domiciliados u otros movimientos bancarios
+que representan varios terceros. No altera `EXTRACTOS.monto`, `saldo` ni
+`fila_numero`.
+
+```sql
+
+id                       UUID PK
+
+extracto_id              UUID FK -> EXTRACTOS NOT NULL
+
+orden                    INTEGER NOT NULL
+
+tercero_nombre           VARCHAR(256) NOT NULL
+
+importe                  DECIMAL(18,4) NOT NULL
+
+notas                    TEXT
+
+usuario_creacion_id      UUID FK -> USUARIOS
+
+fecha_creacion           TIMESTAMPTZ DEFAULT now()
+
+usuario_modificacion_id  UUID FK -> USUARIOS
+
+fecha_modificacion       TIMESTAMPTZ
+
+deleted_at               TIMESTAMPTZ
+
+deleted_by_id            UUID FK -> USUARIOS
+
+```
+
+**Indices:** `extracto_id`, `deleted_at`, `(extracto_id, orden)` UNIQUE parcial
+para `deleted_at IS NULL`.
+
+**RLS:** lectura por `atlas_security.can_read_extracto(extracto_id)` y escritura
+por `atlas_security.can_write_extracto(extracto_id)`.
+
+**Estado calculado:** `sin_desglose` si no hay lineas activas; `cuadrado` si la
+suma de importes activos coincide con `EXTRACTOS.monto`; `descuadrado` si no.
+
+
+
+---
+
+
+
 ### PERMISOS_USUARIO
 
 ```sql
@@ -2467,6 +2516,10 @@ POST   /api/extractos/{id}/restaurar
 PUT    /api/extractos/{id}/check
 
 PUT    /api/extractos/{id}/flag
+
+GET    /api/extractos/{id}/desglose
+
+PUT    /api/extractos/{id}/desglose
 
 GET    /api/extractos/{id}/auditoria
 
@@ -3651,6 +3704,8 @@ No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mism
 - Auditoría por celda: cada campo modificado → entrada con valor antes/después
 
 - Columnas extra via `EXTRACTOS_COLUMNAS_EXTRA`
+
+- Desglose informativo de recibos domiciliados via `EXTRACTOS_DESGLOSES`
 
 
 

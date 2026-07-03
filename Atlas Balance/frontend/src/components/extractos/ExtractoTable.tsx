@@ -25,12 +25,13 @@ interface ExtractoTableProps {
   onToggleCheck: (row: Extracto, checked: boolean) => Promise<void>;
   onToggleFlag: (row: Extracto, flagged: boolean, nota?: string) => Promise<void>;
   onOpenAudit: (row: Extracto, column: string) => void;
+  onOpenDesglose: (row: Extracto) => void;
   canEditCell: (row: Extracto, column: string) => boolean;
 }
 
-const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo'] as const;
+const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'desglose', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo'] as const;
 const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
-const ACTION_COLUMNS = new Set(['checked', 'flagged']);
+const ACTION_COLUMNS = new Set(['checked', 'flagged', 'desglose']);
 const DEFAULT_SELECTED_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda' };
 const DEFAULT_FOCUSED_CELL = { rowIndex: 0, colIndex: 0 };
 
@@ -49,6 +50,7 @@ export default function ExtractoTable({
   onToggleCheck,
   onToggleFlag,
   onOpenAudit,
+  onOpenDesglose,
   canEditCell
 }: ExtractoTableProps) {
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -421,6 +423,7 @@ export default function ExtractoTable({
                           onSaveCell,
                           onToggleCheck,
                           onToggleFlag,
+                          onOpenDesglose,
                           isActive: isFocusedCell
                         })}
                         {column === 'fila_numero' ? (
@@ -474,6 +477,7 @@ function renderCell({
   onSaveCell,
   onToggleCheck,
   onToggleFlag,
+  onOpenDesglose,
   isActive
 }: {
   row: Extracto;
@@ -485,6 +489,7 @@ function renderCell({
   onSaveCell: (row: Extracto, column: string, value: string) => Promise<void>;
   onToggleCheck: (row: Extracto, checked: boolean) => Promise<void>;
   onToggleFlag: (row: Extracto, flagged: boolean, nota?: string) => Promise<void>;
+  onOpenDesglose: (row: Extracto) => void;
   isActive: boolean;
 }) {
   if (column === 'fila_numero') return <span>{row.fila_numero}</span>;
@@ -527,6 +532,24 @@ function renderCell({
       </div>
     );
   }
+  if (column === 'desglose') {
+    const count = row.desglose_count ?? 0;
+    const estado = row.desglose_estado ?? 'sin_desglose';
+    const label = estado === 'cuadrado' ? 'OK' : estado === 'descuadrado' ? 'Desc.' : 'Sin';
+    return (
+      <button
+        type="button"
+        className={`desglose-cell-button desglose-cell-button--${estado}`}
+        tabIndex={isActive ? 0 : -1}
+        title="Abrir desglose del extracto"
+        aria-label={`Abrir desglose de fila ${row.fila_numero}`}
+        onClick={() => onOpenDesglose(row)}
+      >
+        <span>{label}</span>
+        <small>{count} lin.</small>
+      </button>
+    );
+  }
 
   return (
     <EditableCell
@@ -564,6 +587,8 @@ function getCellValue(row: Extracto, column: string): string {
       return row.concepto ?? '';
     case 'comentarios':
       return row.comentarios ?? '';
+    case 'desglose':
+      return `${row.desglose_estado ?? 'sin_desglose'} ${row.desglose_count ?? 0} ${row.desglose_total ?? 0}`;
     case 'monto':
       return String(row.monto ?? '');
     case 'saldo':
@@ -590,6 +615,7 @@ function getColumnWidth(column: string): number {
   if (column === 'fila_numero') return 88;
   if (column === 'checked') return 112;
   if (column === 'flagged') return 176;
+  if (column === 'desglose') return 128;
   if (column === 'fecha') return 124;
   if (column === 'concepto') return 420;
   if (column === 'comentarios') return 316;
@@ -614,6 +640,8 @@ function getColumnLabel(column: string): string {
       return 'Revisada';
     case 'flagged':
       return 'Alerta';
+    case 'desglose':
+      return 'Desglose';
     case 'fecha':
       return 'Fecha';
     case 'concepto':

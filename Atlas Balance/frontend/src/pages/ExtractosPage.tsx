@@ -6,11 +6,13 @@ import { DatePickerField } from '@/components/common/DatePickerField';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import AddRowForm from '@/components/extractos/AddRowForm';
 import AuditCellModal from '@/components/extractos/AuditCellModal';
+import DesgloseModal from '@/components/extractos/DesgloseModal';
+import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
 import ExtractoTable from '@/components/extractos/ExtractoTable';
 import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
-import type { AuditCellEntry, Extracto, PaginatedResponse, TitularConCuentas } from '@/types';
+import type { AuditCellEntry, Extracto, ExtractoDesgloseResumen, PaginatedResponse, TitularConCuentas } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { parseEuropeanNumber } from '@/utils/formatters';
 
@@ -81,6 +83,11 @@ export default function ExtractosPage() {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditColumn, setAuditColumn] = useState<string | null>(null);
   const [auditExtractoId, setAuditExtractoId] = useState<string | null>(null);
+  const [desgloseRow, setDesgloseRow] = useState<Extracto | null>(null);
+  const [desgloseData, setDesgloseData] = useState<ExtractoDesgloseResumen | null>(null);
+  const [desgloseLoading, setDesgloseLoading] = useState(false);
+  const [desgloseSaving, setDesgloseSaving] = useState(false);
+  const [desgloseError, setDesgloseError] = useState<string | null>(null);
 
   const canEditCuenta = usePermisosStore((s) => s.canEditCuenta);
   const canAddInCuenta = usePermisosStore((s) => s.canAddInCuenta);
@@ -401,6 +408,64 @@ export default function ExtractosPage() {
     }
   };
 
+  const onOpenDesglose = async (row: Extracto) => {
+    setDesgloseRow(row);
+    setDesgloseData(null);
+    setDesgloseError(null);
+    setDesgloseLoading(true);
+    try {
+      const { data } = await api.get<ExtractoDesgloseResumen>(`/extractos/${row.id}/desglose`);
+      setDesgloseData(data);
+    } catch (err) {
+      setDesgloseError(extractErrorMessage(err, 'No se pudo cargar el desglose.'));
+    } finally {
+      setDesgloseLoading(false);
+    }
+  };
+
+  const onCloseDesglose = () => {
+    if (desgloseSaving) return;
+    setDesgloseRow(null);
+    setDesgloseData(null);
+    setDesgloseError(null);
+  };
+
+  const onSaveDesglose = async (lineas: DesgloseDraftPayload[]) => {
+    if (!desgloseRow) return;
+    setDesgloseSaving(true);
+    setDesgloseError(null);
+    try {
+      const { data } = await api.put<ExtractoDesgloseResumen>(`/extractos/${desgloseRow.id}/desglose`, { lineas });
+      setDesgloseData(data);
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === desgloseRow.id
+            ? {
+                ...row,
+                desglose_count: data.count,
+                desglose_total: data.total,
+                desglose_estado: data.estado,
+              }
+            : row,
+        ),
+      );
+      setDesgloseRow((current) =>
+        current && current.id === desgloseRow.id
+          ? {
+              ...current,
+              desglose_count: data.count,
+              desglose_total: data.total,
+              desglose_estado: data.estado,
+            }
+          : current,
+      );
+    } catch (err) {
+      setDesgloseError(extractErrorMessage(err, 'No se pudo guardar el desglose.'));
+    } finally {
+      setDesgloseSaving(false);
+    }
+  };
+
   const canEditCell = (row: Extracto, column: string) => {
     if (modo !== 'edicion') return false;
     if (!row.cuenta_id) return false;
@@ -539,6 +604,7 @@ export default function ExtractosPage() {
         onToggleCheck={onToggleCheck}
         onToggleFlag={onToggleFlag}
         onOpenAudit={onOpenAudit}
+        onOpenDesglose={(row) => void onOpenDesglose(row)}
         canEditCell={canEditCell}
       />
 
@@ -563,6 +629,17 @@ export default function ExtractosPage() {
         loading={auditLoading}
         error={auditError}
         onClose={closeAudit}
+      />
+      <DesgloseModal
+        open={Boolean(desgloseRow)}
+        row={desgloseRow}
+        data={desgloseData}
+        loading={desgloseLoading}
+        saving={desgloseSaving}
+        error={desgloseError}
+        canEdit={Boolean(desgloseRow && modo === 'edicion' && canEditCuenta(desgloseRow.cuenta_id, desgloseRow.titular_id, desgloseRow.pais_id))}
+        onClose={onCloseDesglose}
+        onSave={onSaveDesglose}
       />
       {auditExtractoId && <span className="sr-only">{auditExtractoId}</span>}
     </section>

@@ -92,6 +92,9 @@ export interface Extracto {
   flagged_at: string | null;
   flagged_by_id: string | null;
   columnas_extra?: Record<string, string>;
+  desglose_count?: number;
+  desglose_total?: number;
+  desglose_estado?: DesgloseEstado;
   fecha_creacion: string;
   fecha_modificacion?: string | null;
   deleted_at?: string | null;
@@ -100,6 +103,29 @@ export interface Extracto {
   titular_nombre?: string;
   pais_id?: string | null;
   divisa?: string;
+}
+
+export type DesgloseEstado = 'sin_desglose' | 'cuadrado' | 'descuadrado';
+
+export interface ExtractoDesglose {
+  id: string;
+  extracto_id: string;
+  orden: number;
+  tercero_nombre: string;
+  importe: number;
+  notas: string | null;
+  fecha_creacion: string;
+  fecha_modificacion: string | null;
+}
+
+export interface ExtractoDesgloseResumen {
+  extracto_id: string;
+  extracto_monto: number;
+  count: number;
+  total: number;
+  diferencia: number;
+  estado: DesgloseEstado;
+  lineas: ExtractoDesglose[];
 }
 
 export interface CuentaResumenKpi {

@@ -28,6 +28,9 @@ public sealed class ExtractoListItemResponse
     public DateTime? FechaModificacion { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Dictionary<string, string?> ColumnasExtra { get; set; } = [];
+    public int DesgloseCount { get; set; }
+    public decimal DesgloseTotal { get; set; }
+    public string DesgloseEstado { get; set; } = "sin_desglose";
 }
 
 public sealed class CreateExtractoRequest
@@ -50,6 +53,42 @@ public sealed class UpdateExtractoRequest
     public decimal? Monto { get; set; }
     public decimal? Saldo { get; set; }
     public Dictionary<string, string?>? ColumnasExtra { get; set; }
+}
+
+public sealed class ExtractoDesgloseResponse
+{
+    public Guid Id { get; set; }
+    public Guid ExtractoId { get; set; }
+    public int Orden { get; set; }
+    public string TerceroNombre { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public string? Notas { get; set; }
+    public DateTime FechaCreacion { get; set; }
+    public DateTime? FechaModificacion { get; set; }
+}
+
+public sealed class ExtractoDesgloseResumenResponse
+{
+    public Guid ExtractoId { get; set; }
+    public decimal ExtractoMonto { get; set; }
+    public int Count { get; set; }
+    public decimal Total { get; set; }
+    public decimal Diferencia { get; set; }
+    public string Estado { get; set; } = "sin_desglose";
+    public IReadOnlyList<ExtractoDesgloseResponse> Lineas { get; set; } = [];
+}
+
+public sealed class ExtractoDesgloseUpsertRequest
+{
+    public IReadOnlyList<ExtractoDesgloseLineaRequest>? Lineas { get; set; }
+}
+
+public sealed class ExtractoDesgloseLineaRequest
+{
+    public Guid? Id { get; set; }
+    public string? TerceroNombre { get; set; }
+    public decimal Importe { get; set; }
+    public string? Notas { get; set; }
 }
 
 public sealed class ToggleCheckedRequest

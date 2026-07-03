@@ -992,6 +992,86 @@ namespace AtlasBalance.API.Migrations
                     b.ToTable("EXTRACTOS_COLUMNAS_EXTRA", (string)null);
                 });
 
+            modelBuilder.Entity("AtlasBalance.API.Models.ExtractoDesglose", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
+                    b.Property<Guid>("ExtractoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("extracto_id");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion");
+
+                    b.Property<DateTime?>("FechaModificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_modificacion");
+
+                    b.Property<decimal>("Importe")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("importe");
+
+                    b.Property<string>("Notas")
+                        .HasColumnType("text")
+                        .HasColumnName("notas");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<string>("TerceroNombre")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("tercero_nombre");
+
+                    b.Property<Guid?>("UsuarioCreacionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("usuario_creacion_id");
+
+                    b.Property<Guid?>("UsuarioModificacionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("usuario_modificacion_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_extractos_desgloses");
+
+                    b.HasIndex("DeletedAt")
+                        .HasDatabaseName("ix_extractos_desgloses_deleted_at");
+
+                    b.HasIndex("DeletedById")
+                        .HasDatabaseName("ix_extractos_desgloses_deleted_by_id");
+
+                    b.HasIndex("ExtractoId")
+                        .HasDatabaseName("ix_extractos_desgloses_extracto_id");
+
+                    b.HasIndex("UsuarioCreacionId")
+                        .HasDatabaseName("ix_extractos_desgloses_usuario_creacion_id");
+
+                    b.HasIndex("UsuarioModificacionId")
+                        .HasDatabaseName("ix_extractos_desgloses_usuario_modificacion_id");
+
+                    b.HasIndex("ExtractoId", "Orden")
+                        .IsUnique()
+                        .HasDatabaseName("ix_extractos_desgloses_extracto_id_orden")
+                        .HasFilter("\"deleted_at\" IS NULL");
+
+                    b.ToTable("EXTRACTOS_DESGLOSES", (string)null);
+                });
+
             modelBuilder.Entity("AtlasBalance.API.Models.FormatoImportacion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2593,6 +2673,34 @@ namespace AtlasBalance.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_extractos_columnas_extra_extractos_extracto_id");
+                });
+
+            modelBuilder.Entity("AtlasBalance.API.Models.ExtractoDesglose", b =>
+                {
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_extractos_desgloses_usuarios_deleted_by_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Extracto", null)
+                        .WithMany()
+                        .HasForeignKey("ExtractoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_extractos_desgloses_extractos_extracto_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioCreacionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_extractos_desgloses_usuarios_usuario_creacion_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioModificacionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_extractos_desgloses_usuarios_usuario_modificacion_id");
                 });
 
             modelBuilder.Entity("AtlasBalance.API.Models.FormatoImportacion", b =>

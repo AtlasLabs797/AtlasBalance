@@ -1,5 +1,31 @@
 # Documentacion tecnica
 
+## 2026-07-03 - V-02-04 - Desglose informativo de extractos
+
+### Que cambio
+
+- Nueva tabla `EXTRACTOS_DESGLOSES` para modelar lineas hijas informativas de un extracto:
+  `tercero_nombre`, `importe`, `notas`, `orden`, auditoria basica y soft delete.
+- Nueva migracion `20260703120000_AddExtractoDesgloses` con FK restrict, indices y RLS:
+  lectura por `atlas_security.can_read_extracto(extracto_id)` y escritura por
+  `atlas_security.can_write_extracto(extracto_id)`.
+- `ExtractosController` expone `GET/PUT /api/extractos/{id}/desglose`. El `PUT` reemplaza
+  el conjunto completo, normaliza orden y soft-deletea lineas omitidas.
+- El reemplazo usa reordenacion temporal en dos fases dentro de la transaccion para evitar
+  colisiones del indice unico `(extracto_id, orden)` al reutilizar ordenes o intercambiar lineas.
+- `GET /api/extractos` devuelve `desglose_count`, `desglose_total` y `desglose_estado`.
+  El estado se calcula, no se persiste duplicado.
+- Frontend: `ExtractoTable` incorpora columna `Desglose`; `DesgloseModal` permite editar
+  manualmente las lineas y muestra total/diferencia. No toca `monto`, `saldo`, `fila_numero`,
+  dashboard ni conciliacion.
+
+### Verificacion
+
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter FullyQualifiedName~ExtractosControllerTests`
+  con `OutDir` dentro del workspace: 23/23 OK.
+- `npm.cmd run lint`: OK.
+
 ## 2026-07-02 - V-02-04 - Auditoria de seguridad completa y cierre de logout en produccion
 
 ### Que cambio
@@ -1387,7 +1413,7 @@ El restore de solucion tambien falla localmente sin error MSBuild concreto. Mant
 - Se elimina el seed anidado `Atlas Balance/Atlas Balance/scripts/seed-development-data.sql`, que era un artefacto local fuera del paquete real.
 - Se anade `scripts/purge-delivery-data.sql` para dejar una base sin datos operativos antes de publicar o entregar.
 - Se anade `scripts/Purge-DeliveryData.ps1` con confirmacion obligatoria (`-ConfirmDeliveryPurge` o `ATLAS_CONFIRM_DELIVERY_PURGE=BORRAR_DATOS`) y ejecucion contra el contenedor `atlas_balance_db`.
-- La purga borra usuarios, emails, refresh tokens, titulares, cuentas, plazos fijos, extractos, columnas extra, estados de revision, permisos, preferencias, alertas, backups, exportaciones, notificaciones, tokens de integracion, auditorias y uso IA.
+- La purga borra usuarios, emails, refresh tokens, titulares, cuentas, plazos fijos, extractos, columnas extra, desgloses de extractos, estados de revision, permisos, preferencias, alertas, backups, exportaciones, notificaciones, tokens de integracion, auditorias y uso IA.
 - La purga conserva tablas maestras necesarias para arrancar (`CONFIGURACION`, `FORMATOS_IMPORTACION`, `DIVISAS_ACTIVAS`, `TIPOS_CAMBIO`, migraciones), pero pone a `NULL` las referencias a usuarios borrados.
 - Se resetean valores sensibles de `CONFIGURACION`: SMTP, claves API, proveedor/modelo IA operativo y contadores de consumo IA.
 - `.gitignore` ignora seeds demo y la carpeta local anidada `Atlas Balance/Atlas Balance/`.
