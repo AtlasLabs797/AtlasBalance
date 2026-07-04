@@ -125,6 +125,7 @@ export interface ExtractoDesgloseResumen {
   total: number;
   diferencia: number;
   estado: DesgloseEstado;
+  version: string;
   lineas: ExtractoDesglose[];
 }
 

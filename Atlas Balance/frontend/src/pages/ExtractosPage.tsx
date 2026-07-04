@@ -35,6 +35,10 @@ function asUuidOrUndefined(value: string | null | undefined): string | undefined
   return value && UUID_PATTERN.test(value) ? value : undefined;
 }
 
+function asUuidOrEmpty(value: string | null | undefined): string {
+  return asUuidOrUndefined(value) ?? '';
+}
+
 function parseDecimalInput(value: string, fieldLabel: string): number {
   const parsed = parseEuropeanNumber(value);
   if (parsed === null) {
@@ -42,6 +46,11 @@ function parseDecimalInput(value: string, fieldLabel: string): number {
   }
 
   return parsed;
+}
+
+function getLocalDesgloseEstado(count: number | undefined, total: number | undefined, monto: number): Extracto['desglose_estado'] {
+  if (!count) return 'sin_desglose';
+  return Math.round((total ?? 0) * 10000) === Math.round(monto * 10000) ? 'cuadrado' : 'descuadrado';
 }
 
 export default function ExtractosPage() {
@@ -56,8 +65,8 @@ export default function ExtractosPage() {
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cuentaFiltro, setCuentaFiltro] = useState<string>(() => searchParams.get('cuentaId') ?? '');
-  const [titularFiltro, setTitularFiltro] = useState<string>(() => searchParams.get('titularId') ?? '');
+  const [cuentaFiltro, setCuentaFiltro] = useState<string>(() => asUuidOrEmpty(searchParams.get('cuentaId')));
+  const [titularFiltro, setTitularFiltro] = useState<string>(() => asUuidOrEmpty(searchParams.get('titularId')));
   const [fechaDesde, setFechaDesde] = useState<string>(() => searchParams.get('fechaDesde') ?? '');
   const [fechaHasta, setFechaHasta] = useState<string>(() => searchParams.get('fechaHasta') ?? '');
   const [modo, setModo] = useState<'revision' | 'edicion'>('revision');
@@ -68,6 +77,7 @@ export default function ExtractosPage() {
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditData, setAuditData] = useState<AuditCellEntry[]>([]);
   const auditAbortRef = useRef<AbortController | null>(null);
+  const didMountPaisScopeRef = useRef(false);
 
   const closeAudit = () => {
     // F-NEW-14: cancelar peticion pendiente al cerrar el modal.
@@ -88,6 +98,8 @@ export default function ExtractosPage() {
   const [desgloseLoading, setDesgloseLoading] = useState(false);
   const [desgloseSaving, setDesgloseSaving] = useState(false);
   const [desgloseError, setDesgloseError] = useState<string | null>(null);
+  const desgloseAbortRef = useRef<AbortController | null>(null);
+  const desgloseRequestIdRef = useRef<string | null>(null);
 
   const canEditCuenta = usePermisosStore((s) => s.canEditCuenta);
   const canAddInCuenta = usePermisosStore((s) => s.canAddInCuenta);
@@ -148,9 +160,9 @@ export default function ExtractosPage() {
           pageSize,
           sortBy,
           sortDir,
-          cuentaId: cuentaFiltro || undefined,
-          titularId: titularFiltro || undefined,
-          paisId: selectedPaisId || undefined,
+          cuentaId: asUuidOrUndefined(cuentaFiltro),
+          titularId: asUuidOrUndefined(titularFiltro),
+          paisId: asUuidOrUndefined(selectedPaisId),
           fechaDesde: fechaDesde || undefined,
           fechaHasta: fechaHasta || undefined
         }
@@ -199,6 +211,11 @@ export default function ExtractosPage() {
   }, [loadVisibleColumns]);
 
   useEffect(() => {
+    if (!didMountPaisScopeRef.current) {
+      didMountPaisScopeRef.current = true;
+      return;
+    }
+
     setCuentaFiltro('');
     setTitularFiltro('');
     setPage(1);
@@ -207,8 +224,8 @@ export default function ExtractosPage() {
   }, [selectedPaisId]);
 
   useEffect(() => {
-    const nextCuentaId = searchParams.get('cuentaId') ?? '';
-    const nextTitularId = searchParams.get('titularId') ?? '';
+    const nextCuentaId = asUuidOrEmpty(searchParams.get('cuentaId'));
+    const nextTitularId = asUuidOrEmpty(searchParams.get('titularId'));
     const nextFechaDesde = searchParams.get('fechaDesde') ?? '';
     const nextFechaHasta = searchParams.get('fechaHasta') ?? '';
 
@@ -266,14 +283,15 @@ export default function ExtractosPage() {
       } = {
         columnas_visibles: next
       };
-      if (cuentaFiltro) {
-        payload.cuenta_id = cuentaFiltro;
+      const safeCuentaId = asUuidOrUndefined(cuentaFiltro);
+      if (safeCuentaId) {
+        payload.cuenta_id = safeCuentaId;
       }
-      const titularScope = selectedCuenta?.titular_id ?? titularFiltro;
+      const titularScope = asUuidOrUndefined(selectedCuenta?.titular_id) ?? asUuidOrUndefined(titularFiltro);
       if (titularScope) {
         payload.titular_id = titularScope;
       }
-      const paisScope = selectedCuenta?.pais_id ?? selectedPaisId;
+      const paisScope = asUuidOrUndefined(selectedCuenta?.pais_id) ?? asUuidOrUndefined(selectedPaisId);
       if (paisScope) {
         payload.pais_id = paisScope;
       }
@@ -334,7 +352,10 @@ export default function ExtractosPage() {
             const patch: Partial<Extracto> = {};
             if (payload.concepto !== undefined) patch.concepto = payload.concepto;
             if (payload.comentarios !== undefined) patch.comentarios = payload.comentarios;
-            if (payload.monto !== undefined) patch.monto = payload.monto;
+            if (payload.monto !== undefined) {
+              patch.monto = payload.monto;
+              patch.desglose_estado = getLocalDesgloseEstado(r.desglose_count, r.desglose_total, payload.monto);
+            }
             if (payload.saldo !== undefined) patch.saldo = payload.saldo;
             return { ...r, ...patch };
           })
@@ -364,9 +385,10 @@ export default function ExtractosPage() {
 
   const onToggleFlag = async (row: Extracto, flagged: boolean, nota?: string) => {
     setError(null);
+    const nextNota = flagged ? nota ?? null : null;
     try {
-      await api.patch(`/extractos/${row.id}/flag`, { flagged, nota });
-      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, flagged, flagged_nota: nota ?? null } : r)));
+      await api.patch(`/extractos/${row.id}/flag`, { flagged, nota: flagged ? nota : undefined });
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, flagged, flagged_nota: nextNota } : r)));
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo actualizar la alerta de la fila.'));
     }
@@ -417,37 +439,54 @@ export default function ExtractosPage() {
   };
 
   const onOpenDesglose = async (row: Extracto) => {
+    desgloseAbortRef.current?.abort();
+    const ac = new AbortController();
+    desgloseAbortRef.current = ac;
+    desgloseRequestIdRef.current = row.id;
     setDesgloseRow(row);
     setDesgloseData(null);
     setDesgloseError(null);
     setDesgloseLoading(true);
     try {
-      const { data } = await api.get<ExtractoDesgloseResumen>(`/extractos/${row.id}/desglose`);
+      const { data } = await api.get<ExtractoDesgloseResumen>(`/extractos/${row.id}/desglose`, {
+        signal: ac.signal,
+      });
+      if (ac.signal.aborted || desgloseRequestIdRef.current !== row.id) return;
       setDesgloseData(data);
     } catch (err) {
+      if (axios.isAxiosError(err) && err.name === 'CanceledError') {
+        return;
+      }
+      if (ac.signal.aborted || desgloseRequestIdRef.current !== row.id) return;
       setDesgloseError(extractErrorMessage(err, 'No se pudo cargar el desglose.'));
     } finally {
-      setDesgloseLoading(false);
+      if (!ac.signal.aborted && desgloseRequestIdRef.current === row.id) {
+        setDesgloseLoading(false);
+      }
     }
   };
 
   const onCloseDesglose = () => {
     if (desgloseSaving) return;
+    desgloseAbortRef.current?.abort();
+    desgloseAbortRef.current = null;
+    desgloseRequestIdRef.current = null;
     setDesgloseRow(null);
     setDesgloseData(null);
     setDesgloseError(null);
   };
 
-  const onSaveDesglose = async (lineas: DesgloseDraftPayload[]) => {
+  const onSaveDesglose = async (lineas: DesgloseDraftPayload[], version: string) => {
     if (!desgloseRow) return;
+    const rowId = desgloseRow.id;
     setDesgloseSaving(true);
     setDesgloseError(null);
     try {
-      const { data } = await api.put<ExtractoDesgloseResumen>(`/extractos/${desgloseRow.id}/desglose`, { lineas });
+      const { data } = await api.put<ExtractoDesgloseResumen>(`/extractos/${rowId}/desglose`, { version, lineas });
       setDesgloseData(data);
       setRows((prev) =>
         prev.map((row) =>
-          row.id === desgloseRow.id
+          row.id === rowId
             ? {
                 ...row,
                 desglose_count: data.count,
@@ -458,7 +497,7 @@ export default function ExtractosPage() {
         ),
       );
       setDesgloseRow((current) =>
-        current && current.id === desgloseRow.id
+        current && current.id === rowId
           ? {
               ...current,
               desglose_count: data.count,
@@ -468,7 +507,30 @@ export default function ExtractosPage() {
           : current,
       );
     } catch (err) {
-      setDesgloseError(extractErrorMessage(err, 'No se pudo guardar el desglose.'));
+      const message = extractErrorMessage(err, 'No se pudo guardar el desglose.');
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        try {
+          const { data } = await api.get<ExtractoDesgloseResumen>(`/extractos/${rowId}/desglose`);
+          setDesgloseData(data);
+          setRows((prev) =>
+            prev.map((row) =>
+              row.id === rowId
+                ? {
+                    ...row,
+                    desglose_count: data.count,
+                    desglose_total: data.total,
+                    desglose_estado: data.estado,
+                  }
+                : row,
+            ),
+          );
+          setDesgloseError(`${message} Se recargo la version vigente.`);
+        } catch {
+          setDesgloseError(message);
+        }
+      } else {
+        setDesgloseError(message);
+      }
     } finally {
       setDesgloseSaving(false);
     }
@@ -597,8 +659,9 @@ export default function ExtractosPage() {
         onInsertRow={onInsertRow}
         onOpenAudit={onOpenAudit}
         onOpenDesglose={(row) => void onOpenDesglose(row)}
-        canAddRow={(row) => canAddInCuenta(row.cuenta_id, row.titular_id, row.pais_id)}
+        canAddRow={(row) => modo === 'edicion' && canAddInCuenta(row.cuenta_id, row.titular_id, row.pais_id)}
         canEditCell={canEditCell}
+        inlineInsertEnabled={sortBy === 'fila_numero' && sortDir === 'desc'}
       />
 
       <div className="users-pagination">
@@ -630,7 +693,7 @@ export default function ExtractosPage() {
         loading={desgloseLoading}
         saving={desgloseSaving}
         error={desgloseError}
-        canEdit={Boolean(desgloseRow && modo === 'edicion' && canEditCuenta(desgloseRow.cuenta_id, desgloseRow.titular_id, desgloseRow.pais_id))}
+        canEdit={Boolean(desgloseRow && canEditCell(desgloseRow, 'desglose'))}
         onClose={onCloseDesglose}
         onSave={onSaveDesglose}
       />

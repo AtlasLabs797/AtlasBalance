@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import type { Extracto, ExtractoDesgloseResumen } from '@/types';
 import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
@@ -14,7 +16,7 @@ interface DesgloseModalProps {
   error: string | null;
   canEdit: boolean;
   onClose: () => void;
-  onSave: (lineas: DesgloseDraftPayload[]) => Promise<void>;
+  onSave: (lineas: DesgloseDraftPayload[], version: string) => Promise<void>;
 }
 
 export interface DesgloseDraftPayload {
@@ -31,6 +33,15 @@ interface DesgloseDraftLine {
   notas: string;
 }
 
+function serializeDraft(lines: DesgloseDraftLine[]) {
+  return JSON.stringify(lines.map((line) => ({
+    id: line.id ?? null,
+    tercero_nombre: line.tercero_nombre,
+    importe: line.importe,
+    notas: line.notas,
+  })));
+}
+
 export default function DesgloseModal({
   open,
   row,
@@ -42,27 +53,27 @@ export default function DesgloseModal({
   onClose,
   onSave
 }: DesgloseModalProps) {
-  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    onEscape: onClose,
-  });
+  const { confirm, dialogProps: discardDialogProps } = useConfirmDialog();
   const [draft, setDraft] = useState<DesgloseDraftLine[]>([]);
+  const [initialDraftSignature, setInitialDraftSignature] = useState('[]');
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       setDraft([]);
+      setInitialDraftSignature('[]');
       setLocalError(null);
       return;
     }
 
-    setDraft(
-      data?.lineas.map((line) => ({
+    const nextDraft = data?.lineas.map((line) => ({
         id: line.id,
         tercero_nombre: line.tercero_nombre,
         importe: String(line.importe),
         notas: line.notas ?? '',
-      })) ?? [],
-    );
+      })) ?? [];
+    setDraft(nextDraft);
+    setInitialDraftSignature(serializeDraft(nextDraft));
     setLocalError(null);
   }, [data, open]);
 
@@ -73,6 +84,26 @@ export default function DesgloseModal({
   const extractoMonto = row?.monto ?? data?.extracto_monto ?? 0;
   const diferencia = extractoMonto - draftTotal;
   const estado = draft.length === 0 ? 'sin_desglose' : Math.round(draftTotal * 10000) === Math.round(extractoMonto * 10000) ? 'cuadrado' : 'descuadrado';
+  const isDirty = canEdit && serializeDraft(draft) !== initialDraftSignature;
+
+  const requestClose = useCallback(async () => {
+    if (saving) return;
+    if (isDirty) {
+      const discard = await confirm({
+        title: 'Cerrar desglose',
+        message: 'Hay cambios sin guardar en el desglose. Si cierras ahora, se perderan.',
+        confirmLabel: 'Cerrar sin guardar',
+        cancelLabel: 'Seguir editando',
+      });
+      if (!discard) return;
+    }
+
+    onClose();
+  }, [confirm, isDirty, onClose, saving]);
+
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
+    onEscape: saving ? undefined : () => void requestClose(),
+  });
 
   if (!open || !row) {
     return null;
@@ -91,6 +122,11 @@ export default function DesgloseModal({
   };
 
   const save = async () => {
+    if (!data?.version) {
+      setLocalError('Recarga el desglose antes de guardar.');
+      return;
+    }
+
     const payload: DesgloseDraftPayload[] = [];
     for (let index = 0; index < draft.length; index += 1) {
       const line = draft[index];
@@ -115,11 +151,11 @@ export default function DesgloseModal({
     }
 
     setLocalError(null);
-    await onSave(payload);
+    await onSave(payload, data.version);
   };
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={saving ? undefined : onClose}>
+    <div className="modal-backdrop" role="presentation" onClick={saving ? undefined : () => void requestClose()}>
       <div
         ref={dialogRef}
         className="desglose-modal"
@@ -134,7 +170,7 @@ export default function DesgloseModal({
             <h3 id="desglose-modal-title">Desglose del extracto</h3>
             <p>{row.fecha} - {row.concepto || 'Sin concepto'}</p>
           </div>
-          <CloseIconButton onClick={onClose} ariaLabel="Cerrar desglose" />
+          <CloseIconButton onClick={() => void requestClose()} ariaLabel="Cerrar desglose" />
         </header>
 
         <section className={`desglose-summary desglose-summary--${estado}`}>
@@ -160,25 +196,37 @@ export default function DesgloseModal({
               ) : (
                 draft.map((line, index) => (
                   <div className="desglose-line" role="row" key={line.id ?? `new-${index}`}>
-                    <input
-                      value={line.tercero_nombre}
-                      disabled={!canEdit || saving}
-                      aria-label={`Persona de la linea ${index + 1}`}
-                      onChange={(event) => updateLine(index, { tercero_nombre: event.target.value })}
-                    />
-                    <input
-                      value={line.importe}
-                      disabled={!canEdit || saving}
-                      aria-label={`Importe de la linea ${index + 1}`}
-                      inputMode="decimal"
-                      onChange={(event) => updateLine(index, { importe: event.target.value })}
-                    />
-                    <input
-                      value={line.notas}
-                      disabled={!canEdit || saving}
-                      aria-label={`Notas de la linea ${index + 1}`}
-                      onChange={(event) => updateLine(index, { notas: event.target.value })}
-                    />
+                    <label className="desglose-field">
+                      <span>Persona</span>
+                      <input
+                        value={line.tercero_nombre}
+                        disabled={!canEdit || saving}
+                        aria-label={`Persona de la linea ${index + 1}`}
+                        placeholder="Persona"
+                        onChange={(event) => updateLine(index, { tercero_nombre: event.target.value })}
+                      />
+                    </label>
+                    <label className="desglose-field">
+                      <span>Importe</span>
+                      <input
+                        value={line.importe}
+                        disabled={!canEdit || saving}
+                        aria-label={`Importe de la linea ${index + 1}`}
+                        placeholder="Importe"
+                        inputMode="decimal"
+                        onChange={(event) => updateLine(index, { importe: event.target.value })}
+                      />
+                    </label>
+                    <label className="desglose-field">
+                      <span>Notas</span>
+                      <input
+                        value={line.notas}
+                        disabled={!canEdit || saving}
+                        aria-label={`Notas de la linea ${index + 1}`}
+                        placeholder="Notas"
+                        onChange={(event) => updateLine(index, { notas: event.target.value })}
+                      />
+                    </label>
                     <button
                       type="button"
                       className="desglose-icon-button"
@@ -201,11 +249,12 @@ export default function DesgloseModal({
             <Plus size={16} aria-hidden="true" />
             Anadir linea
           </button>
-          <button type="button" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button type="button" onClick={() => void requestClose()} disabled={saving}>Cancelar</button>
           <button type="button" className="primary" onClick={() => void save()} disabled={!canEdit || saving || loading}>
             {saving ? 'Guardando...' : 'Guardar'}
           </button>
         </footer>
+        <ConfirmDialog {...discardDialogProps} />
       </div>
     </div>
   );

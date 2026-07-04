@@ -2521,6 +2521,11 @@ GET    /api/extractos/{id}/desglose
 
 PUT    /api/extractos/{id}/desglose
 
+El `GET` de desglose devuelve una `version` calculada sobre las lineas activas.
+El `PUT` debe reenviar esa `version` junto a `lineas`; si el conjunto fue modificado
+por otro usuario, la API devuelve `409` (`desglose_concurrency_conflict`) y no aplica
+el reemplazo.
+
 GET    /api/extractos/{id}/auditoria
 
 GET    /api/extractos/celda/{cuentaId}/{filaNumero}/{columna}

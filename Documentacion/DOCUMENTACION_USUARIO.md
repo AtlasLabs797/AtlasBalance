@@ -77,6 +77,8 @@ En la columna `Alerta`, marca o desmarca el checkbox y escribe la nota si hace f
 
 La columna `Desglose` sirve para recibos domiciliados u otros movimientos que agrupan varias personas o terceros. Abre el modal, anade nombre, importe y notas de cada linea, y revisa el total contra el importe del extracto. Si no cuadra, la fila queda marcada como `descuadrado`; el saldo bancario no cambia.
 
+Si otra persona cambia el mismo desglose antes de que guardes, Atlas Balance avisa del conflicto, no pisa sus cambios y recarga la version vigente.
+
 Para insertar una fila manual en `Extractos`, pasa por la columna `Fila` y pulsa el boton `+` que aparece entre esa fila y la siguiente. Se abre un formulario dentro de la tabla; al guardar, Atlas Balance inserta la fila en esa posicion y desplaza la numeracion.
 
 El boton `Historial` aparece en la columna `Fila`, no repetido por toda la tabla.

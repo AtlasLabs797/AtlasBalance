@@ -1,5 +1,30 @@
 # Log de errores e incidencias
 
+## 2026-07-04 - V-02-04 - Desglose podia pisar cambios concurrentes (CERRADO)
+
+- Contexto: el modal de `Extractos > Desglose` reemplaza el conjunto completo de lineas. Dos usuarios con el modal abierto podian guardar en distinto orden y el ultimo save pisaba el anterior.
+- Error: no habia version del conjunto ni 409 especifico para `EXTRACTOS_DESGLOSES`.
+- Causa: la concurrencia optimista `xmin` existia en `EXTRACTOS`, pero las lineas de desglose no estaban versionadas y el endpoint opera como reemplazo de conjunto.
+- Solucion:
+  1. `GET /api/extractos/{id}/desglose` devuelve `version` calculada como SHA-256 de las lineas activas.
+  2. `PUT /api/extractos/{id}/desglose` exige `version` y devuelve `409 desglose_concurrency_conflict` si no coincide.
+  3. En PostgreSQL, el guardado toma `pg_advisory_xact_lock` por `extracto_id` antes de leer/comparar para serializar saves simultaneos.
+  4. El frontend envia la version y recarga el desglose vigente si recibe 409.
+- Verificacion: `dotnet test ... --filter GuardarDesglose` OK 7/7, `tsc --noEmit` OK, `npm run lint` OK y `npm run build` OK.
+- Regla: si un endpoint reemplaza un conjunto completo, necesita version de conjunto o lock. Confiar en "normalmente no editaran a la vez" es wishful thinking con corbata.
+
+## 2026-07-04 - V-02-04 - Selector de columnas de Extractos "no hacia nada" al clicar (CERRADO)
+
+- Contexto: en `Extractos > Columnas`, marcar/desmarcar un checkbox de visibilidad no producia ningun efecto visible para el usuario.
+- Error: el click si funcionaba: update optimista + `PUT /api/extractos/columnas-visibles`. El backend respondia `400 Bad Request` y el catch revertia el estado en milisegundos, con el error renderizado fuera de la vista. Resultado percibido: "no hace nada". Evidencia: dos `400` en `logs/atlas-balance-20260703.log` a las 17:46, exactamente cuando el usuario probo.
+- Causa: model binding estricto de `Guid?` en `SaveColumnasVisiblesRequest`: cualquier id de scope (`cuenta_id`/`titular_id`/`pais_id`) vacio o no-GUID tumbaba el request completo. Ese estado corrupto venia del cliente (bundle/pestana antigua, URL o localStorage), y ademas `index.html` se servia sin cabeceras de cache, con lo que un navegador podia quedarse clavado en un frontend viejo tras un rebuild.
+- Solucion (defensa en profundidad):
+  1. `LenientNullableGuidJsonConverter` en los tres ids de scope del DTO: valor vacio/invalido degrada a scope global (null) en vez de 400.
+  2. `ExtractosPage` filtra los ids con `UUID_PATTERN` antes de enviarlos (GET y PUT).
+  3. Estaticos: `.html` con `Cache-Control: no-cache, must-revalidate` (tambien el fallback SPA) y `/assets/*` hasheados con `immutable`.
+- Verificacion: payloads `cuenta_id:""`, `cuenta_id:"undefined"`, `pais_id:"ES"` ahora devuelven 200 con sesion real; toggle de columna en la UI (Vite dev + navegador) dispara `PUT 200` y persiste; `tsc`, `lint` y build backend OK.
+- Regla: si un toggle con update optimista "no hace nada", casi seguro que el guardado falla y se revierte rapido. Mirar el log HTTP del backend antes de tocar el componente. Y para preferencias de UI, el backend debe degradar con gracia, no rechazar por un id de scope irreconocible.
+
 ## 2026-07-03 - V-02-04 - Boton `+` de alta inline quedaba tapado por la fila inferior (CERRADO)
 
 - Contexto: en `Extractos`, el nuevo boton `+` de insercion por fila debia aparecer entre la columna `Fila`, `Revisada` y la fila inferior.

@@ -1070,11 +1070,13 @@ public sealed class ExtractosControllerTests
         await db.SaveChangesAsync();
 
         var controller = BuildController(db, userId, RolUsuario.ADMIN);
+        var version = await GetDesgloseVersion(controller, extractoId);
 
         var result = await controller.GuardarDesglose(
             extractoId,
             new ExtractoDesgloseUpsertRequest
             {
+                Version = version,
                 Lineas =
                 [
                     new ExtractoDesgloseLineaRequest { TerceroNombre = "Persona A", Importe = -60m },
@@ -1140,11 +1142,13 @@ public sealed class ExtractosControllerTests
         await db.SaveChangesAsync();
 
         var controller = BuildController(db, userId, RolUsuario.ADMIN);
+        var version = await GetDesgloseVersion(controller, extractoId);
 
         var result = await controller.GuardarDesglose(
             extractoId,
             new ExtractoDesgloseUpsertRequest
             {
+                Version = version,
                 Lineas =
                 [
                     new ExtractoDesgloseLineaRequest { Id = keptLineId, TerceroNombre = "Persona A actualizada", Importe = -60m }
@@ -1161,6 +1165,73 @@ public sealed class ExtractosControllerTests
         allLines.Single(x => x.Id == keptLineId).DeletedAt.Should().BeNull();
         allLines.Single(x => x.Id == omittedLineId).DeletedAt.Should().NotBeNull();
         (await db.ExtractosDesgloses.CountAsync(x => x.ExtractoId == extractoId)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GuardarDesglose_Should_Return_Conflict_When_Version_Is_Stale()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.desglose.conflict@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Desglose Conflict",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Desglose", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Desglose", Divisa = "EUR", Activa = true });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Recibo domiciliado",
+            Monto = -100m,
+            Saldo = 900m,
+            FilaNumero = 7
+        });
+        db.ExtractosDesgloses.Add(new ExtractoDesglose
+        {
+            Id = lineId,
+            ExtractoId = extractoId,
+            Orden = 1,
+            TerceroNombre = "Persona A",
+            Importe = -100m
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+        var staleVersion = await GetDesgloseVersion(controller, extractoId);
+        var firstSave = await controller.GuardarDesglose(
+            extractoId,
+            new ExtractoDesgloseUpsertRequest
+            {
+                Version = staleVersion,
+                Lineas = [new ExtractoDesgloseLineaRequest { Id = lineId, TerceroNombre = "Persona A", Importe = -80m }]
+            },
+            CancellationToken.None);
+        firstSave.Should().BeOfType<OkObjectResult>();
+
+        var result = await controller.GuardarDesglose(
+            extractoId,
+            new ExtractoDesgloseUpsertRequest
+            {
+                Version = staleVersion,
+                Lineas = [new ExtractoDesgloseLineaRequest { Id = lineId, TerceroNombre = "Persona A", Importe = -60m }]
+            },
+            CancellationToken.None);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+        var line = await db.ExtractosDesgloses.SingleAsync(x => x.Id == lineId);
+        line.Importe.Should().Be(-80m);
     }
 
     [Fact]
@@ -1196,16 +1267,70 @@ public sealed class ExtractosControllerTests
         await db.SaveChangesAsync();
 
         var controller = BuildController(db, userId, RolUsuario.ADMIN);
+        var version = await GetDesgloseVersion(controller, extractoId);
 
         var result = await controller.GuardarDesglose(
             extractoId,
             new ExtractoDesgloseUpsertRequest
             {
+                Version = version,
                 Lineas = [new ExtractoDesgloseLineaRequest { TerceroNombre = " ", Importe = -10m }]
             },
             CancellationToken.None);
 
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task GuardarDesglose_Should_Reject_Missing_Lineas_Without_Deleting_Current_Lines()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.desglose.missing-lineas@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Desglose Missing Lineas",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Desglose", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Desglose", Divisa = "EUR", Activa = true });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Recibo domiciliado",
+            Monto = -100m,
+            Saldo = 900m,
+            FilaNumero = 7
+        });
+        db.ExtractosDesgloses.Add(new ExtractoDesglose
+        {
+            Id = lineId,
+            ExtractoId = extractoId,
+            Orden = 1,
+            TerceroNombre = "Persona A",
+            Importe = -100m
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+        var version = await GetDesgloseVersion(controller, extractoId);
+
+        var result = await controller.GuardarDesglose(extractoId, new ExtractoDesgloseUpsertRequest { Version = version }, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var allLines = await db.ExtractosDesgloses.IgnoreQueryFilters().Where(x => x.ExtractoId == extractoId).ToListAsync();
+        allLines.Should().ContainSingle();
+        allLines.Single().DeletedAt.Should().BeNull();
     }
 
     [Fact]
@@ -1249,16 +1374,81 @@ public sealed class ExtractosControllerTests
         await db.SaveChangesAsync();
 
         var controller = BuildController(db, userId, RolUsuario.GERENTE);
+        var version = await GetDesgloseVersion(controller, extractoId);
 
         var result = await controller.GuardarDesglose(
             extractoId,
             new ExtractoDesgloseUpsertRequest
             {
+                Version = version,
                 Lineas = [new ExtractoDesgloseLineaRequest { TerceroNombre = "Persona A", Importe = -100m }]
             },
             CancellationToken.None);
 
         result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task GuardarDesglose_Should_Forbid_When_User_Cannot_Edit_Desglose_Column()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.desglose.column-denied@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente Desglose Column Denied",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Desglose", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Desglose", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            PuedeVerCuentas = true,
+            PuedeEditarLineas = true
+        });
+        db.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuentaId,
+            ColumnasEditables = """["fecha"]"""
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = extractoId,
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Recibo domiciliado",
+            Monto = -100m,
+            Saldo = 900m,
+            FilaNumero = 7
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+        var version = await GetDesgloseVersion(controller, extractoId);
+
+        var result = await controller.GuardarDesglose(
+            extractoId,
+            new ExtractoDesgloseUpsertRequest
+            {
+                Version = version,
+                Lineas = [new ExtractoDesgloseLineaRequest { TerceroNombre = "Persona A", Importe = -100m }]
+            },
+            CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+        (await db.ExtractosDesgloses.CountAsync(x => x.ExtractoId == extractoId)).Should().Be(0);
     }
 
     [Fact]
@@ -1315,6 +1505,14 @@ public sealed class ExtractosControllerTests
         var payload = result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<ExtractoDesgloseResumenResponse>().Subject;
         payload.Count.Should().Be(1);
         payload.Estado.Should().Be("cuadrado");
+    }
+
+    private static async Task<string> GetDesgloseVersion(ExtractosController controller, Guid extractoId)
+    {
+        var result = await controller.GetDesglose(extractoId, CancellationToken.None);
+        var payload = result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<ExtractoDesgloseResumenResponse>().Subject;
+        payload.Version.Should().NotBeNullOrWhiteSpace();
+        return payload.Version;
     }
 
     private static ExtractosController BuildController(AppDbContext db, Guid userId, RolUsuario role)

@@ -75,11 +75,13 @@ public sealed class ExtractoDesgloseResumenResponse
     public decimal Total { get; set; }
     public decimal Diferencia { get; set; }
     public string Estado { get; set; } = "sin_desglose";
+    public string Version { get; set; } = string.Empty;
     public IReadOnlyList<ExtractoDesgloseResponse> Lineas { get; set; } = [];
 }
 
 public sealed class ExtractoDesgloseUpsertRequest
 {
+    public string? Version { get; set; }
     public IReadOnlyList<ExtractoDesgloseLineaRequest>? Lineas { get; set; }
 }
 

@@ -5,8 +5,8 @@
 }
 
 .extractos-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) auto minmax(30rem, 1.35fr);
   gap: var(--space-4);
   align-items: flex-start;
 }
@@ -36,6 +36,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  justify-content: center;
 }
 
 .extractos-mode-toggle button {
@@ -60,6 +61,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: min(100%, 68rem);
+  justify-self: end;
   padding: var(--space-3);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
@@ -208,6 +210,16 @@
 
 .column-visibility-panel label:hover {
   background: var(--bg-hover);
+}
+
+.column-visibility-panel label.column-visibility-panel-fixed {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-surface-soft) 82%, var(--bg-surface));
+  cursor: default;
+}
+
+.column-visibility-panel label input:disabled {
+  cursor: not-allowed;
 }
 
 .extracto-formula-bar {
@@ -386,6 +398,17 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.extracto-column-label {
+  display: flex;
+  align-items: center;
+  min-height: 1.8rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+}
+
 .cell.head input {
   width: 100%;
   min-height: 1.85rem;
@@ -517,8 +540,8 @@
 
 .extracto-row-insert-trigger {
   position: absolute;
-  right: -0.72rem;
-  bottom: -0.74rem;
+  left: 0.35rem;
+  top: 50%;
   z-index: 10;
   display: inline-flex;
   align-items: center;
@@ -533,9 +556,9 @@
   background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent-primary) 8%);
   color: var(--text-link);
   box-shadow: 0 0.45rem 1rem color-mix(in srgb, var(--text-primary) 12%, transparent);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(0.1rem) scale(0.96);
+  opacity: 0.38;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(0.96);
   transition:
     opacity 140ms var(--ease-premium),
     transform 140ms var(--ease-premium),
@@ -552,14 +575,18 @@
 .extracto-row-insert-trigger:focus-visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0) scale(1);
+  transform: translateY(-50%) scale(1);
 }
 
 .extracto-row:hover .extracto-row-insert-trigger,
 .extracto-row:focus-within .extracto-row-insert-trigger {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0) scale(1);
+  transform: translateY(-50%) scale(1);
+}
+
+.cell--fila_numero > span:not(.cell-edit-shell) {
+  padding-left: 1.6rem;
 }
 
 .extracto-insert-form {
@@ -785,6 +812,23 @@
   min-width: 0;
 }
 
+.desglose-field {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.desglose-field > span {
+  display: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.desglose-field input {
+  width: 100%;
+}
+
 .desglose-empty {
   margin: var(--space-2) 0;
   color: var(--text-secondary);
@@ -812,6 +856,18 @@
   gap: var(--space-1);
 }
 
+@media (max-width: 1200px) {
+  .extractos-header {
+    grid-template-columns: 1fr;
+  }
+
+  .extractos-mode-toggle,
+  .extractos-filters {
+    justify-self: stretch;
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 900px) {
   .desglose-summary {
     grid-template-columns: 1fr;
@@ -825,6 +881,10 @@
 
   .desglose-line--head {
     display: none;
+  }
+
+  .desglose-field > span {
+    display: block;
   }
 
   .desglose-icon-button {
@@ -894,18 +954,20 @@
   }
 
   .extracto-row-insert-trigger {
-    right: -1.375rem;
-    bottom: -1.375rem;
+    left: 0.25rem;
+    right: auto;
+    top: 50%;
+    bottom: auto;
     width: var(--control-height);
     min-width: var(--control-height);
     height: var(--control-height);
     min-height: var(--control-height);
     opacity: 1;
     pointer-events: auto;
-    transform: translateY(0) scale(1);
+    transform: translateY(-50%) scale(1);
   }
 
   .cell--fila_numero > span:not(.cell-edit-shell) {
-    padding-right: calc(var(--control-height) + var(--space-1));
+    padding-left: calc(var(--control-height) + var(--space-1));
   }
 }

@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
@@ -256,8 +258,11 @@ public sealed class ExtractosController : ControllerBase
     }
 
     private async Task AcquireFilaNumeroLockAsync(Guid cuentaId, CancellationToken ct)
+        => await AcquireGuidAdvisoryLockAsync(cuentaId, ct);
+
+    private async Task AcquireGuidAdvisoryLockAsync(Guid id, CancellationToken ct)
     {
-        var bytes = cuentaId.ToByteArray();
+        var bytes = id.ToByteArray();
         var lockKey = BitConverter.ToInt64(bytes, 0) ^ BitConverter.ToInt64(bytes, 8);
         await _db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], ct);
     }
@@ -381,18 +386,19 @@ public sealed class ExtractosController : ControllerBase
     [HttpPut("{id:guid}/desglose")]
     public async Task<IActionResult> GuardarDesglose(Guid id, [FromBody] ExtractoDesgloseUpsertRequest req, CancellationToken ct)
     {
-        if (req is null) return BadRequest(new { error = "La solicitud de desglose esta incompleta." });
+        if (req is null || req.Lineas is null) return BadRequest(new { error = "La solicitud de desglose debe incluir lineas." });
+        if (string.IsNullOrWhiteSpace(req.Version)) return BadRequest(new { error = "La solicitud de desglose debe incluir version." });
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
         var p = await GetPermission(actor, cuenta, ct);
-        if (!p.CanEdit) return Forbid();
+        if (!p.CanEdit || !CanEditColumn(p, "desglose")) return Forbid();
 
         var normalizedLines = new List<NormalizedDesgloseLine>();
         var seenIds = new HashSet<Guid>();
-        var requestedLines = req.Lineas ?? [];
+        var requestedLines = req.Lineas;
         if (requestedLines.Count > 500)
         {
             return BadRequest(new { error = "Un desglose no puede superar 500 lineas." });
@@ -424,11 +430,26 @@ public sealed class ExtractosController : ControllerBase
         var tx = isRelational ? await _db.Database.BeginTransactionAsync(ct) : null;
         try
         {
+            if (isRelational)
+            {
+                await AcquireGuidAdvisoryLockAsync(id, ct);
+            }
+
             var current = await _db.ExtractosDesgloses
                 .IgnoreQueryFilters()
                 .Where(x => x.ExtractoId == id)
                 .ToListAsync(ct);
             var activeCurrent = current.Where(x => x.DeletedAt is null).ToList();
+            var currentVersion = BuildDesgloseVersion(activeCurrent);
+            if (!string.Equals(req.Version, currentVersion, StringComparison.Ordinal))
+            {
+                return Conflict(new
+                {
+                    error = "El desglose fue modificado por otro usuario. Recarga los datos y vuelve a intentarlo.",
+                    code = "desglose_concurrency_conflict"
+                });
+            }
+
             var currentById = activeCurrent.ToDictionary(x => x.Id);
             var beforeSummary = BuildDesgloseAuditSummary(ex.Monto, activeCurrent);
 
@@ -855,8 +876,34 @@ public sealed class ExtractosController : ControllerBase
             Total = total,
             Diferencia = ex.Monto - total,
             Estado = GetDesgloseEstado(lineas.Count, total, ex.Monto),
+            Version = BuildDesgloseVersion(lineas),
             Lineas = lineas
         };
+    }
+
+    private static string BuildDesgloseVersion(IReadOnlyCollection<ExtractoDesglose> lineas)
+    {
+        var responseLines = lineas
+            .Where(x => x.DeletedAt is null)
+            .OrderBy(x => x.Orden)
+            .Select(MapDesgloseLine)
+            .ToList();
+        return BuildDesgloseVersion(responseLines);
+    }
+
+    private static string BuildDesgloseVersion(IReadOnlyList<ExtractoDesgloseResponse> lineas)
+    {
+        var payload = string.Join('\n', lineas
+            .OrderBy(x => x.Orden)
+            .ThenBy(x => x.Id)
+            .Select(x => string.Join('\u001f',
+                x.Id,
+                x.Orden,
+                x.TerceroNombre,
+                x.Importe.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture),
+                x.Notas ?? string.Empty)));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static ExtractoDesgloseResponse MapDesgloseLine(ExtractoDesglose line)

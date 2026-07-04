@@ -8,6 +8,111 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-04 - V-02-04 - Extractos: concurrencia de desglose cerrada
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Cerrado el pendiente de concurrencia del modal de desglose.
+- Backend: `GET /api/extractos/{id}/desglose` devuelve `version`, calculada como hash SHA-256 del conjunto activo de lineas (`id`, `orden`, tercero, importe y notas).
+- Backend: `PUT /api/extractos/{id}/desglose` exige `version`; si la version recibida no coincide con la vigente, devuelve `409` con `code = "desglose_concurrency_conflict"`.
+- Backend: en PostgreSQL el guardado toma `pg_advisory_xact_lock` por `extracto_id` antes de leer/comparar lineas, para serializar dos guardados simultaneos y evitar lost updates reales, no solo stale saves secuenciales.
+- Frontend: `DesgloseModal` no guarda sin version cargada; `ExtractosPage` envia `{ version, lineas }` y, ante `409`, recarga el desglose vigente y muestra el conflicto al usuario.
+- Tests: nuevo caso `GuardarDesglose_Should_Return_Conflict_When_Version_Is_Stale`.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/components/extractos/DesgloseModal.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/Versiones/v-02-04.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/SPEC.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados y verificacion:**
+- `.\node_modules\.bin\tsc.cmd --noEmit`: OK.
+- `npm run lint`: OK.
+- `dotnet test tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --filter GuardarDesglose --no-restore`: OK, 7/7.
+- `npm run build`: OK.
+
+**Pendientes:**
+- Ninguno para la concurrencia del desglose. Sigue sin ejecutarse suite completa con Testcontainers en esta sesion.
+
+---
+## 2026-07-04 - V-02-04 - Fix: selector de columnas de Extractos revertia el toggle en silencio
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Diagnosticado el bug "el selector de columnas no hace nada": el click si disparaba `PUT /api/extractos/columnas-visibles`, pero el backend respondia `400` por model binding (id de scope vacio o no-GUID en el payload) y el update optimista se revertia en milisegundos, sin feedback perceptible. Evidencia: dos `400` en el log de la API (2026-07-03 17:46) coincidiendo con los clicks reportados.
+- Backend: `SaveColumnasVisiblesRequest` usa ahora `LenientNullableGuidJsonConverter` en `cuenta_id`/`titular_id`/`pais_id`: un valor vacio o no parseable degrada a scope global (`null`) en lugar de rechazar el guardado con 400. Para una preferencia de UI, degradar es mejor contrato que fallar.
+- Backend: los `.html` estaticos (incluido el fallback SPA) se sirven con `Cache-Control: no-cache, must-revalidate` y los `/assets/*` hasheados con `immutable`. Sin esto, el navegador podia quedarse con un `index.html` viejo tras un rebuild y seguir ejecutando bundles antiguos (causa probable del payload invalido original).
+- Frontend: `ExtractosPage` valida con `UUID_PATTERN` (`asUuidOrUndefined`) todos los ids de scope que viajan a la API (GET y PUT de columnas visibles, listado), de modo que valores corruptos de URL o localStorage (`undefined`, ids antiguos) nunca llegan al backend.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+
+**Comandos ejecutados y verificacion:**
+- `Start-LocalDev.ps1 -SkipFrontend`: build backend OK (0 errores) y API healthy.
+- `npx tsc --noEmit`: OK. `npm run lint`: OK.
+- Verificacion en vivo contra la API real con sesion autenticada (usuario temporal de pruebas, ya desactivado): payloads `cuenta_id:""`, `cuenta_id:"undefined"` y `pais_id:"ES"` que antes daban 400 ahora devuelven 200; payload normal persiste y el GET lo refleja.
+- Verificacion en vivo de la UI (Vite dev + navegador): toggle off/on de una columna dispara dos `PUT 200` y los checkboxes/tabla reaccionan.
+- Cabeceras verificadas: `/` y `/extractos` responden `Cache-Control: no-cache, must-revalidate`.
+
+**Pendientes:**
+- `wwwroot` no se ha regenerado en esta sesion (hay trabajo WIP de desglose en el arbol); el bundle actual de :5000 (2026-07-03 17:54) funciona con el backend tolerante. Regenerar en el proximo build de release.
+- Si el usuario sigue viendo el fallo en una pestana abierta antigua: hacer un hard refresh (Ctrl+F5) una vez; con `no-cache` ya no volvera a pasar.
+
+---
+## 2026-07-03 - V-02-04 - Extractos: auditoria UX, permisos y contrato de desglose
+
+**Version:** V-02-04
+
+**Trabajo realizado:**
+- Corregido `PUT /api/extractos/{id}/desglose`: `lineas` ausente ahora devuelve `400` y ya no se interpreta como borrado implicito del desglose completo.
+- El guardado de desglose exige permiso granular de columna `desglose`, no solo permiso general de editar lineas.
+- `ExtractosPage` ya no limpia `cuentaId`/`titularId` de la URL al montar; solo resetea esos filtros cuando cambia realmente el pais global.
+- Proteccion contra respuestas tardias en el modal de desglose con `AbortController` y request id.
+- El modal de desglose pide confirmacion antes de cerrar con cambios sin guardar y muestra labels/placeholder utiles en campos.
+- La tabla fuerza `Fila` como columna fija, desactiva sort visual en columnas que backend no ordena (`checked`, `flagged`, `desglose`, extras) y separa permisos `flagged`/`flagged_nota`.
+- Alta inline limitada a modo edicion y sort estable `fila_numero desc`; el boton `+` queda visible dentro de la celda `Fila` cuando aplica.
+- Al editar `monto`, el estado local de desglose se recalcula para no dejar un `OK` falso; al desmarcar alerta se limpia la nota fantasma local.
+- Cabecera/filtros de Extractos ajustados con grid responsive para evitar amontonamiento en desktop estrecho.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/components/extractos/DesgloseModal.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/Versiones/v-02-04.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados y verificacion:**
+- `npm run lint`: OK.
+- `.\node_modules\.bin\tsc.cmd --noEmit`: OK.
+- `npm run build`: OK.
+- `dotnet test tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --filter GuardarDesglose --no-restore`: OK, 6/6.
+- QA visual finita con build compilado, servidor estatico temporal y Playwright usando Chrome del sistema: OK. Capturas en `Atlas Balance/.tmp/atlas-extractos-qa/06-extractos-build-desktop.png`, `07-extractos-build-columnas.png`, `08-extractos-build-desglose.png`.
+
+**Decisiones de diseno:**
+- `Fila` no es configurable mientras sea la columna que sostiene auditoria contextual y alta inline.
+- El alta inline no se muestra fuera de `fila_numero desc`; prometer "debajo" con sort por fecha/monto/concepto era UX falsa.
+- Las columnas no soportadas por el backend no reciben boton de ordenacion. Mejor una limitacion clara que una flecha mentirosa.
+
+**Pendientes:**
+- Sigue pendiente un control de concurrencia especifico para el conjunto de desglose (version/If-Match o equivalente) si dos usuarios editan el modal a la vez.
+
+---
 ## 2026-07-03 - V-02-04 - Desglose informativo de recibos domiciliados en extractos
 
 **Version:** V-02-04

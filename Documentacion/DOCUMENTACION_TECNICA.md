@@ -1,5 +1,26 @@
 # Documentacion tecnica
 
+## 2026-07-04 - V-02-04 - Concurrencia del desglose de extractos
+
+### Que cambio
+
+- `ExtractoDesgloseResumenResponse` incluye `version`, un hash SHA-256 estable del conjunto
+  activo de lineas del desglose.
+- `ExtractoDesgloseUpsertRequest` exige `version` junto con `lineas`. Guardar sin version
+  devuelve `400`; guardar con version antigua devuelve `409`.
+- `ExtractosController.GuardarDesglose` serializa el guardado relacional con
+  `pg_advisory_xact_lock` por `extracto_id` antes de leer/comparar lineas. Sin ese lock, dos
+  requests simultaneos podrian leer la misma version y pasar el check.
+- El frontend envia `{ version, lineas }` desde `DesgloseModal`. Ante `409`, `ExtractosPage`
+  recarga el desglose vigente para evitar que el usuario siga editando un borrador obsoleto.
+
+### Verificacion
+
+- `dotnet test tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --filter GuardarDesglose --no-restore`: 7/7 OK.
+- `.\node_modules\.bin\tsc.cmd --noEmit`: OK.
+- `npm run lint`: OK.
+- `npm run build`: OK.
+
 ## 2026-07-03 - V-02-04 - Alta inline de filas en Extractos
 
 ### Que cambio

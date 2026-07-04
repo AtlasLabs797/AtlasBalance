@@ -56,11 +56,14 @@ interface ExtractoTableProps {
   onOpenDesglose: (row: Extracto) => void;
   canAddRow: (row: Extracto) => boolean;
   canEditCell: (row: Extracto, column: string) => boolean;
+  inlineInsertEnabled: boolean;
 }
 
 const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'desglose', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo'] as const;
 const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
 const ACTION_COLUMNS = new Set(['checked', 'flagged', 'desglose']);
+const REQUIRED_COLUMNS = new Set<string>(['fila_numero']);
+const SORTABLE_COLUMNS = new Set<string>(['fila_numero', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo', 'fecha_creacion']);
 const DEFAULT_SELECTED_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda' };
 const DEFAULT_FOCUSED_CELL = { rowIndex: 0, colIndex: 0 };
 
@@ -82,7 +85,8 @@ export default function ExtractoTable({
   onOpenAudit,
   onOpenDesglose,
   canAddRow,
-  canEditCell
+  canEditCell,
+  inlineInsertEnabled
 }: ExtractoTableProps) {
   const [filters, setFilters] = useState<Record<string, string>>({});
   // F-NEW-11 (V-02-03): debounce del input para no re-virtualizar
@@ -120,9 +124,9 @@ export default function ExtractoTable({
     if (!visibleColumns) {
       return allColumns;
     }
-    const selected = new Set(visibleColumns);
+    const selected = new Set([...REQUIRED_COLUMNS, ...visibleColumns]);
     const next = allColumns.filter((col) => selected.has(col));
-    return next.length > 0 ? next : ['fila_numero'];
+    return next.length > 0 ? next : [...REQUIRED_COLUMNS];
   }, [allColumns, visibleColumns]);
 
   const filteredRows = useMemo(() => {
@@ -162,11 +166,11 @@ export default function ExtractoTable({
   }, [activeColumns.length, filteredRows.length]);
 
   useEffect(() => {
-    if (insertDraft && !rows.some((row) => row.id === insertDraft.afterRowId && canAddRow(row))) {
+    if (insertDraft && (!inlineInsertEnabled || !rows.some((row) => row.id === insertDraft.afterRowId && canAddRow(row)))) {
       setInsertDraft(null);
       setInsertError(null);
     }
-  }, [canAddRow, insertDraft, rows]);
+  }, [canAddRow, inlineInsertEnabled, insertDraft, rows]);
 
   const gridTemplateColumns = activeColumns.length > 0 ? activeColumns.map(getColumnTrack).join(' ') : '1fr';
   const sheetWidth = activeColumns.reduce((total, column) => total + getColumnWidth(column), 0);
@@ -391,18 +395,23 @@ export default function ExtractoTable({
             </button>
           </div>
           {allColumns.map((column) => {
-            const checked = visibleColumns ? visibleColumns.includes(column) || (visibleColumns.length === 0 && column === 'fila_numero') : true;
+            const isRequiredColumn = REQUIRED_COLUMNS.has(column);
+            const checked = isRequiredColumn || (visibleColumns ? visibleColumns.includes(column) : true);
             const isLastVisibleColumn = checked && activeColumns.length <= 1 && activeColumns.includes(column);
 
             return (
-              <label key={column} title={isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}>
+              <label
+                key={column}
+                className={isRequiredColumn ? 'column-visibility-panel-fixed' : undefined}
+                title={isRequiredColumn ? 'Columna fija para auditoria y alta inline.' : isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}
+              >
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={isLastVisibleColumn}
+                  disabled={isRequiredColumn || isLastVisibleColumn}
                   onChange={() => onToggleColumn(column, allColumns)}
                 />
-                {getColumnLabel(column)}
+                {getColumnLabel(column)}{isRequiredColumn ? ' (fija)' : ''}
               </label>
             );
           })}
@@ -425,21 +434,29 @@ export default function ExtractoTable({
         aria-colcount={activeColumns.length}
       >
         <div id={filtersId} className="extracto-table-head" style={sheetGridStyle} role="row" aria-rowindex={1}>
-          {activeColumns.map((column, columnIndex) => (
+          {activeColumns.map((column, columnIndex) => {
+            const isSortable = SORTABLE_COLUMNS.has(column);
+            return (
             <div
               key={column}
               className={`cell head ${getColumnClassName(column)}`}
               role="columnheader"
               aria-colindex={columnIndex + 1}
-              aria-sort={sortBy === column ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+              aria-sort={isSortable ? (sortBy === column ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
             >
-              <button
-                type="button"
-                onClick={() => onSort(column)}
-              >
-                <span>{getColumnLabel(column)}</span>
-                {sortBy === column ? <small>{sortDir === 'asc' ? 'asc' : 'desc'}</small> : null}
-              </button>
+              {isSortable ? (
+                <button
+                  type="button"
+                  onClick={() => onSort(column)}
+                >
+                  <span>{getColumnLabel(column)}</span>
+                  {sortBy === column ? <small>{sortDir === 'asc' ? 'asc' : 'desc'}</small> : null}
+                </button>
+              ) : (
+                <span className="extracto-column-label" title="Esta columna no admite ordenacion global.">
+                  {getColumnLabel(column)}
+                </span>
+              )}
               {showFilters ? (
                 <input
                   aria-label={`Filtrar por ${getColumnLabel(column)}`}
@@ -449,7 +466,8 @@ export default function ExtractoTable({
                 />
               ) : null}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="extracto-table-body" role="rowgroup">
@@ -474,7 +492,7 @@ export default function ExtractoTable({
             >
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                 const row = filteredRows[virtualRow.index];
-                const rowCanAdd = canAddRow(row);
+                const rowCanAdd = inlineInsertEnabled && canAddRow(row);
                 return (
                   <div
                     key={row.id}
@@ -532,6 +550,8 @@ export default function ExtractoTable({
                           row,
                           column,
                           canEdit: canEditCell(row, column),
+                          canEditFlag: canEditCell(row, 'flagged'),
+                          canEditFlagNote: canEditCell(row, 'flagged_nota'),
                           amountClassName: getAmountClassName(row, column),
                           note: flagNotes[row.id] ?? row.flagged_nota ?? '',
                           onNoteChange: (next) => setFlagNotes((prev) => ({ ...prev, [row.id]: next })),
@@ -684,6 +704,8 @@ function renderCell({
   row,
   column,
   canEdit,
+  canEditFlag,
+  canEditFlagNote,
   amountClassName,
   note,
   onNoteChange,
@@ -696,6 +718,8 @@ function renderCell({
   row: Extracto;
   column: string;
   canEdit: boolean;
+  canEditFlag: boolean;
+  canEditFlagNote: boolean;
   amountClassName: string;
   note: string;
   onNoteChange: (next: string) => void;
@@ -724,20 +748,29 @@ function renderCell({
         <input
           type="checkbox"
           checked={row.flagged}
-          disabled={!canEdit}
+          disabled={!canEditFlag}
           tabIndex={isActive ? 0 : -1}
           aria-label={`Marcar fila ${row.fila_numero} con alerta`}
-          onChange={(e) => void onToggleFlag(row, e.target.checked, note)}
+          onChange={(e) => {
+            const nextFlagged = e.target.checked;
+            if (!nextFlagged) {
+              onNoteChange('');
+              void onToggleFlag(row, false, undefined);
+              return;
+            }
+
+            void onToggleFlag(row, true, note);
+          }}
         />
         <input
           value={note}
           placeholder="Nota de alerta"
-          disabled={!canEdit}
+          disabled={!canEditFlagNote || !row.flagged}
           tabIndex={isActive ? 0 : -1}
           aria-label={`Nota de alerta para fila ${row.fila_numero}`}
           onChange={(e) => onNoteChange(e.target.value)}
           onBlur={() => {
-            if (canEdit && row.flagged) {
+            if (canEditFlagNote && row.flagged) {
               void onToggleFlag(row, row.flagged, note);
             }
           }}
