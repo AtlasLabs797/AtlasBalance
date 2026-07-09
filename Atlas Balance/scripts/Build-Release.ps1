@@ -196,7 +196,8 @@ foreach ($script in @(
     "Actualizar-AtlasBalance.ps1",
     "Launch-AtlasBalance.ps1",
     "install-cert-client.ps1",
-    "uninstall-services.ps1"
+    "uninstall-services.ps1",
+    "Caddyfile.example"
 )) {
     Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\$script") -Destination (Join-Path $packageRoot "scripts\$script") -Force
 }

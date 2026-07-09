@@ -6,7 +6,7 @@ El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-02-03-win-
 
 ## Scripts de un clic
 
-- `install.cmd`: instala dependencias, prepara PostgreSQL, crea base de datos, copia API/Watchdog/frontend estatico, genera configuracion de produccion, certificado local, servicios Windows y atajos.
+- `install.cmd`: instala dependencias, prepara PostgreSQL, crea base de datos, copia API/Watchdog/frontend estatico, genera configuracion de produccion, servicios Windows y atajos. En modo directo genera certificado local; en modo reverse proxy deja TLS al proxy.
 - `update.cmd`: actualiza una instalacion existente, crea backup previo de PostgreSQL, conserva configuracion y deja que la API aplique migraciones al arrancar.
 - `uninstall.cmd`: elimina servicios, reglas de firewall, atajos, claves de Data Protection, carpeta instalada y PostgreSQL gestionado si lo instalo Atlas Balance.
 - `start.cmd`: arranca PostgreSQL gestionado, Watchdog y API en ese orden; el frontend se sirve desde la API.
@@ -66,6 +66,25 @@ Health check recomendado:
 ```powershell
 curl.exe -k -v https://localhost/api/health
 ```
+
+## Publicar por Internet con dominio propio
+
+Para exponer la app en `https://balance.tudominio.com`, instala Atlas Balance detras de un proxy inverso. La API queda solo en loopback, la URL base se siembra con el dominio publico y el certificado lo gestiona el proxy:
+
+```powershell
+.\install.cmd -InstallPath C:\AtlasBalance -UseReverseProxy -PublicHost balance.tudominio.com -InternalApiPort 5000 -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
+```
+
+Despues configura el proxy para reenviar a `http://127.0.0.1:5000`. El paquete incluye `scripts\Caddyfile.example`:
+
+```caddyfile
+balance.tudominio.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:5000
+}
+```
+
+En DNS, apunta el dominio al servidor. En firewall, deja abiertos solo `80/tcp` y `443/tcp` hacia Internet. PostgreSQL, Watchdog y el puerto interno de la API no se exponen.
 
 ## Actualizar una instalacion existente
 

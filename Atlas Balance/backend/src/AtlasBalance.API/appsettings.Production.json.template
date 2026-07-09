@@ -12,11 +12,14 @@
     "Email": "admin@atlasbalance.local",
     "Password": "CAMBIAR_PASSWORD_ADMIN_INICIAL_AQUI"
   },
+  "App": {
+    "BaseUrl": "https://CAMBIAR_HOST_PUBLICO_AQUI"
+  },
   "Security": {
     "RequireMfaForWebUsers": true
   },
   "ForwardedHeaders": {
-    "KnownProxies": [],
+    "KnownProxies": [ "127.0.0.1" ],
     "KnownNetworks": []
   },
   "Ia": {
@@ -45,12 +48,8 @@
   },
   "Kestrel": {
     "Endpoints": {
-      "Https": {
-        "Url": "https://0.0.0.0:443",
-        "Certificate": {
-          "Path": "C:/AtlasBalance/certs/atlas-balance.pfx",
-          "Password": "CAMBIAR_PASSWORD_CERTIFICADO_AQUI"
-        }
+      "Http": {
+        "Url": "http://127.0.0.1:5000"
       }
     }
   },

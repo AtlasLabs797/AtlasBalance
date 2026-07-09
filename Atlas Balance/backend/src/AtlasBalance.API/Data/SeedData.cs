@@ -29,7 +29,7 @@ public static class SeedData
 
         EnsureDefaultDivisas(context);
         EnsureDefaultTiposCambio(context, now);
-        EnsureDefaultConfiguraciones(context, seedActorId, now);
+        EnsureDefaultConfiguraciones(context, seedActorId, now, configuration);
 
         return seedActorId;
     }
@@ -110,11 +110,12 @@ public static class SeedData
         }
     }
 
-    private static void EnsureDefaultConfiguraciones(AppDbContext context, Guid? seedActorId, DateTime now)
+    private static void EnsureDefaultConfiguraciones(AppDbContext context, Guid? seedActorId, DateTime now, IConfiguration? configuration)
     {
+        var appBaseUrl = ResolveConfiguredAppBaseUrl(configuration) ?? "https://caja.empresa.local";
         var configuraciones = new Dictionary<string, (string Valor, string Tipo, string Descripcion)>
         {
-            ["app_base_url"] = ("https://caja.empresa.local", "string", "URL base de la aplicacion"),
+            ["app_base_url"] = (appBaseUrl, "string", "URL base de la aplicacion"),
             ["saldo_minimo_global"] = ("0", "decimal", "Saldo minimo global para alertas"),
             ["exchange_rate_sync_hours"] = ("12", "int", "Horas entre sincronizaciones de tipos de cambio"),
             ["backup_retention_weeks"] = ("6", "int", "Semanas de retencion de backups"),
@@ -198,6 +199,23 @@ public static class SeedData
                 UsuarioModificacionId = seedActorId
             });
         }
+    }
+
+    private static string? ResolveConfiguredAppBaseUrl(IConfiguration? configuration)
+    {
+        var value = configuration?["App:BaseUrl"]?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https"))
+        {
+            return null;
+        }
+
+        return value.TrimEnd('/');
     }
 
     private static string ResolveSeedAdminEmail(IConfiguration? configuration)
