@@ -1080,29 +1080,38 @@ public sealed class AtlasAiService : IAtlasAiService
             builder.AppendLine($"- {SanitizeContextText(row.Titular)} | {SanitizeContextText(row.Cuenta)} | {row.Divisa} | saldo {FormatMoney(row.Saldo)} | fecha {row.Fecha:dd/MM/yyyy}");
         }
 
+        // V-02-05 (MED-20): ejecutar los period summary en paralelo. Cada AppendPeriod
+        // escribe a un StringBuilder independiente y luego se concatenan en orden.
+        var periodTasks = new List<Task<StringBuilder>>();
         if (ContainsAny(normalizedQuestion, "mes", "mensual", "actual"))
         {
-            await AppendPeriodSummaryAsync(builder, "MES ACTUAL", cuentasQuery, monthStart, today, cancellationToken);
+            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, monthStart, today, cancellationToken));
         }
-
         if (ContainsAny(normalizedQuestion, "ultimo mes", "ultimos 30", "ultimas 4 semanas"))
         {
-            await AppendPeriodSummaryAsync(builder, "ULTIMOS 30 DIAS", cuentasQuery, rollingMonthStart, today, cancellationToken);
+            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, rollingMonthStart, today, cancellationToken));
         }
-
         if (ContainsAny(normalizedQuestion, "mes pasado", "mes anterior"))
         {
-            await AppendPeriodSummaryAsync(builder, "MES ANTERIOR", cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken);
+            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken));
         }
-
         if (ContainsAny(normalizedQuestion, "trimestre", "trimestral"))
         {
-            await AppendPeriodSummaryAsync(builder, "TRIMESTRE ACTUAL", cuentasQuery, quarterStart, today, cancellationToken);
+            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, quarterStart, today, cancellationToken));
+        }
+        // V-02-05 (MED-20): esperar en paralelo y concatenar en orden.
+        if (periodTasks.Count > 0)
+        {
+            var results = await Task.WhenAll(periodTasks);
+            foreach (var sub in results)
+            {
+                builder.Append(sub);
+            }
         }
 
         if (ContainsAny(normalizedQuestion, "ano", "anual", "2026", "este ano"))
         {
-            await AppendPeriodSummaryAsync(builder, "ANO ACTUAL", cuentasQuery, yearStart, today, cancellationToken);
+            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, yearStart, today, cancellationToken));
         }
 
         builder.AppendLine();
@@ -1207,7 +1216,43 @@ public sealed class AtlasAiService : IAtlasAiService
             }
         }
 
-        return (TrimContextText(builder.ToString()), relevant.Count);
+        // V-02-05 (MED-3): redactar IBANs en el contexto enviado al proveedor IA.
+        var texto = RedactIbanLike(TrimContextText(builder.ToString()));
+        return (texto, relevant.Count);
+    }
+
+    private async Task<StringBuilder> AppendPeriodSummaryAsync(
+        IQueryable<Models.Cuenta> cuentasQuery,
+        DateOnly fromDate,
+        DateOnly to,
+        CancellationToken cancellationToken)
+    {
+        // V-02-05 (MED-20): firma paralela-friendly. Devuelve StringBuilder en
+        // lugar de escribir directamente al builder del caller.
+        var localBuilder = new StringBuilder();
+        var items = await (
+            from c in cuentasQuery
+            join e in _dbContext.Extractos.AsNoTracking()
+                .Where(x => x.Fecha >= fromDate && x.Fecha <= to)
+                on c.Id equals e.CuentaId
+            group new { e.Monto, c.Divisa } by new { c.Divisa } into g
+            select new
+            {
+                Divisa = g.Key.Divisa,
+                Ingresos = g.Where(x => x.Monto > 0).Sum(x => x.Monto),
+                Egresos = -g.Where(x => x.Monto < 0).Sum(x => x.Monto),
+                Neto = g.Sum(x => x.Monto)
+            })
+            .OrderBy(x => x.Divisa)
+            .ToListAsync(cancellationToken);
+
+        localBuilder.AppendLine();
+        localBuilder.AppendLine($"PERIODO {fromDate:dd/MM/yyyy} - {to:dd/MM/yyyy}");
+        foreach (var item in items)
+        {
+            localBuilder.AppendLine($"- {item.Divisa}: ingresos {FormatMoney(item.Ingresos)}, gastos {FormatMoney(item.Egresos)}, neto {FormatMoney(item.Neto)}");
+        }
+        return localBuilder;
     }
 
     private async Task AppendPeriodSummaryAsync(
@@ -1240,6 +1285,11 @@ public sealed class AtlasAiService : IAtlasAiService
         {
             builder.AppendLine($"- {item.Divisa}: ingresos {FormatMoney(item.Ingresos)}, gastos {FormatMoney(item.Egresos)}, neto {FormatMoney(item.Neto)}");
         }
+    }
+#pragma warning disable IDE0051 // unused private member (kept for compatibility with existing call sites during migration)
+    private static void AppendPeriodSummary_ObsoleteKeptForBuild()
+#pragma warning restore IDE0051
+    {
     }
 
     private async Task AppendCategoryAsync(
@@ -2425,6 +2475,12 @@ public sealed class AtlasAiService : IAtlasAiService
             return string.Empty;
         }
 
+        // V-02-05 (MED-3): redactar IBANs (cualquier secuencia ESXX + 20-22 digitos o
+        // IBAN + 2 letras + 2-3 digitos + 4 letras + 14-30 digitos) en la respuesta
+        // del proveedor antes de devolverla al usuario. Defensa en profundidad: el
+        // contexto enviado al proveedor tambien se redacta (ver BuildFinancialContextAsync).
+        answer = RedactIbanLike(answer);
+
         var cleaned = answer.ReplaceLineEndings("\n").Trim();
         cleaned = Regex.Replace(
             cleaned,
@@ -2475,6 +2531,21 @@ public sealed class AtlasAiService : IAtlasAiService
             "\n\n",
             RegexOptions.CultureInvariant,
             TimeSpan.FromMilliseconds(100));
+    }
+
+    private static string RedactIbanLike(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+        // ES seguido de 2 digitos + 4 digitos + 4 digitos + 2 digitos + 10 digitos (24 total en formato compacto).
+        value = Regex.Replace(value, @"\bES\d{22}\b", "ES****[IBAN redactado]", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+        // Formato con espacios o grupos: ESXX XXXX XXXX XXXX XXXX XXXX
+        value = Regex.Replace(value, @"\bES\d{2}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{4}\b", "ES****[IBAN redactado]", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+        // IBAN generico: 2 letras + 2 digitos + 4 letras + 14-30 digitos/letras.
+        value = Regex.Replace(value, @"\b[A-Z]{2}\d{2}[A-Z]{4}[\dA-Z]{14,30}\b", "[IBAN redactado]", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+        return value;
     }
 
     private static bool ContainsInternalAnalysisLeak(string answer)

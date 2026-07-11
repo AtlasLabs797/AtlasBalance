@@ -55,15 +55,33 @@ public sealed class AuthService : IAuthService
         AppDbContext dbContext,
         IConfiguration configuration,
         IAuditService auditService,
-        IMemoryCache? cache = null,
-        ISecretProtector? secretProtector = null)
+        ISecretProtector secretProtector,
+        IMemoryCache? cache = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _auditService = auditService;
         _cache = cache ?? FallbackMemoryCache;
-        _secretProtector = secretProtector ?? PassthroughSecretProtector.Instance;
+        // V-02-05 (MED-1): el protector es obligatorio. Si DI no lo inyecta, el
+        // constructor falla ruidosamente en lugar de degradar a PassthroughSecretProtector
+        // (que almacena secretos en claro). Solo se permite explicitamente via constructor
+        // con un protector de testing (en cuyo caso el caller debe responsabilizarse).
+        if (secretProtector is null)
+        {
+            throw new InvalidOperationException("ISecretProtector es obligatorio. Configure DataProtectionSecretProtector en Program.cs.");
+        }
+        if (secretProtector is PassthroughSecretProtector && !AllowPassthroughSecretProtector)
+        {
+            throw new InvalidOperationException("PassthroughSecretProtector detectado. Esto almacenaria secretos en claro. Use DataProtectionSecretProtector.");
+        }
+        _secretProtector = secretProtector;
     }
+
+    /// <summary>
+    /// V-02-05 (MED-1): los tests unitarios pueden necesitar el passthrough. Lo activan
+    /// explicitamente. En produccion esto queda siempre en false.
+    /// </summary>
+    public static bool AllowPassthroughSecretProtector { get; set; }
 
     public async Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null, string? userAgent = null)
     {

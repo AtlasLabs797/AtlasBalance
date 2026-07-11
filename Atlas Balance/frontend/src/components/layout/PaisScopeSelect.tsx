@@ -9,6 +9,7 @@ export function PaisScopeSelect({ compact = false }: PaisScopeSelectProps) {
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const paises = usePaisScopeStore((state) => state.paises);
   const loading = usePaisScopeStore((state) => state.loading);
+  const lastError = usePaisScopeStore((state) => state.lastError);
   const setSelectedPaisId = usePaisScopeStore((state) => state.setSelectedPaisId);
   const options = [
     { value: '', label: compact ? 'Gen' : 'General' },
@@ -32,6 +33,9 @@ export function PaisScopeSelect({ compact = false }: PaisScopeSelectProps) {
         onChange={setSelectedPaisId}
         disabled={loading}
       />
+      {lastError && !compact ? (
+        <p className="pais-scope-error" role="alert">{lastError}</p>
+      ) : null}
     </div>
   );
 }

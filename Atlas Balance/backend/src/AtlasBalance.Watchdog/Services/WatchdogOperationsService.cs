@@ -9,7 +9,7 @@ namespace AtlasBalance.Watchdog.Services;
 public interface IWatchdogOperationsService
 {
     Task<bool> StartRestoreAsync(string backupPath, CancellationToken cancellationToken);
-    Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken);
+    Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken);
 }
 
 public sealed class WatchdogOperationsService : IWatchdogOperationsService
@@ -135,7 +135,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         return true;
     }
 
-    public async Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
+    public async Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(sourcePath) ||
             string.IsNullOrWhiteSpace(targetPath) ||
@@ -151,6 +151,16 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             !IsAllowedUpdateInstallPath(fullTargetPath) ||
             !IsValidReleasePackage(fullSourcePath))
         {
+            return false;
+        }
+
+        // V-02-05 (CRIT-3): si la API nos pasa el path al ZIP original, lo verificamos
+        // antes de aplicar la actualizacion. Si la firma RSA esta configurada y falla,
+        // o si el ZIP esta fuera de UpdateSourceRoot, rechazamos.
+        var zipVerification = VerifyPackageZipIntegrity(packageZipPath);
+        if (zipVerification is not null)
+        {
+            _logger.LogError("Update rechazado por verificacion de integridad del ZIP: {Reason}", zipVerification);
             return false;
         }
 
@@ -1003,6 +1013,74 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                File.Exists(Path.Combine(packageRoot, "api", "AtlasBalance.API.exe")) &&
                File.Exists(Path.Combine(packageRoot, "watchdog", "AtlasBalance.Watchdog.exe")) &&
                File.Exists(Path.Combine(packageRoot, "scripts", "Actualizar-AtlasBalance.ps1"));
+    }
+
+    /// <summary>
+    /// V-02-05 (CRIT-3): verifica la integridad del ZIP de actualizacion cuando la API
+    /// lo pasa. Rechaza el update si:
+    ///   - el ZIP no existe
+    ///   - el ZIP esta fuera de UpdateSourceRoot
+    ///   - el ZIP no tiene su .sig correspondiente dentro del root
+    ///   - la firma RSA no valida contra la clave publica configurada
+    ///
+    /// Devuelve null si la verificacion pasa o si no hay ZIP que verificar
+    /// (modo legacy). Devuelve un string con la razon si falla.
+    /// </summary>
+    private string? VerifyPackageZipIntegrity(string? packageZipPath)
+    {
+        if (string.IsNullOrWhiteSpace(packageZipPath))
+        {
+            return null;
+        }
+
+        if (!TryGetFullPath(packageZipPath, out var fullZipPath))
+        {
+            return "Path al ZIP invalido";
+        }
+
+        if (!File.Exists(fullZipPath))
+        {
+            return "ZIP no encontrado (puede que la API ya lo haya borrado)";
+        }
+
+        var sourceRoot = _configuration["WatchdogSettings:UpdateSourceRoot"];
+        if (string.IsNullOrWhiteSpace(sourceRoot) || !IsPathWithinRoot(fullZipPath, sourceRoot))
+        {
+            return $"ZIP fuera de UpdateSourceRoot: '{fullZipPath}'";
+        }
+
+        var publicKeyPem = _configuration["UpdateSecurity:ReleaseSigningPublicKeyPem"];
+        if (string.IsNullOrWhiteSpace(publicKeyPem))
+        {
+            _logger.LogWarning("UpdateSecurity:ReleaseSigningPublicKeyPem no configurada en Watchdog; se omite la verificacion de firma RSA del ZIP. Configure la clave para activar la verificacion end-to-end.");
+            return null;
+        }
+
+        var signaturePath = fullZipPath + ".sig";
+        if (!File.Exists(signaturePath))
+        {
+            return $"Firma RSA no encontrada: '{signaturePath}'";
+        }
+
+        try
+        {
+            var rsa = System.Security.Cryptography.RSA.Create();
+            rsa.ImportFromPem(publicKeyPem);
+            var zipBytes = File.ReadAllBytes(fullZipPath);
+            var sigBytes = File.ReadAllBytes(signaturePath);
+            if (!rsa.VerifyData(zipBytes, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1))
+            {
+                rsa.Dispose();
+                return "Firma RSA invalida para el ZIP";
+            }
+            rsa.Dispose();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al verificar firma RSA del ZIP de actualizacion");
+            return "Error al verificar firma RSA: " + ex.Message;
+        }
     }
 
     private static string? ResolveConfiguredExecutable(string? directory, string executableName)

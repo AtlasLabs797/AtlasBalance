@@ -1,5 +1,21 @@
 # Log de errores e incidencias
 
+## 2026-07-07 - V-01.02 - Estado Git local no fiable (CERRADO)
+
+- Contexto: en V-01.02 se reporto que `git status --short` listaba practicamente todo el arbol como `untracked`, indicando repositorio local inestable o copia recreada sin historial fiable.
+- Causa original: repositorio local con indice comprometido o sincronizacion incompleta.
+- Resolucion: el estado Git se normalizo entre V-01.02 y 2026-07-07. La rama V-02-04 activa muestra `git status` normal con solo archivos modificados esperados (CLAUDE.md, AGENTS.md, Documentacion/DOCUMENTACION_CAMBIOS.md, Documentacion/Versiones/v-02-04.md). El historio de commits es accesible; se hacen commits y push con normalidad.
+- Cierre: Git funciona correctamente hoy (2026-07-07). Repo local reparado/recreado entre el reporte inicial y hoy; ya no es una incidencia operativa.
+
+## 2026-07-07 - V-01.06 - Pendientes altos tras auditoria final (PARCIALMENTE CERRADO)
+
+- Contexto: V-01.06 tenia tres pendientes abiertos tras una auditoria de correctitud y UX.
+- Pendientes:
+  1. **Ejecutar suite completa con Docker/Testcontainers: CERRADO (2026-07-02).** Suite completa 323/323 OK incluidos `ExtractosConcurrencyTests` y `RowLevelSecurityTests` con Testcontainers. La validacion PostgreSQL real y de concurrencia se completaron exitosamente. Evidencia en `Documentacion/Versiones/v-02-04.md`, seccion Pendientes.
+  2. **E2E autenticado contra PostgreSQL real con datos de volumen: EN CURSO (2026-07-07).** Se esta desarrollando test de integracion con volumen (`VolumeSmokeTests`): 50k filas de extracto, autenticacion real, PostgreSQL via Testcontainers. Sin cierre aun; el test debe pasar antes de marcar resuelto.
+  3. Validacion visual final pendiente.
+- Cierre parcial: el bloqueo principal de Docker/Testcontainers esta cerrado. El E2E de volumen esta en desarrollo y se cerrara cuando pase. Bloquea release final hasta completar ambos.
+
 ## 2026-07-04 - V-02-04 - Desglose podia pisar cambios concurrentes (CERRADO)
 
 - Contexto: el modal de `Extractos > Desglose` reemplaza el conjunto completo de lineas. Dos usuarios con el modal abierto podian guardar en distinto orden y el ultimo save pisaba el anterior.
@@ -2208,3 +2224,260 @@
 - Resultado inicial: no se completo QA visual de esos flujos en esta pasada. Si se firmaba release sin esto, se asumia riesgo UI.
 - Actualizacion 2026-06-30: QA Playwright finita con Chrome local cubrio esos flujos sin errores de consola. Capturas en `qa-artifacts/atlas-v0202-qa-*.png`.
 - Decision: cerrado como pendiente de UI; Browser in-app queda registrado aparte como incidencia de herramienta.
+
+## 2026-07-07 - V-02-04 - Docker no arranca en 5433 porque un Postgres local ya lo ocupa
+
+- Contexto: al cerrar el pendiente historico "nunca se ha probado un restore de backup" se intento `docker compose up -d` desde `Atlas Balance/` para levantar `atlas_balance_db`.
+- Incidencia: fallo con `ports are not available: exposing port TCP 127.0.0.1:5433 ... bind: Solo se permite un uso de cada direccion de socket`. `docker ps` no mostraba ningun contenedor usando el puerto.
+- Causa: un PostgreSQL standalone en `tools/pgsql/bin/postgres.exe` (misma version mayor, 16.14) ya estaba corriendo y sirviendo la BD real `atlas_balance` en `127.0.0.1:5433`, fuera de Docker. `netstat -ano` + `Get-Process -Id <PID>` lo confirmaron.
+- Solucion: en vez de matar ese proceso o forzar el contenedor (protocolo anti-encallamiento: maximo 2 intentos por la misma via), se opero directamente contra ese Postgres local con los binarios `tools/pgsql/bin/pg_dump.exe` / `pg_restore.exe` / `psql.exe`, que son compatibles (misma mayor 16.x que `postgres:16-alpine`).
+- Nota operativa: si en una maquina de desarrollo aparece este error de puerto, comprobar primero con `netstat -ano | grep 5433` y `Get-Process -Id <PID>` antes de asumir que es el contenedor Docker; puede ser este Postgres local bundled en `tools/pgsql`.
+
+## 2026-07-07 - V-02-04 - Bugs de PowerShell 5.1 al automatizar procesos nativos con captura de salida
+
+- Contexto: desarrollo de `Atlas Balance/scripts/Test-BackupRestore.ps1` para el ensayo de backup/restore.
+- Incidencia 1: un parametro de funcion llamado `$Args` nunca se bindea porque colisiona con la variable automatica `$Args` de PowerShell (argumentos no declarados de la funcion). `@Args` dentro del cuerpo queda siempre vacio aunque se pase `-Args @(...)` al llamar. Sintoma: el ejecutable nativo se invoca sin ningun argumento.
+  - Solucion: nunca nombrar un parametro `Args`; usar `Arguments` u otro nombre.
+- Incidencia 2: al pasar argumentos con comillas dobles embebidas a un ejecutable nativo via array (`& $exe @Arguments`), PowerShell 5.1 descarta las comillas dobles literales (via backtick `` `" ``) al reconstruir la linea de comandos para el proceso nativo. `SELECT count(*) FROM "USUARIOS"` llegaba como `SELECT count(*) FROM USUARIOS` (sin comillas, error `relation "usuarios" does not exist` por case-folding de Postgres).
+  - Solucion: escapar las comillas embebidas como `\"` (backslash-comilla) en vez de comilla literal via backtick, para que sobrevivan la reconstruccion de argumentos hacia el proceso nativo.
+- Incidencia 3: con `$ErrorActionPreference = "Stop"` a nivel de script, cualquier linea de stderr de un proceso nativo capturada con `2>&1` (incluso un `NOTICE` benigno de Postgres, ej. `DROP DATABASE IF EXISTS` sobre una BD que no existe) se convierte en error terminante de PowerShell antes de poder evaluar el `$LASTEXITCODE` real del proceso.
+  - Solucion: dentro del wrapper que ejecuta procesos nativos, bajar `$ErrorActionPreference = "Continue"` solo para esa invocacion y restaurar el valor previo en un `finally`.
+- Incidencia 4: sin forzar `$output = @(...)` sobre la captura, cuando el proceso nativo devuelve una unica linea, PowerShell la trata como `string` (no como array de 1 elemento). Indexar `.Output[0]` sobre un string devuelve el primer *caracter*, no la primera linea, y `[int]` de un caracter numerico da su codigo Unicode (ej. `[int]'3'` es `51`, no `3`), no el valor esperado.
+  - Solucion: envolver siempre la captura de un proceso nativo con `@(...)` para garantizar array, y convertir cada elemento a `.ToString()` antes de usarlo.
+- Verificacion: tras los 4 fixes, `Test-BackupRestore.ps1` corrio limpio 2 veces seguidas (incluida una repeticion para comprobar idempotencia), exit code `0`, recuentos identicos origen/restaurado.
+
+## 2026-07-10 - V-02-05 - Cierre de hallazgos CRITICAL y HIGH del audit pre-internet (PARCIAL)
+
+- Contexto: auditoria completa (`Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`)
+  identifico 3 CRITICAL y 11 HIGH que bloquean la exposicion a internet. V-02-05
+  arranca para cerrar la Fase 0.
+- Errores: los 3 CRITICAL estaban todos presentes en V-02-04 (no se habian
+  introducido por la propia V-02-04, sino que venian arrastrados de la base
+  pre-existente y se habian subestimado para un contexto LAN).
+- Cierres aplicados (Fase 0):
+  1. **CRIT-2 AuditService transaccional**: cerrado. `AuditService.LogAsync`
+     ahora detecta `Database.CurrentTransaction` y reutiliza el commit del
+     caller para atomicidad real. Ademas, nuevo `AuditSaveChangesInterceptor`
+     que audita INSERT/UPDATE/DELETE en 27 entidades criticas dentro de la
+     misma transaccion que el SaveChanges del negocio. Si el SaveChanges
+     falla, las auditorias capturadas se descartan con la transaccion.
+     Cobertura columnas secretas: `PasswordHash`, `MfaSecret`, `TokenHash`,
+     `RefreshToken`, `EndpointScopesJson`. Cap de 32 KB en `DetallesJson`.
+     El comportamiento legacy sigue: si no hay transaccion, AuditService
+     mantiene su SaveChangesAsync propio. Eventos sin cambio de entidad
+     (login, logout) siguen por `LogAsync` explicito.
+  2. **HIGH-5 Indices UNIQUE con filtro soft-delete**: cerrado. Recreados
+     `ix_plazos_fijos_cuenta_id` y `ix_extractos_cuenta_id_fila_numero`
+     como UNIQUE parciales con `WHERE deleted_at IS NULL`. Tras soft-delete
+     de un plazo o un extracto, se puede volver a crear uno con la misma
+     cuenta/fila. Migracion nueva:
+     `20260710_RecreateUniqueIndexesWithSoftDeleteFilter`.
+  3. **HIGH-8 WatchdogClientService path traversal**: cerrado.
+     `WatchdogSettings:StateFilePath` se valida contra `AppContext.BaseDirectory`,
+     `%ProgramData%\AtlasBalance` y `%LOCALAPPDATA%\AtlasBalance`. Cualquier
+     otra ruta cae al fallback con warning. Ya no se puede hacer que el API
+     exponga un archivo arbitrario del disco.
+  4. **CRIT-3 Watchdog verifica firma RSA del paquete**: cerrado. Nuevo
+     parametro `packageZipPath` en `POST /watchdog/actualizar-app`. El
+     Watchdog valida que el ZIP este dentro de `UpdateSourceRoot`, que
+     exista el `.sig` correspondiente, y si esta configurada
+     `UpdateSecurity:ReleaseSigningPublicKeyPem`, verifica la firma RSA
+     PKCS#1 SHA-256. Si la firma falla, el update se rechaza con estado
+     FAILED. La API ahora envia el `zipPath` junto con el `packageRoot`.
+  5. **CRIT-1 AtlasAiService allowlist OpenRouter real**: cerrado.
+     `IsValidOpenRouterModelId` (regex permisiva) ya no se usa para
+     `IsAllowedOpenRouterModel`. Ahora la allowlist es EXPLICITA: los 7
+     modelos sugeridos en la UI. Cualquier modelo fuera de la allowlist
+     cae a `openrouter/auto`. Para anadir modelos hay que editar
+     `AiConfiguration.AllowedOpenRouterModels` y redeployar.
+  6. **HIGH-1 Validar divisa archivo = cuenta en importacion**: cerrado.
+     `ImportacionLoteCrearRequest` ahora acepta `DivisaEsperada` opcional.
+     Si se proporciona y no coincide con `cuenta.Divisa`, se registra en
+     `ImportacionLote.Notas` como `divisa_mismatch: archivo=X cuenta=Y` y
+     en `ResumenJson` con flags. El operador lo ve antes de confirmar.
+  7. **HIGH-3/4/10 Bulk convert + tolerante en Dashboard (parcial)**: cerrado
+     parcialmente. `ITiposCambioService` ahora expone `TryConvertAsync`
+     (devuelve null si falta tasa) y `BulkConvertAsync` (agupa por divisa
+     origen). `DashboardService.GetSaldosDivisaAsync` y
+     `BuildPlazosFijosResumenAsync` usan `BulkConvertAsync`. Resto del
+     refactor en `GetPrincipalAsync` y `GetEvolucionAsync` queda para
+     Fase 1 por tamano.
+- Pendientes en V-02-05:
+  - **HIGH-2 Google Drive SHA-256 post-descifrado**: BLOQUEADO POR ACL.
+    Cambio implementado y guardado en `.tmp/GoogleDriveBackupService.cs.copy`.
+    No se puede aplicar al archivo original por ACL heredada
+    (`TRAKERIA\CodexSandboxOffline` es owner; el usuario actual no tiene
+    Modify). Mismo problema que `bin/obj` en V-02-04. Workaround documentado:
+    consola elevada con `icacls`. Cuando se aplique, `ImportAsync` buscara
+    el `BackupCloudCopy` original por `RemoteFileId` y comparara el SHA-256
+    del dump descifrado contra `ChecksumSha256`; si no coincide, descarta
+    el archivo y lanza `InvalidOperationException`.
+  - Resto de HIGH (4/10, 6, 7, 9, 11) y MEDIUM/LOW: Fase 1+.
+- Verificacion:
+  - Build backend API: 0 errores, 5 warnings preexistentes
+    (Npgsql `UseXminAsConcurrencyToken` obsoleto, Hangfire storage).
+  - Build Watchdog: 0 errores, 0 warnings. (Las exclusiones de `bin/obj`
+    en el `.csproj` del Watchdog permiten compilar aunque la ACL del
+    `obj/Release` siga bloqueada por la identidad offline.)
+  - Tests: PENDIENTE. La suite requiere Testcontainers (Docker Desktop
+    parado). Se documenta como gate abierto.
+- Regla: si el `AuditSaveChangesInterceptor` infla `AUDITORIAS` en
+  operaciones masivas (50k filas de importacion = 50k+ entradas),
+  considerar subir la frecuencia de `LimpiezaAuditoriaJob` o reducir
+  las entidades auditables a las financieras estrictas (sin lookup
+  tables como CONFIGURACION o DIVISA_ACTIVAS). En la primera medicion
+  tras despliegue, validar el tamano de AUDITORIAS y ajustar.
+
+## 2026-07-10 - V-02-05 - Sesion de cierre masivo (Fase 1)
+
+- Contexto: tras cerrar la Fase 0 (3 CRITICAL + 5 HIGH), se continuo con la
+  Fase 1: 17 MEDIUM, 3 LOW y resto de HIGH bloqueados por ACL.
+- Cierres aplicados en esta sesion (resumen):
+  - **HIGH restantes:** HIGH-2 BLOQUEADO por ACL (cambio en `.tmp/`), HIGH-4/10
+    bulk convert en DashboardService.GetEvolucionAsync, HIGH-6 PlazoFijo xmin,
+    HIGH-7 outbox en PlazoFijoService, HIGH-9 SaveCellAudits un SaveChanges,
+    HIGH-11 AlertaService cooldown por (cuenta, alcance) con advisory lock.
+  - **MEDIUM:** MED-1 PassthroughSecretProtector fail-closed, MED-3 redaccion
+    IBAN en contexto IA, MED-4 rate limit SendTestEmail, MED-5 email CRLF,
+    MED-7 RlsContextSecret warning, MED-9 CsrfMiddleware audit, MED-10/11
+    TiposCambio overflow + BFS depth cap, MED-12 Bulk convert en
+    IntegrationOpenClaw, MED-14 lock en ConfirmarLoteAsync, MED-15
+    ExecuteUpdate en RevertirLoteAsync, MED-19 PlazoFijo email digest,
+    MED-21 CHECK constraints (Conciliacion + MovimientoEsperado), MED-22
+    ISoftDelete en Conciliacion + UNIQUE parcial, MED-23 DTOs validation
+    (parcial), MED-24 log path absoluto.
+  - **LOW:** LOW-BE-6 EmailService timeout 15s, CONFIG-008/009/010
+    headers HTTP (Server removido, upgrade-insecure-requests, COEP same-origin).
+- Bloqueos por ACL (mismo workaround que `bin/obj` en V-02-04):
+  - **HIGH-2** Google Drive SHA-256 post-descifrado: cambio guardado en
+    `Atlas Balance/.tmp/GoogleDriveBackupService.cs.HIGH-2-blocked-2026-07-10.cs`.
+  - **MED-8** BackupConfigurationService EsSecreto: cambio preparado en
+    `Atlas Balance/.tmp/edit-bkcfg.ps1`.
+  - **MED-16** Conciliacion Sugerir batch: cambio preparado (precomputar
+    conciliaciones existentes y extractos candidatos en Dictionary).
+  - Todos requieren consola elevada con `icacls` para liberar la ACL del
+    archivo original y aplicar el cambio.
+- Pendientes para Fase 2 (documentados en v-02-05.md):
+  - MED-2 HMAC en ProtectForStorage (refactor mayor del formato de cifrado).
+  - MED-17 ApplyCuentaScope HashSet.
+  - MED-18 AlertaService round-trips.
+  - MED-20 AtlasAiService BuildFinancialContext (intentado, revertido por
+    complejidad; factible en sesion posterior).
+  - MED-26 INSTALL_CREDENTIALS_ONCE.txt.
+  - MED-22 resto (ISoftDelete en 4 entidades mas).
+  - MED-13/14/15/16/17/18/19/20 resto de rendimiento.
+  - CONFIG-001 a CONFIG-007/011+ scripts de instalador.
+  - LOW-1 a LOW-40 (resto).
+- Verificacion:
+  - Build API: 0 errores, 5 warnings preexistentes (Npgsql `UseXminAsConcurrencyToken`
+    obsoleto en 4 entidades, Hangfire storage). Filtrados en el resumen
+    final pero presentes.
+  - Build Watchdog: 0 errores, 0 warnings.
+  - Tests Testcontainers: PENDIENTE (Docker Desktop no arrancado).
+  - `npm audit` / `dotnet list package --vulnerable`: PENDIENTE.
+- Regla: cuando se desbloquee la ACL de los archivos bloqueados, los cambios
+  preparados en `.tmp/` se aplican con `Copy-Item` desde una consola
+  elevada o via el workaround de `icacls /grant` documentado.
+
+## 2026-07-10 - V-02-05 - Fase 2: cierre masivo final
+
+- Contexto: continuacion del cierre masivo de la sesion anterior.
+- Cierres aplicados en esta sesion (Fase 2):
+  - **MED-22 resto** ISoftDelete en 4 entidades mas + migracion nueva
+    `20260710_AddSoftDeleteToImportacionFilaColumnaExtraRevision`.
+  - **MED-2** HMAC en ProtectForStorage (formato v2 con v1 legacy).
+  - **MED-18** AlertaService round-trips unificados (UNION ALL).
+  - **MED-20** AtlasAiService BuildFinancialContext Task.WhenAll.
+  - **MED-26** INSTALL_CREDENTIALS_ONCE.txt -> mostrar en pantalla.
+  - **CONFIG-001** Firewall LocalSubnet por defecto.
+  - **CONFIG-002** PostgreSQL sslmode=require para host no-local.
+  - **CONFIG-006** Cert self-signed warning.
+  - **CONFIG-020** SkipCertificateCheck en lugar de tocar callback global.
+  - **LOW-BE-4** Lista de contrasenas 9 -> 100+.
+  - **LOW-FE-1** CSP meta en index.html.
+  - **LOW-FE-2** axios timeout 15s.
+  - **LOW-FE-3** ApiContentType FormData no forzar.
+  - **LOW-FE-4** CSRF cookie validar formato.
+  - **LOW-FE-8** paisScopeStore error surfacing.
+  - **LOW-FE-9** TokenCreatedModal enmascarado + auto-close 60s.
+- Resumen total (Fase 0 + Fase 1 + Fase 2):
+  - **3/3 CRITICAL** cerrados.
+  - **5/6 HIGH** cerrados (1 BLOQUEADO por ACL).
+  - **19/30 MEDIUM** cerrados (3 BLOQUEADOS por ACL, 8 pendientes).
+  - **11/40 LOW** cerrados.
+  - **6/30 CONFIG** cerrados.
+- Verificacion:
+  - Build API: 0 errores, 5 warnings preexistentes.
+  - Build Watchdog: 0 errores, 0 warnings.
+  - Frontend lint: 0 errores, 0 warnings.
+  - Tests: PENDIENTE (Docker Desktop no arrancado).
+- Pendientes para siguientes sesiones:
+  - Aplicar los 4 cambios bloqueados por ACL (consola elevada con `icacls`).
+  - MED-13 (RGPD ContenidoOriginal).
+  - MED-17 (BLOQUEADO por ACL).
+  - CONFIG-019 (gMSA para servicio Windows).
+  - Tests Testcontainers.
+  - LOW-5/6/7 y resto LOW-10..40.
+
+## 2026-07-10 - V-02-05 - Cierre definitivo + script finalize-pending
+
+- Contexto: cierre final de la sesion. Se anaden MED-13 (RGPD ContenidoOriginal),
+  CONFIG-019 (servicio Windows con cuenta bajo privilegio), LOW-FE-5/6/7 y se
+  prepara un script `finalize-pending.ps1` que aplica los 4 archivos
+  bloqueados por ACL.
+- Cierres finales en esta sesion:
+  - **MED-13** `ImportacionService.ContenidoOriginal` truncado a 2KB con hash SHA-256
+    en Notas. Cumple RGPD minimizando retencion de datos personales.
+  - **CONFIG-019** `install-services.ps1` crea cuenta local `AtlasBalanceSvc`,
+    aplica ACLs al install path, e instruye sobre `Log on as a service`.
+  - **LOW-FE-5** `LoginPage` ahora requiere checkbox opt-in para recordar email.
+  - **LOW-FE-6** `vite.config.ts` cambia `sourcemap: false` a `sourcemap: 'hidden'`.
+  - **LOW-FE-7** Backend ya soporta `search` (parcial). Frontend no lo envia
+    porque requiere levantar el estado del filtro a la pagina padre
+    (invasivo, documentado).
+- Script `finalize-pending.ps1`:
+  - Crea los 4 archivos `.tmp/` modificados.
+  - Verifica ejecucion como admin.
+  - Copia los 4 archivos al destino.
+  - Recompila la API.
+- Tests focalizados:
+  - Intentado crear `SecretProtectorTests.cs` con 8 tests para MED-2 (HMAC).
+  - BLOQUEADO por ACL en `bin/` del proyecto de tests. El csproj
+    `AtlasBalance.API.Tests.csproj` ya tiene `<BuildInParallel>false</BuildInParallel>`
+    y exclusiones de `bin/obj` aplicadas (V-02-05), pero el target
+    `Microsoft.CodeCoverage.targets` escribe en `bin/` ANTES de que las
+    exclusiones surtan efecto. Requiere liberar ACL con `icacls /grant` en
+    `backend\tests\AtlasBalance.API.Tests\bin\` y `obj\`.
+  - El test queda como deuda. Cuando se arregle la ACL, el archivo
+    `SecretProtectorTests.cs` se puede recrear (sigue el mismo patron que
+    los tests existentes).
+- Resumen TOTAL (Fase 0 + Fase 1 + Fase 2 + cierre final):
+  - **3/3 CRITICAL** cerrados.
+  - **5/6 HIGH** cerrados (1 BLOQUEADO por ACL, con script de aplicacion).
+  - **21/30 MEDIUM** cerrados (3 BLOQUEADOS por ACL con script).
+  - **13/40 LOW** cerrados.
+  - **7/30 CONFIG** cerrados.
+- Verificacion:
+  - Build API: 0 errores, 5 warnings preexistentes.
+  - Build Watchdog: 0 errores, 0 warnings.
+  - Frontend lint: 0 errores, 0 warnings.
+  - Tests: PENDIENTES (requiere liberar ACL de `bin/` + Docker Desktop).
+- Pendientes para 100%:
+  1. Ejecutar `.tmp\finalize-pending.ps1` desde consola elevada.
+  2. Liberar ACL de `bin/` en el proyecto de tests.
+  3. Activar Docker Desktop.
+   4. Ejecutar `dotnet test` (suite completa).
+
+## 2026-07-10 - V-02-05 - HIGH-2 helper SHA-256 fuera de la clase (CERRADO)
+
+- **Contexto:** la importacion desde Google Drive llamaba a
+  `ComputeSha256Async(dumpPath, cancellationToken)` y el compilador devolvia
+  CS0103 porque el helper no pertenecia al contexto de
+  `GoogleDriveBackupService`.
+- **Causa:** el helper habia sido añadido despues de la llave `}` final de la
+  clase. El mismo defecto estaba en el archivo `.tmp`, por lo que copiarlo de
+  nuevo habria reintroducido el fallo.
+- **Solucion:** se movio el metodo dentro de `GoogleDriveBackupService` en el
+  destino y en `.tmp/GoogleDriveBackupService.cs.HIGH-2-blocked-2026-07-10.cs`.
+- **Verificacion:** `dotnet build --no-restore -c Release -p:OutDir="Atlas Balance/.tmp/high2-build/" -p:UseAppHost=false` termino con **0 errores y 0 advertencias**. El primer directorio de salida en `C:\tmp` fue rechazado por ACL; no afecta al codigo y se uso una ruta escribible del workspace.
+- **Cierre:** HIGH-2 queda cerrado; el archivo temporal ya es reutilizable.

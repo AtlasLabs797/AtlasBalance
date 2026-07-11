@@ -947,7 +947,8 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("CuentaId", "FilaNumero")
                         .IsUnique()
-                        .HasDatabaseName("ix_extractos_cuenta_id_fila_numero");
+                        .HasDatabaseName("ix_extractos_cuenta_id_fila_numero")
+                        .HasFilter("\"deleted_at\" IS NULL");
 
                     b.HasIndex("CuentaId", "ImportacionFingerprint")
                         .IsUnique()
@@ -1979,7 +1980,8 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("CuentaId")
                         .IsUnique()
-                        .HasDatabaseName("ix_plazos_fijos_cuenta_id");
+                        .HasDatabaseName("ix_plazos_fijos_cuenta_id")
+                        .HasFilter("\"deleted_at\" IS NULL");
 
                     b.HasIndex("CuentaReferenciaId")
                         .HasDatabaseName("ix_plazos_fijos_cuenta_referencia_id");

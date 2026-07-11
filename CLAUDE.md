@@ -93,6 +93,14 @@ Guardar toda la documentacion en `Documentacion`.
 - Las limpiezas temporales solo sobre rutas absolutas verificadas dentro del workspace. Si Windows devuelve permisos repetidos, para y documenta; mirar ruido no arregla nada.
 - En la respuesta final, separa verificado, bloqueado y pendiente. No digas que hubo validacion visual si solo hubo lint/build.
 
+## Higiene antimalware/antivirus
+
+Este equipo tiene antimalware y antivirus activos. Trabaja de forma que no parezca malware: nada de evasion, desactivar defensas, ofuscacion, ejecucion desde `%TEMP%`, descargas de codigo remoto, AMSI bypass, encoded commands, persistencia oculta, inyeccion en procesos, scraping de credenciales, binarios descargados sin verificar, exclusiones antivirus como solucion por defecto, ejecuciones en segundo plano sin salida clara, barridos masivos fuera del workspace o limpiezas agresivas.
+
+- Prefiere comandos finitos, rutas explicitas, logs visibles y artefactos dentro del workspace.
+- Si una tarea legitima puede parecer sospechosa (build de ejecutables, empaquetado, firma, escaneo recursivo, copia masiva), explica el motivo, acota rutas, usa timeout y deja evidencia en la documentacion.
+- No intentes "saltarte" el antivirus. Si bloquea algo, tratalo como senal operativa: corta, documenta el bloqueo y cambia a una via mas transparente.
+
 ## Reglas de desarrollo
 
 ### Backend (C#)

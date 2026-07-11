@@ -19,26 +19,58 @@ using System.Security.Cryptography;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    // V-02-05 (LOW-BE-1): no enviar el header "Server: Kestrel" en respuestas.
+    options.AddServerHeader = false;
+});
 AddExternalDevelopmentSecrets(builder.Configuration, builder.Environment, "AtlasBalance.API.Development.json");
 
 builder.Host.UseWindowsService();
 
-builder.Host.UseSerilog((context, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .Enrich.FromLogContext()
-    .WriteTo.Console()
-    .WriteTo.File("logs/atlas-balance-.log", rollingInterval: RollingInterval.Day));
+builder.Host.UseSerilog((context, config) =>
+{
+    // V-02-05 (MED-24): ruta absoluta configurable para evitar que el log acabe
+    // en C:\Windows\System32\logs cuando AtlasBalance corre como Windows Service
+    // (el cwd por defecto del servicio es System32). Default razonable para
+    // on-premise: %ProgramData%\AtlasBalance\logs.
+    var defaultLogDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "AtlasBalance",
+        "logs");
+    var logPath = context.Configuration["Serilog:FilePath"]
+        ?? Path.Combine(defaultLogDir, "atlas-balance-.log");
+    config
+        .ReadFrom.Configuration(context.Configuration)
+        .Enrich.FromLogContext()
+        .WriteTo.Console()
+        .WriteTo.File(
+            logPath,
+            rollingInterval: RollingInterval.Day,
+            fileSizeLimitBytes: 50L * 1024L * 1024L,
+            retainedFileCountLimit: 30);
+});
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<SmtpTestRateLimit>();
 builder.Services.AddScoped<RlsDbCommandInterceptor>();
+builder.Services.AddScoped<AuditSaveChangesInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options
         .UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
         .UseSnakeCaseNamingConvention()
-        .AddInterceptors(serviceProvider.GetRequiredService<RlsDbCommandInterceptor>()));
+        .AddInterceptors(
+            serviceProvider.GetRequiredService<RlsDbCommandInterceptor>(),
+            serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
 var jwtSecret = ResolveJwtSecret(builder.Configuration, builder.Environment);
 var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, jwtSecret);
+// V-02-05 (MED-7): advertir si RlsContextSecret == JwtSettings:Secret en produccion.
+// Deberian ser claves distintas para que comprometer una no exponga la otra.
+if (!builder.Environment.IsDevelopment() && string.Equals(rlsContextSecret, jwtSecret, StringComparison.Ordinal))
+{
+    Console.Error.WriteLine("[WARN] RlsContextSecret coincide con JwtSettings:Secret. Configure Security:RlsContextSecret como clave independiente para reducir el blast radius ante compromiso.");
+}
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "atlas-balance-api";
 var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "atlas-balance-app";
 
@@ -371,10 +403,19 @@ app.Use(async (context, next) =>
         headers["Referrer-Policy"] = "no-referrer";
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
         headers["Cross-Origin-Opener-Policy"] = "same-origin";
+        // V-02-05 (LOW-BE-3): Cross-Origin-Resource-Policy same-origin para limitar
+        // quien puede embeber recursos de la API.
+        headers["Cross-Origin-Resource-Policy"] = "same-origin";
+        // V-02-05 (LOW-BE-1): quitar Server header que Kestrel envia por defecto.
+        headers.Remove("Server");
 
         var connectSrc = app.Environment.IsDevelopment()
             ? "'self' http://localhost:5173 https://localhost:5000 http://localhost:5000"
             : "'self'";
+
+        // V-02-05 (LOW-BE-2): upgrade-insecure-requests + block-all-mixed-content en
+        // produccion para forzar HTTPS.
+        var cspUpgrade = app.Environment.IsDevelopment() ? string.Empty : "upgrade-insecure-requests; block-all-mixed-content; ";
 
         headers["Content-Security-Policy"] =
             "default-src 'self'; " +
@@ -386,7 +427,8 @@ app.Use(async (context, next) =>
             "img-src 'self' data: blob:; " +
             "object-src 'none'; " +
             "script-src 'self'; " +
-            "style-src 'self' 'unsafe-inline'";
+            "style-src 'self' 'unsafe-inline'; " +
+            cspUpgrade;
 
         return Task.CompletedTask;
     });
@@ -487,7 +529,15 @@ static string ResolveJwtSecret(IConfiguration configuration, IHostEnvironment en
 static string ResolveRlsContextSecret(IConfiguration configuration, string jwtSecret)
 {
     var configured = configuration["Security:RlsContextSecret"];
-    return string.IsNullOrWhiteSpace(configured) ? jwtSecret : configured;
+    if (string.IsNullOrWhiteSpace(configured))
+    {
+        // V-02-05 (MED-7): por defecto cae al secreto JWT para simplificar el
+        // despliegue, pero si el operador rota el secreto JWT debe rotar tambien
+        // el RlsContextSecret. Logueamos warning en produccion para que sea
+        // visible.
+        return jwtSecret;
+    }
+    return configured;
 }
 
 static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)

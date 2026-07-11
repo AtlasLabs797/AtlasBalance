@@ -157,8 +157,14 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("PLAZOS_FIJOS");
             entity.HasKey(e => e.Id);
+            // V-02-05 (HIGH-6): xmin como token de concurrencia. RenovarAsync y
+            // ProcesarVencimientosAsync colisionaban silenciosamente (last-write-wins).
+            // El handler global DbUpdateConcurrencyException -> 409 ya existe en Program.cs.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.InteresPrevisto).HasPrecision(18, 2);
-            entity.HasIndex(e => e.CuentaId).IsUnique();
+            entity.HasIndex(e => e.CuentaId)
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => e.FechaVencimiento);
             entity.HasIndex(e => e.Estado);
             entity.HasIndex(e => e.CuentaReferenciaId);
@@ -188,7 +194,9 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Saldo).HasPrecision(18, 4);
             entity.Property(e => e.ImportacionFingerprint).HasMaxLength(64);
             entity.Property(e => e.ImportacionLoteHash).HasMaxLength(64);
-            entity.HasIndex(e => new { e.CuentaId, e.FilaNumero }).IsUnique();
+            entity.HasIndex(e => new { e.CuentaId, e.FilaNumero })
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => new { e.CuentaId, e.ImportacionFingerprint })
                 .IsUnique()
                 .HasDatabaseName("ix_extractos_cuenta_id_importacion_fingerprint")
@@ -243,8 +251,11 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ErroresJson).HasColumnType("jsonb");
             entity.Property(e => e.AdvertenciasJson).HasColumnType("jsonb");
             entity.Property(e => e.Fingerprint).HasMaxLength(64);
-            entity.HasIndex(e => new { e.LoteId, e.Indice }).IsUnique();
+            // V-02-05 (MED-22): ISoftDelete explicito.
+            entity.HasIndex(e => new { e.LoteId, e.Indice }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => e.Fingerprint);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
             // V-02-03 (MEDIUM): cascade a restrict para que un borrado
             // accidental de lote (saltandose el soft-delete) no queme las filas
             // hijas todavia necesarias para auditoria.
@@ -255,8 +266,10 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("EXTRACTOS_COLUMNAS_EXTRA");
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.ExtractoId);
-            entity.HasIndex(e => e.NombreColumna);
+            // V-02-05 (MED-22): ISoftDelete.
+            entity.HasIndex(e => new { e.ExtractoId, e.NombreColumna }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
             // V-02-03 (MEDIUM): cascade a restrict por la misma razon.
             entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
         });
@@ -286,9 +299,12 @@ public class AppDbContext : DbContext
             entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.Tipo).HasMaxLength(24).IsRequired();
             entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
-            entity.HasIndex(e => new { e.ExtractoId, e.Tipo }).IsUnique();
+            // V-02-05 (MED-22): ISoftDelete.
+            entity.HasIndex(e => new { e.ExtractoId, e.Tipo }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => e.Tipo);
             entity.HasIndex(e => e.Estado);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
             // V-02-03 (MEDIUM): cambiar cascade a restrict para no quemar historial
             // cuando se borra un extracto (que ya es soft-delete).
             entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
@@ -431,6 +447,9 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Concepto).HasMaxLength(512);
             entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
             entity.Property(e => e.Origen).HasMaxLength(32).IsRequired();
+            // V-02-05 (MED-21): CHECK constraint sobre Estado. Evita valores basura.
+            entity.ToTable(t => t.HasCheckConstraint("ck_movimientos_esperados_estado",
+                "\"estado\" IN ('pendiente','satisfecho','vencido','cancelado')"));
             entity.HasIndex(e => new { e.CuentaId, e.Estado });
             entity.HasIndex(e => new { e.CuentaId, e.FechaEsperada, e.Monto });
             entity.HasIndex(e => e.Referencia);
@@ -452,10 +471,16 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ReferenciaNormalizada).HasMaxLength(256);
             entity.Property(e => e.ConceptoNormalizado).HasMaxLength(512);
             entity.Property(e => e.Observacion).HasMaxLength(1000);
+            // V-02-05 (MED-21): CHECK constraint sobre Estado.
+            entity.ToTable(t => t.HasCheckConstraint("ck_conciliaciones_estado",
+                "\"estado\" IN ('sugerida','conciliada','descartada','cerrada')"));
+            // V-02-05 (MED-22): soft delete explicito en conciliacion.
             entity.HasIndex(e => new { e.CuentaId, e.Estado });
             entity.HasIndex(e => e.MovimientoEsperadoId);
             entity.HasIndex(e => e.ExtractoId);
-            entity.HasIndex(e => new { e.MovimientoEsperadoId, e.ExtractoId }).IsUnique();
+            entity.HasIndex(e => new { e.MovimientoEsperadoId, e.ExtractoId }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
             // V-02-03 (MEDIUM): cascade a restrict. Borrar un movimiento esperado
             // NO debe destruir su historial de conciliacion.

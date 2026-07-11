@@ -45,18 +45,28 @@ function DashboardRoute({ children }: { children: JSX.Element }) {
 
 function getCsrfTokenFromCookie(): string | null {
   const cookies = document.cookie.split(';').map((item) => item.trim());
-  const tokenPair = cookies.find((item) => item.startsWith('csrf_token='));
+  // V-02-05 (LOW-FE-4): aceptar ambos prefijos (legacy csrf_token y __Host-atlas-csrf-token)
+  // y validar el formato (Base64URL >= 32 chars). Antes aceptabamos cualquier valor.
+  const tokenPair = cookies.find(
+    (item) => item.startsWith('csrf_token=') || item.startsWith('__Host-atlas-csrf-token=')
+  );
   if (!tokenPair) {
     return null;
   }
 
-  const rawValue = tokenPair.substring('csrf_token='.length);
+  const prefixLength = tokenPair.startsWith('__Host-atlas-csrf-token=')
+    ? '__Host-atlas-csrf-token='.length
+    : 'csrf_token='.length;
+  const rawValue = tokenPair.substring(prefixLength);
   if (!rawValue) {
     return null;
   }
 
   const decoded = decodeURIComponent(rawValue);
-  return decoded ? decoded : null;
+  if (!decoded || decoded.length < 32 || !/^[A-Za-z0-9_-]+$/.test(decoded)) {
+    return null;
+  }
+  return decoded;
 }
 
 export default function App() {

@@ -21,6 +21,11 @@ public static class AiConfiguration
         "qwen/qwen3-coder:free"
     ];
 
+    // V-02-05 (CRIT-1): la allowlist es ahora EXPLICITA, no regex. Evita que un usuario
+    // autenticado invoque modelos premium no suscritos en la cuenta del operador.
+    // Para añadir un modelo: editar este array y redeployar.
+    private static readonly string[] AllowedOpenRouterModels = SuggestedOpenRouterModels;
+
     private static readonly string[] AllowedOpenAiModels =
     [
         "gpt-4.1-mini",
@@ -40,7 +45,12 @@ public static class AiConfiguration
 
     public static bool IsAllowedOpenRouterModel(string? model)
     {
-        return IsValidOpenRouterModelId(model);
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return false;
+        }
+        var normalized = model.Trim();
+        return AllowedOpenRouterModels.Any(x => string.Equals(x, normalized, StringComparison.Ordinal));
     }
 
     public static bool IsSuggestedOpenRouterModel(string? model)

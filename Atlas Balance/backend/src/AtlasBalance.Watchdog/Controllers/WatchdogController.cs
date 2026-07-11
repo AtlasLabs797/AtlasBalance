@@ -58,10 +58,10 @@ public sealed class WatchdogController : ControllerBase
             return BadRequest(new { error = "source_path y target_path no pueden ser iguales" });
         }
 
-        var accepted = await _operationsService.StartUpdateAsync(sourcePath, targetPath, cancellationToken);
+        var accepted = await _operationsService.StartUpdateAsync(sourcePath, targetPath, request.PackageZipPath, cancellationToken);
         if (!accepted)
         {
-            return Conflict(new { error = "Ya hay una operacion watchdog en ejecucion" });
+            return Conflict(new { error = "Ya hay una operacion watchdog en ejecucion o el paquete no paso la verificacion de integridad" });
         }
 
         return Accepted(new { message = "Actualizacion iniciada" });

@@ -943,9 +943,14 @@ public sealed class ExtractosController : ControllerBase
 
     private async Task SaveCellAudits(Extracto ex, Guid? userId, string action, IReadOnlyList<(string Col, string? A, string? N)> changes, CancellationToken ct)
     {
+        if (changes.Count == 0) return;
         var extraCols = await _db.ExtractosColumnasExtra.Where(x => x.ExtractoId == ex.Id).Select(x => x.NombreColumna).ToListAsync(ct);
         extraCols.AddRange(changes.Where(x => !IsBase(x.Col)).Select(x => x.Col));
         var ordered = extraCols.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+        // V-02-05 (HIGH-9): un solo SaveChanges para todas las auditorias de celda.
+        // Antes: N SaveChanges (uno por cambio). Ahora: AddRange + 1 SaveChanges.
+        var timestamp = DateTime.UtcNow;
+        var ip = HttpContext.Connection.RemoteIpAddress;
         foreach (var ch in changes)
         {
             var idx = ch.Col.ToLowerInvariant() switch
@@ -957,8 +962,22 @@ public sealed class ExtractosController : ControllerBase
                 "saldo" => 5,
                 _ => 6 + Math.Max(0, ordered.FindIndex(x => x.Equals(ch.Col, StringComparison.OrdinalIgnoreCase)))
             };
-            await SaveAudit(userId, action, ex.Id, ch.Col, $"{ToExcel(idx)}{ex.FilaNumero}", ch.A, ch.N, ct);
+            _db.Auditorias.Add(new Auditoria
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = userId,
+                TipoAccion = action,
+                EntidadTipo = "EXTRACTOS",
+                EntidadId = ex.Id,
+                ColumnaNombre = ch.Col,
+                CeldaReferencia = $"{ToExcel(idx)}{ex.FilaNumero}",
+                ValorAnterior = ch.A,
+                ValorNuevo = ch.N,
+                Timestamp = timestamp,
+                IpAddress = ip
+            });
         }
+        await _db.SaveChangesAsync(ct);
     }
 
     private async Task SaveAudit(Guid? userId, string action, Guid entityId, string? col, string? cell, string? before, string? after, CancellationToken ct)

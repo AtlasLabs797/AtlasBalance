@@ -174,9 +174,16 @@ public sealed class DashboardService : IDashboardService
 
         var items = new List<DashboardSaldoDivisaResponse>();
 
+        // V-02-05 (HIGH-3): una sola llamada bulk para todas las divisas en lugar de N awaits.
+        // Si una tasa falta, el valor convertido queda en null y se muestra como 0 sin abortar.
+        var saldosParaConversion = metrics.SaldosPorDivisa
+            .OrderBy(x => x.Key)
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+        var bulkConverted = await _tiposCambioService.BulkConvertAsync(saldosParaConversion, targetCurrency, cancellationToken);
+
         foreach (var entry in metrics.SaldosPorDivisa.OrderBy(x => x.Key))
         {
-            var converted = await _tiposCambioService.ConvertAsync(entry.Value, entry.Key, targetCurrency, cancellationToken);
+            var converted = bulkConverted.TryGetValue(entry.Key, out var c) ? c ?? 0m : 0m;
             var disponible = metrics.SaldosDisponiblesPorDivisa.GetValueOrDefault(entry.Key, 0m);
             var inmovilizado = metrics.SaldosInmovilizadosPorDivisa.GetValueOrDefault(entry.Key, 0m);
             items.Add(new DashboardSaldoDivisaResponse
@@ -230,6 +237,33 @@ public sealed class DashboardService : IDashboardService
 
         var accountCurrency = cuentas.ToDictionary(x => x.CuentaId, x => x.Divisa);
 
+        // V-02-05 (HIGH-4/10): precomputar tasas una sola vez por divisa origen, no por
+        // cada fila. Tasas faltantes quedan en 0m (marcador) y el bucle las trata como
+        // 0 sin abortar el dashboard.
+        var tasasPendientes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tasaPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var uniqueDivisas = cuentas.Select(x => x.Divisa)
+            .Where(x => !string.Equals(x, targetCurrency, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var div in uniqueDivisas)
+        {
+            try
+            {
+                tasaPorDivisa[div] = await _tiposCambioService.ConvertAsync(1m, div, targetCurrency, cancellationToken);
+            }
+            catch (TipoCambioMissingException)
+            {
+                tasaPorDivisa[div] = 0m;
+                tasasPendientes.Add(div);
+            }
+        }
+        decimal ConvertInPlace(decimal amount, string divisa)
+        {
+            if (string.Equals(divisa, targetCurrency, StringComparison.OrdinalIgnoreCase)) return amount;
+            return tasaPorDivisa.TryGetValue(divisa, out var t) && t > 0m ? amount * t : 0m;
+        }
+
         // Convencion de saldo (V-02-04): saldo "a fecha de corte" (snapshot historico
         // con filtro Fecha < start) ordena por Fecha DESC como criterio primario, para
         // tomar la fila con la fecha mas reciente antes del corte. NO usar FilaNumero
@@ -268,7 +302,7 @@ public sealed class DashboardService : IDashboardService
         {
             if (accountCurrency.TryGetValue(entry.Key, out var divisa))
             {
-                var converted = await _tiposCambioService.ConvertAsync(entry.Value, divisa, targetCurrency, cancellationToken);
+                var converted = ConvertInPlace(entry.Value, divisa);
                 saldoInicioPeriodo += converted;
                 if (pfCuentaIds.Contains(entry.Key))
                     inmovilizadoInicioPeriodo += converted;
@@ -290,7 +324,7 @@ public sealed class DashboardService : IDashboardService
         {
             if (accountCurrency.TryGetValue(row.CuentaId, out var divisa))
             {
-                var converted = await _tiposCambioService.ConvertAsync(row.Monto, divisa, targetCurrency, cancellationToken);
+                var converted = ConvertInPlace(row.Monto, divisa);
                 if (converted >= 0m)
                     ingresosAnterior += converted;
                 else
@@ -327,7 +361,7 @@ public sealed class DashboardService : IDashboardService
 
                 if (accountCurrency.TryGetValue(item.CuentaId, out var divisa))
                 {
-                    var converted = await _tiposCambioService.ConvertAsync(item.Monto, divisa, targetCurrency, cancellationToken);
+                    var converted = ConvertInPlace(item.Monto, divisa);
                     if (converted >= 0m)
                     {
                         ingresos += converted;
@@ -349,7 +383,7 @@ public sealed class DashboardService : IDashboardService
                     continue;
                 }
 
-                saldoTotal += await _tiposCambioService.ConvertAsync(saldoEntry.Value, divisa, targetCurrency, cancellationToken);
+                saldoTotal += ConvertInPlace(saldoEntry.Value, divisa);
             }
 
             points.Add(new DashboardPuntoEvolucionResponse
@@ -608,14 +642,21 @@ public sealed class DashboardService : IDashboardService
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         decimal interesesConvertidos = 0m;
+        // V-02-05 (HIGH-3): agrupar por divisa y convertir en bulk; las tasas faltantes
+        // se omiten (0) en vez de abortar el dashboard.
+        var interesesPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         foreach (var plazo in plazos)
         {
             if (!plazo.InteresPrevisto.HasValue || !cuentaDivisas.TryGetValue(plazo.CuentaId, out var divisa))
             {
                 continue;
             }
-
-            interesesConvertidos += await _tiposCambioService.ConvertAsync(plazo.InteresPrevisto.Value, divisa, targetCurrency, cancellationToken);
+            interesesPorDivisa[divisa] = interesesPorDivisa.GetValueOrDefault(divisa, 0m) + plazo.InteresPrevisto.Value;
+        }
+        var interesesBulk = await _tiposCambioService.BulkConvertAsync(interesesPorDivisa, targetCurrency, cancellationToken);
+        foreach (var (_, monto) in interesesBulk)
+        {
+            interesesConvertidos += monto ?? 0m;
         }
 
         var proximo = plazos

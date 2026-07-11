@@ -158,7 +158,7 @@ export default defineConfig({
   build: {
     outDir: process.env.VITE_BUILD_OUT_DIR ?? 'dist',
     emptyOutDir: process.env.VITE_BUILD_OUT_DIR ? true : false,
-    sourcemap: false,
+    sourcemap: 'hidden',
     reportCompressedSize: false,
     rollupOptions: {
       output: {

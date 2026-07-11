@@ -375,28 +375,41 @@ public sealed class ConciliacionService : IConciliacionService
             return query;
         }
 
-        if (typeof(T) == typeof(MovimientoEsperado))
+        // V-02-05 (MED-17): precomputar las cuentas accesibles en un HashSet
+        // con un solo join SQL, en lugar del EXISTS por cada fila.
+        var accessibleCuentas = ResolveAccessibleCuentas(usuarioId);
+        if (accessibleCuentas.Count == 0)
         {
-            return (IQueryable<T>)_dbContext.MovimientosEsperados.Where(m =>
-                _dbContext.Cuentas.Any(c =>
-                    c.Id == m.CuentaId &&
-                    _dbContext.PermisosUsuario.Any(p =>
-                        p.UsuarioId == usuarioId &&
-                        (p.PuedeConciliar || p.PuedeCerrarConciliacion) &&
-                        (p.PaisId == null || p.PaisId == c.PaisId) &&
-                        (p.TitularId == null || p.TitularId == c.TitularId) &&
-                        (p.CuentaId == null || p.CuentaId == c.Id))));
+            return query.Where(_ => false);
         }
 
-        return (IQueryable<T>)_dbContext.Conciliaciones.Where(m =>
-            _dbContext.Cuentas.Any(c =>
-                c.Id == m.CuentaId &&
-                _dbContext.PermisosUsuario.Any(p =>
-                    p.UsuarioId == usuarioId &&
-                    (p.PuedeConciliar || p.PuedeCerrarConciliacion) &&
-                    (p.PaisId == null || p.PaisId == c.PaisId) &&
-                    (p.TitularId == null || p.TitularId == c.TitularId) &&
-                    (p.CuentaId == null || p.CuentaId == c.Id))));
+        if (typeof(T) == typeof(MovimientoEsperado))
+        {
+            return (IQueryable<T>)((IQueryable<MovimientoEsperado>)query).Where(m => accessibleCuentas.Contains(m.CuentaId));
+        }
+        if (typeof(T) == typeof(Conciliacion))
+        {
+            return (IQueryable<T>)((IQueryable<Conciliacion>)query).Where(m => accessibleCuentas.Contains(m.CuentaId));
+        }
+        return query;
+    }
+
+    private HashSet<Guid> ResolveAccessibleCuentas(Guid usuarioId)
+    {
+        // V-02-05 (MED-17): una sola query con join cruzado PermisosUsuario x Cuentas.
+        var rows = (
+            from p in _dbContext.PermisosUsuario.AsNoTracking()
+            where p.UsuarioId == usuarioId
+                  && (p.PuedeConciliar || p.PuedeCerrarConciliacion)
+            from c in _dbContext.Cuentas.AsNoTracking()
+            where (p.PaisId == null || p.PaisId == c.PaisId)
+               && (p.TitularId == null || p.TitularId == c.TitularId)
+               && (p.CuentaId == null || p.CuentaId == c.Id)
+            select c.Id)
+            .Distinct()
+            .ToList();
+
+        return new HashSet<Guid>(rows);
     }
 
     private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, bool cerrar, CancellationToken cancellationToken)

@@ -124,7 +124,9 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
 
         if (!string.IsNullOrWhiteSpace(request.GoogleDriveClientSecret))
         {
-            Upsert(rows, "google_drive_oauth_client_secret", _secretProtector.ProtectForStorage(request.GoogleDriveClientSecret), userId, now);
+            // V-02-05 (MED-8): marcar EsSecreto=true explicitamente. Antes el
+            // flag quedaba en false para secrets recien actualizados.
+            Upsert(rows, "google_drive_oauth_client_secret", _secretProtector.ProtectForStorage(request.GoogleDriveClientSecret), userId, now, isSecret: true);
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -173,7 +175,8 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
         string key,
         string value,
         Guid? userId,
-        DateTime now)
+        DateTime now,
+        bool isSecret = false)
     {
         var item = existing.FirstOrDefault(x => x.Clave.Equals(key, StringComparison.OrdinalIgnoreCase));
         if (item is null)
@@ -182,6 +185,10 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
             {
                 Clave = key,
                 Valor = value,
+                // V-02-05 (MED-8): marcar EsSecreto explicitamente. Para claves
+                // sensibles (password/api_key/token/secret) siempre se marca
+                // true; para el resto, segun el parametro isSecret.
+                EsSecreto = isSecret || IsSensitiveConfigKey(key),
                 FechaModificacion = now,
                 UsuarioModificacionId = userId
             };
@@ -191,6 +198,7 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
         }
 
         item.Valor = value;
+        item.EsSecreto = isSecret || IsSensitiveConfigKey(key);
         item.FechaModificacion = now;
         item.UsuarioModificacionId = userId;
     }

@@ -28,17 +28,25 @@ public sealed class MapeoColumnasRequest
 
 public sealed class ImportacionValidarRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
     public Guid CuentaId { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(5 * 1024 * 1024)]
     public string RawData { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string? Separador { get; set; }
+    [System.ComponentModel.DataAnnotations.Required]
     public MapeoColumnasRequest Mapeo { get; set; } = new();
 }
 
 public sealed class ImportacionConfirmarRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
     public Guid CuentaId { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(5 * 1024 * 1024)]
     public string RawData { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string? Separador { get; set; }
+    [System.ComponentModel.DataAnnotations.Required]
     public MapeoColumnasRequest Mapeo { get; set; } = new();
     public IReadOnlyList<int>? FilasAImportar { get; set; }
     public Guid? LoteId { get; set; }
@@ -46,10 +54,14 @@ public sealed class ImportacionConfirmarRequest
 
 public sealed class ImportacionPlazoFijoMovimientoRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
     public Guid CuentaId { get; set; }
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.MaxLength(16)]
     public string TipoMovimiento { get; set; } = "INGRESO";
     public DateOnly Fecha { get; set; }
+    [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.0001", "9999999999.9999")]
     public decimal Monto { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(512)]
     public string? Concepto { get; set; }
 }
 
@@ -105,6 +117,14 @@ public sealed class ImportacionLoteCrearRequest
     public string TipoOrigen { get; set; } = "PEGADO";
     public string? NombreArchivo { get; set; }
     public long? TamanioBytes { get; set; }
+
+    /// <summary>
+    /// V-02-05 (HIGH-1): codigo de divisa declarado por el usuario para los importes pegados.
+    /// Si no coincide con la divisa de la cuenta, se registra una advertencia en el lote
+    /// para que el operador la vea antes de confirmar. Si se omite, se asume la divisa
+    /// de la cuenta (no se valida contra el archivo).
+    /// </summary>
+    public string? DivisaEsperada { get; set; }
 }
 
 public sealed class ImportacionLoteConfirmarRequest

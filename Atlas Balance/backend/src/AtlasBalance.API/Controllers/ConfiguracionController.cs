@@ -24,19 +24,22 @@ public sealed class ConfiguracionController : ControllerBase
     private readonly IAuditService _auditService;
     private readonly ILogger<ConfiguracionController> _logger;
     private readonly ISecretProtector _secretProtector;
+    private readonly SmtpTestRateLimit _smtpTestRateLimit;
 
     public ConfiguracionController(
         AppDbContext dbContext,
         IEmailService emailService,
         IAuditService auditService,
         ILogger<ConfiguracionController> logger,
-        ISecretProtector secretProtector)
+        ISecretProtector secretProtector,
+        SmtpTestRateLimit smtpTestRateLimit)
     {
         _dbContext = dbContext;
         _emailService = emailService;
         _auditService = auditService;
         _logger = logger;
         _secretProtector = secretProtector;
+        _smtpTestRateLimit = smtpTestRateLimit;
     }
 
     [HttpGet]
@@ -268,6 +271,14 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "La solicitud esta incompleta o no tiene el formato esperado." });
         }
 
+        // V-02-05 (MED-4): rate limit 5/min/usuario para evitar que un admin autenticado
+        // abuse del endpoint como relay SMTP.
+        var userId = GetCurrentUserId();
+        if (!await _smtpTestRateLimit.TryAcquireAsync(userId, cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = "Demasiadas pruebas SMTP. Espere 1 minuto." });
+        }
+
         var config = await LoadConfigMapAsync(cancellationToken);
         var target = request.To?.Trim();
         if (string.IsNullOrWhiteSpace(target))
@@ -279,6 +290,9 @@ public sealed class ConfiguracionController : ControllerBase
         {
             return BadRequest(new { error = "Debe indicar un destinatario para el correo de prueba." });
         }
+
+        // V-02-05 (MED-5): validar target contra CRLF antes de enviar.
+        EmailService.ValidateEmailAddressPublic(target, "to");
 
         try
         {

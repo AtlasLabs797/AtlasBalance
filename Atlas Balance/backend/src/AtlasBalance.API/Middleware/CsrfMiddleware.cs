@@ -5,6 +5,7 @@ namespace AtlasBalance.API.Middleware;
 public sealed class CsrfMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<CsrfMiddleware> _logger;
 
     // login/mfa/refresh: el cliente aun no posee csrf_token; refresh-token se protege via SameSite=Strict.
     private static readonly HashSet<string> ExcludedPaths = new(StringComparer.OrdinalIgnoreCase)
@@ -15,9 +16,10 @@ public sealed class CsrfMiddleware
         "/api/health"
     };
 
-    public CsrfMiddleware(RequestDelegate next)
+    public CsrfMiddleware(RequestDelegate next, ILogger<CsrfMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context, ICsrfService csrfService)
@@ -33,6 +35,13 @@ public sealed class CsrfMiddleware
 
             if (!csrfService.IsValid(csrfCookie, csrfHeader))
             {
+                // V-02-05 (MED-9): registrar el intento rechazado para visibilidad.
+                _logger.LogWarning(
+                    "CSRF rechazado: path={Path} method={Method} ip={Ip} ua={UA}",
+                    context.Request.Path,
+                    context.Request.Method,
+                    context.Connection.RemoteIpAddress,
+                    context.Request.Headers.UserAgent.ToString());
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new { error = "CSRF token inválido" });
                 return;

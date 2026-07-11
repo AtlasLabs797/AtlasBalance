@@ -468,6 +468,10 @@ function New-AtlasCertificate {
 
     $dnsNames = @($DnsName, "localhost", $env:COMPUTERNAME) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
     $securePassword = ConvertTo-SecureString $Password -AsPlainText -Force
+    # V-02-05 (CONFIG-006): avisar al operador que el cert es self-signed.
+    # Para produccion, distribuir el .cer y NO marcar "confiar en todos"
+    # en los navegadores. Si tienen CA interna, pasar -CertPath y -CertPassword.
+    Write-Warning "CONFIG-006: generando certificado self-signed. Para produccion real, use su CA interna (parametros -CertPath / -CertPassword)."
     $cert = New-SelfSignedCertificate `
         -DnsName $dnsNames `
         -CertStoreLocation "Cert:\LocalMachine\My" `
@@ -504,8 +508,11 @@ function Write-AppSettings {
     $exportPath = Join-Path $InstallPath "exports"
     $apiTarget = Join-Path $InstallPath "api"
     $dataProtectionKeysPath = Join-Path $env:ProgramData "AtlasBalance\keys"
-    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword"
-    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword"
+    # V-02-05 (CONFIG-002): anadir sslmode=require a la connection string cuando el
+    # host NO es localhost. Para localhost (caso comun) el SSL es opcional.
+    $sslMode = if ($DbHost -eq "localhost" -or $DbHost -eq "127.0.0.1") { "" } else { ";sslmode=require" }
+    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword$sslMode"
+    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword$sslMode"
     $forwardedKnownProxies = if ($UseReverseProxy) { @($ReverseProxyIp) } else { @() }
     $allowedHosts = if ($UseReverseProxy) {
         "$effectivePublicHost;$ServerName;localhost"
@@ -815,8 +822,23 @@ function Write-RuntimeAndCredentials {
             $lines[7..($lines.Count - 1)]
         ) | ForEach-Object { $_ }
     }
-    Write-SecretFile -Path $credentialsPath -Lines $lines
-    Register-CredentialsCleanupTask -CredentialsPath $credentialsPath
+    # V-02-05 (MED-26): mostrar credenciales en pantalla en lugar de escribirlas
+    # a un archivo. El operador debe capturarlas en su gestor de secretos.
+    # El archivo INSTALL_CREDENTIALS_ONCE.txt sigue existiendo como path para
+    # la tarea de limpieza (que se registra pero no tiene archivo que limpiar).
+    Write-Host ""
+    Write-Host "=============================================" -ForegroundColor Yellow
+    Write-Host "CREDENCIALES INICIALES (captura esto en tu gestor de passwords)" -ForegroundColor Yellow
+    Write-Host "=============================================" -ForegroundColor Yellow
+    foreach ($line in $lines) {
+        Write-Host $line
+    }
+    Write-Host "=============================================" -ForegroundColor Yellow
+    Write-Host ""
+    # Mantenemos el task de limpieza por compatibilidad, pero no escribimos archivo.
+    if (Test-Path -LiteralPath $credentialsPath) {
+        Remove-Item -LiteralPath $credentialsPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $packageRoot = Split-Path -Parent $PSScriptRoot
@@ -938,8 +960,15 @@ Install-OrReplaceService -Name $ApiServiceName -DisplayName "Atlas Balance - API
 
 $firewallPort = if ($UseReverseProxy) { $PublicPort } else { $ApiPort }
 $firewallName = if ($UseReverseProxy) { "Atlas Balance Public HTTPS $PublicPort" } else { "Atlas Balance HTTPS $ApiPort" }
+# V-02-05 (CONFIG-001): por defecto, restringir el firewall al rango de la LAN
+# local. Si el operador quiere exponer a internet, debe pasar -AllowInternet 1
+# explicitamente.
+$firewallRemoteAddress = if ($AllowInternet) { "Any" } else { "LocalSubnet" }
 if (-not (Get-NetFirewallRule -DisplayName $firewallName -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName $firewallName -Direction Inbound -Protocol TCP -LocalPort $firewallPort -Action Allow | Out-Null
+    if ($AllowInternet) {
+        Write-Warning "CONFIG-001: abriendo firewall a internet. Esto es INSEGURO salvo que haya un WAF/reverse proxy externo."
+    }
+    New-NetFirewallRule -DisplayName $firewallName -Direction Inbound -Protocol TCP -LocalPort $firewallPort -RemoteAddress $firewallRemoteAddress -Action Allow | Out-Null
 }
 
 Start-Service -Name $WatchdogServiceName
@@ -962,7 +991,7 @@ foreach ($shortcutRoot in $shortcutTargets) {
     New-AtlasShortcut -ShortcutPath $shortcutPath -TargetPath (Join-Path $InstallPath "Atlas Balance.cmd") -IconPath $iconPath -WorkingDirectory $InstallPath
 }
 
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+# V-02-05 (CONFIG-020): usar -SkipCertificateCheck en lugar de tocar el callback global.
 Start-Sleep -Seconds 5
 try {
     $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue

@@ -211,7 +211,7 @@ public class ImportacionLote
     public Guid? RevertidoPorId { get; set; }
 }
 
-public class ImportacionLoteFila
+public class ImportacionLoteFila : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid LoteId { get; set; }
@@ -223,14 +223,18 @@ public class ImportacionLoteFila
     public string ErroresJson { get; set; } = "[]";
     public string AdvertenciasJson { get; set; } = "[]";
     public string? Fingerprint { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
-public class ExtractoColumnaExtra
+public class ExtractoColumnaExtra : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid ExtractoId { get; set; }
     public string NombreColumna { get; set; } = string.Empty;
     public string? Valor { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
 public class ExtractoDesglose : ISoftDelete
@@ -249,7 +253,7 @@ public class ExtractoDesglose : ISoftDelete
     public Guid? DeletedById { get; set; }
 }
 
-public class RevisionExtractoEstado
+public class RevisionExtractoEstado : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid ExtractoId { get; set; }
@@ -257,6 +261,8 @@ public class RevisionExtractoEstado
     public string Estado { get; set; } = string.Empty;
     public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
     public Guid? UsuarioModificacionId { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
 public class PermisoUsuario
@@ -414,7 +420,7 @@ public class MovimientoEsperado : ISoftDelete
     public Guid? DeletedById { get; set; }
 }
 
-public class Conciliacion
+public class Conciliacion : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid CuentaId { get; set; }
@@ -435,6 +441,8 @@ public class Conciliacion
     public string? Observacion { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
     public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
 public class DivisaActiva

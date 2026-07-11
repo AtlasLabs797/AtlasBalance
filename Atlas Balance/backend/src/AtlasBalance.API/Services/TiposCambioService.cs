@@ -11,6 +11,8 @@ namespace AtlasBalance.API.Services;
 public interface ITiposCambioService
 {
     Task<decimal> ConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken);
+    Task<decimal?> TryConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken);
+    Task<IReadOnlyDictionary<string, decimal?>> BulkConvertAsync(IReadOnlyDictionary<string, decimal> amountsBySource, string divisaDestino, CancellationToken cancellationToken);
     Task<IReadOnlyList<TipoCambioDto>> ListarTiposCambioAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<DivisaActivaDto>> ListarDivisasAsync(CancellationToken cancellationToken);
     Task<TipoCambioDto> GuardarTipoCambioManualAsync(string divisaOrigen, string divisaDestino, decimal tasa, CancellationToken cancellationToken);
@@ -24,6 +26,11 @@ public sealed class TiposCambioService : ITiposCambioService
     private const string CacheKey = "tipos_cambio_rates";
     private const string ExchangeRateClient = "exchange-rate-api";
     private const string ExchangeRateApiKeyConfig = "exchange_rate_api_key";
+    // V-02-05 (MED-10/11): acotar tasas razonables. EUR/USD tipico 0.5-2.0, criptomonedas
+    // pueden llegar a 10^6 pero no a 10^12. Evita overflow en el producto acumulado
+    // del BFS y division por cero o tasas negativas en la rama inversa.
+    private const decimal MaxRateValue = 1_000_000m;
+    private const decimal MinRateValue = 1m / MaxRateValue;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
     private readonly AppDbContext _dbContext;
@@ -70,6 +77,69 @@ public sealed class TiposCambioService : ITiposCambioService
         }
 
         return amount * rate.Value;
+    }
+
+    /// <summary>
+    /// V-02-05 (HIGH-3/4/10): variante tolerante de ConvertAsync. Devuelve null en lugar
+    /// de lanzar cuando falta la tasa, para que un dashboard completo no aborte por un
+    /// solo par de monedas sin registrar. Las llamadas existentes mantienen su contrato
+    /// (lanzan TipoCambioMissingException).
+    /// </summary>
+    public async Task<decimal?> TryConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken)
+    {
+        if (amount == 0m)
+        {
+            return 0m;
+        }
+        var from = Normalize(divisaOrigen);
+        var to = Normalize(divisaDestino);
+        if (from == to)
+        {
+            return amount;
+        }
+        var catalog = await GetRateCatalogAsync(cancellationToken);
+        var rate = ResolveRate(from, to, catalog);
+        if (!rate.HasValue)
+        {
+            return null;
+        }
+        return amount * rate.Value;
+    }
+
+    /// <summary>
+    /// V-02-05 (HIGH-3/4/10): convierte un mapa (divisaOrigen -> monto) a la divisa destino
+    /// en una sola pasada. Calcula UNA tasa por divisa origen y la aplica a todos sus
+    /// montos, evitando el N+async del patron anterior. Las divisas sin tasa quedan con
+    /// valor null en el resultado.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, decimal?>> BulkConvertAsync(IReadOnlyDictionary<string, decimal> amountsBySource, string divisaDestino, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, decimal?>(StringComparer.OrdinalIgnoreCase);
+        if (amountsBySource.Count == 0)
+        {
+            return result;
+        }
+
+        var target = Normalize(divisaDestino);
+        var catalog = await GetRateCatalogAsync(cancellationToken);
+
+        foreach (var kv in amountsBySource)
+        {
+            var from = Normalize(kv.Key);
+            if (from == target)
+            {
+                result[from] = kv.Value;
+                continue;
+            }
+            if (kv.Value == 0m)
+            {
+                result[from] = 0m;
+                continue;
+            }
+            var rate = ResolveRate(from, target, catalog);
+            result[from] = rate.HasValue ? kv.Value * rate.Value : (decimal?)null;
+        }
+        return result;
     }
 
     public async Task<IReadOnlyList<TipoCambioDto>> ListarTiposCambioAsync(CancellationToken cancellationToken)
@@ -398,9 +468,21 @@ public sealed class TiposCambioService : ITiposCambioService
                 continue;
             }
 
+            // V-02-05 (MED-10/11): validar tasa directa y su inverso para evitar
+            // overflow, division por cero o tasas absurdas en el BFS del grafo.
+            if (row.Tasa > MaxRateValue || row.Tasa < MinRateValue)
+            {
+                continue;
+            }
+            var inverseRate = 1m / row.Tasa;
+            if (inverseRate <= 0m || inverseRate > MaxRateValue)
+            {
+                continue;
+            }
+
             rates[$"{from}|{to}"] = row.Tasa;
             AddGraphEdge(graph, from, to, row.Tasa);
-            AddGraphEdge(graph, to, from, 1m / row.Tasa);
+            AddGraphEdge(graph, to, from, inverseRate);
         }
 
         var catalog = new RateCatalog(rates, graph);
@@ -469,6 +551,11 @@ public sealed class TiposCambioService : ITiposCambioService
 
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { from };
         var queue = new Queue<(string Currency, decimal AccumulatedRate)>();
+        // V-02-05 (MED-10/11): capar profundidad del BFS y rango de la tasa
+        // acumulada para acotar el coste y evitar overflow.
+        const int MaxBfsDepth = 6;
+        const decimal MaxAccumulatedRate = 1_000_000_000_000m; // 10^12
+        var depthByCurrency = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { [from] = 0 };
 
         foreach (var edge in startingEdges)
         {
@@ -482,12 +569,18 @@ public sealed class TiposCambioService : ITiposCambioService
                 return edge.Value;
             }
 
+            depthByCurrency[edge.Key] = 1;
             queue.Enqueue((edge.Key, edge.Value));
         }
 
         while (queue.Count > 0)
         {
             var current = queue.Dequeue();
+            var currentDepth = depthByCurrency[current.Currency];
+            if (currentDepth >= MaxBfsDepth)
+            {
+                continue;
+            }
             if (!catalog.Graph.TryGetValue(current.Currency, out var nextEdges))
             {
                 continue;
@@ -501,11 +594,16 @@ public sealed class TiposCambioService : ITiposCambioService
                 }
 
                 var resolvedRate = current.AccumulatedRate * edge.Value;
+                if (resolvedRate <= 0m || resolvedRate > MaxAccumulatedRate)
+                {
+                    continue;
+                }
                 if (edge.Key.Equals(to, StringComparison.OrdinalIgnoreCase))
                 {
                     return resolvedRate;
                 }
 
+                depthByCurrency[edge.Key] = currentDepth + 1;
                 queue.Enqueue((edge.Key, resolvedRate));
             }
         }

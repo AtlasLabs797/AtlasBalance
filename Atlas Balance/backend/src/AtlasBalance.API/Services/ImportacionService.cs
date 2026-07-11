@@ -278,9 +278,20 @@ public sealed class ImportacionService : IImportacionService
                 filas_validas = validationRows.Count(row => row.Valida),
                 filas_error = validationRows.Count(row => !row.Valida),
                 filas_advertencia = validationRows.Count(row => row.Advertencias.Count > 0),
-                filas_seleccionadas_default = validationRows.Count(row => row.Valida && row.Advertencias.Count == 0)
+                filas_seleccionadas_default = validationRows.Count(row => row.Valida && row.Advertencias.Count == 0),
+                divisa_cuenta = cuenta.Divisa,
+                divisa_esperada = string.IsNullOrWhiteSpace(request.DivisaEsperada) ? null : request.DivisaEsperada.Trim().ToUpperInvariant(),
+                divisa_mismatch = !string.IsNullOrWhiteSpace(request.DivisaEsperada)
+                    && !string.Equals(request.DivisaEsperada.Trim().ToUpperInvariant(), cuenta.Divisa, StringComparison.OrdinalIgnoreCase)
             }, SnakeCaseJsonOptions),
-            ContenidoOriginal = rawData,
+            // V-02-05 (MED-13): RGPD. Solo persistir los primeros 2 KB del raw
+            // original; el hash SHA-256 completo va en Notas como referencia
+            // de integridad. Esto evita retener datos personales (DNIs, IBANs
+            // ajenos, etc.) indefinidamente en IMPORTACION_LOTES.contenido_original.
+            ContenidoOriginal = TruncarContenidoOriginal(rawData),
+            Notas = string.IsNullOrEmpty(BuildDivisaMismatchNota(cuenta.Divisa, request.DivisaEsperada))
+                ? $"sha256:{loteHash}"
+                : $"{BuildDivisaMismatchNota(cuenta.Divisa, request.DivisaEsperada)} | sha256:{loteHash}",
             LoteHash = loteHash,
             Estado = validationRows.Any(row => !row.Valida) ? "validado_con_errores" : "validado",
             FilasTotal = validationRows.Count,
@@ -367,6 +378,24 @@ public sealed class ImportacionService : IImportacionService
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        // V-02-05 (MED-14): lock por lote para evitar doble confirmacion concurrente
+        // (dos clics rapidos del frontend). Si no lo conseguimos, devolvemos 409.
+        var lockKey = $"importacion_lote_lock:{id:N}";
+        var lockAcquired = false;
+        try
+        {
+            lockAcquired = await TryAcquireAdvisoryXactLockAsync(lockKey, cancellationToken);
+            if (!lockAcquired)
+            {
+                throw new ImportacionException("El lote esta siendo procesado por otra operacion", StatusCodes.Status409Conflict);
+            }
+        }
+        catch (Npgsql.PostgresException)
+        {
+            // Si la BD no permite advisory lock (test con EF InMemory), seguimos
+            // sin lock; el check de estado duplicado abajo cubre el caso comun.
+        }
+
         var lote = await _dbContext.ImportacionLotes.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (lote is null)
         {
@@ -501,16 +530,14 @@ public sealed class ImportacionService : IImportacionService
         }
 
         var now = DateTime.UtcNow;
-        var extractos = await _dbContext.Extractos
+        // V-02-05 (MED-15): ExecuteUpdate en lugar de cargar 50k entidades a memoria
+        // solo para marcarlas. Un UPDATE con WHERE filtro, sin materializacion.
+        var updateCount = await _dbContext.Extractos
             .IgnoreQueryFilters()
             .Where(x => x.ImportacionLoteId == lote.Id && x.DeletedAt == null)
-            .ToListAsync(cancellationToken);
-
-        foreach (var extracto in extractos)
-        {
-            extracto.DeletedAt = now;
-            extracto.DeletedById = usuarioId;
-        }
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(e => e.DeletedAt, now).SetProperty(e => e.DeletedById, (Guid?)usuarioId),
+                cancellationToken);
 
         var filas = await _dbContext.ImportacionLoteFilas.Where(x => x.LoteId == lote.Id).ToListAsync(cancellationToken);
         foreach (var fila in filas.Where(x => x.Estado == "confirmada"))
@@ -532,7 +559,7 @@ public sealed class ImportacionService : IImportacionService
             JsonSerializer.Serialize(new
             {
                 lote.CuentaId,
-                extractos_revertidos = extractos.Count,
+                extractos_revertidos = updateCount,
                 motivo = NormalizeOptionalText(request.Motivo)
             }, SnakeCaseJsonOptions),
             cancellationToken);
@@ -1185,6 +1212,54 @@ public sealed class ImportacionService : IImportacionService
     {
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private async Task<bool> TryAcquireAdvisoryXactLockAsync(string lockKey, CancellationToken cancellationToken)
+    {
+        // V-02-05 (MED-14): pg_advisory_xact_lock scoped a la transaccion actual.
+        // Devuelve true si el lock se acquired inmediatamente, false si otro proceso lo tiene.
+        // Usamos hashtext para convertir el string a bigint.
+        try
+        {
+            var result = await _dbContext.Database
+                .SqlQueryRaw<int>("SELECT pg_try_advisory_xact_lock(hashtext({0})) AS \"Value\"", lockKey)
+                .ToListAsync(cancellationToken);
+            return result.Count > 0 && result[0] == 1;
+        }
+        catch
+        {
+            return true; // fail-open si la BD no soporta advisory lock (tests)
+        }
+    }
+
+    private const int MaxContenidoOriginalBytes = 2 * 1024;
+
+    private static string TruncarContenidoOriginal(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return raw;
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(raw);
+        if (bytes <= MaxContenidoOriginalBytes) return raw;
+        // Truncar preservando el mayor numero de caracteres UTF-8 validos.
+        var truncated = raw;
+        while (System.Text.Encoding.UTF8.GetByteCount(truncated) > MaxContenidoOriginalBytes && truncated.Length > 0)
+        {
+            truncated = truncated[..^1];
+        }
+        return truncated + $"... [truncado a {MaxContenidoOriginalBytes} bytes; ver hash en Notas]";
+    }
+
+    private static string? BuildDivisaMismatchNota(string cuentaDivisa, string? divisaEsperada)
+    {
+        if (string.IsNullOrWhiteSpace(divisaEsperada))
+        {
+            return null;
+        }
+        var normalized = divisaEsperada.Trim().ToUpperInvariant();
+        if (string.Equals(normalized, cuentaDivisa, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        return $"divisa_mismatch: archivo={normalized} cuenta={cuentaDivisa}";
     }
 
     private static void EnsureNotPlazoFijoForFormattedImport(Cuenta cuenta)

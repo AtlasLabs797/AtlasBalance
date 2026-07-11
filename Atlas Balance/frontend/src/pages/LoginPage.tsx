@@ -53,9 +53,17 @@ export default function LoginPage() {
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
+  // V-02-05 (LOW-FE-5): opt-in para recordar email. Antes se hacia
+  // automaticamente; ahora el usuario debe marcar un checkbox. Por defecto OFF.
+  const [rememberEmail, setRememberEmail] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('atlas_remember_email_opt_in') === '1';
+  });
   const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>({
     defaultValues: {
-      email: (typeof window !== 'undefined' ? window.localStorage.getItem('atlas_last_email') ?? '' : ''),
+      email: rememberEmail
+        ? (typeof window !== 'undefined' ? window.localStorage.getItem('atlas_last_email') ?? '' : '')
+        : '',
     },
   });
   const [error, setError] = useState<string | null>(null);
@@ -136,15 +144,13 @@ export default function LoginPage() {
 
   const onSubmit = handleSubmit(async (values) => {
     setError(null);
-    // F-NEW-5 (V-02-03): recordar el email para reducir friccion. Nunca
-    // guardar la contrasena. El localStorage del navegador se mantiene en
-    // sandbox del origen (no se envia al backend).
-    if (typeof window !== 'undefined' && values.email) {
+    // V-02-05 (LOW-FE-5): solo recordar email si el usuario marco la opcion.
+    if (typeof window !== 'undefined' && values.email && rememberEmail) {
       try {
         window.localStorage.setItem('atlas_last_email', values.email);
+        window.localStorage.setItem('atlas_remember_email_opt_in', '1');
       } catch {
-        // Si el storage esta bloqueado (modo privado, etc.) seguimos sin
-        // guardar, no es bloqueante.
+        // Si el storage esta bloqueado seguimos sin guardar.
       }
     }
     try {
@@ -277,6 +283,24 @@ export default function LoginPage() {
                 </button>
               </div>
               {errors.password && <p id="password-error" className="auth-error" role="alert">{errors.password.message}</p>}
+            </div>
+
+            <div className="auth-form-group auth-remember-email">
+              <label className="auth-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={rememberEmail}
+                  onChange={(event) => {
+                    const next = event.target.checked;
+                    setRememberEmail(next);
+                    if (!next && typeof window !== 'undefined') {
+                      window.localStorage.removeItem('atlas_last_email');
+                      window.localStorage.setItem('atlas_remember_email_opt_in', '0');
+                    }
+                  }}
+                />
+                <span>Recordar mi email en este navegador</span>
+              </label>
             </div>
           </>
         )}

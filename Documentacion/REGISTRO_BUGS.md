@@ -14,19 +14,19 @@
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
 - Pendientes:
-  - Ejecutar suite completa V-01.09 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
-  - Hacer E2E autenticado contra PostgreSQL real con datos de volumen antes de release.
+  - **Ejecutar suite completa con Docker/Testcontainers: CERRADO (2026-07-02).** Suite completa 323/323 OK incluidos `ExtractosConcurrencyTests` y `RowLevelSecurityTests` con Testcontainers. Evidencia en `Documentacion/Versiones/v-02-04.md` seccion Pendientes.
+  - **E2E autenticado contra PostgreSQL real con datos de volumen: CERRADO (2026-07-07).** `VolumeSmokeTests` (Testcontainers, PostgreSQL 16 real): siembra 50.000 EXTRACTOS y ejercita paginacion (primera/intermedia/ultima pagina), ordenacion asc/desc, contrato `{data, total, page, pageSize, totalPages}` y resumen de cuenta, con usuario autenticado (ClaimsPrincipal, patron estandar del proyecto de tests). Ejecutado 2 veces (agente + verificacion independiente), 1/1 OK. Matiz: llama a los controllers en proceso, no via HTTP puro (el proyecto de tests no tiene WebApplicationFactory).
   - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en auditorias UI previas; el 2026-05-19 se reforzaron select nativo, modal de importacion, errores persistentes de celda, estados de importacion, tabs de Configuracion, tablas de cuenta/extractos, token modal/metricas, backups y alternativas accesibles de graficas. Falta sesion real con datos de volumen.
-- Estado: abierto. Bloquea recomendar release final.
-
-### 2026-04-20 - V-01.02 - Estado Git local no fiable
-
-- Contexto: `git status --short` funciona, pero lista practicamente todo el arbol como `untracked`.
-- Causa probable: copia local/repo recreado sin historial o indice util para esta carpeta.
-- Impacto: no se puede obtener diff fino ni preparar commit fiable desde esta copia sin reparar el estado Git.
-- Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
+- Estado: solo queda abierta la validacion visual con datos de volumen (sesion de navegador real con 50k filas en el grid). Los otros dos pendientes estan cerrados con evidencia.
 
 ## Cerrados
+
+### 2026-07-07 - V-01.02 - Cerrado - Estado Git local no fiable
+
+- Contexto: en V-01.02 se reporto que `git status --short` listaba practicamente todo el arbol como `untracked`, indicando repositorio local inestable.
+- Causa original: copia local/repo recreado sin historial o indice fiable.
+- Resolucion: el estado Git se normalizo entre V-01.02 y 2026-07-07. La rama V-02-04 activa muestra `git status` normal con solo archivos modificados esperados. El historial de commits es accesible y se hacen commits/push con normalidad.
+- Estado: cerrado. Git funciona correctamente hoy (2026-07-07). Repo local reparado/recreado en algun momento posterior; ya no es una incidencia operativa.
 
 ### 2026-06-30 - V-02-02 - Cerrado - Build-Release fallaba aunque el scanner pasara
 
@@ -1288,3 +1288,108 @@
 - Contexto: se valido build/lint/TypeScript, pero no se completo navegador para importacion, historial de lote, conciliacion, OpenClaw tokens, mobile alertas y modos de Extractos.
 - Solucion 2026-06-30: QA Playwright finita con Chrome local cubrio todos esos flujos sin errores de consola.
 - Estado: cerrado.
+
+## Hallazgos audit V-02-04 pre-internet (2026-07-10)
+
+Origen: `Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`.
+Severidad global: el mas alto de los 3 CRITICAL bloquea el despliegue
+publico; los 11 HIGH requieren arreglo antes de exponer a internet.
+
+### CRITICAL
+
+- **AB-CR-01 - AtlasAiService allowlist OpenRouter inexistente.** Cualquier
+  modelo con formato `vendor/model` pasaba la validacion regex, permitiendo
+  invocar modelos premium no suscritos. **CERRADO en V-02-05 (CRIT-1)**.
+  Allowlist explicita en `AiConfiguration.AllowedOpenRouterModels`.
+- **AB-CR-02 - AuditService.LogAsync fuera de transaccion.** Las auditorias
+  se persistian en commits propios, dejando rastro de operaciones revertidas
+  en `AUDITORIAS`. **CERRADO en V-02-05 (CRIT-2)**. AuditService ahora usa
+  la transaccion del caller; `AuditSaveChangesInterceptor` audita cambios
+  en 27 entidades dentro del mismo SaveChanges.
+- **AB-CR-03 - Watchdog sin verificacion de firma RSA del paquete.** Solo
+  validaba presencia de 4 archivos. Un RCE local podia desplegar binarios
+  maliciosos firmados o no. **CERRADO en V-02-05 (CRIT-3)**. Watchdog ahora
+  verifica firma RSA contra `UpdateSecurity:ReleaseSigningPublicKeyPem`.
+
+### HIGH (cerrados en V-02-05)
+
+- **AB-H-01 - Dashboard aborta con 409 entero si una tasa falta (H1 review).**
+  **PARCIALMENTE CERRADO en V-02-05**. `BulkConvertAsync` y `TryConvertAsync`
+  disponibles; `GetSaldosDivisaAsync` y `BuildPlazosFijosResumenAsync` los usan.
+  Resto (`GetPrincipalAsync`, `GetEvolucionAsync`) en Fase 1.
+- **AB-H-02 - N+async en Dashboard (H2 review).** **PARCIALMENTE CERRADO**
+  con el mismo alcance que AB-H-01.
+- **AB-H-03 - Google Drive restore sin SHA-256 post-descifrado.** **CERRADO en
+  V-02-05**. El checksum se compara tras descifrar el dump. El helper quedó
+  dentro de `GoogleDriveBackupService` y también en el archivo `.tmp` de aplicación.
+- **AB-H-04 - Indices UNIQUE sin filtro soft-delete.** **CERRADO en V-02-05
+  (HIGH-5)**. Migracion `20260710_RecreateUniqueIndexesWithSoftDeleteFilter`.
+- **AB-H-05 - WatchdogClientService path traversal via config.**
+  **CERRADO en V-02-05 (HIGH-8)**.
+- **AB-H-06 - Validar divisa archivo = cuenta en importacion (BUG-021 audit).**
+  **CERRADO en V-02-05 (HIGH-1)**. DTO `DivisaEsperada` + `Notas`/`ResumenJson`
+  con flag `divisa_mismatch`.
+
+### HIGH (pendientes para Fase 1+)
+
+- **AB-H-07 - PlazoFijo sin xmin / concurrencia optimista.** Marcado como
+  HIGH-6 en el audit. Riesgo: last-write-wins entre job y admin.
+- **AB-H-08 - PlazoFijoService email/notificaciones ANTES del commit.**
+  Marcado como HIGH-7. Riesgo: side effects materializados antes de la
+  transaccion.
+- **AB-H-09 - AuditService thread-safe / N SaveChanges en SaveCellAudits.**
+  Marcado como HIGH-9. Riesgo: N round-trips por cambios.
+- **AB-H-10 - AlertaService race en cooldown per-cuenta.** Marcado como
+  HIGH-11. Riesgo: doble alerta en importacion masiva.
+- **AB-H-11 - Resto de N+async en Dashboard.** Marcado como HIGH-4/10
+  parcialmente cerrado.
+
+### MEDIUM
+
+Los 30+ MEDIUM del audit se aceptan como deuda documentada. Detalle en
+`Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md` seccion 3.
+Los mas relevantes a cerrar pronto:
+- MED-1 `PassthroughSecretProtector` fallback silencioso.
+- MED-2 `ProtectForStorage` se basa en prefijo sin MAC.
+- MED-5 Email CRLF validation.
+- MED-22 Soft-delete en entidades pendientes.
+- MED-23 DTOs con validacion (FluentValidation o atributos).
+
+### FASE 1 de V-02-05 (2026-07-10)
+
+Cierres en sesion posterior a Fase 0:
+- **AB-H-04 (HIGH-5)** - Indices UNIQUE con `WHERE deleted_at IS NULL`: **CERRADO en V-02-05**.
+- **AB-H-06 (HIGH-6)** - PlazoFijo sin xmin: **CERRADO en V-02-05**.
+- **AB-H-07 (HIGH-7)** - PlazoFijoService side effects antes del commit: **CERRADO en V-02-05** (outbox basico: commit primero, side effects despues).
+- **AB-H-08 (HIGH-8)** - WatchdogClientService path traversal: **CERRADO en V-02-05**.
+- **AB-H-09 (HIGH-9)** - SaveCellAudits N SaveChanges: **CERRADO en V-02-05**.
+- **AB-H-10 (HIGH-11)** - AlertaService cooldown global: **CERRADO en V-02-05** (cooldown por (cuenta, alcance) con advisory lock).
+- **AB-H-11 (HIGH-4/10)** - Resto de N+async Dashboard: **CERRADO en V-02-05** (GetEvolucionAsync refactorizado con bulk + precomputar tasas).
+ - **AB-H-03 (HIGH-2)** - Google Drive SHA-256 post-descifrado: **CERRADO en V-02-05**. El checksum se compara tras descifrar el dump. El helper se corrigio para quedar dentro de `GoogleDriveBackupService` y tambien en el archivo `.tmp` de aplicacion.
+
+MEDIUM cerrados en V-02-05 (17):
+- MED-1 PassthroughSecretProtector fail-closed.
+- MED-3 Redaccion IBAN en contexto IA.
+- MED-4 Rate limit en SendTestEmail.
+- MED-5 Email CRLF validation.
+- MED-7 RlsContextSecret vs JwtSecret warning.
+- MED-9 CsrfMiddleware audit.
+- MED-10/11 TiposCambio overflow + BFS depth cap.
+- MED-12 Bulk convert en IntegrationOpenClaw.
+- MED-14 Lock en ConfirmarLoteAsync.
+- MED-15 ExecuteUpdate en RevertirLoteAsync.
+- MED-19 PlazoFijo email digest.
+- MED-21 CHECK constraints.
+- MED-22 ISoftDelete en Conciliacion + UNIQUE parcial.
+- MED-23 DTOs validation (parcial).
+- MED-24 Log path absoluto.
+
+LOW cerrados en V-02-05 (3):
+- LOW-BE-6 EmailService timeout 15s.
+- CONFIG-008 Server header removido.
+- CONFIG-009 upgrade-insecure-requests + block-all-mixed-content.
+- CONFIG-010 Cross-Origin-Resource-Policy same-origin.
+
+MEDIUM/LOW pendientes para Fase 2 (documentados en v-02-05.md):
+- MED-2, MED-8, MED-13, MED-16, MED-17, MED-18, MED-20, MED-22 (resto),
+  MED-26, CONFIG-001 a CONFIG-007/011+, LOW-1 a LOW-40.

@@ -1011,10 +1011,16 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 (x.DivisaDestino == principalCurrency && distinctCurrencies.Contains(x.DivisaOrigen)))
             .ToListAsync(cancellationToken);
 
-        foreach (var currency in distinctCurrencies)
+        var distinctList = distinctCurrencies.ToList();
+        if (distinctList.Count > 0)
         {
-            var rate = await _tiposCambioService.ConvertAsync(1m, principalCurrency, currency, cancellationToken);
-            rates[$"{principalCurrency}_{currency}"] = Decimal.Round(rate, 8);
+            // V-02-05 (MED-12): una sola llamada bulk en lugar de N awaits.
+            var onePerCurrency = distinctList.ToDictionary(c => c, _ => 1m, StringComparer.OrdinalIgnoreCase);
+            var bulk = await _tiposCambioService.BulkConvertAsync(onePerCurrency, principalCurrency, cancellationToken);
+            foreach (var (currency, rate) in bulk)
+            {
+                rates[$"{principalCurrency}_{currency}"] = rate.HasValue ? Decimal.Round(rate.Value, 8) : 0m;
+            }
         }
 
         rates["fecha_actualizacion"] = rateRows.Count == 0 ? null : rateRows.Max(x => x.FechaActualizacion);
@@ -1027,17 +1033,22 @@ public sealed class IntegrationOpenClawController : ControllerBase
         string principalCurrency,
         CancellationToken cancellationToken)
     {
-        decimal total = 0m;
+        // V-02-05 (MED-12): agrupar por divisa y convertir en bulk.
+        var saldosPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in saldos)
         {
             if (!currencyByCuenta.TryGetValue(entry.Key, out var currency))
             {
                 continue;
             }
-
-            total += await _tiposCambioService.ConvertAsync(entry.Value, currency, principalCurrency, cancellationToken);
+            saldosPorDivisa[currency] = saldosPorDivisa.GetValueOrDefault(currency, 0m) + entry.Value;
         }
-
+        var bulk = await _tiposCambioService.BulkConvertAsync(saldosPorDivisa, principalCurrency, cancellationToken);
+        decimal total = 0m;
+        foreach (var (_, monto) in bulk)
+        {
+            total += monto ?? 0m;
+        }
         return total;
     }
 

@@ -374,6 +374,33 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         await _encryptionService.DecryptAsync(encryptedPath, dumpPath, cancellationToken);
         TryDelete(encryptedPath);
 
+        // V-02-05 (HIGH-2): verificar SHA-256 del dump descifrado contra el registro
+        // original de BackupCloudCopy. Si no coincide, descartar el archivo y rechazar.
+        var originalCopy = await _dbContext.BackupCloudCopies
+            .IgnoreQueryFilters()
+            .Where(c => c.RemoteFileId == fileId && c.Provider == ProviderName && !string.IsNullOrEmpty(c.ChecksumSha256))
+            .OrderByDescending(c => c.FechaCreacion)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (originalCopy is not null)
+        {
+            var actualHash = await ComputeSha256Async(dumpPath, cancellationToken);
+            if (!string.Equals(actualHash, originalCopy.ChecksumSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                TryDelete(dumpPath);
+                TryDelete(encryptedPath);
+                throw new InvalidOperationException(
+                    "SHA-256 del dump descifrado no coincide con el registrado para " + fileId +
+                    " (BackupCloudCopy=" + originalCopy.Id + "). Posible corrupcion o alteracion del archivo en Drive.");
+            }
+        }
+        else
+        {
+            _logger.LogWarning(
+                "Import desde Google Drive sin BackupCloudCopy original para {FileId} (o sin ChecksumSha256 registrado). Se acepta el archivo sin verificacion de integridad.",
+                fileId);
+        }
+
         var backup = new Backup
         {
             Id = Guid.NewGuid(),
@@ -831,5 +858,18 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
     {
         [JsonPropertyName("files")]
         public List<GoogleDriveFileResponse> Files { get; set; } = [];
+    }
+
+    /// <summary>
+    /// V-02-05 (HIGH-2): calcula SHA-256 de un archivo en disco. Usado para
+    /// verificar la integridad del dump descifrado contra el ChecksumSha256
+    /// del BackupCloudCopy original.
+    /// </summary>
+    private static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
+    {
+        using var stream = File.OpenRead(path);
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var hash = await sha.ComputeHashAsync(stream, cancellationToken);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

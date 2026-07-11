@@ -760,8 +760,9 @@ if ($curl) {
     }
 } else {
     try {
-        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20
+        # V-02-05 (CONFIG-020): evitar tocar el callback global. Usar -SkipCertificateCheck
+        # en este request especifico (es un health check self-signed durante instalacion).
+        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
         $healthOk = ($health.StatusCode -eq 200)
     } catch {
         $healthOk = $false
