@@ -2503,3 +2503,17 @@
 - **Regla:** cuando se amplie una interfaz o constructor de seguridad, compilar
   el proyecto de tests completo en la misma sesion. Compilar solo el proyecto
   productivo deja deuda escondida hasta CI.
+
+## 2026-07-14 - V-02-05 - Migraciones manuscritas ausentes de EF Core (CERRADO)
+
+- **Contexto:** tras reparar la compilacion, el run `29365305520` ejecuto la
+  suite y fallo 3 de 331 pruebas PostgreSQL por columnas `deleted_at` ausentes.
+- **Causa:** las tres migraciones manuscritas `20260710_*` heredaban de
+  `Migration`, pero no tenian atributos `[DbContext]` y `[Migration]` ni archivo
+  Designer. EF Core las compilaba, pero `MigrateAsync()` no las descubria.
+- **Solucion:** se registraron las tres migraciones con ids ordenados y se
+  anadio un test unitario que comprueba su presencia mediante `GetMigrations()`.
+- **Verificacion local:** `MigrationDiscoveryTests` **1/1 OK**. La aplicacion
+  completa sobre PostgreSQL queda validada por el siguiente run de Actions.
+- **Regla:** una clase que hereda de `Migration` no basta. Si la migracion se
+  escribe a mano, debe llevar metadatos EF y un test de descubrimiento.

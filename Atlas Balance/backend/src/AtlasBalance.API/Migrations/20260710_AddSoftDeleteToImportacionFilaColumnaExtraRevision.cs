@@ -1,9 +1,13 @@
+using AtlasBalance.API.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace AtlasBalance.API.Migrations
 {
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260710092000_AddSoftDeleteToImportacionFilaColumnaExtraRevision")]
     public partial class AddSoftDeleteToImportacionFilaColumnaExtraRevision : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

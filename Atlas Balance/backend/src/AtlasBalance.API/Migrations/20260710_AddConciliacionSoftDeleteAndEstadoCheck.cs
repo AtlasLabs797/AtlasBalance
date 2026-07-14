@@ -1,9 +1,13 @@
+using AtlasBalance.API.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace AtlasBalance.API.Migrations
 {
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260710091000_AddConciliacionSoftDeleteAndEstadoCheck")]
     public partial class AddConciliacionSoftDeleteAndEstadoCheck : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

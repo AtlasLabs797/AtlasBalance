@@ -1,9 +1,13 @@
+using AtlasBalance.API.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace AtlasBalance.API.Migrations
 {
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260710090000_RecreateUniqueIndexesWithSoftDeleteFilter")]
     public partial class RecreateUniqueIndexesWithSoftDeleteFilter : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

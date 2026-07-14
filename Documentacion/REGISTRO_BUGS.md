@@ -1402,3 +1402,7 @@ MEDIUM/LOW pendientes para Fase 2 (documentados en v-02-05.md):
   Docker revelados tras compilar: compatibilidad InMemory, reintento de plazo
   fijo, normalizacion OpenRouter y expectativas de allowlist. Verificacion:
   **133/133** tests afectados y **327/327** tests no Docker.
+- **AB-CI-02 - Migraciones V-02-05 compilaban pero EF no las descubria.**
+  **CERRADO en V-02-05.** Las tres migraciones manuscritas ya declaran
+  `[DbContext]` y `[Migration]`; `MigrationDiscoveryTests` impide la regresion.
+  El fallo se hizo visible en el run `29365305520` (3/331 pruebas PostgreSQL).

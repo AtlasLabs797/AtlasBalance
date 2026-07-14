@@ -17453,3 +17453,15 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 **Pendientes:**
 - Las pruebas Testcontainers requieren Docker y se validaran en el runner de
   GitHub Actions tras el push.
+
+### Segunda incidencia revelada por Testcontainers
+
+- El run `29365305520` ya compilo y ejecuto **331** pruebas, pero tres pruebas
+  PostgreSQL fallaron porque EF Core no descubria las tres migraciones
+  manuscritas de V-02-05.
+- Se anadieron `[DbContext]` y `[Migration]` a las migraciones de indices
+  parciales, soft-delete de conciliaciones y soft-delete de entidades de
+  importacion/revision.
+- Se anadio `MigrationDiscoveryTests`: falla si esas migraciones vuelven a
+  desaparecer del ensamblado de migraciones.
+- Verificacion local del nuevo guard: **1/1 OK**.
