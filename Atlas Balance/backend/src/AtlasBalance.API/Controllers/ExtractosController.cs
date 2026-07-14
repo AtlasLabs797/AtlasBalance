@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
@@ -37,6 +39,7 @@ public sealed class ExtractosController : ControllerBase
         [FromQuery] bool? checkedValue = null,
         [FromQuery] bool? flagged = null,
         [FromQuery] string? search = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] bool incluirEliminados = false,
         CancellationToken ct = default)
     {
@@ -53,7 +56,7 @@ public sealed class ExtractosController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 500);
 
-        var allowed = await GetAllowedAccountIds(actor, ct);
+        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
         if (!allowed.Any())
         {
             return Ok(new PaginatedResponse<ExtractoListItemResponse> { Data = [], Total = 0, Page = page, PageSize = pageSize, TotalPages = 0 });
@@ -81,6 +84,8 @@ public sealed class ExtractosController : ControllerBase
                 (x.Comentarios ?? "").ToLower().Contains(term));
         }
 
+        var filteredQuery = q;
+
         q = (sortBy.ToLowerInvariant(), desc) switch
         {
             ("fila_numero", true) => q.OrderByDescending(x => x.FilaNumero),
@@ -100,6 +105,14 @@ public sealed class ExtractosController : ControllerBase
         };
 
         var total = await q.CountAsync(ct);
+        var columnasDisponibles = await (
+                from extra in _db.ExtractosColumnasExtra
+                join extracto in filteredQuery on extra.ExtractoId equals extracto.Id
+                where extra.NombreColumna != ""
+                select extra.NombreColumna)
+            .Distinct()
+            .OrderBy(nombre => nombre)
+            .ToListAsync(ct);
         var pageRows = await q.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         var accountIds = pageRows.Select(x => x.CuentaId).Distinct().ToList();
         var cuentas = await _db.Cuentas.IgnoreQueryFilters().Where(c => accountIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
@@ -108,11 +121,24 @@ public sealed class ExtractosController : ControllerBase
         var extractoIds = pageRows.Select(x => x.Id).ToList();
         var extras = await _db.ExtractosColumnasExtra.Where(x => extractoIds.Contains(x.ExtractoId)).ToListAsync(ct);
         var extrasMap = extras.GroupBy(x => x.ExtractoId).ToDictionary(g => g.Key, g => g.ToDictionary(v => v.NombreColumna, v => v.Valor, StringComparer.OrdinalIgnoreCase));
+        var desgloseMap = await _db.ExtractosDesgloses
+            .Where(x => extractoIds.Contains(x.ExtractoId))
+            .GroupBy(x => x.ExtractoId)
+            .Select(g => new
+            {
+                ExtractoId = g.Key,
+                Count = g.Count(),
+                Total = g.Sum(x => x.Importe)
+            })
+            .ToDictionaryAsync(x => x.ExtractoId, ct);
 
         var data = pageRows.Select(x =>
         {
             var c = cuentas[x.CuentaId];
             var t = titulares[c.TitularId];
+            var hasDesglose = desgloseMap.TryGetValue(x.Id, out var desglose);
+            var desgloseCount = hasDesglose ? desglose!.Count : 0;
+            var desgloseTotal = hasDesglose ? desglose!.Total : 0m;
             return new ExtractoListItemResponse
             {
                 Id = x.Id,
@@ -120,6 +146,7 @@ public sealed class ExtractosController : ControllerBase
                 CuentaNombre = c.Nombre,
                 TitularId = t.Id,
                 TitularNombre = t.Nombre,
+                PaisId = c.PaisId,
                 Divisa = c.Divisa,
                 Fecha = x.Fecha,
                 Concepto = x.Concepto,
@@ -137,7 +164,10 @@ public sealed class ExtractosController : ControllerBase
                 FechaCreacion = x.FechaCreacion,
                 FechaModificacion = x.FechaModificacion,
                 DeletedAt = x.DeletedAt,
-                ColumnasExtra = extrasMap.TryGetValue(x.Id, out var ex) ? ex : []
+                ColumnasExtra = extrasMap.TryGetValue(x.Id, out var ex) ? ex : [],
+                DesgloseCount = desgloseCount,
+                DesgloseTotal = desgloseTotal,
+                DesgloseEstado = GetDesgloseEstado(desgloseCount, desgloseTotal, x.Monto)
             };
         }).ToList();
 
@@ -147,7 +177,8 @@ public sealed class ExtractosController : ControllerBase
             Total = total,
             Page = page,
             PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize),
+            ColumnasDisponibles = columnasDisponibles
         });
     }
 
@@ -227,8 +258,11 @@ public sealed class ExtractosController : ControllerBase
     }
 
     private async Task AcquireFilaNumeroLockAsync(Guid cuentaId, CancellationToken ct)
+        => await AcquireGuidAdvisoryLockAsync(cuentaId, ct);
+
+    private async Task AcquireGuidAdvisoryLockAsync(Guid id, CancellationToken ct)
     {
-        var bytes = cuentaId.ToByteArray();
+        var bytes = id.ToByteArray();
         var lockKey = BitConverter.ToInt64(bytes, 0) ^ BitConverter.ToInt64(bytes, 8);
         await _db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], ct);
     }
@@ -319,6 +353,193 @@ public sealed class ExtractosController : ControllerBase
         await SaveCellAudits(ex, actor.Id, "extracto_celda_actualizada", changes, ct);
         await _alertaService.EvaluateSaldoPostAsync(ex.CuentaId, actor.Id, ct);
         return Ok(new { message = "Extracto actualizado" });
+    }
+
+    [HttpGet("{id:guid}/desglose")]
+    public async Task<IActionResult> GetDesglose(Guid id, CancellationToken ct)
+    {
+        if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
+        var ex = await _db.Extractos.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
+        if (!await CanView(actor, ex.CuentaId, ct)) return Forbid();
+
+        var lineas = await _db.ExtractosDesgloses
+            .AsNoTracking()
+            .Where(x => x.ExtractoId == id)
+            .OrderBy(x => x.Orden)
+            .Select(x => new ExtractoDesgloseResponse
+            {
+                Id = x.Id,
+                ExtractoId = x.ExtractoId,
+                Orden = x.Orden,
+                TerceroNombre = x.TerceroNombre,
+                Importe = x.Importe,
+                Notas = x.Notas,
+                FechaCreacion = x.FechaCreacion,
+                FechaModificacion = x.FechaModificacion
+            })
+            .ToListAsync(ct);
+
+        return Ok(BuildDesgloseResumen(ex, lineas));
+    }
+
+    [HttpPut("{id:guid}/desglose")]
+    public async Task<IActionResult> GuardarDesglose(Guid id, [FromBody] ExtractoDesgloseUpsertRequest req, CancellationToken ct)
+    {
+        if (req is null || req.Lineas is null) return BadRequest(new { error = "La solicitud de desglose debe incluir lineas." });
+        if (string.IsNullOrWhiteSpace(req.Version)) return BadRequest(new { error = "La solicitud de desglose debe incluir version." });
+        if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
+        var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
+        var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
+        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        var p = await GetPermission(actor, cuenta, ct);
+        if (!p.CanEdit || !CanEditColumn(p, "desglose")) return Forbid();
+
+        var normalizedLines = new List<NormalizedDesgloseLine>();
+        var seenIds = new HashSet<Guid>();
+        var requestedLines = req.Lineas;
+        if (requestedLines.Count > 500)
+        {
+            return BadRequest(new { error = "Un desglose no puede superar 500 lineas." });
+        }
+
+        for (var i = 0; i < requestedLines.Count; i++)
+        {
+            var line = requestedLines[i];
+            if (line.Id.HasValue && !seenIds.Add(line.Id.Value))
+            {
+                return BadRequest(new { error = "El desglose contiene lineas duplicadas." });
+            }
+
+            var tercero = NormalizeOptionalText(line.TerceroNombre);
+            if (tercero is null)
+            {
+                return BadRequest(new { error = $"La linea {i + 1} necesita nombre de persona o tercero." });
+            }
+
+            if (line.Importe == 0m)
+            {
+                return BadRequest(new { error = $"La linea {i + 1} necesita un importe distinto de cero." });
+            }
+
+            normalizedLines.Add(new NormalizedDesgloseLine(line.Id, i + 1, tercero, line.Importe, NormalizeOptionalText(line.Notas)));
+        }
+
+        var isRelational = _db.Database.IsRelational();
+        var tx = isRelational ? await _db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            if (isRelational)
+            {
+                await AcquireGuidAdvisoryLockAsync(id, ct);
+            }
+
+            var current = await _db.ExtractosDesgloses
+                .IgnoreQueryFilters()
+                .Where(x => x.ExtractoId == id)
+                .ToListAsync(ct);
+            var activeCurrent = current.Where(x => x.DeletedAt is null).ToList();
+            var currentVersion = BuildDesgloseVersion(activeCurrent);
+            if (!string.Equals(req.Version, currentVersion, StringComparison.Ordinal))
+            {
+                return Conflict(new
+                {
+                    error = "El desglose fue modificado por otro usuario. Recarga los datos y vuelve a intentarlo.",
+                    code = "desglose_concurrency_conflict"
+                });
+            }
+
+            var currentById = activeCurrent.ToDictionary(x => x.Id);
+            var beforeSummary = BuildDesgloseAuditSummary(ex.Monto, activeCurrent);
+
+            foreach (var requestedId in normalizedLines.Where(x => x.Id.HasValue).Select(x => x.Id!.Value))
+            {
+                if (!currentById.ContainsKey(requestedId))
+                {
+                    return BadRequest(new { error = "El desglose contiene una linea que no pertenece a este extracto." });
+                }
+            }
+
+            var keptIds = normalizedLines.Where(x => x.Id.HasValue).Select(x => x.Id!.Value).ToHashSet();
+            foreach (var line in activeCurrent.Where(x => !keptIds.Contains(x.Id)))
+            {
+                line.DeletedAt = DateTime.UtcNow;
+                line.DeletedById = actor.Id;
+                line.UsuarioModificacionId = actor.Id;
+                line.FechaModificacion = DateTime.UtcNow;
+            }
+
+            var keptExisting = normalizedLines
+                .Where(x => x.Id.HasValue)
+                .Select((line, index) => new { Line = line, Entity = currentById[line.Id!.Value], Index = index })
+                .ToList();
+            foreach (var item in keptExisting)
+            {
+                // Evita colisiones del indice unico (extracto_id, orden) al borrar,
+                // insertar o intercambiar ordenes en un mismo reemplazo.
+                item.Entity.Orden = -100_000 - item.Index;
+            }
+
+            if (activeCurrent.Count > 0)
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+
+            foreach (var line in normalizedLines)
+            {
+                if (line.Id.HasValue && currentById.TryGetValue(line.Id.Value, out var existing))
+                {
+                    existing.Orden = line.Orden;
+                    existing.TerceroNombre = line.TerceroNombre;
+                    existing.Importe = line.Importe;
+                    existing.Notas = line.Notas;
+                    existing.UsuarioModificacionId = actor.Id;
+                    existing.FechaModificacion = DateTime.UtcNow;
+                    continue;
+                }
+
+                _db.ExtractosDesgloses.Add(new ExtractoDesglose
+                {
+                    Id = Guid.NewGuid(),
+                    ExtractoId = id,
+                    Orden = line.Orden,
+                    TerceroNombre = line.TerceroNombre,
+                    Importe = line.Importe,
+                    Notas = line.Notas,
+                    UsuarioCreacionId = actor.Id
+                });
+            }
+
+            await _db.SaveChangesAsync(ct);
+            var updated = await _db.ExtractosDesgloses
+                .Where(x => x.ExtractoId == id)
+                .OrderBy(x => x.Orden)
+                .ToListAsync(ct);
+            var afterSummary = BuildDesgloseAuditSummary(ex.Monto, updated);
+            if (!string.Equals(beforeSummary, afterSummary, StringComparison.Ordinal))
+            {
+                await SaveAudit(actor.Id, "extracto_desglose_actualizado", ex.Id, "desglose", $"DES{ex.FilaNumero}", beforeSummary, afterSummary, ct);
+            }
+
+            if (tx is not null)
+            {
+                await tx.CommitAsync(ct);
+            }
+
+            var responseLines = updated
+                .OrderBy(x => x.Orden)
+                .Select(MapDesgloseLine)
+                .ToList();
+            return Ok(BuildDesgloseResumen(ex, responseLines));
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
     }
 
     [HttpPatch("{id:guid}/check")]
@@ -447,38 +668,39 @@ public sealed class ExtractosController : ControllerBase
     }
 
     [HttpGet("cuentas/{cuentaId:guid}/resumen")]
-    public async Task<IActionResult> GetCuentaResumen(Guid cuentaId, [FromQuery] string periodo = "1m", CancellationToken ct = default)
+    public async Task<IActionResult> GetCuentaResumen(Guid cuentaId, [FromQuery] string periodo = "1m", [FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!await CanView(actor, cuentaId, ct)) return Forbid();
-        var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
+        var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.PaisId, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        if (paisId.HasValue && cuenta.PaisId != paisId.Value) return NotFound(new { error = "Cuenta no encontrada en el pais activo" });
         var titular = await _db.Titulares.Where(t => t.Id == cuenta.TitularId).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
-        return Ok(await BuildSummary(actor, cuenta.Id, cuenta.Nombre, cuenta.Iban, cuenta.BancoNombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct));
+        return Ok(await BuildSummary(actor, cuenta.Id, cuenta.Nombre, cuenta.Iban, cuenta.BancoNombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct, cuenta.PaisId));
     }
 
     [HttpGet("titulares/{titularId:guid}/cuentas")]
-    public async Task<IActionResult> GetCuentasTitular(Guid titularId, [FromQuery] string periodo = "1m", CancellationToken ct = default)
+    public async Task<IActionResult> GetCuentasTitular(Guid titularId, [FromQuery] string periodo = "1m", [FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!await CanViewTitular(actor, titularId, ct)) return Forbid();
         var titular = await _db.Titulares.FirstOrDefaultAsync(t => t.Id == titularId, ct);
         if (titular is null) return NotFound(new { error = "Titular no encontrado" });
-        var allowed = await GetAllowedAccountIds(actor, ct);
+        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
         var cuentas = await _db.Cuentas.Where(c => c.TitularId == titularId && allowed.Contains(c.Id)).ToListAsync(ct);
         var summary = new List<CuentaResumenKpiResponse>();
         foreach (var c in cuentas)
         {
-            summary.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct));
+            summary.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct, c.PaisId));
         }
         return Ok(new TitularConCuentasResponse { TitularId = titular.Id, TitularNombre = titular.Nombre, Cuentas = summary });
     }
 
     [HttpGet("titulares-resumen")]
-    public async Task<IActionResult> GetTitularesResumen([FromQuery] string periodo = "1m", CancellationToken ct = default)
+    public async Task<IActionResult> GetTitularesResumen([FromQuery] string periodo = "1m", [FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
-        var allowed = await GetAllowedAccountIds(actor, ct);
+        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
         var cuentas = await _db.Cuentas.Where(c => allowed.Contains(c.Id)).ToListAsync(ct);
         var titularesIds = cuentas.Select(c => c.TitularId).Distinct().ToList();
         var titulares = await _db.Titulares.Where(t => titularesIds.Contains(t.Id)).OrderBy(t => t.Nombre).ToListAsync(ct);
@@ -487,21 +709,25 @@ public sealed class ExtractosController : ControllerBase
         {
             var tc = cuentas.Where(c => c.TitularId == t.Id).ToList();
             var s = new List<CuentaResumenKpiResponse>();
-            foreach (var c in tc) s.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct));
+            foreach (var c in tc) s.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct, c.PaisId));
             outData.Add(new TitularConCuentasResponse { TitularId = t.Id, TitularNombre = t.Nombre, Cuentas = s });
         }
         return Ok(outData);
     }
 
     [HttpGet("columnas-visibles")]
-    public async Task<IActionResult> GetColumnasVisibles([FromQuery] Guid? cuentaId = null, CancellationToken ct = default)
+    public async Task<IActionResult> GetColumnasVisibles(
+        [FromQuery] Guid? cuentaId = null,
+        [FromQuery] Guid? titularId = null,
+        [FromQuery] Guid? paisId = null,
+        CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
-        if (cuentaId.HasValue && !await CanView(actor, cuentaId.Value, ct)) return Forbid();
+        var scope = await ResolvePreferenciaScope(actor, cuentaId, titularId, paisId, ct);
+        if (scope.Forbidden) return Forbid();
+        if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
-        var pref = await _db.PreferenciasUsuarioCuenta
-            .Where(p => p.UsuarioId == actor.Id && p.CuentaId == cuentaId)
-            .FirstOrDefaultAsync(ct);
+        var pref = await QueryPreferenciaUsuarioCuenta(actor.Id, scope).FirstOrDefaultAsync(ct);
 
         return Ok(new { columnas_visibles = ParseArray(pref?.ColumnasVisibles) });
     }
@@ -510,12 +736,11 @@ public sealed class ExtractosController : ControllerBase
     public async Task<IActionResult> SaveColumnasVisibles([FromBody] SaveColumnasVisiblesRequest req, CancellationToken ct)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
-        if (!req.CuentaId.HasValue) return BadRequest(new { error = "cuenta_id es requerido" });
-        if (!await CanView(actor, req.CuentaId.Value, ct)) return Forbid();
+        var scope = await ResolvePreferenciaScope(actor, req.CuentaId, req.TitularId, req.PaisId, ct);
+        if (scope.Forbidden) return Forbid();
+        if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
-        var pref = await _db.PreferenciasUsuarioCuenta
-            .Where(p => p.UsuarioId == actor.Id && p.CuentaId == req.CuentaId)
-            .FirstOrDefaultAsync(ct);
+        var pref = await QueryPreferenciaUsuarioCuenta(actor.Id, scope).FirstOrDefaultAsync(ct);
 
         if (pref is null)
         {
@@ -523,7 +748,9 @@ public sealed class ExtractosController : ControllerBase
             {
                 Id = Guid.NewGuid(),
                 UsuarioId = actor.Id,
-                CuentaId = req.CuentaId,
+                PaisId = scope.PaisId,
+                TitularId = scope.TitularId,
+                CuentaId = scope.CuentaId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -536,8 +763,11 @@ public sealed class ExtractosController : ControllerBase
         return Ok(new { message = "Preferencias guardadas" });
     }
 
-    private async Task<CuentaResumenKpiResponse> BuildSummary(Actor actor, Guid cuentaId, string cuentaNombre, string? iban, string? bancoNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct)
+    private async Task<CuentaResumenKpiResponse> BuildSummary(Actor actor, Guid cuentaId, string cuentaNombre, string? iban, string? bancoNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct, Guid? paisId = null)
     {
+        var paisNombre = paisId.HasValue
+            ? await _db.Paises.IgnoreQueryFilters().Where(p => p.Id == paisId.Value).Select(p => p.Nombre).FirstOrDefaultAsync(ct)
+            : null;
         var q = _db.Extractos.Where(e => e.CuentaId == cuentaId);
         var latest = await q
             .OrderByDescending(e => e.FilaNumero)
@@ -587,6 +817,8 @@ public sealed class ExtractosController : ControllerBase
             Iban = iban,
             BancoNombre = bancoNombre,
             Divisa = divisa,
+            PaisId = paisId,
+            PaisNombre = paisNombre,
             TitularId = titularId,
             TitularNombre = titularNombre,
             EsEfectivo = esEfectivo,
@@ -633,11 +865,92 @@ public sealed class ExtractosController : ControllerBase
         return today.AddMonths(-months);
     }
 
+    private static ExtractoDesgloseResumenResponse BuildDesgloseResumen(Extracto ex, IReadOnlyList<ExtractoDesgloseResponse> lineas)
+    {
+        var total = lineas.Sum(x => x.Importe);
+        return new ExtractoDesgloseResumenResponse
+        {
+            ExtractoId = ex.Id,
+            ExtractoMonto = ex.Monto,
+            Count = lineas.Count,
+            Total = total,
+            Diferencia = ex.Monto - total,
+            Estado = GetDesgloseEstado(lineas.Count, total, ex.Monto),
+            Version = BuildDesgloseVersion(lineas),
+            Lineas = lineas
+        };
+    }
+
+    private static string BuildDesgloseVersion(IReadOnlyCollection<ExtractoDesglose> lineas)
+    {
+        var responseLines = lineas
+            .Where(x => x.DeletedAt is null)
+            .OrderBy(x => x.Orden)
+            .Select(MapDesgloseLine)
+            .ToList();
+        return BuildDesgloseVersion(responseLines);
+    }
+
+    private static string BuildDesgloseVersion(IReadOnlyList<ExtractoDesgloseResponse> lineas)
+    {
+        var payload = string.Join('\n', lineas
+            .OrderBy(x => x.Orden)
+            .ThenBy(x => x.Id)
+            .Select(x => string.Join('\u001f',
+                x.Id,
+                x.Orden,
+                x.TerceroNombre,
+                x.Importe.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture),
+                x.Notas ?? string.Empty)));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static ExtractoDesgloseResponse MapDesgloseLine(ExtractoDesglose line)
+    {
+        return new ExtractoDesgloseResponse
+        {
+            Id = line.Id,
+            ExtractoId = line.ExtractoId,
+            Orden = line.Orden,
+            TerceroNombre = line.TerceroNombre,
+            Importe = line.Importe,
+            Notas = line.Notas,
+            FechaCreacion = line.FechaCreacion,
+            FechaModificacion = line.FechaModificacion
+        };
+    }
+
+    private static string GetDesgloseEstado(int count, decimal total, decimal extractoMonto)
+    {
+        if (count == 0)
+        {
+            return "sin_desglose";
+        }
+
+        return Math.Round(total, 4) == Math.Round(extractoMonto, 4)
+            ? "cuadrado"
+            : "descuadrado";
+    }
+
+    private static string BuildDesgloseAuditSummary(decimal extractoMonto, IReadOnlyCollection<ExtractoDesglose> lineas)
+    {
+        var activeLines = lineas.Where(x => x.DeletedAt is null).ToList();
+        var total = activeLines.Sum(x => x.Importe);
+        var estado = GetDesgloseEstado(activeLines.Count, total, extractoMonto);
+        return $"{activeLines.Count} lineas | total {total:0.####} | diferencia {extractoMonto - total:0.####} | {estado}";
+    }
+
     private async Task SaveCellAudits(Extracto ex, Guid? userId, string action, IReadOnlyList<(string Col, string? A, string? N)> changes, CancellationToken ct)
     {
+        if (changes.Count == 0) return;
         var extraCols = await _db.ExtractosColumnasExtra.Where(x => x.ExtractoId == ex.Id).Select(x => x.NombreColumna).ToListAsync(ct);
         extraCols.AddRange(changes.Where(x => !IsBase(x.Col)).Select(x => x.Col));
         var ordered = extraCols.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+        // V-02-05 (HIGH-9): un solo SaveChanges para todas las auditorias de celda.
+        // Antes: N SaveChanges (uno por cambio). Ahora: AddRange + 1 SaveChanges.
+        var timestamp = DateTime.UtcNow;
+        var ip = HttpContext.Connection.RemoteIpAddress;
         foreach (var ch in changes)
         {
             var idx = ch.Col.ToLowerInvariant() switch
@@ -649,8 +962,22 @@ public sealed class ExtractosController : ControllerBase
                 "saldo" => 5,
                 _ => 6 + Math.Max(0, ordered.FindIndex(x => x.Equals(ch.Col, StringComparison.OrdinalIgnoreCase)))
             };
-            await SaveAudit(userId, action, ex.Id, ch.Col, $"{ToExcel(idx)}{ex.FilaNumero}", ch.A, ch.N, ct);
+            _db.Auditorias.Add(new Auditoria
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = userId,
+                TipoAccion = action,
+                EntidadTipo = "EXTRACTOS",
+                EntidadId = ex.Id,
+                ColumnaNombre = ch.Col,
+                CeldaReferencia = $"{ToExcel(idx)}{ex.FilaNumero}",
+                ValorAnterior = ch.A,
+                ValorNuevo = ch.N,
+                Timestamp = timestamp,
+                IpAddress = ip
+            });
         }
+        await _db.SaveChangesAsync(ct);
     }
 
     private async Task SaveAudit(Guid? userId, string action, Guid entityId, string? col, string? cell, string? before, string? after, CancellationToken ct)
@@ -672,22 +999,24 @@ public sealed class ExtractosController : ControllerBase
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task<HashSet<Guid>> GetAllowedAccountIds(Actor actor, CancellationToken ct)
+    private async Task<HashSet<Guid>> GetAllowedAccountIds(Actor actor, CancellationToken ct, Guid? paisId = null)
     {
-        var visibleAccounts = QueryVisibleAccounts(actor);
+        var visibleAccounts = QueryVisibleAccounts(actor).ApplyPaisScope(paisId);
         if (actor.IsAdmin) return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
         var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
         if (!perms.Any()) return [];
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
+        if (perms.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
         {
             return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
         }
 
-        var accountPerms = perms.Where(GrantsAccountAccess).ToList();
-        var ids = accountPerms.Where(p => p.CuentaId.HasValue).Select(p => p.CuentaId!.Value).ToHashSet();
-        var titularIds = accountPerms.Where(p => p.TitularId.HasValue).Select(p => p.TitularId!.Value).ToList();
         return [.. await visibleAccounts
-            .Where(c => ids.Contains(c.Id) || titularIds.Contains(c.TitularId))
+            .Where(c => _db.PermisosUsuario.Any(p =>
+                p.UsuarioId == actor.Id &&
+                p.PuedeVerCuentas &&
+                (p.PaisId == null || p.PaisId == c.PaisId) &&
+                (p.TitularId == null || p.TitularId == c.TitularId) &&
+                (p.CuentaId == null || p.CuentaId == c.Id)))
             .Select(c => c.Id)
             .ToListAsync(ct)];
     }
@@ -713,24 +1042,20 @@ public sealed class ExtractosController : ControllerBase
             return false;
         }
 
-        if (perms.Any(p => p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
+        if (perms.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
         {
             return true;
         }
 
-        if (perms.Any(p => p.TitularId == titularId && GrantsAccountAccess(p)))
-        {
-            return true;
-        }
-
-        var permittedCuentaIds = perms
-            .Where(p => p.CuentaId.HasValue)
-            .Select(p => p.CuentaId!.Value)
-            .Distinct()
-            .ToList();
-
-        return permittedCuentaIds.Count > 0 &&
-               await QueryVisibleAccounts(actor).AnyAsync(c => c.TitularId == titularId && permittedCuentaIds.Contains(c.Id), ct);
+        return await QueryVisibleAccounts(actor).AnyAsync(
+            c => c.TitularId == titularId &&
+                 _db.PermisosUsuario.Any(p =>
+                     p.UsuarioId == actor.Id &&
+                     p.PuedeVerCuentas &&
+                     (p.PaisId == null || p.PaisId == c.PaisId) &&
+                     (p.TitularId == null || p.TitularId == c.TitularId) &&
+                     (p.CuentaId == null || p.CuentaId == c.Id)),
+            ct);
     }
 
     private static bool GrantsAccountAccess(PermisoUsuario permiso) =>
@@ -740,20 +1065,120 @@ public sealed class ExtractosController : ControllerBase
     {
         if (actor.IsAdmin) return new Perm { CanAdd = true, CanEdit = true, CanDelete = true, EditableCols = null };
         if (!await _db.Titulares.AnyAsync(t => t.Id == cuenta.TitularId && t.DeletedAt == null, ct)) return new Perm();
-        var rows = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).Where(p => p.CuentaId == null || p.CuentaId == cuenta.Id).Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId).ToListAsync(ct);
-        if (!rows.Any()) return new Perm();
-        var prefRows = await _db.PreferenciasUsuarioCuenta
-            .Where(p => p.UsuarioId == actor.Id && (p.CuentaId == null || p.CuentaId == cuenta.Id))
+        var rows = await _db.PermisosUsuario
+            .Where(p => p.UsuarioId == actor.Id)
+            .Where(p => p.PaisId == null || p.PaisId == cuenta.PaisId)
+            .Where(p => p.CuentaId == null || p.CuentaId == cuenta.Id)
+            .Where(p => p.TitularId == null || p.TitularId == cuenta.TitularId)
             .ToListAsync(ct);
-        var parsed = prefRows.Select(r => ParseArray(r.ColumnasEditables)).ToList();
-        HashSet<string>? cols;
-        if (!parsed.Any() || parsed.Any(x => x is null)) cols = null;
-        else
+        if (!rows.Any()) return new Perm();
+
+        var editableRows = rows.Where(r => r.PuedeEditarLineas).ToList();
+        List<PreferenciaUsuarioCuenta> prefRows = [];
+        if (editableRows.Count > 0)
         {
-            cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var x in parsed.Where(x => x is not null)) foreach (var c in x!) cols.Add(c);
+            prefRows = await _db.PreferenciasUsuarioCuenta
+                .Where(p => p.UsuarioId == actor.Id)
+                .ToListAsync(ct);
         }
+        var cols = ResolveEditableColumns(editableRows, prefRows);
+
         return new Perm { CanAdd = rows.Any(r => r.PuedeAgregarLineas), CanEdit = rows.Any(r => r.PuedeEditarLineas), CanDelete = rows.Any(r => r.PuedeEliminarLineas), EditableCols = cols };
+    }
+
+    private async Task<PreferenciaScope> ResolvePreferenciaScope(Actor actor, Guid? cuentaId, Guid? titularId, Guid? paisId, CancellationToken ct)
+    {
+        if (!cuentaId.HasValue)
+        {
+            if (titularId.HasValue && !await CanViewTitular(actor, titularId.Value, ct))
+            {
+                return PreferenciaScope.Forbid();
+            }
+
+            return new PreferenciaScope(paisId, titularId, null, false, false);
+        }
+
+        var cuenta = await _db.Cuentas
+            .AsNoTracking()
+            .Where(c => c.Id == cuentaId.Value)
+            .Select(c => new { c.Id, c.TitularId, c.PaisId })
+            .FirstOrDefaultAsync(ct);
+        if (cuenta is null)
+        {
+            return PreferenciaScope.Missing();
+        }
+
+        if (!await CanView(actor, cuenta.Id, ct))
+        {
+            return PreferenciaScope.Forbid();
+        }
+
+        if (paisId.HasValue && cuenta.PaisId != paisId.Value)
+        {
+            return PreferenciaScope.Missing();
+        }
+
+        if (titularId.HasValue && cuenta.TitularId != titularId.Value)
+        {
+            return PreferenciaScope.Missing();
+        }
+
+        return new PreferenciaScope(cuenta.PaisId, cuenta.TitularId, cuenta.Id, false, false);
+    }
+
+    private IQueryable<PreferenciaUsuarioCuenta> QueryPreferenciaUsuarioCuenta(Guid usuarioId, PreferenciaScope scope)
+    {
+        var query = _db.PreferenciasUsuarioCuenta.Where(p => p.UsuarioId == usuarioId);
+
+        query = scope.PaisId.HasValue
+            ? query.Where(p => p.PaisId == scope.PaisId.Value)
+            : query.Where(p => p.PaisId == null);
+
+        query = scope.TitularId.HasValue
+            ? query.Where(p => p.TitularId == scope.TitularId.Value)
+            : query.Where(p => p.TitularId == null);
+
+        query = scope.CuentaId.HasValue
+            ? query.Where(p => p.CuentaId == scope.CuentaId.Value)
+            : query.Where(p => p.CuentaId == null);
+
+        return query;
+    }
+
+    private static HashSet<string>? ResolveEditableColumns(
+        IReadOnlyList<PermisoUsuario> editableRows,
+        IReadOnlyList<PreferenciaUsuarioCuenta> prefRows)
+    {
+        if (editableRows.Count == 0)
+        {
+            return null;
+        }
+
+        var parsed = editableRows
+            .Select(row => ParseArray(prefRows.FirstOrDefault(pref => SameScope(pref, row))?.ColumnasEditables))
+            .ToList();
+        if (parsed.Any(x => x is null))
+        {
+            return null;
+        }
+
+        var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in parsed)
+        {
+            foreach (var col in row!)
+            {
+                cols.Add(col);
+            }
+        }
+
+        return cols;
+    }
+
+    private static bool SameScope(PreferenciaUsuarioCuenta preferencia, PermisoUsuario permiso)
+    {
+        return preferencia.PaisId == permiso.PaisId &&
+               preferencia.TitularId == permiso.TitularId &&
+               preferencia.CuentaId == permiso.CuentaId;
     }
 
     private IQueryable<Cuenta> QueryVisibleAccounts(Actor actor)
@@ -831,5 +1256,13 @@ public sealed class ExtractosController : ControllerBase
         public bool CanEdit { get; init; }
         public bool CanDelete { get; init; }
         public HashSet<string>? EditableCols { get; init; }
+    }
+
+    private sealed record NormalizedDesgloseLine(Guid? Id, int Orden, string TerceroNombre, decimal Importe, string? Notas);
+
+    private readonly record struct PreferenciaScope(Guid? PaisId, Guid? TitularId, Guid? CuentaId, bool Forbidden, bool NotFound)
+    {
+        public static PreferenciaScope Forbid() => new(null, null, null, true, false);
+        public static PreferenciaScope Missing() => new(null, null, null, false, true);
     }
 }

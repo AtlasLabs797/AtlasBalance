@@ -2,15 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { IconMenu } from '@/components/Icons';
+import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
 import { useAlertCount } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
+import { usePermisosStore } from '@/stores/permisosStore';
 import { useUpdateStore } from '@/stores/updateStore';
 
-const PRIMARY_ITEM_PATHS = ['/dashboard', '/titulares', '/cuentas', '/importacion'];
 const SECONDARY_GROUP_ORDER: NavigationGroup[] = ['operacion', 'control', 'sistema'];
 
 export function BottomNav() {
@@ -24,15 +25,36 @@ export function BottomNav() {
   const exportacionesPendientes = useNotificacionesAdminStore((state) => state.exportacionesPendientes);
   const updateAvailable = useUpdateStore((state) => state.available);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
+  const canViewDashboard = usePermisosStore((state) => state.canViewDashboard());
 
-  const visibleNavItems = useMemo(() => getVisibleNavigationItems(usuario?.rol, { aiAvailable }), [aiAvailable, usuario?.rol]);
+  const visibleNavItems = useMemo(
+    () => getVisibleNavigationItems(usuario?.rol, {
+      aiAvailable,
+      dashboardAvailable: usuario?.rol === 'ADMIN' || canViewDashboard,
+    }),
+    [aiAvailable, canViewDashboard, usuario?.rol]
+  );
+  const primaryItemPaths = useMemo(() => {
+    const dashboardVisible = usuario?.rol === 'ADMIN' || canViewDashboard;
+    if (alertCount > 0) {
+      return dashboardVisible
+        ? ['/dashboard', '/alertas', '/extractos', '/importacion']
+        : ['/alertas', '/extractos', '/importacion', '/revision'];
+    }
+
+    return dashboardVisible
+      ? ['/dashboard', '/cuentas', '/extractos', '/importacion']
+      : ['/extractos', '/cuentas', '/importacion', '/revision'];
+  }, [alertCount, canViewDashboard, usuario?.rol]);
   const primaryItems = useMemo(
-    () => visibleNavItems.filter((item) => PRIMARY_ITEM_PATHS.includes(item.to)),
-    [visibleNavItems]
+    () => primaryItemPaths
+      .map((path) => visibleNavItems.find((item) => item.to === path))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+    [primaryItemPaths, visibleNavItems]
   );
   const secondaryItems = useMemo(
-    () => visibleNavItems.filter((item) => !PRIMARY_ITEM_PATHS.includes(item.to)),
-    [visibleNavItems]
+    () => visibleNavItems.filter((item) => !primaryItemPaths.includes(item.to)),
+    [primaryItemPaths, visibleNavItems]
   );
 
   const hiddenBadgeCount = alertCount + exportacionesPendientes + (updateAvailable ? 1 : 0);
@@ -67,26 +89,6 @@ export function BottomNav() {
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
-
-  useEffect(() => {
-    if (!menuOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMenuOpen(false);
-      }
-    };
-
-    document.body.style.overflow = 'hidden';
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [menuOpen]);
 
   return (
     <>
@@ -139,6 +141,8 @@ export function BottomNav() {
                 ariaLabel="Cerrar menú de accesos"
               />
             </header>
+
+            <PaisScopeSelect />
 
             <div className="bottom-nav-sheet-sections">
               {secondaryGroups.map(({ group, items }) => (

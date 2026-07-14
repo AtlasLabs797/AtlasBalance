@@ -10,6 +10,7 @@ public sealed class ActualizarAppRequest
 {
     public string? SourcePath { get; set; }
     public string? TargetPath { get; set; }
+    public string? PackageZipPath { get; set; }
 }
 
 public sealed class WatchdogState

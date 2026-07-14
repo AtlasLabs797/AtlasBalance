@@ -14,19 +14,204 @@
 
 - Contexto: la auditoria general detecto problemas no criticos pero demasiado relevantes para llamar a la app "lista".
 - Pendientes:
-  - Ejecutar suite completa V-01.09 con Docker/Testcontainers. En esta maquina `docker` no esta instalado/disponible, asi que la validacion PostgreSQL real queda bloqueada.
-  - Hacer E2E autenticado contra PostgreSQL real con datos de volumen antes de release.
+  - **Ejecutar suite completa con Docker/Testcontainers: CERRADO (2026-07-02).** Suite completa 323/323 OK incluidos `ExtractosConcurrencyTests` y `RowLevelSecurityTests` con Testcontainers. Evidencia en `Documentacion/Versiones/v-02-04.md` seccion Pendientes.
+  - **E2E autenticado contra PostgreSQL real con datos de volumen: CERRADO (2026-07-07).** `VolumeSmokeTests` (Testcontainers, PostgreSQL 16 real): siembra 50.000 EXTRACTOS y ejercita paginacion (primera/intermedia/ultima pagina), ordenacion asc/desc, contrato `{data, total, page, pageSize, totalPages}` y resumen de cuenta, con usuario autenticado (ClaimsPrincipal, patron estandar del proyecto de tests). Ejecutado 2 veces (agente + verificacion independiente), 1/1 OK. Matiz: llama a los controllers en proceso, no via HTTP puro (el proyecto de tests no tiene WebApplicationFactory).
   - Validacion visual/E2E final de tablas tipo grid con datos reales. Los modales y formularios criticos ya recibieron foco controlado, labels y ARIA en auditorias UI previas; el 2026-05-19 se reforzaron select nativo, modal de importacion, errores persistentes de celda, estados de importacion, tabs de Configuracion, tablas de cuenta/extractos, token modal/metricas, backups y alternativas accesibles de graficas. Falta sesion real con datos de volumen.
-- Estado: abierto. Bloquea recomendar release final.
-
-### 2026-04-20 - V-01.02 - Estado Git local no fiable
-
-- Contexto: `git status --short` funciona, pero lista practicamente todo el arbol como `untracked`.
-- Causa probable: copia local/repo recreado sin historial o indice util para esta carpeta.
-- Impacto: no se puede obtener diff fino ni preparar commit fiable desde esta copia sin reparar el estado Git.
-- Estado: abierto. No se ha tocado `.git` para evitar empeorar el repositorio local.
+- Estado: solo queda abierta la validacion visual con datos de volumen (sesion de navegador real con 50k filas en el grid). Los otros dos pendientes estan cerrados con evidencia.
 
 ## Cerrados
+
+### 2026-07-07 - V-01.02 - Cerrado - Estado Git local no fiable
+
+- Contexto: en V-01.02 se reporto que `git status --short` listaba practicamente todo el arbol como `untracked`, indicando repositorio local inestable.
+- Causa original: copia local/repo recreado sin historial o indice fiable.
+- Resolucion: el estado Git se normalizo entre V-01.02 y 2026-07-07. La rama V-02-04 activa muestra `git status` normal con solo archivos modificados esperados. El historial de commits es accesible y se hacen commits/push con normalidad.
+- Estado: cerrado. Git funciona correctamente hoy (2026-07-07). Repo local reparado/recreado en algun momento posterior; ya no es una incidencia operativa.
+
+### 2026-06-30 - V-02-02 - Cerrado - Build-Release fallaba aunque el scanner pasara
+
+- Contexto: al validar empaquetado local, `Build-Release.ps1` abortaba despues de `Scanner Atlas sin hallazgos`.
+- Causa: el script comprobaba `$LASTEXITCODE` despues de invocar un `.ps1`; ese valor podia venir sucio de comandos internos.
+- Solucion: comprobar el scanner con `$?`.
+- Verificacion: el empaquetado avanzo al siguiente gate.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Build-Release usaba `npm ci` destructivo sobre `node_modules` bloqueado
+
+- Contexto: el empaquetado local fallaba con `EPERM` al borrar `frontend\node_modules\.vite-temp`.
+- Causa: `Build-Release.ps1` ejecutaba `npm ci` siempre, aunque el arbol local ya existiera y Windows tuviera carpetas bloqueadas. Ademas, un intento fallido podia dejar `node_modules` incompleto.
+- Solucion: `npm ci` solo se ejecuta con `-CleanNpmInstall` o si falta `node_modules`; si existe pero falta `tsc.cmd`, se repara con `npm install --ignore-scripts --no-audit --fund=false`.
+- Verificacion: `Build-Release.ps1 -Version V-02-02 -Runtime win-x64 -AllowUnsignedLocal` OK, ZIP local generado.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Docker/Testcontainers no disponible para cierre de release
+
+- Contexto: la suite completa V-02-02 quedaba en 315/317 porque `ExtractosConcurrencyTests` y `RowLevelSecurityTests` no conectaban con Docker.
+- Causa: Docker Desktop estaba detenido y Testcontainers no descubria el endpoint por permisos/contexto. La URI aceptada por Docker CLI (`npipe:////./pipe/dockerDesktopLinuxEngine`) no es la misma forma que acepta Docker.DotNet/Testcontainers.
+- Solucion operativa: arrancar Docker Desktop y ejecutar tests en contexto elevado con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+- Verificacion: pruebas Testcontainers 2/2 OK y suite backend completa 317/317 OK.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Fallos backend no Docker tras hardening
+
+- Contexto: la primera suite completa posterior al hardening tenia tres fallos no dependientes de Docker.
+- Causas:
+  - configuracion global OpenRouter aceptaba un modelo desconocido en vez de normalizarlo a `openrouter/auto`;
+  - MFA trusted-device quedaba habilitado por fallback cuando faltaba configuracion;
+  - el test de ranking IA por cuenta no declaraba permiso real en `PERMISOS_USUARIO`.
+- Solucion: normalizacion global por proveedor, MFA remember-device fail-closed y fixture de test alineado con `UserAccessService`.
+- Verificacion: `ConfiguracionControllerTests|AtlasAiServiceTests|AuthServiceTests` 101/101 OK; suite backend sin Testcontainers 315/315 OK.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - QA visual completa de nuevos flujos pendiente
+
+- Contexto: quedaba sin validar visualmente importacion, historial de lote, conciliacion, OpenClaw tokens, mobile alertas y modos de Extractos.
+- Solucion: QA Playwright finita con Chrome local, build Vite temporal y API mock cerrada en el mismo proceso.
+- Verificacion: dashboard CTAs, importacion con advertencias desmarcadas, historial, conciliacion, OpenClaw rotacion, Extractos revision/edicion y mobile alertas OK; consola sin errores.
+- Estado: cerrado.
+
+### 2026-06-30 - V-02-02 - Cerrado - Test determinista IA sensible a la fecha actual
+
+- Contexto: el test `AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking` habia fallado en pasadas amplias.
+- Causa real en esta validacion: el fixture usaba `scope.CuentaIds`, pero `UserAccessService.ApplyCuentaScope` aplica permisos persistidos en BD.
+- Solucion: el test crea `PermisoUsuario` con `PuedeVerCuentas=true` sobre la cuenta permitida.
+- Verificacion: `AtlasAiServiceTests` incluido en 101/101 OK.
+- Estado: cerrado.
+
+### 2026-06-27 - V-02-02 - Cerrado - Vite vulnerable y dependencias npm rojas
+
+- Contexto: se recibio aviso de Vite `GHSA-fx2h-pf6j-xcff` / `CVE-2026-53571` y la auditoria npm saco mas deuda.
+- Causa: `package-lock.json` resolvia `vite@8.0.8`, vulnerable al bypass de `server.fs.deny` en Windows; ademas `npm audit` detecto `form-data@4.0.5` high y `js-yaml@4.1.1` moderate.
+- Impacto: Vite podia exponer `.env` u otros ficheros denegados si el dev server se levantaba con `--host`; `form-data` y `js-yaml` mantenian el arbol SCA rojo.
+- Solucion: lockfile actualizado a `form-data@4.0.6`, `vite@8.1.0`, `js-yaml@4.3.0`; `package.json` fija `form-data` y `js-yaml` con `overrides`; `vite.config.ts` cierra el dev server por defecto a loopback/hosts locales y mantiene hardening de `/__open-in-editor`.
+- Verificacion: `npm audit --audit-level=moderate` OK, instalacion limpia con `npm ci` OK, Vite `8.1.0`, frontend lint/TypeScript/build temporal OK.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - RLS de dashboard desalineado con roles
+
+- Contexto: auditoria auth/RLS tras el cambio a tres roles.
+- Causa: la politica RLS de lectura mantenia `PuedeVerCuentas` como lectura general tambien para scope `dashboard` y no reflejaba que `GERENTE` puede ver dashboard con cualquier permiso de datos.
+- Impacto: defensa en profundidad inconsistente. Un empleado con permiso de cuentas pero sin dashboard podia leer datos financieros si una ruta/query llegaba a PostgreSQL con `atlas.request_scope = dashboard`; un gerente valido podia quedar bloqueado en la base.
+- Solucion: migracion `20260626193000_AlignRlsDashboardAccessWithRoles` con funcion `current_user_is_manager()` y ramas de lectura diferenciadas para `dashboard`.
+- Verificacion: backend build OK, tests focalizados de permisos/datos 116/116 OK y `RowLevelSecurityTests` 1/1 OK contra PostgreSQL real/Testcontainers usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Selector de columnas pedia `cuenta_id` en vista general
+
+- Contexto: el panel `Columnas` de `Extractos` seguia fallando al guardar en vista general con el mensaje `cuenta_id es requerido`.
+- Causa: la correccion anterior probaba el controlador directo, pero no el contrato JSON real; el frontend ademas enviaba `cuenta_id: null` cuando el scope era global.
+- Impacto: el usuario no podia guardar columnas visibles sin seleccionar una cuenta.
+- Solucion: DTO con nombres JSON explicitos y `cuenta_id` nullable; frontend omite claves de scope vacias; regresion de deserializacion snake_case.
+- Verificacion: lint OK, TypeScript OK, build Vite temporal OK, `ExtractosControllerTests` 18/18 OK y QA Browser con mock que rechazaba cualquier `cuenta_id` en vista general.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Formatos de importacion salian cortados
+
+- Contexto: la tabla de `Formatos` se veia cortada junto al formulario lateral, especialmente en columnas `Extra` y `Acciones`.
+- Causa: ancho minimo fijo de tabla (`860px`) dentro de una columna de grid que podia ser menor, mas estilos de acciones pensados para tarjetas.
+- Impacto: el usuario tenia que usar scroll horizontal interno o directamente no veia bien botones y columnas.
+- Solucion: `colgroup`, `table-layout: fixed`, anchos en `rem` para columnas criticas, columna `Extra` flexible, acciones de celda propias, botones sin corte de palabra y breakpoint para apilar formulario bajo la tabla.
+- Verificacion: frontend lint OK, TypeScript OK y build Vite temporal OK; revalidado tras quitar `overflow-wrap: anywhere`. QA renderizada con Browser bloqueada por politica de seguridad al abrir `data:`.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - DashboardService no compilaba por `PuedeVerDashboard` ausente en tipo anonimo
+
+- Contexto: un reintento de `ExtractosControllerTests` fallo durante compilacion de API antes de ejecutar tests.
+- Causa: `DashboardService` usaba `PuedeVerDashboard` sobre un tipo anonimo que solo proyectaba cuenta/titular/pais y permisos operativos.
+- Impacto: cualquier build backend que recompilara esa zona podia quedar bloqueada.
+- Solucion: `DashboardService` proyecta `PuedeVerDashboard`, reordena la autorizacion de dashboard para `GERENTE`/`EMPLEADO` y queda cubierto por tests focalizados.
+- Verificacion adicional: `ExtractosControllerTests` 17/17 OK tras corregir la proyeccion.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Selector de columnas de Extractos perdia columnas extra fuera de la pagina actual
+
+- Contexto: el selector `Columnas` de `Extractos` podia no mostrar columnas extra disponibles cuando no aparecian en la pagina cargada.
+- Causa: el frontend calculaba columnas extra desde `rows`, que representa solo la pagina actual, no el resultado filtrado completo.
+- Impacto: el usuario podia quedarse sin forma de activar o recuperar columnas extra del scope actual.
+- Solucion: `GET /api/extractos` expone `columnas_disponibles`; `ExtractosPage` las pasa a `ExtractoTable`; el panel agrega `Mostrar todas`.
+- Verificacion: frontend lint OK, TypeScript OK, build Vite temporal OK, `ExtractosControllerTests` 17/17 OK y QA Browser mockeada del flujo de columnas sin errores de consola.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Grafica principal del dashboard ocultaba ingresos y egresos
+
+- Contexto: el dashboard principal mostraba la grafica de saldo consolidado, pero no las lineas de ingresos y egresos que el usuario esperaba ver en la misma grafica.
+- Causa: el rediseño bancario cambio `EvolucionChart` a `variant="saldoArea"` y esa variante solo renderizaba la serie `saldo`, aunque el dataset seguia trayendo `ingresos` y `egresos`.
+- Impacto: el dashboard separaba ingresos/egresos en KPIs, pero perdia su lectura temporal dentro de la grafica principal.
+- Solucion: `saldoArea` pasa a `ComposedChart`: area para saldo y lineas para ingresos/egresos con eje secundario.
+- Verificacion: frontend lint OK, TypeScript OK, build Vite temporal OK y QA Browser mockeada desktop/mobile con tres trazos SVG, consola sin errores y sin overflow horizontal.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Selector de columnas de Extractos no guardaba en vista general
+
+- Contexto: en `Extractos`, el panel `Columnas` no funcionaba correctamente cuando no habia cuenta seleccionada.
+- Causa: `SaveColumnasVisibles` rechazaba `CuentaId = null`, aunque `GetColumnasVisibles` y `ResolvePreferenciaScope` ya soportaban scopes globales, por pais y por titular. El frontend tambien construia el toggle con una lista de columnas calculada aparte de la tabla.
+- Impacto: el usuario podia marcar/desmarcar columnas, pero el guardado fallaba o se revertia en la vista general.
+- Solucion: backend permite guardar preferencias sin cuenta, lee/escribe scopes nulos con comparacion explicita y frontend usa la lista real de columnas disponibles, conservando scope global/titular/pais/cuenta.
+- Verificacion: frontend lint OK, TypeScript OK, API build OK y `ExtractosControllerTests` 16/16 OK.
+- Estado: cerrado.
+
+### 2026-06-09 - V-02-02 - Cerrado - Permisos por pais/titular/cuenta se podian expandir como union
+
+- Contexto: auditoria con subagentes durante implementacion de autorizacion por pais.
+- Causa: varios servicios convertian permisos en listas separadas de paises, titulares y cuentas.
+- Impacto: una regla `Pais A + Titular B` podia abrir `Pais A` entero o `Titular B` fuera de ese pais.
+- Solucion: autorizacion por fila con AND de todas las dimensiones no nulas en usuarios, integraciones, importacion, dashboard, extractos y alertas.
+- Verificacion: backend build OK; tests focalizados no Docker 32/32 OK.
+- Estado: cerrado.
+
+### 2026-06-09 - V-02-02 - Cerrado - Restricciones de columnas no tenian scope por pais/titular
+
+- Contexto: permisos por pais con columnas visibles/editables.
+- Causa: `PREFERENCIAS_USUARIO_CUENTA` solo guardaba `usuario_id + cuenta_id` o global.
+- Impacto: reglas de columnas de un pais/titular podian aplicarse sobre otro scope.
+- Solucion: `PREFERENCIAS_USUARIO_CUENTA` incorpora `pais_id` y `titular_id`; carga y auth resuelven preferencias por scope exacto.
+- Verificacion: backend build OK; frontend build OK; tests focalizados no Docker 32/32 OK.
+- Estado: cerrado.
+
+### 2026-06-09 - V-02-02 - Cerrado - Preferencias visibles podian abrir columnas editables
+
+- Contexto: extractos usa `PREFERENCIAS_USUARIO_CUENTA` para preferencias visuales y restricciones de columnas.
+- Causa: `GetPermission` mezclaba cualquier preferencia que coincidiera con la cuenta. Una preferencia visual con `ColumnasEditables = null` podia interpretarse como "todas las columnas editables".
+- Impacto: un usuario con edicion limitada por columnas podia editar mas columnas si existia una preferencia visual coincidente en un scope mas especifico.
+- Solucion: columnas editables se resuelven solo desde filas de permiso que conceden `PuedeEditarLineas` y con preferencia de scope exacto. Guardar columnas visibles almacena `pais_id`, `titular_id` y `cuenta_id` reales de la cuenta.
+- Verificacion: regresion en `ExtractosControllerTests`; bloque focalizado no Docker 32/32 OK.
+- Estado: cerrado.
+
+### 2026-06-09 - V-02-02 - Cerrado - Dashboard-only tenia semantica partida
+
+- Contexto: frontend, backend y RLS no interpretaban igual `PuedeVerDashboard`.
+- Causa: frontend aceptaba cualquier `PuedeVerDashboard`; backend exigia permiso operativo de datos; RLS permitia dashboard-only puro.
+- Impacto: UI podia mostrar rutas que backend rechazaba y RLS no actuaba como backstop equivalente.
+- Solucion: frontend y RLS se alinean con backend: dashboard requiere `PuedeVerDashboard` y permiso operativo de datos en el mismo scope.
+- Verificacion: tests de autorizacion incluidos en bloque no Docker 32/32 OK; frontend lint/build OK.
+- Estado: cerrado.
+
+### 2026-06-08 - V-02-02 - Cerrado - MFA recordado no reflejaba la intencion de producto
+
+- Contexto: el producto queria recordar dispositivo unos 3 meses, pero el estado activo era inconsistente.
+- Causa: `mfa_remember_device_enabled` venia apagado por defecto, `MfaRememberDeviceDays` era 62 y logout borraba `mfa_trusted`. Ademas, el token recordado era una cookie firmada, no un dispositivo persistido y revocable.
+- Impacto: el usuario no podia confiar en "recordar dispositivo"; cerrar sesion lo anulaba y no habia listado/revocacion por dispositivo.
+- Solucion: `MFA_TRUSTED_DEVICES` con token opaco hasheado, 90 dias, `security_stamp`, expiracion/revocacion y endpoints de listado/revocacion. Logout conserva la cookie; password/MFA/security stamp invalidan.
+- Verificacion: tests focalizados auth incluidos en bloque backend 122/122 OK.
+- Estado: cerrado.
+
+### 2026-06-08 - V-02-02 - Cerrado - Boton de update podia ofrecer una version no instalable
+
+- Contexto: `actualizacion_disponible=true` no garantiza que el release tenga ZIP oficial, firma, digest, clave publica y Watchdog operativo.
+- Causa: el contrato de `version-disponible` no exponia preflight de instalabilidad.
+- Impacto: la UI podia empujar al usuario a pulsar un boton condenado a fallar. Eso es mala UX y peor operacion.
+- Solucion: `version-disponible` devuelve `instalable`, `bloqueos` y flags de preflight; `Actualizar ahora` y auto-update solo arrancan si `instalable=true`.
+- Verificacion: tests de updater/auto-update incluidos en bloque backend 122/122 OK.
+- Estado: cerrado.
+
+### 2026-06-08 - V-02-02 - Cerrado - OpenRouter estaba limitado por allowlist local fija
+
+- Contexto: el objetivo era usar cualquier modelo OpenRouter valido, no solo una lista local.
+- Causa: backend y frontend normalizaban/recortaban modelos OpenRouter a sugerencias fijas y rutas fallback viejas.
+- Impacto: modelos validos de OpenRouter quedaban bloqueados por Atlas antes de llegar al proveedor.
+- Solucion: validacion sintactica de model id, envio exacto del modelo, `openrouter/auto` conservado y catalogo `/api/ia/modelos` con cache corta.
+- Verificacion: tests IA incluidos en bloque backend 122/122 OK y frontend `npm run build` OK.
+- Estado: cerrado.
 
 ### 2026-06-01 - V-01.09 - Cerrado - Update antiguo sin owner en Watchdog seguia cayendo a usuario runtime
 
@@ -1041,3 +1226,183 @@
 - Solucion: huella de importacion estable por contenido con ordinal de duplicado, `finally` para transacciones de importacion/plazo fijo, saldo actual por `fila_numero` en resumen de cuenta y OpenClaw, rechazo controlado de JSON nulo en configuracion. Cooldown SMTP ya estaba correcto y se mantuvo.
 - Verificacion: tests nuevos fallaron en rojo antes del fix; despues `CuentasControllerTests|IntegrationOpenClawControllerTests|ImportacionServiceTests` 52/52 OK, `ConfiguracionControllerTests` 8/8 OK y suite backend sin Docker/Testcontainers 254/254 OK.
 - Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Sidebar no respetaba modo claro
+
+- Contexto: el usuario detecto que el menu lateral no cambiaba al alternar modo claro/oscuro.
+- Causa: `Sidebar` fijaba `data-theme="dark"` en el `<aside>` y los tokens `--color-sidebar-*` tenian los mismos valores en root y `[data-theme="dark"]`.
+- Solucion: eliminar el tema forzado del componente y definir tokens separados para sidebar claro/oscuro.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK y build Vite temporal OK fuera del sandbox.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Login no respetaba modo claro
+
+- Contexto: el menu de inicio/login seguia viendose oscuro al alternar modo claro/oscuro.
+- Causa: `LoginPage`/`ChangePasswordPage` fijaban `data-theme="dark"` en el panel de marca y `auth.css` tenia colores hardcodeados para oscuro en pagina, tarjeta, inputs, chips y toggle.
+- Solucion: eliminar el tema forzado y migrar la pantalla a tokens locales `--auth-*` con variante clara/oscura gobernada por `document.documentElement[data-theme]`.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, build Vite temporal OK y QA Playwright con Chrome local confirmando cambio visual claro -> oscuro sin errores de consola ni overflow.
+- Estado: cerrado.
+
+### 2026-06-26 - V-02-02 - Cerrado - Toggle de tema del login descentrado
+
+- Contexto: el usuario detecto que el icono de modo claro/oscuro del login no estaba centrado dentro del boton.
+- Causa: `.auth-theme-toggle` no anulaba padding/min-height global de botones y el icono de luna necesitaba compensacion optica.
+- Solucion: normalizar el boton como cuadrado real (`padding: 0`, `min-width/min-height`, `line-height`, `appearance`) y fijar tamano del SVG con ajuste optico para la luna.
+- Verificacion: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, build Vite temporal OK y QA Playwright con Chrome local midiendo boton `38x38` sin overflow ni errores de consola.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado - Importacion sin lote formal ni reversion trazable
+
+- Contexto: el reporte post-revision pedia trazabilidad real de importaciones, origen, archivo, hash, filas y reversibilidad.
+- Causa: la app ya tenia huellas por fila/lote hash, pero no tenia entidad formal de lote con contenido original, filas persistidas, confirmacion y reversion.
+- Solucion: tablas `IMPORTACION_LOTES` e `IMPORTACION_LOTE_FILAS`, `EXTRACTOS.importacion_lote_id`, endpoints de lote, confirmacion opt-in de advertencias y reversion con borrado logico de extractos.
+- Verificacion: tests focalizados de importacion/lotes incluidos en 59/59 OK; build backend OK.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado - Conciliacion no comparaba contra libro esperado interno
+
+- Contexto: la revision exigia conciliacion real, no solo revision visual de extractos.
+- Causa: faltaba modelo de movimientos esperados y matching auditable.
+- Solucion: `MOVIMIENTOS_ESPERADOS`, `CONCILIACIONES`, servicio/controlador `/api/conciliacion/*` y pantalla `/conciliacion` con sugerencias, confirmacion, excepciones y resolucion.
+- Verificacion: test focalizado de matching determinista y confirmacion incluido en 59/59 OK.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado - OpenClaw sin expiracion, scopes y rotacion suficientes
+
+- Contexto: tokens de integracion necesitaban vencimiento, rotacion y restriccion por endpoint.
+- Causa: token activo bastaba para llamar a la integracion mientras no estuviera revocado.
+- Solucion: expiracion por defecto 90 dias, scopes por endpoint, rotacion, bloqueo de expirados, ultimo uso/IP y notificaciones admin por anomalias simples.
+- Verificacion: tests focalizados de token expirado/default de expiracion y middleware incluidos en 59/59 OK.
+- Estado: cerrado.
+
+### 2026-06-29 - V-02-02 - Cerrado 2026-06-30 - Suite completa backend no verde por deuda mixta
+
+- Contexto: tras el hardening se ejecuto `dotnet test` completo desde `C:\tmp`.
+- Resultado: 306 tests OK, 5 fallos.
+- Fallos observados: Configuracion/OpenRouter con modelo desconocido, MFA remember-device default, ranking IA sensible a fecha actual y dos pruebas PostgreSQL/Testcontainers con Docker no disponible.
+- Solucion 2026-06-30: se corrigieron los tres fallos no Docker y se confirmo suite sin Testcontainers 315/315 OK.
+- Estado: cerrado como bug mixto original. El bloqueo restante de Docker/Testcontainers queda abierto en entrada separada.
+
+### 2026-06-29 - V-02-02 - Cerrado 2026-06-30 - QA visual completa de nuevos flujos pendiente
+
+- Contexto: se valido build/lint/TypeScript, pero no se completo navegador para importacion, historial de lote, conciliacion, OpenClaw tokens, mobile alertas y modos de Extractos.
+- Solucion 2026-06-30: QA Playwright finita con Chrome local cubrio todos esos flujos sin errores de consola.
+- Estado: cerrado.
+
+## Hallazgos audit V-02-04 pre-internet (2026-07-10)
+
+Origen: `Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`.
+Severidad global: el mas alto de los 3 CRITICAL bloquea el despliegue
+publico; los 11 HIGH requieren arreglo antes de exponer a internet.
+
+### CRITICAL
+
+- **AB-CR-01 - AtlasAiService allowlist OpenRouter inexistente.** Cualquier
+  modelo con formato `vendor/model` pasaba la validacion regex, permitiendo
+  invocar modelos premium no suscritos. **CERRADO en V-02-05 (CRIT-1)**.
+  Allowlist explicita en `AiConfiguration.AllowedOpenRouterModels`.
+- **AB-CR-02 - AuditService.LogAsync fuera de transaccion.** Las auditorias
+  se persistian en commits propios, dejando rastro de operaciones revertidas
+  en `AUDITORIAS`. **CERRADO en V-02-05 (CRIT-2)**. AuditService ahora usa
+  la transaccion del caller; `AuditSaveChangesInterceptor` audita cambios
+  en 27 entidades dentro del mismo SaveChanges.
+- **AB-CR-03 - Watchdog sin verificacion de firma RSA del paquete.** Solo
+  validaba presencia de 4 archivos. Un RCE local podia desplegar binarios
+  maliciosos firmados o no. **CERRADO en V-02-05 (CRIT-3)**. Watchdog ahora
+  verifica firma RSA contra `UpdateSecurity:ReleaseSigningPublicKeyPem`.
+
+### HIGH (cerrados en V-02-05)
+
+- **AB-H-01 - Dashboard aborta con 409 entero si una tasa falta (H1 review).**
+  **PARCIALMENTE CERRADO en V-02-05**. `BulkConvertAsync` y `TryConvertAsync`
+  disponibles; `GetSaldosDivisaAsync` y `BuildPlazosFijosResumenAsync` los usan.
+  Resto (`GetPrincipalAsync`, `GetEvolucionAsync`) en Fase 1.
+- **AB-H-02 - N+async en Dashboard (H2 review).** **PARCIALMENTE CERRADO**
+  con el mismo alcance que AB-H-01.
+- **AB-H-03 - Google Drive restore sin SHA-256 post-descifrado.** **CERRADO en
+  V-02-05**. El checksum se compara tras descifrar el dump. El helper quedó
+  dentro de `GoogleDriveBackupService` y también en el archivo `.tmp` de aplicación.
+- **AB-H-04 - Indices UNIQUE sin filtro soft-delete.** **CERRADO en V-02-05
+  (HIGH-5)**. Migracion `20260710_RecreateUniqueIndexesWithSoftDeleteFilter`.
+- **AB-H-05 - WatchdogClientService path traversal via config.**
+  **CERRADO en V-02-05 (HIGH-8)**.
+- **AB-H-06 - Validar divisa archivo = cuenta en importacion (BUG-021 audit).**
+  **CERRADO en V-02-05 (HIGH-1)**. DTO `DivisaEsperada` + `Notas`/`ResumenJson`
+  con flag `divisa_mismatch`.
+
+### HIGH (pendientes para Fase 1+)
+
+- **AB-H-07 - PlazoFijo sin xmin / concurrencia optimista.** Marcado como
+  HIGH-6 en el audit. Riesgo: last-write-wins entre job y admin.
+- **AB-H-08 - PlazoFijoService email/notificaciones ANTES del commit.**
+  Marcado como HIGH-7. Riesgo: side effects materializados antes de la
+  transaccion.
+- **AB-H-09 - AuditService thread-safe / N SaveChanges en SaveCellAudits.**
+  Marcado como HIGH-9. Riesgo: N round-trips por cambios.
+- **AB-H-10 - AlertaService race en cooldown per-cuenta.** Marcado como
+  HIGH-11. Riesgo: doble alerta en importacion masiva.
+- **AB-H-11 - Resto de N+async en Dashboard.** Marcado como HIGH-4/10
+  parcialmente cerrado.
+
+### MEDIUM
+
+Los 30+ MEDIUM del audit se aceptan como deuda documentada. Detalle en
+`Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md` seccion 3.
+Los mas relevantes a cerrar pronto:
+- MED-1 `PassthroughSecretProtector` fallback silencioso.
+- MED-2 `ProtectForStorage` se basa en prefijo sin MAC.
+- MED-5 Email CRLF validation.
+- MED-22 Soft-delete en entidades pendientes.
+- MED-23 DTOs con validacion (FluentValidation o atributos).
+
+### FASE 1 de V-02-05 (2026-07-10)
+
+Cierres en sesion posterior a Fase 0:
+- **AB-H-04 (HIGH-5)** - Indices UNIQUE con `WHERE deleted_at IS NULL`: **CERRADO en V-02-05**.
+- **AB-H-06 (HIGH-6)** - PlazoFijo sin xmin: **CERRADO en V-02-05**.
+- **AB-H-07 (HIGH-7)** - PlazoFijoService side effects antes del commit: **CERRADO en V-02-05** (outbox basico: commit primero, side effects despues).
+- **AB-H-08 (HIGH-8)** - WatchdogClientService path traversal: **CERRADO en V-02-05**.
+- **AB-H-09 (HIGH-9)** - SaveCellAudits N SaveChanges: **CERRADO en V-02-05**.
+- **AB-H-10 (HIGH-11)** - AlertaService cooldown global: **CERRADO en V-02-05** (cooldown por (cuenta, alcance) con advisory lock).
+- **AB-H-11 (HIGH-4/10)** - Resto de N+async Dashboard: **CERRADO en V-02-05** (GetEvolucionAsync refactorizado con bulk + precomputar tasas).
+ - **AB-H-03 (HIGH-2)** - Google Drive SHA-256 post-descifrado: **CERRADO en V-02-05**. El checksum se compara tras descifrar el dump. El helper se corrigio para quedar dentro de `GoogleDriveBackupService` y tambien en el archivo `.tmp` de aplicacion.
+
+MEDIUM cerrados en V-02-05 (17):
+- MED-1 PassthroughSecretProtector fail-closed.
+- MED-3 Redaccion IBAN en contexto IA.
+- MED-4 Rate limit en SendTestEmail.
+- MED-5 Email CRLF validation.
+- MED-7 RlsContextSecret vs JwtSecret warning.
+- MED-9 CsrfMiddleware audit.
+- MED-10/11 TiposCambio overflow + BFS depth cap.
+- MED-12 Bulk convert en IntegrationOpenClaw.
+- MED-14 Lock en ConfirmarLoteAsync.
+- MED-15 ExecuteUpdate en RevertirLoteAsync.
+- MED-19 PlazoFijo email digest.
+- MED-21 CHECK constraints.
+- MED-22 ISoftDelete en Conciliacion + UNIQUE parcial.
+- MED-23 DTOs validation (parcial).
+- MED-24 Log path absoluto.
+
+LOW cerrados en V-02-05 (3):
+- LOW-BE-6 EmailService timeout 15s.
+- CONFIG-008 Server header removido.
+- CONFIG-009 upgrade-insecure-requests + block-all-mixed-content.
+- CONFIG-010 Cross-Origin-Resource-Policy same-origin.
+
+MEDIUM/LOW pendientes para Fase 2 (documentados en v-02-05.md):
+- MED-2, MED-8, MED-13, MED-16, MED-17, MED-18, MED-20, MED-22 (resto),
+  MED-26, CONFIG-001 a CONFIG-007/011+, LOW-1 a LOW-40.
+
+### CI de V-02-05 (2026-07-14)
+
+- **AB-CI-01 - Suite backend no compilaba tras cambios de contratos.**
+  **CERRADO en V-02-05.** Se actualizaron fakes, stubs, constructores y llamadas
+  de tests para las interfaces actuales. Tambien se corrigieron los fallos no
+  Docker revelados tras compilar: compatibilidad InMemory, reintento de plazo
+  fijo, normalizacion OpenRouter y expectativas de allowlist. Verificacion:
+  **133/133** tests afectados y **327/327** tests no Docker.
+- **AB-CI-02 - Migraciones V-02-05 compilaban pero EF no las descubria.**
+  **CERRADO en V-02-05.** Las tres migraciones manuscritas ya declaran
+  `[DbContext]` y `[Migration]`; `MigrationDiscoveryTests` impide la regresion.
+  El fallo se hizo visible en el run `29365305520` (3/331 pruebas PostgreSQL).

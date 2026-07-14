@@ -9,6 +9,10 @@ import { extractErrorMessage } from '@/utils/errorMessage';
 const api = axios.create({
   baseURL: '/api',
   withCredentials: true,
+  // V-02-05 (LOW-FE-2): timeout duro de 15s. Sin esto, un backend colgado puede
+  // dejar requests en vuelo indefinidamente y saturar el limite de conexiones
+  // del navegador (6 por host en Chrome).
+  timeout: 15_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -44,6 +48,15 @@ api.interceptors.request.use((config) => {
 
   if (csrfToken && !['get', 'head', 'options'].includes(method)) {
     config.headers['X-CSRF-Token'] = csrfToken;
+  }
+
+  // V-02-05 (LOW-FE-3): no forzar Content-Type application/json cuando el caller
+  // envia FormData. Si lo hicieramos, axios quitaba el boundary del multipart
+  // y el backend rechazaba el body.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (config.headers) {
+      delete config.headers['Content-Type'];
+    }
   }
 
   return config;
@@ -86,6 +99,13 @@ api.interceptors.response.use(
         status ?? 'SIN RESPUESTA',
         getSafeErrorLogDetail(error)
       );
+    }
+
+    if (status === 419 || status === 440) {
+      clearSessionState();
+      pushErrorToast('Sesión caducada. Vuelve a iniciar sesión para continuar.');
+      window.location.href = '/login';
+      return Promise.reject(error);
     }
 
     if (

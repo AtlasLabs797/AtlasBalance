@@ -10,6 +10,7 @@ public sealed class PaginatedResponse<T>
     public int Page { get; set; }
     public int PageSize { get; set; }
     public int TotalPages { get; set; }
+    public IReadOnlyList<string>? ColumnasDisponibles { get; set; }
 }
 
 public sealed class UsuarioListItemResponse
@@ -38,12 +39,17 @@ public sealed class SavePermisoUsuarioRequest
 {
     public Guid? CuentaId { get; set; }
     public Guid? TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public bool PuedeVerCuentas { get; set; }
     public bool PuedeAgregarLineas { get; set; }
     public bool PuedeEditarLineas { get; set; }
     public bool PuedeEliminarLineas { get; set; }
     public bool PuedeImportar { get; set; }
     public bool PuedeVerDashboard { get; set; }
+    public bool PuedeRevisarLineas { get; set; }
+    public bool PuedeAprobarImportaciones { get; set; }
+    public bool PuedeConciliar { get; set; }
+    public bool PuedeCerrarConciliacion { get; set; }
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
     public IReadOnlyList<string>? ColumnasEditables { get; set; }
 }
@@ -53,7 +59,7 @@ public sealed class CreateUsuarioRequest
     public string Email { get; set; } = string.Empty;
     public string NombreCompleto { get; set; } = string.Empty;
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public RolUsuario Rol { get; set; }
+    public RolUsuario Rol { get; set; } = RolUsuario.EMPLEADO;
     public bool Activo { get; set; } = true;
     public bool PrimerLogin { get; set; } = true;
     public bool PuedeUsarIa { get; set; }
@@ -67,7 +73,7 @@ public sealed class UpdateUsuarioRequest
     public string Email { get; set; } = string.Empty;
     public string NombreCompleto { get; set; } = string.Empty;
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public RolUsuario Rol { get; set; }
+    public RolUsuario Rol { get; set; } = RolUsuario.EMPLEADO;
     public bool Activo { get; set; }
     public bool PrimerLogin { get; set; }
     public bool PuedeUsarIa { get; set; }

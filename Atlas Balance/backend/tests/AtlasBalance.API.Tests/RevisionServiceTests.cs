@@ -451,6 +451,52 @@ public class RevisionServiceTests
     }
 
     [Fact]
+    public async Task GetRevisionAsync_Should_Filter_Comisiones_And_Seguros_By_PaisId()
+    {
+        await using var db = BuildDbContext();
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaAId = Guid.NewGuid();
+        var cuentaBId = Guid.NewGuid();
+        var comisionAId = Guid.NewGuid();
+        var comisionBId = Guid.NewGuid();
+        var seguroAId = Guid.NewGuid();
+        var seguroBId = Guid.NewGuid();
+
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaAId, TitularId = titularId, Nombre = "Cuenta ES", Divisa = "EUR", PaisId = paisAId, Activa = true },
+            new Cuenta { Id = cuentaBId, TitularId = titularId, Nombre = "Cuenta MX", Divisa = "MXN", PaisId = paisBId, Activa = true });
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "revision_comisiones_importe_minimo",
+            Valor = "0",
+            Tipo = "number",
+            Descripcion = "Importe minimo"
+        });
+        db.Extractos.AddRange(
+            new Extracto { Id = comisionAId, CuentaId = cuentaAId, Fecha = new DateOnly(2026, 5, 1), Concepto = "Comision mantenimiento ES", Monto = -2m, Saldo = 98m, FilaNumero = 1 },
+            new Extracto { Id = comisionBId, CuentaId = cuentaBId, Fecha = new DateOnly(2026, 5, 1), Concepto = "Comision mantenimiento MX", Monto = -20m, Saldo = 80m, FilaNumero = 1 },
+            new Extracto { Id = seguroAId, CuentaId = cuentaAId, Fecha = new DateOnly(2026, 5, 2), Concepto = "Seguro MAPFRE ES", Monto = -100m, Saldo = -2m, FilaNumero = 2 },
+            new Extracto { Id = seguroBId, CuentaId = cuentaBId, Fecha = new DateOnly(2026, 5, 2), Concepto = "Seguro MAPFRE MX", Monto = -200m, Saldo = -120m, FilaNumero = 2 });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db));
+
+        var comisiones = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest { PaisId = paisAId }, CancellationToken.None);
+        var seguros = await sut.GetSegurosAsync(AdminScope(), new RevisionQueryRequest { PaisId = paisAId }, CancellationToken.None);
+
+        comisiones.Data.Select(x => x.ExtractoId).Should().ContainSingle().Which.Should().Be(comisionAId);
+        seguros.Data.Select(x => x.ExtractoId).Should().ContainSingle().Which.Should().Be(seguroAId);
+        comisiones.Data.Select(x => x.ExtractoId).Should().NotContain(comisionBId);
+        seguros.Data.Select(x => x.ExtractoId).Should().NotContain(seguroBId);
+    }
+
+    [Fact]
     public void GetComisionesAsync_Query_Should_Be_Translatable_By_Npgsql()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -569,7 +615,7 @@ public class RevisionServiceTests
     {
         var method = typeof(RevisionService).GetMethod("BuildRevisionBaseQuery", BindingFlags.NonPublic | BindingFlags.Instance);
         method.Should().NotBeNull();
-        var value = method!.Invoke(sut, [AdminScope(), tipo, terms]);
+        var value = method!.Invoke(sut, [AdminScope(), null, tipo, terms]);
         value.Should().BeAssignableTo<IQueryable>();
         return (IQueryable)value!;
     }

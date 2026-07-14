@@ -16,6 +16,7 @@ interface UiState {
   theme: Theme;
   sidebarCollapsed: boolean;
   activeModal: string | null;
+  blockingOverlayCount: number;
   toasts: Toast[];
 
   // Actions
@@ -25,6 +26,8 @@ interface UiState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   openModal: (modalId: string) => void;
   closeModal: () => void;
+  registerBlockingOverlay: () => void;
+  unregisterBlockingOverlay: () => void;
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
 }
@@ -33,6 +36,7 @@ export const useUiStore = create<UiState>((set) => ({
   theme: normalizeTheme(localStorage.getItem('theme')),
   sidebarCollapsed: false,
   activeModal: null,
+  blockingOverlayCount: 0,
   toasts: [],
 
   toggleTheme: () =>
@@ -56,6 +60,10 @@ export const useUiStore = create<UiState>((set) => ({
 
   openModal: (modalId) => set({ activeModal: modalId }),
   closeModal: () => set({ activeModal: null }),
+  registerBlockingOverlay: () =>
+    set((state) => ({ blockingOverlayCount: state.blockingOverlayCount + 1 })),
+  unregisterBlockingOverlay: () =>
+    set((state) => ({ blockingOverlayCount: Math.max(0, state.blockingOverlayCount - 1) })),
 
   addToast: (toast) =>
     set((state) => ({

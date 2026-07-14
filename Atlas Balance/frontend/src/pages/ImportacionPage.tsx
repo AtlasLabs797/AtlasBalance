@@ -1,21 +1,28 @@
 ﻿import { AxiosError } from 'axios';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { SignedAmount } from '@/components/common/SignedAmount';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import type {
   ImportConfirmResult,
   ImportContextoResponse,
   ImportCuentaContexto,
+  ImportacionLote,
+  ImportacionLoteDetalle,
   ImportMapColumns,
   ImportPlazoFijoMovimientoResult,
   ImportValidationResult,
+  PaginatedResponse,
 } from '@/types';
 import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
 
@@ -28,6 +35,7 @@ const SEPARATOR_SAMPLE_LIMIT = 5;
 const VALIDATION_PAGE_SIZE = 200;
 
 type ImportStep = 1 | 2;
+type ImportTab = 'nueva' | 'historial' | 'lote';
 type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
 type ImportValidationRow = ImportValidationResult['filas'][number];
 
@@ -150,8 +158,10 @@ export default function ImportacionPage() {
   const isEmbedded = searchParams.get('embedded') === '1';
   const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
   const usuario = useAuthStore((state) => state.usuario);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const rawDataId = useId();
   const [step, setStep] = useState<ImportStep>(1);
+  const [activeTab, setActiveTab] = useState<ImportTab>('nueva');
   const [contexto, setContexto] = useState<ImportCuentaContexto[]>([]);
   const [loadingContext, setLoadingContext] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,11 +171,16 @@ export default function ImportacionPage() {
   const [rawData, setRawData] = useState('');
   const [separator, setSeparator] = useState<'tab' | 'comma' | 'semicolon'>('tab');
   const [validacion, setValidacion] = useState<ImportValidationResult | null>(null);
+  const [currentLote, setCurrentLote] = useState<ImportacionLote | null>(null);
+  const [lotes, setLotes] = useState<ImportacionLote[]>([]);
+  const [loadingLotes, setLoadingLotes] = useState(false);
+  const [acceptWarnings, setAcceptWarnings] = useState(false);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [validationPage, setValidationPage] = useState(1);
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [closeAttempted, setCloseAttempted] = useState(false);
   const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
   const [plazoMonto, setPlazoMonto] = useState('');
@@ -177,8 +192,14 @@ export default function ImportacionPage() {
     const load = async () => {
       setLoadingContext(true);
       setError(null);
+      setStep(1);
+      setValidacion(null);
+      setConfirmResult(null);
+      setSelectedRows([]);
       try {
-        const { data } = await api.get<ImportContextoResponse>('/importacion/contexto');
+        const { data } = await api.get<ImportContextoResponse>('/importacion/contexto', {
+          params: { paisId: selectedPaisId || undefined },
+        });
         if (!mounted) {
           return;
         }
@@ -209,7 +230,35 @@ export default function ImportacionPage() {
     return () => {
       mounted = false;
     };
-  }, [preselectedCuentaId]);
+  }, [preselectedCuentaId, selectedPaisId]);
+
+  const loadLotes = useCallback(async (targetCuentaId = cuentaId) => {
+    if (!targetCuentaId) {
+      setLotes([]);
+      return;
+    }
+
+    setLoadingLotes(true);
+    try {
+      const { data } = await api.get<PaginatedResponse<ImportacionLote>>('/importacion/lotes', {
+        params: { cuentaId: targetCuentaId, page: 1, pageSize: 20 },
+      });
+      setLotes(data.data ?? []);
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'No se pudo cargar el historial de lotes'));
+    } finally {
+      setLoadingLotes(false);
+    }
+  }, [cuentaId]);
+
+  useEffect(() => {
+    if (!cuentaId) {
+      setLotes([]);
+      return;
+    }
+
+    void loadLotes(cuentaId);
+  }, [cuentaId, loadLotes]);
 
   const selectedCuenta = useMemo(
     () => contexto.find((cuenta) => cuenta.id === cuentaId) ?? null,
@@ -263,6 +312,13 @@ export default function ImportacionPage() {
     () => validacion?.filas.reduce((total, row) => total + (row.advertencias.length > 0 ? 1 : 0), 0) ?? 0,
     [validacion],
   );
+  const selectedWarningRowsCount = useMemo(
+    () => validacion?.filas.reduce(
+      (total, row) => total + (selectedRowsSet.has(row.indice) && row.advertencias.length > 0 ? 1 : 0),
+      0,
+    ) ?? 0,
+    [selectedRowsSet, validacion],
+  );
   const validationTotalPages = validacion
     ? Math.max(1, Math.ceil(validacion.filas.length / VALIDATION_PAGE_SIZE))
     : 1;
@@ -283,6 +339,8 @@ export default function ImportacionPage() {
     : 0;
   const canManageFormatos = usuario?.rol === 'ADMIN';
   const importAlreadyConfirmed = confirmResult !== null;
+  // Aviso al refrescar/cerrar el navegador con datos pegados sin confirmar.
+  useUnsavedChanges(rawData.trim().length > 0 && !importAlreadyConfirmed);
 
   useEffect(() => {
     if (!autoCloseOnSuccess || !importAlreadyConfirmed || !cuentaId) {
@@ -315,6 +373,8 @@ export default function ImportacionPage() {
 
   const resetValidationState = () => {
     setValidacion(null);
+    setCurrentLote(null);
+    setAcceptWarnings(false);
     setSelectedRows([]);
     setValidationPage(1);
     setConfirmResult(null);
@@ -357,17 +417,22 @@ export default function ImportacionPage() {
     setConfirmResult(null);
 
     try {
-      const { data } = await api.post<ImportValidationResult>('/importacion/validar', {
+      const { data } = await api.post<ImportacionLoteDetalle>('/importacion/lotes', {
         cuenta_id: cuentaId,
         raw_data: rawData,
         separador: separator,
         mapeo: selectedMapeo,
+        tipo_origen: 'PEGADO',
       });
 
-      setValidacion(data);
-      setSelectedRows(data.filas.filter((row) => row.valida).map((row) => row.indice));
+      setCurrentLote(data.lote);
+      setValidacion(data.validacion);
+      setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
+      setAcceptWarnings(false);
       setValidationPage(1);
+      setActiveTab('lote');
       setStep(2);
+      await loadLotes(cuentaId);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'No se pudo validar la importación'));
     } finally {
@@ -376,7 +441,21 @@ export default function ImportacionPage() {
   };
 
   const confirmImport = async () => {
-    if (!validacion || importAlreadyConfirmed || !selectedMapeo || submittingRef.current) {
+    if (!validacion || !currentLote || importAlreadyConfirmed || submittingRef.current) {
+      return;
+    }
+
+    if (selectedWarningRowsCount > 0 && !acceptWarnings) {
+      setError('Hay filas seleccionadas con avisos. Marca la aceptación explícita para confirmarlas.');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: 'Confirmar importación',
+      message: `Se importarán ${selectedValidRowsCount} ${selectedValidRowsCount === 1 ? 'fila' : 'filas'} a la cuenta seleccionada. Esta acción escribe movimientos en el extracto. ¿Continuar?`,
+      confirmLabel: 'Importar',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -386,16 +465,14 @@ export default function ImportacionPage() {
     setSuccess(null);
 
     try {
-      const { data } = await api.post<ImportConfirmResult>('/importacion/confirmar', {
-        cuenta_id: cuentaId,
-        raw_data: rawData,
-        separador: separator,
-        mapeo: selectedMapeo,
+      const { data } = await api.post<ImportConfirmResult>(`/importacion/lotes/${currentLote.id}/confirmar`, {
         filas_a_importar: selectedRows,
+        acepta_advertencias: acceptWarnings,
       });
 
       setConfirmResult(data);
       setSuccess(`Importación completada: ${data.filas_importadas} filas importadas.`);
+      await loadLotes(cuentaId);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'No se pudo confirmar la importación'));
     } finally {
@@ -408,12 +485,15 @@ export default function ImportacionPage() {
     setRawData('');
     setSeparator('tab');
     setValidacion(null);
+    setCurrentLote(null);
+    setAcceptWarnings(false);
     setSelectedRows([]);
     setValidationPage(1);
     setConfirmResult(null);
     setSuccess(null);
     setError(null);
     setStep(1);
+    setActiveTab('nueva');
   };
 
   const submitPlazoFijoMovimiento = async () => {
@@ -515,10 +595,43 @@ export default function ImportacionPage() {
         )}
       </header>
 
+      <div className="import-tabs" role="tablist" aria-label="Secciones de importacion">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'nueva'}
+          className={activeTab === 'nueva' ? 'active' : ''}
+          onClick={() => setActiveTab('nueva')}
+        >
+          Nueva
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'historial'}
+          className={activeTab === 'historial' ? 'active' : ''}
+          onClick={() => setActiveTab('historial')}
+        >
+          Historial
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'lote'}
+          className={activeTab === 'lote' ? 'active' : ''}
+          disabled={!currentLote}
+          onClick={() => setActiveTab('lote')}
+        >
+          Lote
+        </button>
+      </div>
+
+      {activeTab !== 'historial' && (
       <ol className="import-steps">
         <li className={step === 1 ? 'active' : ''}>1. Pegar</li>
         <li className={step === 2 ? 'active' : ''}>2. Validar y confirmar</li>
       </ol>
+      )}
 
       {error && <p className="auth-error" role="alert">{error}</p>}
       {success && <p className="import-success" role="status">{success}</p>}
@@ -531,6 +644,73 @@ export default function ImportacionPage() {
         </p>
       )}
 
+      {activeTab === 'historial' ? (
+        <div className="import-card">
+          <div className="import-history-header">
+            <h3>Historial de lotes</h3>
+            <button type="button" className="button-secondary" onClick={() => void loadLotes()}>
+              {loadingLotes ? 'Actualizando...' : 'Actualizar'}
+            </button>
+          </div>
+          {lotes.length === 0 ? (
+            <p className="import-muted">{loadingLotes ? 'Cargando lotes...' : 'No hay lotes para esta cuenta.'}</p>
+          ) : (
+            <div className="import-validation-table-wrap">
+              <table className="import-validation-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Cuenta</th>
+                    <th>Origen</th>
+                    <th>Estado</th>
+                    <th>Filas</th>
+                    <th>SHA-256</th>
+                    <th>Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lotes.map((lote) => (
+                    <tr key={lote.id}>
+                      <td>{new Date(lote.fecha_creacion).toLocaleString()}</td>
+                      <td>{lote.cuenta_nombre ?? EMPTY_MARKER}</td>
+                      <td>{lote.tipo_origen}{lote.nombre_archivo ? ` / ${lote.nombre_archivo}` : ''}</td>
+                      <td>{lote.estado}</td>
+                      <td>{lote.filas_validas}/{lote.filas_total}</td>
+                      <td><code>{lote.sha256.slice(0, 12)}</code></td>
+                      <td>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={async () => {
+                            setSubmitting(true);
+                            setError(null);
+                            try {
+                              const { data } = await api.get<ImportacionLoteDetalle>(`/importacion/lotes/${lote.id}`);
+                              setCurrentLote(data.lote);
+                              setValidacion(data.validacion);
+                              setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
+                              setAcceptWarnings(false);
+                              setConfirmResult(null);
+                              setStep(2);
+                              setActiveTab('lote');
+                            } catch (err: unknown) {
+                              setError(getApiErrorMessage(err, 'No se pudo abrir el lote'));
+                            } finally {
+                              setSubmitting(false);
+                            }
+                          }}
+                        >
+                          Abrir
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="import-card">
         {step === 1 && (
           <>
@@ -700,6 +880,11 @@ export default function ImportacionPage() {
             <p className="import-muted">
               Cuenta: {selectedCuenta ? `${selectedCuenta.titular_nombre} / ${selectedCuenta.nombre}` : EMPTY_MARKER}. Separador: {validacion.separador_detectado}.
             </p>
+            {currentLote && (
+              <p className="import-muted">
+                Lote: <code>{currentLote.lote_hash.slice(0, 12)}</code> · SHA-256 <code>{currentLote.sha256.slice(0, 12)}</code> · {currentLote.estado}
+              </p>
+            )}
 
             <div className="import-validation-table-wrap">
               <table className="import-validation-table">
@@ -795,11 +980,26 @@ export default function ImportacionPage() {
               </div>
             )}
 
+            {selectedWarningRowsCount > 0 && !importAlreadyConfirmed && (
+              <label className="import-warning-accept">
+                <input
+                  type="checkbox"
+                  checked={acceptWarnings}
+                  onChange={(event) => setAcceptWarnings(event.target.checked)}
+                />
+                Acepto importar {selectedWarningRowsCount} fila{selectedWarningRowsCount === 1 ? '' : 's'} con avisos.
+              </label>
+            )}
+
             {confirmResult && (
               <div className="import-result-box">
                 <p>Procesadas: {confirmResult.filas_procesadas}</p>
                 <p>Importadas: {confirmResult.filas_importadas}</p>
+                <p>Duplicadas: {confirmResult.filas_duplicadas}</p>
                 <p>Con error: {confirmResult.filas_con_error}</p>
+                {confirmResult.advertencias.length > 0 && (
+                  <p>{confirmResult.advertencias.join(' ')}</p>
+                )}
               </div>
             )}
 
@@ -837,6 +1037,8 @@ export default function ImportacionPage() {
           </>
         )}
       </div>
+      )}
+      <ConfirmDialog {...confirmDialogProps} />
     </section>
   );
 }

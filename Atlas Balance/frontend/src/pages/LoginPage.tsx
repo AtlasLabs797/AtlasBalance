@@ -1,11 +1,15 @@
 ﻿import { useEffect, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
+import { useUiStore } from '@/stores/uiStore';
 import type { LoginResponse } from '@/types';
+import { IconMoon, IconSun } from '@/components/Icons';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 interface LoginForm {
@@ -35,12 +39,33 @@ function normalizeReturnTo(value: string | null): string | null {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
+  // F-NEW-1 (V-02-03): ProtectedRoute redirige con state.from cuando el usuario
+  // intenta entrar a una ruta protegida sin sesion. Asi, tras hacer login
+  // lo mandamos de vuelta a donde queria ir, no siempre a /dashboard.
+  const stateFrom = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+  const fromReturnTo = stateFrom?.pathname ? `${stateFrom.pathname ?? ''}${stateFrom.search ?? ''}` : null;
+  const returnTo = normalizeReturnTo(searchParams.get('returnTo')) ?? normalizeReturnTo(fromReturnTo);
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
-  const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>();
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const theme = useUiStore((state) => state.theme);
+  const toggleTheme = useUiStore((state) => state.toggleTheme);
+  // V-02-05 (LOW-FE-5): opt-in para recordar email. Antes se hacia
+  // automaticamente; ahora el usuario debe marcar un checkbox. Por defecto OFF.
+  const [rememberEmail, setRememberEmail] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('atlas_remember_email_opt_in') === '1';
+  });
+  const { register, handleSubmit, formState: { errors, isSubmitting }, setFocus, setValue } = useForm<LoginForm>({
+    defaultValues: {
+      email: rememberEmail
+        ? (typeof window !== 'undefined' ? window.localStorage.getItem('atlas_last_email') ?? '' : '')
+        : '',
+    },
+  });
   const [error, setError] = useState<string | null>(null);
   const [postUpdateMessage, setPostUpdateMessage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -106,7 +131,7 @@ export default function LoginPage() {
     setPermisos(data.permisos ?? []);
 
     if (!data.usuario.primer_login) {
-      await loadAlertasActivas();
+      await loadAlertasActivas(selectedPaisId || undefined);
     }
 
     if (data.usuario.primer_login) {
@@ -119,6 +144,15 @@ export default function LoginPage() {
 
   const onSubmit = handleSubmit(async (values) => {
     setError(null);
+    // V-02-05 (LOW-FE-5): solo recordar email si el usuario marco la opcion.
+    if (typeof window !== 'undefined' && values.email && rememberEmail) {
+      try {
+        window.localStorage.setItem('atlas_last_email', values.email);
+        window.localStorage.setItem('atlas_remember_email_opt_in', '1');
+      } catch {
+        // Si el storage esta bloqueado seguimos sin guardar.
+      }
+    }
     try {
       if (mfaChallenge) {
         const { data } = await api.post<LoginResponse>('/auth/mfa/verify', {
@@ -160,19 +194,47 @@ export default function LoginPage() {
 
   return (
     <section className="auth-page">
-      <div className="auth-header">
-        <div className="auth-logo-container">
-          <img
-            src="/logos/Atlas Balance.png"
-            alt="Atlas Balance"
-            className="auth-logo-image"
-          />
+      <button
+        type="button"
+        className="auth-theme-toggle"
+        onClick={toggleTheme}
+        aria-pressed={theme === 'dark'}
+        aria-label={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+        title={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+      >
+        {theme === 'light' ? <IconMoon /> : <IconSun />}
+      </button>
+
+      <aside className="auth-brand-panel" aria-label="Atlas Balance">
+        <div className="auth-brand-lockup">
+          <span className="auth-logo-image" aria-hidden="true" />
           <div className="auth-branding">
             <h1>Atlas Balance</h1>
           </div>
         </div>
-      </div>
 
+        <div className="auth-brand-copy">
+          <strong>Tesorería local, control real.</strong>
+          <p>Saldos, extractos y previsiones de todos tus bancos, titulares y divisas — centralizados en tu propia red, sin salir de ella.</p>
+          <div className="auth-brand-tags" aria-label="Capacidades principales">
+            <span>Multi-banco</span>
+            <span>Multi-divisa</span>
+            <span>Red local</span>
+          </div>
+        </div>
+
+        <div className="auth-brand-footer">
+          <span>by</span>
+          <img
+            src="/logos/Atlas Labs.png"
+            alt="Atlas Labs"
+            className="auth-footer-logo"
+          />
+          <strong>Atlas Labs</strong>
+        </div>
+      </aside>
+
+      <main className="auth-main-panel">
       <form className="auth-card" onSubmit={onSubmit}>
         <h2 className="auth-card-title">{mfaChallenge ? 'Verificar acceso' : 'Iniciar sesión'}</h2>
         <p className="auth-card-description">
@@ -186,7 +248,6 @@ export default function LoginPage() {
               <input
                 id="email"
                 type="email"
-                autoFocus
                 autoComplete="username"
                 className="auth-input"
                 placeholder="tu@email.com"
@@ -215,11 +276,31 @@ export default function LoginPage() {
                   className="auth-password-toggle"
                   onClick={() => setShowPassword((current) => !current)}
                   aria-pressed={showPassword}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 >
-                  {showPassword ? 'Ocultar' : 'Mostrar'}
+                  {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
                 </button>
               </div>
               {errors.password && <p id="password-error" className="auth-error" role="alert">{errors.password.message}</p>}
+            </div>
+
+            <div className="auth-form-group auth-remember-email">
+              <label className="auth-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={rememberEmail}
+                  onChange={(event) => {
+                    const next = event.target.checked;
+                    setRememberEmail(next);
+                    if (!next && typeof window !== 'undefined') {
+                      window.localStorage.removeItem('atlas_last_email');
+                      window.localStorage.setItem('atlas_remember_email_opt_in', '0');
+                    }
+                  }}
+                />
+                <span>Recordar mi email en este navegador</span>
+              </label>
             </div>
           </>
         )}
@@ -281,18 +362,7 @@ export default function LoginPage() {
           {isSubmitting ? 'Validando...' : (mfaChallenge ? 'Verificar acceso' : 'Entrar')}
         </button>
       </form>
-
-      <div className="auth-footer">
-        <div className="auth-footer-content">
-          <p className="auth-footer-text">by</p>
-          <img
-            src="/logos/Atlas Labs.png"
-            alt="Atlas Labs"
-            className="auth-footer-logo"
-          />
-          <span className="auth-footer-name">Atlas Labs</span>
-        </div>
-      </div>
+      </main>
     </section>
   );
 }

@@ -14,11 +14,18 @@ const AiChatPanel = lazy(() =>
   import('@/components/ia/AiChatPanel').then((module) => ({ default: module.AiChatPanel }))
 );
 
+function getUserInitials(name?: string | null) {
+  const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+  return initials || 'AB';
+}
+
 export function TopBar() {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useUiStore((state) => state.theme);
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
+  const blockingOverlayCount = useUiStore((state) => state.blockingOverlayCount);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const usuario = useAuthStore((state) => state.usuario);
@@ -27,6 +34,7 @@ export function TopBar() {
   const clearAlertas = useAlertasStore((state) => state.clear);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
   const [chatOpen, setChatOpen] = useState(false);
+  const userName = usuario?.nombre_completo ?? 'Sin sesión';
 
   const pageContext = useMemo(() => {
     const exact = navigationItems.find((item) => item.to === location.pathname);
@@ -59,10 +67,10 @@ export function TopBar() {
   };
 
   useEffect(() => {
-    if (!aiAvailable) {
+    if (!aiAvailable || blockingOverlayCount > 0) {
       setChatOpen(false);
     }
-  }, [aiAvailable]);
+  }, [aiAvailable, blockingOverlayCount]);
 
   return (
     <>
@@ -84,7 +92,13 @@ export function TopBar() {
           </div>
         </div>
         <div className="app-topbar-actions">
-          <span className="app-topbar-user">{usuario?.nombre_completo ?? 'Sin sesión'}</span>
+          <span className="app-topbar-user" title={userName}>
+            <span className="app-topbar-avatar" aria-hidden="true">{getUserInitials(usuario?.nombre_completo)}</span>
+            <span className="app-topbar-user-copy">
+              <span>{userName}</span>
+              <small>{usuario?.rol ?? 'Invitado'}</small>
+            </span>
+          </span>
           <button
             type="button"
             className="theme-toggle"
@@ -100,13 +114,13 @@ export function TopBar() {
           </button>
         </div>
       </header>
-      {aiAvailable ? (
+      {aiAvailable && blockingOverlayCount === 0 ? (
         <div className="ai-floating-widget">
           <button
             type="button"
             className={`ai-floating-button${chatOpen ? ' ai-floating-button--active' : ''}`}
             onClick={() => setChatOpen((current) => !current)}
-            aria-pressed={chatOpen}
+            aria-expanded={chatOpen}
             aria-label={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
             title={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
           >

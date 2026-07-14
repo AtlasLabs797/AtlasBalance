@@ -19,14 +19,14 @@ public sealed class ImportacionController : ControllerBase
     }
 
     [HttpGet("contexto")]
-    public async Task<IActionResult> Contexto(CancellationToken cancellationToken)
+    public async Task<IActionResult> Contexto([FromQuery] Guid? paisId = null, CancellationToken cancellationToken = default)
     {
         if (!TryGetActor(out var userId, out var rol))
         {
             return Unauthorized(new { error = "Usuario no autenticado" });
         }
 
-        var result = await _importacionService.GetContextoAsync(userId, rol, cancellationToken);
+        var result = await _importacionService.GetContextoAsync(userId, rol, paisId, cancellationToken);
         return Ok(result);
     }
 
@@ -41,6 +41,124 @@ public sealed class ImportacionController : ControllerBase
         try
         {
             var result = await _importacionService.ValidarAsync(userId, rol, request, cancellationToken);
+            return Ok(result);
+        }
+        catch (ImportacionException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("lotes")]
+    public async Task<IActionResult> ListarLotes(
+        [FromQuery] Guid? cuentaId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetActor(out var userId, out var rol))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _importacionService.ListarLotesAsync(userId, rol, cuentaId, page, pageSize, cancellationToken);
+            return Ok(result);
+        }
+        catch (ImportacionException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("lotes")]
+    public async Task<IActionResult> CrearLote([FromBody] ImportacionLoteCrearRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var userId, out var rol))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _importacionService.CrearLoteAsync(userId, rol, request, HttpContext, cancellationToken);
+            return CreatedAtAction(nameof(ObtenerLote), new { id = result.Lote.Id }, result);
+        }
+        catch (ImportacionException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("lotes/{id:guid}")]
+    public async Task<IActionResult> ObtenerLote(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var userId, out var rol))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _importacionService.ObtenerLoteAsync(userId, rol, id, cancellationToken);
+            return Ok(result);
+        }
+        catch (ImportacionException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("lotes/{id:guid}/filas")]
+    public async Task<IActionResult> ListarLoteFilas(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var userId, out var rol))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _importacionService.ListarLoteFilasAsync(userId, rol, id, cancellationToken);
+            return Ok(result);
+        }
+        catch (ImportacionException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("lotes/{id:guid}/confirmar")]
+    public async Task<IActionResult> ConfirmarLote(Guid id, [FromBody] ImportacionLoteConfirmarRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var userId, out var rol))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _importacionService.ConfirmarLoteAsync(userId, rol, id, request, HttpContext, cancellationToken);
+            return Ok(result);
+        }
+        catch (ImportacionException ex)
+        {
+            return StatusCode(ex.StatusCode, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("lotes/{id:guid}/revertir")]
+    public async Task<IActionResult> RevertirLote(Guid id, [FromBody] ImportacionLoteRevertirRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var userId, out var rol))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _importacionService.RevertirLoteAsync(userId, rol, id, request, HttpContext, cancellationToken);
             return Ok(result);
         }
         catch (ImportacionException ex)

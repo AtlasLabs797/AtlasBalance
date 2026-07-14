@@ -7,23 +7,45 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
+import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { useUiStore } from '@/stores/uiStore';
 
 export function Layout() {
   const location = useLocation();
   const isEmbedded = new URLSearchParams(location.search).get('embedded') === '1';
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
+  const blockingOverlayCount = useUiStore((state) => state.blockingOverlayCount);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const addToast = useUiStore((state) => state.addToast);
   const usuarioId = useAuthStore((state) => state.usuario?.id ?? null);
   const loadIaAvailability = useIaAvailabilityStore((state) => state.load);
   const clearIaAvailability = useIaAvailabilityStore((state) => state.clear);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const loadPaises = usePaisScopeStore((state) => state.loadPaises);
+  const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
 
   const { isToastVisible, isWarningVisible, remainingSeconds, resetTimeout, performLogout } =
     useSessionTimeout();
   const toastShownRef = useRef(false);
+  const hasBlockingOverlay = blockingOverlayCount > 0;
+
+  useEffect(() => {
+    if (!hasBlockingOverlay) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.body.dataset.overlayOpen = 'true';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      delete document.body.dataset.overlayOpen;
+    };
+  }, [hasBlockingOverlay]);
 
   // Show toast warning when inactivity reaches 18 minutes.
   useEffect(() => {
@@ -44,7 +66,7 @@ export function Layout() {
     }
 
     const onResize = () => {
-      setSidebarCollapsed(window.matchMedia('(min-width: 768px) and (max-width: 1023.98px)').matches);
+      setSidebarCollapsed(window.matchMedia('(min-width: 768px) and (max-width: 1199.98px)').matches);
     };
 
     onResize();
@@ -62,6 +84,22 @@ export function Layout() {
     const timer = window.setInterval(() => void loadIaAvailability(true), 60000);
     return () => window.clearInterval(timer);
   }, [clearIaAvailability, loadIaAvailability, usuarioId]);
+
+  useEffect(() => {
+    if (!usuarioId) {
+      return;
+    }
+
+    void loadPaises();
+  }, [loadPaises, usuarioId]);
+
+  useEffect(() => {
+    if (!usuarioId) {
+      return;
+    }
+
+    void loadAlertasActivas(selectedPaisId || undefined);
+  }, [loadAlertasActivas, selectedPaisId, usuarioId]);
 
   if (isEmbedded) {
     return (
@@ -81,7 +119,7 @@ export function Layout() {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}`}>
+    <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}${hasBlockingOverlay ? ' app-shell--overlay-open' : ''}`}>
       <a className="skip-link" href="#main-content">Saltar al contenido</a>
       <Sidebar />
       <div className="app-main">

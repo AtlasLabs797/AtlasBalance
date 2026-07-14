@@ -6,14 +6,15 @@ interface PermisosState {
   permisos: PermisoUsuario[];
   setPermisos: (permisos: PermisoUsuario[]) => void;
   clear: () => void;
-  canViewCuenta: (cuentaId: string, titularId?: string | null) => boolean;
-  canAddInCuenta: (cuentaId: string, titularId?: string | null) => boolean;
-  canEditCuenta: (cuentaId: string, titularId?: string | null) => boolean;
-  canDeleteInCuenta: (cuentaId: string, titularId?: string | null) => boolean;
-  canImportInCuenta: (cuentaId: string, titularId?: string | null) => boolean;
+  canViewCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
+  canAddInCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
+  canEditCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
+  canDeleteInCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
+  canImportInCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
+  canConciliarCuenta: (cuentaId: string, titularId?: string | null, paisId?: string | null) => boolean;
   canViewDashboard: () => boolean;
-  getColumnasVisibles: (cuentaId: string, titularId?: string | null) => string[] | null;
-  getColumnasEditables: (cuentaId: string, titularId?: string | null) => string[] | null;
+  getColumnasVisibles: (cuentaId: string, titularId?: string | null, paisId?: string | null) => string[] | null;
+  getColumnasEditables: (cuentaId: string, titularId?: string | null, paisId?: string | null) => string[] | null;
 }
 
 const isAdmin = () => useAuthStore.getState().usuario?.rol === 'ADMIN';
@@ -23,15 +24,21 @@ const grantsAccountAccess = (permiso: PermisoUsuario) =>
   permiso.puede_agregar_lineas ||
   permiso.puede_editar_lineas ||
   permiso.puede_eliminar_lineas ||
-  permiso.puede_importar;
+  permiso.puede_importar ||
+  permiso.puede_revisar_lineas ||
+  permiso.puede_aprobar_importaciones ||
+  permiso.puede_conciliar ||
+  permiso.puede_cerrar_conciliacion;
 
 const getMatchingPermisos = (
   permisos: PermisoUsuario[],
   cuentaId: string,
-  titularId?: string | null
+  titularId?: string | null,
+  paisId?: string | null
 ) =>
   permisos.filter(
     (p) =>
+      (p.pais_id === null || p.pais_id === paisId) &&
       (p.cuenta_id === null || p.cuenta_id === cuentaId) &&
       (p.titular_id === null || p.titular_id === titularId)
   );
@@ -39,10 +46,11 @@ const getMatchingPermisos = (
 const getCuentaPermisos = (
   permisos: PermisoUsuario[],
   cuentaId: string,
-  titularId?: string | null
+  titularId?: string | null,
+  paisId?: string | null
 ) =>
-  getMatchingPermisos(permisos, cuentaId, titularId).filter(
-    (p) => p.cuenta_id !== null || p.titular_id !== null || grantsAccountAccess(p)
+  getMatchingPermisos(permisos, cuentaId, titularId, paisId).filter(
+    (p) => grantsAccountAccess(p)
   );
 
 const mergeColumnRules = (
@@ -65,43 +73,53 @@ export const usePermisosStore = create<PermisosState>((set, get) => ({
   setPermisos: (permisos) => set({ permisos }),
   clear: () => set({ permisos: [] }),
 
-  canViewCuenta: (cuentaId, titularId) => {
+  canViewCuenta: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return true;
-    return getCuentaPermisos(get().permisos, cuentaId, titularId).length > 0;
+    return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_ver_cuentas);
   },
 
-  canAddInCuenta: (cuentaId, titularId) => {
+  canAddInCuenta: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return true;
-    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_agregar_lineas);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_agregar_lineas);
   },
 
-  canEditCuenta: (cuentaId, titularId) => {
+  canEditCuenta: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return true;
-    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_editar_lineas);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_editar_lineas);
   },
 
-  canDeleteInCuenta: (cuentaId, titularId) => {
+  canDeleteInCuenta: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return true;
-    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_eliminar_lineas);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_eliminar_lineas);
   },
 
-  canImportInCuenta: (cuentaId, titularId) => {
+  canImportInCuenta: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return true;
-    return getCuentaPermisos(get().permisos, cuentaId, titularId).some((p) => p.puede_importar);
+    return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_importar);
+  },
+
+  canConciliarCuenta: (cuentaId, titularId, paisId) => {
+    if (isAdmin()) return true;
+    return getCuentaPermisos(get().permisos, cuentaId, titularId, paisId).some((p) => p.puede_conciliar);
   },
 
   canViewDashboard: () => {
     if (isAdmin()) return true;
-    return get().permisos.some((p) => p.puede_ver_dashboard);
+    const role = useAuthStore.getState().usuario?.rol;
+    return get().permisos.some((p) =>
+      role === 'GERENTE'
+        ? grantsAccountAccess(p)
+        : p.puede_ver_dashboard && grantsAccountAccess(p)
+    );
   },
 
-  getColumnasVisibles: (cuentaId, titularId) => {
+  getColumnasVisibles: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return null;
-    return mergeColumnRules(getCuentaPermisos(get().permisos, cuentaId, titularId), 'columnas_visibles');
+    return mergeColumnRules(getCuentaPermisos(get().permisos, cuentaId, titularId, paisId), 'columnas_visibles');
   },
 
-  getColumnasEditables: (cuentaId, titularId) => {
+  getColumnasEditables: (cuentaId, titularId, paisId) => {
     if (isAdmin()) return null;
-    return mergeColumnRules(getCuentaPermisos(get().permisos, cuentaId, titularId), 'columnas_editables');
+    return mergeColumnRules(getCuentaPermisos(get().permisos, cuentaId, titularId, paisId), 'columnas_editables');
   },
 }));

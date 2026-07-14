@@ -3,6 +3,7 @@ import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import UsuarioModal, {
   type CatalogCuenta,
+  type CatalogPais,
   type CatalogTitular,
 } from '@/components/usuarios/UsuarioModal';
 import api from '@/services/api';
@@ -12,7 +13,7 @@ interface UsuarioRow {
   id: string;
   email: string;
   nombre_completo: string;
-  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
+  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO';
   activo: boolean;
   primer_login: boolean;
   puede_usar_ia: boolean;
@@ -28,8 +29,6 @@ interface DeleteCandidate {
 const rolLabels: Record<UsuarioRow['rol'], string> = {
   ADMIN: 'Administrador',
   GERENTE: 'Gerente',
-  EMPLEADO_ULTRA: 'Empleado ultra',
-  EMPLEADO_PLUS: 'Empleado plus',
   EMPLEADO: 'Empleado',
 };
 
@@ -45,6 +44,7 @@ export default function UsuariosPage() {
   const [error, setError] = useState<string | null>(null);
   const [titulares, setTitulares] = useState<CatalogTitular[]>([]);
   const [cuentas, setCuentas] = useState<CatalogCuenta[]>([]);
+  const [paises, setPaises] = useState<CatalogPais[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
@@ -67,6 +67,7 @@ export default function UsuariosPage() {
       const { data } = await api.get('/usuarios/catalogos-permisos');
       setTitulares(data.titulares ?? []);
       setCuentas(data.cuentas ?? []);
+      setPaises(data.paises ?? []);
     } catch {
       // no-op
     }
@@ -358,6 +359,7 @@ export default function UsuariosPage() {
         editingId={editingId}
         titulares={titulares}
         cuentas={cuentas}
+        paises={paises}
         onClose={closeModal}
         onSaved={loadData}
       />

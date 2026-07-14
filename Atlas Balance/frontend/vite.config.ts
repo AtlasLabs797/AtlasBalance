@@ -1,6 +1,16 @@
-import { createLogger, defineConfig, type Logger, type LogErrorOptions, type LogOptions } from 'vite';
+import { createLogger, defineConfig, type Logger, type LogErrorOptions, type LogOptions, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+
+// V-02-03: leemos la version del package.json para inyectarla como
+// VITE_APP_VERSION (y la fuente sigue siendo appVersion). Asi sidebar /
+// topbar ya no divergen del backend (VERSION, Directory.Build.props).
+const packageJson = JSON.parse(
+  readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'),
+) as { version?: string; appVersion?: string };
+const injectAppVersion = packageJson.appVersion ?? packageJson.version ?? 'desarrollo';
 
 const baseLogger = createLogger();
 
@@ -36,16 +46,105 @@ const redactingLogger: Logger = {
   },
 };
 
+const editorPositionPattern = /:(\d+)(:(\d+))?$/;
+
+const stripEditorPosition = (file: string) => file.trim().replace(editorPositionPattern, '');
+
+const decodedPathCandidates = (file: string) => {
+  const trimmed = stripEditorPosition(file);
+
+  try {
+    return [trimmed, stripEditorPosition(decodeURIComponent(trimmed))];
+  } catch {
+    return [trimmed];
+  }
+};
+
+const hasUncPrefix = (file: string) =>
+  decodedPathCandidates(file).some((candidate) => candidate.replace(/\//g, '\\').startsWith('\\\\'));
+
+const resolveEditorPath = (file: string, root: string) => {
+  const candidate = stripEditorPosition(file);
+
+  if (hasUncPrefix(candidate)) {
+    return { allowed: false, reason: 'UNC paths are not allowed' };
+  }
+
+  let localPath = candidate;
+  if (/^file:/i.test(candidate)) {
+    let fileUrl: URL;
+    try {
+      fileUrl = new URL(candidate);
+    } catch {
+      return { allowed: false, reason: 'invalid file URL' };
+    }
+
+    if (fileUrl.host && fileUrl.host.toLowerCase() !== 'localhost') {
+      return { allowed: false, reason: 'remote file URLs are not allowed' };
+    }
+
+    localPath = fileURLToPath(fileUrl);
+  }
+
+  const resolvedRoot = path.resolve(root);
+  const resolvedPath = path.resolve(resolvedRoot, localPath);
+  const relativePath = path.relative(resolvedRoot, resolvedPath);
+  const isInsideRoot = relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+
+  if (!isInsideRoot) {
+    return { allowed: false, reason: 'path is outside the frontend root' };
+  }
+
+  return { allowed: true, path: resolvedPath };
+};
+
+const openInEditorGuard = (root: string): Plugin => ({
+  name: 'atlas-open-in-editor-guard',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use('/__open-in-editor', (req, res, next) => {
+      let file: string | null;
+
+      try {
+        const requestUrl = req.url?.startsWith('http') ? req.url : `http://localhost${req.url ?? ''}`;
+        file = new URL(requestUrl).searchParams.get('file');
+      } catch {
+        res.statusCode = 400;
+        res.end('Invalid open-in-editor URL.');
+        return;
+      }
+
+      if (!file) {
+        next();
+        return;
+      }
+
+      const validation = resolveEditorPath(file, root);
+      if (!validation.allowed) {
+        server.config.logger.warn(`[security] Blocked unsafe open-in-editor request: ${validation.reason}.`);
+        res.statusCode = 400;
+        res.end('Unsafe open-in-editor path rejected.');
+        return;
+      }
+
+      next();
+    });
+  },
+});
+
 export default defineConfig({
   customLogger: redactingLogger,
-  plugins: [react()],
+  plugins: [openInEditorGuard(__dirname), react()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
   server: {
+    host: '127.0.0.1',
     port: 5173,
+    strictPort: true,
+    allowedHosts: ['localhost', '127.0.0.1'],
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -53,9 +152,13 @@ export default defineConfig({
       },
     },
   },
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(injectAppVersion),
+  },
   build: {
-    outDir: 'dist',
-    sourcemap: false,
+    outDir: process.env.VITE_BUILD_OUT_DIR ?? 'dist',
+    emptyOutDir: process.env.VITE_BUILD_OUT_DIR ? true : false,
+    sourcemap: 'hidden',
     reportCompressedSize: false,
     rollupOptions: {
       output: {

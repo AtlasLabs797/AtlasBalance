@@ -92,7 +92,6 @@
 .page-placeholder,
 .users-table-card,
 .users-form-card,
-.add-row-form,
 .extracto-table-section,
 .account-notes-card,
 .titular-card,
@@ -334,6 +333,21 @@ label,
   background: var(--surface-bg-sunken);
   color: var(--text-secondary);
   letter-spacing: 0.02em;
+}
+
+.users-table-scroll,
+.config-table-wrap,
+.dashboard-table-wrap,
+.import-preview-grid,
+.import-validation-table-wrap,
+.revision-table-wrap,
+.account-excel-wrap {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+}
+
+.config-table-wrap table {
+  min-width: 760px;
 }
 
 tbody tr {

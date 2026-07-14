@@ -9,6 +9,7 @@ import {
   DownloadCloud,
   FileCog,
   LayoutDashboard,
+  Scale,
   SearchCheck,
   Settings,
   TableProperties,
@@ -28,7 +29,7 @@ export const navigationGroups: Record<NavigationGroup, { label: string }> = {
 
 const iconProps = {
   size: 20,
-  strokeWidth: 1.9,
+  strokeWidth: 1.75,
   'aria-hidden': true,
 } as const;
 
@@ -49,6 +50,7 @@ export const navigationItems: NavigationItem[] = [
   { to: '/cuentas',              label: 'Cuentas',       short: 'Cuentas',   icon: createElement(WalletCards, iconProps), group: 'operacion' },
   { to: '/extractos',            label: 'Extractos',     short: 'Extractos', icon: createElement(TableProperties, iconProps), group: 'operacion' },
   { to: '/importacion',          label: 'Importación',   short: 'Importar',  icon: createElement(Upload, iconProps), group: 'operacion' },
+  { to: '/conciliacion',         label: 'Conciliacion',   short: 'Conciliar', icon: createElement(Scale, iconProps), group: 'control' },
   { to: '/revision',             label: 'Revisión',      short: 'Revisión',  icon: createElement(SearchCheck, iconProps), group: 'control' },
   { to: '/ia',                   label: 'IA',            short: 'IA',        icon: createElement(Bot, iconProps), group: 'control', aiOnly: true },
   { to: '/alertas',              label: 'Alertas',       short: 'Alertas',   icon: createElement(BellRing, iconProps), group: 'control' },
@@ -61,9 +63,16 @@ export const navigationItems: NavigationItem[] = [
   { to: '/papelera',             label: 'Papelera',      short: 'Papelera',  icon: createElement(Trash2, iconProps), group: 'sistema', adminOnly: true },
 ];
 
-export function getVisibleNavigationItems(role?: string | null, options?: { aiAvailable?: boolean }) {
+export function getVisibleNavigationItems(
+  role?: string | null,
+  options?: { aiAvailable?: boolean; dashboardAvailable?: boolean }
+) {
   return navigationItems.filter((item) => {
     if (item.adminOnly && role !== 'ADMIN') {
+      return false;
+    }
+
+    if (item.to === '/dashboard' && role !== 'ADMIN' && !options?.dashboardAvailable) {
       return false;
     }
 

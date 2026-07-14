@@ -9,9 +9,14 @@
     />
     <meta name="theme-color" content="#F3F7FB" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#12171F" media="(prefers-color-scheme: dark)" />
+    <!-- V-02-05 (LOW-FE-1): CSP meta como defense-in-depth. El backend ya emite
+         la cabecera CSP, pero si una respuesta falla en servirla (cache,
+         proxy, etc.) esta meta evita el XSS. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="preload" href="/fonts/NationalPark-Regular.ttf" as="font" type="font/ttf" crossorigin>
     <link rel="preload" href="/fonts/HindMadurai-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
-    <link rel="icon" type="image/png" href="/logos/Atlas Balance.png" />
+    <link rel="icon" type="image/svg+xml" href="/logos/Atlas Balance.svg" />
     <link rel="apple-touch-icon" href="/logos/Atlas Balance.png" />
     <title>Atlas Balance</title>
   </head>

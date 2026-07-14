@@ -147,6 +147,51 @@ public sealed class ConfiguracionControllerTests
     }
 
     [Fact]
+    public async Task Update_Should_Accept_MiniMax_With_Server_Api_Key_And_Redact_Audit()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(new Configuracion { Clave = "minimax_api_key", Valor = "old-minimax-key" });
+        await db.SaveChangesAsync();
+        var controller = BuildController(db);
+
+        var result = await controller.Update(new UpdateConfiguracionRequest
+        {
+            Smtp = new UpdateSmtpConfigRequest
+            {
+                Host = "smtp.local",
+                Port = 587,
+                User = "user",
+                Password = "",
+                From = "noreply@test.local"
+            },
+            General = new UpdateGeneralConfigRequest
+            {
+                AppBaseUrl = "https://app.local",
+                AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
+                BackupPath = "C:\\backups",
+                ExportPath = "C:\\exports"
+            },
+            Dashboard = new UpdateDashboardConfigRequest(),
+            Ia = new UpdateIaConfigRequest
+            {
+                Provider = "MINIMAX",
+                Model = AiConfiguration.DefaultMiniMaxModel,
+                Habilitada = true,
+                MiniMaxApiKey = "minimax-test-placeholder"
+            }
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_provider")).Valor.Should().Be("MINIMAX");
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.DefaultMiniMaxModel);
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "minimax_api_key")).Valor.Should().Be("minimax-test-placeholder");
+
+        var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.UpdateConfiguracion);
+        audit.DetallesJson.Should().NotContain("minimax-test-placeholder");
+        audit.DetallesJson.Should().Contain("[REDACTED]");
+    }
+
+    [Fact]
     public async Task Update_Should_Default_Blank_OpenRouter_Model_To_Auto_And_Save_Key()
     {
         await using var db = BuildDbContext();
@@ -311,7 +356,8 @@ public sealed class ConfiguracionControllerTests
             new NoOpEmailService(),
             new AuditService(db),
             NullLogger<ConfiguracionController>.Instance,
-            new PlainTextSecretProtector());
+            new PlainTextSecretProtector(),
+            new SmtpTestRateLimit());
 
         controller.ControllerContext = new ControllerContext
         {

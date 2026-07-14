@@ -11,12 +11,17 @@ public class AppDbContext : DbContext
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<UsuarioEmail> UsuarioEmails => Set<UsuarioEmail>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<MfaTrustedDevice> MfaTrustedDevices => Set<MfaTrustedDevice>();
+    public DbSet<Pais> Paises => Set<Pais>();
     public DbSet<Titular> Titulares => Set<Titular>();
     public DbSet<Cuenta> Cuentas => Set<Cuenta>();
     public DbSet<PlazoFijo> PlazosFijos => Set<PlazoFijo>();
     public DbSet<FormatoImportacion> FormatosImportacion => Set<FormatoImportacion>();
     public DbSet<Extracto> Extractos => Set<Extracto>();
+    public DbSet<ImportacionLote> ImportacionLotes => Set<ImportacionLote>();
+    public DbSet<ImportacionLoteFila> ImportacionLoteFilas => Set<ImportacionLoteFila>();
     public DbSet<ExtractoColumnaExtra> ExtractosColumnasExtra => Set<ExtractoColumnaExtra>();
+    public DbSet<ExtractoDesglose> ExtractosDesgloses => Set<ExtractoDesglose>();
     public DbSet<RevisionExtractoEstado> RevisionExtractoEstados => Set<RevisionExtractoEstado>();
     public DbSet<PermisoUsuario> PermisosUsuario => Set<PermisoUsuario>();
     public DbSet<PreferenciaUsuarioCuenta> PreferenciasUsuarioCuenta => Set<PreferenciaUsuarioCuenta>();
@@ -28,9 +33,13 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationPermission> IntegrationPermissions => Set<IntegrationPermission>();
     public DbSet<AuditoriaIntegracion> AuditoriaIntegraciones => Set<AuditoriaIntegracion>();
     public DbSet<TipoCambio> TiposCambio => Set<TipoCambio>();
+    public DbSet<MovimientoEsperado> MovimientosEsperados => Set<MovimientoEsperado>();
+    public DbSet<Conciliacion> Conciliaciones => Set<Conciliacion>();
     public DbSet<DivisaActiva> DivisasActivas => Set<DivisaActiva>();
     public DbSet<Configuracion> Configuraciones => Set<Configuracion>();
     public DbSet<Backup> Backups => Set<Backup>();
+    public DbSet<BackupCloudConnection> BackupCloudConnections => Set<BackupCloudConnection>();
+    public DbSet<BackupCloudCopy> BackupCloudCopies => Set<BackupCloudCopy>();
     public DbSet<Exportacion> Exportaciones => Set<Exportacion>();
     public DbSet<NotificacionAdmin> NotificacionesAdmin => Set<NotificacionAdmin>();
 
@@ -83,6 +92,40 @@ public class AppDbContext : DbContext
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<MfaTrustedDevice>(entity =>
+        {
+            entity.ToTable("MFA_TRUSTED_DEVICES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.TokenHash).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.SecurityStamp).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.UserAgentSummary).HasMaxLength(256);
+            entity.Property(e => e.IpAddressSummary).HasMaxLength(128);
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            entity.HasIndex(e => e.UsuarioId);
+            entity.HasIndex(e => e.ExpiresAt);
+            entity.HasIndex(e => e.RevokedAt);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Pais>(entity =>
+        {
+            entity.ToTable("PAISES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.Nombre).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.CodigoIso2).HasMaxLength(2);
+            entity.HasIndex(e => e.Nombre).IsUnique();
+            entity.HasIndex(e => e.CodigoIso2)
+                .IsUnique()
+                .HasFilter("\"codigo_iso2\" IS NOT NULL");
+            entity.HasIndex(e => e.Activo);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<Titular>(entity =>
         {
             entity.ToTable("TITULARES");
@@ -99,12 +142,14 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.TitularId);
             entity.HasIndex(e => e.Divisa);
+            entity.HasIndex(e => e.PaisId);
             entity.HasIndex(e => e.EsEfectivo);
             entity.HasIndex(e => e.TipoCuenta);
             entity.HasIndex(e => e.Activa);
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne(e => e.Titular).WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FormatoImportacion>().WithMany().HasForeignKey(e => e.FormatoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Pais).WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -112,8 +157,14 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("PLAZOS_FIJOS");
             entity.HasKey(e => e.Id);
+            // V-02-05 (HIGH-6): xmin como token de concurrencia. RenovarAsync y
+            // ProcesarVencimientosAsync colisionaban silenciosamente (last-write-wins).
+            // El handler global DbUpdateConcurrencyException -> 409 ya existe en Program.cs.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.InteresPrevisto).HasPrecision(18, 2);
-            entity.HasIndex(e => e.CuentaId).IsUnique();
+            entity.HasIndex(e => e.CuentaId)
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => e.FechaVencimiento);
             entity.HasIndex(e => e.Estado);
             entity.HasIndex(e => e.CuentaReferenciaId);
@@ -136,22 +187,31 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("EXTRACTOS");
             entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista via xmin de Postgres.
+            // Devuelve 409 DbUpdateConcurrencyException ante updates perdidos.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.Monto).HasPrecision(18, 4);
             entity.Property(e => e.Saldo).HasPrecision(18, 4);
             entity.Property(e => e.ImportacionFingerprint).HasMaxLength(64);
             entity.Property(e => e.ImportacionLoteHash).HasMaxLength(64);
-            entity.HasIndex(e => new { e.CuentaId, e.FilaNumero }).IsUnique();
+            entity.HasIndex(e => new { e.CuentaId, e.FilaNumero })
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => new { e.CuentaId, e.ImportacionFingerprint })
                 .IsUnique()
                 .HasDatabaseName("ix_extractos_cuenta_id_importacion_fingerprint")
                 .HasFilter("\"importacion_fingerprint\" IS NOT NULL");
             entity.HasIndex(e => e.ImportacionLoteHash);
+            entity.HasIndex(e => e.ImportacionLoteId);
+            // V-02-03 (H5): indice cubriente para busqueda de conciliacion.
+            entity.HasIndex(e => new { e.CuentaId, e.Fecha, e.Monto });
             entity.HasIndex(e => new { e.CuentaId, e.Fecha });
             entity.HasIndex(e => new { e.CuentaId, e.DeletedAt });
             entity.HasIndex(e => e.Fecha);
             entity.HasIndex(e => e.Flagged);
             entity.HasIndex(e => e.Checked);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ImportacionLote>().WithMany().HasForeignKey(e => e.ImportacionLoteId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.CheckedById).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.FlaggedById).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreacionId).OnDelete(DeleteBehavior.Restrict);
@@ -159,25 +219,95 @@ public class AppDbContext : DbContext
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<ImportacionLote>(entity =>
+        {
+            entity.ToTable("IMPORTACION_LOTES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TipoOrigen).HasMaxLength(16).IsRequired();
+            entity.Property(e => e.NombreArchivo).HasMaxLength(260);
+            entity.Property(e => e.Sha256).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.Separador).HasMaxLength(16).IsRequired();
+            entity.Property(e => e.MapeoJson).HasColumnType("jsonb");
+            entity.Property(e => e.ResumenJson).HasColumnType("jsonb");
+            entity.Property(e => e.LoteHash).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.HasIndex(e => e.CuentaId);
+            entity.HasIndex(e => e.LoteHash);
+            entity.HasIndex(e => e.Sha256);
+            entity.HasIndex(e => e.Estado);
+            entity.HasIndex(e => e.FechaCreacion);
+            entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreadorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.ConfirmadoPorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.RevertidoPorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ImportacionLoteFila>(entity =>
+        {
+            entity.ToTable("IMPORTACION_LOTE_FILAS");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.Property(e => e.DatosJson).HasColumnType("jsonb");
+            entity.Property(e => e.ErroresJson).HasColumnType("jsonb");
+            entity.Property(e => e.AdvertenciasJson).HasColumnType("jsonb");
+            entity.Property(e => e.Fingerprint).HasMaxLength(64);
+            // V-02-05 (MED-22): ISoftDelete explicito.
+            entity.HasIndex(e => new { e.LoteId, e.Indice }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
+            entity.HasIndex(e => e.Fingerprint);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+            // V-02-03 (MEDIUM): cascade a restrict para que un borrado
+            // accidental de lote (saltandose el soft-delete) no queme las filas
+            // hijas todavia necesarias para auditoria.
+            entity.HasOne<ImportacionLote>().WithMany().HasForeignKey(e => e.LoteId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<ExtractoColumnaExtra>(entity =>
         {
             entity.ToTable("EXTRACTOS_COLUMNAS_EXTRA");
             entity.HasKey(e => e.Id);
+            // V-02-05 (MED-22): ISoftDelete.
+            entity.HasIndex(e => new { e.ExtractoId, e.NombreColumna }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+            // V-02-03 (MEDIUM): cascade a restrict por la misma razon.
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ExtractoDesglose>(entity =>
+        {
+            entity.ToTable("EXTRACTOS_DESGLOSES");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TerceroNombre).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Importe).HasPrecision(18, 4);
             entity.HasIndex(e => e.ExtractoId);
-            entity.HasIndex(e => e.NombreColumna);
-            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.ExtractoId, e.Orden })
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL");
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<RevisionExtractoEstado>(entity =>
         {
             entity.ToTable("REVISION_EXTRACTO_ESTADOS");
             entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista xmin.
+            entity.UseXminAsConcurrencyToken();
             entity.Property(e => e.Tipo).HasMaxLength(24).IsRequired();
             entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
-            entity.HasIndex(e => new { e.ExtractoId, e.Tipo }).IsUnique();
+            // V-02-05 (MED-22): ISoftDelete.
+            entity.HasIndex(e => new { e.ExtractoId, e.Tipo }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => e.Tipo);
             entity.HasIndex(e => e.Estado);
-            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+            // V-02-03 (MEDIUM): cambiar cascade a restrict para no quemar historial
+            // cuando se borra un extracto (que ya es soft-delete).
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -187,9 +317,11 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.UsuarioId);
             entity.HasIndex(e => new { e.UsuarioId, e.CuentaId });
+            entity.HasIndex(e => new { e.UsuarioId, e.PaisId });
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PreferenciaUsuarioCuenta>(entity =>
@@ -197,15 +329,12 @@ public class AppDbContext : DbContext
             entity.ToTable("PREFERENCIAS_USUARIO_CUENTA");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.UsuarioId);
-            entity.HasIndex(e => new { e.UsuarioId, e.CuentaId })
-                .IsUnique()
-                .HasFilter("\"cuenta_id\" IS NOT NULL");
-            entity.HasIndex(e => e.UsuarioId)
-                .IsUnique()
-                .HasFilter("\"cuenta_id\" IS NULL");
+            entity.HasIndex(e => new { e.UsuarioId, e.PaisId, e.TitularId, e.CuentaId });
             entity.Property(e => e.ColumnasVisibles).HasColumnType("jsonb");
             entity.Property(e => e.ColumnasEditables).HasColumnType("jsonb");
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -264,8 +393,12 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.TokenHash).IsUnique();
             entity.HasIndex(e => e.Estado);
+            entity.HasIndex(e => e.FechaExpiracion);
+            entity.HasIndex(e => e.RotatedFromTokenId);
+            entity.Property(e => e.EndpointScopesJson).HasColumnType("jsonb");
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreadorId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<IntegrationToken>().WithMany().HasForeignKey(e => e.RotatedFromTokenId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<IntegrationPermission>(entity =>
@@ -275,9 +408,11 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.TokenId);
             entity.HasIndex(e => e.TitularId);
             entity.HasIndex(e => e.CuentaId);
+            entity.HasIndex(e => e.PaisId);
             entity.HasOne<IntegrationToken>().WithMany().HasForeignKey(e => e.TokenId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AuditoriaIntegracion>(entity =>
@@ -300,6 +435,62 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => new { e.DivisaOrigen, e.DivisaDestino }).IsUnique();
         });
 
+        modelBuilder.Entity<MovimientoEsperado>(entity =>
+        {
+            entity.ToTable("MOVIMIENTOS_ESPERADOS");
+            entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista xmin.
+            entity.UseXminAsConcurrencyToken();
+            entity.Property(e => e.Monto).HasPrecision(18, 4);
+            entity.Property(e => e.Divisa).HasMaxLength(8).IsRequired();
+            entity.Property(e => e.Referencia).HasMaxLength(128);
+            entity.Property(e => e.Concepto).HasMaxLength(512);
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.Property(e => e.Origen).HasMaxLength(32).IsRequired();
+            // V-02-05 (MED-21): CHECK constraint sobre Estado. Evita valores basura.
+            entity.ToTable(t => t.HasCheckConstraint("ck_movimientos_esperados_estado",
+                "\"estado\" IN ('pendiente','satisfecho','vencido','cancelado')"));
+            entity.HasIndex(e => new { e.CuentaId, e.Estado });
+            entity.HasIndex(e => new { e.CuentaId, e.FechaEsperada, e.Monto });
+            entity.HasIndex(e => e.Referencia);
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioCreacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Conciliacion>(entity =>
+        {
+            entity.ToTable("CONCILIACIONES");
+            entity.HasKey(e => e.Id);
+            // V-02-03 (H6): concurrencia optimista xmin.
+            entity.UseXminAsConcurrencyToken();
+            entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
+            entity.Property(e => e.Regla).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.ReferenciaNormalizada).HasMaxLength(256);
+            entity.Property(e => e.ConceptoNormalizado).HasMaxLength(512);
+            entity.Property(e => e.Observacion).HasMaxLength(1000);
+            // V-02-05 (MED-21): CHECK constraint sobre Estado.
+            entity.ToTable(t => t.HasCheckConstraint("ck_conciliaciones_estado",
+                "\"estado\" IN ('sugerida','conciliada','descartada','cerrada')"));
+            // V-02-05 (MED-22): soft delete explicito en conciliacion.
+            entity.HasIndex(e => new { e.CuentaId, e.Estado });
+            entity.HasIndex(e => e.MovimientoEsperadoId);
+            entity.HasIndex(e => e.ExtractoId);
+            entity.HasIndex(e => new { e.MovimientoEsperadoId, e.ExtractoId }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
+            entity.HasIndex(e => e.DeletedAt);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Cuenta>().WithMany().HasForeignKey(e => e.CuentaId).OnDelete(DeleteBehavior.Restrict);
+            // V-02-03 (MEDIUM): cascade a restrict. Borrar un movimiento esperado
+            // NO debe destruir su historial de conciliacion.
+            entity.HasOne<MovimientoEsperado>().WithMany().HasForeignKey(e => e.MovimientoEsperadoId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioSugerenciaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioConfirmacionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioResolucionId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<DivisaActiva>(entity =>
         {
             entity.ToTable("DIVISAS_ACTIVAS");
@@ -310,6 +501,8 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("CONFIGURACION");
             entity.HasKey(e => e.Clave);
+            entity.Property(e => e.EsSecreto).HasDefaultValue(false);
+            entity.HasIndex(e => e.EsSecreto);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioModificacionId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -318,6 +511,25 @@ public class AppDbContext : DbContext
             entity.ToTable("BACKUPS");
             entity.HasKey(e => e.Id);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.IniciadoPorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BackupCloudConnection>(entity =>
+        {
+            entity.ToTable("BACKUP_CLOUD_CONNECTIONS");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Provider, e.DeletedAt });
+            entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BackupCloudCopy>(entity =>
+        {
+            entity.ToTable("BACKUP_CLOUD_COPIES");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.BackupId);
+            entity.HasIndex(e => new { e.Provider, e.Estado });
+            entity.HasOne(e => e.Backup).WithMany().HasForeignKey(e => e.BackupId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Connection).WithMany().HasForeignKey(e => e.ConnectionId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
         });
 

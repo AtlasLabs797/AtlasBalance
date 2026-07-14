@@ -12,6 +12,9 @@
     "Email": "admin@atlasbalance.local",
     "Password": "<password-admin-inicial-local>"
   },
+  "DemoData": {
+    "Enabled": true
+  },
   "Security": {
     "RequireMfaForWebUsers": true
   },

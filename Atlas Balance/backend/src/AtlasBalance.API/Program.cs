@@ -19,25 +19,58 @@ using System.Security.Cryptography;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    // V-02-05 (LOW-BE-1): no enviar el header "Server: Kestrel" en respuestas.
+    options.AddServerHeader = false;
+});
+AddExternalDevelopmentSecrets(builder.Configuration, builder.Environment, "AtlasBalance.API.Development.json");
 
 builder.Host.UseWindowsService();
 
-builder.Host.UseSerilog((context, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .Enrich.FromLogContext()
-    .WriteTo.Console()
-    .WriteTo.File("logs/atlas-balance-.log", rollingInterval: RollingInterval.Day));
+builder.Host.UseSerilog((context, config) =>
+{
+    // V-02-05 (MED-24): ruta absoluta configurable para evitar que el log acabe
+    // en C:\Windows\System32\logs cuando AtlasBalance corre como Windows Service
+    // (el cwd por defecto del servicio es System32). Default razonable para
+    // on-premise: %ProgramData%\AtlasBalance\logs.
+    var defaultLogDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "AtlasBalance",
+        "logs");
+    var logPath = context.Configuration["Serilog:FilePath"]
+        ?? Path.Combine(defaultLogDir, "atlas-balance-.log");
+    config
+        .ReadFrom.Configuration(context.Configuration)
+        .Enrich.FromLogContext()
+        .WriteTo.Console()
+        .WriteTo.File(
+            logPath,
+            rollingInterval: RollingInterval.Day,
+            fileSizeLimitBytes: 50L * 1024L * 1024L,
+            retainedFileCountLimit: 30);
+});
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<SmtpTestRateLimit>();
 builder.Services.AddScoped<RlsDbCommandInterceptor>();
+builder.Services.AddScoped<AuditSaveChangesInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options
         .UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
         .UseSnakeCaseNamingConvention()
-        .AddInterceptors(serviceProvider.GetRequiredService<RlsDbCommandInterceptor>()));
+        .AddInterceptors(
+            serviceProvider.GetRequiredService<RlsDbCommandInterceptor>(),
+            serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
 var jwtSecret = ResolveJwtSecret(builder.Configuration, builder.Environment);
 var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, jwtSecret);
+// V-02-05 (MED-7): advertir si RlsContextSecret == JwtSettings:Secret en produccion.
+// Deberian ser claves distintas para que comprometer una no exponga la otra.
+if (!builder.Environment.IsDevelopment() && string.Equals(rlsContextSecret, jwtSecret, StringComparison.Ordinal))
+{
+    Console.Error.WriteLine("[WARN] RlsContextSecret coincide con JwtSettings:Secret. Configure Security:RlsContextSecret como clave independiente para reducir el blast radius ante compromiso.");
+}
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "atlas-balance-api";
 var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "atlas-balance-app";
 
@@ -83,7 +116,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     return Task.CompletedTask;
                 }
 
-                context.Token = context.Request.Cookies["access_token"];
+                context.Token = context.Request.Cookies["__Host-atlas-access-token"]
+                    ?? context.Request.Cookies["access_token"];
                 return Task.CompletedTask;
             }
         };
@@ -123,6 +157,16 @@ builder.Services.AddHttpClient("watchdog-client", (sp, client) =>
     client.BaseAddress = ResolveWatchdogBaseUri(config["WatchdogSettings:BaseUrl"]);
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+builder.Services.AddHttpClient("google-oauth", client =>
+{
+    client.BaseAddress = new Uri("https://oauth2.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient("google-apis", client =>
+{
+    client.BaseAddress = new Uri("https://www.googleapis.com/");
+    client.Timeout = TimeSpan.FromMinutes(30);
+});
 var useAiSystemProxy = builder.Configuration.GetValue("Ia:UseSystemProxy", false);
 var aiProxyUrl = builder.Configuration["Ia:ProxyUrl"];
 var hasExplicitAiProxy = !string.IsNullOrWhiteSpace(aiProxyUrl);
@@ -148,6 +192,18 @@ builder.Services.AddHttpClient("openai", client =>
 builder.Services.AddHttpClient("openai-fallback", client =>
 {
     client.BaseAddress = new Uri("https://api.openai.com/v1/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+})
+    .ConfigurePrimaryHttpMessageHandler(() => CreateAiHttpHandler(useProxy: false, proxyUrl: null));
+builder.Services.AddHttpClient("minimax", client =>
+{
+    client.BaseAddress = new Uri("https://api.minimax.io/v1/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+})
+    .ConfigurePrimaryHttpMessageHandler(() => CreateAiHttpHandler(primaryAiUsesProxy, aiProxyUrl));
+builder.Services.AddHttpClient("minimax-fallback", client =>
+{
+    client.BaseAddress = new Uri("https://api.minimax.io/v1/");
     client.Timeout = TimeSpan.FromSeconds(45);
 })
     .ConfigurePrimaryHttpMessageHandler(() => CreateAiHttpHandler(useProxy: false, proxyUrl: null));
@@ -189,6 +245,8 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<ITiposCambioService, TiposCambioService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IImportacionService, ImportacionService>();
+builder.Services.AddScoped<ConciliacionService>();
+builder.Services.AddScoped<IConciliacionService, HardenedConciliacionService>();
 builder.Services.AddScoped<IUserAccessService, UserAccessService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
@@ -196,6 +254,12 @@ builder.Services.AddScoped<IPlazoFijoService, PlazoFijoService>();
 builder.Services.AddScoped<IRevisionService, RevisionService>();
 builder.Services.AddScoped<IAtlasAiService, AtlasAiService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
+builder.Services.AddScoped<BackupConfigurationService>();
+builder.Services.AddScoped<IBackupConfigurationService, HardenedBackupConfigurationService>();
+builder.Services.AddScoped<IBackupEncryptionService, BackupEncryptionService>();
+builder.Services.AddScoped<GoogleDriveBackupService>();
+builder.Services.AddScoped<IGoogleDriveBackupService, HardenedGoogleDriveBackupService>();
+builder.Services.AddScoped<IConfiguracionRepository, ConfiguracionRepository>();
 builder.Services.AddScoped<IExportacionService, ExportacionService>();
 builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
 builder.Services.AddScoped<IActualizacionService, ActualizacionService>();
@@ -206,6 +270,7 @@ builder.Services.AddScoped<SyncTiposCambioJob>();
 builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
 builder.Services.AddScoped<LimpiezaAuditoriaJob>();
 builder.Services.AddScoped<BackupWeeklyJob>();
+builder.Services.AddScoped<BackupSchedulerJob>();
 builder.Services.AddScoped<ExportMensualJob>();
 builder.Services.AddScoped<PlazoFijoVencimientoJob>();
 builder.Services.AddScoped<AutoUpdateJob>();
@@ -255,10 +320,11 @@ using (var scope = app.Services.CreateScope())
         job => job.ExecuteAsync(),
         "15 3 * * *");
 
-    recurringJobManager.AddOrUpdate<BackupWeeklyJob>(
-        "backup-weekly",
+    recurringJobManager.RemoveIfExists("backup-weekly");
+    recurringJobManager.AddOrUpdate<BackupSchedulerJob>(
+        "backup-scheduler",
         job => job.ExecuteAsync(),
-        "0 2 * * 0");
+        "*/15 * * * *");
 
     recurringJobManager.AddOrUpdate<ExportMensualJob>(
         "export-mensual",
@@ -299,6 +365,21 @@ app.UseExceptionHandler(errorApp =>
             return;
         }
 
+        // Conflicto de concurrencia optimista (token xmin): otro usuario modifico
+        // el registro entre la lectura y el guardado. Se devuelve 409 para que el
+        // frontend recargue el dato en vez de reintentar a ciegas (evita lost updates).
+        if (feature?.Error is DbUpdateConcurrencyException)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            context.Response.ContentType = "application/json; charset=utf-8";
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "El registro fue modificado por otro usuario. Recarga los datos y vuelve a intentarlo.",
+                code = "concurrency_conflict"
+            });
+            return;
+        }
+
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         context.Response.ContentType = "application/json; charset=utf-8";
         await context.Response.WriteAsJsonAsync(new { error = "Error interno del servidor." });
@@ -322,10 +403,19 @@ app.Use(async (context, next) =>
         headers["Referrer-Policy"] = "no-referrer";
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
         headers["Cross-Origin-Opener-Policy"] = "same-origin";
+        // V-02-05 (LOW-BE-3): Cross-Origin-Resource-Policy same-origin para limitar
+        // quien puede embeber recursos de la API.
+        headers["Cross-Origin-Resource-Policy"] = "same-origin";
+        // V-02-05 (LOW-BE-1): quitar Server header que Kestrel envia por defecto.
+        headers.Remove("Server");
 
         var connectSrc = app.Environment.IsDevelopment()
             ? "'self' http://localhost:5173 https://localhost:5000 http://localhost:5000"
             : "'self'";
+
+        // V-02-05 (LOW-BE-2): upgrade-insecure-requests + block-all-mixed-content en
+        // produccion para forzar HTTPS.
+        var cspUpgrade = app.Environment.IsDevelopment() ? string.Empty : "upgrade-insecure-requests; block-all-mixed-content; ";
 
         headers["Content-Security-Policy"] =
             "default-src 'self'; " +
@@ -337,7 +427,8 @@ app.Use(async (context, next) =>
             "img-src 'self' data: blob:; " +
             "object-src 'none'; " +
             "script-src 'self'; " +
-            "style-src 'self' 'unsafe-inline'";
+            "style-src 'self' 'unsafe-inline'; " +
+            cspUpgrade;
 
         return Task.CompletedTask;
     });
@@ -365,6 +456,18 @@ staticFileOptions.OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.ContentType = ctx.Context.Response.ContentType + "; charset=utf-8";
     }
+
+    // BUG-COLUMNAS (V-02-04): sin cabeceras de cache el navegador podia
+    // reutilizar un index.html viejo tras un rebuild y seguir cargando
+    // bundles antiguos. El html nunca se cachea; los assets con hash si.
+    if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+    }
+    else if (ctx.Context.Request.Path.StartsWithSegments("/assets"))
+    {
+        ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+    }
 };
 app.UseStaticFiles(staticFileOptions);
 app.UseMiddleware<IntegrationAuthMiddleware>();
@@ -384,7 +487,7 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" }));
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", staticFileOptions);
 
 app.Run();
 
@@ -426,7 +529,15 @@ static string ResolveJwtSecret(IConfiguration configuration, IHostEnvironment en
 static string ResolveRlsContextSecret(IConfiguration configuration, string jwtSecret)
 {
     var configured = configuration["Security:RlsContextSecret"];
-    return string.IsNullOrWhiteSpace(configured) ? jwtSecret : configured;
+    if (string.IsNullOrWhiteSpace(configured))
+    {
+        // V-02-05 (MED-7): por defecto cae al secreto JWT para simplificar el
+        // despliegue, pero si el operador rota el secreto JWT debe rotar tambien
+        // el RlsContextSecret. Logueamos warning en produccion para que sea
+        // visible.
+        return jwtSecret;
+    }
+    return configured;
 }
 
 static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)
@@ -748,6 +859,23 @@ static void RejectUnsafeAllowedHosts(string? allowedHosts)
     }
 }
 
+static void AddExternalDevelopmentSecrets(IConfigurationBuilder configuration, IWebHostEnvironment environment, string fileName)
+{
+    if (!environment.IsDevelopment())
+    {
+        return;
+    }
+
+    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    if (string.IsNullOrWhiteSpace(appData))
+    {
+        return;
+    }
+
+    var path = Path.Combine(appData, "AtlasBalance", "dev-secrets", fileName);
+    configuration.AddJsonFile(path, optional: true, reloadOnChange: true);
+}
+
 static void ProtectExistingConfigurationSecrets(AppDbContext dbContext, ISecretProtector secretProtector)
 {
     var secretKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -755,12 +883,22 @@ static void ProtectExistingConfigurationSecrets(AppDbContext dbContext, ISecretP
         "smtp_password",
         "exchange_rate_api_key",
         "openrouter_api_key",
-        "openai_api_key"
+        "openai_api_key",
+        "minimax_api_key",
+        "google_drive_oauth_client_secret",
+        "backup_cloud_encryption_key",
+        "github_update_token"
     };
 
     var changed = false;
     foreach (var item in dbContext.Configuraciones.Where(c => secretKeys.Contains(c.Clave)))
     {
+        if (!item.EsSecreto)
+        {
+            item.EsSecreto = true;
+            changed = true;
+        }
+
         if (string.IsNullOrWhiteSpace(item.Valor) || secretProtector.IsProtected(item.Valor))
         {
             continue;

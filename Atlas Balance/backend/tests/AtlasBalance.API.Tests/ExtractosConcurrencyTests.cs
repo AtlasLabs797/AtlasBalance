@@ -102,6 +102,67 @@ public sealed class ExtractosConcurrencyTests
         filas.Distinct().Should().HaveCount(10);
     }
 
+    [Fact]
+    public async Task Editar_Fila_En_Dos_Contextos_Debe_Lanzar_DbUpdateConcurrencyException()
+    {
+        // V-02-04 (1.1): el token de concurrencia xmin debe detectar una edicion
+        // perdida. El handler global de Program.cs mapea esta excepcion a 409.
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(_fixture.ConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .Options;
+
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        var extractoId = Guid.NewGuid();
+
+        await using (var setup = new AppDbContext(options))
+        {
+            await setup.Database.EnsureDeletedAsync();
+            await setup.Database.MigrateAsync();
+
+            setup.Titulares.Add(new Titular
+            {
+                Id = titularId,
+                Nombre = "Titular Xmin",
+                Tipo = TipoTitular.EMPRESA
+            });
+            setup.Cuentas.Add(new Cuenta
+            {
+                Id = cuentaId,
+                TitularId = titularId,
+                Nombre = "Cuenta Xmin",
+                Divisa = "EUR",
+                Activa = true
+            });
+            setup.Extractos.Add(new Extracto
+            {
+                Id = extractoId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 4, 1),
+                Concepto = "Original",
+                Monto = 100m,
+                Saldo = 100m,
+                FilaNumero = 1
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var ctxA = new AppDbContext(options);
+        await using var ctxB = new AppDbContext(options);
+
+        var rowA = await ctxA.Extractos.FirstAsync(x => x.Id == extractoId);
+        var rowB = await ctxB.Extractos.FirstAsync(x => x.Id == extractoId);
+
+        rowA.Concepto = "Editado por A";
+        await ctxA.SaveChangesAsync();
+
+        rowB.Concepto = "Editado por B";
+        var act = async () => await ctxB.SaveChangesAsync();
+
+        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+    }
+
     private static ExtractosController BuildController(AppDbContext db, Guid userId)
     {
         var controller = new ExtractosController(db, new NoOpAlertaService());
@@ -126,7 +187,7 @@ public sealed class ExtractosConcurrencyTests
         public Task EvaluateSaldoPostAsync(Guid cuentaId, Guid? actorUserId, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<AlertaActivaItemResponse>>([]);
     }
 }

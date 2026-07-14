@@ -42,6 +42,15 @@ public sealed class SistemaController : ControllerBase
             return BadRequest(new { error = available.Mensaje ?? "No hay actualización disponible." });
         }
 
+        if (!available.Instalable)
+        {
+            return BadRequest(new
+            {
+                error = available.Mensaje ?? "La actualizacion no es instalable.",
+                bloqueos = available.Bloqueos
+            });
+        }
+
         var accepted = await _actualizacionService.IniciarActualizacionAsync(
             request?.SourcePath,
             request?.TargetPath,

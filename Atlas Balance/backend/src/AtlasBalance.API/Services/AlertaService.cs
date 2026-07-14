@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
@@ -10,7 +11,7 @@ namespace AtlasBalance.API.Services;
 public interface IAlertaService
 {
     Task EvaluateSaldoPostAsync(Guid cuentaId, Guid? actorUserId, CancellationToken cancellationToken);
-    Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken);
 }
 
 public sealed class AlertaService : IAlertaService
@@ -82,13 +83,38 @@ public sealed class AlertaService : IAlertaService
 
         var now = DateTime.UtcNow;
         var cooldownHours = await GetSaldoBajoCooldownHoursAsync(cancellationToken);
-        if (alertaAplicable.FechaUltimaAlerta.HasValue &&
-            alertaAplicable.FechaUltimaAlerta.Value > now.AddHours(-cooldownHours))
+        // V-02-05 (HIGH-11): cooldown por (cuenta, alcance) para que alertas de distinto
+        // alcance (CUENTA / TIPO_TITULAR / GLOBAL) no se bloqueen entre si.
+        var alcance = alertaAplicable.CuentaId.HasValue ? "CUENTA"
+            : alertaAplicable.TipoTitular.HasValue ? "TIPO_TITULAR"
+            : "GLOBAL";
+        var cooldownKey = $"alerta_saldo_last_sent_utc:{cuenta.Id:N}:{alcance}";
+        // V-02-05 (HIGH-11): lock por (cuenta, alcance) para evitar que dos
+        // EvaluateSaldoPostAsync concurrentes disparen email doble en importacion
+        // masiva. Se libera al final del SaveChangesAsync.
+        var lockKey = $"alerta_saldo_lock:{cuenta.Id:N}:{alcance}";
+        if (string.Equals(
+                _dbContext.Database.ProviderName,
+                "Npgsql.EntityFrameworkCore.PostgreSQL",
+                StringComparison.Ordinal))
+        {
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                "SELECT pg_advisory_xact_lock(hashtext({0}))", new object[] { lockKey }, cancellationToken);
+        }
+
+        var lastSentAt = await GetCuentaCooldownAsync(cooldownKey, cancellationToken);
+        if (!lastSentAt.HasValue && alertaAplicable.CuentaId == cuenta.Id)
+        {
+            lastSentAt = alertaAplicable.FechaUltimaAlerta;
+        }
+
+        if (lastSentAt.HasValue && lastSentAt.Value > now.AddHours(-cooldownHours))
         {
             _logger.LogInformation(
-                "No se envia alerta por saldo bajo duplicada. alerta_id={AlertaId}, cuenta_id={CuentaId}, cooldown_horas={CooldownHours}",
+                "No se envia alerta por saldo bajo duplicada. alerta_id={AlertaId}, cuenta_id={CuentaId}, alcance={Alcance}, cooldown_horas={CooldownHours}",
                 alertaAplicable.Id,
                 cuenta.Id,
+                alcance,
                 cooldownHours);
             return;
         }
@@ -141,6 +167,7 @@ public sealed class AlertaService : IAlertaService
         }
 
         alertaAplicable.FechaUltimaAlerta = now;
+        await UpsertCuentaCooldownAsync(cooldownKey, now, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(
@@ -164,9 +191,9 @@ public sealed class AlertaService : IAlertaService
             cancellationToken);
     }
 
-    public async Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<AlertaActivaItemResponse>> GetAlertasActivasAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
     {
-        var cuentasQuery = _dbContext.Cuentas.Where(c => c.Activa);
+        var cuentasQuery = _dbContext.Cuentas.Where(c => c.Activa).ApplyPaisScope(paisId);
         if (!scope.IsAdmin)
         {
             if (!scope.HasPermissions)
@@ -177,8 +204,12 @@ public sealed class AlertaService : IAlertaService
             if (!scope.HasGlobalAccess)
             {
                 cuentasQuery = cuentasQuery.Where(c =>
-                    scope.CuentaIds.Contains(c.Id) ||
-                    scope.TitularIds.Contains(c.TitularId));
+                    _dbContext.PermisosUsuario.Any(p =>
+                        p.UsuarioId == scope.UserId &&
+                        p.PuedeVerCuentas &&
+                        (p.PaisId == null || p.PaisId == c.PaisId) &&
+                        (p.TitularId == null || p.TitularId == c.TitularId) &&
+                        (p.CuentaId == null || p.CuentaId == c.Id)));
             }
         }
 
@@ -285,18 +316,21 @@ public sealed class AlertaService : IAlertaService
             return [];
         }
 
-        var loginEmails = await _dbContext.Usuarios
-            .Where(x => userIds.Contains(x.Id) && x.Activo)
-            .Select(x => x.Email.ToLower())
-            .ToListAsync(cancellationToken);
+        // V-02-05 (MED-18): un solo round-trip con UNION ALL en lugar de 2 queries.
+        // Login + emails adicionales en una sola SQL.
+        var combined = await (
+            from u in _dbContext.Usuarios.AsNoTracking()
+            where userIds.Contains(u.Id) && u.Activo
+            select new { u.Id, Email = u.Email.ToLower() }
+        ).Concat(
+            from e in _dbContext.UsuarioEmails.AsNoTracking()
+            where userIds.Contains(e.UsuarioId)
+            select new { Id = e.UsuarioId, Email = e.Email.ToLower() }
+        ).ToListAsync(cancellationToken);
 
-        var extraEmails = await _dbContext.UsuarioEmails
-            .Where(x => userIds.Contains(x.UsuarioId))
-            .Select(x => x.Email.ToLower())
-            .ToListAsync(cancellationToken);
-
-        return loginEmails
-            .Concat(extraEmails)
+        return combined
+            .Select(x => x.Email)
+            .Concat(Enumerable.Empty<string>())
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x)
@@ -313,5 +347,39 @@ public sealed class AlertaService : IAlertaService
         return int.TryParse(raw, out var parsed)
             ? Math.Clamp(parsed, 1, 720)
             : 24;
+    }
+
+    private async Task<DateTime?> GetCuentaCooldownAsync(string key, CancellationToken cancellationToken)
+    {
+        var raw = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Where(x => x.Clave == key)
+            .Select(x => x.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private async Task UpsertCuentaCooldownAsync(string key, DateTime utcNow, CancellationToken cancellationToken)
+    {
+        var value = utcNow.ToString("O", CultureInfo.InvariantCulture);
+        var row = await _dbContext.Configuraciones.FirstOrDefaultAsync(x => x.Clave == key, cancellationToken);
+        if (row is null)
+        {
+            _dbContext.Configuraciones.Add(new Configuracion
+            {
+                Clave = key,
+                Valor = value,
+                Tipo = "datetime",
+                Descripcion = "Ultimo envio de alerta de saldo bajo por cuenta",
+                FechaModificacion = utcNow
+            });
+            return;
+        }
+
+        row.Valor = value;
+        row.FechaModificacion = utcNow;
     }
 }

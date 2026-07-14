@@ -53,6 +53,7 @@ public sealed class CuentasController : ControllerBase
         [FromQuery] string sortDir = "desc",
         [FromQuery] string? search = null,
         [FromQuery] Guid? titularId = null,
+        [FromQuery] Guid? paisId = null,
         [FromQuery] TipoTitular? tipoTitular = null,
         [FromQuery] TipoCuenta? tipoCuenta = null,
         [FromQuery] bool incluirEliminados = false,
@@ -84,6 +85,11 @@ public sealed class CuentasController : ControllerBase
             query = query.Where(c => c.TipoCuenta == tipoCuenta.Value);
         }
 
+        if (paisId.HasValue)
+        {
+            query = query.Where(c => c.PaisId == paisId.Value);
+        }
+
         if (tipoTitular.HasValue)
         {
             query = query.Where(c => _dbContext.Titulares.Any(t => t.Id == c.TitularId && t.Tipo == tipoTitular.Value));
@@ -97,6 +103,7 @@ public sealed class CuentasController : ControllerBase
                 (c.BancoNombre != null && c.BancoNombre.ToLower().Contains(term)) ||
                 (c.NumeroCuenta != null && c.NumeroCuenta.ToLower().Contains(term)) ||
                 (c.Iban != null && c.Iban.ToLower().Contains(term)) ||
+                (c.PaisId != null && _dbContext.Paises.IgnoreQueryFilters().Any(p => p.Id == c.PaisId && p.Nombre.ToLower().Contains(term))) ||
                 (c.Notas != null && c.Notas.ToLower().Contains(term)));
         }
 
@@ -109,6 +116,14 @@ public sealed class CuentasController : ControllerBase
                 c => c.TitularId,
                 t => t.Id,
                 (c, t) => new { Cuenta = c, Titular = t })
+            .GroupJoin(
+                _dbContext.Paises.IgnoreQueryFilters(),
+                row => row.Cuenta.PaisId,
+                p => p.Id,
+                (row, paises) => new { row.Cuenta, row.Titular, Paises = paises })
+            .SelectMany(
+                row => row.Paises.DefaultIfEmpty(),
+                (row, pais) => new { row.Cuenta, row.Titular, Pais = pais })
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
@@ -127,6 +142,8 @@ public sealed class CuentasController : ControllerBase
                     BancoNombre = x.Cuenta.BancoNombre,
                     Divisa = x.Cuenta.Divisa,
                     FormatoId = x.Cuenta.FormatoId,
+                    PaisId = x.Cuenta.PaisId,
+                    PaisNombre = x.Pais != null ? x.Pais.Nombre : null,
                     EsEfectivo = x.Cuenta.EsEfectivo,
                     TipoCuenta = ResolveTipoCuenta(x.Cuenta).ToString(),
                     PlazoFijo = plazoMap.GetValueOrDefault(x.Cuenta.Id),
@@ -190,6 +207,11 @@ public sealed class CuentasController : ControllerBase
             BancoNombre = cuenta.BancoNombre,
             Divisa = cuenta.Divisa,
             FormatoId = cuenta.FormatoId,
+            PaisId = cuenta.PaisId,
+            PaisNombre = await _dbContext.Paises.IgnoreQueryFilters()
+                .Where(p => p.Id == cuenta.PaisId)
+                .Select(p => p.Nombre)
+                .FirstOrDefaultAsync(cancellationToken),
             EsEfectivo = cuenta.EsEfectivo,
             TipoCuenta = ResolveTipoCuenta(cuenta).ToString(),
             PlazoFijo = plazoMap.GetValueOrDefault(cuenta.Id),
@@ -219,6 +241,7 @@ public sealed class CuentasController : ControllerBase
                 c.Iban,
                 c.BancoNombre,
                 c.Divisa,
+                c.PaisId,
                 c.EsEfectivo,
                 c.TipoCuenta,
                 c.TitularId,
@@ -233,6 +256,10 @@ public sealed class CuentasController : ControllerBase
         var titular = await _dbContext.Titulares
             .Where(t => t.Id == cuenta.TitularId)
             .Select(t => t.Nombre)
+            .FirstOrDefaultAsync(cancellationToken);
+        var paisNombre = await _dbContext.Paises.IgnoreQueryFilters()
+            .Where(p => p.Id == cuenta.PaisId)
+            .Select(p => p.Nombre)
             .FirstOrDefaultAsync(cancellationToken);
 
         var latest = await _dbContext.Extractos
@@ -268,6 +295,8 @@ public sealed class CuentasController : ControllerBase
             Iban = cuenta.Iban,
             BancoNombre = cuenta.BancoNombre,
             Divisa = cuenta.Divisa,
+            PaisId = cuenta.PaisId,
+            PaisNombre = paisNombre,
             TitularId = cuenta.TitularId,
             TitularNombre = titular ?? string.Empty,
             EsEfectivo = cuenta.EsEfectivo,
@@ -334,6 +363,7 @@ public sealed class CuentasController : ControllerBase
             BancoNombre = validation.BancoNombre,
             Divisa = validation.Divisa!,
             FormatoId = SupportsFormatoImportacion(validation.TipoCuenta) ? request.FormatoId : null,
+            PaisId = validation.PaisId,
             TipoCuenta = validation.TipoCuenta,
             EsEfectivo = validation.TipoCuenta == TipoCuenta.EFECTIVO,
             Activa = request.Activa,
@@ -366,7 +396,7 @@ public sealed class CuentasController : ControllerBase
             "CUENTAS",
             cuenta.Id,
             HttpContext,
-            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, tipo_cuenta = cuenta.TipoCuenta.ToString(), cuenta.Notas, plazo_fijo = validation.PlazoFijo }),
+            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, cuenta.PaisId, tipo_cuenta = cuenta.TipoCuenta.ToString(), cuenta.Notas, plazo_fijo = validation.PlazoFijo }),
             cancellationToken);
 
         return CreatedAtAction(nameof(Obtener), new { id = cuenta.Id }, new { id = cuenta.Id });
@@ -401,6 +431,7 @@ public sealed class CuentasController : ControllerBase
         cuenta.BancoNombre = validation.BancoNombre;
         cuenta.Divisa = validation.Divisa!;
         cuenta.FormatoId = SupportsFormatoImportacion(validation.TipoCuenta) ? request.FormatoId : null;
+        cuenta.PaisId = validation.PaisId;
         cuenta.TipoCuenta = validation.TipoCuenta;
         cuenta.EsEfectivo = validation.TipoCuenta == TipoCuenta.EFECTIVO;
         cuenta.Activa = request.Activa;
@@ -442,7 +473,7 @@ public sealed class CuentasController : ControllerBase
             "CUENTAS",
             cuenta.Id,
             HttpContext,
-            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, tipo_cuenta = cuenta.TipoCuenta.ToString(), cuenta.Activa, cuenta.Notas, plazo_fijo = validation.PlazoFijo }),
+            JsonSerializer.Serialize(new { cuenta.Nombre, cuenta.Divisa, cuenta.PaisId, tipo_cuenta = cuenta.TipoCuenta.ToString(), cuenta.Activa, cuenta.Notas, plazo_fijo = validation.PlazoFijo }),
             cancellationToken);
 
         return Ok(new { message = "Cuenta actualizada" });
@@ -601,6 +632,15 @@ public sealed class CuentasController : ControllerBase
             return CuentaValidationResult.Fail("La divisa indicada no esta activa", tipoCuenta);
         }
 
+        if (request.PaisId.HasValue)
+        {
+            var paisExists = await _dbContext.Paises.AnyAsync(p => p.Id == request.PaisId.Value && p.Activo, cancellationToken);
+            if (!paisExists)
+            {
+                return CuentaValidationResult.Fail("Pais invalido o inactivo", tipoCuenta);
+            }
+        }
+
         if (SupportsFormatoImportacion(tipoCuenta) && request.FormatoId.HasValue)
         {
             var formato = await _dbContext.FormatosImportacion.FirstOrDefaultAsync(f => f.Id == request.FormatoId.Value, cancellationToken);
@@ -670,6 +710,7 @@ public sealed class CuentasController : ControllerBase
             NumeroCuenta = tipoCuenta == TipoCuenta.NORMAL ? request.NumeroCuenta?.Trim() : null,
             Iban = tipoCuenta == TipoCuenta.NORMAL ? request.Iban?.Trim() : null,
             BancoNombre = tipoCuenta == TipoCuenta.NORMAL ? request.BancoNombre?.Trim() : null,
+            PaisId = request.PaisId,
             PlazoFijo = tipoCuenta == TipoCuenta.PLAZO_FIJO ? plazoFijo : null
         };
     }
@@ -689,6 +730,7 @@ public sealed class CuentasController : ControllerBase
         return await _dbContext.PermisosUsuario.AnyAsync(
             p => p.UsuarioId == scope.UserId &&
                  p.PuedeEditarLineas &&
+                 (p.PaisId == null || p.PaisId == cuenta.PaisId) &&
                  (p.CuentaId == null || p.CuentaId == cuenta.Id) &&
                  (p.TitularId == null || p.TitularId == cuenta.TitularId),
             cancellationToken);
@@ -797,6 +839,7 @@ public sealed class CuentasController : ControllerBase
         public string? NumeroCuenta { get; init; }
         public string? Iban { get; init; }
         public string? BancoNombre { get; init; }
+        public Guid? PaisId { get; init; }
         public SavePlazoFijoRequest? PlazoFijo { get; init; }
 
         public static CuentaValidationResult Fail(string error, TipoCuenta tipoCuenta) => new()

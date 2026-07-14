@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useBlockingOverlay } from '@/hooks/useBlockingOverlay';
 
 const FOCUSABLE_SELECTOR =
   'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
@@ -17,6 +18,7 @@ export function useDialogFocus<T extends HTMLElement>(
   const { initialFocus, onEscape } = options;
   const initialFocusRef = useRef(initialFocus);
   const onEscapeRef = useRef(onEscape);
+  useBlockingOverlay(open);
 
   useEffect(() => {
     initialFocusRef.current = initialFocus;
@@ -30,7 +32,7 @@ export function useDialogFocus<T extends HTMLElement>(
 
     triggerRef.current = document.activeElement;
 
-    window.setTimeout(() => {
+    const focusTimeoutId = window.setTimeout(() => {
       const target =
         initialFocusRef.current?.() ??
         dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ??
@@ -68,6 +70,9 @@ export function useDialogFocus<T extends HTMLElement>(
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      // Cancela el foco inicial pendiente para no llamar .focus() sobre un nodo
+      // ya desmontado si el dialogo se abre y cierra muy rapido.
+      window.clearTimeout(focusTimeoutId);
       window.removeEventListener('keydown', handleKeyDown);
       if (triggerRef.current instanceof HTMLElement) {
         triggerRef.current.focus();

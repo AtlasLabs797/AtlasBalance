@@ -20,7 +20,7 @@ Aplicacion web on-premise para gestion de tesoreria multi-banco, multi-titular, 
 
 **Stack:**
 - Backend: ASP.NET Core 8 (C#) -> Windows Service, HTTPS (Kestrel)
-- Frontend: React 18 + TypeScript + Vite 5 -> servido como estaticos por el backend
+- Frontend: React 18 + TypeScript + Vite 8 -> servido como estaticos por el backend
 - BD: PostgreSQL 16+ (Docker en desarrollo, local en produccion)
 - ORM: Entity Framework Core 8 + Npgsql
 - State: Zustand 4
@@ -244,7 +244,7 @@ npm run build
 
 # Release Windows x64
 cd "Atlas Balance"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-01.09
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-02-03
 
 # Conectar a PostgreSQL
 psql -h localhost -p 5433 -U app_user -d atlas_balance

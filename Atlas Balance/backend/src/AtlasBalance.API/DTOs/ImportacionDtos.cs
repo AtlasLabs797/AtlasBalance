@@ -28,27 +28,40 @@ public sealed class MapeoColumnasRequest
 
 public sealed class ImportacionValidarRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
     public Guid CuentaId { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(5 * 1024 * 1024)]
     public string RawData { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string? Separador { get; set; }
+    [System.ComponentModel.DataAnnotations.Required]
     public MapeoColumnasRequest Mapeo { get; set; } = new();
 }
 
 public sealed class ImportacionConfirmarRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
     public Guid CuentaId { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(5 * 1024 * 1024)]
     public string RawData { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string? Separador { get; set; }
+    [System.ComponentModel.DataAnnotations.Required]
     public MapeoColumnasRequest Mapeo { get; set; } = new();
     public IReadOnlyList<int>? FilasAImportar { get; set; }
+    public Guid? LoteId { get; set; }
 }
 
 public sealed class ImportacionPlazoFijoMovimientoRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
     public Guid CuentaId { get; set; }
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.MaxLength(16)]
     public string TipoMovimiento { get; set; } = "INGRESO";
     public DateOnly Fecha { get; set; }
+    [System.ComponentModel.DataAnnotations.Range(typeof(decimal), "0.0001", "9999999999.9999")]
     public decimal Monto { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(512)]
     public string? Concepto { get; set; }
 }
 
@@ -92,6 +105,83 @@ public sealed class ImportacionConfirmarResponse
     public int FilasDuplicadas { get; set; }
     public int FilasConError { get; set; }
     public IReadOnlyList<ErrorFilaResponse> Errores { get; set; } = [];
+    public IReadOnlyList<string> Advertencias { get; set; } = [];
+}
+
+public sealed class ImportacionLoteCrearRequest
+{
+    public Guid CuentaId { get; set; }
+    public string RawData { get; set; } = string.Empty;
+    public string? Separador { get; set; }
+    public MapeoColumnasRequest Mapeo { get; set; } = new();
+    public string TipoOrigen { get; set; } = "PEGADO";
+    public string? NombreArchivo { get; set; }
+    public long? TamanioBytes { get; set; }
+
+    /// <summary>
+    /// V-02-05 (HIGH-1): codigo de divisa declarado por el usuario para los importes pegados.
+    /// Si no coincide con la divisa de la cuenta, se registra una advertencia en el lote
+    /// para que el operador la vea antes de confirmar. Si se omite, se asume la divisa
+    /// de la cuenta (no se valida contra el archivo).
+    /// </summary>
+    public string? DivisaEsperada { get; set; }
+}
+
+public sealed class ImportacionLoteConfirmarRequest
+{
+    public IReadOnlyList<int>? FilasAImportar { get; set; }
+    public bool AceptaAdvertencias { get; set; }
+}
+
+public sealed class ImportacionLoteRevertirRequest
+{
+    public string? Motivo { get; set; }
+}
+
+public sealed class ImportacionLoteResponse
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public string? CuentaNombre { get; set; }
+    public Guid UsuarioCreadorId { get; set; }
+    public string TipoOrigen { get; set; } = string.Empty;
+    public string? NombreArchivo { get; set; }
+    public long TamanioBytes { get; set; }
+    public string Sha256 { get; set; } = string.Empty;
+    public string Separador { get; set; } = string.Empty;
+    public string LoteHash { get; set; } = string.Empty;
+    public string Estado { get; set; } = string.Empty;
+    public int FilasTotal { get; set; }
+    public int FilasValidas { get; set; }
+    public int FilasError { get; set; }
+    public int FilasAdvertencia { get; set; }
+    public bool AdvertenciasAceptadas { get; set; }
+    public DateTime FechaCreacion { get; set; }
+    public DateTime? FechaConfirmacion { get; set; }
+    public Guid? ConfirmadoPorId { get; set; }
+    public DateTime? FechaReversion { get; set; }
+    public Guid? RevertidoPorId { get; set; }
+}
+
+public sealed class ImportacionLoteDetalleResponse
+{
+    public ImportacionLoteResponse Lote { get; set; } = new();
+    public MapeoColumnasRequest Mapeo { get; set; } = new();
+    public ImportacionValidarResponse Validacion { get; set; } = new();
+}
+
+public sealed class ImportacionLoteFilaResponse
+{
+    public Guid Id { get; set; }
+    public Guid LoteId { get; set; }
+    public int Indice { get; set; }
+    public bool Valida { get; set; }
+    public bool SeleccionadaDefault { get; set; }
+    public string Estado { get; set; } = string.Empty;
+    public Dictionary<string, string?> Datos { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyList<string> Errores { get; set; } = [];
+    public IReadOnlyList<string> Advertencias { get; set; } = [];
+    public string? Fingerprint { get; set; }
 }
 
 public sealed class CuentaImportacionContextoResponse
@@ -100,6 +190,7 @@ public sealed class CuentaImportacionContextoResponse
     public string Nombre { get; set; } = string.Empty;
     public string TitularNombre { get; set; } = string.Empty;
     public string Divisa { get; set; } = string.Empty;
+    public Guid? PaisId { get; set; }
     public bool EsEfectivo { get; set; }
     public string TipoCuenta { get; set; } = string.Empty;
     public Guid? FormatoId { get; set; }

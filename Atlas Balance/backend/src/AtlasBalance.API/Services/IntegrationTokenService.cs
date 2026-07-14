@@ -11,6 +11,10 @@ public interface IIntegrationTokenService
     string GeneratePlainToken();
     string ComputeSha256(string value);
     Task<IntegrationToken?> ValidateActiveTokenAsync(string? plainToken, CancellationToken cancellationToken);
+    DateTime? ResolveExpiration(
+        DateTime? requestedExpiration,
+        bool noExpirationConfirmed,
+        string? noExpirationConfirmationText = null);
     Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken);
 }
 
@@ -55,8 +59,42 @@ public sealed class IntegrationTokenService : IIntegrationTokenService
             .FirstOrDefaultAsync(x =>
                 x.TokenHash == tokenHash &&
                 x.Estado == EstadoTokenIntegracion.Activo &&
+                (x.FechaExpiracion == null || x.FechaExpiracion > _clock.UtcNow) &&
                 x.DeletedAt == null,
                 cancellationToken);
+    }
+
+    public const string NoExpirationConfirmationPhrase = "NO_EXPIRAR";
+
+    public DateTime? ResolveExpiration(
+        DateTime? requestedExpiration,
+        bool noExpirationConfirmed,
+        string? noExpirationConfirmationText = null)
+    {
+        if (requestedExpiration.HasValue)
+        {
+            return requestedExpiration.Value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(requestedExpiration.Value, DateTimeKind.Utc)
+                : requestedExpiration.Value.ToUniversalTime();
+        }
+
+        if (noExpirationConfirmed)
+        {
+            // SECURITY (C-NEW-2, V-02-03): un token sin expiracion es un riesgo
+            // enorme si se filtra. Exigimos que el caller escriba el texto magico
+            // "NO_EXPIRAR" para confirmar que es una decision consciente y no un
+            // checkbox olvidado en la UI.
+            if (string.IsNullOrWhiteSpace(noExpirationConfirmationText) ||
+                !string.Equals(noExpirationConfirmationText.Trim(), NoExpirationConfirmationPhrase, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"Para crear un token sin expiracion, confirma escribiendo exactamente '{NoExpirationConfirmationPhrase}' en el campo SinExpiracionTextoConfirmacion.",
+                    nameof(noExpirationConfirmationText));
+            }
+            return null;
+        }
+
+        return _clock.UtcNow.AddDays(90);
     }
 
     public async Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)

@@ -150,6 +150,8 @@ if ($managedPostgres -and -not $KeepDatabase) {
 
 Get-NetFirewallRule -DisplayName "Atlas Balance HTTPS*" -ErrorAction SilentlyContinue |
     Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName "Atlas Balance Public HTTPS*" -ErrorAction SilentlyContinue |
+    Remove-NetFirewallRule -ErrorAction SilentlyContinue
 
 Remove-ShortcutIfExists -Root ([Environment]::GetFolderPath("Desktop"))
 Remove-ShortcutIfExists -Root ([Environment]::GetFolderPath("CommonDesktopDirectory"))

@@ -30,4 +30,19 @@
     <ProjectReference Include="..\..\src\AtlasBalance.Watchdog\AtlasBalance.Watchdog.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- V-02-04: la ACL de bin/obj bloquea la build desde MSBuild cuando se
+         mezclan salidas Debug/Release antiguas. Excluirlos evita que se
+         recojan como codigo. V-02-05: aplicado tambien en tests porque
+         Microsoft.CodeCoverage.targets escribe a bin/ directamente. -->
+    <Compile Remove="bin/**" />
+    <Content Remove="bin/**" />
+    <EmbeddedResource Remove="bin/**" />
+    <None Remove="bin/**" />
+    <Compile Remove="obj/**" />
+    <Content Remove="obj/**" />
+    <EmbeddedResource Remove="obj/**" />
+    <None Remove="obj/**" />
+  </ItemGroup>
+
 </Project>

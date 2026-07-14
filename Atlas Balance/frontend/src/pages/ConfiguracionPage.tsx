@@ -1,8 +1,11 @@
-﻿import { FormEvent, useEffect, useMemo, useState } from 'react';
+﻿import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Coins, KeyRound, Mail, ServerCog } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useUpdateStore } from '@/stores/updateStore';
@@ -22,6 +25,7 @@ import { formatDateTime as formatDateTimeValue } from '@/utils/formatters';
 import type {
   ConfiguracionSistema,
   DivisaActiva,
+  IaModel,
   IntegrationTokenListItem,
   PaginatedResponse,
   TipoCambio,
@@ -30,7 +34,7 @@ import type {
 
 type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones';
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
-const MFA_REMEMBER_DEVICE_DAYS = 62;
+const MFA_REMEMBER_DEVICE_DAYS = 90;
 
 const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
   { key: 'general', label: 'General + SMTP', Icon: Mail },
@@ -41,8 +45,9 @@ const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
 ];
 
 interface CatalogoPermisos {
+  paises: Array<{ id: string; nombre: string }>;
   titulares: Array<{ id: string; nombre: string }>;
-  cuentas: Array<{ id: string; nombre: string; titular_id: string }>;
+  cuentas: Array<{ id: string; nombre: string; titular_id: string; pais_id: string | null }>;
 }
 
 function formatOptionalDateTime(value: string | null) {
@@ -57,6 +62,7 @@ export default function ConfiguracionPage() {
   const [tab, setTab] = useState<TabKey>('general');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -70,7 +76,7 @@ export default function ConfiguracionPage() {
       app_update_auto_last_checked_utc: '',
       app_update_auto_last_started_utc: '',
       app_update_auto_last_result: '',
-      mfa_remember_device_enabled: false,
+      mfa_remember_device_enabled: true,
       mfa_remember_device_days: MFA_REMEMBER_DEVICE_DAYS,
       backup_path: '',
       export_path: '',
@@ -84,6 +90,8 @@ export default function ConfiguracionPage() {
       openrouter_api_key_configurada: false,
       openai_api_key: '',
       openai_api_key_configurada: false,
+      minimax_api_key: '',
+      minimax_api_key_configurada: false,
       model: OPENROUTER_AUTO_MODEL,
       habilitada: false,
       usuario_puede_usar: false,
@@ -111,6 +119,12 @@ export default function ConfiguracionPage() {
     },
   });
   const [smtpTo, setSmtpTo] = useState('');
+  // Snapshot de la configuracion cargada para avisar de cambios sin guardar al
+  // refrescar/cerrar el navegador. Los tabs son render condicional sobre este
+  // estado, asi que cambiar de pestana NO pierde datos (no necesita guardia).
+  const configBaselineRef = useRef<string | null>(null);
+  const isConfigDirty = configBaselineRef.current !== null && JSON.stringify(config) !== configBaselineRef.current;
+  useUnsavedChanges(isConfigDirty);
 
   const [tipos, setTipos] = useState<TipoCambio[]>([]);
   const [divisas, setDivisas] = useState<DivisaActiva[]>([]);
@@ -119,12 +133,16 @@ export default function ConfiguracionPage() {
   const [nuevaDivisa, setNuevaDivisa] = useState({ codigo: '', nombre: '', simbolo: '' });
 
   const [tokens, setTokens] = useState<IntegrationTokenListItem[]>([]);
-  const [catalogos, setCatalogos] = useState<CatalogoPermisos>({ titulares: [], cuentas: [] });
+  const [catalogos, setCatalogos] = useState<CatalogoPermisos>({ paises: [], titulares: [], cuentas: [] });
+  const [openRouterModels, setOpenRouterModels] = useState<IaModel[]>([]);
   const [showCreateTokenModal, setShowCreateTokenModal] = useState(false);
   const [tokenPlano, setTokenPlano] = useState<string | null>(null);
 
   const logout = useAuthStore((state) => state.logout);
   const updateAvailable = useUpdateStore((state) => state.available);
+  const updateInstallable = useUpdateStore((state) => state.installable);
+  const updateBlockers = useUpdateStore((state) => state.blockers);
+  const updatePreflight = useUpdateStore((state) => state.preflight);
   const currentVersion = useUpdateStore((state) => state.currentVersion);
   const availableVersion = useUpdateStore((state) => state.availableVersion);
   const checkUpdate = useUpdateStore((state) => state.check);
@@ -169,6 +187,8 @@ export default function ConfiguracionPage() {
         openrouter_api_key_configurada: false,
         openai_api_key: '',
         openai_api_key_configurada: false,
+        minimax_api_key: '',
+        minimax_api_key_configurada: false,
         model: OPENROUTER_AUTO_MODEL,
         habilitada: false,
         usuario_puede_usar: false,
@@ -196,11 +216,11 @@ export default function ConfiguracionPage() {
       };
       const loadedIa = cfg.data.ia ?? fallbackIa;
       const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
-      setConfig({
+      const nextConfig: ConfiguracionSistema = {
         ...cfg.data,
         general: {
           ...cfg.data.general,
-          mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? false,
+          mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? true,
           mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
         },
         exchange: cfg.data.exchange ?? { api_key: '', api_key_configurada: false },
@@ -211,8 +231,11 @@ export default function ConfiguracionPage() {
           model: normalizeAiModel(loadedIaProvider, loadedIa.model),
           openrouter_api_key: '',
           openai_api_key: '',
+          minimax_api_key: '',
         },
-      });
+      };
+      setConfig(nextConfig);
+      configBaselineRef.current = JSON.stringify(nextConfig);
       setSmtpTo(cfg.data.smtp.from);
       setTipos(tiposRes.data ?? []);
       setDivisas(nextDivisas);
@@ -238,6 +261,33 @@ export default function ConfiguracionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial explícita de configuración
   }, []);
 
+  useEffect(() => {
+    if (normalizeAiProvider(config.ia.provider) !== 'OPENROUTER') {
+      return;
+    }
+
+    let mounted = true;
+    const loadModels = async () => {
+      try {
+        const { data } = await api.get<IaModel[]>('/ia/modelos', {
+          params: { provider: 'OPENROUTER', search: config.ia.model || undefined },
+        });
+        if (mounted) {
+          setOpenRouterModels(data ?? []);
+        }
+      } catch {
+        if (mounted) {
+          setOpenRouterModels([]);
+        }
+      }
+    };
+
+    void loadModels();
+    return () => {
+      mounted = false;
+    };
+  }, [config.ia.provider, config.ia.model]);
+
   const saveConfig = async (message: string) => {
     const aiProvider = normalizeAiProvider(config.ia.provider);
     const payload: ConfiguracionSistema = {
@@ -250,23 +300,27 @@ export default function ConfiguracionPage() {
     };
     await api.put('/configuracion', payload);
     const refreshed = await api.get<ConfiguracionSistema>('/configuracion');
-    setConfig((prev) => ({
+    const merged: ConfiguracionSistema = {
       ...refreshed.data,
       general: {
-        ...(refreshed.data.general ?? prev.general),
-        mfa_remember_device_enabled: refreshed.data.general?.mfa_remember_device_enabled ?? prev.general.mfa_remember_device_enabled,
-        mfa_remember_device_days: refreshed.data.general?.mfa_remember_device_days ?? prev.general.mfa_remember_device_days,
+        ...(refreshed.data.general ?? config.general),
+        mfa_remember_device_enabled: refreshed.data.general?.mfa_remember_device_enabled ?? config.general.mfa_remember_device_enabled,
+        mfa_remember_device_days: refreshed.data.general?.mfa_remember_device_days ?? config.general.mfa_remember_device_days,
       },
-      exchange: refreshed.data.exchange ?? prev.exchange,
+      exchange: refreshed.data.exchange ?? config.exchange,
       ia: {
-        ...(refreshed.data.ia ?? prev.ia),
-        provider: normalizeAiProvider(refreshed.data.ia?.provider ?? prev.ia.provider),
-        model: normalizeAiModel(refreshed.data.ia?.provider ?? prev.ia.provider, refreshed.data.ia?.model ?? prev.ia.model),
+        ...(refreshed.data.ia ?? config.ia),
+        provider: normalizeAiProvider(refreshed.data.ia?.provider ?? config.ia.provider),
+        model: normalizeAiModel(refreshed.data.ia?.provider ?? config.ia.provider, refreshed.data.ia?.model ?? config.ia.model),
         openrouter_api_key: '',
         openai_api_key: '',
+        minimax_api_key: '',
       },
-      smtp: { ...(refreshed.data.smtp ?? prev.smtp), password: '' },
-    }));
+      smtp: { ...(refreshed.data.smtp ?? config.smtp), password: '' },
+    };
+    setConfig(merged);
+    // Tras guardar, la configuracion vuelve a estar limpia: reseteamos la linea base.
+    configBaselineRef.current = JSON.stringify(merged);
     setFeedback(message);
   };
 
@@ -314,6 +368,15 @@ export default function ConfiguracionPage() {
   };
 
   const updateNow = async () => {
+    const confirmed = await confirm({
+      title: 'Actualizar ahora',
+      message: 'Se instalará la nueva versión y la aplicación se reiniciará. Tu sesión se cerrará y el servicio no estará disponible unos minutos. Esta acción no se puede deshacer. ¿Continuar?',
+      confirmLabel: 'Actualizar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -409,6 +472,22 @@ export default function ConfiguracionPage() {
       return;
     }
 
+    // Confirmar solo los cambios con impacto global: fijar una nueva divisa base
+    // (recalcula todas las conversiones) o desactivar una divisa (deja de estar
+    // disponible en toda la aplicacion).
+    if (divisa.es_base || !divisa.activa) {
+      const confirmed = await confirm({
+        title: divisa.es_base ? 'Cambiar divisa base' : 'Desactivar divisa',
+        message: divisa.es_base
+          ? `Vas a fijar ${codigo} como divisa base. Todas las conversiones y totales pasarán a calcularse en ${codigo}. ¿Continuar?`
+          : `Vas a desactivar la divisa ${codigo}. Dejará de estar disponible en la aplicación. ¿Continuar?`,
+        confirmLabel: divisa.es_base ? 'Fijar como base' : 'Desactivar',
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -455,6 +534,15 @@ export default function ConfiguracionPage() {
   };
 
   const revokeToken = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Revocar token',
+      message: 'El token dejará de funcionar de inmediato y cualquier integración que lo use dejará de tener acceso. ¿Revocar?',
+      confirmLabel: 'Revocar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -469,7 +557,41 @@ export default function ConfiguracionPage() {
     }
   };
 
+  const rotateToken = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Rotar token',
+      message: 'Se generará un token nuevo y el actual dejará de funcionar. Las integraciones que usen el valor anterior deberán actualizarse. ¿Rotar?',
+      confirmLabel: 'Rotar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      const { data } = await api.post<{ token_plano: string }>(`/integraciones/tokens/${id}/rotar`, {});
+      setTokenPlano(data.token_plano);
+      setFeedback('Token rotado. Copia el nuevo valor ahora.');
+      await load();
+    } catch (err) {
+      setError(extractErrorMessage(err, 'No se pudo rotar token.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const deleteToken = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Eliminar token',
+      message: 'El token se eliminará de forma permanente y cualquier integración que lo use dejará de tener acceso. ¿Eliminar?',
+      confirmLabel: 'Eliminar',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -532,9 +654,23 @@ export default function ConfiguracionPage() {
   const selectedAiProvider = normalizeAiProvider(config.ia.provider);
   const selectedAiModel = normalizeAiModel(selectedAiProvider, config.ia.model);
   const aiModelOptions = getAiModelOptions(selectedAiProvider);
+  const openRouterModelOptions = openRouterModels.length > 0
+    ? openRouterModels.map((model) => ({ value: model.id, label: model.nombre || model.id }))
+    : aiModelOptions;
   const aiUsesOpenAi = selectedAiProvider === 'OPENAI';
-  const aiApiKeyValue = aiUsesOpenAi ? config.ia.openai_api_key : config.ia.openrouter_api_key;
-  const aiApiKeyConfigured = aiUsesOpenAi ? config.ia.openai_api_key_configurada : config.ia.openrouter_api_key_configurada;
+  const aiUsesMiniMax = selectedAiProvider === 'MINIMAX';
+  const aiUsesOpenRouter = selectedAiProvider === 'OPENROUTER';
+  const aiProviderLabel = aiUsesOpenAi ? 'OpenAI' : aiUsesMiniMax ? 'MiniMax' : 'OpenRouter';
+  const aiApiKeyValue = aiUsesOpenAi
+    ? config.ia.openai_api_key
+    : aiUsesMiniMax
+      ? config.ia.minimax_api_key
+      : config.ia.openrouter_api_key;
+  const aiApiKeyConfigured = aiUsesOpenAi
+    ? config.ia.openai_api_key_configurada
+    : aiUsesMiniMax
+      ? config.ia.minimax_api_key_configurada
+      : config.ia.openrouter_api_key_configurada;
 
   return (
     <section className="config-page">
@@ -615,7 +751,7 @@ export default function ConfiguracionPage() {
                 Permitir recordar dispositivos MFA durante {config.general.mfa_remember_device_days || MFA_REMEMBER_DEVICE_DAYS} días
               </label>
               <p className="config-note config-note--warning">
-                Cerrar sesión borra la confianza MFA del navegador; este ajuste solo permite omitir el código en nuevos logins mientras la cookie siga viva.
+                Cerrar sesión mantiene el dispositivo recordado. Revoca dispositivos desde MFA o cambia la contraseña para invalidarlos.
               </p>
             </article>
 
@@ -773,29 +909,65 @@ export default function ConfiguracionPage() {
                   options={aiProviderOptions}
                   onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value) } }))}
                 />
+                {aiUsesOpenRouter ? (
+                  <p className="import-muted">
+                    Con OpenRouter, Atlas Balance solicita retención cero de datos (zdr) y deniega
+                    la recopilación en cada consulta. El contexto financiero se envía a la nube para
+                    responder, pero el proveedor no debe conservarlo.
+                  </p>
+                ) : (
+                  <p className="auth-error" role="status">
+                    Aviso: con {aiProviderLabel} la aplicación no puede exigir retención cero por
+                    consulta (solo OpenRouter lo soporta). El contexto financiero se envía a {aiProviderLabel}
+                    y su conservación depende de la configuración/contrato de tu cuenta con ese proveedor.
+                    Para datos financieros reales on-premise, usa OpenRouter o confirma la retención cero
+                    a nivel de cuenta antes de activarlo.
+                  </p>
+                )}
                 <label className="config-field">
-                  <span>{aiUsesOpenAi ? 'Clave API de OpenAI' : 'Clave API de OpenRouter'}</span>
+                  <span>Clave API de {aiProviderLabel}</span>
                   <input
                     type="password"
-                    placeholder={aiApiKeyConfigured ? 'Dejar en blanco para conservar' : `Pega la clave API de ${aiUsesOpenAi ? 'OpenAI' : 'OpenRouter'}`}
+                    placeholder={aiApiKeyConfigured ? 'Dejar en blanco para conservar' : `Pega la clave API de ${aiProviderLabel}`}
                     value={aiApiKeyValue}
                     onChange={(e) =>
                       setConfig((p) => ({
                         ...p,
                         ia: aiUsesOpenAi
                           ? { ...p.ia, openai_api_key: e.target.value }
-                          : { ...p.ia, openrouter_api_key: e.target.value },
+                          : aiUsesMiniMax
+                            ? { ...p.ia, minimax_api_key: e.target.value }
+                            : { ...p.ia, openrouter_api_key: e.target.value },
                       }))
                     }
                   />
                 </label>
-                <AppSelect
-                  className="config-inline-select"
-                  label="Modelo"
-                  value={selectedAiModel}
-                  options={aiModelOptions}
-                  onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
-                />
+                {aiUsesOpenRouter ? (
+                  <label className="config-field">
+                    <span>Modelo</span>
+                    <input
+                      list="openrouter-modelos"
+                      value={config.ia.model}
+                      placeholder="openrouter/auto o proveedor/modelo"
+                      onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: e.target.value } }))}
+                    />
+                    <datalist id="openrouter-modelos">
+                      {openRouterModelOptions.map((model) => (
+                        <option key={model.value} value={model.value}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </datalist>
+                  </label>
+                ) : (
+                  <AppSelect
+                    className="config-inline-select"
+                    label="Modelo"
+                    value={selectedAiModel}
+                    options={aiModelOptions}
+                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
+                  />
+                )}
               </div>
               <p className={config.ia.configurada ? 'config-note' : 'config-note config-note--warning'}>
                 {config.ia.mensaje_estado || 'Configura IA antes de permitir consultas.'}
@@ -1102,16 +1274,27 @@ export default function ConfiguracionPage() {
             <article><h3>Versión actual</h3><p>{currentVersion ?? 'Sin dato'}</p></article>
             <article><h3>Versión disponible</h3><p>{availableVersion ?? 'Ninguna'}</p></article>
             <article><h3>Estado</h3><p className={updateAvailable ? 'config-badge config-badge--stale' : 'config-badge config-badge--ok'}>{updateAvailable ? 'Actualización disponible' : 'Actualizado'}</p></article>
+            <article><h3>Instalable</h3><p className={updateInstallable ? 'config-badge config-badge--ok' : 'config-badge config-badge--stale'}>{updateInstallable ? 'Listo' : 'Bloqueado'}</p></article>
+            <article><h3>ZIP</h3><p>{updatePreflight.assetZipName ?? (updatePreflight.assetZipDetected ? 'Detectado' : 'Sin detectar')}</p></article>
+            <article><h3>Firma/digest</h3><p>{updatePreflight.signatureDetected && updatePreflight.digestPresent ? 'OK' : 'Pendiente'}</p></article>
+            <article><h3>Watchdog</h3><p className={updatePreflight.watchdogAvailable ? 'config-badge config-badge--ok' : 'config-badge config-badge--stale'}>{updatePreflight.watchdogAvailable ? 'Disponible' : 'No disponible'}</p></article>
             <article><h3>Auto</h3><p className={config.general.app_update_auto_enabled ? 'config-badge config-badge--ok' : 'config-badge'}>{config.general.app_update_auto_enabled ? 'Activo' : 'Inactivo'}</p></article>
             <article><h3>Última comprobación auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_checked_utc || null)}</p></article>
             <article><h3>Último inicio auto</h3><p>{formatOptionalDateTime(config.general.app_update_auto_last_started_utc || null)}</p></article>
           </div>
+          {updateAvailable && !updateInstallable && updateBlockers.length > 0 ? (
+            <ul className="config-note config-note--warning">
+              {updateBlockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          ) : null}
           {config.general.app_update_auto_last_result ? <p className="config-note">{config.general.app_update_auto_last_result}</p> : null}
           {updateMessage ? <p className="config-note" role="status">{updateMessage}</p> : null}
           <div className="import-actions">
             <button type="submit" className="button-primary" disabled={busy}>Guardar actualizaciones</button>
             <button type="button" className="button-secondary" onClick={() => void checkUpdate(true)} disabled={busy}>Verificar actualización</button>
-            <button type="button" className="button-warning" onClick={updateNow} disabled={!updateAvailable || busy}>Actualizar ahora</button>
+            <button type="button" className="button-warning" onClick={updateNow} disabled={!updateAvailable || !updateInstallable || busy}>Actualizar ahora</button>
           </div>
         </form>
       )}
@@ -1132,7 +1315,7 @@ export default function ConfiguracionPage() {
 
           <section className="config-card">
             <h2>Tokens existentes</h2>
-            <TokenList tokens={tokens} busy={busy} onRevocar={revokeToken} onEliminar={deleteToken} />
+            <TokenList tokens={tokens} busy={busy} onRevocar={revokeToken} onRotar={rotateToken} onEliminar={deleteToken} />
           </section>
         </div>
       )}
@@ -1149,6 +1332,7 @@ export default function ConfiguracionPage() {
         onError={setError}
       />
       <TokenCreatedModal tokenPlano={tokenPlano} onClose={() => setTokenPlano(null)} />
+      <ConfirmDialog {...confirmDialogProps} />
     </section>
   );
 }

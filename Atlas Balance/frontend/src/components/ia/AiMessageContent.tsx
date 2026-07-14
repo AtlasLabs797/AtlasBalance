@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from 'react';
 
 type AiMessageBlock =
   | { type: 'paragraph'; text: string }
+  | { type: 'code'; language: string | null; code: string }
   | { type: 'list'; ordered: boolean; items: string[] }
   | { type: 'facts'; headers: string[]; rows: string[][] };
 
@@ -22,6 +23,11 @@ export function AiMessageContent({ content }: AiMessageContentProps) {
 }
 
 function parseAiMessageBlocks(content: string): AiMessageBlock[] {
+  const jsonBlock = tryBuildJsonBlock(content);
+  if (jsonBlock) {
+    return [jsonBlock];
+  }
+
   const lines = content.replace(/\r\n/g, '\n').split('\n');
   const blocks: AiMessageBlock[] = [];
   let paragraphLines: string[] = [];
@@ -46,6 +52,20 @@ function parseAiMessageBlocks(content: string): AiMessageBlock[] {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
+
+    if (line.startsWith('```')) {
+      flushParagraph();
+      flushList();
+      const language = line.slice(3).trim() || null;
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith('```')) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      blocks.push({ type: 'code', language, code: codeLines.join('\n').trimEnd() });
+      continue;
+    }
 
     if (!line) {
       flushParagraph();
@@ -114,6 +134,14 @@ function renderBlock(block: AiMessageBlock, index: number): ReactNode {
     );
   }
 
+  if (block.type === 'code') {
+    return (
+      <pre key={`code-${index}`} className="ai-chat-code-block">
+        <code>{block.language ? `${block.language}\n${block.code}` : block.code}</code>
+      </pre>
+    );
+  }
+
   return (
     <dl key={`facts-${index}`} className="ai-chat-facts">
       {block.rows.map((row, rowIndex) => (
@@ -162,6 +190,24 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes.map((node, index) => (
     <Fragment key={`${keyPrefix}-inline-${index}`}>{node}</Fragment>
   ));
+}
+
+function tryBuildJsonBlock(content: string): AiMessageBlock | null {
+  const trimmed = content.trim();
+  if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return {
+      type: 'code',
+      language: 'json',
+      code: JSON.stringify(parsed, null, 2),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function isMarkdownTableStart(lines: string[], index: number): boolean {

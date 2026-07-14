@@ -2,6 +2,7 @@
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type {
   DashboardEvolucion,
@@ -34,6 +35,7 @@ export default function DashboardTitularPage() {
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
   usePermisosStore((state) => state.permisos);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>(() => parsePeriodo(searchParams.get('periodo')));
   const [divisaPrincipal, setDivisaPrincipal] = useState(() => searchParams.get('divisa') ?? 'EUR');
@@ -43,7 +45,7 @@ export default function DashboardTitularPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const allowed = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const allowed = usuario?.rol === 'ADMIN' || canViewDashboard();
   const divisaOptions = useMemo(() => {
     const options = new Set<string>();
     Object.keys(titular?.saldos_por_divisa ?? {}).forEach((item) => options.add(item));
@@ -96,12 +98,12 @@ export default function DashboardTitularPage() {
       setError(null);
       try {
         const [titularRes, evolucionRes, saldosDivisaRes] = await Promise.all([
-          api.get<DashboardTitular>(`/dashboard/titular/${id}`, { params: { divisaPrincipal } }),
+          api.get<DashboardTitular>(`/dashboard/titular/${id}`, { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
           api.get<DashboardEvolucion>('/dashboard/evolucion', {
-            params: { periodo, divisaPrincipal, titularId: id },
+            params: { periodo, divisaPrincipal, titularId: id, paisId: selectedPaisId || undefined },
           }),
           api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', {
-            params: { divisaPrincipal, titularId: id },
+            params: { divisaPrincipal, titularId: id, paisId: selectedPaisId || undefined },
           }),
         ]);
 
@@ -133,7 +135,7 @@ export default function DashboardTitularPage() {
     return () => {
       mounted = false;
     };
-  }, [allowed, id, periodo, divisaPrincipal]);
+  }, [allowed, id, periodo, divisaPrincipal, selectedPaisId]);
 
   if (!allowed) {
     return <Navigate to="/extractos" replace />;
@@ -218,6 +220,7 @@ export default function DashboardTitularPage() {
                 <thead>
                   <tr>
                     <th>Cuenta</th>
+                    <th>País</th>
                     <th>Tipo</th>
                     <th>Saldo ({titular.divisa_principal})</th>
                     <th>Saldo original</th>
@@ -228,6 +231,7 @@ export default function DashboardTitularPage() {
                   {titular.saldos_por_cuenta.map((cuenta) => (
                     <tr key={cuenta.cuenta_id}>
                       <td>{cuenta.cuenta_nombre}</td>
+                      <td>{cuenta.pais_nombre || 'Sin pais'}</td>
                       <td>{cuenta.es_efectivo ? 'Efectivo' : 'Bancaria'}</td>
                       <td>
                         <SignedAmount value={cuenta.saldo_convertido}>
@@ -240,7 +244,7 @@ export default function DashboardTitularPage() {
                         </SignedAmount>
                       </td>
                       <td>
-                        {canViewCuenta(cuenta.cuenta_id, titular.titular_id) ? (
+                        {canViewCuenta(cuenta.cuenta_id, titular.titular_id, cuenta.pais_id) ? (
                           <Link
                             to={`/dashboard/cuenta/${cuenta.cuenta_id}`}
                             className="dashboard-open-link"

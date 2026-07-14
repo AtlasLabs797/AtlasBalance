@@ -20,8 +20,27 @@ export default class AppErrorBoundary extends Component<AppErrorBoundaryProps, A
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    if (import.meta.env.DEV) {
-      console.error('UI section crashed', error, errorInfo);
+    // F-NEW-27 (V-02-03): loggear siempre, tambien en produccion. Si
+    // hay un endpoint /api/telemetria/errores disponible, enviar el
+    // stack con sendBeacon. Si no, al menos queda en consola para
+    // diagnostico local.
+    console.error('UI section crashed', error, errorInfo);
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      try {
+        const payload = JSON.stringify({
+          mensaje: error.message,
+          stack: error.stack,
+          componentStack: errorInfo.componentStack,
+          path: typeof window !== 'undefined' ? window.location.pathname : null,
+          timestamp: new Date().toISOString()
+        });
+        // sendBeacon es fire-and-forget; el navegador lo envia aunque
+        // la pagina se cierre inmediatamente. El endpoint es opcional;
+        // si no existe, sendBeacon falla silenciosamente.
+        navigator.sendBeacon('/api/telemetria/errores', payload);
+      } catch {
+        // No hacer nada: no queremos un bucle de errores.
+      }
     }
   }
 

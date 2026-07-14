@@ -6,12 +6,11 @@ public static class AiConfiguration
     public const string OpenRouterAutoModel = "openrouter/auto";
     public const string OpenRouterDefaultModel = "nvidia/nemotron-3-super-120b-a12b:free";
     public const string OpenRouterGptOss120BModel = "openai/gpt-oss-120b:free";
-    public const string OpenRouterOpenInferenceProvider = "open-inference/int8";
-    public const string OpenRouterGoogleAiStudioProvider = "google-ai-studio";
-    public const int OpenRouterMaxFallbackModels = 3;
     public const string DefaultOpenAiModel = "gpt-4o-mini";
+    public const string DefaultMiniMaxModel = "MiniMax-M3";
+    public const string MiniMaxM27Model = "MiniMax-M2.7";
 
-    private static readonly string[] AllowedOpenRouterModels =
+    private static readonly string[] SuggestedOpenRouterModels =
     [
         OpenRouterAutoModel,
         OpenRouterDefaultModel,
@@ -22,6 +21,11 @@ public static class AiConfiguration
         "qwen/qwen3-coder:free"
     ];
 
+    // V-02-05 (CRIT-1): la allowlist es ahora EXPLICITA, no regex. Evita que un usuario
+    // autenticado invoque modelos premium no suscritos en la cuenta del operador.
+    // Para añadir un modelo: editar este array y redeployar.
+    private static readonly string[] AllowedOpenRouterModels = SuggestedOpenRouterModels;
+
     private static readonly string[] AllowedOpenAiModels =
     [
         "gpt-4.1-mini",
@@ -29,36 +33,15 @@ public static class AiConfiguration
         "gpt-4o"
     ];
 
-    private static readonly string[] OpenRouterAutoFallbackModelCandidates =
+    private static readonly string[] AllowedMiniMaxModels =
     [
-        OpenRouterDefaultModel,
-        "google/gemma-4-31b-it:free",
-        "minimax/minimax-m2.5:free"
+        DefaultMiniMaxModel,
+        MiniMaxM27Model
     ];
 
-    private static readonly string[] DeprecatedOpenRouterModels =
-    [
-        "anthropic/claude-3.5-sonnet",
-        "openai/gpt-5.1",
-        "openai/gpt-4o-mini",
-        "google/gemini-3.1-pro-preview",
-        "google/gemini-2.0-flash-001",
-        "google/gemini-2.5-flash",
-        "google/gemini-2.5-flash-lite",
-        "google/gemini-2.5-pro",
-        "openai/gpt-4.1-mini",
-        "openai/gpt-4.1",
-        "anthropic/claude-sonnet-4.5",
-        "deepseek/deepseek-v3.2",
-        "meta-llama/llama-3.3-70b-instruct"
-    ];
-
-    public static IReadOnlyList<string> OpenRouterModels => AllowedOpenRouterModels;
+    public static IReadOnlyList<string> OpenRouterModels => SuggestedOpenRouterModels;
     public static IReadOnlyList<string> OpenAiModels => AllowedOpenAiModels;
-    public static IReadOnlyList<string> OpenRouterAutoFallbackModels =>
-        OpenRouterAutoFallbackModelCandidates
-            .Take(OpenRouterMaxFallbackModels)
-            .ToArray();
+    public static IReadOnlyList<string> MiniMaxModels => AllowedMiniMaxModels;
 
     public static bool IsAllowedOpenRouterModel(string? model)
     {
@@ -66,8 +49,18 @@ public static class AiConfiguration
         {
             return false;
         }
+        var normalized = model.Trim();
+        return AllowedOpenRouterModels.Any(x => string.Equals(x, normalized, StringComparison.Ordinal));
+    }
 
-        return AllowedOpenRouterModels.Any(x => string.Equals(x, model.Trim(), StringComparison.Ordinal));
+    public static bool IsSuggestedOpenRouterModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return false;
+        }
+
+        return SuggestedOpenRouterModels.Any(x => string.Equals(x, model.Trim(), StringComparison.Ordinal));
     }
 
     public static bool IsAllowedOpenAiModel(string? model)
@@ -80,6 +73,16 @@ public static class AiConfiguration
         return AllowedOpenAiModels.Any(x => string.Equals(x, model.Trim(), StringComparison.Ordinal));
     }
 
+    public static bool IsAllowedMiniMaxModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return false;
+        }
+
+        return AllowedMiniMaxModels.Any(x => string.Equals(x, model.Trim(), StringComparison.Ordinal));
+    }
+
     public static bool IsAllowedModel(string? provider, string? model)
     {
         var normalized = NormalizeProvider(provider);
@@ -87,6 +90,7 @@ public static class AiConfiguration
         {
             "OPENROUTER" => IsAllowedOpenRouterModel(model),
             "OPENAI" => IsAllowedOpenAiModel(model),
+            "MINIMAX" => IsAllowedMiniMaxModel(model),
             _ => false
         };
     }
@@ -94,23 +98,30 @@ public static class AiConfiguration
     public static bool IsSupportedProvider(string? provider)
     {
         var normalized = NormalizeProvider(provider);
-        return normalized is "OPENROUTER" or "OPENAI";
+        return normalized is "OPENROUTER" or "OPENAI" or "MINIMAX";
     }
 
     public static string NormalizeModel(string? provider, string? model)
     {
         var normalizedProvider = NormalizeProvider(provider);
         var normalizedModel = model?.Trim() ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(normalizedModel) && IsAllowedModel(normalizedProvider, normalizedModel))
-        {
-            return normalizedModel;
-        }
-
         return normalizedProvider switch
         {
-            "OPENROUTER" => OpenRouterAutoModel,
-            "OPENAI" => DefaultOpenAiModel,
+            "OPENROUTER" => IsValidOpenRouterModelId(normalizedModel) ? normalizedModel : OpenRouterAutoModel,
+            "OPENAI" => IsAllowedOpenAiModel(normalizedModel) ? normalizedModel : DefaultOpenAiModel,
+            "MINIMAX" => IsAllowedMiniMaxModel(normalizedModel) ? normalizedModel : DefaultMiniMaxModel,
             _ => normalizedModel
+        };
+    }
+
+    public static string NormalizeGlobalConfigModel(string? provider, string? model)
+    {
+        var normalizedProvider = NormalizeProvider(provider);
+        var normalizedModel = model?.Trim() ?? string.Empty;
+        return normalizedProvider switch
+        {
+            "OPENROUTER" => IsSuggestedOpenRouterModel(normalizedModel) ? normalizedModel : OpenRouterAutoModel,
+            _ => NormalizeModel(normalizedProvider, normalizedModel)
         };
     }
 
@@ -118,18 +129,7 @@ public static class AiConfiguration
     {
         var normalizedProvider = NormalizeProvider(provider);
         var normalizedModel = model?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(normalizedModel) || IsAllowedModel(normalizedProvider, normalizedModel))
-        {
-            return NormalizeModel(normalizedProvider, normalizedModel);
-        }
-
-        if (normalizedProvider == "OPENROUTER" &&
-            DeprecatedOpenRouterModels.Any(x => string.Equals(x, normalizedModel, StringComparison.Ordinal)))
-        {
-            return OpenRouterAutoModel;
-        }
-
-        return normalizedModel;
+        return NormalizeModel(normalizedProvider, normalizedModel);
     }
 
     public static bool IsOpenRouterAutoModel(string? model)
@@ -137,53 +137,36 @@ public static class AiConfiguration
         return string.Equals(model?.Trim(), OpenRouterAutoModel, StringComparison.Ordinal);
     }
 
-    public static bool IsOpenRouterDefaultModel(string? model)
-    {
-        return string.Equals(model?.Trim(), OpenRouterDefaultModel, StringComparison.Ordinal);
-    }
-
     public static string ResolveOpenRouterRuntimeModel(string? model)
     {
         var normalized = model?.Trim() ?? string.Empty;
-        return IsOpenRouterAutoModel(normalized) ? OpenRouterDefaultModel : normalized;
-    }
-
-    public static bool IsOpenRouterFreeModel(string? model)
-    {
-        var normalized = model?.Trim();
-        return AllowedOpenRouterModels.Any(x =>
-            !string.Equals(x, OpenRouterAutoModel, StringComparison.Ordinal) &&
-            string.Equals(x, normalized, StringComparison.Ordinal));
-    }
-
-    public static bool IsOpenRouterFreeRoute(string? configuredModel, string? runtimeModel)
-    {
-        return IsOpenRouterAutoModel(configuredModel) || IsOpenRouterFreeModel(runtimeModel);
-    }
-
-    public static bool TryGetOpenRouterPinnedProvider(string? model, out string provider)
-    {
-        provider = string.Empty;
-        var normalized = model?.Trim();
-        if (string.Equals(normalized, "google/gemma-4-31b-it:free", StringComparison.Ordinal))
-        {
-            provider = OpenRouterGoogleAiStudioProvider;
-            return true;
-        }
-
-        if (string.Equals(normalized, "minimax/minimax-m2.5:free", StringComparison.Ordinal) ||
-            string.Equals(normalized, OpenRouterGptOss120BModel, StringComparison.Ordinal))
-        {
-            provider = OpenRouterOpenInferenceProvider;
-            return true;
-        }
-
-        return false;
+        return IsValidOpenRouterModelId(normalized) ? normalized : OpenRouterAutoModel;
     }
 
     public static string NormalizeProvider(string? provider)
     {
         var normalized = provider?.Trim().ToUpperInvariant();
         return string.IsNullOrWhiteSpace(normalized) ? "OPENROUTER" : normalized;
+    }
+
+    public static bool IsValidOpenRouterModelId(string? model)
+    {
+        var normalized = model?.Trim() ?? string.Empty;
+        if (normalized.Length is < 3 or > 160)
+        {
+            return false;
+        }
+
+        if (normalized.Contains("..", StringComparison.Ordinal) ||
+            normalized.Contains("//", StringComparison.Ordinal) ||
+            normalized.StartsWith("/", StringComparison.Ordinal) ||
+            normalized.EndsWith("/", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return normalized.All(ch =>
+            char.IsAsciiLetterOrDigit(ch) ||
+            ch is '/' or '-' or '_' or '.' or ':' or '+');
     }
 }

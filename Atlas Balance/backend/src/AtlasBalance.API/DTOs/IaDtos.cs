@@ -12,6 +12,8 @@ public sealed class IaConfigResponse
     public bool OpenRouterApiKeyConfigurada { get; set; }
     [JsonPropertyName("openai_api_key_configurada")]
     public bool OpenAiApiKeyConfigurada { get; set; }
+    [JsonPropertyName("minimax_api_key_configurada")]
+    public bool MiniMaxApiKeyConfigurada { get; set; }
     public bool Configurada { get; set; }
     public string MensajeEstado { get; set; } = string.Empty;
     public int RequestsPorMinuto { get; set; } = AiConfigurationDefaults.RequestsPerMinute;
@@ -44,6 +46,8 @@ public sealed class UpdateIaConfigRequest
     public string OpenRouterApiKey { get; set; } = string.Empty;
     [JsonPropertyName("openai_api_key")]
     public string OpenAiApiKey { get; set; } = string.Empty;
+    [JsonPropertyName("minimax_api_key")]
+    public string MiniMaxApiKey { get; set; } = string.Empty;
     public int RequestsPorMinuto { get; set; } = AiConfigurationDefaults.RequestsPerMinute;
     public int RequestsPorHora { get; set; } = AiConfigurationDefaults.RequestsPerHour;
     public int RequestsPorDia { get; set; } = AiConfigurationDefaults.RequestsPerDay;
@@ -63,6 +67,14 @@ public sealed class IaChatRequest
 {
     public string Pregunta { get; set; } = string.Empty;
     public string? Model { get; set; }
+    public Guid? PaisId { get; set; }
+}
+
+public sealed class IaModelResponse
+{
+    public string Id { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public int? ContextLength { get; set; }
 }
 
 public sealed class IaChatResponse

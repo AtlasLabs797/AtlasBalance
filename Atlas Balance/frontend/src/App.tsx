@@ -9,6 +9,7 @@ import LoginPage from '@/pages/LoginPage';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 
 const AlertasPage            = lazy(() => import('@/pages/AlertasPage'));
@@ -16,6 +17,7 @@ const AuditoriaPage          = lazy(() => import('@/pages/AuditoriaPage'));
 const BackupsPage            = lazy(() => import('@/pages/BackupsPage'));
 const ChangePasswordPage     = lazy(() => import('@/pages/ChangePasswordPage'));
 const ConfiguracionPage      = lazy(() => import('@/pages/ConfiguracionPage'));
+const ConciliacionPage       = lazy(() => import('@/pages/ConciliacionPage'));
 const CuentaDetailPage       = lazy(() => import('@/pages/CuentaDetailPage'));
 const CuentasPage            = lazy(() => import('@/pages/CuentasPage'));
 const DashboardPage          = lazy(() => import('@/pages/DashboardPage'));
@@ -36,25 +38,35 @@ function DashboardRoute({ children }: { children: JSX.Element }) {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   usePermisosStore((state) => state.permisos);
-  const allowed = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const allowed = usuario?.rol === 'ADMIN' || canViewDashboard();
 
   return allowed ? children : <Navigate to="/extractos" replace />;
 }
 
 function getCsrfTokenFromCookie(): string | null {
   const cookies = document.cookie.split(';').map((item) => item.trim());
-  const tokenPair = cookies.find((item) => item.startsWith('csrf_token='));
+  // V-02-05 (LOW-FE-4): aceptar ambos prefijos (legacy csrf_token y __Host-atlas-csrf-token)
+  // y validar el formato (Base64URL >= 32 chars). Antes aceptabamos cualquier valor.
+  const tokenPair = cookies.find(
+    (item) => item.startsWith('csrf_token=') || item.startsWith('__Host-atlas-csrf-token=')
+  );
   if (!tokenPair) {
     return null;
   }
 
-  const rawValue = tokenPair.substring('csrf_token='.length);
+  const prefixLength = tokenPair.startsWith('__Host-atlas-csrf-token=')
+    ? '__Host-atlas-csrf-token='.length
+    : 'csrf_token='.length;
+  const rawValue = tokenPair.substring(prefixLength);
   if (!rawValue) {
     return null;
   }
 
   const decoded = decodeURIComponent(rawValue);
-  return decoded ? decoded : null;
+  if (!decoded || decoded.length < 32 || !/^[A-Za-z0-9_-]+$/.test(decoded)) {
+    return null;
+  }
+  return decoded;
 }
 
 export default function App() {
@@ -66,6 +78,7 @@ export default function App() {
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const clearAlertas = useAlertasStore((state) => state.clear);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   useEffect(() => {
     if (location.pathname === '/login' || isAuthenticated) {
@@ -83,7 +96,7 @@ export default function App() {
 
         setUsuario(data.usuario, getCsrfTokenFromCookie());
         setPermisos(data.permisos ?? []);
-        await loadAlertasActivas();
+        await loadAlertasActivas(selectedPaisId || undefined);
       } catch {
         if (!mounted) return;
 
@@ -102,7 +115,7 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated, location.pathname, clearAlertas, loadAlertasActivas, logout, setLoading, setPermisos, setUsuario]);
+  }, [isAuthenticated, location.pathname, clearAlertas, loadAlertasActivas, logout, selectedPaisId, setLoading, setPermisos, setUsuario]);
 
   const section = (element: JSX.Element) => (
     <AppErrorBoundary resetKey={location.key}>
@@ -141,6 +154,7 @@ export default function App() {
         <Route path="/cuentas/:id" element={section(<CuentaDetailPage />)} />
         <Route path="/extractos" element={section(<ExtractosPage />)} />
         <Route path="/importacion" element={section(<ImportacionPage />)} />
+        <Route path="/conciliacion" element={section(<ConciliacionPage />)} />
         <Route path="/revision" element={section(<RevisionPage />)} />
         <Route path="/ia" element={section(<IaPage />)} />
         <Route

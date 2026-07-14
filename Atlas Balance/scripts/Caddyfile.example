@@ -1,0 +1,7 @@
+# Atlas Balance behind Caddy.
+# Replace balance.example.com with the real public domain.
+
+balance.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:5000
+}

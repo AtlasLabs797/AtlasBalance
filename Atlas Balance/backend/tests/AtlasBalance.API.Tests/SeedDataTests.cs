@@ -163,6 +163,46 @@ public sealed class SeedDataTests
     }
 
     [Fact]
+    public void Initialize_Should_Seed_Demo_Data_In_Development_Without_Duplicating()
+    {
+        using var db = BuildDbContext();
+
+        SeedData.Initialize(db, BuildSeedConfiguration(), new TestHostEnvironment("Development"));
+        SeedData.Initialize(db, BuildSeedConfiguration(), new TestHostEnvironment("Development"));
+
+        db.Paises.Should().Contain(p => p.Nombre == "Espana" && p.CodigoIso2 == "ES");
+        db.Paises.Should().Contain(p => p.Nombre == "Mexico" && p.CodigoIso2 == "MX");
+        db.Paises.Should().Contain(p => p.Nombre == "Republica Dominicana" && p.CodigoIso2 == "DO");
+        db.Titulares.Count(t => t.Nombre.StartsWith("Demo ")).Should().Be(3);
+        db.Cuentas.Count(c => c.Nombre.StartsWith("Demo ")).Should().Be(5);
+        db.Extractos.Should().HaveCount(25);
+        db.PlazosFijos.Should().ContainSingle(p => p.CuentaId == Guid.Parse("72000000-0000-0000-0000-000000000005"));
+        db.AlertasSaldo.Should().Contain(a => a.CuentaId == Guid.Parse("72000000-0000-0000-0000-000000000002"));
+        db.PermisosUsuario.Should().ContainSingle(p =>
+            p.CuentaId == null &&
+            p.TitularId == null &&
+            p.PaisId == null &&
+            p.PuedeVerCuentas &&
+            p.PuedeVerDashboard);
+    }
+
+    [Fact]
+    public void Initialize_Should_Not_Seed_Demo_Data_In_Production()
+    {
+        using var db = BuildDbContext();
+        var config = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["SeedAdmin:Password"] = string.Concat("CorrectHorse", "BatteryStaple2026!"),
+            ["DemoData:Enabled"] = "true"
+        });
+
+        SeedData.Initialize(db, config, new TestHostEnvironment("Production"));
+
+        db.Cuentas.Should().NotContain(c => c.Nombre.StartsWith("Demo "));
+        db.Extractos.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Initialize_Should_Reject_Default_Admin_Password_In_Production()
     {
         using var db = BuildDbContext();

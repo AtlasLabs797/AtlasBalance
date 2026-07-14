@@ -53,6 +53,35 @@ public class RefreshToken
     public Usuario? Usuario { get; set; }
 }
 
+public class MfaTrustedDevice : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid UsuarioId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public string SecurityStamp { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public string? UserAgentSummary { get; set; }
+    public string? IpAddressSummary { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+    public Usuario? Usuario { get; set; }
+}
+
+public class Pais : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string? CodigoIso2 { get; set; }
+    public bool Activo { get; set; } = true;
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
 public class Titular : ISoftDelete
 {
     public Guid Id { get; set; }
@@ -78,6 +107,8 @@ public class Cuenta : ISoftDelete
     public string? BancoNombre { get; set; }
     public string Divisa { get; set; } = "EUR";
     public Guid? FormatoId { get; set; }
+    public Guid? PaisId { get; set; }
+    public Pais? Pais { get; set; }
     public TipoCuenta TipoCuenta { get; set; } = TipoCuenta.NORMAL;
     public bool EsEfectivo { get; set; }
     public bool Activa { get; set; } = true;
@@ -134,6 +165,7 @@ public class Extracto : ISoftDelete
     public int FilaNumero { get; set; }
     public string? ImportacionFingerprint { get; set; }
     public string? ImportacionLoteHash { get; set; }
+    public Guid? ImportacionLoteId { get; set; }
     public int? ImportacionFilaOrigen { get; set; }
     public DateTime? FechaImportacion { get; set; }
     public bool Checked { get; set; }
@@ -151,15 +183,77 @@ public class Extracto : ISoftDelete
     public Guid? DeletedById { get; set; }
 }
 
-public class ExtractoColumnaExtra
+public class ImportacionLote
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public Guid UsuarioCreadorId { get; set; }
+    public string TipoOrigen { get; set; } = "PEGADO";
+    public string? NombreArchivo { get; set; }
+    public long TamanioBytes { get; set; }
+    public string Sha256 { get; set; } = string.Empty;
+    public string Separador { get; set; } = string.Empty;
+    public string MapeoJson { get; set; } = "{}";
+    public string ResumenJson { get; set; } = "{}";
+    public string ContenidoOriginal { get; set; } = string.Empty;
+    public string LoteHash { get; set; } = string.Empty;
+    public string Estado { get; set; } = "validado";
+    public int FilasTotal { get; set; }
+    public int FilasValidas { get; set; }
+    public int FilasError { get; set; }
+    public int FilasAdvertencia { get; set; }
+    public bool AdvertenciasAceptadas { get; set; }
+    public string? Notas { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaConfirmacion { get; set; }
+    public Guid? ConfirmadoPorId { get; set; }
+    public DateTime? FechaReversion { get; set; }
+    public Guid? RevertidoPorId { get; set; }
+}
+
+public class ImportacionLoteFila : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid LoteId { get; set; }
+    public int Indice { get; set; }
+    public bool Valida { get; set; }
+    public bool SeleccionadaDefault { get; set; }
+    public string Estado { get; set; } = "validada";
+    public string DatosJson { get; set; } = "{}";
+    public string ErroresJson { get; set; } = "[]";
+    public string AdvertenciasJson { get; set; } = "[]";
+    public string? Fingerprint { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class ExtractoColumnaExtra : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid ExtractoId { get; set; }
     public string NombreColumna { get; set; } = string.Empty;
     public string? Valor { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
-public class RevisionExtractoEstado
+public class ExtractoDesglose : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid ExtractoId { get; set; }
+    public int Orden { get; set; }
+    public string TerceroNombre { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public string? Notas { get; set; }
+    public Guid? UsuarioCreacionId { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public Guid? UsuarioModificacionId { get; set; }
+    public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class RevisionExtractoEstado : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid ExtractoId { get; set; }
@@ -167,6 +261,8 @@ public class RevisionExtractoEstado
     public string Estado { get; set; } = string.Empty;
     public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
     public Guid? UsuarioModificacionId { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
 public class PermisoUsuario
@@ -175,18 +271,25 @@ public class PermisoUsuario
     public Guid UsuarioId { get; set; }
     public Guid? CuentaId { get; set; }
     public Guid? TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public bool PuedeVerCuentas { get; set; }
     public bool PuedeAgregarLineas { get; set; }
     public bool PuedeEditarLineas { get; set; }
     public bool PuedeEliminarLineas { get; set; }
     public bool PuedeImportar { get; set; }
     public bool PuedeVerDashboard { get; set; }
+    public bool PuedeRevisarLineas { get; set; }
+    public bool PuedeAprobarImportaciones { get; set; }
+    public bool PuedeConciliar { get; set; }
+    public bool PuedeCerrarConciliacion { get; set; }
 }
 
 public class PreferenciaUsuarioCuenta
 {
     public Guid Id { get; set; }
     public Guid UsuarioId { get; set; }
+    public Guid? PaisId { get; set; }
+    public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
     public string? ColumnasVisibles { get; set; }
     public string? ColumnasEditables { get; set; }
@@ -253,8 +356,12 @@ public class IntegrationToken : ISoftDelete
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaExpiracion { get; set; }
     public DateTime? FechaUltimaUso { get; set; }
     public DateTime? FechaRevocacion { get; set; }
+    public Guid? RotatedFromTokenId { get; set; }
+    public string EndpointScopesJson { get; set; } = "[]";
+    public string? LastUsedIpAddress { get; set; }
     public Guid UsuarioCreadorId { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
@@ -266,6 +373,7 @@ public class IntegrationPermission
     public Guid TokenId { get; set; }
     public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
+    public Guid? PaisId { get; set; }
     public string AccesoTipo { get; set; } = "lectura";
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
 }
@@ -293,6 +401,50 @@ public class TipoCambio
     public FuenteTipoCambio Fuente { get; set; }
 }
 
+public class MovimientoEsperado : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public DateOnly FechaEsperada { get; set; }
+    public decimal Monto { get; set; }
+    public string Divisa { get; set; } = string.Empty;
+    public string? Referencia { get; set; }
+    public string? Concepto { get; set; }
+    public string Estado { get; set; } = "pendiente";
+    public string Origen { get; set; } = "manual";
+    public Guid? UsuarioCreacionId { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public Guid? UsuarioModificacionId { get; set; }
+    public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class Conciliacion : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid CuentaId { get; set; }
+    public Guid MovimientoEsperadoId { get; set; }
+    public Guid? ExtractoId { get; set; }
+    public string Estado { get; set; } = "sugerida";
+    public int Score { get; set; }
+    public string Regla { get; set; } = "deterministica-v1";
+    public int DiferenciaDias { get; set; }
+    public string? ReferenciaNormalizada { get; set; }
+    public string? ConceptoNormalizado { get; set; }
+    public Guid? UsuarioSugerenciaId { get; set; }
+    public DateTime FechaSugerencia { get; set; } = DateTime.UtcNow;
+    public Guid? UsuarioConfirmacionId { get; set; }
+    public DateTime? FechaConfirmacion { get; set; }
+    public Guid? UsuarioResolucionId { get; set; }
+    public DateTime? FechaResolucion { get; set; }
+    public string? Observacion { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaModificacion { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
 public class DivisaActiva
 {
     public string Codigo { get; set; } = string.Empty;
@@ -310,6 +462,7 @@ public class Configuracion
     public string? Descripcion { get; set; }
     public DateTime? FechaModificacion { get; set; }
     public Guid? UsuarioModificacionId { get; set; }
+    public bool EsSecreto { get; set; }
 }
 
 public class Backup : ISoftDelete
@@ -322,6 +475,42 @@ public class Backup : ISoftDelete
     public TipoProceso Tipo { get; set; }
     public Guid? IniciadoPorId { get; set; }
     public string? Notas { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class BackupCloudConnection : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public string Provider { get; set; } = "GOOGLE_DRIVE";
+    public string Estado { get; set; } = "CONNECTED";
+    public string? AccountEmail { get; set; }
+    public string Scope { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public DateTime ConnectedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? LastValidatedAt { get; set; }
+    public string? LastError { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class BackupCloudCopy : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public Guid BackupId { get; set; }
+    public Backup? Backup { get; set; }
+    public Guid? ConnectionId { get; set; }
+    public BackupCloudConnection? Connection { get; set; }
+    public string Provider { get; set; } = "GOOGLE_DRIVE";
+    public string Estado { get; set; } = "PENDING";
+    public string? RemoteFileId { get; set; }
+    public string? RemoteFileName { get; set; }
+    public long? RemoteSizeBytes { get; set; }
+    public string? ChecksumSha256 { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? UploadedAt { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
 }

@@ -4,6 +4,20 @@
 
 La aplicacion esta en la carpeta `Atlas Balance`.
 
+## Datos demo en desarrollo
+
+En entorno `Development`, Atlas Balance puede cargar datos demo sinteticos para revisar la interfaz con contenido: paises, titulares, cuentas, extractos, alertas y plazo fijo.
+
+La plantilla `appsettings.Development.json.template` lo deja activado con:
+
+```json
+"DemoData": {
+  "Enabled": true
+}
+```
+
+Para trabajar con una base limpia, cambia `DemoData.Enabled` a `false` antes del primer arranque. En produccion no se cargan datos demo.
+
 ## Proxy inverso y login
 
 Si Atlas Balance se publica detras de IIS, Nginx, HAProxy u otro proxy inverso, configura en `appsettings.Production.json` las IPs o redes de proxy confiables:
@@ -25,16 +39,17 @@ Desde `V-01.05`, el menu se organiza en tres bloques:
 - `Control`: Alertas y Exportaciones.
 - `Sistema`: Usuarios, Auditoria, Formatos, Backups, Configuracion y Papelera.
 
-En movil, la barra inferior muestra solo los accesos principales: Inicio, Titulares, Cuentas, Importar y Mas. El boton `Mas` abre el resto de secciones.
+En movil, la barra inferior muestra los accesos que mas se usan: Inicio si tienes Dashboard, Cuentas, Extractos, Importar y Mas. Si tu usuario no tiene Dashboard, Extractos pasa a ser el primer acceso. El boton `Mas` abre el resto de secciones, incluido `IA` si esta disponible.
 
 El dashboard principal prioriza la lectura financiera:
 
-- Saldo total en la divisa base.
-- Porcentajes de variacion compactos bajo los KPIs principales, sin texto comparativo adicional.
-- Saldos por divisa, separando disponible e inmovilizado. La divisa base aparece siempre primero.
-- Plazos fijos debajo del resumen de saldo, ingresos y egresos.
-- Evolucion del periodo en una grafica ancha para leer la tendencia sin pelearse con tarjetas laterales.
-- Saldos por titular en la parte inferior, agrupados en tres columnas: Empresa, Autonomo y Particular.
+- Saldo total en la divisa base dentro de un panel superior amplio.
+- Variacion del saldo junto al periodo comparado.
+- Saldos por divisa en tarjetas compactas. La divisa base aparece siempre primero.
+- Filtro por pais y bloque `Saldos por pais` cuando las cuentas tienen pais asociado.
+- Evolucion del saldo en una grafica ancha de area azul, con lineas de ingresos y egresos del periodo.
+- KPIs de ingresos, egresos, disponible e inmovilizado debajo del panel principal.
+- Saldos por titular y plazos fijos juntos en desktop; en movil se apilan.
 
 ## Desglose de cuenta
 
@@ -54,15 +69,111 @@ La vista `Extractos` usa una reticula de celdas tipo hoja de calculo. Las column
 
 Si falla la carga de movimientos, preferencias de columnas o auditoria de una celda, la pantalla muestra el error y permite reintentar. Si intentas ocultar columnas, siempre queda al menos una visible.
 
+El boton `Columnas` permite elegir que columnas se muestran. La preferencia se guarda para el scope actual: cuenta si hay una seleccionada, titular si filtraste por titular, pais si estas en un pais, o vista general si no hay filtros de cuenta/titular. No hace falta elegir una cuenta para guardar columnas en la vista general.
+
+El selector tambien muestra columnas extra disponibles en el resultado filtrado aunque no aparezcan en la fila visible actual. Si una preferencia queda demasiado recortada, usa `Mostrar todas` para recuperar todas las columnas disponibles de esa vista.
+
+En la columna `Alerta`, marca o desmarca el checkbox y escribe la nota si hace falta. La tabla ya no muestra el texto `Marcada/Sin marca` porque era redundante.
+
+La columna `Desglose` sirve para recibos domiciliados u otros movimientos que agrupan varias personas o terceros. Abre el modal, anade nombre, importe y notas de cada linea, y revisa el total contra el importe del extracto. Si no cuadra, la fila queda marcada como `descuadrado`; el saldo bancario no cambia.
+
+Si otra persona cambia el mismo desglose antes de que guardes, Atlas Balance avisa del conflicto, no pisa sus cambios y recarga la version vigente.
+
+Para insertar una fila manual en `Extractos`, pasa por la columna `Fila` y pulsa el boton `+` que aparece entre esa fila y la siguiente. Se abre un formulario dentro de la tabla; al guardar, Atlas Balance inserta la fila en esa posicion y desplaza la numeracion.
+
+El boton `Historial` aparece en la columna `Fila`, no repetido por toda la tabla.
+
+Con teclado, la tabla de Extractos permite moverse por celdas con flechas, Home/End y PageUp/PageDown. Enter o F2 abre la edicion de una celda editable. En movil y tablet tactil conserva scroll local para no romper la comparacion por columnas.
+
+## Novedades de uso (V-02-04)
+
+- **Confirmaciones antes de acciones importantes.** Ahora se pide confirmar antes de:
+  confirmar una importacion, conciliar un movimiento, pulsar "Actualizar ahora",
+  revocar/rotar/eliminar un token de integracion, fijar la divisa base o desactivar
+  una divisa, y desvincular Google Drive. Evita clics accidentales con consecuencias.
+- **Aviso de cambios sin guardar.** Si intentas recargar o cerrar el navegador con una
+  importacion pegada sin confirmar, o cerrar el formulario de usuario con cambios sin
+  guardar, la aplicacion te avisa antes de perderlos.
+- **Importes ambiguos al importar.** Si un importe con un unico separador puede leerse de
+  dos formas (por ejemplo `1,234` como 1234 o como 1.234), la validacion muestra un aviso
+  en esa fila para que revises el formato antes de confirmar. No bloquea, solo avisa.
+- **Edicion de celdas mas fluida.** Al editar una celda del extracto ya no se recarga toda
+  la tabla; solo se actualiza esa fila (salvo si cambias la fecha). Si otra persona edito
+  la misma fila a la vez, veras un aviso y la fila se recargara con el dato actualizado en
+  pantalla en lugar de un error generico.
+- **Desglose de recibos domiciliados.** Cada extracto puede tener lineas informativas por
+  persona/tercero e importe. Sirve para explicar un recibo agrupado sin duplicar movimientos
+  ni alterar saldos.
+- **Caducidad de tokens en tu hora local.** La fecha de expiracion que eliges para un token
+  se interpreta como el final de ese dia en tu zona horaria.
+- **Integracion OpenClaw.** Hoy es de solo lectura; el permiso de escritura de un token no
+  habilita ninguna operacion todavia (se indica en la pantalla de creacion de tokens).
+
 ## Acceso con Google Authenticator
 
 Atlas Balance usa MFA con aplicaciones compatibles tipo Google Authenticator.
 
 La primera vez que entras, despues de email y contrasena, aparece un QR. Escanealo con Google Authenticator y escribe el codigo de 6 digitos. Si el QR no se puede escanear, usa la clave manual que aparece debajo.
 
-Despues de verificarlo, la casilla `Recordar este dispositivo durante 62 dias` solo aparece si un administrador la ha permitido en `Configuracion > General y SMTP > Autenticacion`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login. Se volvera a pedir tambien cuando pasen esos 62 dias, cierres sesion, borres cookies, cambie la seguridad del usuario o uses otro navegador/equipo.
+Despues de verificarlo, la casilla `Recordar este dispositivo durante 90 dias` aparece si el recuerdo de dispositivo esta habilitado en `Configuracion > General y SMTP > Autenticacion`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login.
 
-Cerrar sesion borra tambien la confianza MFA guardada en ese navegador. Si ya tenias una sesion abierta antes de que MFA fuera obligatorio, Atlas Balance puede pedirte iniciar sesion de nuevo y completar MFA; eso es intencionado para cortar sesiones antiguas sin garantia MFA. Si necesitas cortar todos los dispositivos recordados de un usuario, un administrador puede revocar el Authenticator desde `Usuarios`.
+Cerrar sesion ya no borra el dispositivo recordado. Se volvera a pedir MFA cuando pasen esos 90 dias, borres cookies, cambies de navegador/equipo, un administrador revoque el Authenticator, cambie la contrasena o rote la seguridad del usuario. Si necesitas cortar todos los dispositivos recordados de un usuario, un administrador puede revocar el Authenticator desde `Usuarios`.
+
+## Paises en cuentas
+
+En `Cuentas`, cada cuenta puede tener un pais opcional. Las cuentas antiguas quedan sin pais para no romper datos existentes.
+
+El selector `Organizacion` de la barra lateral es ahora el scope global por pais:
+
+- `General` muestra todo, incluidas cuentas sin pais.
+- Un pais concreto muestra solo cuentas, saldos, movimientos, titulares y datos derivados de ese pais.
+- Las cuentas sin pais no aparecen cuando eliges un pais concreto.
+
+El campo `Pais` en alta/edicion de cuenta solo asigna esa etiqueta a la cuenta. No cambia el scope de la app.
+
+El dashboard muestra `Saldos por pais`, para que no tengas que adivinar si el scope esta haciendo algo.
+
+Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
+
+Importante: el pais ya no es solo un filtro visual. En permisos de usuario y tokens de integracion, un administrador puede limitar el acceso a un pais concreto. Si ademas se elige titular o cuenta, Atlas Balance exige que todas esas condiciones coincidan a la vez.
+
+## Copias de seguridad y Google Drive
+
+En `Sistema > Backups`, un administrador puede configurar:
+
+- Si las copias automaticas estan activas.
+- Frecuencia: cada X horas, diaria, semanal o mensual.
+- Hora UTC, dia semanal, dia mensual o intervalo horario segun la frecuencia.
+- Destino: `Solo local` o `Local + Google Drive`.
+
+La copia local sigue siendo el archivo restaurable principal. Si eliges `Local + Google Drive`, Atlas Balance crea la copia local y despues sube a Google Drive una version cifrada `.enc`.
+
+Para usar Google Drive:
+
+1. Crea credenciales OAuth en Google Cloud para la app.
+2. Copia `OAuth Client ID` y `OAuth Client Secret` en `Backups`.
+3. Pulsa `Guardar`.
+4. Pulsa `Vincular` y abre la URL que muestra la pantalla.
+5. Introduce el codigo de Google y concede acceso.
+6. Pulsa `Probar` para validar que el refresh token sigue funcionando.
+
+Si dejas vacia la carpeta Drive ID, Atlas Balance intentara crear una carpeta `Atlas Balance Backups`. Si quieres usar una carpeta concreta, pega su ID.
+
+Desde la misma pantalla puedes:
+
+- Crear una copia manual.
+- Ver si cada copia quedo solo local o subida a Drive.
+- Reintentar la subida a Drive de una copia local correcta.
+- Listar las copias creadas por Atlas Balance en Drive.
+- Importar una copia cifrada desde Drive para convertirla otra vez en copia local restaurable.
+
+Aviso importante: las copias en Drive dependen de la clave local `backup_cloud_encryption_key`. Si pierdes esa clave o reinstalas sin conservar la configuracion protegida, los `.enc` de Drive no se podran descifrar. Drive sera almacenamiento, no magia.
+
+## IA y modelos OpenRouter
+
+En `Configuracion > Revision e IA`, OpenRouter permite escribir cualquier model id valido, por ejemplo `openrouter/auto` o `proveedor/modelo`. Las sugerencias vienen de OpenRouter, pero no son una jaula.
+
+Si OpenRouter rechaza un modelo por saldo, privacidad, proveedor no disponible o ID inexistente, Atlas Balance muestra un error limpio. Si escribes un ID con formato invalido, el backend lo rechaza antes de llamar al proveedor.
 
 ## Paquetes de instalacion
 
@@ -72,7 +183,7 @@ Los paquetes de release estan en:
 Atlas Balance/Atlas Balance Release
 ```
 
-Paquete esperado para la version actual `V-01.09`:
+Ultimo paquete publicado documentado antes de `V-02-03`:
 
 ```text
 AtlasBalance-V-01.09-win-x64.zip
@@ -85,13 +196,13 @@ SHA256 del ZIP firmado de `V-01.09`:
 4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128
 ```
 
-No reutilices hashes ni paquetes de `V-01.07` para publicar `V-01.09`. El asset de GitHub Release `V-01.09-win-x64` ya fue reemplazado con este ZIP corregido y su firma.
+No reutilices hashes ni paquetes de `V-01.09` para publicar `V-02-03`. Cuando se genere `V-02-03`, debe tener ZIP y `.sig` propios.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
-No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-01.09-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
+No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-02-03-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
 
-Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-01.09-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
+Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02-03-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
 Nota dura de `V-01.09`: el codigo ya prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este cambio puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
 
@@ -103,7 +214,7 @@ Antes de publicar o entregar una base local, ejecuta la purga de entrega desde l
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Purge-DeliveryData.ps1" -ConfirmDeliveryPurge
 ```
 
-Esto borra usuarios, titulares, cuentas, extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien deja vacias las claves SMTP, OpenRouter, OpenAI y tipos de cambio externos.
+Esto borra usuarios, titulares, cuentas, extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien deja vacias las claves SMTP, OpenRouter, OpenAI, MiniMax y tipos de cambio externos.
 
 No ejecutes esta purga contra una base de cliente en produccion salvo que quieras dejarla vacia. Su nombre no es decorativo.
 
@@ -157,7 +268,7 @@ El prompt pedira la password en consola segura. No la pegues en comandos, chats 
 Si la instalacion ya tiene los scripts actualizados, tambien vale:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-01.09-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-02-03-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 La distribucion oficial de paquetes se publica como asset en GitHub Releases:
@@ -172,11 +283,11 @@ Tambien puedes actualizar desde la propia app:
 2. Ve a `Configuracion > Sistema`.
 3. Deja el repo `https://github.com/AtlasLabs797/AtlasBalance`.
 4. Pulsa `Verificar actualizacion`.
-5. Si hay version nueva, pulsa `Actualizar ahora`.
+5. Si hay version nueva y el preflight dice `Instalable`, pulsa `Actualizar ahora`.
 
 Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
 
-La app descarga el ZIP oficial `win-x64`, verifica su firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si no puede verificar firma, crear backup o levantar la API despues, no deja la actualizacion como buena. En `V-01.09`, esa ruta ya apunta al paquete completo, pero depende de que `latest` publique el paquete firmado correcto y de que la instalacion tenga el Watchdog compatible.
+La app descarga el ZIP oficial `win-x64`, verifica digest y firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si falta ZIP, firma, digest, clave publica o Watchdog disponible, el boton queda bloqueado con el motivo. En `V-02-03`, `Actualizacion disponible` no significa `Instalable`; esa diferencia evita actualizaciones a medias.
 
 El limite maximo de descarga del paquete es 300 MB. Si una instalacion necesita un limite mas bajo, configura `UpdateSecurity:MaxUpdatePackageBytes`; no sirve para subir el maximo por encima de 300 MB. Si el servidor no declara tamano, Atlas Balance corta igualmente la descarga al superar el limite.
 
@@ -221,9 +332,21 @@ Indica fecha, monto y concepto opcional. Atlas Balance calcula el saldo nuevo de
 
 ## Usuarios y permisos
 
+Atlas Balance usa tres roles:
+
+- `Admin`: acceso total al sistema.
+- `Gerente`: acceso financiero asignado por permisos. Puede trabajar por todos los paises/titulares/cuentas o solo por los seleccionados. Ve dashboards, alertas activas y revision dentro de su alcance, y puede hacer exportaciones manuales. No crea titulares ni cuentas y no administra sistema.
+- `Empleado`: rol base por defecto. Hace lo que indiquen sus permisos granulares.
+
 En `Usuarios`, el modal de alta/edicion incluye `Acceso a todas las cuentas`. Ese ajuste crea un permiso global para ver todas las cuentas sin conceder automaticamente edicion, eliminacion ni importacion.
 
-Para permisos manuales, marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
+Para permisos manuales, marca `Pais` si el usuario solo debe operar en un pais. Luego puedes reducir mas con `Titular` y `Cuenta`. Un permiso con pais y titular no significa "todo el pais o todo el titular"; significa la interseccion exacta.
+
+Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
+
+Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas visibles en `Extractos` no concede permiso de edicion; la edicion de columnas se decide por los permisos configurados en `Usuarios`.
+
+Para `Gerente`, el dashboard se habilita cuando tiene al menos un permiso de datos. Para `Empleado`, `Puede ver dashboard` solo permite dashboard si la fila tambien tiene algun permiso operativo de datos dentro de ese alcance. No abre cuentas ni extractos por si solo.
 
 La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar Authenticator`. Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
 
@@ -238,6 +361,8 @@ Las cuentas pueden ser:
 - `Plazo fijo`: dinero inmovilizado hasta una fecha de vencimiento.
 
 En cuentas normales y de efectivo puedes asociar un `Formato de importacion` desde `Cuentas`. Las normales ademas permiten banco, numero de cuenta e IBAN; las de efectivo no, porque ponerle IBAN a una caja es teatro administrativo.
+
+Tambien puedes asignar `Pais` a cualquier cuenta. Es opcional y se usa para filtros y agregados del dashboard.
 
 Al crear una cuenta de plazo fijo debes indicar fecha de inicio, fecha de vencimiento y si es renovable. Opcionalmente puedes informar interes previsto, cuenta de referencia y notas.
 
@@ -278,9 +403,11 @@ El estado queda guardado y puedes filtrar por pendientes, revisadas o descartada
 
 El importe minimo de comisiones se configura en `Configuracion > Revision e IA`. Se compara por valor absoluto: con umbral `1`, aparecen `-1,20` y `1,20`.
 
+En movil, `Revision` muestra cada movimiento como tarjeta etiquetada para que puedas leer titular, cuenta, importe, concepto y estado sin arrastrar una tabla ancha.
+
 ## IA
 
-El menu lateral incluye `IA` y la barra superior incluye un boton de IA para abrir un chat flotante cuando la IA esta habilitada globalmente y tu usuario tiene permiso.
+El menu lateral incluye `IA` y la barra superior incluye un boton de IA para abrir un chat flotante cuando la IA esta habilitada globalmente y tu usuario tiene permiso. En movil, el boton flotante no aparece: entra desde `Mas > IA` para no tapar la navegacion ni los formularios.
 
 La IA responde usando contexto financiero real minimizado: saldos, agregados y movimientos relevantes cuando aplican. El chat IA requiere permiso explicito por usuario, interruptor global activo, proveedor/modelo configurados, limites de uso disponibles y presupuesto no agotado. Si no tiene datos suficientes, debe decirlo. Si falta configurar proveedor, modelo, API key o permisos, el chat muestra un error claro en vez de inventar.
 
@@ -294,19 +421,21 @@ Atlas Balance tambien filtra razonamiento interno del proveedor. No deberias ver
 
 Si el proveedor externo devuelve algo que Atlas Balance no puede usar, el error debe indicar una categoria tecnica corta, por ejemplo `invalid_json` o `unsupported_content`, en vez de repetir un mensaje generico de respuesta malformada.
 
-Si falla la conexion con OpenRouter u OpenAI, el chat muestra un error generico. El administrador puede revisar la auditoria, donde solo queda una categoria tecnica segura como `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`; no se muestran hostnames internos, proxy, puertos, certificados, prompt, respuesta completa ni API key.
+Si falla la conexion con OpenRouter, OpenAI o MiniMax, el chat muestra un error generico. El administrador puede revisar la auditoria, donde solo queda una categoria tecnica segura como `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`; no se muestran hostnames internos, proxy, puertos, certificados, prompt, respuesta completa ni API key.
 
 En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva. El selector de modelo queda discreto en la cabecera junto al proveedor y cambia el modelo solo para las siguientes consultas de esa conversacion; no modifica la configuracion global de la app.
 
 El chat esta limitado a Atlas Balance, funcionamiento de la app y datos financieros disponibles. Puede responder sobre gastos, ingresos, importes, montos, Seguridad Social, impuestos, comisiones, seguros, recibos, facturas, nominas, cuotas, cargos y cobros si esos datos estan en el contexto financiero accesible para tu usuario. Si preguntas por recetas, cocina, programacion, noticias, ocio, salud, asesoramiento legal externo o cualquier asunto externo, la app debe rechazar la consulta.
 
-En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter` u `OpenAI`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta.
+En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter`, `OpenAI` o `MiniMax`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta.
 
 Para OpenRouter, puedes dejar `Auto (gratis permitido)`. Atlas Balance guarda `openrouter/auto`, pero no usa el Auto Router abierto de OpenRouter porque puede chocar con las restricciones de modelos de tu cuenta. En su lugar, usa fallback con un maximo de 3 modelos por consulta, que es el limite efectivo de OpenRouter: `Nemotron 3 Super (free)`, `Gemma 4 31B (free)` y `MiniMax M2.5 (free)`. Si quieres forzar otro modelo gratis permitido, el selector del chat y el de Configuracion tambien muestran `gpt-oss-120b (free)`, `GLM 4.5 Air (free)` y `Qwen3 Coder 480B A35B (free)`.
 
+Para MiniMax, los modelos soportados son `MiniMax-M3` y `MiniMax-M2.7`. Atlas Balance llama directamente a `https://api.minimax.io/v1/chat/completions` con API key de servidor; no lo trata como slug de OpenRouter. `MiniMax-M3` se envia con `thinking` desactivado y `reasoning_split=true`; `MiniMax-M2.7` mantiene el comportamiento del proveedor porque MiniMax no permite desactivar thinking en la familia M2.x.
+
 Aviso serio: Atlas Balance envia a OpenRouter `zdr=true` y `data_collection=deny` en cada consulta. Si un modelo gratis no puede cumplir esa politica de privacidad, la consulta debe fallar. Eso es molesto, pero sacar finanzas a un proveedor con retencion seria peor.
 
-El chat interno usa una API key de servidor para llamar a OpenAI u OpenRouter.
+El chat interno usa una API key de servidor para llamar a OpenRouter, OpenAI o MiniMax.
 
 Si el servidor necesita proxy corporativo para salir a internet, configuralo en `appsettings.Production.json` con `Ia:UseSystemProxy=true` o con `Ia:ProxyUrl`. Por defecto Atlas Balance no usa proxies heredados de variables de entorno para la IA, porque ya provocaron errores falsos de OpenRouter.
 
@@ -316,15 +445,17 @@ En `Usuarios`, un administrador puede marcar `Puede usar IA` para cada usuario. 
 
 El dashboard principal muestra:
 
-- Saldo disponible: cuentas normales y efectivo.
-- Saldo inmovilizado: cuentas de plazo fijo.
-- Saldo total: disponible + inmovilizado.
-- Saldos por divisa: la divisa base aparece primero y el resto debajo/despues segun el espacio disponible.
-- Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento, ubicados bajo los KPIs de saldo, ingresos y egresos.
-- La grafica de evolucion se muestra en una franja ancha propia, despues del resumen superior de KPIs y saldos por divisa.
+- Saldo consolidado en el panel principal.
+- Saldos por divisa dentro del panel superior; la divisa base aparece primero.
+- Grafica de evolucion de saldo en la misma zona principal del dashboard, con ingresos y egresos visibles como lineas.
+- KPIs de ingresos, egresos, disponible e inmovilizado cuando hay datos suficientes.
+- Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento.
+- Saldos por pais, concentracion por banco/titular y saldos por titular.
 - En `Cuentas > Saldos y evolucion`, la grafica de `Evolucion` se muestra antes del listado de cuentas.
 
-Los saldos por titular ocupan la parte inferior completa del dashboard y se agrupan en tres columnas: Empresa, Autonomo y Particular.
+En desktop, los saldos por titular aparecen junto a `Plazos fijos`; en movil se apilan. Los titulares se agrupan en Empresa, Autonomo y Particular.
+
+El periodo se elige con tabs (`1m`, `3m`, `6m`, `9m`, `12m`, `18m`, `24m`) y la divisa principal con el selector de divisa. Ambos siguen quedando reflejados en la URL del dashboard.
 
 ### Desglose de cuenta
 
@@ -339,7 +470,13 @@ En el dashboard de una cuenta, la tabla de movimientos permite seleccionar filas
 
 La interfaz mantiene el mismo funcionamiento, pero ahora los botones, campos, pestanas, tarjetas, tablas y estados de foco usan un sistema visual comun. No cambia el flujo de trabajo: solo debe sentirse mas consistente al pasar de dashboard a cuentas, extractos, importacion, configuracion o administracion.
 
-Los campos de fecha usan un selector propio de Atlas Balance. Al abrirlo veras el mes, los dias, la fecha seleccionada, el dia actual y las acciones `Hoy` y `Limpiar`. Si no cabe debajo del campo, se abre hacia arriba.
+El menu lateral queda oscuro aunque uses tema claro. Agrupa operacion, control y sistema, mantiene el selector global de pais/organizacion y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
+
+La barra superior queda fija al desplazarte. Desde ahi puedes contraer el menu, cambiar tema, abrir/cerrar el chat IA si tienes permiso y cerrar sesion.
+
+La pantalla de login ahora tiene un panel de marca y una tarjeta de acceso. El flujo no cambia: email, password, MFA, QR de configuracion, recordar dispositivo y primer cambio de password siguen funcionando igual.
+
+Los campos de fecha usan un selector propio de Atlas Balance en ordenador. Al abrirlo veras el mes, los dias, la fecha seleccionada, el dia actual y las acciones `Hoy` y `Limpiar`. Si no cabe debajo del campo, se abre hacia arriba. En movil y tablet tactil se usa el selector nativo del dispositivo para evitar solapes con la navegacion inferior.
 
 En tablets y pantallas pequenas se conservan los targets tactiles amplios y la navegacion inferior. Si algun texto largo o tabla concreta se desborda, hay que reportarlo con pantalla y ruta exacta; los fallos de UI vagos no se arreglan solos.
 
@@ -374,8 +511,79 @@ La tabla de `Extractos` ahora se lee mas como una hoja de calculo:
 - El periodo elegido queda en la URL, asi que puedes recargar o compartir esa vista sin perder el rango.
 - La cabecera queda fija al desplazarte.
 - La columna `Fila` queda fija al mover la tabla horizontalmente.
+- Para insertar una fila, usa el `+` que aparece al pasar por la columna `Fila`; el borrador se abre dentro de la tabla, no en un formulario separado encima.
 - Las celdas tienen bordes mas claros y foco visible al editar.
 - Los importes y saldos usan alineacion derecha y numeros tabulares para comparar cifras rapido.
 - Las columnas tecnicas se muestran con nombres legibles, por ejemplo `Importe` en vez de `monto`.
 
 El funcionamiento no cambia: puedes filtrar, ordenar, editar celdas, abrir historial y cambiar columnas visibles igual que antes.
+
+## Actualizacion visual V-02-02
+
+En la parte inferior del menu lateral veras la version activa y la hora local. Sirve para comprobar rapido que estas mirando la build correcta.
+
+La pantalla de login y el cambio obligatorio de password usan el mismo layout visual: panel de marca y tarjeta de accion. El flujo no cambia: email, password, MFA, QR de configuracion, recordar dispositivo y primer cambio de password siguen funcionando igual.
+
+Si `recordar dispositivo MFA` no esta configurado explicitamente, Atlas Balance lo trata como desactivado. Es la opcion correcta: recordar dispositivos por accidente es una mala idea.
+
+Los desplegables de la app usan `<select>` nativo estilizado. Funcionan con teclado, lector de pantalla y controles del sistema operativo; menos teatro visual, mas fiabilidad.
+
+En movil el dashboard no debe crear scroll horizontal. Las tablas ocultas usadas para accesibilidad de graficas no ocupan ancho visible.
+
+La navegacion por teclado de `Extractos` mantiene una celda activa. Los botones internos de cada celda no llenan la tabulacion; entra en la celda y usa `Enter` o `F2` para editar cuando corresponda.
+
+En `Backups`, los campos de frecuencia, dia y destino usan los mismos desplegables visuales que el resto de la app.
+
+El resumen muestra `Ultima copia correcta en esta pagina` porque ese dato se calcula sobre la pagina cargada. Si necesitas una verdad global, revisa el listado completo o cambia la paginacion; la app no debe fingir precision que no tiene.
+
+Si un codigo de vinculacion de Google Drive expira o falla, Atlas Balance deja de mostrar ese codigo viejo y ofrece generar uno nuevo.
+
+## Importacion por lotes V-02-02
+
+La pantalla `Importacion` se divide en `Nueva`, `Historial` y `Lote`.
+
+- `Nueva`: elige cuenta, pega datos o carga archivo, revisa mapeo, valida y confirma.
+- `Historial`: lista lotes importados, validados o revertidos.
+- `Lote`: muestra evidencia del lote, SHA-256, resumen de filas, advertencias y acciones.
+
+Las filas con advertencias no se seleccionan por defecto. Si decides importarlas, tienes que marcar la aceptacion de advertencias. Esto no es burocracia: evita meter lineas dudosas por accidente.
+
+Revertir un lote borra logicamente los extractos importados por ese lote. La evidencia original queda en la base de datos para auditoria y backups.
+
+## Conciliacion V-02-02
+
+La nueva pantalla `Conciliacion` compara movimientos esperados contra extractos reales.
+
+- Crea movimientos esperados con cuenta, fecha, importe, divisa, referencia y concepto.
+- Genera sugerencias con ventana configurable, por defecto mas/menos 3 dias.
+- Atlas Balance solo sugiere matches de misma cuenta, importe exacto y score suficiente.
+- Puedes confirmar, marcar excepcion o resolver conciliaciones.
+
+Estados disponibles: `pendiente`, `sugerida`, `conciliada`, `excepcion` y `resuelta`.
+
+## Extractos
+
+`Extractos` tiene dos modos:
+
+- `Revision`: modo por defecto para revisar sin editar accidentalmente.
+- `Edicion avanzada`: habilita la edicion inline de celdas.
+
+Si vas con prisa y editas en caliente, ese modo separado existe para salvarte de ti mismo.
+
+## Tokens OpenClaw
+
+Los tokens de integracion tienen expiracion por defecto de 90 dias. Tambien muestran scopes, ultimo uso, IP reciente, rotacion y revocacion.
+
+Un token sin expiracion requiere confirmacion explicita y queda auditado. Es comodo, pero tambien es peor seguridad; usalo solo si tienes un motivo real.
+
+## Secretos locales de desarrollo
+
+Los secretos reales de desarrollo ya no viven en el repo ni en `Documentacion`. Deben estar en `%APPDATA%\AtlasBalance\dev-secrets`.
+
+No pegues valores de tokens, passwords ni connection strings reales en capturas, tickets, documentos o logs. Si alguien te pide hacerlo, esa persona esta pidiendo crear una incidencia.
+
+## Logo Atlas Balance V-02-03
+
+Atlas Balance usa el nuevo simbolo de marca en login, cambio obligatorio de password, menu lateral, favicon y activos de instalacion.
+
+El logo se adapta automaticamente a modo claro y oscuro. No cambia ningun flujo de uso.

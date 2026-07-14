@@ -112,7 +112,10 @@ export function ToastViewport() {
   }
 
   return (
-    <div className="toast-viewport" aria-live="polite" aria-atomic="false">
+    // Sin aria-live en el contenedor: cada toast declara su propio rol
+    // (status = polite, alert = assertive para errores). Anidar una live region
+    // dentro de otra provoca anuncios duplicados/en conflicto en lectores de pantalla.
+    <div className="toast-viewport">
       {toasts.map((toast) => (
         <ToastItem
           key={toast.id}

@@ -5,9 +5,10 @@ import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { Cuenta, ExportacionItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatDateTime, formatNumber } from '@/utils/formatters';
+import { formatBytes, formatDateTime } from '@/utils/formatters';
 
 const pageSizeOptions = [10, 20, 50];
 const estadoExportacionLabels: Record<string, string> = {
@@ -20,12 +21,6 @@ const tipoExportacionLabels: Record<string, string> = {
   MANUAL: 'Manual',
 };
 
-function formatBytes(value: number | null): string {
-  if (!value || value <= 0) return 'Sin tamaño';
-  const mb = value / (1024 * 1024);
-  return `${formatNumber(mb)} MB`;
-}
-
 function formatEstadoExportacion(value: string) {
   return estadoExportacionLabels[value.toUpperCase()] ?? value;
 }
@@ -37,6 +32,7 @@ function formatTipoExportacion(value: string) {
 export default function ExportacionesPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const markExportacionesRead = useNotificacionesAdminStore((state) => state.markExportacionesRead);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [rows, setRows] = useState<ExportacionItem[]>([]);
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
   const [selectedCuentaId, setSelectedCuentaId] = useState('');
@@ -48,6 +44,7 @@ export default function ExportacionesPage() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canCreateManualExport = usuario?.rol === 'ADMIN' || usuario?.rol === 'GERENTE';
 
   const totalRowsText = useMemo(() => `${rows.length} exportaciones en esta página`, [rows.length]);
 
@@ -57,6 +54,7 @@ export default function ExportacionesPage() {
         params: {
           page: 1,
           pageSize: 200,
+          paisId: selectedPaisId || undefined,
           sortBy: 'nombre',
           sortDir: 'asc',
         },
@@ -76,6 +74,7 @@ export default function ExportacionesPage() {
           page,
           pageSize,
           cuentaId: selectedCuentaId || undefined,
+          paisId: selectedPaisId || undefined,
           sortBy: 'fecha_exportacion',
           sortDir: 'desc',
         },
@@ -92,6 +91,10 @@ export default function ExportacionesPage() {
   };
 
   const createManualExport = async () => {
+    if (!canCreateManualExport) {
+      return;
+    }
+
     if (!selectedCuentaId) {
       setError('Selecciona la cuenta que quieres exportar.');
       return;
@@ -138,12 +141,18 @@ export default function ExportacionesPage() {
 
   useEffect(() => {
     void loadCuentas();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por pais global
+  }, [selectedPaisId]);
 
   useEffect(() => {
     void loadRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por paginación/filtro cuenta
-  }, [page, pageSize, selectedCuentaId]);
+  }, [page, pageSize, selectedCuentaId, selectedPaisId]);
+
+  useEffect(() => {
+    setSelectedCuentaId('');
+    setPage(1);
+  }, [selectedPaisId]);
 
   useEffect(() => {
     if (usuario?.rol === 'ADMIN') {
@@ -156,7 +165,11 @@ export default function ExportacionesPage() {
       <header className="exportaciones-header">
         <div>
           <h1>Exportaciones</h1>
-          <p className="dashboard-subtitle">Historial y generación manual de XLSX por cuenta</p>
+          <p className="dashboard-subtitle">
+            {canCreateManualExport
+              ? 'Historial y generación manual de XLSX por cuenta'
+              : 'Historial de XLSX disponibles dentro de tu alcance'}
+          </p>
         </div>
       </header>
 
@@ -173,9 +186,11 @@ export default function ExportacionesPage() {
             setPage(1);
           }}
         />
-        <button type="button" onClick={createManualExport} disabled={exporting || loading}>
-          {exporting ? 'Generando...' : 'Generar exportación'}
-        </button>
+        {canCreateManualExport ? (
+          <button type="button" onClick={createManualExport} disabled={exporting || loading}>
+            {exporting ? 'Generando...' : 'Generar exportación'}
+          </button>
+        ) : null}
       </div>
 
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
@@ -185,7 +200,11 @@ export default function ExportacionesPage() {
         {!loading && rows.length === 0 ? (
           <EmptyState
             title="No hay exportaciones con estos filtros."
-            subtitle="Selecciona una cuenta y genera una exportación para descargar el XLSX."
+            subtitle={
+              canCreateManualExport
+                ? 'Selecciona una cuenta y genera una exportación para descargar el XLSX.'
+                : 'Cuando haya exportaciones listas para tus cuentas, aparecerán aquí.'
+            }
           />
         ) : null}
 

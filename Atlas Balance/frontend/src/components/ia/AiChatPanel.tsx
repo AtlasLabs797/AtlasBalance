@@ -5,7 +5,8 @@ import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
 import { AiMessageContent } from '@/components/ia/AiMessageContent';
 import api from '@/services/api';
-import type { IaChatResponse, IaConfig } from '@/types';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
+import type { IaChatResponse, IaConfig, IaModel } from '@/types';
 import { getAiModelLabel, getAiModelOptions, normalizeAiModel, normalizeAiProvider } from '@/utils/aiModels';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
@@ -44,10 +45,13 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [openRouterModels, setOpenRouterModels] = useState<IaModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailedPrompt, setLastFailedPrompt] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const configured = Boolean(config?.configurada);
   const disabledReason = config?.mensaje_estado || 'Falta configurar la IA en Ajustes.';
   const accessBlocked = Boolean(config && (!config.habilitada || !config.usuario_puede_usar));
@@ -56,12 +60,16 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const configModel = config?.model;
   const selectedProvider = normalizeAiProvider(configProvider);
   const modelOptions = useMemo(() => getAiModelOptions(selectedProvider), [selectedProvider]);
+  const openRouterModelOptions = useMemo(
+    () => (openRouterModels.length > 0 ? openRouterModels.map((model) => ({ value: model.id, label: model.nombre || model.id })) : modelOptions),
+    [modelOptions, openRouterModels],
+  );
   const chatModelOptions = useMemo(
     () => modelOptions.map((model) => ({ ...model, label: getCompactModelLabel(model.label) })),
     [modelOptions],
   );
   const activeModel = normalizeAiModel(selectedProvider, selectedModel || configModel);
-  const providerLabel = selectedProvider === 'OPENAI' ? 'OpenAI' : 'OpenRouter';
+  const providerLabel = selectedProvider === 'OPENAI' ? 'OpenAI' : selectedProvider === 'MINIMAX' ? 'MiniMax' : 'OpenRouter';
 
   useEffect(() => {
     let mounted = true;
@@ -110,6 +118,33 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     setSelectedModel((current) => normalizeAiModel(configProvider, current || configModel));
   }, [configProvider, configModel]);
 
+  useEffect(() => {
+    if (selectedProvider !== 'OPENROUTER') {
+      return;
+    }
+
+    let mounted = true;
+    const loadModels = async () => {
+      try {
+        const { data } = await api.get<IaModel[]>('/ia/modelos', {
+          params: { provider: 'OPENROUTER', search: selectedModel || configModel || undefined },
+        });
+        if (mounted) {
+          setOpenRouterModels(data ?? []);
+        }
+      } catch {
+        if (mounted) {
+          setOpenRouterModels([]);
+        }
+      }
+    };
+
+    void loadModels();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedProvider, selectedModel, configModel]);
+
   const ask = async (question: string) => {
     const prompt = question.trim();
     if (!prompt || loading) {
@@ -128,11 +163,16 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
 
     setInput('');
     setError(null);
+    setLastFailedPrompt(null);
     setMessages((current) => [...current, { role: 'user', content: prompt }]);
     setLoading(true);
 
     try {
-      const { data } = await api.post<IaChatResponse>('/ia/chat', { pregunta: prompt, model: activeModel });
+      const { data } = await api.post<IaChatResponse>('/ia/chat', {
+        pregunta: prompt,
+        model: activeModel,
+        pais_id: selectedPaisId || undefined,
+      });
       setMessages((current) => [
         ...current,
         {
@@ -149,6 +189,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
       ]);
     } catch (err) {
       setError(extractErrorMessage(err, 'La IA no pudo responder con los datos actuales.'));
+      setLastFailedPrompt(prompt);
     } finally {
       setLoading(false);
     }
@@ -192,13 +233,33 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
           {canAsk ? (
             <div className="ai-chat-toolbar" aria-label="Opciones de consulta IA">
               <span className="ai-chat-provider">{providerLabel}</span>
-              <AppSelect
-                value={activeModel}
-                options={chatModelOptions}
-                onChange={setSelectedModel}
-                ariaLabel={`Modelo de IA en ${providerLabel}`}
-                disabled={!canAsk || loading}
-              />
+              {selectedProvider !== 'OPENROUTER' ? (
+                <AppSelect
+                  value={activeModel}
+                  options={chatModelOptions}
+                  onChange={setSelectedModel}
+                  ariaLabel={`Modelo de IA en ${providerLabel}`}
+                  disabled={!canAsk || loading}
+                />
+              ) : (
+                <>
+                  <input
+                    className="ai-chat-model-input"
+                    list="ai-chat-openrouter-modelos"
+                    value={selectedModel || activeModel}
+                    onChange={(event) => setSelectedModel(event.target.value)}
+                    aria-label={`Modelo de IA en ${providerLabel}`}
+                    disabled={!canAsk || loading}
+                  />
+                  <datalist id="ai-chat-openrouter-modelos">
+                    {openRouterModelOptions.map((model) => (
+                      <option key={model.value} value={model.value}>
+                        {getCompactModelLabel(model.label)}
+                      </option>
+                    ))}
+                  </datalist>
+                </>
+              )}
             </div>
           ) : null}
         </div>
@@ -277,7 +338,16 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
             ) : null}
           </div>
 
-          {error ? <p className="auth-error" role="alert">{error}</p> : null}
+          {error ? (
+            <div className="auth-error" role="alert">
+              <p>{error}</p>
+              {lastFailedPrompt ? (
+                <button type="button" className="button-secondary" onClick={() => void ask(lastFailedPrompt)} disabled={loading}>
+                  Reintentar última pregunta
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <form className="ai-chat-form" onSubmit={submit}>
             <label className="sr-only" htmlFor={compact ? 'ai-chat-floating-question' : 'ai-chat-page-question'}>

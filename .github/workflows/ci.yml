@@ -58,38 +58,7 @@ jobs:
 
       - name: Scan high-confidence secrets
         shell: pwsh
-        run: |
-          $patterns = @(
-            '-----BEGIN (RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----',
-            'AKIA[0-9A-Z]{16}',
-            'gh[pousr]_[A-Za-z0-9_]{36,}',
-            'github_pat_[A-Za-z0-9_]{20,}',
-            'xox[baprs]-[A-Za-z0-9-]{20,}',
-            'sk-live-[A-Za-z0-9]{20,}',
-            'sk_live_[A-Za-z0-9]{20,}',
-            'npm_[A-Za-z0-9]{36,}',
-            'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+',
-            'postgres(ql)?://[^:\s]+:[^@\s]+@'
-          )
-          $files = (git -c core.quotepath=false ls-files -z) -split "`0" | Where-Object {
-            $_ -and
-            $_ -notmatch '(^|/)(Otros|Skills|Skills Curated)/' -and
-            $_ -notmatch '(^|/)(bin|obj|node_modules|dist)/'
-          }
-          $findings = @()
-          foreach ($file in $files) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
-            $content = Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue
-            foreach ($pattern in $patterns) {
-              if ($content -match $pattern) {
-                $findings += "$file matches $pattern"
-              }
-            }
-          }
-          if ($findings.Count -gt 0) {
-            $findings | ForEach-Object { Write-Error $_ }
-            throw 'Secret scan failed.'
-          }
+        run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.ps1" -Root "."'
 
       - name: Install frontend dependencies
         working-directory: "Atlas Balance/frontend"

@@ -13,9 +13,15 @@ namespace AtlasBalance.API.Services;
 
 public interface IImportacionService
 {
-    Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, CancellationToken cancellationToken);
+    Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, Guid? paisId, CancellationToken cancellationToken);
     Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken);
     Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
+    Task<PaginatedResponse<ImportacionLoteResponse>> ListarLotesAsync(Guid usuarioId, string rol, Guid? cuentaId, int page, int pageSize, CancellationToken cancellationToken);
+    Task<ImportacionLoteDetalleResponse> CrearLoteAsync(Guid usuarioId, string rol, ImportacionLoteCrearRequest request, HttpContext httpContext, CancellationToken cancellationToken);
+    Task<ImportacionLoteDetalleResponse> ObtenerLoteAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken);
+    Task<ImportacionConfirmarResponse> ConfirmarLoteAsync(Guid usuarioId, string rol, Guid id, ImportacionLoteConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
+    Task<ImportacionLoteResponse> RevertirLoteAsync(Guid usuarioId, string rol, Guid id, ImportacionLoteRevertirRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
 }
 
@@ -37,9 +43,22 @@ public sealed class ImportacionService : IImportacionService
         "d-M-yyyy"
     ];
 
+    private static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
     private readonly IAlertaService? _alertaService;
+
+    private enum ImportacionPermissionMode
+    {
+        Importar,
+        Aprobar,
+        Ver
+    }
 
     public ImportacionService(AppDbContext dbContext, IAuditService auditService, IAlertaService? alertaService = null)
     {
@@ -48,10 +67,10 @@ public sealed class ImportacionService : IImportacionService
         _alertaService = alertaService;
     }
 
-    public async Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, CancellationToken cancellationToken)
+    public async Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, Guid? paisId, CancellationToken cancellationToken)
     {
         var isAdmin = string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
-        IQueryable<Cuenta> baseQuery = _dbContext.Cuentas.AsNoTracking().Where(c => c.Activa);
+        IQueryable<Cuenta> baseQuery = _dbContext.Cuentas.AsNoTracking().Where(c => c.Activa).ApplyPaisScope(paisId);
 
         if (!isAdmin)
         {
@@ -65,24 +84,16 @@ public sealed class ImportacionService : IImportacionService
                 return new ImportacionContextoResponse { Cuentas = [] };
             }
 
-            var hasGlobal = permisosImportacion.Any(p => p.CuentaId is null && p.TitularId is null);
+            var hasGlobal = permisosImportacion.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null);
             if (!hasGlobal)
             {
-                var permittedCuentaIds = permisosImportacion
-                    .Where(p => p.CuentaId.HasValue)
-                    .Select(p => p.CuentaId!.Value)
-                    .Distinct()
-                    .ToList();
-
-                var permittedTitularIds = permisosImportacion
-                    .Where(p => !p.CuentaId.HasValue && p.TitularId.HasValue)
-                    .Select(p => p.TitularId!.Value)
-                    .Distinct()
-                    .ToList();
-
                 baseQuery = baseQuery.Where(c =>
-                    permittedCuentaIds.Contains(c.Id) ||
-                    permittedTitularIds.Contains(c.TitularId));
+                    _dbContext.PermisosUsuario.Any(p =>
+                        p.UsuarioId == usuarioId &&
+                        p.PuedeImportar &&
+                        (p.PaisId == null || p.PaisId == c.PaisId) &&
+                        (p.TitularId == null || p.TitularId == c.TitularId) &&
+                        (p.CuentaId == null || p.CuentaId == c.Id)));
             }
         }
 
@@ -99,6 +110,7 @@ public sealed class ImportacionService : IImportacionService
                 x.cuenta.Nombre,
                 TitularNombre = x.titular.Nombre,
                 x.cuenta.Divisa,
+                x.cuenta.PaisId,
                 x.cuenta.EsEfectivo,
                 TipoCuenta = x.cuenta.TipoCuenta == TipoCuenta.NORMAL && x.cuenta.EsEfectivo
                     ? TipoCuenta.EFECTIVO
@@ -121,6 +133,7 @@ public sealed class ImportacionService : IImportacionService
                 Nombre = c.Nombre,
                 TitularNombre = c.TitularNombre,
                 Divisa = c.Divisa,
+                PaisId = c.PaisId,
                 EsEfectivo = c.EsEfectivo,
                 TipoCuenta = c.TipoCuenta.ToString(),
                 FormatoId = c.FormatoId,
@@ -131,7 +144,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, requireImportPermission: true, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var normalizedMap = NormalizeMap(request.Mapeo);
@@ -155,9 +168,422 @@ public sealed class ImportacionService : IImportacionService
         };
     }
 
+    public async Task<PaginatedResponse<ImportacionLoteResponse>> ListarLotesAsync(
+        Guid usuarioId,
+        string rol,
+        Guid? cuentaId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        if (cuentaId.HasValue)
+        {
+            await EnsureCuentaPermitidaAsync(usuarioId, rol, cuentaId.Value, ImportacionPermissionMode.Ver, cancellationToken);
+        }
+
+        var isAdmin = string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
+        var query = _dbContext.ImportacionLotes.AsNoTracking().AsQueryable();
+        if (cuentaId.HasValue)
+        {
+            query = query.Where(x => x.CuentaId == cuentaId.Value);
+        }
+
+        if (!isAdmin)
+        {
+            query = query.Where(l =>
+                _dbContext.Cuentas.Any(c =>
+                    c.Id == l.CuentaId &&
+                    _dbContext.PermisosUsuario.Any(p =>
+                        p.UsuarioId == usuarioId &&
+                        (p.PuedeVerCuentas || p.PuedeImportar || p.PuedeRevisarLineas || p.PuedeAprobarImportaciones) &&
+                        (p.PaisId == null || p.PaisId == c.PaisId) &&
+                        (p.TitularId == null || p.TitularId == c.TitularId) &&
+                        (p.CuentaId == null || p.CuentaId == c.Id))));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var lotes = await query
+            .OrderByDescending(x => x.FechaCreacion)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var cuentaIds = lotes.Select(x => x.CuentaId).Distinct().ToList();
+        var cuentas = await _dbContext.Cuentas
+            .AsNoTracking()
+            .Where(x => cuentaIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre, cancellationToken);
+
+        return new PaginatedResponse<ImportacionLoteResponse>
+        {
+            Data = lotes.Select(x => MapLote(x, cuentas.GetValueOrDefault(x.CuentaId))).ToList(),
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+        };
+    }
+
+    public async Task<ImportacionLoteDetalleResponse> CrearLoteAsync(
+        Guid usuarioId,
+        string rol,
+        ImportacionLoteCrearRequest request,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        EnsureNotPlazoFijoForFormattedImport(cuenta);
+
+        var rawData = request.RawData ?? string.Empty;
+        var rawSize = Encoding.UTF8.GetByteCount(rawData);
+        var declaredSize = request.TamanioBytes ?? rawSize;
+        if (declaredSize < 0)
+        {
+            throw new ImportacionException("El tamano del archivo no es valido", StatusCodes.Status400BadRequest);
+        }
+
+        if (rawSize > MaxRawDataLength || declaredSize > MaxRawDataLength)
+        {
+            throw new ImportacionException("El archivo supera el limite de 5 MB", StatusCodes.Status413PayloadTooLarge);
+        }
+
+        var normalizedMap = NormalizeMap(request.Mapeo);
+        var (rows, separator) = ParseRows(rawData, request.Separador);
+        var validationRows = ValidateRows(rows, normalizedMap);
+        var validRows = validationRows.Where(row => row.Valida).ToList();
+        var fingerprintsByIndex = validRows.Count == 0
+            ? new Dictionary<int, string>()
+            : BuildImportFingerprints(cuenta.Id, validRows);
+        var loteHash = validRows.Count == 0
+            ? Sha256Hex($"empty|{cuenta.Id:N}|{Sha256Hex(rawData)}")
+            : BuildImportBatchHash(validRows, fingerprintsByIndex);
+
+        var lote = new ImportacionLote
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuenta.Id,
+            UsuarioCreadorId = usuarioId,
+            TipoOrigen = NormalizeTipoOrigen(request.TipoOrigen),
+            NombreArchivo = NormalizeOptionalText(request.NombreArchivo),
+            TamanioBytes = declaredSize,
+            Sha256 = Sha256Hex(rawData),
+            Separador = HumanSeparator(separator),
+            MapeoJson = JsonSerializer.Serialize(normalizedMap, SnakeCaseJsonOptions),
+            ResumenJson = JsonSerializer.Serialize(new
+            {
+                filas_total = validationRows.Count,
+                filas_validas = validationRows.Count(row => row.Valida),
+                filas_error = validationRows.Count(row => !row.Valida),
+                filas_advertencia = validationRows.Count(row => row.Advertencias.Count > 0),
+                filas_seleccionadas_default = validationRows.Count(row => row.Valida && row.Advertencias.Count == 0),
+                divisa_cuenta = cuenta.Divisa,
+                divisa_esperada = string.IsNullOrWhiteSpace(request.DivisaEsperada) ? null : request.DivisaEsperada.Trim().ToUpperInvariant(),
+                divisa_mismatch = !string.IsNullOrWhiteSpace(request.DivisaEsperada)
+                    && !string.Equals(request.DivisaEsperada.Trim().ToUpperInvariant(), cuenta.Divisa, StringComparison.OrdinalIgnoreCase)
+            }, SnakeCaseJsonOptions),
+            // V-02-05 (MED-13): RGPD. Solo persistir los primeros 2 KB del raw
+            // original; el hash SHA-256 completo va en Notas como referencia
+            // de integridad. Esto evita retener datos personales (DNIs, IBANs
+            // ajenos, etc.) indefinidamente en IMPORTACION_LOTES.contenido_original.
+            ContenidoOriginal = TruncarContenidoOriginal(rawData),
+            Notas = string.IsNullOrEmpty(BuildDivisaMismatchNota(cuenta.Divisa, request.DivisaEsperada))
+                ? $"sha256:{loteHash}"
+                : $"{BuildDivisaMismatchNota(cuenta.Divisa, request.DivisaEsperada)} | sha256:{loteHash}",
+            LoteHash = loteHash,
+            Estado = validationRows.Any(row => !row.Valida) ? "validado_con_errores" : "validado",
+            FilasTotal = validationRows.Count,
+            FilasValidas = validationRows.Count(row => row.Valida),
+            FilasError = validationRows.Count(row => !row.Valida),
+            FilasAdvertencia = validationRows.Count(row => row.Advertencias.Count > 0),
+            FechaCreacion = DateTime.UtcNow
+        };
+
+        _dbContext.ImportacionLotes.Add(lote);
+        _dbContext.ImportacionLoteFilas.AddRange(validationRows.Select(row => new ImportacionLoteFila
+        {
+            Id = Guid.NewGuid(),
+            LoteId = lote.Id,
+            Indice = row.Indice,
+            Valida = row.Valida,
+            SeleccionadaDefault = row.Valida && row.Advertencias.Count == 0,
+            Estado = ResolveLoteFilaEstado(row),
+            DatosJson = JsonSerializer.Serialize(row.Datos, SnakeCaseJsonOptions),
+            ErroresJson = JsonSerializer.Serialize(row.Errores, SnakeCaseJsonOptions),
+            AdvertenciasJson = JsonSerializer.Serialize(row.Advertencias, SnakeCaseJsonOptions),
+            Fingerprint = row.Valida ? fingerprintsByIndex.GetValueOrDefault(row.Indice) : null
+        }));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync(
+            usuarioId,
+            "importacion_lote_creado",
+            "IMPORTACION_LOTES",
+            lote.Id,
+            httpContext,
+            JsonSerializer.Serialize(new
+            {
+                lote.CuentaId,
+                lote.TipoOrigen,
+                lote.NombreArchivo,
+                lote.TamanioBytes,
+                lote.Sha256,
+                lote.LoteHash,
+                lote.FilasTotal,
+                lote.FilasValidas,
+                lote.FilasError,
+                lote.FilasAdvertencia
+            }, SnakeCaseJsonOptions),
+            cancellationToken);
+
+        return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cancellationToken);
+    }
+
+    public async Task<ImportacionLoteDetalleResponse> ObtenerLoteAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken)
+    {
+        var lote = await _dbContext.ImportacionLotes.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (lote is null)
+        {
+            throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
+        }
+
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Ver, cancellationToken);
+        return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken)
+    {
+        var lote = await _dbContext.ImportacionLotes.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (lote is null)
+        {
+            throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
+        }
+
+        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Ver, cancellationToken);
+        var filas = await _dbContext.ImportacionLoteFilas
+            .AsNoTracking()
+            .Where(x => x.LoteId == id)
+            .OrderBy(x => x.Indice)
+            .ToListAsync(cancellationToken);
+        return filas.Select(MapLoteFila).ToList();
+    }
+
+    public async Task<ImportacionConfirmarResponse> ConfirmarLoteAsync(
+        Guid usuarioId,
+        string rol,
+        Guid id,
+        ImportacionLoteConfirmarRequest request,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        // V-02-05 (MED-14): lock por lote para evitar doble confirmacion concurrente
+        // (dos clics rapidos del frontend). Si no lo conseguimos, devolvemos 409.
+        var lockKey = $"importacion_lote_lock:{id:N}";
+        var lockAcquired = false;
+        try
+        {
+            lockAcquired = await TryAcquireAdvisoryXactLockAsync(lockKey, cancellationToken);
+            if (!lockAcquired)
+            {
+                throw new ImportacionException("El lote esta siendo procesado por otra operacion", StatusCodes.Status409Conflict);
+            }
+        }
+        catch (Npgsql.PostgresException)
+        {
+            // Si la BD no permite advisory lock (test con EF InMemory), seguimos
+            // sin lock; el check de estado duplicado abajo cubre el caso comun.
+        }
+
+        var lote = await _dbContext.ImportacionLotes.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (lote is null)
+        {
+            throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
+        }
+
+        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Aprobar, cancellationToken);
+        if (lote.Estado is "confirmado" or "revertido")
+        {
+            throw new ImportacionException("El lote ya esta cerrado", StatusCodes.Status409Conflict);
+        }
+
+        var filas = await _dbContext.ImportacionLoteFilas
+            .Where(x => x.LoteId == id)
+            .OrderBy(x => x.Indice)
+            .ToListAsync(cancellationToken);
+        var filasAImportar = request.FilasAImportar?.ToHashSet() ??
+                             filas.Where(x => x.SeleccionadaDefault).Select(x => x.Indice).ToHashSet();
+        var filasConAdvertencias = filas
+            .Where(x => x.Valida && filasAImportar.Contains(x.Indice) && ParseJsonList(x.AdvertenciasJson).Count > 0)
+            .Select(x => x.Indice)
+            .ToList();
+
+        if (filasConAdvertencias.Count > 0 && !request.AceptaAdvertencias)
+        {
+            throw new ImportacionException(
+                "El lote contiene filas seleccionadas con advertencias. Confirma acepta_advertencias=true para importarlas.",
+                StatusCodes.Status400BadRequest);
+        }
+
+        var mapeo = ParseMapeoJson(lote.MapeoJson) ?? throw new ImportacionException("El mapeo guardado del lote no es valido", StatusCodes.Status409Conflict);
+        ImportacionConfirmarResponse response;
+        try
+        {
+            response = await ConfirmarAsync(
+                usuarioId,
+                rol,
+                new ImportacionConfirmarRequest
+                {
+                    CuentaId = lote.CuentaId,
+                    RawData = lote.ContenidoOriginal,
+                    Separador = lote.Separador,
+                    Mapeo = mapeo,
+                    FilasAImportar = filasAImportar.ToList(),
+                    LoteId = lote.Id
+                },
+                httpContext,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // H-OPEN-4 (V-02-03): si la confirmacion interna revienta (colision
+            // de fingerprint, etc.), el lote debe quedar marcado como "error"
+            // para que el usuario sepa que algo fallo, no en "validado" con
+            // extractos a medias.
+            lote.Estado = "error";
+            lote.Notas = $"ConfirmarAsync fallo: {Truncate(ex.Message, 500)}";
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(
+                usuarioId,
+                "importacion_lote_error",
+                "IMPORTACION_LOTES",
+                lote.Id,
+                httpContext,
+                JsonSerializer.Serialize(new { lote.CuentaId, mensaje = ex.Message }, SnakeCaseJsonOptions),
+                cancellationToken);
+            throw new ImportacionException(
+                "La confirmacion fallo. El lote quedo marcado como 'error'. Revisa la causa y reintenta.",
+                StatusCodes.Status409Conflict);
+        }
+
+        lote.Estado = "confirmado";
+        lote.FechaConfirmacion = DateTime.UtcNow;
+        lote.ConfirmadoPorId = usuarioId;
+        lote.AdvertenciasAceptadas = request.AceptaAdvertencias;
+
+        foreach (var fila in filas.Where(x => x.Valida))
+        {
+            fila.Estado = filasAImportar.Contains(fila.Indice) ? "confirmada" : "omitida";
+        }
+
+        var warnings = new List<string>();
+        if (lote.UsuarioCreadorId == usuarioId)
+        {
+            warnings.Add("Maker-checker solo aviso: el mismo usuario creo y aprobo este lote.");
+            AddAdminNotification(
+                "maker_checker_importacion",
+                "El mismo usuario creo y aprobo un lote de importacion.",
+                new { lote_id = lote.Id, usuario_id = usuarioId, cuenta_id = lote.CuentaId });
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync(
+            usuarioId,
+            "importacion_lote_confirmado",
+            "IMPORTACION_LOTES",
+            lote.Id,
+            httpContext,
+            JsonSerializer.Serialize(new
+            {
+                lote.CuentaId,
+                filas_a_importar = filasAImportar.Count,
+                response.FilasImportadas,
+                response.FilasDuplicadas,
+                acepta_advertencias = request.AceptaAdvertencias,
+                maker_checker_warning = warnings.Count > 0
+            }, SnakeCaseJsonOptions),
+            cancellationToken);
+
+        response.Advertencias = warnings;
+        return response;
+    }
+
+    public async Task<ImportacionLoteResponse> RevertirLoteAsync(
+        Guid usuarioId,
+        string rol,
+        Guid id,
+        ImportacionLoteRevertirRequest request,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var lote = await _dbContext.ImportacionLotes.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (lote is null)
+        {
+            throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
+        }
+
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Aprobar, cancellationToken);
+        if (lote.Estado == "revertido")
+        {
+            throw new ImportacionException("El lote ya fue revertido", StatusCodes.Status409Conflict);
+        }
+
+        var now = DateTime.UtcNow;
+        // V-02-05 (MED-15): ExecuteUpdate en lugar de cargar 50k entidades a memoria
+        // solo para marcarlas. Un UPDATE con WHERE filtro, sin materializacion.
+        int updateCount;
+        var extractosARevertir = _dbContext.Extractos
+            .IgnoreQueryFilters()
+            .Where(x => x.ImportacionLoteId == lote.Id && x.DeletedAt == null);
+        if (_dbContext.Database.IsRelational())
+        {
+            updateCount = await extractosARevertir.ExecuteUpdateAsync(
+                s => s.SetProperty(e => e.DeletedAt, now).SetProperty(e => e.DeletedById, (Guid?)usuarioId),
+                cancellationToken);
+        }
+        else
+        {
+            var extractos = await extractosARevertir.ToListAsync(cancellationToken);
+            foreach (var extracto in extractos)
+            {
+                extracto.DeletedAt = now;
+                extracto.DeletedById = usuarioId;
+            }
+            updateCount = extractos.Count;
+        }
+
+        var filas = await _dbContext.ImportacionLoteFilas.Where(x => x.LoteId == lote.Id).ToListAsync(cancellationToken);
+        foreach (var fila in filas.Where(x => x.Estado == "confirmada"))
+        {
+            fila.Estado = "revertida";
+        }
+
+        lote.Estado = "revertido";
+        lote.FechaReversion = now;
+        lote.RevertidoPorId = usuarioId;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync(
+            usuarioId,
+            "importacion_lote_revertido",
+            "IMPORTACION_LOTES",
+            lote.Id,
+            httpContext,
+            JsonSerializer.Serialize(new
+            {
+                lote.CuentaId,
+                extractos_revertidos = updateCount,
+                motivo = NormalizeOptionalText(request.Motivo)
+            }, SnakeCaseJsonOptions),
+            cancellationToken);
+
+        return MapLote(lote, cuenta.Nombre);
+    }
+
     public async Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, requireImportPermission: true, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var (rows, separator) = ParseRows(request.RawData, request.Separador);
@@ -295,6 +721,7 @@ public sealed class ImportacionService : IImportacionService
                 FilaNumero = maxFila,
                 ImportacionFingerprint = candidate.Fingerprint,
                 ImportacionLoteHash = loteHash,
+                ImportacionLoteId = request.LoteId,
                 ImportacionFilaOrigen = row.Indice,
                 FechaImportacion = now,
                 UsuarioCreacionId = usuarioId,
@@ -387,7 +814,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, requireImportPermission: true, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
         if (ResolveTipoCuenta(cuenta) != TipoCuenta.PLAZO_FIJO)
         {
             throw new ImportacionException("Esta operacion solo aplica a cuentas de plazo fijo", StatusCodes.Status400BadRequest);
@@ -499,7 +926,7 @@ public sealed class ImportacionService : IImportacionService
         }
     }
 
-    private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, bool requireImportPermission, CancellationToken cancellationToken)
+    private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, ImportacionPermissionMode permissionMode, CancellationToken cancellationToken)
     {
         var cuenta = await _dbContext.Cuentas
             .AsNoTracking()
@@ -523,7 +950,8 @@ public sealed class ImportacionService : IImportacionService
             .ToListAsync(cancellationToken);
 
         var hasPermission = permisos.Any(p =>
-            (!requireImportPermission || p.PuedeImportar) &&
+            GrantsImportacionPermission(p, permissionMode) &&
+            (p.PaisId is null || p.PaisId == cuenta.PaisId) &&
             (p.CuentaId is null || p.CuentaId == cuenta.Id) &&
             (p.TitularId is null || p.TitularId == cuenta.TitularId));
 
@@ -533,6 +961,166 @@ public sealed class ImportacionService : IImportacionService
         }
 
         return cuenta;
+    }
+
+    private static bool GrantsImportacionPermission(PermisoUsuario permiso, ImportacionPermissionMode permissionMode)
+    {
+        return permissionMode switch
+        {
+            ImportacionPermissionMode.Importar => permiso.PuedeImportar,
+            ImportacionPermissionMode.Aprobar => permiso.PuedeAprobarImportaciones || permiso.PuedeImportar,
+            ImportacionPermissionMode.Ver => permiso.PuedeVerCuentas ||
+                                             permiso.PuedeImportar ||
+                                             permiso.PuedeRevisarLineas ||
+                                             permiso.PuedeAprobarImportaciones,
+            _ => false
+        };
+    }
+
+    private async Task<ImportacionLoteDetalleResponse> BuildLoteDetalleAsync(ImportacionLote lote, string? cuentaNombre, CancellationToken cancellationToken)
+    {
+        var filas = await _dbContext.ImportacionLoteFilas
+            .AsNoTracking()
+            .Where(x => x.LoteId == lote.Id)
+            .OrderBy(x => x.Indice)
+            .ToListAsync(cancellationToken);
+        var filaResponses = filas.Select(MapLoteFila).ToList();
+
+        return new ImportacionLoteDetalleResponse
+        {
+            Lote = MapLote(lote, cuentaNombre),
+            Mapeo = ParseMapeoJson(lote.MapeoJson) ?? new MapeoColumnasRequest(),
+            Validacion = new ImportacionValidarResponse
+            {
+                FilasOk = filaResponses.Count(x => x.Valida),
+                FilasError = filaResponses.Count(x => !x.Valida),
+                SeparadorDetectado = lote.Separador,
+                Filas = filaResponses.Select(x => new FilaValidacionResponse
+                {
+                    Indice = x.Indice,
+                    Valida = x.Valida,
+                    Datos = x.Datos,
+                    Errores = x.Errores,
+                    Advertencias = x.Advertencias
+                }).ToList(),
+                Errores = filaResponses
+                    .Where(x => !x.Valida)
+                    .Select(x => new ErrorFilaResponse
+                    {
+                        FilaIndice = x.Indice,
+                        Mensajes = x.Errores
+                    })
+                    .ToList()
+            }
+        };
+    }
+
+    private static ImportacionLoteResponse MapLote(ImportacionLote lote, string? cuentaNombre)
+    {
+        return new ImportacionLoteResponse
+        {
+            Id = lote.Id,
+            CuentaId = lote.CuentaId,
+            CuentaNombre = cuentaNombre,
+            UsuarioCreadorId = lote.UsuarioCreadorId,
+            TipoOrigen = lote.TipoOrigen,
+            NombreArchivo = lote.NombreArchivo,
+            TamanioBytes = lote.TamanioBytes,
+            Sha256 = lote.Sha256,
+            Separador = lote.Separador,
+            LoteHash = lote.LoteHash,
+            Estado = lote.Estado,
+            FilasTotal = lote.FilasTotal,
+            FilasValidas = lote.FilasValidas,
+            FilasError = lote.FilasError,
+            FilasAdvertencia = lote.FilasAdvertencia,
+            AdvertenciasAceptadas = lote.AdvertenciasAceptadas,
+            FechaCreacion = lote.FechaCreacion,
+            FechaConfirmacion = lote.FechaConfirmacion,
+            ConfirmadoPorId = lote.ConfirmadoPorId,
+            FechaReversion = lote.FechaReversion,
+            RevertidoPorId = lote.RevertidoPorId
+        };
+    }
+
+    private static ImportacionLoteFilaResponse MapLoteFila(ImportacionLoteFila fila)
+    {
+        return new ImportacionLoteFilaResponse
+        {
+            Id = fila.Id,
+            LoteId = fila.LoteId,
+            Indice = fila.Indice,
+            Valida = fila.Valida,
+            SeleccionadaDefault = fila.SeleccionadaDefault,
+            Estado = fila.Estado,
+            Datos = ParseJsonDictionary(fila.DatosJson),
+            Errores = ParseJsonList(fila.ErroresJson),
+            Advertencias = ParseJsonList(fila.AdvertenciasJson),
+            Fingerprint = fila.Fingerprint
+        };
+    }
+
+    private static string ResolveLoteFilaEstado(FilaValidacionResponse row)
+    {
+        if (!row.Valida)
+        {
+            return "error";
+        }
+
+        return row.Advertencias.Count > 0 ? "advertencia" : "validada";
+    }
+
+    private static string NormalizeTipoOrigen(string? raw)
+    {
+        var normalized = (raw ?? "PEGADO").Trim().ToUpperInvariant();
+        return normalized == "ARCHIVO" ? "ARCHIVO" : "PEGADO";
+    }
+
+    private static Dictionary<string, string?> ParseJsonDictionary(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string?>>(rawJson, SnakeCaseJsonOptions)
+                   ?? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static IReadOnlyList<string> ParseJsonList(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(rawJson, SnakeCaseJsonOptions) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private void AddAdminNotification(string tipo, string mensaje, object details)
+    {
+        _dbContext.NotificacionesAdmin.Add(new NotificacionAdmin
+        {
+            Id = Guid.NewGuid(),
+            Tipo = tipo,
+            Mensaje = mensaje,
+            Fecha = DateTime.UtcNow,
+            DetallesJson = JsonSerializer.Serialize(details, SnakeCaseJsonOptions)
+        });
     }
 
     private static bool IsFilaNumeroUniqueViolation(DbUpdateException exception)
@@ -638,6 +1226,54 @@ public sealed class ImportacionService : IImportacionService
     {
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private async Task<bool> TryAcquireAdvisoryXactLockAsync(string lockKey, CancellationToken cancellationToken)
+    {
+        // V-02-05 (MED-14): pg_advisory_xact_lock scoped a la transaccion actual.
+        // Devuelve true si el lock se acquired inmediatamente, false si otro proceso lo tiene.
+        // Usamos hashtext para convertir el string a bigint.
+        try
+        {
+            var result = await _dbContext.Database
+                .SqlQueryRaw<int>("SELECT pg_try_advisory_xact_lock(hashtext({0})) AS \"Value\"", lockKey)
+                .ToListAsync(cancellationToken);
+            return result.Count > 0 && result[0] == 1;
+        }
+        catch
+        {
+            return true; // fail-open si la BD no soporta advisory lock (tests)
+        }
+    }
+
+    private const int MaxContenidoOriginalBytes = 2 * 1024;
+
+    private static string TruncarContenidoOriginal(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return raw;
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(raw);
+        if (bytes <= MaxContenidoOriginalBytes) return raw;
+        // Truncar preservando el mayor numero de caracteres UTF-8 validos.
+        var truncated = raw;
+        while (System.Text.Encoding.UTF8.GetByteCount(truncated) > MaxContenidoOriginalBytes && truncated.Length > 0)
+        {
+            truncated = truncated[..^1];
+        }
+        return truncated + $"... [truncado a {MaxContenidoOriginalBytes} bytes; ver hash en Notas]";
+    }
+
+    private static string? BuildDivisaMismatchNota(string cuentaDivisa, string? divisaEsperada)
+    {
+        if (string.IsNullOrWhiteSpace(divisaEsperada))
+        {
+            return null;
+        }
+        var normalized = divisaEsperada.Trim().ToUpperInvariant();
+        if (string.Equals(normalized, cuentaDivisa, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        return $"divisa_mismatch: archivo={normalized} cuenta={cuentaDivisa}";
     }
 
     private static void EnsureNotPlazoFijoForFormattedImport(Cuenta cuenta)
@@ -815,7 +1451,9 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("El archivo pegado supera el limite de 5 MB", StatusCodes.Status413PayloadTooLarge);
         }
 
-        var lines = rawData
+        var normalizedRawData = rawData.TrimStart('\uFEFF');
+
+        var lines = normalizedRawData
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Where(line => !string.IsNullOrWhiteSpace(line))
@@ -960,6 +1598,8 @@ public sealed class ImportacionService : IImportacionService
                 else if (TryBuildSignedMonto(data["ingreso"], data["egreso"], errors, out var signedMonto))
                 {
                     data["monto"] = signedMonto.ToString(CultureInfo.InvariantCulture);
+                    AddAmbiguousAmountWarning(data["ingreso"], "Ingreso", warnings);
+                    AddAmbiguousAmountWarning(data["egreso"], "Egreso", warnings);
                     if (map.TipoMonto == "tres_columnas")
                     {
                         data["monto_banco"] = GetCell(row, map.Monto!.Value);
@@ -991,6 +1631,10 @@ public sealed class ImportacionService : IImportacionService
                 else if (!TryParseDecimalSmart(data["monto"], out _))
                 {
                     errors.Add(BuildDecimalError("Monto", data["monto"]));
+                }
+                else
+                {
+                    AddAmbiguousAmountWarning(data["monto"], "Monto", warnings);
                 }
             }
 
@@ -1031,6 +1675,7 @@ public sealed class ImportacionService : IImportacionService
             else
             {
                 lastValidSaldoRaw = data["saldo"];
+                AddAmbiguousAmountWarning(data["saldo"], "Saldo", warnings);
             }
 
             validation.Add(new FilaValidacionResponse
@@ -1245,12 +1890,7 @@ public sealed class ImportacionService : IImportacionService
 
         try
         {
-            var options = new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-                PropertyNameCaseInsensitive = true
-            };
-            return JsonSerializer.Deserialize<MapeoColumnasRequest>(rawJson, options);
+            return JsonSerializer.Deserialize<MapeoColumnasRequest>(rawJson, SnakeCaseJsonOptions);
         }
         catch
         {
@@ -1312,6 +1952,65 @@ public sealed class ImportacionService : IImportacionService
         return parts.Skip(1).All(part => part.Length == 3 && HasDigitsOnly(part));
     }
 
+    // V-02-04 (1.3): un valor con un unico separador y exactamente un grupo de 3
+    // digitos (ej. "1,234") es ambiguo: puede ser 1234 (agrupacion de miles) o
+    // 1.234 (decimal con 3 decimales). TryParseDecimalSmart elige miles, que suele
+    // ser correcto para importes de 2 decimales, pero en modos una_columna/dos_columnas
+    // no hay columna de control que lo verifique. Devolvemos un aviso (no bloqueante)
+    // para que el usuario revise el formato antes de confirmar. Devuelve null si no
+    // hay ambiguedad.
+    private static string? BuildAmbiguousAmountWarning(string? raw, string fieldLabel)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var text = raw.Trim()
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace(" ", string.Empty, StringComparison.Ordinal);
+
+        if (text.StartsWith('(') && text.EndsWith(')'))
+        {
+            text = text[1..^1];
+        }
+
+        text = text.Replace("MX$", string.Empty, StringComparison.Ordinal)
+            .Replace("RD$", string.Empty, StringComparison.Ordinal)
+            .Replace("€", string.Empty, StringComparison.Ordinal)
+            .Replace("$", string.Empty, StringComparison.Ordinal);
+
+        var hasComma = text.Contains(',');
+        var hasDot = text.Contains('.');
+        if (hasComma == hasDot)
+        {
+            // Ni un solo tipo de separador, o ambos presentes: en esos casos la
+            // interpretacion es deterministica y no ambigua.
+            return null;
+        }
+
+        var separator = hasComma ? ',' : '.';
+        var parts = text.Split(separator);
+        if (parts.Length != 2 || parts[1].Length != 3 || !IsThousandsGrouped(text, separator))
+        {
+            return null;
+        }
+
+        var comoMiles = text.Replace(separator.ToString(), string.Empty, StringComparison.Ordinal);
+        var comoDecimal = text.Replace(separator, '.');
+        return $"{fieldLabel} '{raw.Trim()}' es ambiguo: se importara como {comoMiles} (agrupacion de miles). " +
+               $"Si el valor real es {comoDecimal}, ajusta el separador decimal del formato.";
+    }
+
+    private static void AddAmbiguousAmountWarning(string? raw, string fieldLabel, List<string> warnings)
+    {
+        var warning = BuildAmbiguousAmountWarning(raw, fieldLabel);
+        if (warning is not null)
+        {
+            warnings.Add(warning);
+        }
+    }
+
     private static bool HasDigitsOnlyIgnoringSign(string value)
     {
         var normalized = value.TrimStart('+', '-');
@@ -1319,6 +2018,9 @@ public sealed class ImportacionService : IImportacionService
     }
 
     private static bool HasDigitsOnly(string value) => value.All(char.IsDigit);
+
+    private static string Truncate(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
 
     private sealed record ImportRowCandidate(FilaValidacionResponse Row, string Fingerprint);
 }

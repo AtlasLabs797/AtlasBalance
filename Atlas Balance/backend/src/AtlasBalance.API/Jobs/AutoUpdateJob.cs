@@ -87,6 +87,22 @@ public sealed class AutoUpdateJob
                 return;
             }
 
+            if (!available.Instalable)
+            {
+                var bloqueos = available.Bloqueos.Count == 0
+                    ? "preflight no instalable."
+                    : string.Join(" | ", available.Bloqueos);
+                Upsert(
+                    config,
+                    LastResultKey,
+                    Trim($"Actualizacion disponible, pero no instalable: {bloqueos}", 300),
+                    "string",
+                    "Ultimo resultado de actualizacion automatica",
+                    now);
+                await _dbContext.SaveChangesAsync(CancellationToken.None);
+                return;
+            }
+
             var version = string.IsNullOrWhiteSpace(available.VersionDisponible)
                 ? "version desconocida"
                 : available.VersionDisponible;

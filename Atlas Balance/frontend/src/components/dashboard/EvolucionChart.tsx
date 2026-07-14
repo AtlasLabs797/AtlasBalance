@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react';
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -18,6 +20,8 @@ interface EvolucionChartProps {
   divisa: string;
   colors: DashboardChartColors;
   height?: number;
+  variant?: 'multiLine' | 'saldoArea';
+  xAxisMode?: 'date' | 'month';
 }
 
 const EVOLUTION_AXIS_MIN_WIDTH = 52;
@@ -37,7 +41,14 @@ const LEGACY_CHART_COLOR_TOKENS: Record<string, string> = {
   '#7b7b7b': 'var(--chart-saldo)',
 };
 
-export function EvolucionChart({ points, divisa, colors, height = 320 }: EvolucionChartProps) {
+export function EvolucionChart({
+  points,
+  divisa,
+  colors,
+  height = 320,
+  variant = 'multiLine',
+  xAxisMode = 'date',
+}: EvolucionChartProps) {
   if (points.length === 0) {
     return <p className="dashboard-empty">No hay movimientos en este periodo.</p>;
   }
@@ -45,11 +56,108 @@ export function EvolucionChart({ points, divisa, colors, height = 320 }: Evoluci
   const lastPoint = points[points.length - 1];
   const yDomain = getEvolutionDomain(points);
   const axisWidth = getEvolutionAxisWidth(points, divisa, yDomain);
+  const saldoDomain = getSaldoDomain(points);
+  const movementDomain = getMovementDomain(points);
   const chartColors = {
     ingresos: resolveChartColor(colors.ingresos, 'var(--chart-ingresos)'),
     egresos: resolveChartColor(colors.egresos, 'var(--chart-egresos)'),
     saldo: resolveChartColor(colors.saldo, 'var(--chart-saldo)'),
   };
+  const tickFormatter = xAxisMode === 'month' ? formatMonthTick : formatDate;
+
+  if (variant === 'saldoArea') {
+    return (
+      <div
+        className="dashboard-chart-wrapper dashboard-chart-wrapper--saldo-area"
+        role="group"
+        aria-label={`Evolución de saldo, ingresos y egresos. Saldo final ${formatCurrency(lastPoint.saldo, divisa)}.`}
+      >
+        <div className="dashboard-chart-legend" aria-hidden="true">
+          <span style={{ '--series-color': chartColors.saldo } as CSSProperties}>Saldo</span>
+          <span style={{ '--series-color': chartColors.ingresos } as CSSProperties}>Ingresos</span>
+          <span style={{ '--series-color': chartColors.egresos } as CSSProperties}>Egresos</span>
+        </div>
+        <ResponsiveContainer width="100%" height={height}>
+          <ComposedChart data={points} margin={{ top: 12, right: 0, bottom: 8, left: 0 }}>
+            <defs>
+              <linearGradient id="dashboardSaldoArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={chartColors.saldo} stopOpacity={0.22} />
+                <stop offset="100%" stopColor={chartColors.saldo} stopOpacity={0.04} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+            <XAxis
+              dataKey="fecha"
+              tickFormatter={tickFormatter}
+              padding={{ left: 8, right: 8 }}
+              axisLine={false}
+              tickLine={false}
+              tickMargin={10}
+              minTickGap={28}
+              tick={EVOLUTION_AXIS_TICK_STYLE}
+            />
+            <YAxis
+              yAxisId="saldo"
+              tickFormatter={(value) => formatCompactAxis(value)}
+              domain={saldoDomain}
+              width={74}
+              axisLine={false}
+              tickLine={false}
+              tickMargin={EVOLUTION_AXIS_TICK_MARGIN}
+              tick={EVOLUTION_AXIS_TICK_STYLE}
+            />
+            <YAxis
+              yAxisId="movement"
+              orientation="right"
+              tickFormatter={(value) => formatCompactAxis(value)}
+              domain={movementDomain}
+              width={74}
+              axisLine={false}
+              tickLine={false}
+              tickMargin={EVOLUTION_AXIS_TICK_MARGIN}
+              tick={EVOLUTION_AXIS_TICK_STYLE}
+            />
+            <Tooltip content={<DashboardTooltip divisa={divisa} />} cursor={{ stroke: 'var(--chart-grid)' }} />
+            <Area
+              yAxisId="saldo"
+              type="monotone"
+              name="Saldo"
+              dataKey="saldo"
+              stroke={chartColors.saldo}
+              fill="url(#dashboardSaldoArea)"
+              strokeWidth={2.8}
+              dot={false}
+              isAnimationActive={false}
+              activeDot={{ r: 5, strokeWidth: 0, fill: chartColors.saldo }}
+            />
+            <Line
+              yAxisId="movement"
+              type="monotone"
+              name="Ingresos"
+              dataKey="ingresos"
+              stroke={chartColors.ingresos}
+              dot={false}
+              strokeWidth={2.2}
+              isAnimationActive={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: chartColors.ingresos }}
+            />
+            <Line
+              yAxisId="movement"
+              type="monotone"
+              name="Egresos"
+              dataKey="egresos"
+              stroke={chartColors.egresos}
+              dot={false}
+              strokeWidth={2.2}
+              isAnimationActive={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: chartColors.egresos }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+        <EvolutionDataTable points={points} divisa={divisa} />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -67,7 +175,7 @@ export function EvolucionChart({ points, divisa, colors, height = 320 }: Evoluci
           <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="fecha"
-            tickFormatter={(value) => formatDate(value)}
+            tickFormatter={tickFormatter}
             padding={{ left: 8, right: 8 }}
             axisLine={false}
             tickLine={false}
@@ -136,6 +244,42 @@ export function EvolucionChart({ points, divisa, colors, height = 320 }: Evoluci
   );
 }
 
+function EvolutionDataTable({ points, divisa }: Pick<EvolucionChartProps, 'points' | 'divisa'>) {
+  return (
+    <table className="sr-only">
+      <caption>Datos de evolución por fecha</caption>
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Ingresos</th>
+          <th>Egresos</th>
+          <th>Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {points.map((point) => (
+          <tr key={point.fecha}>
+            <td>{formatDate(point.fecha)}</td>
+            <td>{formatCurrency(point.ingresos, divisa)}</td>
+            <td>{formatCurrency(point.egresos, divisa)}</td>
+            <td>{formatCurrency(point.saldo, divisa)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function formatMonthTick(value: string): string {
+  const match = /^(\d{4})-(\d{2})/.exec(value);
+  const date = match ? new Date(Number(match[1]), Number(match[2]) - 1, 1) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return formatDate(value);
+  }
+
+  return date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+}
+
 function resolveChartColor(value: string | undefined, fallback: string): string {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) {
@@ -166,6 +310,46 @@ function getEvolutionDomain(points: DashboardPuntoEvolucion[]): [number, number]
   }
 
   return [min, max];
+}
+
+function getSaldoDomain(points: DashboardPuntoEvolucion[]): [number, number] {
+  const values = points.map((point) => point.saldo);
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  if (dataMin === dataMax) {
+    return [dataMin - 1, dataMax + 1];
+  }
+
+  const span = dataMax - dataMin;
+  const padding = Math.max(span * 0.12, Math.max(Math.abs(dataMin), Math.abs(dataMax), 1) * 0.015);
+  return [dataMin - padding, dataMax + padding];
+}
+
+function getMovementDomain(points: DashboardPuntoEvolucion[]): [number, number] {
+  const values = points.flatMap((point) => [point.ingresos, point.egresos]);
+  const dataMin = Math.min(...values, 0);
+  const dataMax = Math.max(...values, 0);
+
+  if (dataMin === dataMax) {
+    return [dataMin - 1, dataMax + 1];
+  }
+
+  const span = dataMax - dataMin;
+  const padding = Math.max(span * 0.12, Math.max(Math.abs(dataMin), Math.abs(dataMax), 1) * 0.04);
+  return [dataMin < 0 ? dataMin - padding : 0, dataMax > 0 ? dataMax + padding : 0];
+}
+
+function formatCompactAxis(value: number | string): string {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return String(value);
+  }
+
+  return new Intl.NumberFormat('es-ES', {
+    notation: 'compact',
+    compactDisplay: 'short',
+    maximumFractionDigits: 2,
+  }).format(numeric);
 }
 
 function getEvolutionAxisWidth(

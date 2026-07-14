@@ -4,6 +4,8 @@
 
 La carpeta `Skills` contiene skills locales para mejorar Atlas Balance. Hay repos completos y muchas copias repetidas para distintos agentes (`.agents`, `.codex`, `.claude`, `.cursor`, etc.). No trates cada copia como una skill distinta. Usa las rutas canonicas de este documento.
 
+Nota V-02-02 (2026-06-09): en este checkout las skills de diseno viven bajo `Skills/02_Design-UI-UX/...`. Si una referencia antigua menciona `Skills/Diseno/...`, resuelve primero contra la ruta actual `Skills/02_Design-UI-UX/...`. Los indices `Skills/02_Design-UI-UX/README.md` e `INDEX.md` conservan texto importado de "Atlas Connect" y menciones a Tailwind; no gobiernan Atlas Balance.
+
 Antes de aplicar una skill:
 
 1. Lee solo el `SKILL.md`, `CLAUDE.md` o `README.md` canonico de esa skill.
@@ -23,17 +25,19 @@ Antes de aplicar una skill:
 
 | Skill | Ruta canonica | Usar cuando | Como usarla |
 |---|---|---|---|
-| Catalogo de diseno | `Skills/Diseno/design.md` | Hay duda sobre que skill de diseno elegir. | Usalo como indice rapido. Luego carga la skill concreta, no todo el paquete. |
-| emil-design-eng | `Skills/Diseno/emilkowalski-skill/skills/emil-design-eng/SKILL.md` | Hay que mejorar microinteracciones, transiciones, tacto de componentes, estados o detalles invisibles de calidad. | Aplica su filosofia de detalles compuestos. Ideal para componentes concretos, no para redisenar toda la app. |
-| 21st SDK | `Skills/Diseno/21st-sdk` | Referencia externa para SDK de agentes, runtime y componentes de chat/agent UI de 21st.dev. | No es una skill local canonica de Atlas Balance ni debe cargarse automaticamente. Usarlo solo como repo de referencia o SDK aislado; no ejecutar servicios `dev`, relay/proxy ni apps web sin revisar secretos, dependencias y superficie de red. |
-| shadcn/ui | `Skills/Diseno/shadcn-ui` | Referencia externa de componentes, CLI y patrones de registry shadcn/ui. | No introducir shadcn/ui en Atlas Balance sin decision tecnica explicita; el proyecto usa React/Vite con CSS variables propias. Usarlo como referencia aislada. El build completo requiere `bun` para `apps/v4`; el paquete `shadcn` si compila localmente. |
-| Tailwind CSS | `Skills/Diseno/tailwindcss` | Referencia externa del motor y tooling Tailwind. | No introducir Tailwind en Atlas Balance sin decision tecnica explicita. Usarlo como referencia aislada; el paquete `tailwindcss` compila, pero el build completo requiere Rust/Cargo para `@tailwindcss/oxide` y esta maquina no lo tiene instalado. |
+| Catalogo de diseno | `Skills/02_Design-UI-UX/INDEX.md` | Hay duda sobre que skill de diseno elegir. | Usalo como indice rapido, recordando que conserva texto importado de Atlas Connect y no sustituye las reglas de Atlas Balance. Luego carga la skill concreta, no todo el paquete. |
+| emil-design-eng | `Skills/02_Design-UI-UX/emilkowalski-skill/skills/emil-design-eng/SKILL.md` | Hay que mejorar microinteracciones, transiciones, tacto de componentes, estados o detalles invisibles de calidad. | Aplica su filosofia de detalles compuestos. Ideal para componentes concretos, no para redisenar toda la app. |
+| 21st SDK | No disponible en este checkout | Referencia historica para SDK de agentes, runtime y componentes de chat/agent UI de 21st.dev. | No es una skill local canonica de Atlas Balance ni debe cargarse automaticamente. |
+| shadcn/ui | No disponible en este checkout | Referencia historica de componentes, CLI y patrones de registry shadcn/ui. | No introducir shadcn/ui en Atlas Balance sin decision tecnica explicita; el proyecto usa React/Vite con CSS variables propias. |
+| Tailwind CSS | No disponible en este checkout | Referencia historica del motor y tooling Tailwind. | No introducir Tailwind en Atlas Balance sin decision tecnica explicita. |
 
 ## Diseno: Impeccable
 
-Ruta base canonica: `Skills/Diseno/impeccable/source/skills`.
+Ruta base canonica: `Skills/02_Design-UI-UX/impeccable/SKILL.md`.
 
 Estas skills comparten una regla: si no hay contexto de diseno claro, primero usa `impeccable` en modo `teach`. Para Atlas Balance, respeta siempre CSS variables y no metas Tailwind.
+
+En esta copia local, `critique`, `audit`, `layout`, `typeset`, `colorize`, `harden`, `polish`, `adapt`, `animate`, `clarify`, `distill`, `quieter`, `bolder` y `craft` estan como referencias `plugin/skills/impeccable/reference/<skill>.md` dentro de la skill `impeccable`, no como carpetas independientes con `SKILL.md`.
 
 | Skill | Usar cuando | Como usarla |
 |---|---|---|
@@ -58,7 +62,9 @@ Estas skills comparten una regla: si no hay contexto de diseno claro, primero us
 
 ## Diseno: Taste Skill
 
-Ruta base canonica: `Skills/Diseno/taste-skill/.agents/skills`.
+Ruta base canonica: `Skills/02_Design-UI-UX/taste-skill/skills`.
+
+Rutas actuales relevantes: `redesign-existing-projects` vive en `redesign-skill/SKILL.md`; `design-taste-frontend` vive en `taste-skill/SKILL.md`.
 
 | Skill | Usar cuando | Como usarla |
 |---|---|---|
@@ -73,7 +79,7 @@ Ruta base canonica: `Skills/Diseno/taste-skill/.agents/skills`.
 
 ## Diseno: UI/UX Pro Max y CKM
 
-Ruta base canonica: `Skills/Diseno/ui-ux-pro-max-skill/.agents/skills`.
+Ruta base canonica: `Skills/02_Design-UI-UX/ui-ux-pro-max-skill/.claude/skills`.
 
 | Skill | Usar cuando | Como usarla |
 |---|---|---|
@@ -95,7 +101,7 @@ Ruta base canonica: `Skills/Diseno/ui-ux-pro-max-skill/.agents/skills`.
 
 | Skill | Ruta canonica | Usar cuando | Como usarla |
 |---|---|---|---|
-| cyber-neo | `Skills/Seguridad/cyber-neo-main/skills/cyber-neo/SKILL.md` | El usuario pide auditoria de seguridad, vulnerabilidades, secretos, auth, permisos, criptografia, CI/CD, supply chain o pentest ligero. | Carga `SKILL.md`; revisa OWASP/CWE, secretos, dependencias, authz/authn y genera reporte priorizado. No ejecutes herramientas externas si no estan instaladas o si el coste/riesgo no esta claro. |
+| cyber-neo | `Skills/05_Security/cyber-neo/SKILL.md` | El usuario pide auditoria de seguridad, vulnerabilidades, secretos, auth, permisos, criptografia, CI/CD, supply chain o pentest ligero. | Carga `SKILL.md`; revisa OWASP/CWE, secretos, dependencias, authz/authn y genera reporte priorizado. No ejecutes herramientas externas si no estan instaladas o si el coste/riesgo no esta claro. |
 
 ## Orden recomendado por tipo de tarea
 

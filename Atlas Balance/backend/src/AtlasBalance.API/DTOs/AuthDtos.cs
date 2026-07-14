@@ -47,18 +47,35 @@ public sealed class AuthResponse
     public int MfaRememberDeviceDays { get; set; }
 }
 
+public sealed class TrustedMfaDeviceResponse
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public string? UserAgentSummary { get; set; }
+    public string? IpAddressSummary { get; set; }
+    public bool Current { get; set; }
+}
+
 public sealed class PermisoUsuarioResponse
 {
     public Guid Id { get; set; }
     public Guid UsuarioId { get; set; }
     public Guid? CuentaId { get; set; }
     public Guid? TitularId { get; set; }
+    public Guid? PaisId { get; set; }
     public bool PuedeVerCuentas { get; set; }
     public bool PuedeAgregarLineas { get; set; }
     public bool PuedeEditarLineas { get; set; }
     public bool PuedeEliminarLineas { get; set; }
     public bool PuedeImportar { get; set; }
     public bool PuedeVerDashboard { get; set; }
+    public bool PuedeRevisarLineas { get; set; }
+    public bool PuedeAprobarImportaciones { get; set; }
+    public bool PuedeConciliar { get; set; }
+    public bool PuedeCerrarConciliacion { get; set; }
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
     public IReadOnlyList<string>? ColumnasEditables { get; set; }
 }

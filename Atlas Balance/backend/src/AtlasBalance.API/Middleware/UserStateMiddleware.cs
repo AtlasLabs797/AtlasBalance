@@ -4,7 +4,9 @@ using System.Text;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 
 namespace AtlasBalance.API.Middleware;
 
@@ -124,10 +126,49 @@ public sealed class UserStateMiddleware
 
     private static async Task RejectAsync(HttpContext context, string error)
     {
-        context.Response.Cookies.Delete("access_token");
-        context.Response.Cookies.Delete("refresh_token");
-        context.Response.Cookies.Delete("csrf_token");
+        DeleteAuthCookies(context);
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         await context.Response.WriteAsJsonAsync(new { error });
+    }
+
+    // Borra las cookies de sesion usando el nombre real segun entorno. En produccion
+    // llevan el prefijo __Host-atlas- (ver AuthController.CookieName); borrar solo los
+    // nombres legacy dejaba la cookie real viva hasta caducar. Se borran ambas variantes
+    // por si quedaran cookies antiguas de una version anterior.
+    private static void DeleteAuthCookies(HttpContext context)
+    {
+        var env = context.RequestServices?.GetService(typeof(IWebHostEnvironment)) as IWebHostEnvironment;
+        var isDev = env?.IsDevelopment() ?? false;
+        var secure = !isDev;
+
+        void Delete(string name, bool httpOnly)
+        {
+            context.Response.Cookies.Delete(name, new CookieOptions
+            {
+                Path = "/",
+                HttpOnly = httpOnly,
+                Secure = secure,
+                SameSite = SameSiteMode.Strict,
+                IsEssential = true
+            });
+        }
+
+        (string BaseName, bool HttpOnly)[] cookies =
+        [
+            ("access_token", true),
+            ("refresh_token", true),
+            ("csrf_token", false),
+            ("mfa_trusted", true)
+        ];
+
+        foreach (var (baseName, httpOnly) in cookies)
+        {
+            var realName = isDev ? baseName : $"__Host-atlas-{baseName.Replace("_", "-")}";
+            Delete(realName, httpOnly);
+            if (!string.Equals(realName, baseName, StringComparison.Ordinal))
+            {
+                Delete(baseName, httpOnly);
+            }
+        }
     }
 }

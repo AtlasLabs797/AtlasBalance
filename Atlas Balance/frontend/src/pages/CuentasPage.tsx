@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
@@ -10,10 +10,13 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type {
   Cuenta,
@@ -59,6 +62,7 @@ interface CuentaFormState {
   banco_nombre: string;
   divisa: string;
   formato_id: string;
+  pais_id: string;
   tipo_cuenta: TipoCuenta;
   activa: boolean;
   notas: string;
@@ -81,6 +85,8 @@ interface DashboardCuentaRow {
   titular_id: string;
   titular_nombre: string;
   banco_nombre: string | null;
+  pais_id: string | null;
+  pais_nombre: string | null;
   divisa: string;
   saldo_actual: number;
   saldo_convertido: number;
@@ -94,6 +100,7 @@ const emptyForm: CuentaFormState = {
   banco_nombre: '',
   divisa: 'EUR',
   formato_id: '',
+  pais_id: '',
   tipo_cuenta: 'NORMAL',
   activa: true,
   notas: '',
@@ -140,12 +147,14 @@ export default function CuentasPage() {
   const canViewCuenta = usePermisosStore((state) => state.canViewCuenta);
   usePermisosStore((state) => state.permisos);
   const isAdmin = usuario?.rol === 'ADMIN';
-  const canSeeDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
+  const canSeeDashboard = usuario?.rol === 'ADMIN' || canViewDashboard();
 
   const [items, setItems] = useState<CuentaRow[]>([]);
   const [titulares, setTitulares] = useState<Titular[]>([]);
   const [divisas, setDivisas] = useState<DivisaOption[]>([]);
   const [formatos, setFormatos] = useState<FormatoOption[]>([]);
+  const paises = usePaisScopeStore((state) => state.paises);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -174,6 +183,10 @@ export default function CuentasPage() {
   const [renewingId, setRenewingId] = useState<string | null>(null);
   const [form, setForm] = useState<CuentaFormState>(emptyForm);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const formBaselineRef = useRef<string | null>(null);
+  const { confirm: confirmDiscard, dialogProps: discardDialogProps } = useConfirmDialog();
+  const isFormDirty = isFormModalOpen && formBaselineRef.current !== null && JSON.stringify(form) !== formBaselineRef.current;
+  useUnsavedChanges(isFormDirty);
   const [saving, setSaving] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
   const formatosDisponibles = useMemo(
@@ -253,6 +266,7 @@ export default function CuentasPage() {
           pageSize,
           search: debouncedSearch || undefined,
           titularId: titularFilter || undefined,
+          paisId: selectedPaisId || undefined,
           tipoTitular: tipoTitularFilter || undefined,
           tipoCuenta: tipoCuentaFilter || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
@@ -277,7 +291,11 @@ export default function CuentasPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros/paginacion
-  }, [page, pageSize, debouncedSearch, titularFilter, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
+  }, [page, pageSize, debouncedSearch, titularFilter, selectedPaisId, tipoTitularFilter, tipoCuentaFilter, incluirEliminados, isAdmin]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedPaisId]);
 
   useEffect(() => {
     if (!canSeeDashboard) {
@@ -292,9 +310,9 @@ export default function CuentasPage() {
       setDashboardError(null);
       try {
         const [principalRes, evolucionRes, saldosDivisaRes] = await Promise.all([
-          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal } }),
-          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal } }),
-          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal } }),
+          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined } }),
+          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
         ]);
         const cuentaRows = (principalRes.data.saldos_por_cuenta ?? [])
           .map((cuenta) => ({
@@ -303,6 +321,8 @@ export default function CuentasPage() {
             titular_id: cuenta.titular_id,
             titular_nombre: cuenta.titular_nombre,
             banco_nombre: cuenta.banco_nombre ?? null,
+            pais_id: cuenta.pais_id ?? null,
+            pais_nombre: cuenta.pais_nombre ?? null,
             divisa: cuenta.divisa,
             saldo_actual: cuenta.saldo_actual,
             saldo_convertido: cuenta.saldo_convertido,
@@ -338,16 +358,19 @@ export default function CuentasPage() {
     return () => {
       mounted = false;
     };
-  }, [canSeeDashboard, divisaPrincipal, periodo]);
+  }, [canSeeDashboard, divisaPrincipal, periodo, selectedPaisId]);
+
+  const buildFormDefaults = (): CuentaFormState => ({
+    ...emptyForm,
+    titular_id: titulares[0]?.id ?? '',
+    divisa: divisas[0]?.codigo ?? 'EUR',
+    pais_id: '',
+  });
 
   const resetForm = () => {
     setEditingId(null);
     setRenewingId(null);
-    setForm(() => ({
-      ...emptyForm,
-      titular_id: titulares[0]?.id ?? '',
-      divisa: divisas[0]?.codigo ?? 'EUR',
-    }));
+    setForm(buildFormDefaults());
   };
 
   const openCreateModal = () => {
@@ -356,23 +379,40 @@ export default function CuentasPage() {
       return;
     }
 
-    resetForm();
+    const defaults = buildFormDefaults();
+    setEditingId(null);
+    setRenewingId(null);
+    setForm(defaults);
+    formBaselineRef.current = JSON.stringify(defaults);
     setFormError(null);
     setIsFormModalOpen(true);
   };
 
-  const closeFormModal = () => {
+  const closeFormModal = async () => {
     if (saving) {
       return;
     }
 
+    if (isFormDirty) {
+      const discard = await confirmDiscard({
+        title: 'Descartar cambios',
+        message: 'Tienes cambios sin guardar en esta cuenta. Si cierras, se perderán. ¿Descartar?',
+        confirmLabel: 'Descartar',
+        cancelLabel: 'Seguir editando',
+      });
+      if (!discard) {
+        return;
+      }
+    }
+
+    formBaselineRef.current = null;
     setIsFormModalOpen(false);
     setFormError(null);
     resetForm();
   };
 
   const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
-    onEscape: saving ? undefined : closeFormModal,
+    onEscape: saving ? undefined : () => void closeFormModal(),
   });
 
   useEffect(() => {
@@ -413,7 +453,7 @@ export default function CuentasPage() {
       const { data } = await api.get<CuentaRow>(`/cuentas/${id}`, { params: { incluirEliminados: true } });
       setEditingId(id);
       setRenewingId(null);
-      setForm({
+      const loadedForm: CuentaFormState = {
         titular_id: data.titular_id,
         nombre: data.nombre,
         numero_cuenta: data.numero_cuenta ?? '',
@@ -421,6 +461,7 @@ export default function CuentasPage() {
         banco_nombre: data.banco_nombre ?? '',
         divisa: data.divisa,
         formato_id: data.tipo_cuenta === 'PLAZO_FIJO' ? '' : (data.formato_id ?? ''),
+        pais_id: data.pais_id ?? '',
         tipo_cuenta: data.tipo_cuenta ?? (data.es_efectivo ? 'EFECTIVO' : 'NORMAL'),
         activa: data.activa,
         notas: data.notas ?? '',
@@ -430,7 +471,9 @@ export default function CuentasPage() {
         renovable: data.plazo_fijo?.renovable ?? false,
         cuenta_referencia_id: data.plazo_fijo?.cuenta_referencia_id ?? '',
         plazo_fijo_notas: data.plazo_fijo?.notas ?? '',
-      });
+      };
+      setForm(loadedForm);
+      formBaselineRef.current = JSON.stringify(loadedForm);
       setIsFormModalOpen(true);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo cargar cuenta'));
@@ -466,6 +509,7 @@ export default function CuentasPage() {
       banco_nombre: form.banco_nombre.trim() || null,
       divisa: form.divisa,
       formato_id: form.tipo_cuenta === 'PLAZO_FIJO' ? null : (form.formato_id || null),
+      pais_id: form.pais_id || null,
       tipo_cuenta: form.tipo_cuenta,
       es_efectivo: form.tipo_cuenta === 'EFECTIVO',
       activa: form.activa,
@@ -590,17 +634,30 @@ export default function CuentasPage() {
                 </section>
               ) : null}
 
+              {principal.saldos_por_pais?.length ? (
+                <div className="titulares-divisa-banners" aria-label="Saldos por país">
+                  {principal.saldos_por_pais.slice(0, 6).map((pais) => (
+                    <article className="dashboard-mini-card" key={pais.pais_id ?? 'sin-pais'}>
+                      <span>{pais.pais_nombre}</span>
+                      <strong>{formatCurrency(pais.total_convertido, principal.divisa_principal)}</strong>
+                      <small>{pais.total_cuentas} cuenta{pais.total_cuentas === 1 ? '' : 's'}</small>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="cuentas-balance-list" aria-label={`Saldos por cuenta bancaria en ${principal.divisa_principal}`}>
-                <div className="cuentas-balance-heading" aria-hidden="true">
-                  <span>Cuenta bancaria</span>
-                  <span>Banco</span>
-                  <span>Divisa</span>
-                  <span>Saldo total</span>
-                  <span>Detalle</span>
+              <div className="cuentas-balance-heading" aria-hidden="true">
+                <span>Cuenta bancaria</span>
+                <span>Banco</span>
+                <span>País</span>
+                <span>Divisa</span>
+                <span>Saldo total</span>
+                <span>Detalle</span>
                 </div>
 
                 {saldosCuentaRows.map((item) => {
-                  const canOpenDashboardCuenta = canViewCuenta(item.cuenta_id, item.titular_id);
+                  const canOpenDashboardCuenta = canViewCuenta(item.cuenta_id, item.titular_id, item.pais_id);
 
                   return canOpenDashboardCuenta ? (
                     <Link
@@ -619,6 +676,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -637,6 +695,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -748,7 +807,7 @@ export default function CuentasPage() {
             const fallbackSaldo = typeof item.saldo_actual === 'number' ? item.saldo_actual : null;
             const saldoValue = saldoCuenta?.saldo ?? fallbackSaldo;
             const saldoCurrency = saldoCuenta?.divisa ?? item.divisa;
-            const canOpenDashboardCuenta = canViewCuenta(item.id, item.titular_id);
+            const canOpenDashboardCuenta = canViewCuenta(item.id, item.titular_id, item.pais_id);
 
             return (
               <article className="titular-card cuenta-card" key={item.id}>
@@ -769,6 +828,10 @@ export default function CuentasPage() {
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Banco</span>
                     <strong className="cuenta-card-meta-value">{item.banco_nombre || 'Sin banco'}</strong>
+                  </div>
+                  <div className="cuenta-card-meta-item">
+                    <span className="cuenta-card-meta-label">País</span>
+                    <strong className="cuenta-card-meta-value">{item.pais_nombre || 'Sin pais'}</strong>
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Estado</span>
@@ -846,7 +909,7 @@ export default function CuentasPage() {
       </div>
 
       {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop users-modal-backdrop" onClick={closeFormModal}>
+        <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeFormModal()}>
           <div
             ref={formDialogRef}
             className="users-modal phase2-form-modal phase2-form-modal--wide"
@@ -863,7 +926,7 @@ export default function CuentasPage() {
               </div>
               <CloseIconButton
                 className="users-modal-close"
-                onClick={closeFormModal}
+                onClick={() => void closeFormModal()}
                 disabled={saving}
                 ariaLabel="Cerrar modal de cuenta"
               />
@@ -904,6 +967,19 @@ export default function CuentasPage() {
                       label: `${divisa.codigo} ${divisa.nombre ? `- ${divisa.nombre}` : ''}`,
                     }))}
                     onChange={(next) => setForm((f) => ({ ...f, divisa: next }))}
+                  />
+
+                  <AppSelect
+                    label="País"
+                    value={form.pais_id}
+                    options={[
+                      { value: '', label: 'Sin país' },
+                      ...paises.map((pais) => ({
+                        value: pais.id,
+                        label: pais.codigo_iso2 ? `${pais.nombre} (${pais.codigo_iso2})` : pais.nombre,
+                      })),
+                    ]}
+                    onChange={(next) => setForm((f) => ({ ...f, pais_id: next }))}
                   />
 
                   <AppSelect
@@ -1033,7 +1109,7 @@ export default function CuentasPage() {
               ) : null}
 
               <div className="users-form-actions phase2-modal-actions">
-                <button type="button" onClick={closeFormModal} disabled={saving}>Cancelar</button>
+                <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
                 <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
               </div>
             </form>
@@ -1055,6 +1131,7 @@ export default function CuentasPage() {
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={remove}
       />
+      <ConfirmDialog {...discardDialogProps} />
     </section>
   );
 }

@@ -63,7 +63,7 @@ Si la base local tiene datos de prueba, limpiala antes de entregar o generar una
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Purge-DeliveryData.ps1" -ConfirmDeliveryPurge
 ```
 
-La purga borra usuarios, titulares, cuentas, extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien vacia claves SMTP, OpenRouter, OpenAI y tipos de cambio externos.
+La purga borra usuarios, titulares, cuentas, extractos, desgloses de extractos, tokens, auditorias, backups/exportaciones registradas y consumo IA. Tambien vacia claves SMTP, OpenRouter, OpenAI, MiniMax, Google Drive, cifrado de backups en nube y tipos de cambio externos.
 
 No la ejecutes contra una base de cliente real salvo que quieras dejarla vacia. Esto no es un reset estetico; borra datos operativos.
 
@@ -98,6 +98,34 @@ Si quieres usar una instancia PostgreSQL existente:
 
 Limitacion honesta: si ya tienes PostgreSQL instalado y no das password de administrador, ningun script puede adivinarla. Eso no es automatizacion; eso seria magia barata.
 
+#### Instalacion para Internet con dominio propio
+
+Para publicar Atlas Balance en `https://balance.tudominio.com`, usa reverse proxy. No abras Kestrel directo a Internet.
+
+```powershell
+.\install.cmd -InstallPath C:\AtlasBalance -UseReverseProxy -PublicHost balance.tudominio.com -InternalApiPort 5000 -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
+```
+
+Este modo genera:
+
+- API escuchando solo en `http://127.0.0.1:5000`.
+- `AllowedHosts` con el dominio publico, el nombre del servidor y `localhost`.
+- `App:BaseUrl` y la configuracion inicial `app_base_url` con `https://balance.tudominio.com`.
+- `ForwardedHeaders.KnownProxies = [ "127.0.0.1" ]` para proxy local.
+- Health check interno del Watchdog contra `http://localhost:5000/api/health`.
+- Firewall abierto para el puerto publico HTTPS, no para el puerto interno de la API.
+
+Configura el proxy para terminar TLS y reenviar a la API local. El paquete incluye `scripts\Caddyfile.example`; ejemplo minimo:
+
+```caddyfile
+balance.tudominio.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:5000
+}
+```
+
+Despues, en `Configuracion > General`, verifica que la URL base de la app sea `https://balance.tudominio.com` para que los enlaces de email no apunten a una URL local. PostgreSQL y Watchdog nunca se exponen a Internet.
+
 Alternativa soportada si quieres saltarte el wrapper:
 
 ```powershell
@@ -108,16 +136,16 @@ El instalador hace esto:
 
 1. Crea `C:\AtlasBalance`.
 2. Copia backend, frontend estatico y watchdog.
-3. Genera secretos seguros para JWT, Watchdog, certificado, DB y admin inicial.
+3. Genera secretos seguros para JWT, Watchdog, DB y admin inicial; en modo directo tambien genera certificado local.
 4. Instala o localiza PostgreSQL.
 5. Crea o actualiza la base `atlas_balance`, el usuario owner/migracion `atlas_balance_owner` y el usuario runtime `atlas_balance_app` sin superusuario ni `BYPASSRLS`.
 6. Genera `appsettings.Production.json` para API y Watchdog.
-7. Genera certificado HTTPS local en `C:\AtlasBalance\certs`.
+7. En modo directo genera certificado HTTPS local en `C:\AtlasBalance\certs`; en modo reverse proxy, TLS queda en el proxy.
 8. Instala servicios Windows:
    - `AtlasBalance.PostgreSQL` si PostgreSQL fue gestionado por el instalador.
    - `AtlasBalance.API`
    - `AtlasBalance.Watchdog`
-9. Abre firewall para el puerto HTTPS.
+9. Abre firewall para el puerto HTTPS publico.
 10. Crea el atajo `Atlas Balance` con el logo.
 11. Arranca PostgreSQL, Watchdog y API en ese orden.
 
@@ -201,9 +229,11 @@ En `Configuracion > Sistema`, deja como repositorio de actualizaciones:
 https://github.com/AtlasLabs797/AtlasBalance
 ```
 
-Al pulsar `Verificar actualizacion`, Atlas Balance consulta el ultimo GitHub Release oficial.
+Al pulsar `Verificar actualizacion`, Atlas Balance consulta el ultimo GitHub Release oficial y devuelve si la version es instalable. Hay una diferencia importante: version nueva no significa paquete aplicable.
 
 Si activas `Actualizar automaticamente desde GitHub`, la API revisa una vez al dia a partir de la hora UTC configurada. Si hay una version superior, descarga el release firmado y pide al Watchdog aplicar la actualizacion. Viene desactivado por defecto. Activarlo sin entender las ventanas de mantenimiento seria comodidad barata y downtime caro.
+
+Desde `V-02-02`, la UI solo habilita `Actualizar ahora` si el preflight confirma ZIP oficial `win-x64`, firma `.zip.sig`, digest SHA-256, clave publica de firma y Watchdog local disponible. Si algo falta, muestra el bloqueo en vez de dejarte pulsar un boton que iba a fallar.
 
 Al pulsar `Actualizar ahora`, Atlas Balance:
 
@@ -332,7 +362,7 @@ Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exac
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
 - PostgreSQL aplica Row Level Security con politicas por usuario, integracion, admin y operaciones internas. El contexto va firmado; el rol runtime de la app no debe tener `BYPASSRLS` ni ser owner de las tablas.
-- MFA web es obligatorio cuando `Security:RequireMfaForWebUsers=true`. El recuerdo de dispositivo dura 62 dias, solo aparece si un administrador activa `mfa_remember_device_enabled`, y `logout` borra `mfa_trusted`.
+- MFA web es obligatorio cuando `Security:RequireMfaForWebUsers=true`. Desde `V-02-02`, el recuerdo de dispositivo dura 90 dias, queda habilitado por defecto en configuracion nueva, persiste tras logout y puede revocarse por dispositivo o invalidarse al rotar `security_stamp`.
 - `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
 - La URL de actualizaciones queda limitada al repo oficial de Atlas Balance en GitHub por HTTPS y el paquete online debe venir firmado con `.zip.sig`.
 - `config\INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial con ACL limitada a Administrators/SYSTEM y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.

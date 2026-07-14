@@ -608,7 +608,7 @@ Esta es la pieza central de la aplicación.
 
 
 
-**5 Roles:**
+**3 Roles:**
 
 
 
@@ -616,15 +616,11 @@ Esta es la pieza central de la aplicación.
 
 |-----|-------------|
 
-| **ADMIN** | Acceso total al sistema |
+| **ADMIN** | Acceso total: usuarios, permisos, configuracion, backups, auditoria, papelera, formatos, integraciones, paises, titulares, cuentas, alertas, revision, exportaciones y dashboard |
 
-| **GERENTE** | Ver y editar cuentas asignadas, exportar, dashboard si habilitado |
+| **GERENTE** | Acceso financiero asignado por permiso global, pais, titular o cuenta. Ve dashboards, alertas y revision de su alcance; puede hacer exportaciones manuales. No crea titulares/cuentas ni administra sistema |
 
-| **EMPLEADO_ULTRA** | Ver + agregar + editar en cuentas autorizadas |
-
-| **EMPLEADO_PLUS** | Ver + solo agregar nuevas líneas (no editar anteriores) |
-
-| **EMPLEADO** | Solo lectura en cuentas autorizadas |
+| **EMPLEADO** | Rol base por defecto. Su acceso depende solo de permisos granulares asignados |
 
 
 
@@ -892,7 +888,7 @@ OpenClaw:
 
 sk_atlas_balance_[32 caracteres aleatorios Base64]
 
-Ejemplo: sk_atlas_balance_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
+Ejemplo: sk_atlas_balance_<32-caracteres-aleatorios>
 
 ```
 
@@ -1532,7 +1528,7 @@ password_hash           VARCHAR(255) NOT NULL
 
 nombre_completo         VARCHAR(255) NOT NULL
 
-rol                     ENUM('ADMIN','GERENTE','EMPLEADO_ULTRA','EMPLEADO_PLUS','EMPLEADO')
+rol                     ENUM('ADMIN','GERENTE','EMPLEADO')
 
 activo                  BOOLEAN DEFAULT true
 
@@ -1903,6 +1899,55 @@ valor           TEXT
 ```
 
 **Índices:** `extracto_id`, `nombre_columna`
+
+
+
+---
+
+
+
+### EXTRACTOS_DESGLOSES
+
+Desglose informativo 1:N para recibos domiciliados u otros movimientos bancarios
+que representan varios terceros. No altera `EXTRACTOS.monto`, `saldo` ni
+`fila_numero`.
+
+```sql
+
+id                       UUID PK
+
+extracto_id              UUID FK -> EXTRACTOS NOT NULL
+
+orden                    INTEGER NOT NULL
+
+tercero_nombre           VARCHAR(256) NOT NULL
+
+importe                  DECIMAL(18,4) NOT NULL
+
+notas                    TEXT
+
+usuario_creacion_id      UUID FK -> USUARIOS
+
+fecha_creacion           TIMESTAMPTZ DEFAULT now()
+
+usuario_modificacion_id  UUID FK -> USUARIOS
+
+fecha_modificacion       TIMESTAMPTZ
+
+deleted_at               TIMESTAMPTZ
+
+deleted_by_id            UUID FK -> USUARIOS
+
+```
+
+**Indices:** `extracto_id`, `deleted_at`, `(extracto_id, orden)` UNIQUE parcial
+para `deleted_at IS NULL`.
+
+**RLS:** lectura por `atlas_security.can_read_extracto(extracto_id)` y escritura
+por `atlas_security.can_write_extracto(extracto_id)`.
+
+**Estado calculado:** `sin_desglose` si no hay lineas activas; `cuadrado` si la
+suma de importes activos coincide con `EXTRACTOS.monto`; `descuadrado` si no.
 
 
 
@@ -2472,6 +2517,15 @@ PUT    /api/extractos/{id}/check
 
 PUT    /api/extractos/{id}/flag
 
+GET    /api/extractos/{id}/desglose
+
+PUT    /api/extractos/{id}/desglose
+
+El `GET` de desglose devuelve una `version` calculada sobre las lineas activas.
+El `PUT` debe reenviar esa `version` junto a `lineas`; si el conjunto fue modificado
+por otro usuario, la API devuelve `409` (`desglose_concurrency_conflict`) y no aplica
+el reemplazo.
+
 GET    /api/extractos/{id}/auditoria
 
 GET    /api/extractos/celda/{cuentaId}/{filaNumero}/{columna}
@@ -2798,7 +2852,7 @@ ExtractoTable/
 
   ColumnVisibilityPanel
 
-  AddRowForm
+  InlineInsertRowDraft
 
 
 
@@ -3656,6 +3710,8 @@ No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mism
 
 - Columnas extra via `EXTRACTOS_COLUMNAS_EXTRA`
 
+- Desglose informativo de recibos domiciliados via `EXTRACTOS_DESGLOSES`
+
 
 
 **Días 15-16: ExtractoTable — base**
@@ -4102,31 +4158,35 @@ No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mism
 
 
 
-|  | ADMIN | GERENTE | EMP.ULTRA | EMP.PLUS | EMPLEADO |
+|  | ADMIN | GERENTE | EMPLEADO |
 
-|--|-------|---------|-----------|----------|---------|
+|--|-------|---------|----------|
 
-| Ver extractos (cuentas asignadas) | ✅ | ✅* | ✅* | ✅* | ✅* |
+| Ver extractos/cuentas asignadas | Si | Si, por alcance global/pais/titular/cuenta | Segun permiso |
 
-| Agregar filas nuevas | ✅ | ✅* | ✅* | ✅* | ❌ |
+| Agregar filas nuevas | Si | Segun permiso | Segun permiso |
 
-| Editar filas existentes | ✅ | ✅* | ✅* | ❌ | ❌ |
+| Editar filas existentes | Si | Segun permiso | Segun permiso |
 
-| Eliminar filas | ✅ | ✅* | ❌ | ❌ | ❌ |
+| Eliminar filas | Si | Segun permiso | Segun permiso |
 
-| Checkbox / Flag por fila | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Checkbox / Flag por fila | Si | Segun permiso sobre la cuenta | Segun permiso sobre la cuenta |
 
-| Ver dashboard | ✅ | Si auth | ❌ | ❌ | ❌ |
+| Ver dashboard | Si | Si tiene alcance de datos asignado | Solo con `puede_ver_dashboard` y permiso de datos |
 
-| Exportar datos | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Exportacion manual | Si | Si tiene acceso a la cuenta | No |
 
-| Importar extractos | ✅ | ✅ | ✅* | ❌ | ❌ |
+| Importar extractos | Si | Segun permiso | Segun permiso |
 
-| Gestión usuarios | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Ver alertas activas | Si | Si, dentro de su alcance | Si, dentro de su alcance |
 
-| Gestión titulares/cuentas | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Ver revision bancaria | Si | Si, dentro de su alcance | Si, dentro de su alcance |
 
-| Gestión formatos importación | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Gestion usuarios/permisos | Si | No | No |
+
+| Gestion titulares/cuentas | Si | No | No |
+
+| Gestion formatos/importacion, backups, integraciones, configuracion, auditoria y papelera | Si | No | No |
 
 | Ver auditoría completa | ✅ | ❌ | ❌ | ❌ | ❌ |
 

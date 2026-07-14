@@ -61,6 +61,25 @@ function buildMonthDays(viewMonth: Date): Array<Date | null> {
   return days;
 }
 
+function usePrefersNativeDateInput() {
+  const [prefersNativeDateInput, setPrefersNativeDateInput] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+
+    const query = window.matchMedia('(hover: none), (pointer: coarse)');
+    const updatePreference = () => setPrefersNativeDateInput(query.matches);
+
+    updatePreference();
+    query.addEventListener('change', updatePreference);
+    return () => query.removeEventListener('change', updatePreference);
+  }, []);
+
+  return prefersNativeDateInput;
+}
+
 export function DatePickerField({
   value,
   onChange,
@@ -84,6 +103,7 @@ export function DatePickerField({
   const today = useMemo(() => new Date(), []);
   const days = useMemo(() => buildMonthDays(viewMonth), [viewMonth]);
   const displayValue = selectedDate ? DISPLAY_FORMATTER.format(selectedDate) : placeholder;
+  const prefersNativeDateInput = usePrefersNativeDateInput();
 
   const closePicker = useCallback((restoreFocus = false) => {
     setIsOpen(false);
@@ -134,6 +154,25 @@ export function DatePickerField({
     }
   }, [isOpen, selectedDate]);
 
+  // Al abrir, llevar el foco al dia seleccionado (o a hoy) para que el teclado
+  // pueda navegar la rejilla directamente. Es un popover no modal: NO atrapa el
+  // foco (se cierra con Escape o click fuera), por eso no usa useDialogFocus.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (isOpen && !wasOpenRef.current) {
+      focusDate(selectedDate ?? new Date());
+    }
+    wasOpenRef.current = isOpen;
+    // focusDate es estable en la practica; solo nos interesa el flanco de apertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (prefersNativeDateInput) {
+      setIsOpen(false);
+    }
+  }, [prefersNativeDateInput]);
+
   useLayoutEffect(() => {
     if (!isOpen || !rootRef.current || !popoverRef.current) return;
 
@@ -172,6 +211,36 @@ export function DatePickerField({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [closePicker, isOpen]);
+
+  if (prefersNativeDateInput) {
+    return (
+      <div className={label ? 'date-picker-field date-field' : 'date-picker-field'} ref={rootRef}>
+        {label ? <span id={labelId}>{label}</span> : null}
+        <div className="date-picker-native-row">
+          <input
+            id={valueId}
+            type="date"
+            className="date-picker-native-input"
+            value={selectedDate ? toIsoDate(selectedDate) : ''}
+            aria-label={label ? undefined : ariaLabel}
+            aria-labelledby={label ? labelId : undefined}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          {allowClear && selectedDate ? (
+            <button
+              type="button"
+              className="date-picker-native-clear"
+              disabled={disabled}
+              onClick={() => onChange('')}
+            >
+              Limpiar
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={label ? 'date-picker-field date-field' : 'date-picker-field'} ref={rootRef}>

@@ -24,19 +24,22 @@ public sealed class ConfiguracionController : ControllerBase
     private readonly IAuditService _auditService;
     private readonly ILogger<ConfiguracionController> _logger;
     private readonly ISecretProtector _secretProtector;
+    private readonly SmtpTestRateLimit _smtpTestRateLimit;
 
     public ConfiguracionController(
         AppDbContext dbContext,
         IEmailService emailService,
         IAuditService auditService,
         ILogger<ConfiguracionController> logger,
-        ISecretProtector secretProtector)
+        ISecretProtector secretProtector,
+        SmtpTestRateLimit smtpTestRateLimit)
     {
         _dbContext = dbContext;
         _emailService = emailService;
         _auditService = auditService;
         _logger = logger;
         _secretProtector = secretProtector;
+        _smtpTestRateLimit = smtpTestRateLimit;
     }
 
     [HttpGet]
@@ -159,13 +162,13 @@ public sealed class ConfiguracionController : ControllerBase
         var aiProvider = AiConfiguration.NormalizeProvider(aiRequest.Provider);
         if (!AiConfiguration.IsSupportedProvider(aiProvider))
         {
-            return BadRequest(new { error = "Proveedor de IA no soportado. Atlas Balance admite OpenRouter u OpenAI con clave API de servidor." });
+            return BadRequest(new { error = "Proveedor de IA no soportado. Atlas Balance admite OpenRouter, OpenAI o MiniMax con clave API de servidor." });
         }
 
-        var aiModel = AiConfiguration.NormalizeModel(aiProvider, aiRequest.Model);
+        var aiModel = AiConfiguration.NormalizeGlobalConfigModel(aiProvider, aiRequest.Model);
         if (!AiConfiguration.IsAllowedModel(aiProvider, aiModel))
         {
-            return BadRequest(new { error = "Modelo de IA no permitido por la politica de Atlas Balance. Usa un modelo permitido o openrouter/auto." });
+            return BadRequest(new { error = "Modelo de IA invalido para el proveedor seleccionado." });
         }
 
         var aiValidationError = ValidateIaGovernance(aiRequest);
@@ -217,6 +220,11 @@ public sealed class ConfiguracionController : ControllerBase
         {
             Upsert(config, "openai_api_key", _secretProtector.ProtectForStorage(openAiApiKey), userId, now);
         }
+        var miniMaxApiKey = aiRequest.MiniMaxApiKey;
+        if (!string.IsNullOrWhiteSpace(miniMaxApiKey))
+        {
+            Upsert(config, "minimax_api_key", _secretProtector.ProtectForStorage(miniMaxApiKey), userId, now);
+        }
         Upsert(config, "ai_requests_per_minute", aiRequest.RequestsPorMinuto.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "ai_requests_per_hour", aiRequest.RequestsPorHora.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "ai_requests_per_day", aiRequest.RequestsPorDia.ToString(CultureInfo.InvariantCulture), userId, now);
@@ -258,6 +266,14 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "La solicitud esta incompleta o no tiene el formato esperado." });
         }
 
+        // V-02-05 (MED-4): rate limit 5/min/usuario para evitar que un admin autenticado
+        // abuse del endpoint como relay SMTP.
+        var userId = GetCurrentUserId();
+        if (!await _smtpTestRateLimit.TryAcquireAsync(userId, cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = "Demasiadas pruebas SMTP. Espere 1 minuto." });
+        }
+
         var config = await LoadConfigMapAsync(cancellationToken);
         var target = request.To?.Trim();
         if (string.IsNullOrWhiteSpace(target))
@@ -269,6 +285,9 @@ public sealed class ConfiguracionController : ControllerBase
         {
             return BadRequest(new { error = "Debe indicar un destinatario para el correo de prueba." });
         }
+
+        // V-02-05 (MED-5): validar target contra CRLF antes de enviar.
+        EmailService.ValidateEmailAddressPublic(target, "to");
 
         try
         {
@@ -323,20 +342,24 @@ public sealed class ConfiguracionController : ControllerBase
         Guid? userId,
         DateTime now)
     {
+        var esSecreto = IsSensitiveConfigKey(key);
+        var storedValue = esSecreto ? _secretProtector.ProtectForStorage(value) : value;
         var item = existing.FirstOrDefault(x => x.Clave.Equals(key, StringComparison.OrdinalIgnoreCase));
         if (item is null)
         {
             _dbContext.Configuraciones.Add(new AtlasBalance.API.Models.Configuracion
             {
                 Clave = key,
-                Valor = value,
+                Valor = storedValue,
+                EsSecreto = esSecreto,
                 FechaModificacion = now,
                 UsuarioModificacionId = userId
             });
             return;
         }
 
-        item.Valor = value;
+        item.Valor = storedValue;
+        item.EsSecreto = esSecreto;
         item.FechaModificacion = now;
         item.UsuarioModificacionId = userId;
     }
@@ -374,6 +397,7 @@ public sealed class ConfiguracionController : ControllerBase
         var enabled = ParseBool(GetValue(config, "ai_enabled"), fallback: false);
         var hasOpenRouterKey = !string.IsNullOrWhiteSpace(GetValue(config, "openrouter_api_key"));
         var hasOpenAiKey = !string.IsNullOrWhiteSpace(GetValue(config, "openai_api_key"));
+        var hasMiniMaxKey = !string.IsNullOrWhiteSpace(GetValue(config, "minimax_api_key"));
         var currentMonthKey = DateTime.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
         var storedMonthKey = GetValue(config, "ai_usage_month_key");
         var openRouterConfigured = provider == "OPENROUTER" &&
@@ -384,6 +408,10 @@ public sealed class ConfiguracionController : ControllerBase
                                hasOpenAiKey &&
                                !string.IsNullOrWhiteSpace(model) &&
                                AiConfiguration.IsAllowedOpenAiModel(model);
+        var miniMaxConfigured = provider == "MINIMAX" &&
+                                hasMiniMaxKey &&
+                                !string.IsNullOrWhiteSpace(model) &&
+                                AiConfiguration.IsAllowedMiniMaxModel(model);
 
         return new IaConfigResponse
         {
@@ -393,8 +421,9 @@ public sealed class ConfiguracionController : ControllerBase
             UsuarioPuedeUsar = usuarioPuedeUsarIa,
             OpenRouterApiKeyConfigurada = hasOpenRouterKey,
             OpenAiApiKeyConfigurada = hasOpenAiKey,
-            Configurada = enabled && usuarioPuedeUsarIa && (openRouterConfigured || openAiConfigured),
-            MensajeEstado = BuildIaStatusMessage(enabled, usuarioPuedeUsarIa, provider, hasOpenRouterKey, hasOpenAiKey, model),
+            MiniMaxApiKeyConfigurada = hasMiniMaxKey,
+            Configurada = enabled && usuarioPuedeUsarIa && (openRouterConfigured || openAiConfigured || miniMaxConfigured),
+            MensajeEstado = BuildIaStatusMessage(enabled, usuarioPuedeUsarIa, provider, hasOpenRouterKey, hasOpenAiKey, hasMiniMaxKey, model),
             RequestsPorMinuto = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_minute"), AiConfigurationDefaults.RequestsPerMinute)),
             RequestsPorHora = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_hour"), AiConfigurationDefaults.RequestsPerHour)),
             RequestsPorDia = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_day"), AiConfigurationDefaults.RequestsPerDay)),
@@ -413,7 +442,7 @@ public sealed class ConfiguracionController : ControllerBase
         };
     }
 
-    private static string BuildIaStatusMessage(bool enabled, bool userCanUse, string provider, bool hasOpenRouterKey, bool hasOpenAiKey, string model)
+    private static string BuildIaStatusMessage(bool enabled, bool userCanUse, string provider, bool hasOpenRouterKey, bool hasOpenAiKey, bool hasMiniMaxKey, string model)
     {
         if (!enabled)
         {
@@ -438,6 +467,11 @@ public sealed class ConfiguracionController : ControllerBase
         if (provider == "OPENAI" && !hasOpenAiKey)
         {
             return "Falta configurar la clave API de OpenAI.";
+        }
+
+        if (provider == "MINIMAX" && !hasMiniMaxKey)
+        {
+            return "Falta configurar la clave API de MiniMax.";
         }
 
         if (string.IsNullOrWhiteSpace(model))
@@ -573,7 +607,8 @@ public sealed class ConfiguracionController : ControllerBase
                (request.Ia.Provider is null ||
                 request.Ia.Model is null ||
                 request.Ia.OpenRouterApiKey is null ||
-                request.Ia.OpenAiApiKey is null);
+                request.Ia.OpenAiApiKey is null ||
+                request.Ia.MiniMaxApiKey is null);
     }
 
     private static Dictionary<string, string> RedactSensitiveConfig(IReadOnlyDictionary<string, string> source)

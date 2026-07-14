@@ -1,6 +1,7 @@
 using FluentAssertions;
 using AtlasBalance.API.Controllers;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -14,7 +15,7 @@ namespace AtlasBalance.API.Tests;
 public sealed class AuthControllerTests
 {
     [Fact]
-    public async Task Logout_Should_Delete_Trusted_Mfa_Cookie()
+    public async Task Logout_Should_Keep_Trusted_Mfa_Cookie()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -37,15 +38,43 @@ public sealed class AuthControllerTests
         setCookie.Should().Contain("access_token=");
         setCookie.Should().Contain("refresh_token=");
         setCookie.Should().Contain("csrf_token=");
-        setCookie.Should().Contain("mfa_trusted=");
+        setCookie.Should().NotContain("mfa_trusted=");
+    }
+
+    [Fact]
+    public async Task Logout_Should_Delete_HostPrefixed_Cookies_In_Production()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+
+        var controller = new AuthController(
+            new LogoutOnlyAuthService(),
+            new CsrfService(),
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            new AuditService(db));
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Cookie =
+            "__Host-atlas-access-token=a; __Host-atlas-refresh-token=r; __Host-atlas-csrf-token=c; __Host-atlas-mfa-trusted=trusted";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        var result = await controller.Logout(CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var setCookie = httpContext.Response.Headers.SetCookie.ToString();
+        setCookie.Should().Contain("__Host-atlas-access-token=");
+        setCookie.Should().Contain("__Host-atlas-refresh-token=");
+        setCookie.Should().Contain("__Host-atlas-csrf-token=");
+        setCookie.Should().NotContain("__Host-atlas-mfa-trusted=");
     }
 
     private sealed class LogoutOnlyAuthService : IAuthService
     {
-        public Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null) =>
+        public Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null, string? userAgent = null) =>
             throw new NotSupportedException();
 
-        public Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken) =>
+        public Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken, string? userAgent = null) =>
             throw new NotSupportedException();
 
         public Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken) =>
@@ -58,6 +87,15 @@ public sealed class AuthControllerTests
             throw new NotSupportedException();
 
         public Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<TrustedMfaDeviceResponse>> GetTrustedMfaDevicesAsync(Guid userId, string? currentTrustedMfaToken, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> RevokeTrustedMfaDeviceAsync(Guid userId, Guid deviceId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> RevokeCurrentTrustedMfaDeviceAsync(Guid userId, string? currentTrustedMfaToken, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 

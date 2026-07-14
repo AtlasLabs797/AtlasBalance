@@ -1,5 +1,777 @@
 # Documentacion tecnica
 
+## 2026-07-04 - V-02-04 - Concurrencia del desglose de extractos
+
+### Que cambio
+
+- `ExtractoDesgloseResumenResponse` incluye `version`, un hash SHA-256 estable del conjunto
+  activo de lineas del desglose.
+- `ExtractoDesgloseUpsertRequest` exige `version` junto con `lineas`. Guardar sin version
+  devuelve `400`; guardar con version antigua devuelve `409`.
+- `ExtractosController.GuardarDesglose` serializa el guardado relacional con
+  `pg_advisory_xact_lock` por `extracto_id` antes de leer/comparar lineas. Sin ese lock, dos
+  requests simultaneos podrian leer la misma version y pasar el check.
+- El frontend envia `{ version, lineas }` desde `DesgloseModal`. Ante `409`, `ExtractosPage`
+  recarga el desglose vigente para evitar que el usuario siga editando un borrador obsoleto.
+
+### Verificacion
+
+- `dotnet test tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --filter GuardarDesglose --no-restore`: 7/7 OK.
+- `.\node_modules\.bin\tsc.cmd --noEmit`: OK.
+- `npm run lint`: OK.
+- `npm run build`: OK.
+
+## 2026-07-03 - V-02-04 - Alta inline de filas en Extractos
+
+### Que cambio
+
+- `ExtractosPage` deja de mostrar el formulario global `Agregar fila manual` encima de la tabla.
+- Se elimina el componente frontend muerto `AddRowForm`, que ya no representa el flujo real.
+- `ExtractoTable` incorpora un boton `+` en la interseccion visual de la columna `Fila` con la fila siguiente, siguiendo el patron ya usado en el desglose de cuenta.
+- La fila virtual activa sube de `z-index` para que el `+` no quede tapado por la fila inferior; la cabecera mantiene una capa superior.
+- Al pulsar `+`, la tabla abre un borrador inline bajo la fila ancla con fecha, concepto, comentarios, importe, saldo y columnas extra.
+- El alta usa el endpoint existente `POST /api/extractos` con `insert_before_fila_numero`, por lo que el backend conserva la logica transaccional de desplazar `fila_numero`.
+- La fila virtualizada mide la altura real del borrador abierto para evitar solapes al hacer scroll.
+
+### Verificacion
+
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run lint`: OK.
+- No se arranco servidor ni navegador para QA visual por las reglas anti-encallamiento de Vite/Chromium; queda validado por tipos, lint y revision estatica del diff.
+
+## 2026-07-03 - V-02-04 - Desglose informativo de extractos
+
+### Que cambio
+
+- Nueva tabla `EXTRACTOS_DESGLOSES` para modelar lineas hijas informativas de un extracto:
+  `tercero_nombre`, `importe`, `notas`, `orden`, auditoria basica y soft delete.
+- Nueva migracion `20260703120000_AddExtractoDesgloses` con FK restrict, indices y RLS:
+  lectura por `atlas_security.can_read_extracto(extracto_id)` y escritura por
+  `atlas_security.can_write_extracto(extracto_id)`.
+- `ExtractosController` expone `GET/PUT /api/extractos/{id}/desglose`. El `PUT` reemplaza
+  el conjunto completo, normaliza orden y soft-deletea lineas omitidas.
+- El reemplazo usa reordenacion temporal en dos fases dentro de la transaccion para evitar
+  colisiones del indice unico `(extracto_id, orden)` al reutilizar ordenes o intercambiar lineas.
+- `GET /api/extractos` devuelve `desglose_count`, `desglose_total` y `desglose_estado`.
+  El estado se calcula, no se persiste duplicado.
+- Frontend: `ExtractoTable` incorpora columna `Desglose`; `DesgloseModal` permite editar
+  manualmente las lineas y muestra total/diferencia. No toca `monto`, `saldo`, `fila_numero`,
+  dashboard ni conciliacion.
+
+### Verificacion
+
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter FullyQualifiedName~ExtractosControllerTests`
+  con `OutDir` dentro del workspace: 23/23 OK.
+- `npm.cmd run lint`: OK.
+
+## 2026-07-02 - V-02-04 - Auditoria de seguridad completa y cierre de logout en produccion
+
+### Que cambio
+
+- **`AuthController.DeleteCookie` borra el nombre real por entorno.** El logout (y el borrado
+  de `mfa_trusted` en `AttachCookiesAndBuildAuthResponse`/`RevokeCurrentTrustedDevice`) borraba
+  solo los nombres legacy (`access_token`, `refresh_token`, `csrf_token`, `mfa_trusted`). En
+  produccion las cookies reales llevan prefijo `__Host-atlas-*` (V-02-03), asi que el logout
+  revocaba el refresh token en servidor pero dejaba en el navegador un access token valido
+  hasta ~1h y la cookie CSRF viva (CWE-613). Ahora `DeleteCookie` replica el criterio de
+  `UserStateMiddleware.DeleteAuthCookies`: borra el nombre real segun entorno mas la variante
+  legacy, con `Path=/` y `Secure` (requisito del prefijo `__Host-`). La politica de conservar
+  `mfa_trusted` tras logout (V-01.07) se mantiene intacta.
+- **Guard de null en `UserStateMiddleware.DeleteAuthCookies`.** `context.RequestServices` puede
+  ser null fuera del pipeline real (tests unitarios con `DefaultHttpContext`); se usa `?.` y
+  fallback a comportamiento no-dev. Corrige el NRE del test
+  `InvokeAsync_Should_Reject_Token_When_SecurityStamp_Is_Stale`.
+
+### Verificacion
+
+- Backend: build OK (API y Watchdog, `OutDir` redirigido a scratchpad por ACL de `bin`).
+- Tests: suite completa **323/323 OK** (tras arrancar Docker Desktop), incluido el nuevo
+  `AuthControllerTests.Logout_Should_Delete_HostPrefixed_Cookies_In_Production`, los
+  `ExtractosConcurrencyTests` (409 de concurrencia) y `RowLevelSecurityTests` con Testcontainers.
+- Auditoria completa documentada en `SEGURIDAD_AUDITORIA_V-02-04.md` (npm audit 0 vulnerabilidades,
+  NuGet 0 paquetes vulnerables, sin secretos versionados).
+
+## 2026-07-01 - V-02-04 - Correcciones post-review, UX de seguridad, a11y y limpieza
+
+### Que cambio
+
+- **Concurrencia optimista -> 409.** El handler global de `Program.cs` mapea
+  `DbUpdateConcurrencyException` a `409 Conflict` con `{ error, code: "concurrency_conflict" }`,
+  siguiendo el patron de `TipoCambioMissingException`. El token `xmin` de `Extracto`,
+  `MovimientoEsperado`, `Conciliacion` y `RevisionExtractoEstado` ya detectaba el
+  conflicto; antes caia al `500` generico. `ExtractosPage.onSaveCell` recarga la fila al
+  recibir 409. Test: `ExtractosConcurrencyTests.Editar_Fila_En_Dos_Contextos_Debe_Lanzar_DbUpdateConcurrencyException`.
+- **Aviso de importe ambiguo.** `ImportacionService` incorpora `BuildAmbiguousAmountWarning`/
+  `AddAmbiguousAmountWarning`: cuando un importe con separador unico tiene exactamente un
+  grupo de 3 digitos (miles vs decimal ambiguo), se anade una advertencia por fila
+  (`FilaValidacionResponse.Advertencias`) para monto/ingreso/egreso/saldo. No bloquea.
+- **Convencion de ordenacion de saldo (documentada, sin cambio funcional).** Se verifico que
+  la doble ordenacion NO era un bug: saldo "ahora" (sin filtro de fecha) usa `FilaNumero DESC`
+  primario; saldo "a fecha de corte" (`Fecha < inicio`) usa `Fecha DESC` primario. Comentarios
+  anadidos en `DashboardService` (BuildMetrics/GetEvolucion) e `IntegrationOpenClawController`.
+- **Cookies de sesion en `UserStateMiddleware.RejectAsync`.** Ahora borra los nombres reales
+  segun entorno (`__Host-atlas-*` en produccion) mas las variantes legacy, con `Path=/` y
+  `Secure` (requisito del prefijo `__Host-`). Antes solo borraba `access_token`/`refresh_token`/
+  `csrf_token`, dejando viva la cookie real en produccion.
+- **Frontend UX:** hooks `useConfirmDialog` (promesa sobre `ConfirmDialog`) y `useUnsavedChanges`
+  (`beforeunload`). Confirmaciones en importar/conciliar/actualizar/tokens/divisas/Drive.
+  `UsuarioModal` detecta cambios por snapshot y confirma el descarte al cerrar. `ExtractosPage`
+  parchea la fila editada en local en vez de recargar la pagina (salvo cambio de fecha).
+- **Frontend a11y/hardening:** `SignedAmount` con `showSign`; `ToastViewport` sin live region
+  anidada; `useDialogFocus` cancela el `setTimeout` de foco en cleanup; `DatePickerField`
+  enfoca el dia al abrir (popover no modal, sin `useDialogFocus` a proposito); `ChangePasswordPage`
+  valida la confirmacion via RHF (`aria-describedby`); `formatDateTime` con guard de fecha
+  invalida; `CreateTokenModal` calcula la expiracion como fin de dia local -> UTC y avisa de que
+  OpenClaw es solo lectura.
+- **Limpieza:** eliminado `stores/divisaStore.ts` (sin referencias) y 10 `.gitkeep` redundantes;
+  `formatBytes` consolidado en `utils/formatters.ts` (+ tilde en "Sin tamaño").
+- **Version:** `V-02-04` / `2.4.0` en `VERSION`, `Directory.Build.props`, `frontend/package.json`
+  (+`appVersion`), `package-lock.json` y seed `app_version`.
+
+### Verificacion
+
+- Frontend: `npx tsc --noEmit` OK; `npm run lint` (`--max-warnings 0`) OK.
+- Backend: fuentes compilan sin `error CS` (`dotnet build -p:UseAppHost=false`). El paso de
+  copia a `bin` fallo con `MSB3021 Access denied` por `bin` bloqueado por una instancia en
+  ejecucion; bloqueo de entorno, no de codigo. Tests con Postgres (fixture): no ejecutados.
+
+### Seguimiento de pendientes
+
+- **Modales restantes: HECHO.** `useUnsavedChanges` + confirmacion de descarte cableados en
+  `CuentasPage`, `TitularesPage` y (guard `beforeunload` sobre `config`) `ConfiguracionPage`.
+  Los tabs de Configuracion son render condicional sobre estado de pagina: cambiar de pestana no
+  pierde datos.
+- **Retencion IA: VERIFICADO en codigo.** Solo OpenRouter envia directiva de retencion cero
+  (`zdr`/`data_collection: deny`); OpenAI/MiniMax no. Aviso anadido en la UI de la pestana IA.
+  Queda accion contractual si se usan esos proveedores con datos reales.
+- **Test 409 con Postgres: BLOQUEADO por ACL (requiere elevacion).** Docker OK. No hay app en
+  ejecucion (unico `dotnet` = VBCSCompiler). Los `bin/Debug`/`obj` de API/Watchdog tienen ACL creada
+  por identidad de sandbox: `BUILTIN\Usuarios` (incl. `TRAKERIA\usuario`) solo lectura, sin escritura
+  ni borrado. La recompilacion falla con `Access denied` (`GenerateDepsFile`/staticwebassets). Fix:
+  `icacls ... /grant "TRAKERIA\usuario:(OI)(CI)M" /T` sobre esos bin/obj como administrador (o
+  borrarlos elevado) y reconstruir. Detalle en `Documentacion/Versiones/v-02-04.md`.
+
+## 2026-07-01 - V-02-03 - Alineacion completa de fuentes de version
+
+### Que cambio
+
+- `Build-Release.ps1`, workflow de release, instalador y wrapper `install.ps1` apuntan por defecto a `V-02-03`.
+- `SeedData` inicializa `app_version` como `V-02-03`.
+- `package-lock.json` queda alineado con `package.json` en `2.3.0`.
+- `README_RELEASE.md`, `CLAUDE.md` y `AGENTS.md` usan ejemplos de release `V-02-03`.
+- La documentacion de usuario de paquetes instalables apunta al ZIP y firma `AtlasBalance-V-02-03-win-x64`.
+
+### Verificacion
+
+- Barrido `rg` de referencias activas fuera de documentacion historica.
+- Parser PowerShell de scripts de release/instalacion: OK.
+- `npm.cmd run lint`: OK.
+
+## 2026-07-01 - V-02-03 - Wrappers de hardening para servicios bloqueados por ACL
+
+### Que cambio
+
+- `IConciliacionService` apunta ahora a `HardenedConciliacionService`, que delega operaciones normales al servicio original y aplica tolerancia configurable en sugerencias.
+- `IGoogleDriveBackupService` apunta a `HardenedGoogleDriveBackupService`, que verifica el SHA-256 registrado del backup cifrado descargado antes de llamar a la importacion original.
+- `IBackupConfigurationService` apunta a `HardenedBackupConfigurationService`, que asegura `EsSecreto=true` para secretos de backup tras guardar configuracion.
+- Las clases originales quedan registradas como concretas para que los wrappers las usen como delegados internos.
+
+### Verificacion
+
+- Backend build OK.
+- Suite backend completa: 321/321 OK.
+- Frontend lint/build OK.
+
+### Nota tecnica
+
+- Esta aproximacion evita duplicar servicios completos y evita modificar archivos bloqueados por ACL. El punto critico de Google Drive se verifica antes de la importacion real mediante descarga temporal y hash del `.enc` cuando existe checksum local registrado.
+
+## 2026-07-01 - V-02-03 - Correcciones finales aplicables de hardening
+
+### Que cambio
+
+- Las claves sensibles escritas desde `ConfiguracionController` quedan cifradas de forma idempotente y marcadas con `EsSecreto`.
+- La migracion de secretos en arranque marca secretos existentes como `EsSecreto` e incluye `github_update_token`.
+- El cooldown de alertas de saldo bajo pasa a ser por cuenta, evitando que una alerta global silencie otras cuentas. Para compatibilidad, `FechaUltimaAlerta` se respeta si la alerta ya era especifica de esa misma cuenta.
+- Dashboard separa ingresos y egresos por divisa antes de convertir, evitando netear flujos contrarios.
+- Frontend mejora recuperacion de sesion y UX IA: 419/440 fuerzan relogin claro, cambio de password recarga alertas y chat IA permite reintentar la ultima pregunta.
+
+### Verificacion
+
+- Backend build OK.
+- Tests focalizados dashboard/alertas/configuracion: 24/24 OK.
+- Suite backend completa: 320/320 OK.
+- Frontend lint OK.
+- Build Vite temporal OK.
+
+### Limites
+
+- No se pudo editar `ConciliacionService.cs`, `GoogleDriveBackupService.cs` ni `BackupConfigurationService.cs` por ACL local heredada. Los pendientes asociados quedan documentados en incidencias.
+
+## 2026-07-01 - V-02-03 - Hardening backend/frontend y migracion minima
+
+### Que cambio
+
+- `BackupEncryptionService` deja de regenerar silenciosamente claves cifradas corruptas de backups cloud.
+- Los tokens de integracion sin expiracion requieren confirmacion textual exacta `NO_EXPIRAR`.
+- En produccion las cookies auth/CSRF usan prefijo `__Host-atlas-*`; desarrollo conserva nombres legacy.
+- `ImportacionService.ParseRows` elimina BOM UTF-8 inicial (`\uFEFF`) antes de validar filas pegadas.
+- `ConfirmarLoteAsync` marca el lote como `error`, guarda `Notas` y audita si falla la confirmacion interna.
+- `Configuracion.EsSecreto` y `ConfiguracionRepository` preparan el modelo para secretos configurables; el cifrado real queda pendiente.
+- La migracion `20260701115326_V0203_Hardening` es manual y minima: `IMPORTACION_LOTES.notas`, `CONFIGURACION.es_secreto`, indices nuevos y FKs `Restrict`; no crea/elimina `xmin`.
+- Frontend: email recordado en login, filtros de extractos con debounce, cancelacion de auditoria al cerrar modal y telemetria basica de error boundary.
+
+### Verificacion
+
+- Backend build en copia temporal: OK.
+- Backend tests directos en copia temporal: 319/320 OK; unico fallo conocido en dashboard (`252M` esperado vs `204.00M`).
+- Testcontainers focalizado: 2/2 OK.
+- `npm.cmd run lint`: OK.
+- Build Vite con `VITE_BUILD_OUT_DIR` temporal: OK.
+
+### Pendiente tecnico
+
+- Implementar tolerancia configurable de conciliacion cuando `ConciliacionService.cs` no este bloqueado por ACL.
+- Resolver el test time-sensitive de dashboard antes de promocionar la suite completa como verde.
+
+## 2026-06-27 - V-02-02 - Vite y dependencias npm vulnerables corregidas
+
+### Que cambio
+
+- `Atlas Balance/frontend/package-lock.json` resuelve `form-data` a `4.0.6`.
+- `Atlas Balance/frontend/package.json` fija `form-data@4.0.6` y `js-yaml@4.3.0` con `overrides`.
+- La validacion SCA saco mas deuda del mismo arbol y se cerro en la misma pasada:
+  - `vite` pasa del rango vulnerable `8.0.0 - 8.0.15` a resolucion `8.1.0`; `package.json` exige como minimo `^8.0.16`.
+  - `js-yaml` pasa de `4.1.1` a `4.3.0`.
+- `vite.config.ts` anade `atlas-open-in-editor-guard`, un middleware `configureServer` que intercepta `/__open-in-editor` antes del middleware interno de Vite.
+- El guard rechaza rutas UNC, `file://host/...` remotas y rutas resueltas fuera de `Atlas Balance/frontend`.
+- El dev server queda limitado a `127.0.0.1`, puerto estricto y `allowedHosts` de loopback.
+- No cambia codigo runtime de la aplicacion ni contratos API; el cambio afecta dependencias y servidor de desarrollo.
+
+### Por que
+
+El advisory de Vite permite leer archivos bloqueados por `server.fs.deny` en Windows usando NTFS ADS (`.env::$DATA?raw`) o nombres 8.3 cuando el dev server esta expuesto con `--host`/`server.host`. Produccion no sirve Vite: sirve estaticos desde ASP.NET Core. El riesgo aqui era de desarrollo/local LAN, pero dejar `vite@8.0.8` en el lock era una puerta tonta.
+
+`npm audit` saco ademas `form-data` high y `js-yaml` moderate. La correccion sensata es cerrar el arbol de dependencias, fijar las transitivas vulnerables con overrides y dejar el dev server cerrado a loopback por defecto. El guard de `/__open-in-editor` queda como defensa adicional de servidor de desarrollo, no como sustituto del parche de Vite.
+
+### Verificacion
+
+- `npm.cmd ls form-data --all`: confirmo `form-data@4.0.5` antes del cambio.
+- `npm.cmd view form-data@4.0.6 version dist.integrity --json`: OK.
+- `npm.cmd audit --audit-level=moderate`: OK final, `found 0 vulnerabilities`.
+- Check Node del lockfile: `form-data 4.0.6`, `js-yaml 4.3.0`, `vite 8.1.0`.
+- Instalacion limpia temporal con `npm.cmd ci --ignore-scripts --no-audit --fund=false`: OK.
+- Se aparto el `node_modules` real bloqueado a `node_modules.blocked-20260627183808` y se ejecuto `npm.cmd ci --ignore-scripts` en el checkout real: OK.
+- `npm.cmd ls form-data js-yaml vite --all`: OK, `form-data@4.0.6`, `js-yaml@4.3.0`, `vite@8.1.0`.
+- `npm.cmd exec vite -- --version`: `vite/8.1.0 win32-x64 node-v24.15.0`.
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal Vite con `--outDir ..\..\tmp-vite-security-real-node-modules-v02-02`: OK.
+
+### Limite real
+
+La instalacion activa `node_modules` ya esta alineada con el lock corregido. Los residuos locales que Windows no dejaba borrar se movieron fuera del workspace a `C:\tmp\atlas-balance-blocked-node-modules\` y `C:\tmp\atlas-balance-blocked-artifacts\`; no forman parte del proyecto ni del artefacto versionable.
+
+## 2026-06-26 - V-02-02 - RLS alineado con roles de dashboard
+
+### Que cambio
+
+- Se agrego la migracion `20260626193000_AlignRlsDashboardAccessWithRoles`.
+- RLS incorpora `atlas_security.current_user_is_manager()` para reconocer `GERENTE` activo desde `USUARIOS.rol = 1`.
+- `atlas_security.can_read_cuenta(...)` y `atlas_security.can_read_titular(...)` separan la lectura normal de la lectura `dashboard`.
+- En scope `dashboard`, un usuario solo lee datos si es `GERENTE` con permiso de datos o si tiene `PuedeVerDashboard` mas algun permiso de datos.
+- Un `EMPLEADO` con `PuedeVerCuentas` pero sin `PuedeVerDashboard` ya no puede leer cuentas/extractos cuando `atlas.request_scope = dashboard`.
+- `RowLevelSecurityTests` cubre gerente, empleado sin dashboard, empleado con dashboard y lectura normal fuera de dashboard.
+- Se revisaron endpoints sensibles de cuentas, titulares, extractos, dashboard, revision, alertas, exportaciones, importacion, IA y OpenClaw para confirmar que pasan por scopes de usuario/integracion antes de leer datos.
+
+### Por que
+
+El modelo de tres roles permitio dashboard a `GERENTE` con cualquier permiso de datos, pero la funcion RLS anterior no distinguia bien el scope `dashboard`: dejaba pasar `PuedeVerCuentas` de forma demasiado amplia y a la vez podia bloquear un gerente valido sin `PuedeVerDashboard`. Esa mezcla era mala defensa en profundidad. La base debe imponer la misma semantica que el backend.
+
+### Verificacion
+
+- `dotnet build "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj" --no-restore -p:UseAppHost=false`: OK.
+- `docker info`: OK; Docker Desktop activo.
+- `dotnet restore "...AtlasBalance.API.Tests.csproj" --artifacts-path "C:\tmp\atlas-rls-artifacts"`: OK tras aislar artefactos por `Access denied` en `bin/obj`.
+- `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK.
+- Tests focalizados de permisos/datos con artefactos en `C:\tmp\atlas-rls-artifacts`: 116/116 OK.
+
+## 2026-06-26 - V-02-02 - Guardado de columnas de Extractos sin cuenta
+
+### Que cambio
+
+- `SaveColumnasVisiblesRequest` usa `JsonPropertyName` explicitos para el contrato snake_case del endpoint `PUT /api/extractos/columnas-visibles`.
+- `CuentaId`, `TitularId` y `PaisId` siguen siendo nullable para soportar scope global, por pais, por titular y por cuenta.
+- `ExtractosPage.saveVisibleColumns` construye el body del `PUT` sin claves nulas. En vista general envia solo `columnas_visibles`.
+- `ExtractosControllerTests` ahora cubre deserializacion snake_case con `cuenta_id: null` y con `cuenta_id` omitido.
+
+### Por que
+
+El test anterior llamaba al controlador directamente y no probaba el payload real del navegador. Eso dejaba un agujero: la UI podia seguir recibiendo validacion `cuenta_id es requerido` aunque la logica interna aceptara `CuentaId = null`. La solucion endurece ambos lados del contrato y evita enviar nulos innecesarios.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `ExtractosControllerTests`: 18/18 OK.
+- Build Vite temporal: OK.
+- QA Browser con mock estricto: el mock rechazaba cualquier `PUT` que incluyera `cuenta_id`; activar `categoria` en vista general guardo sin enviar esa clave y sin error.
+
+## 2026-06-26 - V-02-02 - Layout de formatos de importacion
+
+### Que cambio
+
+- `FormatosImportacionPage` declara un `colgroup` para la tabla de formatos.
+- `entities.css` sustituye el `min-width: 860px` fijo por `width: 100%`, `table-layout: fixed` y anchuras en `rem` para banco, divisa, columnas base, estado y acciones; `Extra` queda como columna flexible.
+- Las acciones de fila quedan dentro de `.formatos-row-actions`, anulando borde, margen y padding de `.phase2-row-actions` para que se comporten como acciones de celda.
+- Se evita partir palabras con `overflow-wrap: normal`, `word-break: normal` y `white-space: nowrap` en botones de accion.
+- El grid de la pagina usa una columna minima real para la tabla en desktop y pasa a una sola columna bajo `1023.98px`.
+
+### Por que
+
+La tabla estaba forzada a medir mas que la columna disponible. Eso creaba scroll horizontal interno y dejaba el usuario viendo media tabla, con acciones cortadas. El fallo no estaba en los datos: era layout CSS peleando contra el panel lateral.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir tmp-vite-formatos-layout-v02-02 --emptyOutDir`: OK.
+- Revalidacion tras evitar palabras partidas: lint OK, TypeScript OK y build Vite temporal OK.
+- QA Browser renderizada bloqueada por politica de seguridad al abrir una pagina `data:` de prueba; no se uso workaround.
+
+## 2026-06-26 - V-02-02 - Proyeccion de permisos en DashboardService
+
+### Que cambio
+
+- `DashboardService.GetAuthorizedScopeAsync` vuelve a proyectar `PuedeVerDashboard` cuando carga permisos de usuario.
+
+### Por que
+
+Una modificacion previa habia cambiado la logica para diferenciar `GERENTE` de otros roles, pero dejo fuera `PuedeVerDashboard` del tipo anonimo. El servicio lo leia despues y cualquier recompilacion del backend fallaba antes de ejecutar tests.
+
+### Verificacion
+
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 17/17 OK tras corregir la proyeccion.
+
+## 2026-06-26 - V-02-02 - Modelo de usuarios reducido a tres roles
+
+### Que cambio
+
+- `RolUsuario` queda en `ADMIN = 0`, `GERENTE = 1` y `EMPLEADO = 2`.
+- La migracion `20260626180000_ReduceUserRolesToThreeTypes` convierte roles numericos antiguos `3/4` a `2` y recrea el tipo PostgreSQL auxiliar `rol_usuario` con solo `admin`, `gerente` y `empleado`.
+- Los DTOs de alta/edicion de usuario tienen `EMPLEADO` como valor por defecto para evitar que un payload incompleto derive en `ADMIN`.
+- `UsuarioModal`, tipos frontend y labels de `UsuariosPage` eliminan `EMPLEADO_ULTRA` y `EMPLEADO_PLUS`.
+- `DashboardController` deja de depender de rol `GERENTE`: el servicio autoriza por rol y permisos.
+- `DashboardService` permite dashboard a `GERENTE` con cualquier permiso de datos asignado; `EMPLEADO` necesita `PuedeVerDashboard` mas permiso de datos.
+- El menu lateral y la navegacion inferior ocultan `Dashboard` cuando el usuario no lo tiene disponible.
+- `UsuariosController` rechaza crear o actualizar un `GERENTE` sin ningun permiso de datos global, por pais, titular o cuenta.
+
+### Por que
+
+`EMPLEADO_ULTRA` y `EMPLEADO_PLUS` eran nombres sin comportamiento real. Eso confundia permisos: parecia una jerarquia de roles, pero el producto ya operaba con permisos granulares. La decision limpia es tres roles y permisos explicitos.
+
+### Verificacion
+
+- `DashboardServiceTests` cubre gerente con permiso de datos sin `PuedeVerDashboard` y empleado que solo entra al dashboard si tiene `PuedeVerDashboard`.
+- `UsuariosControllerTests` cubre rechazo de gerente sin alcance de datos.
+- Frontend lint OK.
+- TypeScript OK.
+- Backend build OK desde `C:\tmp` por el bloqueo conocido de SDK fijado en `global.json`.
+- Tests focalizados `DashboardServiceTests|UsuariosControllerTests`: 17/17 OK.
+- Build Vite temporal OK con salida dentro de `frontend`.
+
+## 2026-06-26 - V-02-02 - Columnas extra disponibles en selector de Extractos
+
+### Que cambio
+
+- `PaginatedResponse<T>` incorpora `ColumnasDisponibles` como campo opcional. Con la politica JSON actual, solo se serializa cuando el endpoint lo rellena.
+- `ExtractosController.Listar` calcula `columnas_disponibles` sobre la consulta filtrada completa antes de aplicar paginacion.
+- `ExtractosPage` guarda `availableExtraColumns` desde `data.columnas_disponibles` y lo pasa a `ExtractoTable`.
+- `ExtractoTable` compone sus columnas con `BASE_COLUMNS + availableExtraColumns + columnas_extra presentes en filas`.
+- El panel `Columnas` anade `Mostrar todas`, que guarda todas las columnas disponibles en el scope activo.
+- `ExtractosControllerTests` cubre el caso donde la pagina actual no trae una columna extra, pero otra fila del mismo resultado filtrado si la trae.
+
+### Por que
+
+El selector estaba demasiado pegado a la pagina cargada. Si una columna extra existia en el resultado filtrado pero no en la pagina o fila visible, desaparecia del selector. Eso hacia que el usuario no pudiera activarla o recuperar una preferencia limpia. Un selector de columnas debe basarse en el conjunto disponible, no en una muestra accidental de filas.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 17/17 OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-extractos-columns-v02-02 --emptyOutDir`: OK.
+- QA Browser con API mock: `categoria` y `origen` aparecen desde `columnas_disponibles`; activar `categoria` actualiza cabecera y payload; `Mostrar todas` deja 11 columnas visibles; consola sin errores.
+
+### Limite real
+
+La QA fue mockeada para aislar el flujo del selector. No se tocaron datos reales ni preferencias reales de usuario.
+
+## 2026-06-26 - V-02-02 - Ingresos y egresos en grafica principal del dashboard
+
+### Que cambio
+
+- `EvolucionChart` mantiene `variant="saldoArea"` para el dashboard principal, pero cambia internamente esa variante de `AreaChart` a `ComposedChart`.
+- La serie `saldo` sigue como area azul con dominio propio calculado por `getSaldoDomain`.
+- `ingresos` y `egresos` se renderizan como lineas sobre un eje Y secundario calculado por `getMovementDomain`.
+- La leyenda de la variante `saldoArea` muestra `Saldo`, `Ingresos` y `Egresos`.
+- El `aria-label` vuelve a describir las tres series para lectores de pantalla.
+
+### Por que
+
+El rediseño bancario anterior gano limpieza, pero oculto datos que el usuario espera ver en la grafica principal. Eso no es minimalismo, es informacion perdida.
+
+Usar un unico eje para saldo e ingresos/egresos era mala solucion: el saldo esta en millones y el movimiento del periodo suele ser mucho menor. El eje secundario permite conservar la lectura fina del saldo sin hacer invisibles las lineas de movimiento.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-dashboard-ingresos-egresos-v02-02 --emptyOutDir`: OK.
+- QA Browser con build temporal y API mock:
+  - desktop: wrapper `saldoArea` con leyenda `Saldo/Ingresos/Egresos`, tres trazos SVG y consola sin errores;
+  - mobile `390x800`: grafica presente, tres trazos SVG, bottom nav visible y sin overflow horizontal.
+
+### Limite real
+
+La QA fue mockeada para aislar el componente. Antes de release conviene validar con datos reales de movimientos altos/bajos para confirmar que el eje derecho mantiene lectura clara.
+
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos por scope
+
+### Que cambio
+
+- `ExtractosPage.onToggleColumn` recibe desde `ExtractoTable` la lista real de columnas disponibles (`BASE_COLUMNS + columnas_extra`).
+- Al guardar preferencias, el frontend usa ese set disponible para calcular altas/bajas y descartar columnas obsoletas.
+- El payload de `PUT /api/extractos/columnas-visibles` conserva el scope correcto:
+  - cuenta seleccionada: `cuenta_id + titular_id + pais_id`;
+  - titular sin cuenta: `titular_id`;
+  - pais/global sin cuenta: `pais_id` o scope global.
+- `ExtractosController.SaveColumnasVisibles` deja de rechazar `CuentaId = null`; ahora usa `ResolvePreferenciaScope`, igual que el `GET`.
+- `GetColumnasVisibles` y `SaveColumnasVisibles` consultan preferencias con comparacion explicita de nulos por `pais_id`, `titular_id` y `cuenta_id`, para que los scopes globales no dependan de igualdad contra `NULL`.
+- `ExtractosControllerTests` cambia el test que esperaba `BadRequest` por una regresion que exige guardar preferencias globales sin cuenta.
+
+### Por que
+
+El bug era de contrato, no de CSS. La lectura de preferencias ya aceptaba scope global/titular/pais, pero la escritura exigia cuenta. Resultado: en la vista general de Extractos el selector parecia permitir ocultar columnas, pero el backend rechazaba el guardado y el estado se revertia. Eso es una mala UX y una mala API: dos endpoints hermanos no pueden discrepar asi.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `dotnet build ...AtlasBalance.API.csproj --no-restore -p:UseAppHost=false`: OK, con warning obsoleto de Hangfire PostgreSQL ya existente.
+- `dotnet test ...AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~ExtractosControllerTests" -p:UseAppHost=false --no-restore`: 16/16 OK.
+
+### Limite real
+
+No se hizo QA visual con navegador real ni servidor dev. La validacion cubre contrato backend, lint y tipos frontend.
+
+## 2026-06-26 - V-02-02 - Flag de extractos simplificado
+
+### Que cambio
+
+- `ExtractoTable` deja de renderizar el texto `Marcada/Sin marca` dentro de la columna `Alerta`.
+- La celda de flag conserva solo checkbox y campo `Nota de alerta`.
+- `extractos.css` elimina la columna interna y estilos muertos de `.flag-label`.
+- El ancho de la columna `flagged` baja de `210px` a `176px` para recuperar espacio horizontal.
+- El boton visible `Historial` se renderiza solo en `fila_numero`, no en cada celda no operativa.
+- En tactil, el padding reservado para `Historial` queda limitado a la columna `Fila`.
+
+### Por que
+
+El texto de estado repetia lo que ya comunica el checkbox y ensuciaba una tabla financiera densa. Checkbox + nota es suficiente; meter una etiqueta intermedia era ruido, no informacion.
+
+El `Historial` repetido en toda la fila era otra forma de ruido: parecia una accion distinta por celda, cuando visualmente debe actuar como acceso de fila desde la primera columna.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+
+### Limite real
+
+No se hizo QA visual con navegador real. El cambio es estatico y focalizado en render/CSS; antes de release conviene revisar una cuenta con notas de alerta largas.
+
+## 2026-06-26 - V-02-02 - Dashboard estilo referencia bancaria
+
+### Que cambio
+
+- `DashboardPage` cambia la primera lectura a un panel unico: saldo consolidado, resumen de cuentas/bancos/divisas, tarjetas compactas por divisa y grafica principal dentro del mismo borde.
+- El titulo visible vuelve a `Dashboard` para coincidir con la referencia y reducir ruido.
+- `Saldos por titular` y `Plazos fijos` se agrupan en `dashboard-detail-grid` en desktop. `Saldos por pais` y `Concentracion` quedan debajo.
+- `EvolucionChart` acepta `variant="saldoArea"` y `xAxisMode="month"`.
+- En la variante `saldoArea`, el dominio del eje Y se calcula solo con `saldo`, las etiquetas del eje se compactan sin moneda y la animacion queda desactivada.
+- `dashboard.css` reduce sombras, usa bordes finos, baja radios al sistema de 8px, refuerza numeros monoespaciados y hace el selector de periodo mas parecido a control segmentado.
+
+### Por que
+
+La referencia no era "mas bonita"; era mas clara. El dashboard anterior mezclaba saldo, divisas, ingresos, egresos y grafica como piezas competidoras. La nueva composicion fuerza una lectura bancaria: primero patrimonio consolidado, despues tendencia, luego movimiento del periodo y exposicion.
+
+Se mantiene el selector de divisa aunque no salga en la captura de referencia. Quitar control funcional para copiar una imagen seria una mala decision.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir ..\..\tmp-vite-dashboard-reference-v02-02 --emptyOutDir`: OK.
+- QA Playwright finita con Chrome local, servidor temporal cerrado y APIs mockeadas: desktop `1198px` y mobile `390px`, sin overflow horizontal, consola sin errores, grafica `saldoArea` renderizada.
+- Capturas revisadas con `view_image`: referencia del usuario, `output/playwright/dashboard-reference-desktop-v02-02.png` y `output/playwright/dashboard-reference-mobile-v02-02.png`.
+
+### Limite real
+
+La QA uso datos mockeados para no depender de login/API local. Antes de release conviene abrir con datos reales y comprobar divisas con codigos/importes largos.
+
+## 2026-06-23 - V-02-02 - Interactividad responsive y accesibilidad operativa
+
+### Que cambio
+
+- `uiStore` incorpora `blockingOverlayCount` y acciones para registrar/desregistrar overlays bloqueantes.
+- Nuevo hook `useBlockingOverlay(open)` para que cualquier modal/sheet/alertdialog participe en el bloqueo global.
+- `useDialogFocus` usa `useBlockingOverlay`, conserva focus trap y restauracion de foco, y ahora sirve como punto unico para modales comunes.
+- `Layout` observa si hay overlays activos, bloquea `document.body.style.overflow`, marca `body[data-overlay-open]` y anade `app-shell--overlay-open`.
+- `TopBar` cierra y oculta el chat IA si hay overlay activo. En CSS movil, `.ai-floating-widget` queda oculto; la IA se usa por ruta.
+- La escala de capas queda: sticky/bottom nav < toast/IA < modal backdrop < modal surface < tooltip. Esto evita que IA/toasts queden por encima de una accion bloqueante.
+- `DatePickerField` detecta puntero tactil/coarse y renderiza `input type="date"` con boton `Limpiar`; en escritorio conserva el calendario custom con grid de dias.
+- `BottomNav` prioriza accesos moviles segun permisos: Dashboard si procede, Cuentas, Extractos, Importar y Mas. Sin Dashboard, Extractos pasa primero.
+- `ExtractoTable` declara `role="grid"` y cada celda de datos usa `role="gridcell"`, `aria-colindex`, `aria-selected` y `tabIndex` roving. Soporta flechas, Home/End, Ctrl+Home/End, PageUp/PageDown y Enter/F2.
+- `RevisionPage` agrega `data-label` en celdas y CSS mobile para convertir filas en tarjetas etiquetadas bajo `767.98px`.
+- `CuentaDetailPage` hace focusables las celdas no editables principales para actualizar la barra de formula con teclado.
+- `system-coherence.css` refuerza scroll tactil local en wrappers de tabla y da ancho minimo a tablas administrativas dentro de `config-table-wrap`.
+
+### Por que
+
+La app ya tenia responsive parcial, pero no interactividad robusta. El problema no era estetico: overlays competian con IA, el date picker movil peleaba con la bottom nav, y `ExtractoTable` se anunciaba como tabla aunque funcionaba como hoja editable. Eso rompe teclado, tactil y lectores de pantalla.
+
+Se mantuvo el criterio de producto: las superficies financieras densas no se convierten en tarjetas si perderian comparacion por columnas. Por eso Extractos y desglose de cuenta siguen siendo hojas con scroll local; Revision si cambia a tarjetas en movil porque cada fila es una decision aislada.
+
+### Verificacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd run build`: OK.
+
+### Limite real
+
+No se hizo QA visual con navegador real ni servidor dev. En este repo ya hay incidencias repetidas con Vite/Rolldown/Chromium y la instruccion operativa exige no encallar la sesion levantando servidores largos desde `shell_command`. Antes de release visual, revisar manualmente desktop, tablet y movil con backend local levantado.
+
+## 2026-06-22 - V-02-02 - Copias programables y Google Drive
+
+### Que cambio
+
+- `BackupSchedulerJob` reemplaza el recurring job semanal fijo. Hangfire ejecuta `backup-scheduler` cada 15 minutos y la decision real sale de `BackupSchedule`.
+- Configuracion nueva en `CONFIGURACION`:
+  - `backup_auto_enabled`
+  - `backup_auto_frequency` (`HOURLY`, `DAILY`, `WEEKLY`, `MONTHLY`)
+  - `backup_auto_time_utc`
+  - `backup_auto_day_of_week`
+  - `backup_auto_day_of_month`
+  - `backup_auto_interval_hours`
+  - `backup_auto_last_started_utc`
+  - `backup_auto_last_result`
+  - `backup_destination` (`LOCAL`, `LOCAL_Y_GOOGLE_DRIVE`)
+  - `google_drive_oauth_client_id`
+  - `google_drive_oauth_client_secret`
+  - `google_drive_folder_id`
+  - `backup_cloud_encryption_key`
+- `ISecretProtector` protege `google_drive_oauth_client_secret`, `backup_cloud_encryption_key` y los refresh tokens de Drive.
+- Tablas nuevas:
+  - `BACKUP_CLOUD_CONNECTIONS`: proveedor, estado, email de cuenta, scope, refresh token protegido y estado de validacion.
+  - `BACKUP_CLOUD_COPIES`: copia local, conexion, estado de subida/importacion, ID remoto, nombre remoto, tamano, checksum y error seguro.
+- Migracion: `20260622120000_AddBackupSchedulingAndGoogleDrive`.
+- RLS: ambas tablas nuevas quedan con FORCE RLS y politica admin/system.
+- Endpoints admin nuevos bajo `/api/backups`:
+  - `GET/PUT /config`
+  - `POST /google-drive/link/start`
+  - `GET /google-drive/link/{sessionId}`
+  - `POST /google-drive/disconnect`
+  - `POST /google-drive/test`
+  - `POST /{id}/google-drive/retry`
+  - `GET /google-drive/files`
+  - `POST /google-drive/import`
+- La subida a Drive usa OAuth device flow y scope `https://www.googleapis.com/auth/drive.file openid email`.
+- Antes de subir, el `.dump` local se cifra a `.dump.enc` con AES-GCM por bloques y clave local protegida. El archivo temporal cifrado se borra best-effort tras subir.
+- La importacion desde Drive descarga un `.enc`, lo descifra en la carpeta local de backups y registra un `Backup` restaurable.
+- `scripts/purge-delivery-data.sql` borra conexiones/subidas de Drive y vacia claves OAuth/cifrado antes de una entrega limpia.
+
+### Por que
+
+Guardar solo en local no es estrategia de copia de seguridad seria: si el disco muere, la "copia" muere con el sistema. Pero subir un dump financiero sin cifrar a Drive tambien seria una mala decision. La solucion implementada mantiene copia local restaurable y sube a nube solo una version cifrada.
+
+El scheduler no llama directamente a cron dinamico por cada cambio de configuracion. Hangfire despierta cada 15 minutos y `BackupSchedule.IsDue` decide si toca ejecutar. Es simple, auditable y evita reprogramaciones fragiles.
+
+### Verificacion
+
+- Backend build OK desde `C:\tmp` con SDK 8.0.421: `dotnet build ...AtlasBalance.API.csproj -p:UseAppHost=false --no-restore`.
+- Tests focalizados: `BackupScheduleTests|BackupEncryptionServiceTests|ManualProcessResponseTests`: 9/9 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd exec tsc -- --noEmit`: OK.
+- Frontend `npm.cmd run build`: OK.
+
+### Limite real
+
+- No se probo subida real a Google Drive porque faltan credenciales OAuth y cuenta vinculada en este entorno.
+- Para validar en servidor: configurar OAuth Client ID/Secret, guardar configuracion, vincular cuenta desde `Backups`, crear copia manual y confirmar que aparece un archivo `.enc` en Drive.
+- La clave `backup_cloud_encryption_key` debe conservarse junto con la instalacion. Si se pierde, las copias cifradas ya subidas a Drive no se podran descifrar. Esto no es opcional ni romantico: sin clave no hay restauracion.
+
+## 2026-06-21 - V-02-02 - Proveedor IA MiniMax M3/M2.7
+
+### Que cambio
+
+- Atlas Balance admite `MINIMAX` como tercer proveedor IA junto a `OPENROUTER` y `OPENAI`.
+- Modelos permitidos para MiniMax: `MiniMax-M3` y `MiniMax-M2.7`.
+- `Program.cs` registra los clientes HTTP `minimax` y `minimax-fallback` contra `https://api.minimax.io/v1/`.
+- `AtlasAiService` llama a `chat/completions` con formato OpenAI-compatible. Para MiniMax usa `max_completion_tokens`, `reasoning_split=true` y, en `MiniMax-M3`, `thinking: { type: "disabled" }` para reducir razonamiento visible.
+- La clave se guarda en `CONFIGURACION.minimax_api_key`, protegida por `ISecretProtector`, redactada en auditoria y expuesta al frontend solo como `minimax_api_key_configurada`.
+- `Configuracion > Revision e IA` permite elegir MiniMax, pegar su API key y seleccionar M3 o M2.7. El chat IA muestra MiniMax y permite alternar esos modelos.
+- Se anade la migracion `20260621190000_AddMiniMaxProviderConfig`.
+
+### Por que
+
+MiniMax no es un slug de OpenRouter aqui. Es otro endpoint, otra clave, otra facturacion y otra politica de datos. Mezclarlo con OpenRouter habria parecido funcionar hasta que hubiera que depurar cuota, privacidad o errores de proveedor.
+
+Se verifico la documentacion oficial de MiniMax: la API compatible OpenAI usa `OPENAI_BASE_URL=https://api.minimax.io/v1`, `POST /v1/chat/completions`, y lista `MiniMax-M3` y `MiniMax-M2.7` como modelos disponibles. La misma documentacion marca `max_tokens` como legado y recomienda `max_completion_tokens`.
+
+Fuentes consultadas:
+- `https://platform.minimax.io/docs/api-reference/text-chat-openai`
+- `https://platform.minimax.io/docs/api-reference/text-openai-api`
+- `https://platform.minimax.io/docs/guides/quickstart-preparation`
+
+### Verificacion
+
+- Tests MiniMax focalizados: `dotnet test ... --filter "FullyQualifiedName~Update_Should_Accept_MiniMax|FullyQualifiedName~AskAsync_Should_Use_MiniMax"`: 3/3 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd exec tsc -- --noEmit`: OK.
+- Frontend `npm.cmd run build`: OK.
+- `git diff --check`: OK, con avisos CRLF de Git no bloqueantes.
+
+### Limite real
+
+- La suite focalizada amplia `AtlasAiServiceTests|ConfiguracionControllerTests` compilo pero quedo 73/76: dos fallos de `ConfiguracionControllerTests` ya documentados y un test de ranking trimestral sensible a la fecha actual. No son fallos de MiniMax.
+- No se hizo llamada real a MiniMax porque no hay API key en el entorno y no se deben inventar ni documentar secretos.
+
+## 2026-06-09 - V-02-02 - Datos demo de desarrollo
+
+### Que cambio
+
+- `SeedData` incorpora datos demo sinteticos para entornos `Development`.
+- La demo crea 3 paises, 3 titulares, 5 cuentas, 25 extractos, 1 plazo fijo, alertas de saldo, permiso global para el admin seed y una auditoria `DEMO_SEED`.
+- Los IDs son fijos y el seed es idempotente: arrancar dos veces no duplica cuentas ni extractos.
+- `DemoData:Enabled=false` desactiva el seed demo en desarrollo; en `Production` nunca se carga aunque la clave este en `true`.
+- `appsettings.Development.json.template` deja `DemoData.Enabled=true` para que una instalacion local nueva muestre la app con datos.
+
+### Por que
+
+La UI financiera vacia no sirve para evaluar jerarquia, tablas, dashboards, paises, titulares, divisas, alertas ni plazos fijos. Meter datos demo sin guardarrail de entorno seria una mala idea: una app de tesoreria no debe arrancar produccion con movimientos ficticios.
+
+### Verificacion
+
+- `dotnet test "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend\tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj" --filter SeedDataTests --no-restore` desde `C:\tmp`: 8/8 OK.
+- El comando desde la raiz queda bloqueado por el `global.json` que exige SDK `8.0.419`; se uso el workaround ya documentado con SDK `8.0.421`.
+- Warnings no bloqueantes: `NU1900` por NuGet sin red y obsoleto Hangfire/PostgreSQL preexistente.
+
+### Limite real
+
+No se arranco la app ni se hizo validacion visual. El cambio queda validado a nivel de seed/test; la vista real dependera de levantar la base local con configuracion valida.
+
+## 2026-06-09 - V-02-02 - Autorizacion real por pais en permisos y RLS
+
+### Que cambio
+
+- `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS` incorporan `pais_id`; el pais pasa a ser dimension de autorizacion, no solo filtro operativo.
+- Los scopes se evalúan por fila: si una regla tiene `pais_id`, `titular_id` y `cuenta_id`, las tres dimensiones deben coincidir. No se mezclan listas independientes.
+- `UserAccessService`, `IntegrationAuthorizationService`, `ImportacionService`, `DashboardService`, `ExtractosController`, `AlertaService` y exportaciones respetan el scope por pais.
+- RLS actualiza `can_read_cuenta`, `can_write_cuenta`, `can_read_titular`, `can_export_cuenta` y `can_review_extracto` con `pais_id`.
+- `PERMISOS_USUARIO` e `INTEGRATION_PERMISSIONS` quedan bajo RLS/FORCE RLS.
+- Las preferencias de columnas (`PREFERENCIAS_USUARIO_CUENTA`) agregan `pais_id` y `titular_id` para que restricciones por columnas no contaminen otro pais/titular.
+- En extractos, las preferencias visibles se guardan con el scope real de la cuenta (`pais_id`, `titular_id`, `cuenta_id`) y las columnas editables solo se resuelven desde filas de permiso que conceden edicion. Una preferencia visual ya no puede actuar como permiso de edicion ilimitado.
+- `RowLevelSecurityTests` cubre usuario e integracion con `pais_id + titular_id` y comprueba FORCE RLS en tablas nuevas de paises, MFA y permisos.
+- `ImportacionContextoResponse` devuelve `pais_id` por cuenta para que el frontend mantenga el mismo contrato de scope que el backend.
+- El frontend envia y consume `pais_id` en permisos de usuarios, tokens de integracion y helpers de permisos.
+- Dashboard-only queda alineado: sin permiso operativo de datos no abre cuentas ni dashboard de datos.
+
+### Por que
+
+El selector global de pais era solo scope operativo. Eso no era seguridad. La seguridad real exige que el permiso, el backend y la base apliquen la misma frontera. Si `Pais A + Titular B` se convierte en `Pais A entero OR Titular B entero`, no es un permiso: es una fuga con UI bonita.
+
+### Verificacion
+
+- Subagentes usados para auditoria backend/RLS y frontend/contratos; se corrigieron los hallazgos de sobreconcesion por scopes combinados, exportacion incoherente, columnas por scope y dashboard-only inconsistente.
+- Backend build OK desde `C:\tmp` con SDK `8.0.421` y `-p:UseAppHost=false`.
+- Tests focalizados backend no Docker: `ExtractosControllerTests|UserAccessServiceTests|IntegrationAuthorizationServiceTests`: 32/32 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd run build`: OK.
+- Revalidacion 2026-06-26: `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
+
+### Limite real
+
+El modelo RLS esta preparado y el test ya cubre pais, pero la validacion PostgreSQL/Testcontainers queda como gate obligatorio de release. Si Docker no esta operativo, no se puede declarar RLS verde.
+
+## 2026-06-09 - V-02-02 - App shell nativo con scope global por pais
+
+### Que cambio
+
+- Nuevo `paisScopeStore` frontend: `selectedPaisId: string | ''`, carga de paises activos, persistencia en `localStorage` y reset a `General` cuando el pais persistido ya no esta activo.
+- `Layout` carga paises al tener sesion y recarga alertas activas con el pais seleccionado.
+- `Sidebar` y `BottomNav` muestran `PaisScopeSelect`; en colapsado usa etiquetas cortas (`Gen`, ISO2) para no aplastar texto.
+- El filtro local de pais desaparece de dashboard/cuentas y el scope global se propaga explicitamente por params, no por interceptor global de Axios.
+- Nuevos filtros backend `paisId` en titulares, extractos/resumenes, importacion contexto, revision, exportaciones, alertas activas y auditoria. `/api/ia/chat` acepta `pais_id`.
+- `PaisScopeQueryExtensions.ApplyPaisScope` centraliza el filtro de cuentas: sin `paisId` no filtra; con `paisId` exige `Cuenta.PaisId == paisId`.
+
+### Por que
+
+El selector de pais no es un permiso. Es scope operativo. Primero se aplica el alcance del usuario; despues se reduce por pais. Confundir eso con aislamiento de seguridad seria una mentira peligrosa.
+
+Meter shadcn/Tailwind/app-shell externo aqui habria sido mala ingenieria: el repo no usa ese stack, no tiene `components.json` y falta token de registry. Se replico el comportamiento con las piezas reales del producto.
+
+### Verificacion
+
+- Backend build OK usando SDK instalado `8.0.421` desde `C:\tmp`; el `global.json` local exige `8.0.419` con `rollForward=disable`.
+- Tests focalizados de capas afectadas: 161/161 OK.
+- Frontend `npm.cmd run lint`: OK.
+- Frontend `npm.cmd exec tsc -- --noEmit`: OK.
+- Frontend `npm.cmd run build`: OK.
+- Playwright con Chrome local y servidor temporal cerrado en el mismo comando: desktop expandido, desktop colapsado, tablet y movil verificados. Capturas en `output/playwright/`.
+
+### Limite real
+
+La suite backend no Docker completa quedo en 288/290 por dos fallos preexistentes/ajenos en `ConfiguracionControllerTests`. Docker/Testcontainers no se ejecuto.
+
+## 2026-06-08 - V-02-02 - Actualizador, MFA recordado, OpenRouter y paises
+
+### Que cambio
+
+- `GET /api/sistema/version-disponible` devuelve preflight de instalabilidad: `instalable`, `bloqueos`, asset ZIP, firma, digest, clave publica y Watchdog disponible.
+- `POST /api/sistema/actualizar` y `AutoUpdateJob` rechazan iniciar update si `instalable=false`.
+- `IWatchdogClientService.EstaDisponibleAsync` comprueba el Watchdog local por HTTP con secreto y timeout; ya no se infiere disponibilidad desde el estado fallback.
+- `MFA_TRUSTED_DEVICES` guarda dispositivos recordados con token opaco hasheado, `usuario_id`, `security_stamp`, expiracion, revocacion, `last_used_at`, user-agent e IP resumidos.
+- `POST /api/auth/mfa/verify` emite `mfa_trusted` httpOnly/SameSite Strict por 90 dias si `remember_device=true`. `logout` no borra esa cookie.
+- `GET/DELETE /api/auth/mfa/trusted-devices` lista y revoca dispositivos del usuario. Revocar MFA o cambiar password invalida por rotacion de `security_stamp`.
+- OpenRouter acepta cualquier ID valido por sintaxis y conserva `openrouter/auto`; no hay allowlist fija ni array `models` de fallback.
+- `GET /api/ia/modelos` consulta OpenRouter `/api/v1/models` con cache corta y devuelve sugerencias filtradas.
+- `PAISES` es catalogo propio con soft delete; `CUENTAS.pais_id` es nullable. Cuentas y dashboard aceptan `paisId` y dashboard devuelve `saldos_por_pais`.
+
+### Por que
+
+El boton de update no podia depender solo de "hay version nueva": un release sin ZIP instalable, firma, digest, clave publica o Watchdog vivo no debe habilitar actualizacion. Eso no es UX; es control de danos.
+
+La confianza MFA anterior era fragil: default apagado, duracion incorrecta y logout la borraba. Si "recordar dispositivo" no sobrevive a logout, el texto miente.
+
+La allowlist fija de OpenRouter contradecia el objetivo de usar cualquier modelo disponible en la cuenta. La validacion correcta es sintactica y el proveedor decide disponibilidad, saldo y privacidad.
+
+Pais pertenece a cuenta porque el dashboard y los filtros operan sobre saldos por cuenta. Ponerlo en titular habria mezclado estructuras cuando un titular tenga cuentas en varios paises.
+
+### Verificacion
+
+- Tests nuevos/actualizados cubren preflight de update, MFA recordado 90 dias/revocacion, modelos OpenRouter arbitrarios e invalidos, y dashboard filtrado/agregado por pais.
+- `npm run build` frontend: OK.
+- `C:\tmp\dotnet-sdk-8.0.419\dotnet.exe build AtlasBalance.API.csproj --no-restore`: OK con warnings no bloqueantes `NU1900` y Hangfire/PostgreSQL obsoleto.
+- Tests focalizados backend: 122/122 OK para updater, auto-update, auth/MFA, IA/OpenRouter, dashboard y respuestas manuales.
+- `git diff --check`: OK; solo avisos CRLF esperados.
+
+### Limite real
+
+No se ejecuto Testcontainers/Docker. Si una entrega necesita validar RLS con PostgreSQL real, ese gate no queda cubierto por esta pasada.
+
 ## 2026-06-01 - V-01.09 - Fallbacks de backup para updates desde instalaciones antiguas
 
 ### Que cambio
@@ -177,11 +949,11 @@ El bug de MFA era sutil y peligroso: el cambio de password marcaba el nuevo refr
 - `AuthServiceTests|AuthControllerTests|ManualProcessResponseTests`: 27/27 OK.
 - Bloque autorizacion/integracion/import-export/update/watchdog: 88/88 OK.
 - Suite backend sin Docker/Testcontainers: 269/269 OK.
-- `RowLevelSecurityTests` compila, pero no se ejecuto porque Testcontainers falla antes de crear PostgreSQL: Docker no esta disponible/configurado en esta maquina.
+- Revalidacion 2026-06-26: `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
 
 ### Limite real
 
-RLS con PostgreSQL real sigue siendo gate de release. Compilar la migracion no prueba las politicas con el motor; sin Docker, vender esto como "validado completo" seria hacerse trampas.
+RLS con PostgreSQL real era gate de release y quedo revalidado el 2026-06-26. Compilar la migracion no prueba las politicas con el motor; la prueba runtime si.
 
 ## 2026-05-20 - V-01.09 - Threat model: soft-delete heredado en importacion/exportacion
 
@@ -680,7 +1452,7 @@ El restore de solucion tambien falla localmente sin error MSBuild concreto. Mant
 - Se elimina el seed anidado `Atlas Balance/Atlas Balance/scripts/seed-development-data.sql`, que era un artefacto local fuera del paquete real.
 - Se anade `scripts/purge-delivery-data.sql` para dejar una base sin datos operativos antes de publicar o entregar.
 - Se anade `scripts/Purge-DeliveryData.ps1` con confirmacion obligatoria (`-ConfirmDeliveryPurge` o `ATLAS_CONFIRM_DELIVERY_PURGE=BORRAR_DATOS`) y ejecucion contra el contenedor `atlas_balance_db`.
-- La purga borra usuarios, emails, refresh tokens, titulares, cuentas, plazos fijos, extractos, columnas extra, estados de revision, permisos, preferencias, alertas, backups, exportaciones, notificaciones, tokens de integracion, auditorias y uso IA.
+- La purga borra usuarios, emails, refresh tokens, titulares, cuentas, plazos fijos, extractos, columnas extra, desgloses de extractos, estados de revision, permisos, preferencias, alertas, backups, exportaciones, notificaciones, tokens de integracion, auditorias y uso IA.
 - La purga conserva tablas maestras necesarias para arrancar (`CONFIGURACION`, `FORMATOS_IMPORTACION`, `DIVISAS_ACTIVAS`, `TIPOS_CAMBIO`, migraciones), pero pone a `NULL` las referencias a usuarios borrados.
 - Se resetean valores sensibles de `CONFIGURACION`: SMTP, claves API, proveedor/modelo IA operativo y contadores de consumo IA.
 - `.gitignore` ignora seeds demo y la carpeta local anidada `Atlas Balance/Atlas Balance/`.
@@ -3670,3 +4442,259 @@ El timeout de sesion del frontend separa actividad real de render visual: `lastA
 - Los paquetes de actualizacion todavia necesitan limites de tamano y validacion de contenido antes de extraer.
 - Importacion conserva riesgos de fingerprint dependiente del indice de fila y transacciones no garantizadas con `finally`.
 - El calculo de saldo actual no esta completamente unificado entre dashboard/extractos/cuentas.
+
+## 2026-06-23 - V-02-02 - Implementacion del sistema visual
+
+### Base de diseño
+
+La fuente canonica del rediseño es `Documentacion/Diseno/design.md`. El mockup de referencia queda versionado en `Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html`.
+
+El frontend mantiene React/Vite/CSS propio. No se agregaron dependencias ni se sustituyeron stores, rutas, permisos o contratos API.
+
+### Tokens y clases comunes
+
+`frontend/src/styles/variables.css` define el rail oscuro permanente, topbar de 64px y tokens de sidebar. `global.css` añade primitivas reutilizables:
+
+- `.ab-card`, `.ab-card-header`, `.ab-card-meta`
+- `.ab-kpi`
+- `.ab-badge`
+- `.ab-tabs`, `.ab-tab`
+- `.ab-field`, `.ab-input`
+- `.ab-empty`
+- `.ab-button--block`, `.ab-button--sm`
+
+Estas clases son una capa visual; no contienen lógica de negocio ni sustituyen los componentes existentes.
+
+### Shell y login
+
+`Sidebar` hereda el `data-theme` global. Los tokens `--color-sidebar-*` definen una variante clara y otra oscura para que el rail lateral cambie junto con el modo claro/oscuro sin duplicar logica en React. Conserva `PaisScopeSelect`, conteos de alertas/exportaciones, badge de update y filtrado de items por permisos/IA.
+
+`TopBar` conserva logout, toggle de tema, colapso de sidebar y chat IA flotante; solo cambia la representacion del usuario a pill con iniciales y rol.
+
+`LoginPage` pasa a layout partido y añade toggle de tema, pero mantiene:
+
+- login email/password,
+- MFA challenge,
+- QR de enrolamiento,
+- recordar dispositivo,
+- `returnTo` seguro,
+- mensaje post-update,
+- carga de permisos/alertas tras login.
+
+### Dashboard y extractos
+
+`DashboardPage` sigue consumiendo `/dashboard/principal`, `/dashboard/evolucion` y `/dashboard/saldos-divisa`. La composicion cambia a hero card con saldo consolidado, divisas y `EvolucionChart`; se conservan KPIs, plazos fijos, saldos por pais, concentracion y saldos por titular.
+
+`PeriodoSelector` se convierte en tabs segmentadas sobre los mismos valores (`1m`, `3m`, `6m`, `9m`, `12m`, `18m`, `24m`). No cambia query string ni carga de datos.
+
+`ExtractosPage` mantiene `ExtractoTable` virtualizada, `role="grid"`, edicion inline, auditoria de celda, columnas visibles, filtros por titular/cuenta/fechas y paginacion. Solo se ajusta estructura de header y estilos.
+
+### Pantallas operativas/admin
+
+La capa visual se extendio a importacion, revision, IA, entidades, formatos, usuarios, auditoria, exportaciones, papelera, configuracion y backups. Los cambios son CSS y hooks de clase en `FormatosImportacionPage`; no cambian endpoints ni permisos.
+
+### Validacion
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `git diff --check`: OK con avisos CRLF preexistentes.
+- `npm.cmd run build`: bloqueado por `EPERM` al limpiar `frontend/dist/assets`.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02 --emptyOutDir`: OK.
+
+## 2026-06-23 - V-02-02 - QA posterior del rediseno
+
+La pasada de QA posterior cerro huecos de cobertura:
+
+- `ChangePasswordPage` queda alineada con el layout partido de login.
+- `AppSelect` deja de depender del select nativo visible y usa popover/listbox propio; los selects de Backups se migran a este componente.
+- `PeriodoSelector` usa semantica `radiogroup`/`radio` con roving `tabIndex`.
+- `ExtractoTable` conserva la grilla roving: los botones internos de edicion quedan fuera de la tabulacion normal y el historial solo es focable en la celda activa.
+- `BackupsPage` diferencia `Ultima copia correcta en esta pagina` y limpia `linkStart` cuando Google Drive devuelve `FAILED` o `EXPIRED`, evitando codigos OAuth rancios en pantalla.
+- `.sr-only` se endurece con `!important`, `clip-path` y desplazamiento `left: -10000px` para que tablas accesibles de charts no creen overflow horizontal en mobile.
+
+Validacion adicional:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `git diff --check`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02-qa3 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright finita con Chrome local y API mock: login, cambio obligatorio de password, dashboard, periodo, extractos, backups y mobile OK; consola sin errores.
+
+## 2026-06-26 - V-02-02 - Sidebar sensible al tema
+
+`Sidebar` deja de fijar `data-theme="dark"` en el `<aside>`. El rail lateral toma el tema activo desde `document.documentElement`, igual que el resto del shell.
+
+`variables.css` separa tokens de sidebar para claro y oscuro:
+
+- Claro: fondo de superficie, texto secundario, borde suave, hover de superficie y activo con `accent-primary-soft`.
+- Oscuro: mantiene el rail grafito original con texto claro, hover translucido y sombra mas marcada.
+
+`shell.css` usa esos tokens para marca, selector de organizacion, hover, estado activo y sombra del rail. La navegacion inferior sigue aprovechando `--color-sidebar-active-text`, por lo que su estado activo tambien respeta el tema.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK tras repetir una vez por ruido transitorio durante cambios no relacionados en `EvolucionChart.tsx`.
+- `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-sidebar-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+
+Pendiente: no se hizo QA visual con navegador porque el cambio es acotado a tokens/CSS y no se arranco servidor dev por la regla anti-encallamiento.
+
+## 2026-06-26 - V-02-02 - Login segun referencia oscura
+
+`LoginPage` mantiene el flujo existente de autenticacion, MFA, QR de enrolamiento, `returnTo` seguro y mensaje post-update. El cambio es visual y de microinteraccion:
+
+- panel izquierdo oscuro con marca superior, claim `Tesoreria local, control real.`, descripcion operativa y chips de capacidades;
+- panel derecho con separador vertical y tarjeta de login compacta;
+- logos filtrados por CSS para conservar contraste sobre fondo oscuro sin crear nuevos assets;
+- boton de mostrar contrasena con icono `Eye/EyeOff` y etiquetas accesibles;
+- responsive de una columna en tablet/mobile, sin overflow horizontal.
+
+No se muestra "Recordar este dispositivo" en el estado base de login porque esa opcion solo se envia al backend durante el challenge MFA (`/auth/mfa/verify`). Exponerla antes seria un control sin efecto real.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-reference-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA visual con Chrome local via Playwright sobre servidor estatico temporal: `/login` desktop 1580x835 y mobile 390x844, consola sin errores y sin overflow horizontal.
+
+## 2026-06-26 - V-02-02 - Login con tokens claro/oscuro
+
+El login y el cambio obligatorio de contrasena ya no fijan `data-theme="dark"` en el panel de marca. La pantalla de autenticacion usa tokens locales `--auth-*` definidos en `.auth-page`:
+
+- variante clara por defecto: fondo azul muy claro, panel de marca claro, tarjeta blanca, texto oscuro y primario azul;
+- variante oscura bajo `[data-theme="dark"] .auth-page`: conserva el aspecto grafito de la referencia anterior;
+- controles, chips, logos filtrados, separador, sombras, boton y toggle consumen esos tokens en vez de valores hardcodeados.
+
+Esto mantiene el mecanismo global existente (`document.documentElement[data-theme]` desde `uiStore`) y evita otra isla visual bloqueada en oscuro.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-theme-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright con Chrome local: el login carga en `light`, el boton de tema cambia a `dark`, los colores computados de pagina/tarjeta/texto cambian y no hay overflow horizontal en 1580x835 ni 390x844.
+
+## 2026-06-26 - V-02-02 - Centrado del toggle de tema en login
+
+El boton `.auth-theme-toggle` hereda estilos globales de boton si no se anulan explicitamente. Para evitar que el control de modo claro/oscuro quede visualmente descentrado:
+
+- se normaliza con `appearance: none`, `box-sizing: border-box`, `padding: 0`, `line-height: 1`, `min-width` y `min-height` iguales al tamano declarado;
+- el SVG interno usa tamano fijo y `display: block`;
+- la luna se desplaza levemente a la izquierda solo cuando `aria-pressed="false"` porque su geometria visual pesa hacia la derecha aunque el `viewBox` este centrado.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- Build temporal: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-toggle-center-v02-02 --emptyOutDir`: OK fuera del sandbox.
+- QA Playwright con Chrome local: boton `38x38`, sin overflow mobile y sin errores de consola.
+
+## 2026-06-29 - V-02-02 - Hardening financiero post-reporte
+
+Backend:
+
+- Nuevas entidades persistentes: `ImportacionLote`, `ImportacionLoteFila`, `MovimientoEsperado` y `Conciliacion`.
+- `Extracto` incorpora `ImportacionLoteId` manteniendo `ImportacionLoteHash` por compatibilidad.
+- `AppDbContext` declara tablas, indices, FK y configuracion para lotes, filas, movimientos esperados y conciliaciones.
+- Migracion EF Core: `20260629090000_FinancialHardeningV0202`.
+- Importacion expone `/api/importacion/lotes`, detalle/filas, confirmacion y reversion. El contenido original queda guardado en BD hasta 5 MB con SHA-256 y mapeo usado.
+- `ConfirmarLoteAsync` no selecciona filas con advertencias por defecto y exige `acepta_advertencias=true` si se eligen.
+- Conciliacion expone `/api/conciliacion/*`, crea movimientos esperados internos, genera sugerencias deterministas y permite confirmar, marcar excepcion y resolver.
+- Permisos agregados a `PERMISOS_USUARIO`: revisar lineas, aprobar importaciones, conciliar y cerrar conciliacion.
+- Maker-checker no bloquea; registra auditoria y `NotificacionAdmin` si el mismo usuario importa/crea y aprueba/cierra.
+- OpenClaw valida expiracion en `IntegrationTokenService`, aplica scopes en middleware, registra ultima IP, notifica rate limit/nueva IP y agrega rotacion en `POST /api/integraciones/tokens/{id}/rotar`.
+- API y Watchdog cargan configuracion externa local desde `%APPDATA%\AtlasBalance\dev-secrets` solo en Development.
+
+Frontend:
+
+- `/importacion` usa tabs `Nueva`, `Historial` y `Lote` con lote formal y confirmacion por advertencias.
+- Nueva ruta `/conciliacion` para libro esperado, sugerencias, confirmacion y excepciones.
+- `ExtractosPage` separa `Revision` y `Edicion avanzada`; la edicion inline queda cerrada hasta entrar en modo avanzado.
+- `AppSelect` vuelve a `<select>` nativo estilizado para accesibilidad robusta.
+- `DashboardPage` agrega CTAs operativos: importar, revisar alertas y conciliar pendientes.
+- Navegacion mobile prioriza `Alertas` cuando hay alertas activas.
+- UI de tokens OpenClaw muestra expiracion, scopes, ultimo uso/IP, revocacion y rotacion.
+
+Release y seguridad:
+
+- `Build-Release.ps1` valida version `^V-\d{2}[-.]\d{2}$`, runtime `win-x64` y ejecuta scanner Atlas antes de empaquetar.
+- `.github/workflows/release.yml` usa default `V-02-02`, permisos por job y `environment: release-signing`.
+- `.github/workflows/ci.yml` ejecuta `scripts/Test-AtlasSecrets.ps1`.
+- El scanner Atlas revisa codigo, scripts, workflows y documentacion versionable; excluye artefactos pesados y no imprime valores.
+
+Validacion inicial 2026-06-29:
+
+- `dotnet build AtlasBalance.API.Tests.csproj --no-restore -c Debug` desde `C:\tmp`: OK.
+- Tests focalizados impactados: 59/59 OK.
+- `npm.cmd run lint`, `npm.cmd exec tsc -- --noEmit` y build Vite temporal: OK.
+- `Test-AtlasSecrets.ps1`: OK.
+- `npm audit --audit-level=moderate`: OK.
+- `dotnet list package --vulnerable --include-transitive`: OK.
+- Suite completa backend inicial del 2026-06-29: no verde; 306 OK y 5 fallos por deuda preexistente/sensible a fecha y Docker/Testcontainers sin Docker. Estado actualizado final el 2026-06-30: 317/317 OK con Docker Desktop operativo.
+
+## 2026-06-30 - V-02-02 - Cierre tecnico de validacion post-hardening
+
+Correcciones posteriores:
+
+- `AiConfiguration.NormalizeGlobalConfigModel` normaliza configuracion global por proveedor. En OpenRouter solo conserva modelos sugeridos conocidos y convierte ids desconocidos a `openrouter/auto`; el chat IA sigue pudiendo usar modelos OpenRouter arbitrarios por su ruta especifica.
+- `ConfiguracionController.Update` usa esa normalizacion para guardar `ai_model`.
+- `AuthService.IsMfaRememberDeviceEnabledAsync` queda fail-closed: valor ausente/invalido equivale a `false`.
+- `ConfiguracionController.Get` devuelve `mfa_remember_device_enabled=false` si no hay configuracion explicita.
+- `AtlasAiServiceTests.AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking` declara permiso real sobre la cuenta del fixture para probar el scope aplicado por `UserAccessService`, no un bypass artificial.
+
+QA visual:
+
+- Browser in-app se intento primero y se descarto tras timeout de attach, bloqueo de `file://` y timeout/reset al levantar localhost mock.
+- Playwright finito con Chrome local sirvio `C:\tmp\atlas-balance-vite-v0202-qa`, API mock y cierre obligatorio de browser/servidor.
+- Flujos cubiertos: dashboard CTAs, `/importacion` con lote formal y advertencias no seleccionadas, historial de lote, `/conciliacion`, tokens OpenClaw con rotacion, `Extractos` revision/edicion avanzada y mobile con `Alertas` como acceso primario.
+- Capturas generadas en `qa-artifacts/atlas-v0202-qa-*.png`.
+
+Validacion final:
+
+- Backend no Docker: 315/315 OK.
+- Testcontainers: `RowLevelSecurityTests|ExtractosConcurrencyTests` 2/2 OK con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine` en contexto elevado.
+- Backend completo: 317/317 OK.
+- Frontend: lint OK, TypeScript OK, build Vite temporal OK.
+- Seguridad/SCA: scanner Atlas OK, `npm audit --audit-level=moderate` OK, NuGet vulnerable OK desde `C:\tmp`.
+- Docker: Docker Desktop debe estar arrancado. El CLI elevado detecta el daemon por `npipe:////./pipe/dockerDesktopLinuxEngine`; Testcontainers/Docker.DotNet necesita `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+
+Empaquetado local:
+
+- `Build-Release.ps1` ya no decide el resultado del scanner de secretos por `$LASTEXITCODE`, porque un `.ps1` exitoso puede dejar ese valor heredado de comandos internos. Usa `$?`.
+- `Build-Release.ps1` usa `npm ci` solo si se pide `-CleanNpmInstall` o falta `node_modules`. Si existe `node_modules` pero esta incompleto, ejecuta `npm install --ignore-scripts --no-audit --fund=false` para reparar sin borrar arboles bloqueados.
+- Validacion local: `Build-Release.ps1 -Version V-02-02 -Runtime win-x64 -AllowUnsignedLocal` genera `AtlasBalance-V-02-02-win-x64.zip`. Al usar `-AllowUnsignedLocal` no genera firma y no es publicable.
+
+## 2026-07-01 - V-02-03 - Logo Atlas Balance
+
+- El activo principal de marca de Atlas Balance pasa a `frontend/public/logos/Atlas Balance.svg`.
+- El SVG usa `fill="currentColor"` y una regla interna `prefers-color-scheme` para funcionar tambien como favicon directo.
+- `LoginPage`, `ChangePasswordPage` y el sidebar renderizan el simbolo como mascara CSS, no como imagen filtrada.
+- `auth.css` define `--auth-logo-color` para claro (`#285bd9`) y oscuro (`#82a4ff`).
+- `frontend/public/logos/Atlas Balance.png` se regenera desde el SVG solo como fallback para `apple-touch-icon` e instalador.
+- La copia de `wwwroot/logos` queda actualizada para ejecuciones servidas por backend.
+
+Esto elimina la dependencia visual del PNG anterior. Usar mascara CSS aqui es la opcion correcta: un filtro sobre un PNG negro parece rapido, pero es deuda visual disfrazada de solucion.
+
+## 2026-07-03 - V-02-04 - Fondo blanco en tarjeta principal del dashboard
+
+- `frontend/src/styles/variables.css` define `--dashboard-hero-bg`.
+- En tema claro el valor es `#ffffff`, para que la tarjeta principal completa no herede el tinte del hero financiero.
+- En tema oscuro el valor cae a `var(--bg-surface)`, evitando una placa blanca agresiva en una pantalla oscura.
+- `frontend/src/styles/layout/dashboard.css` aplica esa superficie a `.dashboard-hero-card`; resumen, divisas y grafica comparten el mismo fondo. La grafica no necesita una placa interna propia.
+
+Validacion:
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd exec tsc -- --noEmit`: OK.
+- `npm.cmd exec vite -- build --outDir .tmp-dashboard-hero-bg-v0204 --emptyOutDir`: OK.
+- Browser in-app bloqueo la validacion con `data:` por politica; no se uso workaround externo. Se verifico el CSS fuente y el CSS compilado.
+
+## 2026-07-03 - V-02-04 - Importacion: backend local actualizado y build endurecida
+
+- Sintoma real tras sincronizar `wwwroot`: `GET http://localhost:5000/api/importacion/lotes` seguia devolviendo `404 {"error":"Endpoint no encontrado"}`.
+- Diagnostico: el backend activo era viejo. `GET /api/importacion/contexto` devolvia `401`, asi que la API estaba viva; solo faltaba la ruta nueva de lotes en el proceso cargado.
+- Bloqueo al reiniciar: `Start-LocalDev.ps1` fallaba en build con `CS0579` por atributos duplicados desde `backend/src/AtlasBalance.API/obj/Release/**`.
+- Causa tecnica: al compilar con `BaseIntermediateOutputPath` redirigido a `tools/dotnet-build/api/obj`, los restos `obj` dentro del proyecto dejaban de ser el intermediate path activo y podian entrar por globbing de items.
+- Cambio aplicado: `AtlasBalance.API.csproj` elimina `bin\**` y `obj\**` de `Compile`, `Content`, `EmbeddedResource` y `None`.
+- Verificacion: `Start-LocalDev.ps1 -TimeoutSeconds 90` compila y arranca la API; `curl.exe -i http://localhost:5000/api/importacion/lotes` devuelve `401 Unauthorized`, que es la respuesta correcta para una ruta `[Authorize]` sin cookies.

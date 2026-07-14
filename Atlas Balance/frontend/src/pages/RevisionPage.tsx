@@ -5,6 +5,7 @@ import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type { PaginatedResponse, RevisionComisionItem, RevisionEstadoComision, RevisionEstadoSeguro, RevisionSeguroItem } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -15,6 +16,7 @@ type RevisionTab = 'comisiones' | 'seguros';
 type EstadoFiltro = 'TODAS' | 'PENDIENTE' | 'DEVUELTA' | 'CORRECTO' | 'DESCARTADA';
 
 export default function RevisionPage() {
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [tab, setTab] = useState<RevisionTab>('comisiones');
   const [estado, setEstado] = useState<EstadoFiltro>('TODAS');
   const [comisiones, setComisiones] = useState<RevisionComisionItem[]>([]);
@@ -33,7 +35,9 @@ export default function RevisionPage() {
     setLoading(true);
     setError(null);
     try {
-      const params = estado === 'TODAS' ? { page, pageSize } : { estado, page, pageSize };
+      const params = estado === 'TODAS'
+        ? { page, pageSize, paisId: selectedPaisId || undefined }
+        : { estado, page, pageSize, paisId: selectedPaisId || undefined };
       if (tab === 'comisiones') {
         const { data } = await api.get<PaginatedResponse<RevisionComisionItem>>('/revision/comisiones', { params });
         setComisiones(data?.data ?? []);
@@ -55,7 +59,11 @@ export default function RevisionPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tab/filtro controlan la consulta
-  }, [tab, estado, page, pageSize]);
+  }, [tab, estado, page, pageSize, selectedPaisId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedPaisId]);
 
   const filtroOptions = useMemo(() => {
     if (tab === 'comisiones') {
@@ -159,14 +167,14 @@ export default function RevisionPage() {
         <ComisionesTable
           rows={comisiones}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id)}
+          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setComisionEstado}
         />
       ) : (
         <SegurosTable
           rows={seguros}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id)}
+          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setSeguroEstado}
         />
       )}
@@ -232,14 +240,14 @@ function ComisionesTable({
         <tbody>
           {rows.map((item) => (
             <tr key={item.extracto_id}>
-              <td>{item.titular}</td>
-              <td>{item.cuenta}</td>
-              <td className="revision-cell-fixed">{formatDate(item.fecha)}</td>
-              <td className="revision-cell-money">
+              <td data-label="Titular">{item.titular}</td>
+              <td data-label="Cuenta">{item.cuenta}</td>
+              <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
+              <td data-label="Monto" className="revision-cell-money">
                 <SignedAmount value={item.monto}>{formatCurrency(item.monto, item.divisa)}</SignedAmount>
               </td>
-              <td title={item.concepto}>{item.concepto}</td>
-              <td>
+              <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
+              <td data-label="Revision">
                 <RevisionComisionActions
                   item={item}
                   busy={busyId === item.extracto_id}
@@ -286,14 +294,14 @@ function SegurosTable({
         <tbody>
           {rows.map((item) => (
             <tr key={item.extracto_id}>
-              <td>{item.titular}</td>
-              <td>{item.cuenta}</td>
-              <td className="revision-cell-fixed">{formatDate(item.fecha)}</td>
-              <td className="revision-cell-money">
+              <td data-label="Titular">{item.titular}</td>
+              <td data-label="Cuenta">{item.cuenta}</td>
+              <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
+              <td data-label="Importe" className="revision-cell-money">
                 <SignedAmount value={item.importe}>{formatCurrency(item.importe, item.divisa)}</SignedAmount>
               </td>
-              <td title={item.concepto}>{item.concepto}</td>
-              <td>
+              <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
+              <td data-label="Estado">
                 <RevisionSeguroActions
                   item={item}
                   busy={busyId === item.extracto_id}

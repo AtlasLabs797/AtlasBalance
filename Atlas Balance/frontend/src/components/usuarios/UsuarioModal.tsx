@@ -1,7 +1,10 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
@@ -15,10 +18,19 @@ export interface CatalogCuenta {
   nombre: string;
   titular_id: string;
   titular_nombre: string | null;
+  pais_id: string | null;
+  pais_nombre: string | null;
+}
+
+export interface CatalogPais {
+  id: string;
+  nombre: string;
+  codigo_iso2: string | null;
 }
 
 interface PermisoFormRow {
   key: string;
+  pais_id: string;
   titular_id: string;
   cuenta_id: string;
   puede_ver_cuentas: boolean;
@@ -34,7 +46,7 @@ interface PermisoFormRow {
 interface UserFormState {
   email: string;
   nombre_completo: string;
-  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
+  rol: 'ADMIN' | 'GERENTE' | 'EMPLEADO';
   activo: boolean;
   primer_login: boolean;
   puede_usar_ia: boolean;
@@ -44,6 +56,7 @@ interface UserFormState {
 }
 
 interface PermisoApiRow {
+  pais_id?: string | null;
   titular_id?: string | null;
   cuenta_id?: string | null;
   puede_ver_cuentas?: boolean;
@@ -74,12 +87,14 @@ interface UsuarioModalProps {
   editingId: string | null;
   titulares: CatalogTitular[];
   cuentas: CatalogCuenta[];
+  paises: CatalogPais[];
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }
 
 const emptyPermiso = (): PermisoFormRow => ({
   key: crypto.randomUUID(),
+  pais_id: '',
   titular_id: '',
   cuenta_id: '',
   puede_ver_cuentas: false,
@@ -106,6 +121,7 @@ const emptyForm = (): UserFormState => ({
 
 const getPermisoScopeLabel = (
   permiso: PermisoFormRow,
+  paises: CatalogPais[],
   titulares: CatalogTitular[],
   cuentas: CatalogCuenta[]
 ) => {
@@ -125,6 +141,11 @@ const getPermisoScopeLabel = (
     return titular ? `Titular: ${titular.nombre}` : 'Titular específico';
   }
 
+  if (permiso.pais_id) {
+    const pais = paises.find((item) => item.id === permiso.pais_id);
+    return pais ? `País: ${pais.nombre}` : 'País específico';
+  }
+
   return 'Permiso global';
 };
 
@@ -139,6 +160,7 @@ export default function UsuarioModal({
   editingId,
   titulares,
   cuentas,
+  paises,
   onClose,
   onSaved,
 }: UsuarioModalProps) {
@@ -146,8 +168,13 @@ export default function UsuarioModal({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Snapshot del formulario base para detectar cambios sin guardar.
+  const baselineRef = useRef<string | null>(null);
+  const { confirm, dialogProps: discardDialogProps } = useConfirmDialog();
+  const isDirty = open && baselineRef.current !== null && JSON.stringify(form) !== baselineRef.current;
+  useUnsavedChanges(isDirty);
   const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    onEscape: submitting ? undefined : onClose,
+    onEscape: submitting ? undefined : () => void closeModal(),
   });
 
   const title = useMemo(
@@ -164,7 +191,9 @@ export default function UsuarioModal({
     }
 
     if (!editingId) {
-      setForm(emptyForm());
+      const fresh = emptyForm();
+      setForm(fresh);
+      baselineRef.current = JSON.stringify(fresh);
       setError(null);
       return;
     }
@@ -183,6 +212,7 @@ export default function UsuarioModal({
 
         const mappedPermisos: PermisoFormRow[] = (data.permisos ?? []).map((permiso) => ({
           key: crypto.randomUUID(),
+          pais_id: permiso.pais_id ?? '',
           titular_id: permiso.titular_id ?? '',
           cuenta_id: permiso.cuenta_id ?? '',
           puede_ver_cuentas: permiso.puede_ver_cuentas ?? false,
@@ -195,7 +225,7 @@ export default function UsuarioModal({
           columnas_editables: (permiso.columnas_editables ?? []).join(', '),
         }));
 
-        setForm({
+        const loadedForm: UserFormState = {
           email: data.usuario.email,
           nombre_completo: data.usuario.nombre_completo,
           rol: data.usuario.rol,
@@ -205,7 +235,9 @@ export default function UsuarioModal({
           password: '',
           emails: (data.emails ?? []).join('\n'),
           permisos: mappedPermisos.length > 0 ? mappedPermisos : [emptyPermiso()],
-        });
+        };
+        setForm(loadedForm);
+        baselineRef.current = JSON.stringify(loadedForm);
       } catch (err) {
         if (!cancelled) {
           setError(extractErrorMessage(err, 'No se pudo cargar el usuario'));
@@ -250,7 +282,7 @@ export default function UsuarioModal({
           permiso.puede_eliminar_lineas ||
           permiso.puede_importar ||
           permiso.puede_ver_dashboard;
-        const hasScope = !!permiso.cuenta_id || !!permiso.titular_id;
+        const hasScope = !!permiso.cuenta_id || !!permiso.titular_id || !!permiso.pais_id;
 
         if (!hasFlags && !hasScope && !columnasVisibles && !columnasEditables) {
           return null;
@@ -259,6 +291,7 @@ export default function UsuarioModal({
         return {
           cuenta_id: permiso.cuenta_id || null,
           titular_id: permiso.titular_id || null,
+          pais_id: permiso.pais_id || null,
           puede_ver_cuentas: permiso.puede_ver_cuentas,
           puede_agregar_lineas: permiso.puede_agregar_lineas,
           puede_editar_lineas: permiso.puede_editar_lineas,
@@ -290,7 +323,7 @@ export default function UsuarioModal({
   const grantAllAccounts = () => {
     setForm((prev) => {
       const globalIndex = prev.permisos.findIndex(
-        (permiso) => !permiso.titular_id && !permiso.cuenta_id
+        (permiso) => !permiso.pais_id && !permiso.titular_id && !permiso.cuenta_id
       );
 
       if (globalIndex >= 0) {
@@ -307,6 +340,7 @@ export default function UsuarioModal({
       const hasOnlyBlankRow =
         prev.permisos.length === 1 &&
         !prev.permisos[0].titular_id &&
+        !prev.permisos[0].pais_id &&
         !prev.permisos[0].cuenta_id &&
         !prev.permisos[0].puede_ver_cuentas &&
         !prev.permisos[0].puede_agregar_lineas &&
@@ -336,8 +370,19 @@ export default function UsuarioModal({
     });
   };
 
-  const closeModal = () => {
+  const closeModal = async () => {
     if (submitting) return;
+    if (isDirty) {
+      const discard = await confirm({
+        title: 'Descartar cambios',
+        message: 'Tienes cambios sin guardar en este usuario. Si cierras, se perderán. ¿Descartar?',
+        confirmLabel: 'Descartar',
+        cancelLabel: 'Seguir editando',
+      });
+      if (!discard) {
+        return;
+      }
+    }
     onClose();
   };
 
@@ -394,7 +439,7 @@ export default function UsuarioModal({
   }
 
   return (
-    <div className="modal-backdrop users-modal-backdrop" onClick={closeModal}>
+    <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeModal()}>
       <div
         ref={dialogRef}
         className="users-modal"
@@ -411,7 +456,7 @@ export default function UsuarioModal({
           </div>
           <CloseIconButton
             className="users-modal-close"
-            onClick={closeModal}
+            onClick={() => void closeModal()}
             disabled={submitting}
             ariaLabel="Cerrar modal de usuario"
           />
@@ -464,8 +509,6 @@ export default function UsuarioModal({
                   options={[
                     { value: 'ADMIN', label: 'ADMIN' },
                     { value: 'GERENTE', label: 'GERENTE' },
-                    { value: 'EMPLEADO_ULTRA', label: 'EMPLEADO_ULTRA' },
-                    { value: 'EMPLEADO_PLUS', label: 'EMPLEADO_PLUS' },
                     { value: 'EMPLEADO', label: 'EMPLEADO' },
                   ]}
                   onChange={(next) =>
@@ -574,10 +617,15 @@ export default function UsuarioModal({
 
               <div className="users-permisos-list">
                 {form.permisos.map((permiso, index) => {
-                  const cuentasFiltradas = permiso.titular_id
-                    ? cuentas.filter((cuenta) => cuenta.titular_id === permiso.titular_id)
-                    : cuentas;
-                  const scopeLabel = getPermisoScopeLabel(permiso, titulares, cuentas);
+                  const cuentasFiltradas = cuentas
+                    .filter((cuenta) => !permiso.pais_id || cuenta.pais_id === permiso.pais_id)
+                    .filter((cuenta) => !permiso.titular_id || cuenta.titular_id === permiso.titular_id);
+                  const titularesFiltrados = permiso.pais_id
+                    ? titulares.filter((titular) =>
+                        cuentas.some((cuenta) => cuenta.pais_id === permiso.pais_id && cuenta.titular_id === titular.id)
+                      )
+                    : titulares;
+                  const scopeLabel = getPermisoScopeLabel(permiso, paises, titulares, cuentas);
 
                   return (
                     <div key={permiso.key} className="permiso-row">
@@ -597,11 +645,27 @@ export default function UsuarioModal({
 
                       <div className="permiso-grid">
                         <AppSelect
+                          label="País"
+                          value={permiso.pais_id}
+                          options={[
+                            { value: '', label: 'Todos los países' },
+                            ...paises.map((pais) => ({ value: pais.id, label: pais.nombre })),
+                          ]}
+                          onChange={(next) =>
+                            updatePermiso(permiso.key, {
+                              pais_id: next,
+                              titular_id: '',
+                              cuenta_id: '',
+                            })
+                          }
+                        />
+
+                        <AppSelect
                           label="Titular"
                           value={permiso.titular_id}
                           options={[
                             { value: '', label: 'Global o por cuenta' },
-                            ...titulares.map((titular) => ({ value: titular.id, label: titular.nombre })),
+                            ...titularesFiltrados.map((titular) => ({ value: titular.id, label: titular.nombre })),
                           ]}
                           onChange={(next) =>
                             updatePermiso(permiso.key, {
@@ -742,7 +806,7 @@ export default function UsuarioModal({
             </section>
 
             <div className="users-form-actions users-form-actions--sticky">
-              <button type="button" className="button-secondary" onClick={closeModal} disabled={submitting}>
+              <button type="button" className="button-secondary" onClick={() => void closeModal()} disabled={submitting}>
                 Cancelar
               </button>
               <button type="submit" className="button-primary" disabled={submitting}>
@@ -752,6 +816,7 @@ export default function UsuarioModal({
           </form>
         )}
       </div>
+      <ConfirmDialog {...discardDialogProps} />
     </div>
   );
 }

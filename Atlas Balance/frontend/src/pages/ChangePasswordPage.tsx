@@ -2,8 +2,12 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
+import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
+import { useUiStore } from '@/stores/uiStore';
+import { IconMoon, IconSun } from '@/components/Icons';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 interface ChangePasswordForm {
@@ -17,16 +21,15 @@ export default function ChangePasswordPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
+  const theme = useUiStore((state) => state.theme);
+  const toggleTheme = useUiStore((state) => state.toggleTheme);
   const [error, setError] = useState<string | null>(null);
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<ChangePasswordForm>();
+  const { register, handleSubmit, getValues, formState: { errors, isSubmitting } } = useForm<ChangePasswordForm>();
 
-  const onSubmit = handleSubmit(async ({ passwordActual, passwordNueva, confirmacion }) => {
+  const onSubmit = handleSubmit(async ({ passwordActual, passwordNueva }) => {
     setError(null);
-
-    if (passwordNueva !== confirmacion) {
-      setError('La confirmación no coincide.');
-      return;
-    }
 
     try {
       const { data } = await api.put('/auth/cambiar-password', { password_actual: passwordActual, password_nueva: passwordNueva });
@@ -36,6 +39,7 @@ export default function ChangePasswordPage() {
       } else if (usuario) {
         setUsuario({ ...usuario, primer_login: false });
       }
+      await loadAlertasActivas(selectedPaisId || undefined);
       navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo cambiar la contraseña.'));
@@ -44,7 +48,45 @@ export default function ChangePasswordPage() {
 
   return (
     <section className="auth-page">
-      <form className="auth-card" onSubmit={onSubmit}>
+      <button
+        type="button"
+        className="auth-theme-toggle"
+        onClick={toggleTheme}
+        aria-pressed={theme === 'dark'}
+        aria-label={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+        title={`Cambiar a modo ${theme === 'light' ? 'oscuro' : 'claro'}`}
+      >
+        {theme === 'light' ? <IconMoon /> : <IconSun />}
+      </button>
+
+      <aside className="auth-brand-panel" aria-label="Atlas Balance">
+        <div className="auth-brand-lockup">
+          <span className="auth-logo-image" aria-hidden="true" />
+          <div className="auth-branding">
+            <h1>Atlas Balance</h1>
+            <p>Control financiero interno</p>
+          </div>
+        </div>
+
+        <div className="auth-brand-copy">
+          <span className="auth-brand-eyebrow">Primer acceso</span>
+          <strong>Seguridad primero. Operativa después.</strong>
+          <p>Actualiza la contraseña inicial antes de entrar a datos financieros reales.</p>
+        </div>
+
+        <div className="auth-brand-footer">
+          <span>by</span>
+          <img
+            src="/logos/Atlas Labs.png"
+            alt="Atlas Labs"
+            className="auth-footer-logo"
+          />
+          <strong>Atlas Labs</strong>
+        </div>
+      </aside>
+
+      <main className="auth-main-panel">
+        <form className="auth-card" onSubmit={onSubmit}>
         <h1 className="auth-card-title">Cambio obligatorio de contraseña</h1>
         <p className="auth-card-description">Es tu primer inicio de sesión. Cambia la contraseña para continuar.</p>
 
@@ -92,7 +134,10 @@ export default function ChangePasswordPage() {
             className="auth-input"
             aria-invalid={errors.confirmacion ? true : undefined}
             aria-describedby={errors.confirmacion ? 'confirmacion-error' : undefined}
-            {...register('confirmacion', { required: 'Repite la contraseña nueva.' })}
+            {...register('confirmacion', {
+              required: 'Repite la contraseña nueva.',
+              validate: (value) => value === getValues('passwordNueva') || 'La confirmación no coincide.',
+            })}
           />
           {errors.confirmacion ? (
             <p id="confirmacion-error" className="auth-error" role="alert">{errors.confirmacion.message}</p>
@@ -104,7 +149,8 @@ export default function ChangePasswordPage() {
         <button type="submit" disabled={isSubmitting} className="auth-button">
           {isSubmitting ? 'Guardando...' : 'Actualizar contraseña'}
         </button>
-      </form>
+        </form>
+      </main>
     </section>
   );
 }

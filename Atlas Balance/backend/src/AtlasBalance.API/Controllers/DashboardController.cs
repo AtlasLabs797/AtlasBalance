@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace AtlasBalance.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = "ADMIN,GERENTE")]
+[Authorize]
 [Route("api/dashboard")]
 public sealed class DashboardController : ControllerBase
 {
@@ -18,7 +18,7 @@ public sealed class DashboardController : ControllerBase
     }
 
     [HttpGet("principal")]
-    public async Task<IActionResult> Principal([FromQuery] string? divisaPrincipal, CancellationToken cancellationToken)
+    public async Task<IActionResult> Principal([FromQuery] string? divisaPrincipal, [FromQuery] Guid? paisId, CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId))
         {
@@ -27,7 +27,7 @@ public sealed class DashboardController : ControllerBase
 
         try
         {
-            var result = await _dashboardService.GetPrincipalAsync(userId, divisaPrincipal, cancellationToken);
+            var result = await _dashboardService.GetPrincipalAsync(userId, divisaPrincipal, paisId, cancellationToken);
             return Ok(result);
         }
         catch (DashboardAccessException ex)
@@ -37,7 +37,7 @@ public sealed class DashboardController : ControllerBase
     }
 
     [HttpGet("titular/{titularId:guid}")]
-    public async Task<IActionResult> Titular(Guid titularId, [FromQuery] string? divisaPrincipal, CancellationToken cancellationToken)
+    public async Task<IActionResult> Titular(Guid titularId, [FromQuery] string? divisaPrincipal, [FromQuery] Guid? paisId, CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId))
         {
@@ -46,7 +46,7 @@ public sealed class DashboardController : ControllerBase
 
         try
         {
-            var result = await _dashboardService.GetTitularAsync(userId, titularId, divisaPrincipal, cancellationToken);
+            var result = await _dashboardService.GetTitularAsync(userId, titularId, divisaPrincipal, paisId, cancellationToken);
             return Ok(result);
         }
         catch (DashboardAccessException ex)
@@ -59,6 +59,7 @@ public sealed class DashboardController : ControllerBase
     public async Task<IActionResult> SaldosDivisa(
         [FromQuery] string? divisaPrincipal,
         [FromQuery] Guid? titularId,
+        [FromQuery] Guid? paisId,
         CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId))
@@ -68,7 +69,7 @@ public sealed class DashboardController : ControllerBase
 
         try
         {
-            var result = await _dashboardService.GetSaldosDivisaAsync(userId, divisaPrincipal, titularId, cancellationToken);
+            var result = await _dashboardService.GetSaldosDivisaAsync(userId, divisaPrincipal, titularId, paisId, cancellationToken);
             return Ok(result);
         }
         catch (DashboardAccessException ex)
@@ -82,6 +83,7 @@ public sealed class DashboardController : ControllerBase
         [FromQuery] string periodo = "1m",
         [FromQuery] string? divisaPrincipal = null,
         [FromQuery] Guid? titularId = null,
+        [FromQuery] Guid? paisId = null,
         CancellationToken cancellationToken = default)
     {
         if (!TryGetUserId(out var userId))
@@ -91,7 +93,7 @@ public sealed class DashboardController : ControllerBase
 
         try
         {
-            var result = await _dashboardService.GetEvolucionAsync(userId, periodo, divisaPrincipal, titularId, cancellationToken);
+            var result = await _dashboardService.GetEvolucionAsync(userId, periodo, divisaPrincipal, titularId, paisId, cancellationToken);
             return Ok(result);
         }
         catch (DashboardAccessException ex)

@@ -23,7 +23,7 @@ interface AlertasState {
   dismissBanner: () => void;
   resetBanner: () => void;
   clear: () => void;
-  loadAlertasActivas: () => Promise<void>;
+  loadAlertasActivas: (paisId?: string) => Promise<void>;
 }
 
 const SESSION_KEY = 'alertas_banner_dismissed_session';
@@ -47,10 +47,12 @@ export const useAlertasStore = create<AlertasState>((set) => ({
     sessionStorage.removeItem(SESSION_KEY);
     set({ alertasActivas: [], bannerDismissed: false, loading: false, lastError: null });
   },
-  loadAlertasActivas: async () => {
+  loadAlertasActivas: async (paisId) => {
     set({ loading: true, lastError: null });
     try {
-      const { data } = await api.get<AlertaActiva[]>('/alertas/activas');
+      const { data } = await api.get<AlertaActiva[]>('/alertas/activas', {
+        params: { paisId: paisId || undefined },
+      });
       set({ alertasActivas: data, lastError: null });
       if (data.length === 0) {
         sessionStorage.removeItem(SESSION_KEY);

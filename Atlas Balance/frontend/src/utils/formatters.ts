@@ -137,6 +137,12 @@ export function formatNumber(value: number, decimals: number = 2): string {
   }).format(value);
 }
 
+export function formatBytes(value: number | null | undefined): string {
+  if (!value || value <= 0) return 'Sin tamaño';
+  const mb = value / (1024 * 1024);
+  return `${formatNumber(mb)} MB`;
+}
+
 export function formatDate(dateStr: string): string {
   const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
   if (dateOnlyMatch) {
@@ -158,6 +164,9 @@ export function formatDate(dateStr: string): string {
 
 export function formatDateTime(dateStr: string): string {
   const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) {
+    return dateStr;
+  }
   return date.toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',

@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { useAuthStore } from '@/stores/authStore';
 
 interface RoleGuardProps {
-  roles: Array<'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO'>;
+  roles: Array<'ADMIN' | 'GERENTE' | 'EMPLEADO'>;
   children: ReactNode;
 }
 

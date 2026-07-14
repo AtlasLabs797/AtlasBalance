@@ -17,20 +17,18 @@ interface AppSelectProps {
 }
 
 export function AppSelect({ value, options, onChange, label, ariaLabel, className, disabled = false }: AppSelectProps) {
-  const labelId = useId();
   const selectId = useId();
 
   return (
-    <div className={['app-select-field', className].filter(Boolean).join(' ')}>
-      {label ? <label id={labelId} className="app-select-label" htmlFor={selectId}>{label}</label> : null}
-      <div className="app-select-native-wrap">
+    <label className={['app-select-field', className].filter(Boolean).join(' ')} htmlFor={selectId}>
+      {label ? <span className="app-select-label">{label}</span> : null}
+      <span className="app-select-native-wrap">
         <select
           id={selectId}
           className="app-select-trigger app-select-native"
           disabled={disabled}
           value={value}
           aria-label={label ? undefined : ariaLabel}
-          aria-labelledby={label ? labelId : undefined}
           onChange={(event) => onChange(event.target.value)}
         >
           {options.map((option) => (
@@ -39,8 +37,8 @@ export function AppSelect({ value, options, onChange, label, ariaLabel, classNam
             </option>
           ))}
         </select>
-        <span className="app-select-chevron app-select-chevron--native" aria-hidden="true" />
-      </div>
-    </div>
+        <span className="app-select-chevron" aria-hidden="true" />
+      </span>
+    </label>
   );
 }

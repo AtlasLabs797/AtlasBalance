@@ -431,6 +431,48 @@ public sealed class CuentasControllerTests
         page.Data.Single().TipoCuenta.Should().Be(nameof(TipoCuenta.PLAZO_FIJO));
     }
 
+    [Fact]
+    public async Task Listar_Should_Filter_By_PaisId()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var paisAId = Guid.NewGuid();
+        var paisBId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.pais.cuentas@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Pais Cuentas",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Paises.AddRange(
+            new Pais { Id = paisAId, Nombre = "Espana", CodigoIso2 = "ES", Activo = true },
+            new Pais { Id = paisBId, Nombre = "Mexico", CodigoIso2 = "MX", Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Pais", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = Guid.NewGuid(), TitularId = titularId, Nombre = "Cuenta ES", Divisa = "EUR", PaisId = paisAId, Activa = true },
+            new Cuenta { Id = Guid.NewGuid(), TitularId = titularId, Nombre = "Cuenta MX", Divisa = "MXN", PaisId = paisBId, Activa = true },
+            new Cuenta { Id = Guid.NewGuid(), TitularId = titularId, Nombre = "Cuenta General", Divisa = "EUR", Activa = true });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId);
+
+        var result = await controller.Listar(paisId: paisAId, cancellationToken: CancellationToken.None);
+
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<CuentaListItemResponse>>().Subject;
+        page.Total.Should().Be(1);
+        page.Data.Should().ContainSingle();
+        page.Data.Single().Nombre.Should().Be("Cuenta ES");
+        page.Data.Single().PaisId.Should().Be(paisAId);
+        page.Data.Single().PaisNombre.Should().Be("Espana");
+    }
+
     private sealed class NoOpPlazoFijoService : IPlazoFijoService
     {
         public Task<int> ProcesarVencimientosAsync(DateOnly hoy, CancellationToken cancellationToken)

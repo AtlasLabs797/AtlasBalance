@@ -533,6 +533,7 @@ function Update-ProductionConfigDefaults {
     $changed = $false
     $apiConfig = Read-JsonFile -Path $ApiConfigPath
     Ensure-JsonObjectProperty -Object $apiConfig -Name "Security"
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "App"
     Ensure-JsonObjectProperty -Object $apiConfig -Name "Ia"
     Ensure-JsonObjectProperty -Object $apiConfig -Name "ForwardedHeaders"
     Ensure-JsonObjectProperty -Object $apiConfig -Name "WatchdogSettings"
@@ -540,11 +541,17 @@ function Update-ProductionConfigDefaults {
     Ensure-JsonObjectProperty -Object $apiConfig -Name "UpdateSecurity"
     Ensure-JsonObjectProperty -Object $apiConfig -Name "DataProtection"
 
+    $useReverseProxy = $Runtime -and $Runtime.UseReverseProxy
     $apiPort = if ($Runtime -and $Runtime.ApiPort) { [int]$Runtime.ApiPort } else { 443 }
-    $apiHealthUrl = if ($apiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost:$apiPort/api/health" }
+    $internalApiPort = if ($Runtime -and $Runtime.InternalApiPort) { [int]$Runtime.InternalApiPort } else { 5000 }
+    $apiHealthUrl = if ($useReverseProxy) { "http://localhost:$internalApiPort/api/health" } elseif ($apiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost:$apiPort/api/health" }
+    $appBaseUrl = if ($Runtime -and $Runtime.AppUrl) { [string]$Runtime.AppUrl } else { "" }
     $publicKey = Get-PackagedReleasePublicKey -ApiSource $ApiSource
 
     $changed = (Set-JsonDefault -Object $apiConfig.Security -Name "RequireMfaForWebUsers" -Value $true) -or $changed
+    if (-not [string]::IsNullOrWhiteSpace($appBaseUrl)) {
+        $changed = (Set-JsonDefault -Object $apiConfig.App -Name "BaseUrl" -Value $appBaseUrl) -or $changed
+    }
     $changed = (Set-JsonDefault -Object $apiConfig.Ia -Name "UseSystemProxy" -Value $false) -or $changed
     $changed = (Set-JsonDefault -Object $apiConfig.Ia -Name "ProxyUrl" -Value "") -or $changed
     $changed = (Set-JsonDefault -Object $apiConfig.ForwardedHeaders -Name "KnownProxies" -Value @()) -or $changed
@@ -753,8 +760,9 @@ if ($curl) {
     }
 } else {
     try {
-        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20
+        # V-02-05 (CONFIG-020): evitar tocar el callback global. Usar -SkipCertificateCheck
+        # en este request especifico (es un health check self-signed durante instalacion).
+        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
         $healthOk = ($health.StatusCode -eq 200)
     } catch {
         $healthOk = $false

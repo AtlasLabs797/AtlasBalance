@@ -1,6 +1,6 @@
 ﻿// Mirror of DB schema + API response types
 
-export type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO_ULTRA' | 'EMPLEADO_PLUS' | 'EMPLEADO';
+export type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO';
 export type TipoTitular = 'EMPRESA' | 'AUTONOMO' | 'PARTICULAR';
 export type TipoCuenta = 'NORMAL' | 'EFECTIVO' | 'PLAZO_FIJO';
 export type EstadoPlazoFijo = 'ACTIVO' | 'PROXIMO_VENCER' | 'VENCIDO' | 'RENOVADO' | 'CANCELADO';
@@ -8,6 +8,8 @@ export type EstadoToken = 'activo' | 'revocado';
 export type FuenteTipoCambio = 'API' | 'MANUAL';
 export type EstadoBackup = 'PENDING' | 'SUCCESS' | 'FAILED';
 export type TipoBackup = 'AUTO' | 'MANUAL';
+export type BackupFrequency = 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+export type BackupDestination = 'LOCAL' | 'LOCAL_Y_GOOGLE_DRIVE';
 
 export interface Usuario {
   id: string;
@@ -43,6 +45,8 @@ export interface Cuenta {
   banco_nombre: string | null;
   divisa: string;
   formato_id: string | null;
+  pais_id: string | null;
+  pais_nombre: string | null;
   es_efectivo: boolean;
   tipo_cuenta: TipoCuenta;
   titular_tipo?: TipoTitular;
@@ -88,13 +92,41 @@ export interface Extracto {
   flagged_at: string | null;
   flagged_by_id: string | null;
   columnas_extra?: Record<string, string>;
+  desglose_count?: number;
+  desglose_total?: number;
+  desglose_estado?: DesgloseEstado;
   fecha_creacion: string;
   fecha_modificacion?: string | null;
   deleted_at?: string | null;
   cuenta_nombre?: string;
   titular_id?: string;
   titular_nombre?: string;
+  pais_id?: string | null;
   divisa?: string;
+}
+
+export type DesgloseEstado = 'sin_desglose' | 'cuadrado' | 'descuadrado';
+
+export interface ExtractoDesglose {
+  id: string;
+  extracto_id: string;
+  orden: number;
+  tercero_nombre: string;
+  importe: number;
+  notas: string | null;
+  fecha_creacion: string;
+  fecha_modificacion: string | null;
+}
+
+export interface ExtractoDesgloseResumen {
+  extracto_id: string;
+  extracto_monto: number;
+  count: number;
+  total: number;
+  diferencia: number;
+  estado: DesgloseEstado;
+  version: string;
+  lineas: ExtractoDesglose[];
 }
 
 export interface CuentaResumenKpi {
@@ -103,6 +135,8 @@ export interface CuentaResumenKpi {
   iban: string | null;
   banco_nombre: string | null;
   divisa: string;
+  pais_id: string | null;
+  pais_nombre: string | null;
   titular_id: string;
   titular_nombre: string;
   es_efectivo: boolean;
@@ -159,12 +193,17 @@ export interface PermisoUsuario {
   usuario_id: string;
   cuenta_id: string | null;
   titular_id: string | null;
+  pais_id: string | null;
   puede_ver_cuentas: boolean;
   puede_agregar_lineas: boolean;
   puede_editar_lineas: boolean;
   puede_eliminar_lineas: boolean;
   puede_importar: boolean;
   puede_ver_dashboard: boolean;
+  puede_revisar_lineas: boolean;
+  puede_aprobar_importaciones: boolean;
+  puede_conciliar: boolean;
+  puede_cerrar_conciliacion: boolean;
   columnas_visibles: string[] | null;
   columnas_editables: string[] | null;
 }
@@ -258,6 +297,16 @@ export interface TipoCambio {
   fuente: FuenteTipoCambio;
 }
 
+export interface Pais {
+  id: string;
+  nombre: string;
+  codigo_iso2: string | null;
+  activo: boolean;
+  fecha_creacion: string;
+  fecha_modificacion: string | null;
+  deleted_at: string | null;
+}
+
 export interface Configuracion {
   clave: string;
   valor: string;
@@ -305,6 +354,8 @@ export interface ConfiguracionSistema {
     openrouter_api_key_configurada: boolean;
     openai_api_key: string;
     openai_api_key_configurada: boolean;
+    minimax_api_key: string;
+    minimax_api_key_configurada: boolean;
     model: string;
     habilitada: boolean;
     usuario_puede_usar: boolean;
@@ -365,6 +416,7 @@ export interface SaveConfiguracionSistemaRequest {
     provider: string;
     openrouter_api_key: string;
     openai_api_key: string;
+    minimax_api_key: string;
     model: string;
     habilitada: boolean;
     requests_por_minuto: number;
@@ -390,6 +442,7 @@ export interface RevisionComisionItem {
   extracto_id: string;
   cuenta_id: string;
   titular_id: string;
+  pais_id: string | null;
   titular: string;
   cuenta: string;
   fecha: string;
@@ -403,6 +456,7 @@ export interface RevisionSeguroItem {
   extracto_id: string;
   cuenta_id: string;
   titular_id: string;
+  pais_id: string | null;
   titular: string;
   cuenta: string;
   fecha: string;
@@ -416,6 +470,7 @@ export interface IaConfig {
   provider: string;
   openrouter_api_key_configurada: boolean;
   openai_api_key_configurada: boolean;
+  minimax_api_key_configurada: boolean;
   model: string;
   habilitada: boolean;
   usuario_puede_usar: boolean;
@@ -454,6 +509,12 @@ export interface IaChatResponse {
   aviso: string | null;
 }
 
+export interface IaModel {
+  id: string;
+  nombre: string;
+  context_length: number | null;
+}
+
 export interface BackupItem {
   id: string;
   fecha_creacion: string;
@@ -464,6 +525,72 @@ export interface BackupItem {
   iniciado_por_id: string | null;
   iniciado_por_nombre: string | null;
   notas: string | null;
+  destino: BackupDestination | string;
+  cloud_provider: string | null;
+  cloud_estado: string | null;
+  cloud_uploaded_at: string | null;
+  cloud_file_id: string | null;
+  cloud_file_name: string | null;
+  cloud_error_message: string | null;
+}
+
+export interface GoogleDriveBackupConfig {
+  client_id: string;
+  client_secret_configured: boolean;
+  connected: boolean;
+  account_email: string | null;
+  folder_id: string | null;
+  last_validated_at: string | null;
+  last_error: string | null;
+  encryption_key_configured: boolean;
+}
+
+export interface BackupConfig {
+  auto_enabled: boolean;
+  frequency: BackupFrequency | string;
+  time_utc: string;
+  day_of_week: number;
+  day_of_month: number;
+  interval_hours: number;
+  destination: BackupDestination | string;
+  last_started_utc: string;
+  last_result: string;
+  google_drive: GoogleDriveBackupConfig;
+}
+
+export interface SaveBackupConfigRequest {
+  auto_enabled: boolean;
+  frequency: BackupFrequency | string;
+  time_utc: string;
+  day_of_week: number;
+  day_of_month: number;
+  interval_hours: number;
+  destination: BackupDestination | string;
+  google_drive_client_id: string;
+  google_drive_client_secret: string;
+  google_drive_folder_id: string;
+}
+
+export interface GoogleDriveLinkStart {
+  session_id: string;
+  user_code: string;
+  verification_url: string;
+  expires_at: string;
+  interval_seconds: number;
+}
+
+export interface GoogleDriveLinkStatus {
+  estado: 'PENDING' | 'CONNECTED' | 'FAILED' | 'EXPIRED' | string;
+  message: string | null;
+  account_email: string | null;
+  poll_after_seconds: number;
+}
+
+export interface GoogleDriveBackupFile {
+  file_id: string;
+  name: string;
+  size_bytes: number | null;
+  created_time: string | null;
 }
 
 export interface ExportacionItem {
@@ -495,6 +622,14 @@ export interface VersionDisponibleResponse {
   version_actual: string;
   version_disponible: string | null;
   actualizacion_disponible: boolean;
+  instalable: boolean;
+  bloqueos: string[];
+  asset_zip_nombre: string | null;
+  asset_zip_detectado: boolean;
+  firma_detectada: boolean;
+  digest_presente: boolean;
+  clave_publica_configurada: boolean;
+  watchdog_disponible: boolean;
   mensaje: string | null;
 }
 
@@ -502,6 +637,7 @@ export interface IntegrationPermissionItem {
   id: string;
   titular_id: string | null;
   cuenta_id: string | null;
+  pais_id: string | null;
   acceso_tipo: string;
 }
 
@@ -514,8 +650,12 @@ export interface IntegrationTokenListItem {
   permiso_lectura: boolean;
   permiso_escritura: boolean;
   fecha_creacion: string;
+  fecha_expiracion: string | null;
   fecha_ultima_uso: string | null;
   fecha_revocacion: string | null;
+  rotated_from_token_id: string | null;
+  scopes: string[];
+  last_used_ip_address: string | null;
   usuario_creador_id: string;
   deleted_at: string | null;
 }
@@ -530,9 +670,13 @@ export interface CreateIntegrationTokenRequest {
   descripcion?: string;
   permiso_lectura: boolean;
   permiso_escritura: boolean;
+  fecha_expiracion?: string | null;
+  sin_expiracion_confirmada?: boolean;
+  scopes: string[];
   permisos: Array<{
     titular_id: string | null;
     cuenta_id: string | null;
+    pais_id: string | null;
     acceso_tipo: string;
   }>;
 }
@@ -542,6 +686,7 @@ export interface SaveIntegrationTokenRequest extends CreateIntegrationTokenReque
 export interface CreateIntegrationTokenResponse {
   token: IntegrationTokenDetail;
   token_plano: string;
+  advertencias: string[];
 }
 
 export interface IntegrationTokenMetrics {
@@ -568,6 +713,7 @@ export interface PaginatedResponse<T> {
   page: number;
   page_size: number;
   total_pages: number;
+  columnas_disponibles?: string[] | null;
 }
 
 export interface ApiResponse<T> {
@@ -602,6 +748,7 @@ export interface DashboardPrincipal {
   plazos_fijos: DashboardPlazosFijosResumen;
   saldos_por_titular: DashboardSaldoTitular[];
   saldos_por_cuenta: DashboardSaldoCuenta[];
+  saldos_por_pais: DashboardSaldoPais[];
   concentracion_bancos: DashboardConcentracionBanco[];
   chart_colors: DashboardChartColors;
 }
@@ -623,6 +770,7 @@ export interface DashboardTitular {
   egresos_mes: number;
   total_convertido: number;
   saldos_por_cuenta: DashboardSaldoCuenta[];
+  saldos_por_pais: DashboardSaldoPais[];
   chart_colors: DashboardChartColors;
 }
 
@@ -669,12 +817,22 @@ export interface DashboardSaldoCuenta {
   cuenta_nombre: string;
   titular_id: string;
   titular_nombre: string;
+  pais_id: string | null;
+  pais_nombre: string | null;
   banco_nombre?: string | null;
   divisa: string;
   es_efectivo: boolean;
   tipo_cuenta: TipoCuenta;
   saldo_actual: number;
   saldo_convertido: number;
+}
+
+export interface DashboardSaldoPais {
+  pais_id: string | null;
+  pais_nombre: string;
+  saldos_por_divisa: Record<string, number>;
+  total_convertido: number;
+  total_cuentas: number;
 }
 
 export interface DashboardSaldoDivisa {
@@ -733,6 +891,7 @@ export interface ImportCuentaContexto {
   nombre: string;
   titular_nombre: string;
   divisa: string;
+  pais_id: string | null;
   es_efectivo: boolean;
   tipo_cuenta: TipoCuenta;
   formato_id: string | null;
@@ -746,11 +905,95 @@ export interface ImportContextoResponse {
 export interface ImportConfirmResult {
   filas_procesadas: number;
   filas_importadas: number;
+  filas_duplicadas: number;
   filas_con_error: number;
   errores: {
     fila_indice: number;
     mensajes: string[];
   }[];
+  advertencias: string[];
+}
+
+export interface ImportacionLote {
+  id: string;
+  cuenta_id: string;
+  cuenta_nombre: string | null;
+  usuario_creador_id: string;
+  tipo_origen: 'PEGADO' | 'ARCHIVO' | string;
+  nombre_archivo: string | null;
+  tamanio_bytes: number;
+  sha256: string;
+  separador: string;
+  lote_hash: string;
+  estado: string;
+  filas_total: number;
+  filas_validas: number;
+  filas_error: number;
+  filas_advertencia: number;
+  advertencias_aceptadas: boolean;
+  fecha_creacion: string;
+  fecha_confirmacion: string | null;
+  confirmado_por_id: string | null;
+  fecha_reversion: string | null;
+  revertido_por_id: string | null;
+}
+
+export interface ImportacionLoteFila extends ImportRowResult {
+  id: string;
+  lote_id: string;
+  seleccionada_default: boolean;
+  estado: string;
+  fingerprint: string | null;
+}
+
+export interface ImportacionLoteDetalle {
+  lote: ImportacionLote;
+  mapeo: ImportMapColumns;
+  validacion: ImportValidationResult;
+}
+
+export interface MovimientoEsperado {
+  id: string;
+  cuenta_id: string;
+  cuenta_nombre: string | null;
+  fecha_esperada: string;
+  monto: number;
+  divisa: string;
+  referencia: string | null;
+  concepto: string | null;
+  estado: string;
+  origen: string;
+  usuario_creacion_id: string | null;
+  fecha_creacion: string;
+}
+
+export interface ExtractoConciliacion {
+  id: string;
+  fecha: string;
+  concepto: string | null;
+  monto: number;
+  saldo: number;
+  fila_numero: number;
+}
+
+export interface Conciliacion {
+  id: string;
+  cuenta_id: string;
+  cuenta_nombre: string | null;
+  movimiento_esperado_id: string;
+  extracto_id: string | null;
+  estado: string;
+  score: number;
+  regla: string;
+  diferencia_dias: number;
+  referencia_normalizada: string | null;
+  concepto_normalizado: string | null;
+  observacion: string | null;
+  fecha_creacion: string;
+  fecha_confirmacion: string | null;
+  fecha_resolucion: string | null;
+  movimiento_esperado: MovimientoEsperado | null;
+  extracto: ExtractoConciliacion | null;
 }
 
 export interface ImportPlazoFijoMovimientoResult {

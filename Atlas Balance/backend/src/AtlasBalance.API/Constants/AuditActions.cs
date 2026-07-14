@@ -25,6 +25,11 @@ public static class AuditActions
     public const string PlazoFijoRenovado = "PLAZO_FIJO_RENOVADO";
     public const string BackupGenerado = "BACKUP_GENERADO";
     public const string BackupRetencionAutomatica = "BACKUP_RETENCION_AUTOMATICA";
+    public const string BackupConfigUpdated = "BACKUP_CONFIG_UPDATED";
+    public const string BackupCloudLinked = "BACKUP_CLOUD_LINKED";
+    public const string BackupCloudDisconnected = "BACKUP_CLOUD_DISCONNECTED";
+    public const string BackupCloudUpload = "BACKUP_CLOUD_UPLOAD";
+    public const string BackupCloudImport = "BACKUP_CLOUD_IMPORT";
     public const string ExportacionGenerada = "EXPORTACION_GENERADA";
     public const string ExportacionBloqueada = "EXPORTACION_BLOQUEADA";
     public const string UpdateConfiguracion = "UPDATE_CONFIGURACION";

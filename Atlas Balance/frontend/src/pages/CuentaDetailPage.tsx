@@ -16,6 +16,7 @@ import EditableCell from '@/components/extractos/EditableCell';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import type { CuentaResumenKpi, Extracto, PaginatedResponse, PeriodoDashboard } from '@/types';
@@ -119,6 +120,7 @@ export default function CuentaDetailPage() {
   const canImportInCuenta = usePermisosStore((state) => state.canImportInCuenta);
   const getColumnasEditables = usePermisosStore((state) => state.getColumnasEditables);
   usePermisosStore((state) => state.permisos);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [summary, setSummary] = useState<CuentaResumenKpi | null>(null);
   const [rows, setRows] = useState<Extracto[]>([]);
@@ -141,12 +143,12 @@ export default function CuentaDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
-  const allowedDashboard = usuario?.rol === 'ADMIN' || (usuario?.rol === 'GERENTE' && canViewDashboard());
-  const canImport = Boolean(cuentaId) && summary ? canImportInCuenta(cuentaId, summary.titular_id) : false;
-  const canAddRows = Boolean(cuentaId) && summary ? canAddInCuenta(cuentaId, summary.titular_id) : false;
-  const canDeleteRows = Boolean(cuentaId) && summary ? canDeleteInCuenta(cuentaId, summary.titular_id) : false;
-  const canOpenAccount = Boolean(cuentaId) && summary ? canViewCuenta(cuentaId, summary.titular_id) : false;
-  const canEditAccountNotes = Boolean(cuentaId) && summary ? canEditCuenta(cuentaId, summary.titular_id) : false;
+  const allowedDashboard = usuario?.rol === 'ADMIN' || canViewDashboard();
+  const canImport = Boolean(cuentaId) && summary ? canImportInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canAddRows = Boolean(cuentaId) && summary ? canAddInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canDeleteRows = Boolean(cuentaId) && summary ? canDeleteInCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canOpenAccount = Boolean(cuentaId) && summary ? canViewCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
+  const canEditAccountNotes = Boolean(cuentaId) && summary ? canEditCuenta(cuentaId, summary.titular_id, summary.pais_id) : false;
   const plazoFijo = summary?.tipo_cuenta === 'PLAZO_FIJO' ? summary.plazo_fijo : null;
   const hasBankName = Boolean(summary?.banco_nombre?.trim());
   const hasIban = Boolean(summary?.iban?.trim());
@@ -162,11 +164,11 @@ export default function CuentaDetailPage() {
         return false;
       }
 
-      if (!canEditCuenta(cuentaId, summary.titular_id)) {
+      if (!canEditCuenta(cuentaId, summary.titular_id, summary.pais_id)) {
         return false;
       }
 
-      const editableColumns = getColumnasEditables(cuentaId, summary.titular_id);
+      const editableColumns = getColumnasEditables(cuentaId, summary.titular_id, summary.pais_id);
       return editableColumns === null || editableColumns.includes(column);
     },
     [canEditCuenta, cuentaId, getColumnasEditables, summary]
@@ -185,9 +187,9 @@ export default function CuentaDetailPage() {
 
     try {
       const [summaryRes, rowsRes] = await Promise.all([
-        api.get<CuentaResumenKpi>(`/extractos/cuentas/${id}/resumen`, { params: { periodo } }),
+        api.get<CuentaResumenKpi>(`/extractos/cuentas/${id}/resumen`, { params: { periodo, paisId: selectedPaisId || undefined } }),
         api.get<PaginatedResponse<Extracto>>('/extractos', {
-          params: { cuentaId: id, page: rowsPage, pageSize: rowsPageSize, sortBy: 'fila_numero', sortDir: 'desc' },
+          params: { cuentaId: id, paisId: selectedPaisId || undefined, page: rowsPage, pageSize: rowsPageSize, sortBy: 'fila_numero', sortDir: 'desc' },
         }),
       ]);
 
@@ -209,7 +211,7 @@ export default function CuentaDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize]);
+  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId]);
 
   useEffect(() => {
     void loadCuentaData();
@@ -699,6 +701,12 @@ export default function CuentaDetailPage() {
                 {bankLabel}
               </dd>
             </div>
+            <div>
+              <dt>País</dt>
+              <dd className={summary.pais_nombre ? undefined : 'account-identity-value--muted'}>
+                {summary.pais_nombre || 'Sin pais'}
+              </dd>
+            </div>
             <div className="account-identity-iban">
               <dt>IBAN</dt>
               <dd className={hasIban ? undefined : 'account-identity-value--muted'}>{formatIban(summary.iban)}</dd>
@@ -946,6 +954,7 @@ export default function CuentaDetailPage() {
                       ) : null}
                       <td
                         className="account-cell-fixed account-row-anchor-cell"
+                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
                         onFocus={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
                       >
@@ -1011,6 +1020,7 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
+                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
                         onFocus={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
                       >
@@ -1020,6 +1030,7 @@ export default function CuentaDetailPage() {
                       </td>
                       <td
                         className="account-cell-money account-cell-fixed"
+                        tabIndex={0}
                         onClick={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
                         onFocus={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
                       >

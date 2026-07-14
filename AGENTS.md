@@ -21,6 +21,7 @@ Reglas criticas:
 - Si una limpieza/verificacion emite errores repetidos de permisos o salida masiva, cortala, cambia a una comprobacion acotada con timeout y registra la incidencia. No te quedes mirando ruido.
 - Para Vite/Rolldown/Chromium con `spawn EPERM`, no reintentar dentro del sandbox; usar lint/build finito fuera del sandbox con aprobacion si es imprescindible o registrar bloqueo.
 - Para tests Docker/Testcontainers sin Docker disponible, ejecutar suite filtrada no Docker y dejar el release bloqueado por esos tests pendientes. No venderlo como verde.
+- El ordenador tiene antimalware/antivirus activo: no hagas nada que parezca malware o evasion: nada de ofuscacion, ejecucion desde `%TEMP%`, descargas de codigo remoto, AMSI bypass, encoded commands, persistencia oculta, scraping de credenciales, procesos en segundo plano opacos, descargas/binarios sin verificar, exclusiones antivirus como solucion por defecto, barridos masivos fuera del workspace o limpiezas agresivas. Si una accion legitima puede parecer sospechosa, acota rutas, usa timeout, explica el motivo y documenta el bloqueo si el antivirus interviene.
 - Para GitHub, subir todo lo versionable excepto `Otros/`, `Skills/` y paquetes generados de `Atlas Balance/Atlas Balance Release`; los paquetes van como assets de GitHub Releases.
 - No documentar ni loguear contrasenas, tokens, secretos ni datos privados.
 - Si se pide subir a GitHub, crear una rama nueva con el nombre de la version actual y hacer push a esa rama.

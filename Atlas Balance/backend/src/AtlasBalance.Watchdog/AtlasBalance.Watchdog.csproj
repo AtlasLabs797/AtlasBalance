@@ -22,4 +22,17 @@
     <Content Update="appsettings.Production.json.template" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- V-02-04: la ACL de bin/obj bloquea la build desde MSBuild cuando se mezclan
+         salidas Release antiguas. Excluirlos evita que se recojan como codigo. -->
+    <Compile Remove="bin/**" />
+    <Content Remove="bin/**" />
+    <EmbeddedResource Remove="bin/**" />
+    <None Remove="bin/**" />
+    <Compile Remove="obj/**" />
+    <Content Remove="obj/**" />
+    <EmbeddedResource Remove="obj/**" />
+    <None Remove="obj/**" />
+  </ItemGroup>
+
 </Project>

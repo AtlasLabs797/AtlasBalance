@@ -28,6 +28,7 @@ Atlas Balance/backend/src/AtlasBalance.API/wwwroot/logos/
 
 # Frontend
 Atlas Balance/frontend/node_modules/
+Atlas Balance/frontend/node_modules.blocked-*/
 Atlas Balance/frontend/dist/
 
 # IDE
@@ -46,6 +47,7 @@ logs/
 # Temporary files
 .claude/
 artifacts/
+qa-artifacts/
 .codex-verify/
 .codex-logs/
 .codex-runlogs/
@@ -53,6 +55,8 @@ artifacts/
 output/
 .tmp*/
 tmp*
+*.bak
+*.bak_*
 test-results/
 backend_log.txt
 Atlas Balance/backend/src/AtlasBalance.Watchdog/watchdog-state.json

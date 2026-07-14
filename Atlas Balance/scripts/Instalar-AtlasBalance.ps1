@@ -2,6 +2,11 @@ param(
     [string]$InstallPath = "C:\AtlasBalance",
     [string]$ServerName = $env:COMPUTERNAME,
     [int]$ApiPort = 443,
+    [switch]$UseReverseProxy,
+    [string]$PublicHost = "",
+    [int]$PublicPort = 443,
+    [int]$InternalApiPort = 5000,
+    [string]$ReverseProxyIp = "127.0.0.1",
     [int]$WatchdogPort = 5001,
     [string]$DbHost = "localhost",
     [int]$DbPort = 5432,
@@ -24,7 +29,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-01.09"
+$AppVersion = "V-02-03"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
@@ -86,6 +91,23 @@ function New-RandomSecret {
         $chars[$i] = $alphabet[$bytes[$i] % $alphabet.Length]
     }
     return -join $chars
+}
+
+function Test-HostValue {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    return $Value -notmatch '[:/\\\s*]'
+}
+
+function Test-IpValue {
+    param([string]$Value)
+
+    $address = $null
+    return [Net.IPAddress]::TryParse($Value, [ref]$address)
 }
 
 function Protect-SecretDirectory {
@@ -198,6 +220,7 @@ function Write-PostgresManualInstallHint {
     Write-Host "En Windows Server 2019 instala PostgreSQL 16+ manualmente. PostgreSQL 17 es valido." -ForegroundColor Yellow
     Write-Host "Despues relanza el instalador indicando, por ejemplo:" -ForegroundColor Yellow
     Write-Host '.\install.cmd -InstallPath C:\AtlasBalance -ServerName NOMBRE_SERVIDOR -ApiPort 443 -PostgresAdminPassword <password> -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"' -ForegroundColor Cyan
+    Write-Host 'Para dominio publico detras de proxy: .\install.cmd -InstallPath C:\AtlasBalance -UseReverseProxy -PublicHost balance.ejemplo.com -InternalApiPort 5000 -PostgresAdminPassword <password> -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"' -ForegroundColor Cyan
     Write-Host "No pegues passwords reales en chats, tickets ni documentacion." -ForegroundColor Yellow
     Write-Host ""
 }
@@ -445,6 +468,10 @@ function New-AtlasCertificate {
 
     $dnsNames = @($DnsName, "localhost", $env:COMPUTERNAME) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
     $securePassword = ConvertTo-SecureString $Password -AsPlainText -Force
+    # V-02-05 (CONFIG-006): avisar al operador que el cert es self-signed.
+    # Para produccion, distribuir el .cer y NO marcar "confiar en todos"
+    # en los navegadores. Si tienen CA interna, pasar -CertPath y -CertPassword.
+    Write-Warning "CONFIG-006: generando certificado self-signed. Para produccion real, use su CA interna (parametros -CertPath / -CertPassword)."
     $cert = New-SelfSignedCertificate `
         -DnsName $dnsNames `
         -CertStoreLocation "Cert:\LocalMachine\My" `
@@ -481,9 +508,29 @@ function Write-AppSettings {
     $exportPath = Join-Path $InstallPath "exports"
     $apiTarget = Join-Path $InstallPath "api"
     $dataProtectionKeysPath = Join-Path $env:ProgramData "AtlasBalance\keys"
-    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword"
-    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword"
-    $url = "https://0.0.0.0:$ApiPort"
+    # V-02-05 (CONFIG-002): anadir sslmode=require a la connection string cuando el
+    # host NO es localhost. Para localhost (caso comun) el SSL es opcional.
+    $sslMode = if ($DbHost -eq "localhost" -or $DbHost -eq "127.0.0.1") { "" } else { ";sslmode=require" }
+    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword$sslMode"
+    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword$sslMode"
+    $forwardedKnownProxies = if ($UseReverseProxy) { @($ReverseProxyIp) } else { @() }
+    $allowedHosts = if ($UseReverseProxy) {
+        "$effectivePublicHost;$ServerName;localhost"
+    } else {
+        "$ServerName;localhost"
+    }
+    $kestrelEndpointName = if ($UseReverseProxy) { "Http" } else { "Https" }
+    $kestrelEndpoint = [ordered]@{
+        Url = $internalApiUrl
+    }
+    if (-not $UseReverseProxy) {
+        $kestrelEndpoint.Certificate = [ordered]@{
+            Path = $CertPath
+            Password = $CertPassword
+        }
+    }
+    $kestrelEndpoints = [ordered]@{}
+    $kestrelEndpoints[$kestrelEndpointName] = $kestrelEndpoint
 
     $seedAdminPassword = if ($ExistingUsersDetected) { "" } else { $AdminPassword }
 
@@ -501,6 +548,16 @@ function Write-AppSettings {
             Email = $AdminEmail
             Password = $seedAdminPassword
         }
+        App = [ordered]@{
+            BaseUrl = $appUrl
+        }
+        Security = [ordered]@{
+            RequireMfaForWebUsers = $true
+        }
+        ForwardedHeaders = [ordered]@{
+            KnownProxies = $forwardedKnownProxies
+            KnownNetworks = @()
+        }
         Ia = [ordered]@{
             UseSystemProxy = $false
             ProxyUrl = ""
@@ -517,7 +574,7 @@ function Write-AppSettings {
             UpdateTargetPath = $apiTarget
             RequireDatabaseBackupBeforeUpdate = $true
             RequireHealthCheckAfterUpdate = $true
-            ApiHealthUrl = if ($ApiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$ApiPort/api/health" }
+            ApiHealthUrl = $healthUrl
         }
         GitHubSettings = [ordered]@{
             UpdateToken = ""
@@ -529,15 +586,7 @@ function Write-AppSettings {
             KeysPath = $dataProtectionKeysPath
         }
         Kestrel = [ordered]@{
-            Endpoints = [ordered]@{
-                Https = [ordered]@{
-                    Url = $url
-                    Certificate = [ordered]@{
-                        Path = $CertPath
-                        Password = $CertPassword
-                    }
-                }
-            }
+            Endpoints = $kestrelEndpoints
         }
         Serilog = [ordered]@{
             MinimumLevel = [ordered]@{
@@ -549,7 +598,7 @@ function Write-AppSettings {
                 }
             }
         }
-        AllowedHosts = "$ServerName;localhost"
+        AllowedHosts = $allowedHosts
     }
 
     $watchdogConfig = [ordered]@{
@@ -710,6 +759,11 @@ function Write-RuntimeAndCredentials {
     $runtime = [ordered]@{
         Version = $AppVersion
         AppUrl = $AppUrl
+        UseReverseProxy = [bool]$UseReverseProxy
+        PublicHost = $effectivePublicHost
+        PublicPort = $PublicPort
+        ApiPort = $ApiPort
+        InternalApiPort = $InternalApiPort
         ApiServiceName = $ApiServiceName
         WatchdogServiceName = $WatchdogServiceName
         PostgresServiceName = if ($ManagedPostgres) { $PostgresServiceName } else { "" }
@@ -768,8 +822,23 @@ function Write-RuntimeAndCredentials {
             $lines[7..($lines.Count - 1)]
         ) | ForEach-Object { $_ }
     }
-    Write-SecretFile -Path $credentialsPath -Lines $lines
-    Register-CredentialsCleanupTask -CredentialsPath $credentialsPath
+    # V-02-05 (MED-26): mostrar credenciales en pantalla en lugar de escribirlas
+    # a un archivo. El operador debe capturarlas en su gestor de secretos.
+    # El archivo INSTALL_CREDENTIALS_ONCE.txt sigue existiendo como path para
+    # la tarea de limpieza (que se registra pero no tiene archivo que limpiar).
+    Write-Host ""
+    Write-Host "=============================================" -ForegroundColor Yellow
+    Write-Host "CREDENCIALES INICIALES (captura esto en tu gestor de passwords)" -ForegroundColor Yellow
+    Write-Host "=============================================" -ForegroundColor Yellow
+    foreach ($line in $lines) {
+        Write-Host $line
+    }
+    Write-Host "=============================================" -ForegroundColor Yellow
+    Write-Host ""
+    # Mantenemos el task de limpieza por compatibilidad, pero no escribimos archivo.
+    if (Test-Path -LiteralPath $credentialsPath) {
+        Remove-Item -LiteralPath $credentialsPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $packageRoot = Split-Path -Parent $PSScriptRoot
@@ -783,6 +852,27 @@ if (-not (Test-Path (Join-Path $apiSource "AtlasBalance.API.exe")) -or
 
 if (-not (Test-IsAdmin)) {
     throw "Ejecuta este instalador como Administrador."
+}
+
+$effectivePublicHost = if ([string]::IsNullOrWhiteSpace($PublicHost)) { $ServerName.Trim() } else { $PublicHost.Trim() }
+if (-not (Test-HostValue $ServerName)) {
+    throw "ServerName debe ser un hostname sin esquema, puerto, rutas ni comodines."
+}
+if (-not (Test-HostValue $effectivePublicHost)) {
+    throw "PublicHost debe ser un dominio/hostname sin esquema, puerto, rutas ni comodines. Usa balance.ejemplo.com, no https://balance.ejemplo.com."
+}
+if ($UseReverseProxy -and -not (Test-IpValue $ReverseProxyIp)) {
+    throw "ReverseProxyIp debe ser una IP valida del proxy inverso, por ejemplo 127.0.0.1."
+}
+if ($UseReverseProxy -and $InternalApiPort -eq $PublicPort) {
+    throw "InternalApiPort y PublicPort no deben ser el mismo puerto en modo reverse proxy."
+}
+$internalApiUrl = if ($UseReverseProxy) { "http://127.0.0.1:$InternalApiPort" } else { "https://0.0.0.0:$ApiPort" }
+$healthUrl = if ($UseReverseProxy) { "http://localhost:$InternalApiPort/api/health" } elseif ($ApiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$ApiPort/api/health" }
+$appUrl = if ($UseReverseProxy) {
+    if ($PublicPort -eq 443) { "https://$effectivePublicHost" } else { "https://$effectivePublicHost`:$PublicPort" }
+} else {
+    if ($ApiPort -eq 443) { "https://$ServerName" } else { "https://$ServerName`:$ApiPort" }
 }
 
 if ([string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = New-RandomSecret 40 }
@@ -845,15 +935,21 @@ Sync-DirectoryPreserveConfig -Source $watchdogSource -Target $watchdogPath
 Copy-Item -LiteralPath (Join-Path $packageRoot "Atlas Balance.cmd") -Destination (Join-Path $InstallPath "Atlas Balance.cmd") -Force
 Copy-Item -LiteralPath (Join-Path $packageRoot "scripts\Launch-AtlasBalance.ps1") -Destination (Join-Path $InstallPath "scripts\Launch-AtlasBalance.ps1") -Force
 
-$cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
-Protect-SecretDirectory -Path (Join-Path $InstallPath "certs")
-Protect-SecretFile -Path $cert.Path
+$certPath = ""
+$effectiveCertPassword = ""
+if (-not $UseReverseProxy) {
+    $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
+    Protect-SecretDirectory -Path (Join-Path $InstallPath "certs")
+    Protect-SecretFile -Path $cert.Path
+    $certPath = $cert.Path
+    $effectiveCertPassword = $cert.Password
+}
 Write-AppSettings `
     -ApiPath $apiPath `
     -WatchdogPath $watchdogPath `
     -PostgresBin $PostgresBinPath `
-    -CertPath $cert.Path `
-    -CertPassword $cert.Password `
+    -CertPath $certPath `
+    -CertPassword $effectiveCertPassword `
     -JwtSecret $jwtSecret `
     -WatchdogSecret $watchdogSecret
 
@@ -862,15 +958,22 @@ $watchdogExe = Join-Path $watchdogPath "AtlasBalance.Watchdog.exe"
 Install-OrReplaceService -Name $WatchdogServiceName -DisplayName "Atlas Balance - Watchdog" -Description "Backups y actualizaciones de Atlas Balance" -ExePath $watchdogExe
 Install-OrReplaceService -Name $ApiServiceName -DisplayName "Atlas Balance - API" -Description "API y frontend de Atlas Balance" -ExePath $apiExe
 
-$firewallName = "Atlas Balance HTTPS $ApiPort"
+$firewallPort = if ($UseReverseProxy) { $PublicPort } else { $ApiPort }
+$firewallName = if ($UseReverseProxy) { "Atlas Balance Public HTTPS $PublicPort" } else { "Atlas Balance HTTPS $ApiPort" }
+# V-02-05 (CONFIG-001): por defecto, restringir el firewall al rango de la LAN
+# local. Si el operador quiere exponer a internet, debe pasar -AllowInternet 1
+# explicitamente.
+$firewallRemoteAddress = if ($AllowInternet) { "Any" } else { "LocalSubnet" }
 if (-not (Get-NetFirewallRule -DisplayName $firewallName -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName $firewallName -Direction Inbound -Protocol TCP -LocalPort $ApiPort -Action Allow | Out-Null
+    if ($AllowInternet) {
+        Write-Warning "CONFIG-001: abriendo firewall a internet. Esto es INSEGURO salvo que haya un WAF/reverse proxy externo."
+    }
+    New-NetFirewallRule -DisplayName $firewallName -Direction Inbound -Protocol TCP -LocalPort $firewallPort -RemoteAddress $firewallRemoteAddress -Action Allow | Out-Null
 }
 
 Start-Service -Name $WatchdogServiceName
 Start-Service -Name $ApiServiceName
 
-$appUrl = if ($ApiPort -eq 443) { "https://$ServerName" } else { "https://$ServerName`:$ApiPort" }
 Write-RuntimeAndCredentials -AppUrl $appUrl
 
 $logoPng = Join-Path $apiPath "wwwroot\logos\Atlas Balance.png"
@@ -888,7 +991,7 @@ foreach ($shortcutRoot in $shortcutTargets) {
     New-AtlasShortcut -ShortcutPath $shortcutPath -TargetPath (Join-Path $InstallPath "Atlas Balance.cmd") -IconPath $iconPath -WorkingDirectory $InstallPath
 }
 
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+# V-02-05 (CONFIG-020): usar -SkipCertificateCheck en lugar de tocar el callback global.
 Start-Sleep -Seconds 5
 try {
     $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue

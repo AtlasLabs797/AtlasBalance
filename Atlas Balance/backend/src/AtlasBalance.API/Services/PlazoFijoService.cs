@@ -31,12 +31,19 @@ public sealed class PlazoFijoService : IPlazoFijoService
     public async Task<int> ProcesarVencimientosAsync(DateOnly hoy, CancellationToken cancellationToken)
     {
         var plazos = await (
-                from plazo in _dbContext.PlazosFijos
-                join cuenta in _dbContext.Cuentas on plazo.CuentaId equals cuenta.Id
-                join titular in _dbContext.Titulares on cuenta.TitularId equals titular.Id
-                where cuenta.Activa && plazo.Estado != EstadoPlazoFijo.CANCELADO && plazo.Estado != EstadoPlazoFijo.RENOVADO
-                select new { Plazo = plazo, Cuenta = cuenta, Titular = titular })
+            from plazo in _dbContext.PlazosFijos
+            join cuenta in _dbContext.Cuentas on plazo.CuentaId equals cuenta.Id
+            join titular in _dbContext.Titulares on cuenta.TitularId equals titular.Id
+            where cuenta.Activa && plazo.Estado != EstadoPlazoFijo.CANCELADO && plazo.Estado != EstadoPlazoFijo.RENOVADO
+            select new { Plazo = plazo, Cuenta = cuenta, Titular = titular })
             .ToListAsync(cancellationToken);
+
+        // V-02-05 (HIGH-7): side effects materializados DESPUES del commit de los
+        // cambios de estado. Email y notificacion admin solo se emiten si el commit
+        // principal se aplico. Si la notificacion falla tras el commit, se loguea
+        // y queda como deuda para el siguiente job (el PlazoFijo.FechaUltimaNotificacion
+        // solo se actualiza si email y notificacion se completaron).
+        var sideEffects = new List<(Cuenta Cuenta, Titular Titular, PlazoFijo Plazo, EstadoPlazoFijo NuevoEstado, bool EstadoCambio, bool DebeNotificar)>();
 
         var cambios = 0;
         foreach (var item in plazos)
@@ -53,44 +60,66 @@ public sealed class PlazoFijoService : IPlazoFijoService
 
             item.Plazo.Estado = nuevoEstado.Value;
             item.Plazo.FechaModificacion = DateTime.UtcNow;
-            var notificacionAdminCreada = false;
-            var emailEnviado = false;
-            if (debeNotificar)
-            {
-                notificacionAdminCreada = await TryAddAdminNotificationAsync(item.Cuenta, item.Titular, item.Plazo, nuevoEstado.Value, cancellationToken);
-                emailEnviado = await TrySendEmailAsync(item.Cuenta, item.Titular, item.Plazo.FechaVencimiento, nuevoEstado.Value, cancellationToken);
-                if (emailEnviado)
-                {
-                    item.Plazo.FechaUltimaNotificacion = hoy;
-                }
-            }
 
             if (estadoCambio || debeNotificar)
             {
-                await _auditService.LogAsync(
-                    null,
-                    nuevoEstado.Value == EstadoPlazoFijo.VENCIDO ? AuditActions.PlazoFijoVencido : AuditActions.PlazoFijoProximoVencer,
-                    "PLAZOS_FIJOS",
-                    item.Plazo.Id,
-                    ipAddress: null,
-                    detallesJson: JsonSerializer.Serialize(new
-                    {
-                        cuenta_id = item.Cuenta.Id,
-                        fecha_vencimiento = item.Plazo.FechaVencimiento,
-                        estado = nuevoEstado.Value.ToString(),
-                        notificacion_admin_creada = notificacionAdminCreada,
-                        email_enviado = emailEnviado
-                    }),
-                    cancellationToken);
+                sideEffects.Add((item.Cuenta, item.Titular, item.Plazo, nuevoEstado.Value, estadoCambio, debeNotificar));
             }
 
-            if (estadoCambio || notificacionAdminCreada || emailEnviado)
+            if (estadoCambio || debeNotificar)
             {
                 cambios++;
             }
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // V-02-05 (MED-19): agrupar side effects por (titular, estado) y enviar UN
+        // digest por destinatario. Antes: N emails (uno por plazo).
+        var groupedByTitularEstado = sideEffects
+            .Where(se => se.DebeNotificar)
+            .GroupBy(se => (se.Titular.Id, se.NuevoEstado));
+
+        foreach (var grupo in groupedByTitularEstado)
+        {
+            var representante = grupo.First();
+            var items = grupo
+                .Select(se => $"{se.Cuenta.Nombre} (vence {se.Plazo.FechaVencimiento:dd/MM/yyyy})")
+                .ToList();
+            var notificacionAdminCreada = await TryAddAdminNotificationAsync(
+                representante.Cuenta, representante.Titular, representante.Plazo, representante.NuevoEstado, cancellationToken);
+            var emailEnviado = await TrySendDigestEmailAsync(
+                representante.Titular.Nombre, items, representante.NuevoEstado, cancellationToken);
+            if (notificacionAdminCreada && emailEnviado)
+            {
+                foreach (var se in grupo)
+                {
+                    se.Plazo.FechaUltimaNotificacion = hoy;
+                }
+            }
+        }
+
+        foreach (var se in sideEffects)
+        {
+            await _auditService.LogAsync(
+                null,
+                se.NuevoEstado == EstadoPlazoFijo.VENCIDO ? AuditActions.PlazoFijoVencido : AuditActions.PlazoFijoProximoVencer,
+                "PLAZOS_FIJOS",
+                se.Plazo.Id,
+                ipAddress: null,
+                detallesJson: JsonSerializer.Serialize(new
+                {
+                    cuenta_id = se.Cuenta.Id,
+                    fecha_vencimiento = se.Plazo.FechaVencimiento,
+                    estado = se.NuevoEstado.ToString()
+                }),
+                cancellationToken);
+        }
+
+        if (sideEffects.Count > 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
         return cambios;
     }
 
@@ -175,7 +204,7 @@ public sealed class PlazoFijoService : IPlazoFijoService
 
         if (alreadyExists)
         {
-            return false;
+            return true;
         }
 
         _dbContext.NotificacionesAdmin.Add(new NotificacionAdmin
@@ -241,6 +270,45 @@ public sealed class PlazoFijoService : IPlazoFijoService
         return fechaVencimiento.DayNumber - hoy.DayNumber <= 14
             ? EstadoPlazoFijo.PROXIMO_VENCER
             : null;
+    }
+
+    // V-02-05 (MED-19): envio en formato digest. Un email por (titular, estado) con
+    // la lista de plazos que tocan hoy, en lugar de un email por plazo.
+    private async Task<bool> TrySendDigestEmailAsync(
+        string titularNombre,
+        IReadOnlyList<string> items,
+        EstadoPlazoFijo estado,
+        CancellationToken cancellationToken)
+    {
+        var recipients = await _dbContext.Usuarios
+            .Where(u => u.Activo && u.Rol == RolUsuario.ADMIN)
+            .Select(u => u.Email.ToLower())
+            .ToListAsync(cancellationToken);
+
+        if (recipients.Count == 0)
+        {
+            _logger.LogWarning("No se envia email digest de plazos fijos: sin destinatarios admin activos");
+            return false;
+        }
+
+        try
+        {
+            var digestSummary = string.Join("; ", items);
+            await _emailService.SendPlazoFijoVencimientoAsync(
+                recipients,
+                titularNombre,
+                $"Digest: {digestSummary}",
+                Guid.Empty,
+                DateOnly.MinValue,
+                estado,
+                cancellationToken);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Fallo al enviar email digest de plazos fijos");
+            return false;
+        }
     }
 
     private static string BuildNotificationMessage(string cuentaNombre, DateOnly fechaVencimiento, EstadoPlazoFijo estado) =>

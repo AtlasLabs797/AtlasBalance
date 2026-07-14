@@ -5,7 +5,8 @@
 
 param(
     [string]$InstallPath = "C:\AtlasBalance",
-    [string]$ApiPort = "443"
+    [string]$ApiPort = "443",
+    [string]$ServiceAccount = "AtlasBalanceSvc"
 )
 
 Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
@@ -55,16 +56,52 @@ if ($apiService) {
     Start-Sleep -Seconds 2
 }
 
+# V-02-05 (CONFIG-019): crear cuenta de servicio de bajo privilegio si no existe.
+# LocalService es mas restrictivo que LocalSystem y suficiente para la app
+# (no necesita acceso a HKLM fuera de su path, ni a otros servicios).
+$serviceAccountExists = Get-LocalUser -Name $ServiceAccount -ErrorAction SilentlyContinue
+if (-not $serviceAccountExists) {
+    Write-Host "Creando cuenta de servicio de bajo privilegio: $ServiceAccount" -ForegroundColor Yellow
+    $securePassword = ConvertTo-SecureString -String ([Guid]::NewGuid().ToString() + [Guid]::NewGuid().ToString().Substring(0, 8)) -AsPlainText -Force
+    New-LocalUser -Name $ServiceAccount `
+        -Password $securePassword `
+        -PasswordNeverExpires `
+        -UserMayNotChangePassword `
+        -AccountNeverExpires `
+        -Description "Cuenta de servicio para Atlas Balance (bajo privilegio)" `
+        -ErrorAction Stop
+    # Permitir logon como servicio. Requiere secedit / export.
+    Write-Host "Cuenta $ServiceAccount creada. Configure 'Logon as a service' manualmente si es necesario." -ForegroundColor Yellow
+}
+
+# ACLs: el servicio solo necesita lectura/escritura en su install path.
+$serviceAccountObj = "$env:COMPUTERNAME\$ServiceAccount"
+$installPathAcl = Get-Acl $InstallPath
+$readRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $serviceAccountObj, "Read,Write,Modify,Delete,Synchronize", "ContainerInherit,ObjectInherit", "None", "Allow")
+$installPathAcl.AddAccessRule($readRule)
+try {
+    Set-Acl -Path $InstallPath -AclObject $installPathAcl -ErrorAction SilentlyContinue
+} catch {
+    Write-Warning "No se pudieron aplicar ACLs sobre $InstallPath. Revisar manualmente."
+}
+
+# Instalar el servicio. New-Service sin -Credential usa LocalSystem por defecto.
 New-Service -Name $apiServiceName `
     -BinaryPathName ('"' + $apiExe + '"') `
     -DisplayName "Atlas Balance - API" `
     -Description "API REST y frontend para Atlas Balance" `
     -StartupType Automatic
 
-# Configure auto-restart on failure
+# Configurar auto-restart on failure
 sc.exe failure $apiServiceName reset=86400 actions=restart/10000/restart/30000/restart/60000
 
-Write-Host "$apiServiceName instalado" -ForegroundColor Green
+Write-Host "$apiServiceName instalado (cuenta: $serviceAccountObj si configuro 'Logon as a service')" -ForegroundColor Green
+
+Write-Host "" -ForegroundColor Yellow
+Write-Host "IMPORTANTE: para que la cuenta de bajo privilegio funcione, configure:" -ForegroundColor Yellow
+Write-Host "  secpol.msc -> Local Policies -> User Rights Assignment -> Log on as a service" -ForegroundColor Yellow
+Write-Host "  Agregue el usuario $ServiceAccount si no aparece." -ForegroundColor Yellow
 
 # ── Install Watchdog Service ──
 Write-Host "`nInstalando $watchdogServiceName..." -ForegroundColor Yellow

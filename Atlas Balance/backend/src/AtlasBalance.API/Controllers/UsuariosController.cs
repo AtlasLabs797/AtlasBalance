@@ -33,21 +33,31 @@ public sealed class UsuariosController : ControllerBase
             .Select(t => new { id = t.Id, nombre = t.Nombre })
             .ToListAsync(cancellationToken);
 
+        var paises = await _dbContext.Paises
+            .Where(p => p.Activo)
+            .OrderBy(p => p.Nombre)
+            .Select(p => new { id = p.Id, nombre = p.Nombre, codigo_iso2 = p.CodigoIso2 })
+            .ToListAsync(cancellationToken);
+
         var cuentas = await (
             from c in _dbContext.Cuentas
             join t in _dbContext.Titulares on c.TitularId equals t.Id into titularesJoin
             from titular in titularesJoin.DefaultIfEmpty()
+            join p in _dbContext.Paises on c.PaisId equals p.Id into paisesJoin
+            from pais in paisesJoin.DefaultIfEmpty()
             orderby c.Nombre
             select new
             {
                 id = c.Id,
                 nombre = c.Nombre,
                 titular_id = c.TitularId,
-                titular_nombre = titular != null ? titular.Nombre : null
+                titular_nombre = titular != null ? titular.Nombre : null,
+                pais_id = c.PaisId,
+                pais_nombre = pais != null ? pais.Nombre : null
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(new { titulares, cuentas });
+        return Ok(new { titulares, cuentas, paises });
     }
 
     [HttpGet]
@@ -173,6 +183,12 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = validation.Error });
         }
 
+        var roleValidation = ValidateRolePermissions(usuario.Rol, permisos);
+        if (!roleValidation.Ok)
+        {
+            return BadRequest(new { error = roleValidation.Error });
+        }
+
         var before = await LoadPermisosAuditSnapshotAsync(id, cancellationToken);
         await UpsertPermisosAsync(id, permisos, cancellationToken);
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
@@ -202,13 +218,16 @@ public sealed class UsuariosController : ControllerBase
         var permiso = await _dbContext.PermisosUsuario
             .Where(x => x.UsuarioId == id && x.CuentaId == cuentaId)
             .FirstOrDefaultAsync(cancellationToken);
+        if (permiso is null)
+        {
+            return NotFound(new { error = "Permiso no encontrado para la cuenta indicada" });
+        }
+
         var preferencia = await _dbContext.PreferenciasUsuarioCuenta
-            .Where(x => x.UsuarioId == id && x.CuentaId == cuentaId)
+            .Where(x => x.UsuarioId == id && x.PaisId == permiso.PaisId && x.TitularId == permiso.TitularId && x.CuentaId == permiso.CuentaId)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return permiso is null
-            ? NotFound(new { error = "Permiso no encontrado para la cuenta indicada" })
-            : Ok(MapPermiso(permiso, preferencia));
+        return Ok(MapPermiso(permiso, preferencia));
     }
 
     [HttpPut("{id:guid}/permisos/cuenta/{cuentaId:guid}")]
@@ -224,12 +243,17 @@ public sealed class UsuariosController : ControllerBase
         {
             CuentaId = cuentaId,
             TitularId = request.TitularId,
+            PaisId = request.PaisId,
             PuedeVerCuentas = request.PuedeVerCuentas,
             PuedeAgregarLineas = request.PuedeAgregarLineas,
             PuedeEditarLineas = request.PuedeEditarLineas,
             PuedeEliminarLineas = request.PuedeEliminarLineas,
             PuedeImportar = request.PuedeImportar,
             PuedeVerDashboard = request.PuedeVerDashboard,
+            PuedeRevisarLineas = request.PuedeRevisarLineas,
+            PuedeAprobarImportaciones = request.PuedeAprobarImportaciones,
+            PuedeConciliar = request.PuedeConciliar,
+            PuedeCerrarConciliacion = request.PuedeCerrarConciliacion,
             ColumnasVisibles = request.ColumnasVisibles,
             ColumnasEditables = request.ColumnasEditables
         };
@@ -248,14 +272,11 @@ public sealed class UsuariosController : ControllerBase
         _dbContext.PermisosUsuario.RemoveRange(existing);
         var existingPreference = await _dbContext.PreferenciasUsuarioCuenta
             .Where(x => x.UsuarioId == id && x.CuentaId == cuentaId)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (existingPreference is not null)
-        {
-            _dbContext.PreferenciasUsuarioCuenta.Remove(existingPreference);
-        }
+            .ToListAsync(cancellationToken);
+        _dbContext.PreferenciasUsuarioCuenta.RemoveRange(existingPreference);
 
         await AddPermisoAsync(id, normalizedRequest);
-        AddPreferencia(id, normalizedRequest.CuentaId, normalizedRequest.ColumnasVisibles, normalizedRequest.ColumnasEditables);
+        AddPreferencia(id, normalizedRequest.PaisId, normalizedRequest.TitularId, normalizedRequest.CuentaId, normalizedRequest.ColumnasVisibles, normalizedRequest.ColumnasEditables);
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -412,6 +433,12 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = validation.Error });
         }
 
+        var roleValidation = ValidateRolePermissions(request.Rol, request.Permisos);
+        if (!roleValidation.Ok)
+        {
+            return BadRequest(new { error = roleValidation.Error });
+        }
+
         var usuario = new Usuario
         {
             Id = Guid.NewGuid(),
@@ -483,6 +510,12 @@ public sealed class UsuariosController : ControllerBase
         if (!validation.Ok)
         {
             return BadRequest(new { error = validation.Error });
+        }
+
+        var roleValidation = ValidateRolePermissions(request.Rol, request.Permisos);
+        if (!roleValidation.Ok)
+        {
+            return BadRequest(new { error = roleValidation.Error });
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
@@ -712,6 +745,13 @@ public sealed class UsuariosController : ControllerBase
         usuario.MfaEnabledAt = null;
         usuario.MfaLastAcceptedStep = null;
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, revokedAt, cancellationToken);
+        var trustedDevices = await _dbContext.MfaTrustedDevices
+            .Where(x => x.UsuarioId == usuario.Id && x.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var trustedDevice in trustedDevices)
+        {
+            trustedDevice.RevokedAt = revokedAt;
+        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -729,7 +769,7 @@ public sealed class UsuariosController : ControllerBase
             "USUARIOS",
             usuario.Id,
             HttpContext,
-            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }),
+            JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens, dispositivos_mfa_revocados = trustedDevices.Count }),
             cancellationToken);
 
         return Ok(new { message = "Authenticator revocado. El usuario tendra que configurarlo de nuevo en el proximo acceso." });
@@ -743,7 +783,7 @@ public sealed class UsuariosController : ControllerBase
             {
                 var cuenta = await _dbContext.Cuentas
                     .Where(c => c.Id == permiso.CuentaId.Value)
-                    .Select(c => new { c.Id, c.TitularId })
+                    .Select(c => new { c.Id, c.TitularId, c.PaisId })
                     .FirstOrDefaultAsync(cancellationToken);
                 if (cuenta is null)
                 {
@@ -753,6 +793,11 @@ public sealed class UsuariosController : ControllerBase
                 if (permiso.TitularId.HasValue && cuenta.TitularId != permiso.TitularId.Value)
                 {
                     return (false, "La cuenta indicada no pertenece al titular seleccionado");
+                }
+
+                if (permiso.PaisId.HasValue && cuenta.PaisId != permiso.PaisId.Value)
+                {
+                    return (false, "La cuenta indicada no pertenece al país seleccionado");
                 }
             }
 
@@ -764,10 +809,42 @@ public sealed class UsuariosController : ControllerBase
                     return (false, $"Titular inválido: {permiso.TitularId}");
                 }
             }
+
+            if (permiso.PaisId.HasValue)
+            {
+                var exists = await _dbContext.Paises.AnyAsync(p => p.Id == permiso.PaisId.Value && p.Activo, cancellationToken);
+                if (!exists)
+                {
+                    return (false, $"País inválido: {permiso.PaisId}");
+                }
+            }
         }
 
         return (true, null);
     }
+
+    private static (bool Ok, string? Error) ValidateRolePermissions(RolUsuario rol, IReadOnlyList<SavePermisoUsuarioRequest> permisos)
+    {
+        if (rol != RolUsuario.GERENTE)
+        {
+            return (true, null);
+        }
+
+        return permisos.Any(GrantsAccountDataAccess)
+            ? (true, null)
+            : (false, "Un gerente necesita al menos un permiso de datos: global, por país, titular o cuenta.");
+    }
+
+    private static bool GrantsAccountDataAccess(SavePermisoUsuarioRequest permiso) =>
+        permiso.PuedeVerCuentas ||
+        permiso.PuedeAgregarLineas ||
+        permiso.PuedeEditarLineas ||
+        permiso.PuedeEliminarLineas ||
+        permiso.PuedeImportar ||
+        permiso.PuedeRevisarLineas ||
+        permiso.PuedeAprobarImportaciones ||
+        permiso.PuedeConciliar ||
+        permiso.PuedeCerrarConciliacion;
 
     private async Task<bool> UsuarioExisteAsync(Guid id, bool includeDeleted, CancellationToken cancellationToken)
     {
@@ -830,7 +907,8 @@ public sealed class UsuariosController : ControllerBase
     {
         var permisos = await _dbContext.PermisosUsuario
             .Where(x => x.UsuarioId == usuarioId)
-            .OrderBy(x => x.TitularId)
+            .OrderBy(x => x.PaisId)
+            .ThenBy(x => x.TitularId)
             .ThenBy(x => x.CuentaId)
             .ToListAsync(cancellationToken);
         var preferencias = await _dbContext.PreferenciasUsuarioCuenta
@@ -839,7 +917,7 @@ public sealed class UsuariosController : ControllerBase
 
         return permisos.Select(permiso =>
         {
-            var preferencia = preferencias.FirstOrDefault(pref => pref.CuentaId == permiso.CuentaId);
+            var preferencia = preferencias.FirstOrDefault(pref => SameScope(pref, permiso));
             return MapPermiso(permiso, preferencia);
         }).ToList();
     }
@@ -848,7 +926,8 @@ public sealed class UsuariosController : ControllerBase
     {
         var permisos = await _dbContext.PermisosUsuario
             .Where(x => x.UsuarioId == usuarioId)
-            .OrderBy(x => x.TitularId)
+            .OrderBy(x => x.PaisId)
+            .ThenBy(x => x.TitularId)
             .ThenBy(x => x.CuentaId)
             .ToListAsync(cancellationToken);
         var preferencias = await _dbContext.PreferenciasUsuarioCuenta
@@ -857,17 +936,22 @@ public sealed class UsuariosController : ControllerBase
 
         var snapshot = permisos.Select(permiso =>
         {
-            var preferencia = preferencias.FirstOrDefault(pref => pref.CuentaId == permiso.CuentaId);
+            var preferencia = preferencias.FirstOrDefault(pref => SameScope(pref, permiso));
             return new
             {
                 permiso.CuentaId,
                 permiso.TitularId,
+                permiso.PaisId,
                 permiso.PuedeVerCuentas,
                 permiso.PuedeAgregarLineas,
                 permiso.PuedeEditarLineas,
                 permiso.PuedeEliminarLineas,
                 permiso.PuedeImportar,
                 permiso.PuedeVerDashboard,
+                permiso.PuedeRevisarLineas,
+                permiso.PuedeAprobarImportaciones,
+                permiso.PuedeConciliar,
+                permiso.PuedeCerrarConciliacion,
                 ColumnasVisibles = preferencia?.ColumnasVisibles,
                 ColumnasEditables = preferencia?.ColumnasEditables
             };
@@ -918,10 +1002,10 @@ public sealed class UsuariosController : ControllerBase
 
         foreach (var item in permisos
                      .Where(x => x.ColumnasVisibles is not null || x.ColumnasEditables is not null)
-                     .GroupBy(x => x.CuentaId)
+                     .GroupBy(x => new { x.PaisId, x.TitularId, x.CuentaId })
                      .Select(x => x.Last()))
         {
-            AddPreferencia(usuarioId, item.CuentaId, item.ColumnasVisibles, item.ColumnasEditables);
+            AddPreferencia(usuarioId, item.PaisId, item.TitularId, item.CuentaId, item.ColumnasVisibles, item.ColumnasEditables);
         }
     }
 
@@ -933,29 +1017,43 @@ public sealed class UsuariosController : ControllerBase
             UsuarioId = usuarioId,
             CuentaId = item.CuentaId,
             TitularId = item.TitularId,
+            PaisId = item.PaisId,
             PuedeVerCuentas = item.PuedeVerCuentas,
             PuedeAgregarLineas = item.PuedeAgregarLineas,
             PuedeEditarLineas = item.PuedeEditarLineas,
             PuedeEliminarLineas = item.PuedeEliminarLineas,
             PuedeImportar = item.PuedeImportar,
-            PuedeVerDashboard = item.PuedeVerDashboard
+            PuedeVerDashboard = item.PuedeVerDashboard,
+            PuedeRevisarLineas = item.PuedeRevisarLineas,
+            PuedeAprobarImportaciones = item.PuedeAprobarImportaciones,
+            PuedeConciliar = item.PuedeConciliar,
+            PuedeCerrarConciliacion = item.PuedeCerrarConciliacion
         });
 
         return Task.CompletedTask;
     }
 
-    private void AddPreferencia(Guid usuarioId, Guid? cuentaId, IReadOnlyList<string>? columnasVisibles, IReadOnlyList<string>? columnasEditables)
+    private void AddPreferencia(Guid usuarioId, Guid? paisId, Guid? titularId, Guid? cuentaId, IReadOnlyList<string>? columnasVisibles, IReadOnlyList<string>? columnasEditables)
     {
         _dbContext.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
         {
             Id = Guid.NewGuid(),
             UsuarioId = usuarioId,
+            PaisId = paisId,
+            TitularId = titularId,
             CuentaId = cuentaId,
             ColumnasVisibles = columnasVisibles is null ? null : JsonSerializer.Serialize(columnasVisibles),
             ColumnasEditables = columnasEditables is null ? null : JsonSerializer.Serialize(columnasEditables),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
+    }
+
+    private static bool SameScope(PreferenciaUsuarioCuenta preferencia, PermisoUsuario permiso)
+    {
+        return preferencia.PaisId == permiso.PaisId &&
+               preferencia.TitularId == permiso.TitularId &&
+               preferencia.CuentaId == permiso.CuentaId;
     }
 
     private static IReadOnlyList<string>? ParseJsonArray(string? rawJson)
@@ -983,12 +1081,17 @@ public sealed class UsuariosController : ControllerBase
             UsuarioId = permiso.UsuarioId,
             CuentaId = permiso.CuentaId,
             TitularId = permiso.TitularId,
+            PaisId = permiso.PaisId,
             PuedeVerCuentas = permiso.PuedeVerCuentas,
             PuedeAgregarLineas = permiso.PuedeAgregarLineas,
             PuedeEditarLineas = permiso.PuedeEditarLineas,
             PuedeEliminarLineas = permiso.PuedeEliminarLineas,
             PuedeImportar = permiso.PuedeImportar,
             PuedeVerDashboard = permiso.PuedeVerDashboard,
+            PuedeRevisarLineas = permiso.PuedeRevisarLineas,
+            PuedeAprobarImportaciones = permiso.PuedeAprobarImportaciones,
+            PuedeConciliar = permiso.PuedeConciliar,
+            PuedeCerrarConciliacion = permiso.PuedeCerrarConciliacion,
             ColumnasVisibles = ParseJsonArray(preferencia?.ColumnasVisibles),
             ColumnasEditables = ParseJsonArray(preferencia?.ColumnasEditables)
         };

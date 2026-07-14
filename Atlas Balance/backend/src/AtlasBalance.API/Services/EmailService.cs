@@ -77,6 +77,11 @@ public sealed class EmailService : IEmailService
             smtpFrom = "noreply@atlasbalance.local";
         }
 
+        // V-02-05 (MED-5): validar smtpFrom contra CRLF y otros caracteres que
+        // permitirian header injection. MailKit lo sanea, pero el contrato del
+        // operador es "solo una direccion de email".
+        ValidateEmailAddress(smtpFrom, "smtp_from");
+
         var smtpPort = int.TryParse(smtpPortRaw, out var parsedPort) ? parsedPort : 587;
         var cuentaUrl = EscapeHtml($"{appBaseUrl}/cuentas/{cuentaId}");
 
@@ -208,6 +213,9 @@ public sealed class EmailService : IEmailService
         CancellationToken cancellationToken)
     {
         using var client = new SmtpClient();
+        // V-02-05 (LOW-BE-6): timeout duro de 15s para SMTP. Sin esto, un servidor
+        // SMTP caido puede dejar el handler colgado indefinidamente.
+        client.Timeout = 15_000;
         var userName = smtpUser?.Trim();
         var hasCredentials = !string.IsNullOrWhiteSpace(userName);
         var secureSocketOptions = smtpPort == 465
@@ -229,5 +237,29 @@ public sealed class EmailService : IEmailService
     private static string EscapeHtml(string value)
     {
         return System.Net.WebUtility.HtmlEncode(value);
+    }
+
+    // V-02-05 (MED-5): valida que la direccion de email no contenga CRLF ni
+    // caracteres que permitirian header injection aunque MailKit sanea. Limita
+    // a formato "local@dominio" sin display-name.
+    private static readonly System.Text.RegularExpressions.Regex EmailAddressRegex =
+        new(@"^[^<>:\r\n\t\x00-\x1F\x7F]+@[A-Za-z0-9._-]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public static void ValidateEmailAddressPublic(string value, string configKey) => ValidateEmailAddress(value, configKey);
+
+    private static void ValidateEmailAddress(string value, string configKey)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"{configKey} no puede estar vacio.");
+        }
+        if (value.Contains('\r') || value.Contains('\n') || value.Contains(':') || value.Contains('<') || value.Contains('>'))
+        {
+            throw new InvalidOperationException($"{configKey} contiene caracteres no permitidos (CRLF, ':', '<', '>'). Use solo una direccion de email valida.");
+        }
+        if (!EmailAddressRegex.IsMatch(value.Trim()))
+        {
+            throw new InvalidOperationException($"{configKey} no tiene formato de direccion de email valido.");
+        }
     }
 }

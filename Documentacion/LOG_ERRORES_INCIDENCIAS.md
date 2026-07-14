@@ -1,5 +1,520 @@
 # Log de errores e incidencias
 
+## 2026-07-07 - V-01.02 - Estado Git local no fiable (CERRADO)
+
+- Contexto: en V-01.02 se reporto que `git status --short` listaba practicamente todo el arbol como `untracked`, indicando repositorio local inestable o copia recreada sin historial fiable.
+- Causa original: repositorio local con indice comprometido o sincronizacion incompleta.
+- Resolucion: el estado Git se normalizo entre V-01.02 y 2026-07-07. La rama V-02-04 activa muestra `git status` normal con solo archivos modificados esperados (CLAUDE.md, AGENTS.md, Documentacion/DOCUMENTACION_CAMBIOS.md, Documentacion/Versiones/v-02-04.md). El historio de commits es accesible; se hacen commits y push con normalidad.
+- Cierre: Git funciona correctamente hoy (2026-07-07). Repo local reparado/recreado entre el reporte inicial y hoy; ya no es una incidencia operativa.
+
+## 2026-07-07 - V-01.06 - Pendientes altos tras auditoria final (PARCIALMENTE CERRADO)
+
+- Contexto: V-01.06 tenia tres pendientes abiertos tras una auditoria de correctitud y UX.
+- Pendientes:
+  1. **Ejecutar suite completa con Docker/Testcontainers: CERRADO (2026-07-02).** Suite completa 323/323 OK incluidos `ExtractosConcurrencyTests` y `RowLevelSecurityTests` con Testcontainers. La validacion PostgreSQL real y de concurrencia se completaron exitosamente. Evidencia en `Documentacion/Versiones/v-02-04.md`, seccion Pendientes.
+  2. **E2E autenticado contra PostgreSQL real con datos de volumen: EN CURSO (2026-07-07).** Se esta desarrollando test de integracion con volumen (`VolumeSmokeTests`): 50k filas de extracto, autenticacion real, PostgreSQL via Testcontainers. Sin cierre aun; el test debe pasar antes de marcar resuelto.
+  3. Validacion visual final pendiente.
+- Cierre parcial: el bloqueo principal de Docker/Testcontainers esta cerrado. El E2E de volumen esta en desarrollo y se cerrara cuando pase. Bloquea release final hasta completar ambos.
+
+## 2026-07-04 - V-02-04 - Desglose podia pisar cambios concurrentes (CERRADO)
+
+- Contexto: el modal de `Extractos > Desglose` reemplaza el conjunto completo de lineas. Dos usuarios con el modal abierto podian guardar en distinto orden y el ultimo save pisaba el anterior.
+- Error: no habia version del conjunto ni 409 especifico para `EXTRACTOS_DESGLOSES`.
+- Causa: la concurrencia optimista `xmin` existia en `EXTRACTOS`, pero las lineas de desglose no estaban versionadas y el endpoint opera como reemplazo de conjunto.
+- Solucion:
+  1. `GET /api/extractos/{id}/desglose` devuelve `version` calculada como SHA-256 de las lineas activas.
+  2. `PUT /api/extractos/{id}/desglose` exige `version` y devuelve `409 desglose_concurrency_conflict` si no coincide.
+  3. En PostgreSQL, el guardado toma `pg_advisory_xact_lock` por `extracto_id` antes de leer/comparar para serializar saves simultaneos.
+  4. El frontend envia la version y recarga el desglose vigente si recibe 409.
+- Verificacion: `dotnet test ... --filter GuardarDesglose` OK 7/7, `tsc --noEmit` OK, `npm run lint` OK y `npm run build` OK.
+- Regla: si un endpoint reemplaza un conjunto completo, necesita version de conjunto o lock. Confiar en "normalmente no editaran a la vez" es wishful thinking con corbata.
+
+## 2026-07-04 - V-02-04 - Selector de columnas de Extractos "no hacia nada" al clicar (CERRADO)
+
+- Contexto: en `Extractos > Columnas`, marcar/desmarcar un checkbox de visibilidad no producia ningun efecto visible para el usuario.
+- Error: el click si funcionaba: update optimista + `PUT /api/extractos/columnas-visibles`. El backend respondia `400 Bad Request` y el catch revertia el estado en milisegundos, con el error renderizado fuera de la vista. Resultado percibido: "no hace nada". Evidencia: dos `400` en `logs/atlas-balance-20260703.log` a las 17:46, exactamente cuando el usuario probo.
+- Causa: model binding estricto de `Guid?` en `SaveColumnasVisiblesRequest`: cualquier id de scope (`cuenta_id`/`titular_id`/`pais_id`) vacio o no-GUID tumbaba el request completo. Ese estado corrupto venia del cliente (bundle/pestana antigua, URL o localStorage), y ademas `index.html` se servia sin cabeceras de cache, con lo que un navegador podia quedarse clavado en un frontend viejo tras un rebuild.
+- Solucion (defensa en profundidad):
+  1. `LenientNullableGuidJsonConverter` en los tres ids de scope del DTO: valor vacio/invalido degrada a scope global (null) en vez de 400.
+  2. `ExtractosPage` filtra los ids con `UUID_PATTERN` antes de enviarlos (GET y PUT).
+  3. Estaticos: `.html` con `Cache-Control: no-cache, must-revalidate` (tambien el fallback SPA) y `/assets/*` hasheados con `immutable`.
+- Verificacion: payloads `cuenta_id:""`, `cuenta_id:"undefined"`, `pais_id:"ES"` ahora devuelven 200 con sesion real; toggle de columna en la UI (Vite dev + navegador) dispara `PUT 200` y persiste; `tsc`, `lint` y build backend OK.
+- Regla: si un toggle con update optimista "no hace nada", casi seguro que el guardado falla y se revierte rapido. Mirar el log HTTP del backend antes de tocar el componente. Y para preferencias de UI, el backend debe degradar con gracia, no rechazar por un id de scope irreconocible.
+
+## 2026-07-03 - V-02-04 - Boton `+` de alta inline quedaba tapado por la fila inferior (CERRADO)
+
+- Contexto: en `Extractos`, el nuevo boton `+` de insercion por fila debia aparecer entre la columna `Fila`, `Revisada` y la fila inferior.
+- Error: el boton existia en la celda, pero al sobresalir por debajo de la fila quedaba tapado por la siguiente fila virtualizada.
+- Causa: las filas de `@tanstack/react-virtual` se renderizan como elementos absolutos hermanos; sin `z-index` en la fila activa, la fila siguiente gana el orden de pintado.
+- Solucion: la fila virtual activa (`hover`/`focus-within`) sube de z-index, la fila con borrador abierto conserva z-index propio y la cabecera queda por encima para no ser invadida por controles de filas.
+- Verificacion: `npm.cmd exec tsc -- --noEmit` OK y `npm.cmd run lint` OK.
+- Regla: si un control sobresale entre filas virtualizadas, el z-index tiene que vivir en el contenedor virtual, no solo en el boton hijo. Poner `z-index: 9999` al boton es maquillaje malo.
+
+## 2026-07-03 - V-02-04 - `dotnet test` con `OutDir` en `C:\tmp` devuelve Access denied (CERRADO)
+
+- Contexto: validacion focalizada de `ExtractosControllerTests` para el desglose informativo de extractos.
+- Error: `dotnet test ... -p:OutDir=C:\tmp\atlas-balance-desglose-tests\ --no-restore` intento copiar dependencias a `C:\tmp\atlas-balance-desglose-tests` y fallo con `MSB3021 Access denied`.
+- Causa: esa ruta temporal no era escribible en esta sesion/ACL, aunque `C:\tmp` sea la ubicacion habitual de scratchpad.
+- Solucion: repetir el test con `OutDir` dentro del workspace (`Atlas Balance\.tmp\...`) y limpiar el artefacto al terminar.
+- Verificacion: `ExtractosControllerTests` paso 23/23 con `OutDir` en workspace.
+- Regla: si `C:\tmp` devuelve `Access denied`, no insistas; usa `.tmp` dentro del workspace con ruta verificada.
+
+## 2026-07-03 - V-02-04 - Tarjeta principal del dashboard con fondo tintado (CERRADO)
+
+- Contexto: en el dashboard principal, la tarjeta superior completa heredaba un fondo azulado leve.
+- Error: el usuario esperaba una tarjeta blanca uniforme; blanquear solo la zona de la grafica dejaba una mezcla visual rara.
+- Causa: el redisenio del hero uso un fondo tintado para el bloque consolidado completo.
+- Solucion: se anadio `--dashboard-hero-bg` con `#ffffff` en tema claro y superficie del tema en modo oscuro; `.dashboard-hero-card` usa esa superficie y la grafica hereda el mismo fondo.
+- Verificacion: `npm.cmd run lint` OK; `npm.cmd exec tsc -- --noEmit` OK; build Vite temporal OK; Browser in-app bloqueo `data:` por politica, asi que se cerro con validacion estatica del CSS fuente y compilado.
+- Regla: cuando el usuario dice "toda la tarjeta", no hagas cirugia de 20 pixeles. La superficie debe ser coherente.
+
+## 2026-07-03 - V-02-04 - Backend local seguia sin GET /api/importacion/lotes tras actualizar wwwroot (CERRADO)
+
+- Contexto: tras sincronizar `wwwroot`, importacion seguia mostrando `Endpoint no encontrado`.
+- Error: el backend vivo en `localhost:5000` era una instancia vieja: `GET /api/importacion/contexto` devolvia `401` (ruta existente), pero `GET /api/importacion/lotes` devolvia `404` con el fallback. El frontend actual llama esa ruta al cargar el historial.
+- Causa: el backend no se habia reiniciado con el codigo actual. Al intentar reiniciarlo, `Start-LocalDev.ps1` fallaba porque MSBuild incluia `backend/src/AtlasBalance.API/obj/Release/**` como codigo al compilar con `BaseIntermediateOutputPath` redirigido, generando atributos duplicados.
+- Solucion: `AtlasBalance.API.csproj` excluye explicitamente `bin\**` y `obj\**` de `Compile`, `Content`, `EmbeddedResource` y `None`. Despues `Start-LocalDev.ps1` compilo y arranco la API nueva.
+- Verificacion: `curl http://localhost:5000/api/importacion/lotes` devuelve `401 Unauthorized`, no `404 Endpoint no encontrado`. Eso confirma que la ruta existe y solo falta sesion valida.
+- Regla: si una ruta con `[Authorize]` existe, sin login debe dar `401`, no `404`. El `404` aqui era backend viejo, no permisos.
+
+## 2026-07-03 - V-02-04 - Importacion mostraba "Endpoint no encontrado" por wwwroot desincronizado (CERRADO)
+
+- Contexto: al usar la pantalla de importacion aparecia el mensaje del fallback `/api/{**catchAll}`: `Endpoint no encontrado`.
+- Error: la API local servia `backend/src/AtlasBalance.API/wwwroot` con bundles de mayo, mientras el frontend actual de V-02-04 ya usaba el flujo de lotes (`/api/importacion/lotes`, `/api/importacion/lotes/{id}/confirmar`). El directorio `wwwroot` esta ignorado por Git, asi que podia quedar viejo aunque el codigo fuente estuviera correcto.
+- Causa: desincronizacion entre frontend compilado servido por Kestrel y backend actual. No era un fallo de routing de `ImportacionController`; los endpoints existen en el codigo fuente actual.
+- Solucion: build frontend finita con salida temporal fuera del sandbox por el `EPERM` conocido de Vite/Rolldown, y copia del resultado a `backend/src/AtlasBalance.API/wwwroot`. Se verifico que `index.html` referencia `index-CEDYqK9x.js` y que el bundle `ImportacionPage-BLba2vWW.js` llama `/importacion/contexto`, `/importacion/lotes`, `/importacion/lotes/{id}/confirmar` y `/importacion/plazo-fijo/movimiento`.
+- Regla: si aparece `Endpoint no encontrado` en una pantalla con endpoints presentes en controllers, comprobar primero el bundle servido por `wwwroot`. Buscar bugs en backend sin mirar el asset servido es disparar a la niebla.
+
+## 2026-07-02 - V-02-04 - Logout no borraba las cookies __Host-atlas-* en produccion (CERRADO)
+
+- Contexto: auditoria de seguridad completa de V-02-04.
+- Error: `AuthController.DeleteCookie` borraba solo los nombres legacy (`access_token`, etc.). En produccion las cookies reales llevan prefijo `__Host-atlas-` (V-02-03), asi que el logout dejaba el access token (~1h de validez) y la cookie CSRF vivos en el navegador. CWE-613.
+- Causa: al introducir el prefijo `__Host-` en V-02-03 se corrigio `UserStateMiddleware.DeleteAuthCookies` pero se olvido el mismo patron en `AuthController`.
+- Solucion: `DeleteCookie` borra el nombre real por entorno (`CookieName`) mas la variante legacy, con `Path=/` y `Secure`. Test de regresion `Logout_Should_Delete_HostPrefixed_Cookies_In_Production`.
+- Regla: si una convencion de nombres de cookie cambia, grep de TODOS los puntos que las borran/leen (`DeleteCookie`, `Cookies.Delete`, `ReadCookie`), no solo donde aparecio el bug.
+
+## 2026-07-02 - V-02-04 - NRE en UserStateMiddleware.DeleteAuthCookies con DefaultHttpContext (CERRADO)
+
+- Contexto: suite de tests durante la auditoria de seguridad; fallaba `InvokeAsync_Should_Reject_Token_When_SecurityStamp_Is_Stale`.
+- Error: `context.RequestServices.GetService(...)` lanza `NullReferenceException` cuando el `HttpContext` no viene del pipeline real (tests con `DefaultHttpContext` sin service provider).
+- Solucion: acceso null-conditional (`context.RequestServices?.GetService(...)`); con null se asume produccion (borra ambas variantes), el fallback mas seguro.
+- Verificacion: 320/320 tests no-Docker OK.
+
+## 2026-07-02 - V-02-04 - bin/obj bloqueados por ACL: build y tests via OutDir redirigido
+
+- Contexto: `dotnet build`/`dotnet test` fallaban con `UnauthorizedAccessException`/`MSB3021` sobre `bin\Debug` de API y Watchdog.
+- Causa: los archivos de `bin` fueron creados por la identidad `TRAKERIA\CodexSandboxUsers` y el usuario actual solo tiene lectura (misma ACL documentada el 2026-07-01). No habia procesos bloqueando (solo workers MSBuild).
+- Solucion aplicada: compilar y testear con `-p:OutDir=<scratchpad>\build-*\` sin tocar `bin`. Funciona para build y para `dotnet test`, incluida la suite completa con Testcontainers (323/323 tras arrancar Docker Desktop, que estaba parado y subio en ~4s).
+- Verificado que la ACL NO es arreglable sin elevacion: `trakeria\usuario` no es admin, no es owner (`TRAKERIA\CodexSandboxOffline`) y no pertenece a los grupos con Modify. Queda solo como limpieza opcional con consola elevada (comandos en `Versiones/v-02-04.md`).
+- Regla: si `bin/obj` estan bloqueados por ACL, no insistas ni pidas elevacion para validar codigo; `-p:OutDir` a una ruta escribible desbloquea build y tests completos.
+
+## 2026-07-01 - V-02-03 - Render PNG de logo bloqueado por Playwright sin navegador instalado
+
+- Contexto: sustitucion del logo Atlas Balance y regeneracion del PNG fallback desde el SVG.
+- Incidencia: `chromium.launch()` de Playwright fallo porque no existia `chromium_headless_shell` en `%LOCALAPPDATA%\ms-playwright`.
+- Incidencia adicional: build Vite temporal contra `C:\tmp\atlas-balance-logo-v0203` fallo con `EPERM` al crear la carpeta de salida.
+- Causa: dependencia de navegador de Playwright no instalada en esta maquina.
+- Solucion aplicada: usar el ejecutable local de Chrome (`C:\Program Files\Google\Chrome\Application\chrome.exe`) con Playwright y cerrar el proceso al terminar.
+- Solucion adicional: cambiar el build temporal a `.tmp-logo-build` dentro de `frontend` y limpiar esa carpeta tras validar.
+- Verificacion: PNG nuevo generado en `frontend/public/logos/Atlas Balance.png` y copiado a `backend/src/AtlasBalance.API/wwwroot/logos/Atlas Balance.png`; `npm.cmd run lint` OK; build Vite temporal en `.tmp-logo-build` OK.
+- Regla: no descargues navegadores para renderizar un asset si Chrome/Edge local ya existe. Mas instalacion para un PNG es una forma elegante de perder tiempo.
+
+## 2026-07-01 - V-02-03 - ACL de servicios bloqueados resuelta sin tocar archivos mediante wrappers
+
+- Contexto: `ConciliacionService.cs`, `GoogleDriveBackupService.cs` y `BackupConfigurationService.cs` seguian sin permitir escritura directa.
+- Decision: no insistir con ACL ni duplicar servicios completos. Se agregaron wrappers registrados en DI:
+  - `HardenedConciliacionService` para tolerancia configurable de conciliacion.
+  - `HardenedGoogleDriveBackupService` para verificacion SHA-256 del `.enc` antes de importacion Google Drive.
+  - `HardenedBackupConfigurationService` para marcar secretos de backup como `EsSecreto`.
+- Verificacion:
+  - Backend build OK.
+  - Suite backend completa: 321/321 OK.
+  - Frontend lint/build OK.
+- Pendiente no bloqueante: limpiar `.bak` con permisos elevados si se quiere dejar el workspace sin basura local.
+
+## 2026-07-01 - V-02-03 - Pendientes no cerrables por ACL en servicios criticos
+
+- Contexto: intento de cerrar todos los pendientes restantes de V-02-03.
+- Incidencias:
+  - `ConciliacionService.cs` sigue rechazando escritura con `FileSystem.writeFile`; bloquea tolerancia configurable de conciliacion.
+  - `GoogleDriveBackupService.cs` rechaza escritura con `FileSystem.writeFile`; bloquea verificacion SHA-256 en importacion desde Google Drive.
+  - `BackupConfigurationService.cs` rechaza escritura con `FileSystem.writeFile`; bloquea marcar `EsSecreto` desde ese writer concreto.
+- Decision:
+  - Se corto la via tras el primer fallo por archivo, siguiendo el protocolo anti-encallamiento.
+  - Se aplicaron solo pendientes en archivos escribibles y se validaron con build/tests/lint/build.
+- Verificacion de lo aplicado:
+  - Backend build OK.
+  - Tests focalizados dashboard/alertas/configuracion: 24/24 OK.
+  - Suite backend completa: 320/320 OK.
+  - Frontend lint/build OK.
+
+## 2026-07-01 - V-02-03 - Validacion backend en workspace bloqueada por ACL y wrapper de tests no fiable
+
+- Contexto: cierre de hardening V-02-03 con migracion, importacion BOM, cookies `__Host-`, tokens sin expiracion y frontend.
+- Incidencias:
+  - `ConciliacionService.cs` no se pudo editar: `FileSystem.writeFile` denegado por ACL heredada.
+  - `.bak` locales de sesiones previas no se pudieron borrar: `FileSystem.remove` denegado.
+  - `atlas-build.ps1 -Action test` fallo con errores masivos falsos de namespaces (`MigrationBuilder`, `DbContext`, `MimeMessage`) por el modo de salida/intermediate path del wrapper.
+  - La suite backend directa quedo 319/320 por el fallo conocido `DashboardServiceTests.GetPrincipalAsync_Should_Aggregate_CurrentBalances_And_PeriodFlows_In_TargetCurrency`: esperaba `252M`, obtuvo `204.00M`.
+- Solucion/decision:
+  - No insistir en editar/borrar rutas bloqueadas; documentar H3 conciliacion pendiente.
+  - Usar el wrapper solo para sincronizar/build y ejecutar `dotnet test` directamente dentro de `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build`.
+  - Mantener la migracion V0203 manual minima para evitar DDL duplicado y no tocar `xmin` como columna ordinaria.
+- Verificacion:
+  - Backend build en copia temporal OK.
+  - Backend suite directa: 319/320 OK, unico fallo dashboard conocido.
+  - Testcontainers focalizado `ExtractosConcurrencyTests|RowLevelSecurityTests`: 2/2 OK con Docker disponible.
+  - Frontend `npm.cmd run lint`: OK.
+  - Frontend build temporal con `VITE_BUILD_OUT_DIR`: OK.
+
+## 2026-06-30 - V-02-02 - Build-Release bloqueado por scanner OK con `$LASTEXITCODE` sucio y `npm ci` destructivo
+
+- Contexto: validacion local de empaquetado V-02-02 con `Build-Release.ps1 -AllowUnsignedLocal`.
+- Incidencias:
+  - El scanner Atlas imprimia `Scanner Atlas sin hallazgos`, pero `Build-Release.ps1` fallaba porque miraba `$LASTEXITCODE` heredado.
+  - `npm ci` fallo con `EPERM` al intentar borrar `frontend\node_modules\.vite-temp`.
+  - El intento fallido dejo `node_modules` incompleto y faltaba `node_modules\.bin\tsc.cmd`.
+- Solucion:
+  - `Build-Release.ps1` comprueba el scanner con `$?`.
+  - `npm ci` queda limitado a `-CleanNpmInstall` o ausencia de `node_modules`.
+  - Si `node_modules` existe pero esta incompleto, el script repara con `npm install --ignore-scripts --no-audit --fund=false`.
+- Verificacion: empaquetado local unsigned OK; `AtlasBalance-V-02-02-win-x64.zip` generado. No se genera `.sig` sin clave privada.
+
+## 2026-06-30 - V-02-02 - Docker/Testcontainers no disponible en cierre de hardening, resuelto
+
+- Contexto: validacion final backend posterior a correcciones V-02-02.
+- Incidencia inicial: `dotnet test` completo quedaba en 315/317; fallaban solo `ExtractosConcurrencyTests` y `RowLevelSecurityTests`.
+- Causa observada: Docker Desktop estaba detenido y, una vez arrancado, el usuario normal recibia `permission denied` contra los pipes. Docker CLI elevado funciona con `npipe:////./pipe/dockerDesktopLinuxEngine`, pero Docker.DotNet/Testcontainers exige `npipe://./pipe/dockerDesktopLinuxEngine`.
+- Solucion: arrancar Docker Desktop y ejecutar las pruebas en contexto elevado con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+- Verificacion: pruebas Testcontainers 2/2 OK y suite backend completa 317/317 OK.
+
+## 2026-06-30 - V-02-02 - Browser in-app no usable para QA visual completa
+
+- Contexto: QA de `/importacion`, historial de lote, `/conciliacion`, tokens OpenClaw, `Extractos` y mobile alertas.
+- Incidencias:
+  - Browser in-app fallo esperando attach del webview.
+  - La ruta `file://` del build fue bloqueada por politica de la herramienta.
+  - El intento con localhost mock hizo timeout y reseteo el runtime.
+- Decision: se corto Browser tras intentos suficientes y se uso Playwright finito con Chrome local, build Vite temporal y servidor/API mock cerrados en el mismo proceso.
+- Verificacion: QA Playwright OK, consola sin errores, capturas en `qa-artifacts/atlas-v0202-qa-*.png`.
+
+## 2026-06-30 - V-02-02 - NuGet vulnerable bloqueado por `global.json` desde repo
+
+- Contexto: ejecucion de `dotnet list package --vulnerable --include-transitive`.
+- Incidencia: desde la raiz del repo falla porque `global.json` pide SDK `8.0.419` y la maquina tiene `8.0.421`.
+- Solucion: ejecutar desde `C:\tmp` apuntando al `.csproj` absoluto.
+- Verificacion: NuGet vulnerable OK, sin paquetes vulnerables.
+
+## 2026-06-27 - V-02-02 - Vite `server.fs.deny` vulnerable y `package-lock` bloqueado por EPERM
+
+- Contexto: remediacion de `GHSA-fx2h-pf6j-xcff` / `CVE-2026-53571` en Vite y validacion SCA npm.
+- Causa:
+  - `package-lock.json` resolvia `vite@8.0.8`, vulnerable en Windows a bypass de `server.fs.deny` via NTFS ADS o nombres 8.3 si el dev server se exponia por red.
+  - `npm audit` detecto tambien `form-data@4.0.5` high y `js-yaml@4.1.1` moderate.
+  - `npm install` fallo por `EPERM` al tocar `node_modules\.bin\nanoid`; `npm install --package-lock-only` fallo por `EPERM` al tocar `node_modules\.package-lock.json`.
+  - La limpieza posterior de `node_modules.blocked-20260627183808` fallo por `Access denied` masivo.
+- Solucion:
+  - Se corto la via de npm tras dos fallos y se dejo el lockfile en estado corregido y validado.
+  - `form-data` queda en `4.0.6`, `vite` en `8.1.0` y `js-yaml` en `4.3.0`.
+  - `package.json` fija `form-data@4.0.6` y `js-yaml@4.3.0` con `overrides`.
+  - `vite.config.ts` limita el dev server a loopback/hosts locales y conserva hardening de `/__open-in-editor`.
+  - `.gitignore` ignora `Atlas Balance/frontend/node_modules.blocked-*/` y ESLint ignora `node_modules.blocked-*` para que los restos locales de npm bloqueado no ensucien Git/lint.
+  - Se aparto `node_modules` bloqueado y se regenero una instalacion real limpia con `npm ci --ignore-scripts`.
+- Verificacion:
+  - `npm audit --audit-level=moderate`: OK, `found 0 vulnerabilities`.
+  - `npm ls form-data js-yaml vite --all`: OK, `form-data@4.0.6`, `js-yaml@4.3.0`, `vite@8.1.0`.
+  - Vite real: `8.1.0`.
+  - Frontend lint, TypeScript y build temporal OK.
+- Pendiente local: los residuos bloqueados se movieron fuera del workspace a `C:\tmp\atlas-balance-blocked-node-modules\` y `C:\tmp\atlas-balance-blocked-artifacts\`.
+- Regla: cuando npm se estrella con `EPERM`, no reintentes hasta aburrir a Windows. Aparta el arbol bloqueado, reinstala limpio y valida contra la instalacion real.
+
+## 2026-06-26 - V-02-02 - RLS `dashboard` no seguia el modelo real de tres roles
+
+- Contexto: comprobacion de seguridad/RLS tras reducir usuarios a `ADMIN`, `GERENTE` y `EMPLEADO`.
+- Causa:
+  - `DashboardService` permite a `GERENTE` ver dashboard con cualquier permiso de datos.
+  - RLS seguia atando `dashboard` a `p.puede_ver_dashboard` en una rama y dejaba `p.puede_ver_cuentas` como lectura general, incluso dentro de scope `dashboard`.
+  - Resultado: la base no era una copia fiel del contrato de backend. Un empleado con `PuedeVerCuentas` pero sin `PuedeVerDashboard` podia leer tablas financieras si una consulta llegaba con `atlas.request_scope = dashboard`; un gerente valido podia quedar bloqueado por RLS si no tenia `PuedeVerDashboard`.
+- Solucion:
+  - Nueva migracion `20260626193000_AlignRlsDashboardAccessWithRoles`.
+  - `current_user_is_manager()` reconoce gerente activo.
+  - `can_read_cuenta` y `can_read_titular` exigen, en scope `dashboard`, `GERENTE` o `PuedeVerDashboard`, y ademas algun permiso de datos.
+  - Regresiones agregadas en `RowLevelSecurityTests`.
+- Verificacion:
+  - Backend build OK.
+  - Tests focalizados no Docker de permisos/datos: 116/116 OK.
+  - `docker info` OK; Docker Desktop activo.
+  - `RowLevelSecurityTests` con PostgreSQL real/Testcontainers: 1/1 OK usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
+- Regla: cuando cambias semantica de roles, actualiza tambien el backstop RLS. Si backend y base no dicen lo mismo, el atacante escucha a la capa mas floja.
+
+## 2026-06-26 - V-02-02 - Selector de columnas seguia fallando con `cuenta_id es requerido`
+
+- Contexto: tras corregir el selector de columnas de `Extractos`, el guardado en vista general seguia mostrando `cuenta_id es requerido`.
+- Causa:
+  - La regresion anterior llamaba al controlador directamente y no cubria el payload JSON real que envia el navegador.
+  - El frontend enviaba `cuenta_id: null` cuando no habia cuenta seleccionada, aumentando la probabilidad de choque con validaciones de modelo o builds no alineadas.
+  - El contrato del DTO dependia solo de la politica global snake_case, sin nombres JSON explicitos en el request critico.
+- Solucion:
+  - `SaveColumnasVisiblesRequest` declara `JsonPropertyName` para `cuenta_id`, `titular_id`, `pais_id` y `columnas_visibles`.
+  - `ExtractosPage` omite claves de scope vacias en el `PUT`; en vista general envia solo `columnas_visibles`.
+  - Se agrego test de deserializacion snake_case con `cuenta_id: null` y con `cuenta_id` omitido.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - `ExtractosControllerTests`: 18/18 OK.
+  - Build Vite temporal OK.
+  - QA Browser con mock estricto: el mock rechazaba cualquier body con `cuenta_id`; activar `categoria` guardo sin enviar `cuenta_id`, sin error y con la columna visible.
+- Regla: si el bug vive en HTTP, una prueba que llama al metodo C# directo no basta. Eso no es cobertura; es una coartada.
+
+## 2026-06-26 - V-02-02 - Tabla de formatos quedaba cortada por ancho fijo
+
+- Contexto: en `Formatos`, la lista de formatos aparecia con columnas y acciones cortadas al lado del formulario `Nuevo Formato`.
+- Causa:
+  - `.formatos-page .users-table-scroll table` forzaba `min-width: 860px`.
+  - El grid reservaba ancho al formulario lateral, dejando a la tabla menos espacio real que su ancho minimo.
+  - Las acciones heredaban estilos de `.phase2-row-actions` pensados para tarjetas, no para una celda de tabla.
+- Solucion:
+  - Se agrego `colgroup` a la tabla.
+  - La tabla usa `table-layout: fixed`, `width: 100%` y anchuras en `rem` para columnas criticas.
+  - Las acciones se encapsulan en `.formatos-row-actions` y el formulario baja debajo en breakpoints estrechos.
+  - Se elimino `overflow-wrap: anywhere`, que partia palabras como `Activo` y `Eliminar`.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build Vite temporal: OK.
+  - Revalidacion tras evitar palabras partidas: lint OK, TypeScript OK y build Vite temporal OK.
+  - QA Browser renderizada bloqueada por politica de seguridad al abrir `data:`.
+- Regla: si una tabla administrativa vive junto a un formulario lateral, no le metas un `min-width` fijo y reces. Define columnas o el layout te cobra intereses.
+
+## 2026-06-26 - V-02-02 - `DashboardService` no compilaba por proyeccion sin `PuedeVerDashboard`
+
+- Contexto: tras validar el selector de columnas de extractos, un reintento posterior de `ExtractosControllerTests` forzo recompilacion y fallo antes de ejecutar tests.
+- Causa:
+  - `DashboardService.cs(721)` intenta leer `PuedeVerDashboard` desde un tipo anonimo que no incluye esa propiedad.
+  - La consulta de permisos de dashboard habia separado permisos operativos de datos y permiso visual de dashboard.
+- Resolucion:
+  - `DashboardService` vuelve a proyectar `PuedeVerDashboard`.
+  - La autorizacion de dashboard queda alineada con el modelo de tres roles: `GERENTE` usa permiso de datos asignado; `EMPLEADO` necesita `PuedeVerDashboard` mas permiso de datos.
+  - Se agregan tests focalizados para ambos casos.
+- Verificacion adicional:
+  - `ExtractosControllerTests` 17/17 OK tras corregir la proyeccion, desbloqueando la validacion del selector de columnas.
+- Regla: si una politica mezcla rol y permiso, proyecta ambos datos en la misma consulta. Asumir que el campo "estara ahi" es programar con fe.
+
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos perdia columnas extra fuera de la pagina actual
+
+- Contexto: el selector `Columnas` de `Extractos` no funcionaba de forma fiable con columnas extra.
+- Causa:
+  - `ExtractoTable` calculaba columnas extra desde `rows`, que solo contiene la pagina cargada.
+  - Si una columna extra existia en el resultado filtrado completo pero no en esa pagina/fila, el selector no la mostraba y el usuario no podia activarla.
+- Solucion:
+  - `GET /api/extractos` devuelve `columnas_disponibles` calculadas sobre la consulta filtrada completa antes de paginar.
+  - `ExtractosPage` guarda esa lista y `ExtractoTable` la usa para construir el selector.
+  - El panel incorpora `Mostrar todas` para restaurar una preferencia completa del scope activo.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - `ExtractosControllerTests`: 17/17 OK.
+  - Build Vite temporal: OK.
+  - QA Browser mockeada: activar `categoria` actualiza cabecera y payload; `Mostrar todas` deja 11 columnas visibles; consola sin errores.
+- Regla: un selector de columnas no debe depender de una muestra paginada. Eso no es estado, es accidente.
+
+## 2026-06-26 - V-02-02 - Grafica principal del dashboard ocultaba ingresos/egresos
+
+- Contexto: el usuario detecto que la grafica superior del dashboard principal solo mostraba saldo.
+- Causa:
+  - `DashboardPage` llamaba `EvolucionChart` con `variant="saldoArea"`.
+  - Esa variante habia sido creada para replicar la referencia bancaria y solo renderizaba `saldo`, aunque `DashboardPuntoEvolucion` ya tenia `ingresos` y `egresos`.
+- Solucion:
+  - `saldoArea` usa `ComposedChart`.
+  - `saldo` se mantiene como area con eje izquierdo.
+  - `ingresos` y `egresos` se renderizan como lineas con eje derecho para no perder escala.
+  - La leyenda y el `aria-label` incluyen las tres series.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build Vite temporal dentro del workspace: OK.
+  - QA Browser mockeada desktop/mobile: tres trazos SVG, consola sin errores y sin overflow horizontal.
+- Incidencias de QA:
+  - `tab.playwright.waitForLoadState({ state: 'networkidle' })` no esta soportado por el Browser runtime aunque la documentacion mencione `networkidle`; usar `load` + espera concreta de selector/DOM.
+  - Un mock de dashboard devolvio error por variable `puntos` inexistente; se corrigio a `points` antes de validar mobile.
+- Regla: si un rediseño oculta datos que el usuario necesita, no lo llames limpio; arreglalo.
+
+## 2026-06-26 - V-02-02 - Selector de columnas de extractos no guardaba sin cuenta
+
+- Contexto: el selector `Columnas` de `Extractos` parecia no funcionar en la vista general.
+- Causa:
+  - `GET /api/extractos/columnas-visibles` permitia scope sin `cuentaId`.
+  - `PUT /api/extractos/columnas-visibles`, en cambio, rechazaba `CuentaId = null` con `BadRequest`.
+  - El frontend ademas calculaba columnas por defecto desde `rows`, no desde la lista real que renderizaba la tabla.
+- Solucion:
+  - Backend: `SaveColumnasVisibles` usa `ResolvePreferenciaScope` tambien cuando no hay cuenta.
+  - Backend: `GetColumnasVisibles` y `SaveColumnasVisibles` consultan preferencias con comparacion explicita de nulos para scopes globales/titular/pais.
+  - Frontend: `ExtractoTable` pasa `allColumns` al toggle y `ExtractosPage` guarda scope global/titular/pais/cuenta segun filtros.
+  - Test actualizado: la regresion ahora exige guardar preferencias globales sin cuenta.
+- Verificacion:
+  - Frontend lint OK.
+  - TypeScript OK.
+  - API build OK.
+  - `ExtractosControllerTests`: 16/16 OK.
+- Regla: si lectura y escritura comparten recurso de preferencias, no les inventes contratos distintos. Eso no es defensa, es sabotaje de UX.
+
+## 2026-06-26 - V-02-02 - Test backend focalizado bloqueado por `bin/obj`
+
+- Contexto: validacion de `ExtractosControllerTests` tras corregir selector de columnas.
+- Incidencias:
+  - `--no-restore` fallo porque faltaba `project.assets.json` de API.
+  - Con restore, NuGet/restauracion paso, pero el build fallo con `Access denied` al escribir `AtlasBalance.API.staticwebassets.runtime.json`, `AtlasBalance.API.csproj.FileListAbsolute.txt` y cache de Watchdog.
+  - Redirigir `BaseIntermediateOutputPath`/`OutputPath` a `C:\tmp` cambio el fallo a atributos duplicados generados por MSBuild.
+- Resolucion posterior:
+  - Tras compilar API con `dotnet build ...AtlasBalance.API.csproj --no-restore -p:UseAppHost=false`, el test focalizado pudo ejecutarse.
+  - `ExtractosControllerTests`: 16/16 OK.
+- Regla: si `bin/obj` esta bloqueado y el workaround de salida temporal tambien rompe MSBuild, para. El codigo no mejora por mirar otro error de build.
+
+## 2026-06-26 - V-02-02 - Build Vite temporal en `C:\tmp` bloqueado por `EPERM`
+
+- Contexto: validacion del ajuste visual del dashboard contra referencia.
+- Incidencia:
+  - `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-dashboard-reference-v02-02 --emptyOutDir` transformo modulos, pero fallo en `vite:prepare-out-dir`.
+  - Error: `EPERM: operation not permitted, mkdir 'C:\tmp\atlas-balance-dashboard-reference-v02-02'`.
+- Solucion:
+  - No se reintento la misma ruta.
+  - Se uso salida temporal dentro del workspace: `..\..\tmp-vite-dashboard-reference-v02-02`, que compilo correctamente.
+  - La carpeta temporal del build se elimino despues de la captura Playwright.
+- Regla: si `C:\tmp` devuelve `EPERM`, no conviertas el build en pelea de permisos; usa una salida temporal dentro del workspace o pide elevacion solo si es imprescindible.
+
+## 2026-06-26 - V-02-02 - Sidebar bloqueado en oscuro por `data-theme`
+
+- Contexto: correccion del menu lateral para que acompanara el modo claro/oscuro.
+- Incidencias:
+  - El `<aside>` de `Sidebar` tenia `data-theme="dark"`, anulando el tema global.
+  - Los tokens `--color-sidebar-*` estaban duplicados con valores oscuros tanto en `:root` como en `[data-theme="dark"]`.
+  - Un wrapper de validacion con `Start-Process` fallo por entorno Windows con claves `Path`/`PATH` duplicadas; se cambio a `npm.cmd` directo.
+  - El primer `tsc --noEmit` emitio errores transitorios en `EvolucionChart.tsx` mientras habia cambios no relacionados; el segundo intento paso.
+  - Build Vite en sandbox fallo con `EPERM` al crear `C:\tmp\atlas-balance-vite-build-sidebar-theme-v02-02`; fuera del sandbox paso.
+- Solucion:
+  - Se elimino el `data-theme` local del sidebar.
+  - Se separaron tokens claros/oscuros de fondo, texto, hover, scope, activo, ring y sombra.
+  - Se valido con lint, TypeScript y build temporal fuera del sandbox.
+- Regla: si un componente fija `data-theme`, deja de ser tema global; usalo solo para islas deliberadas como paneles de marca.
+
+## 2026-06-26 - V-02-02 - Login bloqueado en oscuro por CSS hardcodeado
+
+- Contexto: el usuario reporto que el modo claro/oscuro del menu de inicio no funcionaba.
+- Incidencias:
+  - `LoginPage` y `ChangePasswordPage` todavia fijaban `data-theme="dark"` en `.auth-brand-panel`.
+  - `auth.css` habia quedado con colores oscuros hardcodeados, asi que el toggle cambiaba `document.documentElement[data-theme]` pero no la superficie visible.
+- Solucion:
+  - Se elimino el `data-theme` local de las pantallas de auth.
+  - Se crearon tokens locales `--auth-*` con valores claros por defecto y override oscuro en `[data-theme="dark"] .auth-page`.
+  - Se conectaron pagina, paneles, tarjeta, inputs, chips, logos, toggle y boton a esos tokens.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build temporal fuera del sandbox: OK.
+  - QA Playwright con Chrome local: click en toggle cambia `theme=light` a `theme=dark`, los colores computados cambian y no hay overflow en desktop/mobile.
+- Regla: redisenar una pantalla en oscuro no justifica hardcodear oscuro. Si hay toggle global, cada superficie debe consumir tokens o declarar explicitamente que es una isla fija.
+
+## 2026-06-26 - V-02-02 - Toggle de tema del login descentrado
+
+- Contexto: tras corregir claro/oscuro del login, el icono de modo claro/oscuro se veia descentrado dentro del boton.
+- Causa:
+  - `.auth-theme-toggle` heredaba padding/min-height de estilos globales de boton, por lo que el control medido era mas alto que ancho.
+  - El icono de luna tiene peso visual hacia la derecha aunque el SVG use un `viewBox` centrado.
+- Solucion:
+  - Se anulo la herencia nativa/global con `appearance: none`, `padding: 0`, `min-width`, `min-height`, `box-sizing` y `line-height`.
+  - Se fijo tamano del SVG interno y se aplico ajuste optico horizontal solo a la luna.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build temporal fuera del sandbox: OK.
+  - QA Playwright con Chrome local: boton `38x38`, sin overflow horizontal y sin errores de consola.
+- Regla: para icon buttons no basta con `place-items: center`; hay que neutralizar padding/min-height heredados y revisar el peso optico del glyph.
+
+## 2026-06-23 - V-02-02 - Lint en BottomNav por reactividad falsa
+
+- Contexto: implementacion de navegacion inferior movil dependiente de permiso de Dashboard.
+- Incidencia:
+  - `npm.cmd run lint` fallo por warning `react-hooks/exhaustive-deps`: `useMemo` tenia dependencia innecesaria `permisos`.
+  - La intencion era forzar recalc cuando cambiaban permisos, pero meter estado solo como dependencia es ruido y ESLint hizo bien en marcarlo.
+- Solucion:
+  - Se sustituyo por selector booleano real: `usePermisosStore((state) => state.canViewDashboard())`.
+  - `primaryItemPaths` depende de ese booleano y del rol del usuario.
+- Resultado:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - `npm.cmd run build`: OK.
+- Regla: no metas dependencias fantasma para "hacer reaccionar" un hook; deriva el dato que necesitas y suscribete a ese dato.
+
+## 2026-06-22 - V-02-02 - Validacion backups: SDK clavado y test incoherente
+
+- Contexto: implementacion de copias programables y subida cifrada a Google Drive.
+- Incidencias:
+  - `dotnet build` desde la raiz fallo porque `global.json` exige SDK `8.0.419` y la maquina tiene `8.0.421`.
+  - Se uso el workaround ya documentado: ejecutar build/test desde `C:\tmp` apuntando al `.csproj`, para que no se lea el `global.json` del repo.
+  - El filtro `BackupScheduleTests|ManualProcessResponseTests` expuso una incoherencia existente: `ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Write_Cuenta` esperaba `Forbid` por `canWriteCuenta=false`, pero el endpoint valida `CanAccessCuentaAsync`.
+  - Un intento de ejecutar build y tests .NET en paralelo bloqueo `obj\Debug\net8.0\AtlasBalance.API.dll`. Se repitio serializado y paso.
+- Decision:
+  - No se cambio el controlador de exportaciones para satisfacer un test equivocado.
+  - Se corrigio el test a `canAccessCuenta=false`.
+  - Build backend serializado: OK.
+  - Revalidacion focalizada: 9/9 OK.
+- Regla: si el test contradice el contrato real del controlador, arregla el test; no deformes produccion para hacer feliz una asercion mala.
+
+## 2026-06-21 - V-02-02 - Validacion MiniMax: suite amplia IA/Configuracion sigue roja
+
+- Contexto: alta de MiniMax como proveedor IA con modelos `MiniMax-M3` y `MiniMax-M2.7`.
+- Incidencias:
+  - El filtro focalizado MiniMax paso 3/3.
+  - El filtro amplio `AtlasAiServiceTests|ConfiguracionControllerTests` fallo 3 tests: `ConfiguracionControllerTests.Update_Should_Normalize_Unknown_OpenRouter_Model_To_Auto`, `ConfiguracionControllerTests.Get_Should_Not_Return_SmtpPassword` y `AtlasAiServiceTests.AskAsync_Should_Respect_Cuenta_Scope_In_Deterministic_Ranking`.
+  - Los dos fallos de Configuracion ya estaban documentados como deuda tras permitir modelos OpenRouter arbitrarios y cambiar MFA recordado.
+  - El fallo de ranking IA es sensible a la fecha actual: con fecha 2026-06-21 el test espera datos de trimestre que no existen en su fixture para `01/04/2026 a 21/06/2026`.
+- Decision:
+  - No se reintento la misma via mas de dos veces.
+  - Se mantuvo la verificacion MiniMax acotada y se registro la deuda restante.
+  - No se llamo verde a la suite amplia.
+- Regla: si una suite amplia falla por deuda ajena, nombra los tests y ejecuta un filtro focalizado que pruebe exactamente el cambio.
+
+## 2026-06-09 - V-02-02 - Captura Playwright de mockup HTML bloqueada por navegador no instalado
+
+- Contexto: validacion visual del mockup `Documentacion/Diseno/mockups/atlas-balance-post-uiux-v02-02.html`.
+- Incidencia:
+  - `npm.cmd exec playwright -- screenshot ...` fallo porque no existe `C:\Users\usuario\AppData\Local\ms-playwright\chromium_headless_shell-1217\chrome-headless-shell-win64\chrome-headless-shell.exe`.
+  - Playwright sugirio instalar browsers con `npx playwright install`.
+- Decision:
+  - No se descargo Chromium ni se pidio red/elevacion porque el entregable es un HTML estatico y la validacion funcional de app no dependia de ello.
+  - Se mantuvo validacion estatica: archivo creado, sin referencias externas/dependencias prohibidas y `git diff --check` OK.
+- Regla: para mockups HTML estaticos, no conviertas una captura bloqueada por browser ausente en instalacion de tooling salvo que el usuario pida evidencia visual renderizada.
+
+## 2026-06-09 - V-02-02 - Autorizacion por pais: fallos detectados en verificacion
+
+- Contexto: implementacion de permisos/RLS/modelo de autorizacion por pais.
+- Incidencias:
+  - `dotnet build` detecto uso de `ToHashSetAsync` no disponible en el stack EF actual. Solucion: `ToListAsync(...).ToHashSet()`.
+  - `npm run build` detecto que `ExtractosPage` usaba `cuenta.pais_id` sin declararlo en el tipo local de opciones. Solucion: propagar `pais_id` desde `CuentaResumenKpi`.
+  - Auditoria subagente detecto sobreconcesion en `CanWriteCuentaAsync`/`CanEditCuentaAsync` cuando coexistian `PaisId + TitularId + CuentaId`. Solucion: exigir coincidencia AND de todas las dimensiones no nulas.
+  - Auditoria subagente detecto columnas por scope mezcladas por falta de `pais_id`/`titular_id` en preferencias. Solucion: extender `PREFERENCIAS_USUARIO_CUENTA` y resolver preferencias por scope exacto.
+  - Revalidacion detecto que una preferencia visual de extractos con `ColumnasEditables = null` podia abrir todas las columnas editables al mezclarse con una regla de edicion scopeada. Solucion: resolver columnas editables solo desde filas `PermisoUsuario` que conceden edicion y con preferencia de scope exacto.
+  - Auditoria subagente detecto dashboard-only inconsistente entre frontend/backend/RLS. Solucion: frontend y RLS exigen `PuedeVerDashboard` mas permiso operativo de datos, igual que backend.
+  - `RowLevelSecurityTests` no pudo validar PostgreSQL real en ese momento porque Docker/Testcontainers no estaba disponible. Revalidacion 2026-06-26: 1/1 OK con PostgreSQL real/Testcontainers usando artefactos aislados en `C:\tmp\atlas-rls-artifacts`.
+- Resultado:
+  - Backend build OK.
+  - Tests focalizados backend no Docker 32/32 OK.
+  - Frontend lint/build OK.
+- Regla: los scopes compuestos se evaluan como interseccion, nunca como union de listas independientes.
+
+## 2026-06-09 - V-02-02 - Verificacion pais scope: SDK clavado y suite amplia roja por Configuracion
+
+- Contexto: validacion de app shell y scope global por pais.
+- Incidencias:
+  - `dotnet build` desde el repo falla porque `global.json` exige SDK `8.0.419` con `rollForward=disable`, pero la maquina tiene `8.0.421`.
+  - Workaround limpio: ejecutar `dotnet build/test` desde `C:\tmp` apuntando al `.csproj`, para que el SDK resolver no lea ese `global.json`.
+  - Suite backend no Docker: 288/290 OK; fallan `ConfiguracionControllerTests.Update_Should_Normalize_Unknown_OpenRouter_Model_To_Auto` y `ConfiguracionControllerTests.Get_Should_Not_Return_SmtpPassword`.
+- Resultado:
+  - Build backend OK con SDK `8.0.421` desde `C:\tmp`.
+  - Tests focalizados del cambio OK: 161/161.
+  - No se tocaron los fallos de Configuracion porque son ajenos al scope de pais/shell.
+- Regla: no llames verde a una suite roja. Si el cambio focal pasa pero la suite amplia falla por deuda ajena, dilo con nombres.
+
 ## 2026-06-01 - V-01.09 - Update V-01.06 seguia fallando si Watchdog no tenia owner
 
 - Contexto: el paquete `V-01.09-win-x64` corregido seguia fallando en una instalacion `V-01.06` durante el backup previo.
@@ -1638,3 +2153,367 @@
 - Causa: `permisosStore.canViewCuenta` trataba cualquier fila global (`cuenta_id/titular_id null`) como acceso de cuenta, sin distinguir si era solo `PuedeVerDashboard`.
 - Solucion aplicada: `canViewCuenta`, `canAddInCuenta`, `canEditCuenta`, `canDeleteInCuenta`, `canImportInCuenta`, `getColumnasVisibles` y `getColumnasEditables` pasan a ignorar filas globales `dashboard-only`; solo cuentan filas scopeadas de cuenta/titular o filas globales con acceso global de datos. `CuentasPage` muestra `Sin acceso` en vez de CTA operativos y `CuentaDetailPage` redirige al dashboard si recibe `403`.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y `robocopy dist ..\\backend\\src\\AtlasBalance.API\\wwwroot /MIR` OK.
+
+## 2026-06-23 - V-02-02 - Build estandar bloqueada por `frontend/dist/assets`
+
+- Contexto: durante la validacion del rediseño completo, `npm.cmd run build` compilo TypeScript y transformo modulos, pero fallo en `vite:prepare-out-dir`.
+- Causa observada: `EPERM, Permission denied` al intentar vaciar `Atlas Balance/frontend/dist/assets`. Es coherente con las incidencias conocidas de carpetas `dist`/`wwwroot` bloqueadas por procesos locales o permisos de Windows.
+- Impacto: no invalida el codigo del rediseño, pero impide usar la build estandar como artefacto mientras esa carpeta este bloqueada.
+- Workaround aplicado: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02 --emptyOutDir` compilo correctamente.
+- Verificacion relacionada: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, `git diff --check` OK con avisos CRLF preexistentes.
+- Pendiente: liberar/regenerar `frontend/dist/assets` antes de empaquetar release o sincronizar `wwwroot`.
+
+## 2026-06-23 - V-02-02 - Overflow horizontal mobile por tablas `.sr-only`
+
+- Contexto: durante la QA del rediseno, el dashboard mobile a 390px tenia `scrollWidth` mayor que `clientWidth`.
+- Causa: las tablas accesibles ocultas de `EvolucionChart` usan `className="sr-only"`, pero al ser tablas conservaban ancho intrinseco aunque estuvieran clippeadas.
+- Solucion aplicada: `.sr-only` fuerza dimensiones maximas de 1px, `clip-path: inset(50%)`, `!important` defensivo y `left: -10000px` para que el contenido accesible no aumente el ancho visible.
+- Verificacion: QA Playwright con Chrome local confirma dashboard mobile `clientWidth=390`, `scrollWidth=390`, bottom nav visible y consola sin errores.
+
+## 2026-06-23 - V-02-02 - Browser in-app con timeouts CDP durante QA visual
+
+- Contexto: el Browser in-app cargo DOM de login/cambio de password, pero `Page.captureScreenshot`, `Page.navigate` y un click por locator empezaron a expirar por CDP.
+- Causa observada: inestabilidad de la herramienta Browser/CDP en la sesion, no evidencia de error de la app; las mismas rutas funcionaron con Chrome local via Playwright.
+- Solucion aplicada: cortar la via tras dos intentos y cambiar a QA finita con Playwright + Chrome local + servidor/API mock cerrados en el mismo proceso.
+- Verificacion: Playwright local completo OK, capturas generadas en `output/playwright/` y consola sin errores.
+
+## 2026-06-26 - V-02-02 - QA login: EPERM en build temporal y Chromium ausente
+
+- Contexto: validacion visual del login redisenado segun referencia.
+- Incidencias:
+  - `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-login-reference-v02-02 --emptyOutDir` fallo dentro del sandbox con `EPERM` al crear el `outDir`.
+  - Playwright no pudo lanzar Chromium bundled porque faltaba `C:\Users\usuario\AppData\Local\ms-playwright\chromium_headless_shell-1217\chrome-headless-shell-win64\chrome-headless-shell.exe`.
+  - `npm.cmd run lint` y `npm.cmd exec tsc -- --noEmit` detectaron una variable muerta preexistente: `lastEvolutionPoint` en `DashboardPage.tsx`.
+- Solucion aplicada:
+  - No se reintento Vite/Rolldown dentro del sandbox; se ejecuto build finito fuera del sandbox y paso.
+  - No se descargo Chromium; se uso Chrome local con `executablePath` explicito y servidor estatico temporal cerrado al terminar.
+  - Se elimino `lastEvolutionPoint` porque no tenia usos.
+- Verificacion:
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd exec tsc -- --noEmit`: OK.
+  - Build temporal fuera del sandbox: OK.
+  - QA Playwright con Chrome local: capturas desktop/mobile, consola sin errores y sin overflow horizontal.
+
+## 2026-06-29 - V-02-02 - Scanner Atlas encallado por recorrido demasiado amplio
+
+- Contexto: durante el hardening financiero se agrego `scripts/Test-AtlasSecrets.ps1` y se ejecuto contra el workspace local.
+- Incidencia: los dos primeros recorridos tardaron demasiado porque `Get-ChildItem -Recurse` entraba en arboles pesados antes de que los filtros excluyeran artefactos.
+- Solucion: se corto el proceso encallado, se cambio a recorrido manual que evita directorios excluidos antes de descender y se limito la lista positiva a workflows, backend, frontend, scripts y documentacion versionable.
+- Ajuste adicional: el scanner exige valores plausibles, no simples prefijos de token ni placeholders.
+- Verificacion: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Atlas Balance\scripts\Test-AtlasSecrets.ps1"` OK, sin hallazgos.
+
+## 2026-06-29 - V-02-02 - Build Vite temporal requiere ejecucion fuera del sandbox
+
+- Contexto: validacion frontend posterior a cambios en importacion, conciliacion, OpenClaw y select nativo.
+- Incidencia: Vite/Rolldown ya habia fallado en sandbox con `EPERM` al usar salida temporal. Es una incidencia conocida del proyecto.
+- Solucion: no se reintento dentro del sandbox; se ejecuto build finito fuera del sandbox con `--outDir C:\tmp\atlas-balance-vite-v0202`.
+- Verificacion: build OK.
+
+## 2026-06-29 - V-02-02 - Suite completa backend sigue bloqueada para release
+
+- Contexto: se ejecuto suite completa tras el hardening.
+- Resultado: 306 tests pasaron y 5 fallaron.
+- Fallos: deuda preexistente/sensible a fecha en Configuracion/OpenRouter, MFA remember-device default y ranking IA; dos pruebas PostgreSQL/Testcontainers fallan porque Docker no esta disponible/configurado.
+- Decision inicial: se valido el cambio con build backend y tests focalizados impactados 59/59 OK, pero no se declaro release verde.
+- Actualizacion 2026-06-30: la deuda no Docker quedo corregida y validada; despues se arranco Docker Desktop y la suite completa paso 317/317 con `DOCKER_HOST=npipe://./pipe/dockerDesktopLinuxEngine`.
+- Pendiente: ninguno en este gate.
+
+## 2026-06-29 - V-02-02 - QA visual completa pendiente, cerrada 2026-06-30
+
+- Contexto: el plan pedia Browser/Playwright para importacion, historial de lote, conciliacion, OpenClaw tokens, mobile alertas y Extractos revision/edicion.
+- Resultado inicial: no se completo QA visual de esos flujos en esta pasada. Si se firmaba release sin esto, se asumia riesgo UI.
+- Actualizacion 2026-06-30: QA Playwright finita con Chrome local cubrio esos flujos sin errores de consola. Capturas en `qa-artifacts/atlas-v0202-qa-*.png`.
+- Decision: cerrado como pendiente de UI; Browser in-app queda registrado aparte como incidencia de herramienta.
+
+## 2026-07-07 - V-02-04 - Docker no arranca en 5433 porque un Postgres local ya lo ocupa
+
+- Contexto: al cerrar el pendiente historico "nunca se ha probado un restore de backup" se intento `docker compose up -d` desde `Atlas Balance/` para levantar `atlas_balance_db`.
+- Incidencia: fallo con `ports are not available: exposing port TCP 127.0.0.1:5433 ... bind: Solo se permite un uso de cada direccion de socket`. `docker ps` no mostraba ningun contenedor usando el puerto.
+- Causa: un PostgreSQL standalone en `tools/pgsql/bin/postgres.exe` (misma version mayor, 16.14) ya estaba corriendo y sirviendo la BD real `atlas_balance` en `127.0.0.1:5433`, fuera de Docker. `netstat -ano` + `Get-Process -Id <PID>` lo confirmaron.
+- Solucion: en vez de matar ese proceso o forzar el contenedor (protocolo anti-encallamiento: maximo 2 intentos por la misma via), se opero directamente contra ese Postgres local con los binarios `tools/pgsql/bin/pg_dump.exe` / `pg_restore.exe` / `psql.exe`, que son compatibles (misma mayor 16.x que `postgres:16-alpine`).
+- Nota operativa: si en una maquina de desarrollo aparece este error de puerto, comprobar primero con `netstat -ano | grep 5433` y `Get-Process -Id <PID>` antes de asumir que es el contenedor Docker; puede ser este Postgres local bundled en `tools/pgsql`.
+
+## 2026-07-07 - V-02-04 - Bugs de PowerShell 5.1 al automatizar procesos nativos con captura de salida
+
+- Contexto: desarrollo de `Atlas Balance/scripts/Test-BackupRestore.ps1` para el ensayo de backup/restore.
+- Incidencia 1: un parametro de funcion llamado `$Args` nunca se bindea porque colisiona con la variable automatica `$Args` de PowerShell (argumentos no declarados de la funcion). `@Args` dentro del cuerpo queda siempre vacio aunque se pase `-Args @(...)` al llamar. Sintoma: el ejecutable nativo se invoca sin ningun argumento.
+  - Solucion: nunca nombrar un parametro `Args`; usar `Arguments` u otro nombre.
+- Incidencia 2: al pasar argumentos con comillas dobles embebidas a un ejecutable nativo via array (`& $exe @Arguments`), PowerShell 5.1 descarta las comillas dobles literales (via backtick `` `" ``) al reconstruir la linea de comandos para el proceso nativo. `SELECT count(*) FROM "USUARIOS"` llegaba como `SELECT count(*) FROM USUARIOS` (sin comillas, error `relation "usuarios" does not exist` por case-folding de Postgres).
+  - Solucion: escapar las comillas embebidas como `\"` (backslash-comilla) en vez de comilla literal via backtick, para que sobrevivan la reconstruccion de argumentos hacia el proceso nativo.
+- Incidencia 3: con `$ErrorActionPreference = "Stop"` a nivel de script, cualquier linea de stderr de un proceso nativo capturada con `2>&1` (incluso un `NOTICE` benigno de Postgres, ej. `DROP DATABASE IF EXISTS` sobre una BD que no existe) se convierte en error terminante de PowerShell antes de poder evaluar el `$LASTEXITCODE` real del proceso.
+  - Solucion: dentro del wrapper que ejecuta procesos nativos, bajar `$ErrorActionPreference = "Continue"` solo para esa invocacion y restaurar el valor previo en un `finally`.
+- Incidencia 4: sin forzar `$output = @(...)` sobre la captura, cuando el proceso nativo devuelve una unica linea, PowerShell la trata como `string` (no como array de 1 elemento). Indexar `.Output[0]` sobre un string devuelve el primer *caracter*, no la primera linea, y `[int]` de un caracter numerico da su codigo Unicode (ej. `[int]'3'` es `51`, no `3`), no el valor esperado.
+  - Solucion: envolver siempre la captura de un proceso nativo con `@(...)` para garantizar array, y convertir cada elemento a `.ToString()` antes de usarlo.
+- Verificacion: tras los 4 fixes, `Test-BackupRestore.ps1` corrio limpio 2 veces seguidas (incluida una repeticion para comprobar idempotencia), exit code `0`, recuentos identicos origen/restaurado.
+
+## 2026-07-10 - V-02-05 - Cierre de hallazgos CRITICAL y HIGH del audit pre-internet (PARCIAL)
+
+- Contexto: auditoria completa (`Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`)
+  identifico 3 CRITICAL y 11 HIGH que bloquean la exposicion a internet. V-02-05
+  arranca para cerrar la Fase 0.
+- Errores: los 3 CRITICAL estaban todos presentes en V-02-04 (no se habian
+  introducido por la propia V-02-04, sino que venian arrastrados de la base
+  pre-existente y se habian subestimado para un contexto LAN).
+- Cierres aplicados (Fase 0):
+  1. **CRIT-2 AuditService transaccional**: cerrado. `AuditService.LogAsync`
+     ahora detecta `Database.CurrentTransaction` y reutiliza el commit del
+     caller para atomicidad real. Ademas, nuevo `AuditSaveChangesInterceptor`
+     que audita INSERT/UPDATE/DELETE en 27 entidades criticas dentro de la
+     misma transaccion que el SaveChanges del negocio. Si el SaveChanges
+     falla, las auditorias capturadas se descartan con la transaccion.
+     Cobertura columnas secretas: `PasswordHash`, `MfaSecret`, `TokenHash`,
+     `RefreshToken`, `EndpointScopesJson`. Cap de 32 KB en `DetallesJson`.
+     El comportamiento legacy sigue: si no hay transaccion, AuditService
+     mantiene su SaveChangesAsync propio. Eventos sin cambio de entidad
+     (login, logout) siguen por `LogAsync` explicito.
+  2. **HIGH-5 Indices UNIQUE con filtro soft-delete**: cerrado. Recreados
+     `ix_plazos_fijos_cuenta_id` y `ix_extractos_cuenta_id_fila_numero`
+     como UNIQUE parciales con `WHERE deleted_at IS NULL`. Tras soft-delete
+     de un plazo o un extracto, se puede volver a crear uno con la misma
+     cuenta/fila. Migracion nueva:
+     `20260710_RecreateUniqueIndexesWithSoftDeleteFilter`.
+  3. **HIGH-8 WatchdogClientService path traversal**: cerrado.
+     `WatchdogSettings:StateFilePath` se valida contra `AppContext.BaseDirectory`,
+     `%ProgramData%\AtlasBalance` y `%LOCALAPPDATA%\AtlasBalance`. Cualquier
+     otra ruta cae al fallback con warning. Ya no se puede hacer que el API
+     exponga un archivo arbitrario del disco.
+  4. **CRIT-3 Watchdog verifica firma RSA del paquete**: cerrado. Nuevo
+     parametro `packageZipPath` en `POST /watchdog/actualizar-app`. El
+     Watchdog valida que el ZIP este dentro de `UpdateSourceRoot`, que
+     exista el `.sig` correspondiente, y si esta configurada
+     `UpdateSecurity:ReleaseSigningPublicKeyPem`, verifica la firma RSA
+     PKCS#1 SHA-256. Si la firma falla, el update se rechaza con estado
+     FAILED. La API ahora envia el `zipPath` junto con el `packageRoot`.
+  5. **CRIT-1 AtlasAiService allowlist OpenRouter real**: cerrado.
+     `IsValidOpenRouterModelId` (regex permisiva) ya no se usa para
+     `IsAllowedOpenRouterModel`. Ahora la allowlist es EXPLICITA: los 7
+     modelos sugeridos en la UI. Cualquier modelo fuera de la allowlist
+     cae a `openrouter/auto`. Para anadir modelos hay que editar
+     `AiConfiguration.AllowedOpenRouterModels` y redeployar.
+  6. **HIGH-1 Validar divisa archivo = cuenta en importacion**: cerrado.
+     `ImportacionLoteCrearRequest` ahora acepta `DivisaEsperada` opcional.
+     Si se proporciona y no coincide con `cuenta.Divisa`, se registra en
+     `ImportacionLote.Notas` como `divisa_mismatch: archivo=X cuenta=Y` y
+     en `ResumenJson` con flags. El operador lo ve antes de confirmar.
+  7. **HIGH-3/4/10 Bulk convert + tolerante en Dashboard (parcial)**: cerrado
+     parcialmente. `ITiposCambioService` ahora expone `TryConvertAsync`
+     (devuelve null si falta tasa) y `BulkConvertAsync` (agupa por divisa
+     origen). `DashboardService.GetSaldosDivisaAsync` y
+     `BuildPlazosFijosResumenAsync` usan `BulkConvertAsync`. Resto del
+     refactor en `GetPrincipalAsync` y `GetEvolucionAsync` queda para
+     Fase 1 por tamano.
+- Pendientes en V-02-05:
+  - **HIGH-2 Google Drive SHA-256 post-descifrado**: BLOQUEADO POR ACL.
+    Cambio implementado y guardado en `.tmp/GoogleDriveBackupService.cs.copy`.
+    No se puede aplicar al archivo original por ACL heredada
+    (`TRAKERIA\CodexSandboxOffline` es owner; el usuario actual no tiene
+    Modify). Mismo problema que `bin/obj` en V-02-04. Workaround documentado:
+    consola elevada con `icacls`. Cuando se aplique, `ImportAsync` buscara
+    el `BackupCloudCopy` original por `RemoteFileId` y comparara el SHA-256
+    del dump descifrado contra `ChecksumSha256`; si no coincide, descarta
+    el archivo y lanza `InvalidOperationException`.
+  - Resto de HIGH (4/10, 6, 7, 9, 11) y MEDIUM/LOW: Fase 1+.
+- Verificacion:
+  - Build backend API: 0 errores, 5 warnings preexistentes
+    (Npgsql `UseXminAsConcurrencyToken` obsoleto, Hangfire storage).
+  - Build Watchdog: 0 errores, 0 warnings. (Las exclusiones de `bin/obj`
+    en el `.csproj` del Watchdog permiten compilar aunque la ACL del
+    `obj/Release` siga bloqueada por la identidad offline.)
+  - Tests: PENDIENTE. La suite requiere Testcontainers (Docker Desktop
+    parado). Se documenta como gate abierto.
+- Regla: si el `AuditSaveChangesInterceptor` infla `AUDITORIAS` en
+  operaciones masivas (50k filas de importacion = 50k+ entradas),
+  considerar subir la frecuencia de `LimpiezaAuditoriaJob` o reducir
+  las entidades auditables a las financieras estrictas (sin lookup
+  tables como CONFIGURACION o DIVISA_ACTIVAS). En la primera medicion
+  tras despliegue, validar el tamano de AUDITORIAS y ajustar.
+
+## 2026-07-10 - V-02-05 - Sesion de cierre masivo (Fase 1)
+
+- Contexto: tras cerrar la Fase 0 (3 CRITICAL + 5 HIGH), se continuo con la
+  Fase 1: 17 MEDIUM, 3 LOW y resto de HIGH bloqueados por ACL.
+- Cierres aplicados en esta sesion (resumen):
+  - **HIGH restantes:** HIGH-2 BLOQUEADO por ACL (cambio en `.tmp/`), HIGH-4/10
+    bulk convert en DashboardService.GetEvolucionAsync, HIGH-6 PlazoFijo xmin,
+    HIGH-7 outbox en PlazoFijoService, HIGH-9 SaveCellAudits un SaveChanges,
+    HIGH-11 AlertaService cooldown por (cuenta, alcance) con advisory lock.
+  - **MEDIUM:** MED-1 PassthroughSecretProtector fail-closed, MED-3 redaccion
+    IBAN en contexto IA, MED-4 rate limit SendTestEmail, MED-5 email CRLF,
+    MED-7 RlsContextSecret warning, MED-9 CsrfMiddleware audit, MED-10/11
+    TiposCambio overflow + BFS depth cap, MED-12 Bulk convert en
+    IntegrationOpenClaw, MED-14 lock en ConfirmarLoteAsync, MED-15
+    ExecuteUpdate en RevertirLoteAsync, MED-19 PlazoFijo email digest,
+    MED-21 CHECK constraints (Conciliacion + MovimientoEsperado), MED-22
+    ISoftDelete en Conciliacion + UNIQUE parcial, MED-23 DTOs validation
+    (parcial), MED-24 log path absoluto.
+  - **LOW:** LOW-BE-6 EmailService timeout 15s, CONFIG-008/009/010
+    headers HTTP (Server removido, upgrade-insecure-requests, COEP same-origin).
+- Bloqueos por ACL (mismo workaround que `bin/obj` en V-02-04):
+  - **HIGH-2** Google Drive SHA-256 post-descifrado: cambio guardado en
+    `Atlas Balance/.tmp/GoogleDriveBackupService.cs.HIGH-2-blocked-2026-07-10.cs`.
+  - **MED-8** BackupConfigurationService EsSecreto: cambio preparado en
+    `Atlas Balance/.tmp/edit-bkcfg.ps1`.
+  - **MED-16** Conciliacion Sugerir batch: cambio preparado (precomputar
+    conciliaciones existentes y extractos candidatos en Dictionary).
+  - Todos requieren consola elevada con `icacls` para liberar la ACL del
+    archivo original y aplicar el cambio.
+- Pendientes para Fase 2 (documentados en v-02-05.md):
+  - MED-2 HMAC en ProtectForStorage (refactor mayor del formato de cifrado).
+  - MED-17 ApplyCuentaScope HashSet.
+  - MED-18 AlertaService round-trips.
+  - MED-20 AtlasAiService BuildFinancialContext (intentado, revertido por
+    complejidad; factible en sesion posterior).
+  - MED-26 INSTALL_CREDENTIALS_ONCE.txt.
+  - MED-22 resto (ISoftDelete en 4 entidades mas).
+  - MED-13/14/15/16/17/18/19/20 resto de rendimiento.
+  - CONFIG-001 a CONFIG-007/011+ scripts de instalador.
+  - LOW-1 a LOW-40 (resto).
+- Verificacion:
+  - Build API: 0 errores, 5 warnings preexistentes (Npgsql `UseXminAsConcurrencyToken`
+    obsoleto en 4 entidades, Hangfire storage). Filtrados en el resumen
+    final pero presentes.
+  - Build Watchdog: 0 errores, 0 warnings.
+  - Tests Testcontainers: PENDIENTE (Docker Desktop no arrancado).
+  - `npm audit` / `dotnet list package --vulnerable`: PENDIENTE.
+- Regla: cuando se desbloquee la ACL de los archivos bloqueados, los cambios
+  preparados en `.tmp/` se aplican con `Copy-Item` desde una consola
+  elevada o via el workaround de `icacls /grant` documentado.
+
+## 2026-07-10 - V-02-05 - Fase 2: cierre masivo final
+
+- Contexto: continuacion del cierre masivo de la sesion anterior.
+- Cierres aplicados en esta sesion (Fase 2):
+  - **MED-22 resto** ISoftDelete en 4 entidades mas + migracion nueva
+    `20260710_AddSoftDeleteToImportacionFilaColumnaExtraRevision`.
+  - **MED-2** HMAC en ProtectForStorage (formato v2 con v1 legacy).
+  - **MED-18** AlertaService round-trips unificados (UNION ALL).
+  - **MED-20** AtlasAiService BuildFinancialContext Task.WhenAll.
+  - **MED-26** INSTALL_CREDENTIALS_ONCE.txt -> mostrar en pantalla.
+  - **CONFIG-001** Firewall LocalSubnet por defecto.
+  - **CONFIG-002** PostgreSQL sslmode=require para host no-local.
+  - **CONFIG-006** Cert self-signed warning.
+  - **CONFIG-020** SkipCertificateCheck en lugar de tocar callback global.
+  - **LOW-BE-4** Lista de contrasenas 9 -> 100+.
+  - **LOW-FE-1** CSP meta en index.html.
+  - **LOW-FE-2** axios timeout 15s.
+  - **LOW-FE-3** ApiContentType FormData no forzar.
+  - **LOW-FE-4** CSRF cookie validar formato.
+  - **LOW-FE-8** paisScopeStore error surfacing.
+  - **LOW-FE-9** TokenCreatedModal enmascarado + auto-close 60s.
+- Resumen total (Fase 0 + Fase 1 + Fase 2):
+  - **3/3 CRITICAL** cerrados.
+  - **5/6 HIGH** cerrados (1 BLOQUEADO por ACL).
+  - **19/30 MEDIUM** cerrados (3 BLOQUEADOS por ACL, 8 pendientes).
+  - **11/40 LOW** cerrados.
+  - **6/30 CONFIG** cerrados.
+- Verificacion:
+  - Build API: 0 errores, 5 warnings preexistentes.
+  - Build Watchdog: 0 errores, 0 warnings.
+  - Frontend lint: 0 errores, 0 warnings.
+  - Tests: PENDIENTE (Docker Desktop no arrancado).
+- Pendientes para siguientes sesiones:
+  - Aplicar los 4 cambios bloqueados por ACL (consola elevada con `icacls`).
+  - MED-13 (RGPD ContenidoOriginal).
+  - MED-17 (BLOQUEADO por ACL).
+  - CONFIG-019 (gMSA para servicio Windows).
+  - Tests Testcontainers.
+  - LOW-5/6/7 y resto LOW-10..40.
+
+## 2026-07-10 - V-02-05 - Cierre definitivo + script finalize-pending
+
+- Contexto: cierre final de la sesion. Se anaden MED-13 (RGPD ContenidoOriginal),
+  CONFIG-019 (servicio Windows con cuenta bajo privilegio), LOW-FE-5/6/7 y se
+  prepara un script `finalize-pending.ps1` que aplica los 4 archivos
+  bloqueados por ACL.
+- Cierres finales en esta sesion:
+  - **MED-13** `ImportacionService.ContenidoOriginal` truncado a 2KB con hash SHA-256
+    en Notas. Cumple RGPD minimizando retencion de datos personales.
+  - **CONFIG-019** `install-services.ps1` crea cuenta local `AtlasBalanceSvc`,
+    aplica ACLs al install path, e instruye sobre `Log on as a service`.
+  - **LOW-FE-5** `LoginPage` ahora requiere checkbox opt-in para recordar email.
+  - **LOW-FE-6** `vite.config.ts` cambia `sourcemap: false` a `sourcemap: 'hidden'`.
+  - **LOW-FE-7** Backend ya soporta `search` (parcial). Frontend no lo envia
+    porque requiere levantar el estado del filtro a la pagina padre
+    (invasivo, documentado).
+- Script `finalize-pending.ps1`:
+  - Crea los 4 archivos `.tmp/` modificados.
+  - Verifica ejecucion como admin.
+  - Copia los 4 archivos al destino.
+  - Recompila la API.
+- Tests focalizados:
+  - Intentado crear `SecretProtectorTests.cs` con 8 tests para MED-2 (HMAC).
+  - BLOQUEADO por ACL en `bin/` del proyecto de tests. El csproj
+    `AtlasBalance.API.Tests.csproj` ya tiene `<BuildInParallel>false</BuildInParallel>`
+    y exclusiones de `bin/obj` aplicadas (V-02-05), pero el target
+    `Microsoft.CodeCoverage.targets` escribe en `bin/` ANTES de que las
+    exclusiones surtan efecto. Requiere liberar ACL con `icacls /grant` en
+    `backend\tests\AtlasBalance.API.Tests\bin\` y `obj\`.
+  - El test queda como deuda. Cuando se arregle la ACL, el archivo
+    `SecretProtectorTests.cs` se puede recrear (sigue el mismo patron que
+    los tests existentes).
+- Resumen TOTAL (Fase 0 + Fase 1 + Fase 2 + cierre final):
+  - **3/3 CRITICAL** cerrados.
+  - **5/6 HIGH** cerrados (1 BLOQUEADO por ACL, con script de aplicacion).
+  - **21/30 MEDIUM** cerrados (3 BLOQUEADOS por ACL con script).
+  - **13/40 LOW** cerrados.
+  - **7/30 CONFIG** cerrados.
+- Verificacion:
+  - Build API: 0 errores, 5 warnings preexistentes.
+  - Build Watchdog: 0 errores, 0 warnings.
+  - Frontend lint: 0 errores, 0 warnings.
+  - Tests: PENDIENTES (requiere liberar ACL de `bin/` + Docker Desktop).
+- Pendientes para 100%:
+  1. Ejecutar `.tmp\finalize-pending.ps1` desde consola elevada.
+  2. Liberar ACL de `bin/` en el proyecto de tests.
+  3. Activar Docker Desktop.
+   4. Ejecutar `dotnet test` (suite completa).
+
+## 2026-07-10 - V-02-05 - HIGH-2 helper SHA-256 fuera de la clase (CERRADO)
+
+- **Contexto:** la importacion desde Google Drive llamaba a
+  `ComputeSha256Async(dumpPath, cancellationToken)` y el compilador devolvia
+  CS0103 porque el helper no pertenecia al contexto de
+  `GoogleDriveBackupService`.
+- **Causa:** el helper habia sido añadido despues de la llave `}` final de la
+  clase. El mismo defecto estaba en el archivo `.tmp`, por lo que copiarlo de
+  nuevo habria reintroducido el fallo.
+- **Solucion:** se movio el metodo dentro de `GoogleDriveBackupService` en el
+  destino y en `.tmp/GoogleDriveBackupService.cs.HIGH-2-blocked-2026-07-10.cs`.
+- **Verificacion:** `dotnet build --no-restore -c Release -p:OutDir="Atlas Balance/.tmp/high2-build/" -p:UseAppHost=false` termino con **0 errores y 0 advertencias**. El primer directorio de salida en `C:\tmp` fue rechazado por ACL; no afecta al codigo y se uso una ruta escribible del workspace.
+- **Cierre:** HIGH-2 queda cerrado; el archivo temporal ya es reutilizable.
+
+## 2026-07-14 - V-02-05 - GitHub Actions no compilaba la suite backend (CERRADO)
+
+- **Contexto:** el run `29210316379`, job `Build, test, and audit`, fallo en
+  `dotnet test` antes de ejecutar pruebas.
+- **Causa inicial:** siete errores `CS0535` por fakes/stubs que conservaban
+  contratos anteriores a los parametros `packageZipPath`, conversion tolerante
+  y conversion bulk.
+- **Deuda revelada al compilar:** constructores de tests sin los nuevos
+  `ISecretProtector` y `SmtpTestRateLimit`, llamadas Watchdog antiguas, tres
+  incompatibilidades con EF InMemory y tests de IA previos a la allowlist
+  explicita de V-02-05.
+- **Solucion:** se alinearon todos los dobles de prueba con los contratos
+  actuales; los caminos exclusivos de PostgreSQL quedaron condicionados a
+  proveedor relacional con fallback InMemory equivalente; se corrigio el
+  reintento de notificacion de plazo fijo y la normalizacion global de modelos
+  OpenRouter; se actualizaron expectativas IA obsoletas.
+- **Verificacion:** tests afectados **133/133 OK** y suite no Docker
+  **327/327 OK**. Las pruebas Testcontainers quedan para el runner de GitHub.
+- **Regla:** cuando se amplie una interfaz o constructor de seguridad, compilar
+  el proyecto de tests completo en la misma sesion. Compilar solo el proyecto
+  productivo deja deuda escondida hasta CI.
+
+## 2026-07-14 - V-02-05 - Migraciones manuscritas ausentes de EF Core (CERRADO)
+
+- **Contexto:** tras reparar la compilacion, el run `29365305520` ejecuto la
+  suite y fallo 3 de 331 pruebas PostgreSQL por columnas `deleted_at` ausentes.
+- **Causa:** las tres migraciones manuscritas `20260710_*` heredaban de
+  `Migration`, pero no tenian atributos `[DbContext]` y `[Migration]` ni archivo
+  Designer. EF Core las compilaba, pero `MigrateAsync()` no las descubria.
+- **Solucion:** se registraron las tres migraciones con ids ordenados y se
+  anadio un test unitario que comprueba su presencia mediante `GetMigrations()`.
+- **Verificacion local:** `MigrationDiscoveryTests` **1/1 OK**. La aplicacion
+  completa sobre PostgreSQL queda validada por el siguiente run de Actions.
+- **Regla:** una clase que hereda de `Migration` no basta. Si la migracion se
+  escribe a mano, debe llevar metadatos EF y un test de descubrimiento.

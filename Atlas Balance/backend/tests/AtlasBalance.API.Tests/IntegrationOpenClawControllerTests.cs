@@ -308,6 +308,16 @@ public sealed class IntegrationOpenClawControllerTests
         public Task<decimal> ConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken)
             => Task.FromResult(amount);
 
+        public Task<decimal?> TryConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken)
+            => Task.FromResult<decimal?>(amount);
+
+        public Task<IReadOnlyDictionary<string, decimal?>> BulkConvertAsync(
+            IReadOnlyDictionary<string, decimal> amountsBySource,
+            string divisaDestino,
+            CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyDictionary<string, decimal?>>(
+                amountsBySource.ToDictionary(x => x.Key, x => (decimal?)x.Value, StringComparer.OrdinalIgnoreCase));
+
         public Task<DivisaActivaDto> ActualizarDivisaAsync(string codigo, string? nombre, string? simbolo, bool activa, bool esBase, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 

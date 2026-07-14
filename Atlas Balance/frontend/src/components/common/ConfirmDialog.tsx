@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
+import { useDialogFocus } from '@/hooks/useDialogFocus';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -24,56 +25,10 @@ export default function ConfirmDialog({
   onConfirm,
 }: ConfirmDialogProps) {
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
-  const triggerRef = useRef<Element | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-
-    triggerRef.current = document.activeElement;
-    window.setTimeout(() => cancelButtonRef.current?.focus(), 0);
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !loading) {
-        onCancel();
-        return;
-      }
-
-      if (event.key !== 'Tab') {
-        return;
-      }
-
-      const dialog = cancelButtonRef.current?.closest('[role="dialog"]');
-      const focusable = Array.from(
-        dialog?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-        ) ?? []
-      );
-
-      if (focusable.length === 0) {
-        return;
-      }
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      if (triggerRef.current instanceof HTMLElement) {
-        triggerRef.current.focus();
-      }
-    };
-  }, [loading, onCancel, open]);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
+    initialFocus: () => cancelButtonRef.current,
+    onEscape: loading ? undefined : onCancel,
+  });
 
   if (!open) {
     return null;
@@ -82,6 +37,7 @@ export default function ConfirmDialog({
   return (
     <div className="modal-backdrop" onClick={!loading ? onCancel : undefined}>
       <div
+        ref={dialogRef}
         className="users-confirm-modal"
         onClick={(event) => event.stopPropagation()}
         role="dialog"

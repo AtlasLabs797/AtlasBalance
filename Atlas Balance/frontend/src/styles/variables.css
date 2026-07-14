@@ -68,6 +68,7 @@
   --bg-surface: #fbfcfe;
   --bg-surface-soft: #f1f5fa;
   --bg-surface-muted: #e9eff6;
+  --dashboard-hero-bg: #ffffff;
   --bg-input: #fbfcfe;
   --bg-hover: #e9eff6;
   --bg-selected: #e6eefc;
@@ -140,10 +141,16 @@
   --color-button-secondary-border: var(--border-strong);
   --color-button-secondary-text: var(--text-primary);
 
-  --color-bg-sidebar: #fbfcfe;
-  --color-sidebar-text: #445266;
+  --color-bg-sidebar: var(--bg-surface);
+  --color-sidebar-text: var(--text-secondary);
+  --color-sidebar-muted: var(--text-muted);
+  --color-sidebar-border: var(--border-soft);
+  --color-sidebar-hover-bg: var(--bg-surface-soft);
+  --color-sidebar-scope-bg: var(--bg-surface-soft);
   --color-sidebar-active-bg: var(--accent-primary-soft);
-  --color-sidebar-active-text: #214cad;
+  --color-sidebar-active-text: var(--text-link);
+  --color-sidebar-active-ring: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  --color-sidebar-shadow: 14px 0 32px color-mix(in srgb, var(--text-primary) 6%, transparent);
 
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
@@ -214,7 +221,8 @@
 
   --sidebar-width: 252px;
   --sidebar-collapsed-width: 72px;
-  --topbar-height: 68px;
+  --topbar-height: 64px;
+  --mobile-bottom-nav-height: 78px;
 
   --border-radius-sm: 8px;
   --border-radius-md: 8px;
@@ -259,9 +267,10 @@
 
   --z-dropdown: 100;
   --z-sticky: 200;
+  --z-toast: 260;
+  --z-floating: 280;
   --z-modal-backdrop: 300;
   --z-modal: 400;
-  --z-toast: 500;
   --z-tooltip: 600;
 }
 
@@ -271,6 +280,7 @@
   --bg-surface: #1b2330;
   --bg-surface-soft: #202a38;
   --bg-surface-muted: #293545;
+  --dashboard-hero-bg: var(--bg-surface);
   --bg-input: #161d27;
   --bg-hover: #242f3e;
   --bg-selected: #233558;
@@ -328,10 +338,16 @@
   --row-flagged-bg: rgba(255, 196, 70, 0.18);
   --row-flagged-border: rgba(255, 213, 112, 0.42);
 
-  --color-bg-sidebar: #1b2330;
-  --color-sidebar-text: #c0cbda;
+  --color-bg-sidebar: #12171f;
+  --color-sidebar-text: #c8d3e1;
+  --color-sidebar-muted: #8f9caf;
+  --color-sidebar-border: rgba(216, 226, 240, 0.12);
+  --color-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+  --color-sidebar-scope-bg: rgba(255, 255, 255, 0.04);
   --color-sidebar-active-bg: rgba(130, 164, 255, 0.16);
-  --color-sidebar-active-text: #d5ddff;
+  --color-sidebar-active-text: #f8fbff;
+  --color-sidebar-active-ring: rgba(130, 164, 255, 0.22);
+  --color-sidebar-shadow: 18px 0 44px rgba(0, 0, 0, 0.18);
 
   --surface-bg-raised: color-mix(in srgb, var(--bg-surface) 90%, transparent);
   --surface-bg-sunken: color-mix(in srgb, var(--bg-surface-soft) 76%, var(--bg-app));

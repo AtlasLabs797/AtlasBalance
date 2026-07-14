@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Services;
@@ -35,13 +35,14 @@ public sealed class AuthController : ControllerBase
 
         try
         {
-            var trustedMfaToken = Request.Cookies["mfa_trusted"];
+            var trustedMfaToken = ReadCookie("mfa_trusted");
             var result = await _authService.LoginAsync(
                 request.Email,
                 request.Password,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 cancellationToken,
-                trustedMfaToken);
+                trustedMfaToken,
+                Request.Headers.UserAgent.ToString());
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
         catch (AuthException ex)
@@ -56,7 +57,7 @@ public sealed class AuthController : ControllerBase
     {
         try
         {
-            var refreshToken = Request.Cookies["refresh_token"];
+            var refreshToken = ReadCookie("refresh_token");
             var result = await _authService.RefreshTokenAsync(refreshToken ?? string.Empty, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
@@ -82,7 +83,8 @@ public sealed class AuthController : ControllerBase
                 request.Code,
                 request.RememberDevice,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
-                cancellationToken);
+                cancellationToken,
+                Request.Headers.UserAgent.ToString());
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
         catch (AuthException ex)
@@ -96,13 +98,12 @@ public sealed class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
-        var refreshToken = Request.Cookies["refresh_token"];
+        var refreshToken = ReadCookie("refresh_token");
         var revokedUserId = await _authService.LogoutAsync(refreshToken, cancellationToken);
 
         DeleteCookie("access_token");
         DeleteCookie("refresh_token");
         DeleteCookie("csrf_token");
-        DeleteCookie("mfa_trusted");
 
         var actorUserId = TryGetUserId(out var authenticatedUserId)
             ? authenticatedUserId
@@ -120,7 +121,47 @@ public sealed class AuthController : ControllerBase
                 cancellationToken);
         }
 
-        return Ok(new { message = "Sesión cerrada" });
+        return Ok(new { message = "Sesi�n cerrada" });
+    }
+
+    [HttpGet("mfa/trusted-devices")]
+    [Authorize]
+    public async Task<IActionResult> TrustedDevices(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        var devices = await _authService.GetTrustedMfaDevicesAsync(userId, ReadCookie("mfa_trusted"), cancellationToken);
+        return Ok(devices);
+    }
+
+    [HttpDelete("mfa/trusted-devices")]
+    [Authorize]
+    public async Task<IActionResult> RevokeCurrentTrustedDevice(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        var revoked = await _authService.RevokeCurrentTrustedMfaDeviceAsync(userId, ReadCookie("mfa_trusted"), cancellationToken);
+        DeleteCookie("mfa_trusted");
+        return revoked ? Ok(new { message = "Dispositivo MFA recordado revocado" }) : NotFound(new { error = "Dispositivo MFA recordado no encontrado" });
+    }
+
+    [HttpDelete("mfa/trusted-devices/{deviceId:guid}")]
+    [Authorize]
+    public async Task<IActionResult> RevokeTrustedDevice(Guid deviceId, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        var revoked = await _authService.RevokeTrustedMfaDeviceAsync(userId, deviceId, cancellationToken);
+        return revoked ? Ok(new { message = "Dispositivo MFA recordado revocado" }) : NotFound(new { error = "Dispositivo MFA recordado no encontrado" });
     }
 
     [HttpGet("me")]
@@ -168,7 +209,7 @@ public sealed class AuthController : ControllerBase
                 request.PasswordActual,
                 request.PasswordNueva,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
-                Request.Cookies["refresh_token"],
+                ReadCookie("refresh_token"),
                 cancellationToken);
             return Ok(AttachCookiesAndBuildAuthResponse(result));
         }
@@ -176,6 +217,12 @@ public sealed class AuthController : ControllerBase
         {
             return StatusCode(ex.StatusCode, new { error = ex.Message });
         }
+    }
+
+    private string ReadCookie(string baseName)
+    {
+        var prod = $"__Host-atlas-{baseName.Replace("_", "-")}";
+        return Request.Cookies[prod] ?? Request.Cookies[baseName] ?? string.Empty;
     }
 
     private object AttachCookiesAndBuildAuthResponse(AuthResult result)
@@ -199,14 +246,22 @@ public sealed class AuthController : ControllerBase
             };
         }
 
+        // S-NEW-1 (V-02-03): prefijo __Host- en produccion para que un subdominio
+        // comprometido no pueda sobrescribir las cookies de sesion. En dev seguimos
+        // usando los nombres antiguos para no requerir HTTPS local.
+        var accessCookieName = CookieName("access_token");
+        var refreshCookieName = CookieName("refresh_token");
+        var mfaCookieName = CookieName("mfa_trusted");
+        var csrfCookieName = CookieName("csrf_token");
+
         if (!string.IsNullOrWhiteSpace(result.AccessToken))
         {
-            Response.Cookies.Append("access_token", result.AccessToken, BuildCookieOptions(TimeSpan.FromHours(1), httpOnly: true, secure: ShouldUseSecureCookie()));
+            Response.Cookies.Append(accessCookieName, result.AccessToken, BuildCookieOptions(TimeSpan.FromHours(1), httpOnly: true, secure: ShouldUseSecureCookie()));
         }
 
         if (!string.IsNullOrWhiteSpace(result.RefreshToken))
         {
-            Response.Cookies.Append("refresh_token", result.RefreshToken, BuildCookieOptions(TimeSpan.FromDays(7), httpOnly: true, secure: ShouldUseSecureCookie()));
+            Response.Cookies.Append(refreshCookieName, result.RefreshToken, BuildCookieOptions(TimeSpan.FromDays(7), httpOnly: true, secure: ShouldUseSecureCookie()));
         }
 
         if (!string.IsNullOrWhiteSpace(result.TrustedMfaToken) && result.TrustedMfaTokenExpiresAt.HasValue)
@@ -214,12 +269,12 @@ public sealed class AuthController : ControllerBase
             var maxAge = result.TrustedMfaTokenExpiresAt.Value - DateTime.UtcNow;
             if (maxAge > TimeSpan.Zero)
             {
-                Response.Cookies.Append("mfa_trusted", result.TrustedMfaToken, BuildCookieOptions(maxAge, httpOnly: true, secure: ShouldUseSecureCookie()));
+                Response.Cookies.Append(mfaCookieName, result.TrustedMfaToken, BuildCookieOptions(maxAge, httpOnly: true, secure: ShouldUseSecureCookie()));
             }
         }
 
         var csrfToken = _csrfService.GenerateToken();
-        Response.Cookies.Append("csrf_token", csrfToken, BuildCookieOptions(TimeSpan.FromDays(7), httpOnly: false, secure: ShouldUseSecureCookie()));
+        Response.Cookies.Append(csrfCookieName, csrfToken, BuildCookieOptions(TimeSpan.FromDays(7), httpOnly: false, secure: ShouldUseSecureCookie()));
 
         return new AuthResponse
         {
@@ -228,6 +283,9 @@ public sealed class AuthController : ControllerBase
             Permisos = result.Permisos
         };
     }
+
+    private string CookieName(string baseName) =>
+        _environment.IsDevelopment() ? baseName : $"__Host-atlas-{baseName.Replace("_", "-")}";
 
     private static CookieOptions BuildCookieOptions(TimeSpan maxAge, bool httpOnly, bool secure)
     {
@@ -243,15 +301,28 @@ public sealed class AuthController : ControllerBase
 
     private bool ShouldUseSecureCookie() => !_environment.IsDevelopment() || Request.IsHttps;
 
-    private void DeleteCookie(string name)
+    // Borra la cookie usando el nombre real segun entorno (en produccion llevan el
+    // prefijo __Host-atlas-, ver CookieName). Borrar solo el nombre legacy dejaba la
+    // cookie real viva en el navegador hasta caducar (el access token seguia siendo
+    // valido ~1h tras el logout). Se borra tambien la variante legacy por si quedaran
+    // cookies de una version anterior. Mismo criterio que UserStateMiddleware.
+    private void DeleteCookie(string baseName)
     {
-        Response.Cookies.Delete(name, new CookieOptions
+        var options = new CookieOptions
         {
-            HttpOnly = name is "access_token" or "refresh_token" or "mfa_trusted",
+            Path = "/",
+            HttpOnly = baseName is "access_token" or "refresh_token" or "mfa_trusted",
             Secure = ShouldUseSecureCookie(),
             SameSite = SameSiteMode.Strict,
             IsEssential = true
-        });
+        };
+
+        var realName = CookieName(baseName);
+        Response.Cookies.Delete(realName, options);
+        if (!string.Equals(realName, baseName, StringComparison.Ordinal))
+        {
+            Response.Cookies.Delete(baseName, options);
+        }
     }
 
     private bool TryGetUserId(out Guid userId)

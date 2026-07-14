@@ -6,6 +6,7 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { TipoTitular } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
@@ -73,6 +74,7 @@ export default function AlertasPage() {
   const activeLoading = useAlertasStore((state) => state.loading);
   const activeError = useAlertasStore((state) => state.lastError);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
+  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   const [configLoading, setConfigLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -121,6 +123,8 @@ export default function AlertasPage() {
     }
   };
 
+  const loadScopedAlertasActivas = () => loadAlertasActivas(selectedPaisId || undefined);
+
   const loadConfiguracion = async () => {
     if (!isAdmin) {
       return;
@@ -147,8 +151,8 @@ export default function AlertasPage() {
   };
 
   useEffect(() => {
-    void loadAlertasActivas();
-  }, [loadAlertasActivas]);
+    void loadAlertasActivas(selectedPaisId || undefined);
+  }, [loadAlertasActivas, selectedPaisId]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -177,7 +181,7 @@ export default function AlertasPage() {
       }
 
       setFeedback('Alerta global guardada.');
-      await Promise.all([loadConfiguracion(), loadAlertasActivas()]);
+      await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (saveError: unknown) {
       setError(getErrorMessage(saveError, 'No se pudo guardar la alerta global.'));
     } finally {
@@ -207,7 +211,7 @@ export default function AlertasPage() {
       setFeedback(editingCuentaAlertId ? 'Alerta de cuenta actualizada.' : 'Alerta de cuenta creada.');
       setEditingCuentaAlertId(null);
       setCuentaForm(EMPTY_FORM);
-      await Promise.all([loadConfiguracion(), loadAlertasActivas()]);
+      await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (saveError: unknown) {
       setError(getErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta.'));
     } finally {
@@ -237,7 +241,7 @@ export default function AlertasPage() {
       setFeedback(editingTipoAlertId ? 'Alerta por tipo actualizada.' : 'Alerta por tipo creada.');
       setEditingTipoAlertId(null);
       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
-      await Promise.all([loadConfiguracion(), loadAlertasActivas()]);
+      await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (saveError: unknown) {
       setError(getErrorMessage(saveError, 'No se pudo guardar la alerta por tipo.'));
     } finally {
@@ -288,7 +292,7 @@ export default function AlertasPage() {
       }
 
       setFeedback('Alerta eliminada.');
-      await Promise.all([loadConfiguracion(), loadAlertasActivas()]);
+      await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (deleteError: unknown) {
       setError(getErrorMessage(deleteError, 'No se pudo eliminar la alerta.'));
     } finally {
@@ -331,7 +335,7 @@ export default function AlertasPage() {
               Se evalúan al crear o editar extractos. El banner superior y este listado usan la misma fuente.
             </p>
           </div>
-          <button type="button" onClick={() => void loadAlertasActivas()} disabled={activeLoading}>
+          <button type="button" onClick={() => void loadScopedAlertasActivas()} disabled={activeLoading}>
             {activeLoading ? 'Actualizando...' : 'Recargar'}
           </button>
         </div>

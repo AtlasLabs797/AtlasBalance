@@ -1,12 +1,31 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
 import { useAlertCount } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
+import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useUpdateStore } from '@/stores/updateStore';
+
+// V-02-03: version unica inyectada por Vite desde package.json (appVersion).
+// Antes estaba hardcodeada y se desincronizaba de VERSION / Directory.Build.props.
+// V-02-03 cierre: el reloj se refresca solo al cambiar de pestaña para no
+// molestar a los usuarios que miran la sidebar fijamente.
+const APP_VERSION_LABEL = (
+  (import.meta.env.VITE_APP_VERSION as string | undefined)?.trim()
+  ?? (import.meta.env.PACKAGE_VERSION as string | undefined)?.trim()
+  ?? 'desarrollo'
+);
+
+function formatSidebarClock(value: Date) {
+  return new Intl.DateTimeFormat('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(value);
+}
 
 export function Sidebar() {
   const location = useLocation();
@@ -19,6 +38,8 @@ export function Sidebar() {
   const updateAvailable = useUpdateStore((state) => state.available);
   const checkUpdate = useUpdateStore((state) => state.check);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
+  const canViewDashboard = usePermisosStore((state) => state.canViewDashboard());
+  const [now, setNow] = useState(() => new Date());
 
   // Check for updates once per session when the user role is known, not on every navigation.
   useEffect(() => {
@@ -36,7 +57,15 @@ export function Sidebar() {
     clearNotificaciones();
   }, [clearNotificaciones, loadResumen, location.pathname, usuario?.rol]);
 
-  const visibleNavItems = getVisibleNavigationItems(usuario?.rol, { aiAvailable });
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const visibleNavItems = getVisibleNavigationItems(usuario?.rol, {
+    aiAvailable,
+    dashboardAvailable: usuario?.rol === 'ADMIN' || canViewDashboard,
+  });
   const groupOrder: NavigationGroup[] = ['operacion', 'control', 'sistema'];
 
   const getBadge = (to: string) => {
@@ -72,11 +101,18 @@ export function Sidebar() {
   };
 
   return (
-    <aside className={`app-sidebar${sidebarCollapsed ? ' app-sidebar--collapsed' : ''}`} aria-label="Navegación principal">
+    <aside
+      className={`app-sidebar${sidebarCollapsed ? ' app-sidebar--collapsed' : ''}`}
+      aria-label="Navegación principal"
+    >
       <div className="app-brand" aria-label="Atlas Balance">
         <span className="app-brand-logo" aria-hidden="true" />
-        <span className="app-brand-text" aria-hidden={sidebarCollapsed}>Atlas Balance</span>
+        <span className="app-brand-text" aria-hidden={sidebarCollapsed}>
+          <span className="app-brand-name">Atlas Balance</span>
+          <span className="app-brand-subtitle">by Atlas Labs</span>
+        </span>
       </div>
+      <PaisScopeSelect compact={sidebarCollapsed} />
       <nav className="app-nav">
         {groupOrder.map((group) => {
           const items = visibleNavItems.filter((item) => item.group === group);
@@ -108,6 +144,10 @@ export function Sidebar() {
           );
         })}
       </nav>
+      <div className="app-sidebar-footer" aria-hidden={sidebarCollapsed}>
+        <span>{APP_VERSION_LABEL}</span>
+        <time dateTime={now.toISOString()}>{formatSidebarClock(now)}</time>
+      </div>
     </aside>
   );
 }
