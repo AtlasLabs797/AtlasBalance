@@ -2481,3 +2481,25 @@
   destino y en `.tmp/GoogleDriveBackupService.cs.HIGH-2-blocked-2026-07-10.cs`.
 - **Verificacion:** `dotnet build --no-restore -c Release -p:OutDir="Atlas Balance/.tmp/high2-build/" -p:UseAppHost=false` termino con **0 errores y 0 advertencias**. El primer directorio de salida en `C:\tmp` fue rechazado por ACL; no afecta al codigo y se uso una ruta escribible del workspace.
 - **Cierre:** HIGH-2 queda cerrado; el archivo temporal ya es reutilizable.
+
+## 2026-07-14 - V-02-05 - GitHub Actions no compilaba la suite backend (CERRADO)
+
+- **Contexto:** el run `29210316379`, job `Build, test, and audit`, fallo en
+  `dotnet test` antes de ejecutar pruebas.
+- **Causa inicial:** siete errores `CS0535` por fakes/stubs que conservaban
+  contratos anteriores a los parametros `packageZipPath`, conversion tolerante
+  y conversion bulk.
+- **Deuda revelada al compilar:** constructores de tests sin los nuevos
+  `ISecretProtector` y `SmtpTestRateLimit`, llamadas Watchdog antiguas, tres
+  incompatibilidades con EF InMemory y tests de IA previos a la allowlist
+  explicita de V-02-05.
+- **Solucion:** se alinearon todos los dobles de prueba con los contratos
+  actuales; los caminos exclusivos de PostgreSQL quedaron condicionados a
+  proveedor relacional con fallback InMemory equivalente; se corrigio el
+  reintento de notificacion de plazo fijo y la normalizacion global de modelos
+  OpenRouter; se actualizaron expectativas IA obsoletas.
+- **Verificacion:** tests afectados **133/133 OK** y suite no Docker
+  **327/327 OK**. Las pruebas Testcontainers quedan para el runner de GitHub.
+- **Regla:** cuando se amplie una interfaz o constructor de seguridad, compilar
+  el proyecto de tests completo en la misma sesion. Compilar solo el proyecto
+  productivo deja deuda escondida hasta CI.

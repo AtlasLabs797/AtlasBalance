@@ -70,6 +70,7 @@ public class WatchdogClientServiceTests
         Func<Task> action = async () => await service.SolicitarActualizacionAsync(
             "C:\\AtlasBalance\\updates\\v",
             "C:\\AtlasBalance\\api",
+            null,
             CancellationToken.None);
 
         await action.Should().ThrowAsync<InvalidOperationException>();

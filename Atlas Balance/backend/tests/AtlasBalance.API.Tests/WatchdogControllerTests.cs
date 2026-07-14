@@ -50,7 +50,7 @@ public sealed class WatchdogControllerTests
             return Task.FromResult(true);
         }
 
-        public Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
+        public Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken)
         {
             UpdateCalled = true;
             return Task.FromResult(true);

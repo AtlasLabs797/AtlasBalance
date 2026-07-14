@@ -243,7 +243,7 @@ public class ManualProcessResponseTests
             return Task.FromResult(true);
         }
 
-        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
+        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken)
         {
             return Task.FromResult(true);
         }

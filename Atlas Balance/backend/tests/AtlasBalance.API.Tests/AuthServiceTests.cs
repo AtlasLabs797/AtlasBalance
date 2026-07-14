@@ -60,7 +60,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
 
         for (var i = 1; i <= 4; i++)
         {
@@ -98,7 +98,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
 
         Func<Task> action = () => sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
@@ -127,7 +127,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
 
         var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
@@ -152,7 +152,7 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), cache);
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), cache);
         const string sharedIp = "10.10.10.10";
 
         for (var i = 0; i < 20; i++)
@@ -185,7 +185,7 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), cache);
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), cache);
         const string sharedIp = "10.10.10.11";
 
         for (var i = 0; i < 19; i++)
@@ -749,7 +749,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
         var originalStamp = user.SecurityStamp;
         var result = await sut.ChangePasswordAsync(user.Id, "OldPass123!Ab", "NewPass12345!", "127.0.0.1", null, CancellationToken.None);
 
@@ -780,7 +780,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
         user.LockedUntil = DateTime.UtcNow.AddMinutes(30);
@@ -809,7 +809,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
         var login = await sut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
         var previousHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(login.RefreshToken!))).ToLowerInvariant();
 
@@ -843,7 +843,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var refreshHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(login.RefreshToken!))).ToLowerInvariant();
         var storedToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == refreshHash);
@@ -881,7 +881,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var stampAfterLogin = (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp;
 
@@ -917,7 +917,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db));
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
         var revokedUserId = await sut.LogoutAsync(login.RefreshToken, CancellationToken.None);

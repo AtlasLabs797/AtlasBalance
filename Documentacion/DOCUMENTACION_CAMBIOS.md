@@ -17414,3 +17414,42 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 
 **Pendientes:**
 - Tests completos/Testcontainers siguen pendientes por las incidencias de ACL y Docker documentadas previamente.
+
+## 2026-07-14 - V-02-05 - Reparacion de GitHub Actions y suite backend
+
+**Version:** V-02-05
+
+**Trabajo realizado:**
+- Se actualizaron los fakes y stubs que no implementaban las firmas actuales de
+  `IWatchdogClientService`, `IWatchdogOperationsService` e `ITiposCambioService`.
+- Se actualizaron constructores de tests tras hacer obligatorios
+  `ISecretProtector` y `SmtpTestRateLimit`.
+- `AlertaService` aplica el advisory lock solo con proveedor relacional.
+- `ImportacionService.RevertirLoteAsync` conserva `ExecuteUpdateAsync` en
+  produccion y usa un fallback equivalente para el proveedor InMemory de tests.
+- El reintento de email de plazos fijos considera satisfecha una notificacion
+  admin ya existente, evitando que `FechaUltimaNotificacion` quede siempre nula.
+- Configuracion normaliza modelos OpenRouter desconocidos a `openrouter/auto`;
+  los tests de IA se alinearon con la allowlist explicita de V-02-05.
+
+**Archivos tocados:**
+- Servicios/controlador backend: `ConfiguracionController.cs`,
+  `AlertaService.cs`, `ImportacionService.cs`, `PlazoFijoService.cs`.
+- Tests backend afectados por los contratos y comportamientos anteriores.
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`,
+  `Documentacion/LOG_ERRORES_INCIDENCIAS.md`,
+  `Documentacion/REGISTRO_BUGS.md` y `Documentacion/Versiones/v-02-05.md`.
+
+**Comandos ejecutados y resultado:**
+- `gh run view 29210316379 --log-failed`: fallo confirmado en compilacion de tests.
+- Tests focalizados afectados: **133/133 OK**.
+- Suite backend sin Testcontainers: **327/327 OK**.
+- Escaneo de secretos: **sin hallazgos**.
+- Auditorias NuGet (API, Watchdog y tests): **0 paquetes vulnerables**.
+- Auditoria npm: **0 vulnerabilidades**.
+- Frontend lint y build: **OK**.
+- `git diff --check`: sin errores de whitespace.
+
+**Pendientes:**
+- Las pruebas Testcontainers requieren Docker y se validaran en el runner de
+  GitHub Actions tras el push.

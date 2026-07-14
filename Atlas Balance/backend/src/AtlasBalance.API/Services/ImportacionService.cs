@@ -532,12 +532,26 @@ public sealed class ImportacionService : IImportacionService
         var now = DateTime.UtcNow;
         // V-02-05 (MED-15): ExecuteUpdate en lugar de cargar 50k entidades a memoria
         // solo para marcarlas. Un UPDATE con WHERE filtro, sin materializacion.
-        var updateCount = await _dbContext.Extractos
+        int updateCount;
+        var extractosARevertir = _dbContext.Extractos
             .IgnoreQueryFilters()
-            .Where(x => x.ImportacionLoteId == lote.Id && x.DeletedAt == null)
-            .ExecuteUpdateAsync(
+            .Where(x => x.ImportacionLoteId == lote.Id && x.DeletedAt == null);
+        if (_dbContext.Database.IsRelational())
+        {
+            updateCount = await extractosARevertir.ExecuteUpdateAsync(
                 s => s.SetProperty(e => e.DeletedAt, now).SetProperty(e => e.DeletedById, (Guid?)usuarioId),
                 cancellationToken);
+        }
+        else
+        {
+            var extractos = await extractosARevertir.ToListAsync(cancellationToken);
+            foreach (var extracto in extractos)
+            {
+                extracto.DeletedAt = now;
+                extracto.DeletedById = usuarioId;
+            }
+            updateCount = extractos.Count;
+        }
 
         var filas = await _dbContext.ImportacionLoteFilas.Where(x => x.LoteId == lote.Id).ToListAsync(cancellationToken);
         foreach (var fila in filas.Where(x => x.Estado == "confirmada"))

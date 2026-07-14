@@ -345,6 +345,8 @@ public sealed class ActualizacionServiceTests
         File.Exists(Path.Combine(watchdog.SourcePath, "watchdog", "AtlasBalance.Watchdog.exe")).Should().BeTrue();
         File.Exists(Path.Combine(watchdog.SourcePath, "scripts", "Actualizar-AtlasBalance.ps1")).Should().BeTrue();
         watchdog.TargetPath.Should().Be(configuredTarget);
+        watchdog.PackageZipPath.Should().NotBeNull();
+        File.Exists(watchdog.PackageZipPath!).Should().BeTrue();
 
         Directory.Delete(root, recursive: true);
     }
@@ -859,7 +861,7 @@ public sealed class ActualizacionServiceTests
         public Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken)
             => Task.FromResult(true);
 
-        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
+        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken)
             => Task.FromResult(true);
 
         public Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken)
@@ -874,7 +876,7 @@ public sealed class ActualizacionServiceTests
         public Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken)
             => Task.FromResult(false);
 
-        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
+        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken)
             => Task.FromResult(false);
 
         public Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken)
@@ -889,15 +891,17 @@ public sealed class ActualizacionServiceTests
         public int Calls { get; private set; }
         public string? SourcePath { get; private set; }
         public string? TargetPath { get; private set; }
+        public string? PackageZipPath { get; private set; }
 
         public Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken)
             => Task.FromResult(true);
 
-        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, CancellationToken cancellationToken)
+        public Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken)
         {
             Calls++;
             SourcePath = sourcePath;
             TargetPath = targetPath;
+            PackageZipPath = packageZipPath;
             return Task.FromResult(true);
         }
 

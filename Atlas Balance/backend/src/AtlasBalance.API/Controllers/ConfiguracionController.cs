@@ -165,11 +165,6 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "Proveedor de IA no soportado. Atlas Balance admite OpenRouter, OpenAI o MiniMax con clave API de servidor." });
         }
 
-        if (!string.IsNullOrWhiteSpace(aiRequest.Model) && !AiConfiguration.IsAllowedModel(aiProvider, aiRequest.Model))
-        {
-            return BadRequest(new { error = "Modelo de IA invalido para el proveedor seleccionado." });
-        }
-
         var aiModel = AiConfiguration.NormalizeGlobalConfigModel(aiProvider, aiRequest.Model);
         if (!AiConfiguration.IsAllowedModel(aiProvider, aiModel))
         {

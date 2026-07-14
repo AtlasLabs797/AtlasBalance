@@ -356,7 +356,8 @@ public sealed class ConfiguracionControllerTests
             new NoOpEmailService(),
             new AuditService(db),
             NullLogger<ConfiguracionController>.Instance,
-            new PlainTextSecretProtector());
+            new PlainTextSecretProtector(),
+            new SmtpTestRateLimit());
 
         controller.ControllerContext = new ControllerContext
         {

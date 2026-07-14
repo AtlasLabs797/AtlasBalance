@@ -32,7 +32,7 @@ public sealed class WatchdogOperationsServiceTests
         var stateStore = new FakeWatchdogStateStore();
         var service = CreateService(stateStore, updateRoot, installPath);
 
-        var accepted = await service.StartUpdateAsync(packagePath, installPath, CancellationToken.None);
+        var accepted = await service.StartUpdateAsync(packagePath, installPath, null, CancellationToken.None);
         var finalState = await stateStore.WaitForCompletionAsync();
         var updatedApi = await File.ReadAllTextAsync(Path.Combine(installPath, "api", "AtlasBalance.API.exe"));
         var updatedWatchdog = await File.ReadAllTextAsync(Path.Combine(installPath, "watchdog", "AtlasBalance.Watchdog.exe"));
@@ -66,7 +66,7 @@ public sealed class WatchdogOperationsServiceTests
         var stateStore = new FakeWatchdogStateStore();
         var service = CreateService(stateStore, root, sourcePath);
 
-        var accepted = await service.StartUpdateAsync(sourcePath, sourcePath, CancellationToken.None);
+        var accepted = await service.StartUpdateAsync(sourcePath, sourcePath, null, CancellationToken.None);
 
         accepted.Should().BeFalse();
 
@@ -86,7 +86,7 @@ public sealed class WatchdogOperationsServiceTests
         var stateStore = new FakeWatchdogStateStore();
         var service = CreateService(stateStore, allowedRoot, targetPath);
 
-        var accepted = await service.StartUpdateAsync(sourcePath, targetPath, CancellationToken.None);
+        var accepted = await service.StartUpdateAsync(sourcePath, targetPath, null, CancellationToken.None);
 
         accepted.Should().BeFalse();
 

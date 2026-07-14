@@ -888,7 +888,7 @@ public class AtlasAiServiceTests
             "127.0.0.1",
             CancellationToken.None);
 
-        httpFactory.LastPayload.Should().Contain("MES ACTUAL");
+        httpFactory.LastPayload.Should().Contain("PERIODO");
         httpFactory.LastPayload.Should().Contain("TOTALES POR MES");
         httpFactory.LastPayload.Should().Contain("COMISIONES DETECTADAS");
         httpFactory.LastPayload.Should().Contain("SEGUROS DETECTADOS");
@@ -1527,8 +1527,7 @@ public class AtlasAiServiceTests
     [InlineData("google/gemma-4-31b-it:free")]
     [InlineData("minimax/minimax-m2.5:free")]
     [InlineData(AiConfiguration.OpenRouterGptOss120BModel)]
-    [InlineData("anthropic/claude-3.5-sonnet")]
-    public async Task AskAsync_Should_Send_Any_Valid_OpenRouter_Model_With_Privacy_Guard(string model)
+    public async Task AskAsync_Should_Send_Allowed_OpenRouter_Model_With_Privacy_Guard(string model)
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: model);
@@ -1597,10 +1596,10 @@ public class AtlasAiServiceTests
             "Resumen de gastos",
             "127.0.0.1",
             CancellationToken.None,
-            "custom/vendor-model-2.1:free");
+            "qwen/qwen3-coder:free");
 
-        result.Model.Should().Be("custom/vendor-model-2.1:free");
-        httpFactory.LastPayload.Should().Contain("\"model\":\"custom/vendor-model-2.1:free\"");
+        result.Model.Should().Be("qwen/qwen3-coder:free");
+        httpFactory.LastPayload.Should().Contain("\"model\":\"qwen/qwen3-coder:free\"");
         httpFactory.LastPayload.Should().NotContain("\"only\"");
         httpFactory.LastPayload.Should().NotContain("\"models\"");
         db.Configuraciones.Single(x => x.Clave == "ai_model").Valor.Should().Be(AiConfiguration.OpenRouterDefaultModel);
@@ -1636,7 +1635,7 @@ public class AtlasAiServiceTests
     }
 
     [Fact]
-    public async Task AskAsync_Should_Preserve_Stored_Custom_OpenRouter_Model_Before_Provider_Call()
+    public async Task AskAsync_Should_Block_Stored_Custom_OpenRouter_Model_Before_Provider_Call()
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: "anthropic/claude-3.5-sonnet");
@@ -1648,14 +1647,11 @@ public class AtlasAiServiceTests
             new UserAccessService(db),
             new AuditService(db));
 
-        var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
+        var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
-        result.Model.Should().Be("anthropic/claude-3.5-sonnet");
-        httpFactory.LastPayload.Should().Contain("\"model\":\"anthropic/claude-3.5-sonnet\"");
-        ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
-        httpFactory.LastPayload.Should().NotContain("\"models\"");
-        httpFactory.LastPayload.Should().NotContain("\"id\":\"auto-router\"");
-        httpFactory.LastPayload.Should().NotContain("\"allowed_models\"");
+        await act.Should().ThrowAsync<IaConfigurationException>()
+            .WithMessage("*Modelo de IA invalido*");
+        httpFactory.RequestCount.Should().Be(0);
     }
 
     [Fact]

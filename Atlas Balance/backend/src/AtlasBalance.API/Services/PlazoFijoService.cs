@@ -204,7 +204,7 @@ public sealed class PlazoFijoService : IPlazoFijoService
 
         if (alreadyExists)
         {
-            return false;
+            return true;
         }
 
         _dbContext.NotificacionesAdmin.Add(new NotificacionAdmin

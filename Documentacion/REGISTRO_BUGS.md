@@ -1393,3 +1393,12 @@ LOW cerrados en V-02-05 (3):
 MEDIUM/LOW pendientes para Fase 2 (documentados en v-02-05.md):
 - MED-2, MED-8, MED-13, MED-16, MED-17, MED-18, MED-20, MED-22 (resto),
   MED-26, CONFIG-001 a CONFIG-007/011+, LOW-1 a LOW-40.
+
+### CI de V-02-05 (2026-07-14)
+
+- **AB-CI-01 - Suite backend no compilaba tras cambios de contratos.**
+  **CERRADO en V-02-05.** Se actualizaron fakes, stubs, constructores y llamadas
+  de tests para las interfaces actuales. Tambien se corrigieron los fallos no
+  Docker revelados tras compilar: compatibilidad InMemory, reintento de plazo
+  fijo, normalizacion OpenRouter y expectativas de allowlist. Verificacion:
+  **133/133** tests afectados y **327/327** tests no Docker.

@@ -93,8 +93,14 @@ public sealed class AlertaService : IAlertaService
         // EvaluateSaldoPostAsync concurrentes disparen email doble en importacion
         // masiva. Se libera al final del SaveChangesAsync.
         var lockKey = $"alerta_saldo_lock:{cuenta.Id:N}:{alcance}";
-        await _dbContext.Database.ExecuteSqlRawAsync(
-            "SELECT pg_advisory_xact_lock(hashtext({0}))", new object[] { lockKey }, cancellationToken);
+        if (string.Equals(
+                _dbContext.Database.ProviderName,
+                "Npgsql.EntityFrameworkCore.PostgreSQL",
+                StringComparison.Ordinal))
+        {
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                "SELECT pg_advisory_xact_lock(hashtext({0}))", new object[] { lockKey }, cancellationToken);
+        }
 
         var lastSentAt = await GetCuentaCooldownAsync(cooldownKey, cancellationToken);
         if (!lastSentAt.HasValue && alertaAplicable.CuentaId == cuenta.Id)
