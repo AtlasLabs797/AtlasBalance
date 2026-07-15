@@ -8,6 +8,36 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-16 - V-02.06 - Apertura y alineacion de version
+
+**Version:** V-02.06
+
+**Trabajo realizado:**
+- Se abre V-02.06 a partir de V-02-05.
+- Se alinean los metadatos de backend, frontend, trazabilidad de paquete y
+  documentacion, que aun declaraban V-02-04/2.4.0.
+
+**Archivos tocados:**
+- `Atlas Balance/VERSION`
+- `Atlas Balance/Directory.Build.props`
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `Documentacion/Versiones/version_actual.md`
+- `Documentacion/Versiones/v-02.06.md`
+
+**Comandos ejecutados y resultado:**
+- Verificacion estatica de identificadores de version: `V-02.06` y `2.6.0`
+  presentes en los seis artefactos de trazabilidad.
+- `dotnet build AtlasBalance.sln --no-restore -p:UseAppHost=false -v:minimal`:
+  **0 errores**; 3 avisos `NU1900` porque NuGet no pudo consultar el feed de
+  vulnerabilidades en este entorno.
+- `git diff --check`: sin errores de formato.
+
+**Pendientes:**
+- Definir el alcance funcional y las validaciones propias de V-02.06 antes de
+  publicar una release.
+
+---
 ## 2026-07-07 - V-02-04 - Cierre de pendientes pre-entrega (orquestacion con subagentes)
 
 **Version:** V-02-04
