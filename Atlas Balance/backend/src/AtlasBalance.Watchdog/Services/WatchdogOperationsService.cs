@@ -2,6 +2,7 @@
 using System.ServiceProcess;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AtlasBalance.Watchdog.Logging;
 using AtlasBalance.Watchdog.Models;
 
 namespace AtlasBalance.Watchdog.Services;
@@ -160,7 +161,9 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         var zipVerification = VerifyPackageZipIntegrity(packageZipPath);
         if (zipVerification is not null)
         {
-            _logger.LogError("Update rechazado por verificacion de integridad del ZIP: {Reason}", zipVerification);
+            // V-02-06 (CodeQL #13): sanear {ReasonSafe} para evitar CWE-117 (log forging).
+            // zipVerification se construye a partir de packageZipPath, que llega del caller API.
+            _logger.LogError("Update rechazado por verificacion de integridad del ZIP: {ReasonSafe}", LogScrubber.Scrub(zipVerification));
             return false;
         }
 

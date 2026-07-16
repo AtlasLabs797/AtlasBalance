@@ -1,4 +1,5 @@
-﻿using AtlasBalance.API.Services;
+﻿using AtlasBalance.API.Logging;
+using AtlasBalance.API.Services;
 
 namespace AtlasBalance.API.Middleware;
 
@@ -36,12 +37,15 @@ public sealed class CsrfMiddleware
             if (!csrfService.IsValid(csrfCookie, csrfHeader))
             {
                 // V-02-05 (MED-9): registrar el intento rechazado para visibilidad.
+                // V-02-06 (CodeQL #10/#11): sanear path/ip/ua antes de loguearlos para
+                // evitar CWE-117 (log forging) si el cliente envia CRLF en la URL o en
+                // cabeceras. Method es un enum y nunca tainted, queda tal cual.
                 _logger.LogWarning(
-                    "CSRF rechazado: path={Path} method={Method} ip={Ip} ua={UA}",
-                    context.Request.Path,
+                    "CSRF rechazado: path={PathSafe} method={Method} ip={IpSafe} ua={UaSafe}",
+                    LogScrubber.Scrub(context.Request.Path.Value),
                     context.Request.Method,
-                    context.Connection.RemoteIpAddress,
-                    context.Request.Headers.UserAgent.ToString());
+                    LogScrubber.Scrub(context.Connection.RemoteIpAddress?.ToString()),
+                    LogScrubber.Scrub(context.Request.Headers.UserAgent.ToString()));
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new { error = "CSRF token inválido" });
                 return;

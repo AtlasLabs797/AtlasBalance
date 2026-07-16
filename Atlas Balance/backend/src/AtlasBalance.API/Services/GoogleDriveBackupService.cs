@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -396,9 +397,12 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         }
         else
         {
+            // V-02-06 (CodeQL #12): sanear {FileIdSafe} para evitar CWE-117 (log forging).
+            // fileId es validado por IsSafeGoogleIdentifier antes de llegar aqui, pero el
+            // scrubber cubre el caso de un identificador legitimo con caracteres de control.
             _logger.LogWarning(
-                "Import desde Google Drive sin BackupCloudCopy original para {FileId} (o sin ChecksumSha256 registrado). Se acepta el archivo sin verificacion de integridad.",
-                fileId);
+                "Import desde Google Drive sin BackupCloudCopy original para {FileIdSafe} (o sin ChecksumSha256 registrado). Se acepta el archivo sin verificacion de integridad.",
+                LogScrubber.Scrub(fileId));
         }
 
         var backup = new Backup
