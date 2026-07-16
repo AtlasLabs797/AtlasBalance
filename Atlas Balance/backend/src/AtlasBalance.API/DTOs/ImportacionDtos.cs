@@ -131,6 +131,14 @@ public sealed class ImportacionLoteConfirmarRequest
 {
     public IReadOnlyList<int>? FilasAImportar { get; set; }
     public bool AceptaAdvertencias { get; set; }
+
+    /// <summary>
+    /// V-02.06 (HIGH-1, bloqueante): cuando el lote se creo con <c>divisa_esperada</c>
+    /// distinta de la divisa de la cuenta, el backend rechaza el guardado con 400
+    /// salvo que el cliente envie este flag en <c>true</c>. Defensa frente a
+    /// importes erroneos por pegar un archivo de otra divisa sin darse cuenta.
+    /// </summary>
+    public bool ForceConfirmDivisaMismatch { get; set; }
 }
 
 public sealed class ImportacionLoteRevertirRequest
@@ -161,6 +169,20 @@ public sealed class ImportacionLoteResponse
     public Guid? ConfirmadoPorId { get; set; }
     public DateTime? FechaReversion { get; set; }
     public Guid? RevertidoPorId { get; set; }
+
+    /// <summary>
+    /// V-02.06 (HIGH-1, bloqueante): true si el lote se creo con
+    /// <c>divisa_esperada</c> y no coincide con la divisa de la cuenta.
+    /// El frontend debe mostrar UI de confirmacion explicita antes de
+    /// enviar <c>force_confirm_divisa_mismatch=true</c>.
+    /// </summary>
+    public bool DivisaMismatch { get; set; }
+
+    /// <summary>Divisa oficial de la cuenta destino.</summary>
+    public string DivisaCuenta { get; set; } = string.Empty;
+
+    /// <summary>Divisa declarada por el usuario al crear el lote (puede ser null).</summary>
+    public string? DivisaEsperada { get; set; }
 }
 
 public sealed class ImportacionLoteDetalleResponse

@@ -78,6 +78,7 @@ export default function ConfiguracionPage() {
       app_update_auto_last_result: '',
       mfa_remember_device_enabled: true,
       mfa_remember_device_days: MFA_REMEMBER_DEVICE_DAYS,
+      require_mfa_for_non_admin_users: true,
       backup_path: '',
       export_path: '',
     },
@@ -222,6 +223,7 @@ export default function ConfiguracionPage() {
           ...cfg.data.general,
           mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? true,
           mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
+          require_mfa_for_non_admin_users: cfg.data.general?.require_mfa_for_non_admin_users ?? true,
         },
         exchange: cfg.data.exchange ?? { api_key: '', api_key_configurada: false },
         revision: cfg.data.revision ?? { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
@@ -306,6 +308,7 @@ export default function ConfiguracionPage() {
         ...(refreshed.data.general ?? config.general),
         mfa_remember_device_enabled: refreshed.data.general?.mfa_remember_device_enabled ?? config.general.mfa_remember_device_enabled,
         mfa_remember_device_days: refreshed.data.general?.mfa_remember_device_days ?? config.general.mfa_remember_device_days,
+        require_mfa_for_non_admin_users: refreshed.data.general?.require_mfa_for_non_admin_users ?? config.general.require_mfa_for_non_admin_users,
       },
       exchange: refreshed.data.exchange ?? config.exchange,
       ia: {
@@ -351,6 +354,28 @@ export default function ConfiguracionPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleRequireMfaToggle = async (next: boolean) => {
+    const previous = config.general.require_mfa_for_non_admin_users;
+    if (next === previous) {
+      return;
+    }
+    if (!next) {
+      const confirmed = await confirm({
+        title: 'Desactivar Authenticator para gerentes y empleados',
+        message:
+          'Los gerentes y empleados podran iniciar sesion solo con contrasena. Los administradores seguiran obligados a usar Authenticator. El cambio se aplica al siguiente inicio de sesion y queda registrado en auditoria.',
+        confirmLabel: 'Desactivar para no administradores',
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+    setConfig((p) => ({
+      ...p,
+      general: { ...p.general, require_mfa_for_non_admin_users: next },
+    }));
   };
 
   const sendTestEmail = async () => {
@@ -737,6 +762,18 @@ export default function ConfiguracionPage() {
 
             <article className="config-section-panel">
               <h3>Autenticación</h3>
+              <p className="config-note">
+                Los administradores siempre deben usar Authenticator. El siguiente interruptor aplica
+                la obligatoriedad solo a gerentes y empleados.
+              </p>
+              <label className="config-check">
+                <input
+                  type="checkbox"
+                  checked={config.general.require_mfa_for_non_admin_users}
+                  onChange={(e) => void handleRequireMfaToggle(e.target.checked)}
+                />
+                Exigir Authenticator a gerentes y empleados
+              </label>
               <label className="config-check">
                 <input
                   type="checkbox"
@@ -752,6 +789,11 @@ export default function ConfiguracionPage() {
               </label>
               <p className="config-note config-note--warning">
                 Cerrar sesión mantiene el dispositivo recordado. Revoca dispositivos desde MFA o cambia la contraseña para invalidarlos.
+              </p>
+              <p className="config-note config-note--warning">
+                Los administradores nunca pueden desactivar su propio Authenticator. La política por rol se
+                evalúa en cada inicio de sesión y refresh; cambiar el interruptor no afecta a sesiones
+                administrativas ya iniciadas.
               </p>
             </article>
 

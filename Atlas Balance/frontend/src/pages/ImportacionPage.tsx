@@ -175,6 +175,10 @@ export default function ImportacionPage() {
   const [lotes, setLotes] = useState<ImportacionLote[]>([]);
   const [loadingLotes, setLoadingLotes] = useState(false);
   const [acceptWarnings, setAcceptWarnings] = useState(false);
+  // V-02.06 (HIGH-1, bloqueante): aceptacion explicita de que se quiere
+  // importar un archivo cuya divisa declarada no coincide con la divisa
+  // de la cuenta. Sin esto el backend rechaza con 400.
+  const [forceConfirmDivisaMismatch, setForceConfirmDivisaMismatch] = useState(false);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [validationPage, setValidationPage] = useState(1);
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
@@ -375,6 +379,7 @@ export default function ImportacionPage() {
     setValidacion(null);
     setCurrentLote(null);
     setAcceptWarnings(false);
+    setForceConfirmDivisaMismatch(false);
     setSelectedRows([]);
     setValidationPage(1);
     setConfirmResult(null);
@@ -429,6 +434,7 @@ export default function ImportacionPage() {
       setValidacion(data.validacion);
       setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
       setAcceptWarnings(false);
+      setForceConfirmDivisaMismatch(false);
       setValidationPage(1);
       setActiveTab('lote');
       setStep(2);
@@ -450,6 +456,16 @@ export default function ImportacionPage() {
       return;
     }
 
+    // V-02.06 (HIGH-1, bloqueante): si el backend marco el lote con
+    // `divisa_mismatch`, exigimos aceptacion explicita via checkbox
+    // antes de enviar `force_confirm_divisa_mismatch: true`.
+    if (currentLote.divisa_mismatch && !forceConfirmDivisaMismatch) {
+      setError(
+        `La divisa declarada (${currentLote.divisa_esperada ?? '?'}) no coincide con la divisa de la cuenta (${currentLote.divisa_cuenta}). Marca la confirmación explícita para importar de todas formas.`,
+      );
+      return;
+    }
+
     const confirmed = await confirm({
       title: 'Confirmar importación',
       message: `Se importarán ${selectedValidRowsCount} ${selectedValidRowsCount === 1 ? 'fila' : 'filas'} a la cuenta seleccionada. Esta acción escribe movimientos en el extracto. ¿Continuar?`,
@@ -468,6 +484,7 @@ export default function ImportacionPage() {
       const { data } = await api.post<ImportConfirmResult>(`/importacion/lotes/${currentLote.id}/confirmar`, {
         filas_a_importar: selectedRows,
         acepta_advertencias: acceptWarnings,
+        force_confirm_divisa_mismatch: forceConfirmDivisaMismatch,
       });
 
       setConfirmResult(data);
@@ -487,6 +504,7 @@ export default function ImportacionPage() {
     setValidacion(null);
     setCurrentLote(null);
     setAcceptWarnings(false);
+    setForceConfirmDivisaMismatch(false);
     setSelectedRows([]);
     setValidationPage(1);
     setConfirmResult(null);
@@ -690,6 +708,7 @@ export default function ImportacionPage() {
                               setValidacion(data.validacion);
                               setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
                               setAcceptWarnings(false);
+                              setForceConfirmDivisaMismatch(false);
                               setConfirmResult(null);
                               setStep(2);
                               setActiveTab('lote');
@@ -989,6 +1008,24 @@ export default function ImportacionPage() {
                 />
                 Acepto importar {selectedWarningRowsCount} fila{selectedWarningRowsCount === 1 ? '' : 's'} con avisos.
               </label>
+            )}
+
+            {currentLote?.divisa_mismatch === true && !importAlreadyConfirmed && (
+              <div className="import-warning-accept" role="alert">
+                <p className="auth-error" style={{ margin: '0 0 0.5rem 0' }}>
+                  Aviso de divisa: la cuenta destino opera en{' '}
+                  <strong>{currentLote.divisa_cuenta}</strong> pero declaraste pegar datos en{' '}
+                  <strong>{currentLote.divisa_esperada ?? '?'}</strong>. Si confirmas, los importes quedaran registrados con tu declaracion.
+                </p>
+                <label style={{ display: 'block', marginTop: '0.25rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={forceConfirmDivisaMismatch}
+                    onChange={(event) => setForceConfirmDivisaMismatch(event.target.checked)}
+                  />
+                  Confirmo que quiero importar este archivo en {currentLote.divisa_esperada ?? '?'} aunque la cuenta sea {currentLote.divisa_cuenta}.
+                </label>
+              </div>
             )}
 
             {confirmResult && (

@@ -16,7 +16,8 @@
     "BaseUrl": "https://CAMBIAR_HOST_PUBLICO_AQUI"
   },
   "Security": {
-    "RequireMfaForWebUsers": true
+    "RequireMfaForWebUsers": true,
+    "RlsContextSecret": "GENERAR-CLAVE-RLS-DISTINTA-DE-JWT-MINIMO-32-CARACTERES-AQUI"
   },
   "ForwardedHeaders": {
     "KnownProxies": [ "127.0.0.1" ],

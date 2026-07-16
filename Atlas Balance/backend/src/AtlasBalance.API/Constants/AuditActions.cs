@@ -9,6 +9,7 @@ public static class AuditActions
     public const string MfaVerified = "MFA_VERIFIED";
     public const string MfaEnabled = "MFA_ENABLED";
     public const string MfaRevoked = "MFA_REVOKED";
+    public const string MfaPolicyUpdated = "MFA_POLICY_UPDATED";
     public const string AccountLocked = "ACCOUNT_LOCKED";
     public const string PasswordChanged = "PASSWORD_CHANGED";
     public const string PasswordReset = "PASSWORD_RESET";

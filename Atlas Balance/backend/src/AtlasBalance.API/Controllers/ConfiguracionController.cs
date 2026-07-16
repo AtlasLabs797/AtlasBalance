@@ -75,6 +75,7 @@ public sealed class ConfiguracionController : ControllerBase
                 AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
                 MfaRememberDeviceEnabled = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey), fallback: false),
                 MfaRememberDeviceDays = SecurityConfigurationDefaults.MfaRememberDeviceDays,
+                RequireMfaForNonAdminUsers = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey), fallback: true),
                 BackupPath = GetValue(config, "backup_path"),
                 ExportPath = GetValue(config, "export_path")
             },
@@ -193,7 +194,11 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
         Upsert(config, "app_update_auto_enabled", request.General.AppUpdateAutoEnabled ? "true" : "false", userId, now);
         Upsert(config, "app_update_auto_hour_utc", request.General.AppUpdateAutoHourUtc.ToString(CultureInfo.InvariantCulture), userId, now);
+        var previousRequireMfaForNonAdminUsers = ParseBool(
+            config.FirstOrDefault(x => x.Clave == SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey)?.Valor ?? string.Empty,
+            fallback: true);
         Upsert(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, request.General.MfaRememberDeviceEnabled ? "true" : "false", userId, now);
+        Upsert(config, SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey, request.General.RequireMfaForNonAdminUsers ? "true" : "false", userId, now);
         Upsert(config, "backup_path", request.General.BackupPath.Trim(), userId, now);
         Upsert(config, "export_path", request.General.ExportPath.Trim(), userId, now);
         var exchangeApiKey = request.Exchange?.ApiKey;
@@ -254,6 +259,30 @@ public sealed class ConfiguracionController : ControllerBase
                 after = RedactSensitiveConfig(after)
             }),
             cancellationToken);
+
+        // V-02.06: ademas de la auditoria generica, registramos un evento
+        // semantico cuando el interruptor de politica MFA cambia para que un
+        // operador pueda auditarlo sin parsear el diff completo.
+        var newRequireMfaForNonAdminUsers = ParseBool(
+            after.GetValueOrDefault(SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey) ?? string.Empty,
+            fallback: true);
+        if (previousRequireMfaForNonAdminUsers != newRequireMfaForNonAdminUsers)
+        {
+            await _auditService.LogAsync(
+                userId,
+                AuditActions.MfaPolicyUpdated,
+                "CONFIGURACION",
+                null,
+                HttpContext,
+                JsonSerializer.Serialize(new
+                {
+                    clave = SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey,
+                    antes = previousRequireMfaForNonAdminUsers,
+                    despues = newRequireMfaForNonAdminUsers,
+                    nota = "Los administradores siguen obligados a usar MFA independientemente de este interruptor."
+                }),
+                cancellationToken);
+        }
 
         return Ok(new { message = "Configuración actualizada" });
     }

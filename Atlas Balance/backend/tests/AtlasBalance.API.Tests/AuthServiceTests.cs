@@ -117,7 +117,7 @@ public class AuthServiceTests
             Email = "ok@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
             NombreCompleto = "Ok User",
-            Rol = RolUsuario.ADMIN,
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = true,
             FailedLoginAttempts = 3,
@@ -255,7 +255,11 @@ public class AuthServiceTests
             Email = "pre-mfa-refresh@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
             NombreCompleto = "Pre Mfa Refresh",
-            Rol = RolUsuario.ADMIN,
+            // EMPLEADO para que BuildConfig (MFA off) emita tokens. Los
+            // administradores quedan excluidos porque V-02.06 los obliga
+            // a MFA siempre, asi que no pueden emitir un refresh token
+            // pre-MFA.
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             FechaCreacion = DateTime.UtcNow
@@ -265,6 +269,8 @@ public class AuthServiceTests
 
         var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
         var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        preMfaLogin.MfaRequired.Should().BeFalse();
+        preMfaLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();
         var preMfaRefreshHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(preMfaLogin.RefreshToken!))).ToLowerInvariant();
 
         var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
@@ -376,7 +382,10 @@ public class AuthServiceTests
             Email = "mfa-change-pre-session@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!Ab", workFactor: 12),
             NombreCompleto = "Mfa Change Pre Session",
-            Rol = RolUsuario.ADMIN,
+            // EMPLEADO porque queremos emitir un refresh token sin garantia MFA
+            // (con BuildConfig). V-02.06 obliga a administradores a usar
+            // Authenticator, asi que no pueden tener sesiones pre-MFA.
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             MfaEnabled = true,
@@ -388,6 +397,7 @@ public class AuthServiceTests
 
         var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
         var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
+        preMfaLogin.MfaRequired.Should().BeFalse();
 
         var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
         Func<Task> changePassword = () => mfaSut.ChangePasswordAsync(
@@ -772,7 +782,7 @@ public class AuthServiceTests
             Email = "refresh-locked@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
             NombreCompleto = "Refresh Locked",
-            Rol = RolUsuario.ADMIN,
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             FechaCreacion = DateTime.UtcNow
@@ -801,7 +811,7 @@ public class AuthServiceTests
             Email = "rotate@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!Ab", workFactor: 12),
             NombreCompleto = "Rotate User",
-            Rol = RolUsuario.ADMIN,
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             FechaCreacion = DateTime.UtcNow
@@ -835,7 +845,7 @@ public class AuthServiceTests
             Email = "refresh-stamp@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
             NombreCompleto = "Refresh Stamp User",
-            Rol = RolUsuario.ADMIN,
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             FechaCreacion = DateTime.UtcNow
@@ -873,7 +883,7 @@ public class AuthServiceTests
             Email = "reuse@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
             NombreCompleto = "Reuse User",
-            Rol = RolUsuario.ADMIN,
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             FechaCreacion = DateTime.UtcNow
@@ -909,7 +919,7 @@ public class AuthServiceTests
             Email = "logout@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
             NombreCompleto = "Logout User",
-            Rol = RolUsuario.ADMIN,
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             FechaCreacion = DateTime.UtcNow
@@ -950,7 +960,11 @@ public class AuthServiceTests
         Email = email,
         PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
         NombreCompleto = "Active User",
-        Rol = RolUsuario.ADMIN,
+        // V-02.06: los tests que usan BuildConfig (MFA apagado) ya no pueden
+        // usar ADMIN porque ahora los administradores siempre requieren
+        // Authenticator. EMPLEADO respeta la politica configurable y permite
+        // probar el flujo de login directo sin desafio MFA.
+        Rol = RolUsuario.EMPLEADO,
         Activo = true,
         PrimerLogin = false,
         FechaCreacion = DateTime.UtcNow

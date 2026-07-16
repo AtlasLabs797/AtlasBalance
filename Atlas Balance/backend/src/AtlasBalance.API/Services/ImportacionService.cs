@@ -215,11 +215,11 @@ public sealed class ImportacionService : IImportacionService
         var cuentas = await _dbContext.Cuentas
             .AsNoTracking()
             .Where(x => cuentaIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, x => x.Nombre, cancellationToken);
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
 
         return new PaginatedResponse<ImportacionLoteResponse>
         {
-            Data = lotes.Select(x => MapLote(x, cuentas.GetValueOrDefault(x.CuentaId))).ToList(),
+            Data = lotes.Select(x => MapLote(x, cuentas.TryGetValue(x.CuentaId, out var c) ? c.Nombre : null, cuentas.TryGetValue(x.CuentaId, out var cv) ? cv.Divisa : null)).ToList(),
             Total = total,
             Page = page,
             PageSize = pageSize,
@@ -338,7 +338,7 @@ public sealed class ImportacionService : IImportacionService
             }, SnakeCaseJsonOptions),
             cancellationToken);
 
-        return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cancellationToken);
+        return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cuenta.Divisa, cancellationToken);
     }
 
     public async Task<ImportacionLoteDetalleResponse> ObtenerLoteAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken)
@@ -350,7 +350,7 @@ public sealed class ImportacionService : IImportacionService
         }
 
         var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Ver, cancellationToken);
-        return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cancellationToken);
+        return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cuenta.Divisa, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken)
@@ -406,6 +406,21 @@ public sealed class ImportacionService : IImportacionService
         if (lote.Estado is "confirmado" or "revertido")
         {
             throw new ImportacionException("El lote ya esta cerrado", StatusCodes.Status409Conflict);
+        }
+
+        // V-02.06 (HIGH-1, bloqueante): si el lote fue creado con una divisa
+        // esperada distinta a la de la cuenta, exigimos confirmacion explicita
+        // del operador antes de tocar el extracto. Sin este ack devolvemos 400
+        // con code "divisa_mismatch_requires_ack" para que el frontend pueda
+        // mostrar el modal de confirmacion. El ack persiste en auditoria.
+        var resumen = ParseLoteResumen(lote.ResumenJson);
+        if (resumen.DivisaMismatch && !request.ForceConfirmDivisaMismatch)
+        {
+            throw new ImportacionException(
+                "La divisa del archivo pegado no coincide con la divisa de la cuenta. " +
+                "Vuelve a abrir el lote, marca la aceptacion explicita de la advertencia de divisa y reintenta la confirmacion.",
+                StatusCodes.Status400BadRequest,
+                "divisa_mismatch_requires_ack");
         }
 
         var filas = await _dbContext.ImportacionLoteFilas
@@ -501,6 +516,12 @@ public sealed class ImportacionService : IImportacionService
                 response.FilasImportadas,
                 response.FilasDuplicadas,
                 acepta_advertencias = request.AceptaAdvertencias,
+                // V-02.06 (HIGH-1): auditar siempre la aceptacion explicita
+                // de la advertencia de divisa. Si es true y el lote tenia
+                // mismatch, queda registro forense de la decision.
+                force_confirm_divisa_mismatch = request.ForceConfirmDivisaMismatch,
+                divisa_cuenta = resumen.DivisaCuenta,
+                divisa_esperada = resumen.DivisaEsperada,
                 maker_checker_warning = warnings.Count > 0
             }, SnakeCaseJsonOptions),
             cancellationToken);
@@ -578,7 +599,7 @@ public sealed class ImportacionService : IImportacionService
             }, SnakeCaseJsonOptions),
             cancellationToken);
 
-        return MapLote(lote, cuenta.Nombre);
+        return MapLote(lote, cuenta.Nombre, cuenta.Divisa);
     }
 
     public async Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken)
@@ -977,7 +998,7 @@ public sealed class ImportacionService : IImportacionService
         };
     }
 
-    private async Task<ImportacionLoteDetalleResponse> BuildLoteDetalleAsync(ImportacionLote lote, string? cuentaNombre, CancellationToken cancellationToken)
+    private async Task<ImportacionLoteDetalleResponse> BuildLoteDetalleAsync(ImportacionLote lote, string? cuentaNombre, string? cuentaDivisa, CancellationToken cancellationToken)
     {
         var filas = await _dbContext.ImportacionLoteFilas
             .AsNoTracking()
@@ -988,7 +1009,7 @@ public sealed class ImportacionService : IImportacionService
 
         return new ImportacionLoteDetalleResponse
         {
-            Lote = MapLote(lote, cuentaNombre),
+            Lote = MapLote(lote, cuentaNombre, cuentaDivisa),
             Mapeo = ParseMapeoJson(lote.MapeoJson) ?? new MapeoColumnasRequest(),
             Validacion = new ImportacionValidarResponse
             {
@@ -1015,8 +1036,15 @@ public sealed class ImportacionService : IImportacionService
         };
     }
 
-    private static ImportacionLoteResponse MapLote(ImportacionLote lote, string? cuentaNombre)
+    private static ImportacionLoteResponse MapLote(ImportacionLote lote, string? cuentaNombre, string? cuentaDivisa = null)
     {
+        var resumen = ParseLoteResumen(lote.ResumenJson);
+        // V-02-06 (HIGH-1): el resumen persistido por CrearLoteAsync ya trae
+        // cuenta/esperada/mismatch; el parametro cuentaDivisa cubre el listado
+        // paginado donde no queremos volver a la BD para rellenar el campo.
+        var divisaCuenta = !string.IsNullOrWhiteSpace(cuentaDivisa)
+            ? cuentaDivisa
+            : resumen.DivisaCuenta;
         return new ImportacionLoteResponse
         {
             Id = lote.Id,
@@ -1039,8 +1067,48 @@ public sealed class ImportacionService : IImportacionService
             FechaConfirmacion = lote.FechaConfirmacion,
             ConfirmadoPorId = lote.ConfirmadoPorId,
             FechaReversion = lote.FechaReversion,
-            RevertidoPorId = lote.RevertidoPorId
+            RevertidoPorId = lote.RevertidoPorId,
+            // V-02.06 (HIGH-1, bloqueante): campos nuevos
+            DivisaMismatch = resumen.DivisaMismatch,
+            DivisaCuenta = divisaCuenta ?? string.Empty,
+            DivisaEsperada = resumen.DivisaEsperada
         };
+    }
+
+    private readonly record struct LoteResumen(bool DivisaMismatch, string? DivisaCuenta, string? DivisaEsperada);
+
+    private static LoteResumen ParseLoteResumen(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return default;
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+            var mismatch = false;
+            var cuenta = (string?)null;
+            var esperada = (string?)null;
+            if (root.TryGetProperty("divisa_mismatch", out var mismatchEl) &&
+                (mismatchEl.ValueKind == JsonValueKind.True || mismatchEl.ValueKind == JsonValueKind.False))
+            {
+                mismatch = mismatchEl.GetBoolean();
+            }
+            if (root.TryGetProperty("divisa_cuenta", out var cuentaEl) && cuentaEl.ValueKind == JsonValueKind.String)
+            {
+                cuenta = cuentaEl.GetString();
+            }
+            if (root.TryGetProperty("divisa_esperada", out var esperadaEl) && esperadaEl.ValueKind == JsonValueKind.String)
+            {
+                esperada = esperadaEl.GetString();
+            }
+            return new LoteResumen(mismatch, cuenta, esperada);
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
     }
 
     private static ImportacionLoteFilaResponse MapLoteFila(ImportacionLoteFila fila)
@@ -2029,8 +2097,22 @@ public sealed class ImportacionException : Exception
 {
     public int StatusCode { get; }
 
+    /// <summary>
+    /// Codigo de maquina opcional devuelto al cliente para que pueda
+    /// discriminar el caso sin parsear el mensaje. Usado por HIGH-1
+    /// (<c>divisa_mismatch_requires_ack</c>), MED-14 (<c>lote_locked</c>)
+    /// y errores futuros con semantica concreta.
+    /// </summary>
+    public string? Code { get; }
+
     public ImportacionException(string message, int statusCode) : base(message)
     {
         StatusCode = statusCode;
+    }
+
+    public ImportacionException(string message, int statusCode, string code) : base(message)
+    {
+        StatusCode = statusCode;
+        Code = code;
     }
 }

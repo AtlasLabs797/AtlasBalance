@@ -20,6 +20,7 @@ export interface Usuario {
   primer_login: boolean;
   puede_usar_ia: boolean;
   mfa_enabled: boolean;
+  mfa_required: boolean;
   fecha_creacion: string;
   fecha_ultima_login: string | null;
 }
@@ -332,6 +333,7 @@ export interface ConfiguracionSistema {
     app_update_auto_last_result: string;
     mfa_remember_device_enabled: boolean;
     mfa_remember_device_days: number;
+    require_mfa_for_non_admin_users: boolean;
     backup_path: string;
     export_path: string;
   };
@@ -397,6 +399,7 @@ export interface SaveConfiguracionSistemaRequest {
     app_update_auto_enabled: boolean;
     app_update_auto_hour_utc: number;
     mfa_remember_device_enabled: boolean;
+    require_mfa_for_non_admin_users: boolean;
     backup_path: string;
     export_path: string;
   };
@@ -936,6 +939,13 @@ export interface ImportacionLote {
   confirmado_por_id: string | null;
   fecha_reversion: string | null;
   revertido_por_id: string | null;
+  // V-02.06 (HIGH-1, bloqueante): el backend devuelve estos campos cuando
+  // el lote fue creado con una `divisa_esperada` distinta de la divisa
+  // de la cuenta. El frontend debe mostrar una aceptacion explicita antes
+  // de poder confirmar el lote.
+  divisa_mismatch: boolean;
+  divisa_cuenta: string;
+  divisa_esperada: string | null;
 }
 
 export interface ImportacionLoteFila extends ImportRowResult {

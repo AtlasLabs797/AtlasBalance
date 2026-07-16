@@ -2,6 +2,72 @@
 
 ## Abiertos
 
+### 2026-07-16 - V-02.06 - RLS en identidad/configuracion pospuesto a V-02.07
+
+- **Contexto:** la auditoria RLS de V-02.06 discutio aplicar RLS a
+  `USUARIOS`, `REFRESH_TOKENS`, `INTEGRATION_TOKENS` y `CONFIGURACION`
+  (esta ultima con secretos como `smtp_password`, claves IA y
+  `backup_cloud_encryption_key`).
+- **Causa raiz:** el contexto RLS firmado solo identifica `user_id` despues
+  del login. Login, MFA, refresh y la validacion de tokens de integracion
+  ejecutan `SELECT` y `UPDATE` sobre esas tablas antes de que el contexto
+  pueda restringirlas. Ademas, RLS en PostgreSQL filtra filas pero no puede
+  ocultar columnas: una vez una policy `USING (...)` admite la fila, un
+  `SELECT *` devuelve `password_hash`, `mfa_secret`, `token_hash`, etc.
+  Limitar esas columnas requiere GRANT a nivel de columna, vistas o una
+  API de funciones dedicada.
+- **Pendiente para V-02.07:**
+  - Disenar y aplicar policies que cubran el login flow (incluyendo
+    `is_auth_flow`) sin romper autenticacion ni MFA setup/recovery.
+  - Evaluar si conviene llevar secretos a una tabla paralela
+    `CONFIGURACION_SECRETS` accesible solo por admin/system o usar
+    GRANTs a nivel de columna sobre `CONFIGURACION` con `es_secreto=true`.
+  - Aplicar `SELECT` admin-only en `USUARIOS` y `INTEGRATION_TOKENS`
+    con auto-lectura por su creador/usuario, y `INSERT/UPDATE` admin-only.
+  - Anadir tests de regresion para login/MFA/refresh/integraciones con
+    las nuevas policies.
+- **Estado:** abierto. V-02.06 solo activa FORCE RLS + soft-delete
+  backstop en las tablas financieras y mejora el backup/restore; el
+  alcance de identidad se difiere explicitamente para evitar romper
+  autenticacion.
+
+### 2026-07-16 - V-02.06 - AppDbContextModelSnapshot desalineado
+
+- **Contexto:** `tests/AtlasBalance.API.Tests/MigrationDiscoveryTests` y las
+  migraciones V-02.05 confirman que las migraciones se descubren bien, pero
+  `AppDbContextModelSnapshot.cs` todavia omite `DeletedAt`/`DeletedById` en
+  `Conciliacion`, `ImportacionLoteFila`, `ExtractoColumnaExtra` y
+  `RevisionExtractoEstado` aunque el modelo actual los declara.
+- **Causa raiz:** las migraciones V-02.05 que anadieron esas columnas
+  fueron manuscritas-SQL (sin scaffold EF) y no se reconcilio el snapshot.
+- **Pendiente para V-02.07:**
+  - Reconciliar el snapshot manualmente o regenerar el binario EF
+    correspondiente alineado con las columnas reales.
+  - Verificar que `dotnet ef migrations script` no recrea las columnas ya
+    presentes.
+  - Confirmar con un test runtime que `db.Database.Migrate()` sobre una
+    base vacia aplica el conjunto completo de migraciones incluyendo la
+    nueva `20260716120000_HardenFinancialV0202Rls`.
+- **Estado:** abierto. Por eso la migracion `HardenFinancialV0202Rls` es
+  manuscrita-SQL (mismo patron que las V-02.05) y no usa scaffold EF.
+
+### 2026-07-16 - V-02.06 - IMPORTACION_LOTES sin soft-delete
+
+- **Contexto:** la entidad `IMPORTACION_LOTES` no implementa `ISoftDelete`
+  en el modelo y no tiene columnas `deleted_at`/`deleted_by_id`.
+- **Causa raiz:** se creo en la migracion V-02.02 sin columnas de
+  soft-delete, y nadie ha anadido esa capacidad todavia.
+- **Pendiente para V-02.07:**
+  - Anadir `deleted_at`/`deleted_by_id` con migracion que respete el
+    snapshot EF ya reconciliado.
+  - Aplicar `ISoftDelete` en `ImportacionLote.cs` (heredar de entidad base
+    o aplicar el filtro global via `AppDbContext`).
+  - Extender la policy SELECT de la tabla con `deleted_at IS NULL`.
+- **Estado:** abierto. En V-02.06 la policy nueva solo separa
+  SELECT/INSERT/UPDATE/DELETE con `can_read_cuenta_by_id` /
+  `can_write_cuenta_by_id`, sin filtro soft-delete (que requiere la
+  columna).
+
 ### 2026-05-22 - V-01.09 - Bootstrap desde Watchdog antiguo pendiente
 
 - Contexto: tras implementar el update online de paquete completo, quedan dos bloqueos fuera del codigo nuevo.

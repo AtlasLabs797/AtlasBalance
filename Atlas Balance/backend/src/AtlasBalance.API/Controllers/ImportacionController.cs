@@ -45,7 +45,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -68,7 +68,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -87,7 +87,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -106,7 +106,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -125,7 +125,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -144,7 +144,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -163,7 +163,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -182,7 +182,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 
@@ -206,7 +206,7 @@ public sealed class ImportacionController : ControllerBase
         }
         catch (ImportacionException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
         }
     }
 

@@ -29,7 +29,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-02-03"
+$AppVersion = "V-02.06"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
@@ -499,7 +499,8 @@ function Write-AppSettings {
         [string]$CertPath,
         [string]$CertPassword,
         [string]$JwtSecret,
-        [string]$WatchdogSecret
+        [string]$WatchdogSecret,
+        [string]$RlsContextSecret
     )
 
     $stateFile = Join-Path $InstallPath "watchdog-state.json"
@@ -553,6 +554,11 @@ function Write-AppSettings {
         }
         Security = [ordered]@{
             RequireMfaForWebUsers = $true
+            # V-02-06 (RLS-SEC-01): clave independiente del secreto JWT para
+            # firmar contextos RLS. Se genera siempre aleatoria en instalacion
+            # nueva; la persistencia la gestiona Actualizar-AtlasBalance.ps1
+            # para instalaciones existentes.
+            RlsContextSecret = $RlsContextSecret
         }
         ForwardedHeaders = [ordered]@{
             KnownProxies = $forwardedKnownProxies
@@ -881,6 +887,10 @@ if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = New-RandomS
 if ([string]::IsNullOrWhiteSpace($PostgresInstallPath)) { $PostgresInstallPath = Join-Path $InstallPath "postgresql\16" }
 if ([string]::IsNullOrWhiteSpace($PostgresDataPath)) { $PostgresDataPath = Join-Path $InstallPath "postgres-data" }
 $jwtSecret = New-RandomSecret 64
+# V-02-06 (RLS-SEC-01): el secreto RLS debe ser independiente del JWT. Se
+# genera aleatorio y se persiste en el appsettings efectivo durante la
+# generacion de configuracion mas abajo.
+$rlsContextSecret = New-RandomSecret 64
 $watchdogSecret = New-RandomSecret 64
 $certPassword = New-RandomSecret 40
 
@@ -951,7 +961,8 @@ Write-AppSettings `
     -CertPath $certPath `
     -CertPassword $effectiveCertPassword `
     -JwtSecret $jwtSecret `
-    -WatchdogSecret $watchdogSecret
+    -WatchdogSecret $watchdogSecret `
+    -RlsContextSecret $rlsContextSecret
 
 $apiExe = Join-Path $apiPath "AtlasBalance.API.exe"
 $watchdogExe = Join-Path $watchdogPath "AtlasBalance.Watchdog.exe"

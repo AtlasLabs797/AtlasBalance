@@ -102,7 +102,10 @@ public sealed class CsrfMiddlewareTests
             NullLogger<CsrfMiddleware>.Instance);
 
         var context = BuildContext("/api/usuarios", "POST", userAgent: "Mozilla/5.0");
-        context.Request.Cookies.Append("csrf_token", "valid-token");
+        // IRequestCookieCollection no expone Append; el middleware lee la
+        // cookie via Request.Headers["Cookie"], asi que esa es la via
+        // correcta para sembrar el valor en tests.
+        context.Request.Headers.Append("Cookie", "csrf_token=valid-token");
         context.Request.Headers.Append("X-CSRF-Token", "valid-token");
         var csrf = new AcceptingCsrfService();
 

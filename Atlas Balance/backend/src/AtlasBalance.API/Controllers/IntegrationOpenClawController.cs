@@ -135,6 +135,11 @@ public sealed class IntegrationOpenClawController : ControllerBase
         var cuentasData = new List<object>(cuentas.Count);
         decimal totalConvertido = 0m;
 
+        // V-02.06 (MED-12): consolidar la conversion de saldos en una sola
+        // llamada a BulkConvertAsync, agregados por divisa, en lugar de N
+        // awaits individuales por cuenta. Las mismas garantias de
+        // tolerancia a tasas faltantes que el dashboard.
+        var saldosPorDivisaParaConvertir = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         foreach (var cuenta in cuentas)
         {
             latestByCuenta.TryGetValue(cuenta.CuentaId, out var latest);
@@ -142,7 +147,7 @@ public sealed class IntegrationOpenClawController : ControllerBase
             alertas.TryGetValue(cuenta.CuentaId, out var alerta);
 
             var saldoActual = latest?.Saldo ?? 0m;
-            totalConvertido += await _tiposCambioService.ConvertAsync(saldoActual, cuenta.Divisa, principalCurrency, cancellationToken);
+            saldosPorDivisaParaConvertir[cuenta.Divisa] = saldosPorDivisaParaConvertir.GetValueOrDefault(cuenta.Divisa, 0m) + saldoActual;
 
             cuentasData.Add(new
             {
@@ -164,6 +169,15 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 estado_alerta = ResolveAlertState(saldoActual, alerta),
                 fecha_ultimo_movimiento = latest?.Fecha.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
             });
+        }
+
+        if (saldosPorDivisaParaConvertir.Count > 0)
+        {
+            var bulkSaldos = await _tiposCambioService.BulkConvertAsync(saldosPorDivisaParaConvertir, principalCurrency, cancellationToken);
+            foreach (var (_, monto) in bulkSaldos)
+            {
+                totalConvertido += monto ?? 0m;
+            }
         }
 
         var totalesPorDivisa = cuentas

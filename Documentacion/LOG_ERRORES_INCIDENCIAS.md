@@ -2642,3 +2642,102 @@
 - **Regla:** si el build local choca con el ACL de `obj/` repetidamente,
   registrarlo y dejar que CI valide. Insistir desde el sandbox no aporta
   senales nuevas y solo retrasa el commit.
+
+## 2026-07-16 - V-02.06 - RLS hardening: bypass por owner en V-02.02 y secretos compartidos (BLOQUEO PARCIAL REGISTRADO)
+
+- **Contexto:** auditoria RLS global con 4 subagentes en paralelo (migraciones,
+  interceptor/firma, politicas, roles/Docker). Resultado: 4 tablas criticas
+  del ciclo V-02.02 quedaban sin `FORCE ROW LEVEL SECURITY`, varias policies
+  eran `FOR ALL` y dejaban visibles filas soft-deleted a usuarios con
+  escritura, y el secreto RLS caia al secreto JWT sin fail-closed. Ademas,
+  `BackupService` ejecutaba `pg_dump` con el rol runtime, lo que bajo FORCE
+  RLS producia dumps incompletos o fallidos.
+- **Causa raiz:**
+  - `20260629090000_FinancialHardeningV0202.cs:241-246` solo hizo `ENABLE`
+    en `IMPORTACION_LOTES`, `IMPORTACION_LOTE_FILAS`, `MOVIMIENTOS_ESPERADOS`
+    y `CONCILIACIONES`. Todas las demas migraciones del mismo ciclo han
+    emparejado `ENABLE` + `FORCE`; esta se quedo a medias.
+  - Las policies `FOR ALL` participaban en `SELECT`, asi que un usuario con
+    `can_write_*` (intentando `UPDATE`/`DELETE`/`INSERT`) terminaba
+    devolviendo filas borradas como si estuvieran vivas.
+  - `20260710_AddConciliacionSoftDeleteAndEstadoCheck.cs` y
+    `20260710_AddSoftDeleteToImportacionFilaColumnaExtraRevision.cs`
+    anadieron `deleted_at` a `CONCILIACIONES`, `IMPORTACION_LOTE_FILAS`,
+    `EXTRACTOS_COLUMNAS_EXTRA` y `REVISION_EXTRACTO_ESTADOS`; las policies
+    nunca fueron actualizadas para filtrar la nueva columna.
+  - `BackupService.RunPgDumpAsync` usaba `DefaultConnection` y eso filtra
+    los datos por las policies del rol runtime bajo FORCE RLS.
+  - `RlsDbCommandInterceptor` leia `IConfiguration` por su cuenta; una
+    cadena vacia o solo espacios se consideraba configurada y producia
+    firmas vacias no detectables por `context_is_valid()`.
+  - `Security:RlsContextSecret` no estaba validado en
+    `RejectUnsafeProductionSecret` en arranque; cualquier cadena
+    debilicaba el aislamiento criptografico entre JWT y RLS.
+- **Solucion aplicada (alcance seguro acordado en revision adversarial):**
+  - Migracion `20260716120000_HardenFinancialV0202Rls` con `FORCE ROW LEVEL SECURITY` en las 4 tablas, separacion de policies en `SELECT`/`INSERT`/`UPDATE`/`DELETE` y filtro `deleted_at IS NULL` en los `SELECT` donde corresponde. La nueva migracion es manuscrita-SQL (mismo patron que las V-02.05) porque `AppDbContextModelSnapshot.cs` esta desalineado con los cambios soft-delete.
+  - `BackupService.ResolveDumpConnection` (ahora `internal`) resuelve owner por `MigrationConnection` -> `WatchdogSettings.DbOwner*` -> `DefaultConnection`; aborta si solo hay runtime.
+  - `RlsDbCommandInterceptor` recibe `RlsContextSecret` por DI; `Program.cs.ResolveRlsContextSecret` aplica `RejectUnsafeProductionSecret` (32 chars, no placeholder, distinto de JWT) en Production. El fallback al JWT se mantiene solo en Development.
+  - `Program.cs.ResolveMigrationConnectionString` ya no cae a `runtimeConnectionString` en Production; lanza `InvalidOperationException` con procedimiento.
+  - `Instalar-AtlasBalance.ps1` genera y persiste `RlsContextSecret` aleatorio; `AppVersion` actualizado a `V-02.06`.
+  - `Actualizar-AtlasBalance.ps1` regenera `Security.RlsContextSecret` y `ConnectionStrings:MigrationConnection` cuando faltan, sin imprimirlos.
+  - Tests no-Docker nuevos:
+    `tests/AtlasBalance.API.Tests/Rls/RlsContextSignerTests.cs`,
+    `tests/AtlasBalance.API.Tests/Rls/RlsDbCommandInterceptorContextTests.cs`,
+    `tests/AtlasBalance.API.Tests/BackupServiceOwnerResolutionTests.cs`.
+  - `MigrationDiscoveryTests` exige la nueva migracion.
+  - `RowLevelSecurityTests` ampliado a las 23 tablas (incluye
+    `IMPORTACION_*`, `MOVIMIENTOS_ESPERADOS`, `CONCILIACIONES`,
+    `EXTRACTOS_DESGLOSES`, `BACKUP_CLOUD_*`).
+  - Plantillas `appsettings.*.template` ahora incluyen el placeholder
+    `Security.RlsContextSecret`.
+- **Bloqueos / pendientes declarados:**
+  - Docker/Testcontainers no esta disponible en este host, por lo que la
+    suite principal `RowLevelSecurityTests` queda bloqueada. La entrega al
+    cliente esta condicionada a esa ejecucion en un host con Docker.
+  - La ejecucion dinamica de los tests nuevos choca con la ACL heredada
+    sobre `obj/` y `bin/` del repositorio (ya documentado en este mismo
+    log mas arriba). Los tests compilan OK via
+    `BaseIntermediateOutputPath=C:\tmp\atlas-rls-build-v0206` (0 errores)
+    pero el test host no encuentra `hostpolicy.dll` en la salida y no
+    descubre los nuevos `Fact`s desde el bin original. Cuando la ACL se
+    restaure, los tests daran cobertura dinamica completa.
+  - Backup/restore real con FORCE RLS (dump + restore con rol owner y tablas
+    FINANCIERAS) requiere un host con Postgres real; aqui se valida solo
+    estaticamente.
+  - Deuda diferida a V-02.07: `ISoftDelete` en `IMPORTACION_LOTES`,
+    reconciliacion de `AppDbContextModelSnapshot.cs` con soft-delete, y RLS
+    sobre `USUARIOS`/`REFRESH_TOKENS`/`INTEGRATION_TOKENS`/`CONFIGURACION`
+    (requiere refactor previo del flujo `is_auth_flow` para evitar romper
+    login; RLS no oculta columnas como `password_hash` o `token_hash`).
+- **Verificacion parcial:**
+  - Build incremental de API, Watchdog y Tests via `BaseIntermediateOutputPath`: **0 errores**.
+  - `dotnet test --filter MigrationDiscoveryTests` ejecuto 1/1 OK (test antiguo), pero los nuevos tests estan en el bin del proyecto testeable y no pueden ser descubiertos desde el bin del repo por la ACL.
+  - CodeQL: re-scan pendiente del push a la rama V-02.06 en GitHub (escaneo automatico).
+  - Backup/restore owner con pg_dump: pendiente de host con Postgres + Docker.
+- **Reglas seguidas:**
+  - Antes de implementar, revision adversarial explicita de un subagente
+    detecto que el plan inicial romperia login/MFA/refresh. Plan corregido
+    antes de tocar archivos.
+  - Documentacion afectada actualizada antes de cerrar: `v-02.06.md`,
+    `DOCUMENTACION_CAMBIOS.md`, este `LOG_ERRORES_INCIDENCIAS.md`.
+  - No se ha activado un fail-fast inmediato incompatible con
+    instalaciones legacy: `Security:RlsContextSecret` se genera en
+    instalacion nueva y se regenera en actualizacion, pero el arranque
+    en Production rechaza su ausencia solo despues de este ciclo.
+  - No se anade RLS a tablas de identidad/configuracion: limitacion
+    documentada con justificacion en `v-02.06.md`.
+- **Regla:** cuando una auditoria encuentra varios hallazgos relacionados,
+  pasarlos por una revision adversarial antes de implementar. Saltarse
+  ese paso produce planes que parecen razonables y rompen produccion.
+- **Regla adicional:** el secreto RLS debe inyectarse por DI una sola vez
+  tras validar longitud/origen; permitir al interceptor leer
+  `IConfiguration` por su cuenta lleva a inconsistencias entre el secrec
+  to usado en el `set_config` y el que se sembro en
+  `atlas_security.rls_context_secret`.
+
+## 2026-07-16 - V-02.06 - CodeQL hardening: cierre de las 5 alertas
+
+- **Contexto:** las 5 alertas CodeQL del merge anterior estaban abiertas al
+  inicio de la sesion. Escaneo automatico CodeQL pendiente en GitHub.
+- **Trabajo aplicado:** ver seccion `CodeQL hardening` de `v-02.06.md` y
+  bitacora previa en este fichero.

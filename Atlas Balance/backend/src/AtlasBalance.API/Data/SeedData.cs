@@ -113,6 +113,14 @@ public static class SeedData
     private static void EnsureDefaultConfiguraciones(AppDbContext context, Guid? seedActorId, DateTime now, IConfiguration? configuration)
     {
         var appBaseUrl = ResolveConfiguredAppBaseUrl(configuration) ?? "https://caja.empresa.local";
+        // V-02.06: la politica MFA por rol vive en CONFIGURACION. Si el operador
+        // conserva Security:RequireMfaForWebUsers=true (recomendado y valor por
+        // defecto en appsettings.json/appsettings.Production.json.template) la
+        // opcion para no administradores se siembra como "true". Si un dia se baja
+        // el flag del appsettings, SeedData lo respeta para no introducir un
+        // cambio brusco al migrar.
+        var fallbackRequireMfa = configuration?.GetValue("Security:RequireMfaForWebUsers", true) ?? true;
+        var requireMfaDefault = fallbackRequireMfa ? "true" : "false";
         var configuraciones = new Dictionary<string, (string Valor, string Tipo, string Descripcion)>
         {
             ["app_base_url"] = (appBaseUrl, "string", "URL base de la aplicacion"),
@@ -142,6 +150,7 @@ public static class SeedData
             ["app_update_auto_last_started_utc"] = ("", "datetime", "Ultima actualizacion automatica iniciada en UTC"),
             ["app_update_auto_last_result"] = ("", "string", "Ultimo resultado de actualizacion automatica"),
             [SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey] = ("true", "bool", "Permite recordar dispositivos MFA durante 90 dias"),
+            [SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey] = (requireMfaDefault, "bool", "Exige Authenticator a gerentes y empleados; los administradores siempre deben usarlo"),
             ["smtp_host"] = ("", "string", "Host SMTP"),
             ["smtp_port"] = ("587", "int", "Puerto SMTP"),
             ["smtp_user"] = ("", "string", "Usuario SMTP"),

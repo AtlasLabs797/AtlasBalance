@@ -3192,6 +3192,31 @@ El detalle importante: un cliente SQL con credenciales runtime puede ejecutar `S
 - RLS no reemplaza permisos de controlador. Si alguien elimina checks en C#, sigue siendo un bug aunque PostgreSQL bloquee parte del dano.
 - En contenedores dev antiguos puede no existir rol `postgres` porque se crearon con `app_user` como superusuario. La migracion activa RLS y firma de contexto, pero la separacion fuerte owner/runtime exige migrar ownership con un rol administrador o recrear la base con el Docker/instalador nuevo.
 
+### V-02.06 - RLS hardening financiero y unificacion del secreto RLS
+
+- **Migracion** `20260716120000_HardenFinancialV0202Rls`: anade `FORCE ROW LEVEL SECURITY` en `IMPORTACION_LOTES`, `IMPORTACION_LOTE_FILAS`, `MOVIMIENTOS_ESPERADOS` y `CONCILIACIONES` (la migracion que las creo, `20260629090000_FinancialHardeningV0202`, solo hizo `ENABLE`). Separa las policies previas `FOR ALL` en `SELECT`/`INSERT`/`UPDATE`/`DELETE` con sus `USING`/`WITH CHECK` correspondientes, y aniade `deleted_at IS NULL` en el `SELECT` de `IMPORTACION_LOTE_FILAS`, `MOVIMIENTOS_ESPERADOS`, `CONCILIACIONES`, `EXTRACTOS_COLUMNAS_EXTRA` y `REVISION_EXTRACTO_ESTADOS`. La migracion es manuscrita-SQL (mismo patron que las V-02.05) porque `AppDbContextModelSnapshot.cs` esta desalineado con el modelo y un scaffold EF podria recrear columnas ya existentes.
+- **`RlsContextSecret` por DI**: nuevo contenedor `AtlasBalance.API.Data.RlsContextSecret`. El interceptor ya no lee `IConfiguration` por su cuenta; `Program.cs.ResolveRlsContextSecret` lo construye una sola vez, en Production exige `>=32 chars`, no placeholder y distinto del secreto JWT (excepcion explicita en lugar de warning en stderr). En Development conserva el fallback al JWT para que `dotnet run` siga funcionando.
+- **`BackupService.ResolveDumpConnection`** (ahora `internal` para tests): orden `ConnectionStrings:MigrationConnection` -> `WatchdogSettings:DbOwnerUser/Password` -> `DefaultConnection`. Si solo existe el rol runtime, `RunPgDumpAsync` aborta con mensaje claro en lugar de ejecutar `pg_dump` filtrado por FORCE RLS.
+- **`MigrationConnection` obligatorio fuera de Development**: `Program.cs.ResolveMigrationConnectionString` ya no devuelve la cadena runtime cuando falta; lanza `InvalidOperationException` con procedimiento de actualizacion.
+- **Instalador / actualizador**: `Instalar-AtlasBalance.ps1` genera `Security:RlsContextSecret` aleatorio y lo persiste; `Actualizar-AtlasBalance.ps1` lo regenera cuando falta o coincide con JWT, y rellena `ConnectionStrings:MigrationConnection` reusando la cascada owner ya existente. Ninguno imprime credenciales.
+- **Tests nuevos**:
+  - `tests/AtlasBalance.API.Tests/Rls/RlsContextSignerTests.cs`: 6 facts (payload canonico, secreto vacio, vector fijo contra `HMACSHA256` directo, determinismo, sensibilidad por cada campo).
+  - `tests/AtlasBalance.API.Tests/Rls/RlsDbCommandInterceptorContextTests.cs`: 6 facts sobre `BuildContext` (system, anonimo, auth, dashboard, write, revision) sin necesidad de PostgreSQL.
+  - `tests/AtlasBalance.API.Tests/BackupServiceOwnerResolutionTests.cs`: 3 facts (sin owner, con `MigrationConnection`, con `WatchdogSettings.DbOwner*`).
+  - `tests/AtlasBalance.API.Tests/MigrationDiscoveryTests.cs`: exige la nueva migracion.
+  - `tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`: inventario ampliado a 23 tablas (incluye las 4 financieras del V-02.02, `EXTRACTOS_DESGLOSES`, `BACKUP_CLOUD_*`).
+
+### Deuda diferida a V-02.07
+
+- RLS en `USUARIOS`, `REFRESH_TOKENS`, `INTEGRATION_TOKENS` y
+  `CONFIGURACION`. Requiere diseno previo del flujo `is_auth_flow` y
+  funciones que limiten columnas (RLS solo filtra filas). Si se aplica
+  una policy amplia para no romper login, el aislamiento es debil.
+- Reconciliacion de `AppDbContextModelSnapshot.cs` con los cambios
+  `deleted_at` de V-02.05.
+- `ISoftDelete` en `IMPORTACION_LOTES` y filtro `deleted_at IS NULL` en
+  su policy `SELECT`.
+
 ### Verificacion
 
 - `dotnet build '.\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj' -c Release --no-restore`: OK.

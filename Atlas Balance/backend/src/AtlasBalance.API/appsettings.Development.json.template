@@ -16,7 +16,8 @@
     "Enabled": true
   },
   "Security": {
-    "RequireMfaForWebUsers": true
+    "RequireMfaForWebUsers": true,
+    "RlsContextSecret": "<clave-rls-local-distinta-de-jwt-minimo-32-caracteres>"
   },
   "ForwardedHeaders": {
     "KnownProxies": [],

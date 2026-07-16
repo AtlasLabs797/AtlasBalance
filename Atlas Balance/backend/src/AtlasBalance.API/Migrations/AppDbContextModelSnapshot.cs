@@ -1142,6 +1142,15 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("numeric(18,8)")
                         .HasColumnName("coste_estimado_eur");
 
+                    // V-02.06 (MED-22): soft delete explicito en IaUsoUsuario.
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
                     b.Property<DateTime>("FechaModificacion")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_modificacion");
@@ -1174,6 +1183,9 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_ia_uso_usuarios");
+
+                    b.HasIndex("DeletedAt")
+                        .HasDatabaseName("ix_ia_uso_usuarios_deleted_at");
 
                     b.HasIndex("FechaModificacion")
                         .HasDatabaseName("ix_ia_uso_usuarios_fecha_modificacion");

@@ -412,17 +412,24 @@ public sealed class RowLevelSecurityTests
                       'PLAZOS_FIJOS',
                       'EXTRACTOS',
                       'EXTRACTOS_COLUMNAS_EXTRA',
+                      'EXTRACTOS_DESGLOSES',
                       'REVISION_EXTRACTO_ESTADOS',
                       'EXPORTACIONES',
                       'PREFERENCIAS_USUARIO_CUENTA',
                       'AUDITORIAS',
                       'AUDITORIA_INTEGRACIONES',
                       'BACKUPS',
+                      'BACKUP_CLOUD_CONNECTIONS',
+                      'BACKUP_CLOUD_COPIES',
                       'PAISES',
                       'MFA_TRUSTED_DEVICES',
                       'PERMISOS_USUARIO',
                       'INTEGRATION_PERMISSIONS',
-                      'NOTIFICACIONES_ADMIN'
+                      'NOTIFICACIONES_ADMIN',
+                      'IMPORTACION_LOTES',
+                      'IMPORTACION_LOTE_FILAS',
+                      'MOVIMIENTOS_ESPERADOS',
+                      'CONCILIACIONES'
                   )
             ) r
             WHERE NOT r.relrowsecurity OR NOT r.relforcerowsecurity OR r.policy_count = 0

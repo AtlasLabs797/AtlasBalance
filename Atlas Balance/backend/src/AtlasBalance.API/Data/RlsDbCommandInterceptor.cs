@@ -6,17 +6,24 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace AtlasBalance.API.Data;
 
+// V-02-06 (RLS-SEC-01): el secreto RLS ahora se inyecta por DI desde
+// Program.cs despues de validarlo. Esto elimina la lectura independiente de
+// IConfiguration y la inconsistencia con JWT que provocaba que un secreto
+// en blanco ("" o solo espacios) generara firmas invalidas en runtime.
 public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly string _contextSecret;
 
-    public RlsDbCommandInterceptor(IHttpContextAccessor httpContextAccessor, IConfiguration configuration)
+    // El tipo de parametro RlsContextSecret es internal, asi que el ctor
+    // tambien debe serlo para no disparar CS0051. La clase sigue siendo
+    // public sealed para que EF Core la descubra como interceptor y la DI
+    // interna la construya por reflection (las llamadas AddScoped son en
+    // este ensamblado).
+    internal RlsDbCommandInterceptor(IHttpContextAccessor httpContextAccessor, RlsContextSecret contextSecret)
     {
         _httpContextAccessor = httpContextAccessor;
-        _contextSecret = configuration["Security:RlsContextSecret"]
-            ?? configuration["JwtSettings:Secret"]
-            ?? string.Empty;
+        _contextSecret = contextSecret.Secret;
     }
 
     public override InterceptionResult<DbDataReader> ReaderExecuting(
@@ -105,7 +112,11 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
         command.Connection.State != System.Data.ConnectionState.Open ||
         command.CommandText.Contains("set_config('atlas.", StringComparison.OrdinalIgnoreCase);
 
-    private RlsSessionContext BuildContext()
+    // V-02-06 (RLS-UNIT-01): exponemos BuildContext como internal para que los
+    // tests unitarios puedan verificar el scope derivado del path sin tener
+    // que instanciar un DbCommand real (lo que exigiria un AppDbContext
+    // conectado a PostgreSQL).
+    internal RlsSessionContext BuildContext()
     {
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext is null)
@@ -199,7 +210,7 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
         command.Parameters.Add(parameter);
     }
 
-    private readonly record struct RlsSessionContext(
+    internal readonly record struct RlsSessionContext(
         string AuthMode,
         string UserId,
         string IntegrationTokenId,

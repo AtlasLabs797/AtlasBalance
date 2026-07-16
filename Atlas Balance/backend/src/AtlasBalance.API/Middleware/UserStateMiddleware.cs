@@ -68,6 +68,15 @@ public sealed class UserStateMiddleware
             return;
         }
 
+        // V-02.06: los administradores necesitan garantia MFA en el JWT. Si el
+        // token se emitio sin ella (sesion heredada o bypass de la politica
+        // anterior), la sesion se rechaza para forzar un re-login con MFA.
+        if (usuario.Rol == RolUsuario.ADMIN && !HasMfaAssurance(context.User, usuario))
+        {
+            await RejectAsync(context, "Se requiere MFA para continuar");
+            return;
+        }
+
         context.Items[HttpContextItemKeys.CurrentUsuario] = usuario;
         context.User = BuildPrincipal(usuario, context.User.Identity?.AuthenticationType);
 
@@ -116,6 +125,36 @@ public sealed class UserStateMiddleware
         var userBytes = Encoding.UTF8.GetBytes(usuario.SecurityStamp);
         return tokenBytes.Length == userBytes.Length &&
                CryptographicOperations.FixedTimeEquals(tokenBytes, userBytes);
+    }
+
+    private static bool HasMfaAssurance(ClaimsPrincipal principal, Usuario usuario)
+    {
+        var verifiedRaw = principal.FindFirstValue(AuthClaimNames.MfaVerifiedAt);
+        var mfaStamp = principal.FindFirstValue(AuthClaimNames.MfaSecurityStamp);
+
+        if (string.IsNullOrWhiteSpace(verifiedRaw) || string.IsNullOrWhiteSpace(mfaStamp))
+        {
+            return false;
+        }
+
+        // La garantia MFA debe estar anclada al security stamp actual del
+        // usuario. Si el stamp cambia (rotacion por password, revocacion
+        // administrativa, etc.) la garantia se considera obsoleta.
+        var stampBytes = Encoding.UTF8.GetBytes(mfaStamp);
+        var userBytes = Encoding.UTF8.GetBytes(usuario.SecurityStamp);
+        if (stampBytes.Length != userBytes.Length ||
+            !CryptographicOperations.FixedTimeEquals(stampBytes, userBytes))
+        {
+            return false;
+        }
+
+        if (!long.TryParse(verifiedRaw, out var unix))
+        {
+            return false;
+        }
+
+        var verifiedAt = DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime;
+        return verifiedAt <= DateTime.UtcNow;
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, out Guid userId)

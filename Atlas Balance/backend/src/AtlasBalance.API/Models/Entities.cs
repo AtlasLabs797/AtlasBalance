@@ -331,7 +331,11 @@ public class Auditoria
     public string? DetallesJson { get; set; }
 }
 
-public class IaUsoUsuario
+// V-02.06 (MED-22): ISoftDelete explicito para alinear con las demas
+// entidades que persisten uso/contadores historicos. Aplica el filtro
+// global del AppDbContext (DeletedAt IS NULL) y permite conservar el
+// mes cerrado cuando un usuario se desactiva/borra.
+public class IaUsoUsuario : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid UsuarioId { get; set; }
@@ -343,6 +347,8 @@ public class IaUsoUsuario
     public decimal CosteEstimadoEur { get; set; }
     public DateTime FechaUltimoUsoUtc { get; set; }
     public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
 public class IntegrationToken : ISoftDelete
