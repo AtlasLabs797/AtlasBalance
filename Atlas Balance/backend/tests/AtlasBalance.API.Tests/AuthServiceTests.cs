@@ -34,6 +34,16 @@ public class AuthServiceTests
         })
         .Build();
 
+    private static IConfiguration BuildRequireNonAdminMfaConfig(bool requireNonAdmin) => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["JwtSettings:Secret"] = "test-secret-key-minimum-32-characters-long",
+            ["JwtSettings:AccessTokenExpMinutes"] = "60",
+            ["JwtSettings:RefreshTokenExpDays"] = "7",
+            ["Security:RequireMfaForWebUsers"] = (requireNonAdmin ? "true" : "false")
+        })
+        .Build();
+
     private static AppDbContext BuildDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -427,7 +437,10 @@ public class AuthServiceTests
             Email = "mfa-change-setup-session@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPass123!Ab", workFactor: 12),
             NombreCompleto = "Mfa Change Setup Session",
-            Rol = RolUsuario.ADMIN,
+            // EMPLEADO para que BuildConfig (MFA off) emita tokens. Los
+            // administradores quedan excluidos porque V-02.06 los obliga
+            // a MFA siempre.
+            Rol = RolUsuario.EMPLEADO,
             Activo = true,
             PrimerLogin = false,
             MfaEnabled = false,
@@ -438,6 +451,8 @@ public class AuthServiceTests
 
         var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
         var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
+        preMfaLogin.MfaRequired.Should().BeFalse();
+        preMfaLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();
 
         var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
         Func<Task> changePassword = () => mfaSut.ChangePasswordAsync(
@@ -969,5 +984,137 @@ public class AuthServiceTests
         PrimerLogin = false,
         FechaCreacion = DateTime.UtcNow
     };
+
+    // V-02.06: matriz admin/no-admin x politica. Cubre que la politica por rol
+    // siempre obliga a administradores, independientemente de la configuracion
+    // operativa, y que los no administradores siguen la clave almacenada.
+    [Theory]
+    [InlineData(RolUsuario.ADMIN, true)]
+    [InlineData(RolUsuario.ADMIN, false)]
+    [InlineData(RolUsuario.GERENTE, true)]
+    [InlineData(RolUsuario.EMPLEADO, false)]
+    public async Task Login_Should_Apply_Mfa_Policy_Per_Role(RolUsuario rol, bool requireNonAdmin)
+    {
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = $"policy-{rol}-{(requireNonAdmin ? "on" : "off")}@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Policy User",
+            Rol = rol,
+            Activo = true,
+            PrimerLogin = false,
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        if (rol != RolUsuario.ADMIN)
+        {
+            // Para no administradores, sembramos la clave operativa y
+            // verificamos que el rol la respeta.
+            db.Configuraciones.Add(new Configuracion
+            {
+                Clave = SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey,
+                Valor = requireNonAdmin ? "true" : "false"
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildRequireNonAdminMfaConfig(requireNonAdmin), new AuditService(db), new PlainTextSecretProtector());
+        var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+
+        if (rol == RolUsuario.ADMIN)
+        {
+            // Admin siempre MFA, nunca tokens directos.
+            result.AccessToken.Should().BeNull();
+            result.RefreshToken.Should().BeNull();
+            result.MfaRequired.Should().BeTrue();
+        }
+        else if (requireNonAdmin)
+        {
+            result.MfaRequired.Should().BeTrue();
+            result.AccessToken.Should().BeNull();
+        }
+        else
+        {
+            result.MfaRequired.Should().BeFalse();
+            result.AccessToken.Should().NotBeNullOrWhiteSpace();
+        }
+
+        result.Usuario.MfaRequired.Should().Be(rol == RolUsuario.ADMIN || requireNonAdmin);
+    }
+
+    [Fact]
+    public async Task Login_Should_Reject_Admin_Session_When_Stale_Mfa_Challenge()
+    {
+        // V-02.06: si el security stamp rota durante el desafio MFA, el
+        // verify debe rechazarlo aunque el codigo TOTP sea valido.
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-stale-admin@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Stale Admin",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            MfaEnabled = true,
+            MfaSecret = TotpService.GenerateSecret(),
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        UserSessionState.RotateSecurityStamp(persisted);
+        await db.SaveChangesAsync();
+
+        Func<Task> verify = () => sut.VerifyMfaAsync(login.MfaChallengeId!, code, false, "127.0.0.1", CancellationToken.None);
+        var exception = await verify.Should().ThrowAsync<AuthException>();
+        exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        exception.Which.Message.Should().Be("Codigo MFA invalido o expirado");
+    }
+
+    [Fact]
+    public async Task Login_Should_Keep_Admin_Assurance_After_Verified_Mfa()
+    {
+        // V-02.06: un admin que completa MFA obtiene un access token con la
+        // marca de MFA verificado. Eso es lo que UserStateMiddleware usa
+        // para permitir acceso administrativo sin re-login.
+        await using var db = BuildDbContext();
+        var user = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa-assured-admin@test.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 12),
+            NombreCompleto = "Assured Admin",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false,
+            MfaEnabled = true,
+            MfaSecret = TotpService.GenerateSecret(),
+            FechaCreacion = DateTime.UtcNow
+        };
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
+        var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, false, "127.0.0.1", CancellationToken.None);
+
+        verified.AccessToken.Should().NotBeNullOrWhiteSpace();
+
+        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+        var jwt = handler.ReadJwtToken(verified.AccessToken!);
+        jwt.Claims.Should().Contain(c => c.Type == AuthClaimNames.MfaVerifiedAt);
+        jwt.Claims.Should().Contain(c => c.Type == AuthClaimNames.MfaSecurityStamp);
+        jwt.Claims.First(c => c.Type == AuthClaimNames.MfaSecurityStamp).Value.Should().Be(user.SecurityStamp);
+    }
 
 }

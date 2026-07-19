@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -221,7 +222,7 @@ public sealed class BackupService : IBackupService
             return (true, null);
         }
 
-        _logger.LogWarning("pg_dump local falló: {Error}. Se intentará fallback docker.", localResult.ErrorMessage);
+        _logger.LogWarning("pg_dump local falló: {ErrorSafe}. Se intentará fallback docker.", LogScrubber.Scrub(localResult.ErrorMessage));
         return await RunPgDumpViaDockerAsync(backupPath, conn, cancellationToken);
     }
 

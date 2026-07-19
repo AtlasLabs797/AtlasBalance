@@ -3,6 +3,7 @@ using System.Text.Json;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Constants;
+using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -30,12 +31,18 @@ public sealed class IntegracionesController : ControllerBase
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
     private readonly IIntegrationTokenService _integrationTokenService;
+    private readonly IIntegrationRateLimitCleaner _rateLimitCleaner;
 
-    public IntegracionesController(AppDbContext dbContext, IAuditService auditService, IIntegrationTokenService integrationTokenService)
+    public IntegracionesController(
+        AppDbContext dbContext,
+        IAuditService auditService,
+        IIntegrationTokenService integrationTokenService,
+        IIntegrationRateLimitCleaner rateLimitCleaner)
     {
         _dbContext = dbContext;
         _auditService = auditService;
         _integrationTokenService = integrationTokenService;
+        _rateLimitCleaner = rateLimitCleaner;
     }
 
     [HttpGet]
@@ -241,6 +248,12 @@ public sealed class IntegracionesController : ControllerBase
             return NotFound(new { error = "Token no encontrado" });
         }
 
+        // V-02.06 (MED-29): limpiar contadores de rate-limit en memoria
+        // para que un token revocado deje de "consumir" cuota del minuto
+        // actual y del anterior. Sin esto, un atacante podria reusar la
+        // ventana de 2 minutos para agotar la cuota global.
+        _rateLimitCleaner.ClearRateLimitsForToken(id);
+
         await _auditService.LogAsync(
             GetCurrentUserId(),
             AuditActions.RevokeIntegrationToken,
@@ -294,6 +307,12 @@ public sealed class IntegracionesController : ControllerBase
         };
 
         _dbContext.IntegrationTokens.Add(newToken);
+
+        // V-02.06 (MED-29): la rotacion equivale a revocar el token viejo.
+        // Limpiamos sus contadores para que el nuevo token arranque sin
+        // arrastre de cuota del anterior.
+        _rateLimitCleaner.ClearRateLimitsForToken(oldToken.Id);
+
         var oldPermissions = await _dbContext.IntegrationPermissions
             .AsNoTracking()
             .Where(x => x.TokenId == oldToken.Id)

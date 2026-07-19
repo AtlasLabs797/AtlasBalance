@@ -90,9 +90,17 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
             return;
         }
 
-        var context = BuildContext();
-        using var contextCommand = CreateContextCommand(command, context, _contextSecret);
-        contextCommand.ExecuteNonQuery();
+        ReentryGuard.Enter();
+        try
+        {
+            var context = BuildContext();
+            using var contextCommand = CreateContextCommand(command, context, _contextSecret);
+            contextCommand.ExecuteNonQuery();
+        }
+        finally
+        {
+            ReentryGuard.Exit();
+        }
     }
 
     private async Task ApplyRlsContextAsync(DbCommand command, CancellationToken cancellationToken)
@@ -102,15 +110,46 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
             return;
         }
 
-        var context = BuildContext();
-        await using var contextCommand = CreateContextCommand(command, context, _contextSecret);
-        await contextCommand.ExecuteNonQueryAsync(cancellationToken);
+        ReentryGuard.Enter();
+        try
+        {
+            var context = BuildContext();
+            await using var contextCommand = CreateContextCommand(command, context, _contextSecret);
+            await contextCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            ReentryGuard.Exit();
+        }
     }
 
     private static bool ShouldSkip(DbCommand command) =>
         command.Connection is null ||
         command.Connection.State != System.Data.ConnectionState.Open ||
-        command.CommandText.Contains("set_config('atlas.", StringComparison.OrdinalIgnoreCase);
+        // V-02-06 (MED-30): si el comando se origina dentro del propio
+        // interceptor (publicacion de set_config del contexto RLS),
+        // saltamos. Antes se hacia por busqueda textual en CommandText.
+        ReentryGuard.IsActive;
+
+    /// <summary>
+    /// V-02-06 (MED-30): marcador thread-static para detectar cuando un
+    /// comando se origina dentro del propio interceptor (el set_config
+    /// que publica contexto RLS). Anteriormente se evitaba la recursion
+    /// por una busqueda textual en CommandText, fragil ante cualquier
+    /// cambio de formato. El flag es robusto y no requiere inspeccionar
+    /// SQL del usuario.
+    /// </summary>
+    private static class ReentryGuard
+    {
+        [ThreadStatic]
+        private static int _depth;
+
+        public static bool IsActive => _depth > 0;
+
+        public static void Enter() => _depth++;
+
+        public static void Exit() => _depth--;
+    }
 
     // V-02-06 (RLS-UNIT-01): exponemos BuildContext como internal para que los
     // tests unitarios puedan verificar el scope derivado del path sin tener

@@ -235,4 +235,35 @@ public sealed class IntegrationAuthMiddlewareTests
         public Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)
             => Task.FromResult(false);
     }
+
+    // -----------------------------------------------------------------------
+    // V-02.06 (MED-29): cuando un token se revoca o rota, los contadores
+    // de rate-limit por minuto en memoria deben invalidarse. Sin esto,
+    // un atacante podria acumular cuota en un minuto y consumirla
+    // varios minutos despues aunque el token estuviera revocado.
+    // -----------------------------------------------------------------------
+    [Fact]
+    public void IntegrationRateLimitCleaner_Should_Remove_Counters_For_Token()
+    {
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var clock = new FakeClock(new DateTime(2026, 4, 18, 11, 5, 0, DateTimeKind.Utc));
+        var cleaner = new IntegrationRateLimitCleaner(cache, clock);
+        var tokenId = Guid.NewGuid();
+
+        // Sembramos manualmente los contadores current/previous del minuto
+        // en curso para ese token, simulando uso previo.
+        var currentKey = $"{tokenId:N}:{clock.UtcNow:yyyyMMddHHmm}";
+        var previousMinute = clock.UtcNow.AddMinutes(-1);
+        var previousKey = $"{tokenId:N}:{previousMinute:yyyyMMddHHmm}";
+        cache.Set(currentKey, 42, TimeSpan.FromMinutes(2));
+        cache.Set(previousKey, 13, TimeSpan.FromMinutes(2));
+
+        cache.Get<int>(currentKey).Should().Be(42);
+        cache.Get<int>(previousKey).Should().Be(13);
+
+        cleaner.ClearRateLimitsForToken(tokenId);
+
+        cache.TryGetValue<int>(currentKey, out _).Should().BeFalse();
+        cache.TryGetValue<int>(previousKey, out _).Should().BeFalse();
+    }
 }

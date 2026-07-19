@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Logging;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Services;
@@ -131,7 +132,7 @@ public sealed class ActualizacionService : IActualizacionService
         var available = await CheckVersionDisponibleAsync(cancellationToken);
         if (!available.ActualizacionDisponible || !available.Instalable)
         {
-            _logger.LogWarning("No se puede iniciar actualizacion: preflight no instalable. Bloqueos: {Bloqueos}", string.Join(" | ", available.Bloqueos));
+            _logger.LogWarning("No se puede iniciar actualizacion: preflight no instalable. Bloqueos: {BloqueosSafe}", LogScrubber.Scrub(string.Join(" | ", available.Bloqueos)));
             return false;
         }
 

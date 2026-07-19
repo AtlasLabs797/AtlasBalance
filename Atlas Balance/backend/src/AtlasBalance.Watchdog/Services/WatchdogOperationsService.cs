@@ -885,7 +885,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         if (!IsLocalHealthUrl(healthUrl))
         {
-            _logger.LogWarning("Health check rechazado por URL no local: {HealthUrl}", healthUrl);
+            _logger.LogWarning("Health check rechazado por URL no local: {HealthUrlSafe}", LogScrubber.Scrub(healthUrl));
             return false;
         }
 
@@ -939,11 +939,11 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 CopyFileIfExists(Path.Combine(rollbackPath, file), Path.Combine(installPath, file));
             }
 
-            _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPath}", rollbackPath);
+            _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
         }
         catch (Exception rollbackEx)
         {
-            _logger.LogError(rollbackEx, "No se pudo aplicar rollback de binarios desde {RollbackPath}", rollbackPath);
+            _logger.LogError(rollbackEx, "No se pudo aplicar rollback de binarios desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
         }
     }
 

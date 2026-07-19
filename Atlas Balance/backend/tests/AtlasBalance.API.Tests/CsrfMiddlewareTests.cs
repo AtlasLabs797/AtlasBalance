@@ -49,6 +49,29 @@ public sealed class CsrfMiddlewareTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
 
+    // V-02.06 (CodeQL #10): el middleware envuelve Request.Path con
+    // LogScrubber.Scrub antes de loguearlo para evitar log forging
+    // (CWE-117) por CRLF en la URL. Este test fija esa garantia
+    // explicitamente sobre el path, no solo sobre el UA.
+    [Fact]
+    public async Task InvokeAsync_Should_NotThrow_When_RequestPath_Contains_CrLf()
+    {
+        var middleware = new CsrfMiddleware(
+            _ => Task.CompletedTask,
+            NullLogger<CsrfMiddleware>.Instance);
+
+        var context = BuildContext(
+            "/api/usuarios\r\n2026-01-01 FAKE LOG ENTRY\r\n",
+            "POST",
+            userAgent: "Mozilla/5.0");
+        var csrf = new RejectingCsrfService();
+
+        var act = async () => await middleware.InvokeAsync(context, csrf);
+
+        await act.Should().NotThrowAsync();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
     [Fact]
     public async Task InvokeAsync_Should_CallNext_When_Method_IsGet()
     {

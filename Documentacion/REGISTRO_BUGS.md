@@ -1377,13 +1377,17 @@ publico; los 11 HIGH requieren arreglo antes de exponer a internet.
   maliciosos firmados o no. **CERRADO en V-02-05 (CRIT-3)**. Watchdog ahora
   verifica firma RSA contra `UpdateSecurity:ReleaseSigningPublicKeyPem`.
 
-### HIGH (cerrados en V-02-05)
+### HIGH (cerrados en V-02-05 / V-02.06)
 
 - **AB-H-01 - Dashboard aborta con 409 entero si una tasa falta (H1 review).**
-  **PARCIALMENTE CERRADO en V-02-05**. `BulkConvertAsync` y `TryConvertAsync`
-  disponibles; `GetSaldosDivisaAsync` y `BuildPlazosFijosResumenAsync` los usan.
-  Resto (`GetPrincipalAsync`, `GetEvolucionAsync`) en Fase 1.
-- **AB-H-02 - N+async en Dashboard (H2 review).** **PARCIALMENTE CERRADO**
+  **CERRADO en V-02.06**. `BulkConvertAsync` se aplica ahora en
+  `GetSaldosDivisaAsync`, `BuildPlazosFijosResumenAsync`,
+  `BuildMetricsAsync` y `GetEvolucionAsync` mediante el helper
+  `DashboardService.ResolveBulkRatesAsync`. Tolerancia a tasas faltantes
+  sin abortar el dashboard. Verificacion: 9/9 DashboardServiceTests OK y
+  9/9 Nuevo `ResolveBulkRatesAsync` ejercita el patron en
+  `GetPrincipalAsync_Should_Aggregate_CurrentBalances_And_PeriodFlows_In_TargetCurrency`.
+- **AB-H-02 - N+async en Dashboard (H2 review).** **CERRADO en V-02.06**
   con el mismo alcance que AB-H-01.
 - **AB-H-03 - Google Drive restore sin SHA-256 post-descifrado.** **CERRADO en
   V-02-05**. El checksum se compara tras descifrar el dump. El helper quedó

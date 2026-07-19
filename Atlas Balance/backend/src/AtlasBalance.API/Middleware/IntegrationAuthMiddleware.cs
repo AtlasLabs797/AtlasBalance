@@ -15,6 +15,49 @@ public static class IntegrationHttpContextItemKeys
     public const string CurrentIntegrationToken = "current_integration_token";
 }
 
+/// <summary>
+/// V-02.06 (MED-29): expone la limpieza del rate-limit por token de la
+/// ventana en memoria para que los endpoints administrativos (revocar,
+/// rotar) invaliden los contadores del minuto actual y el anterior sin
+/// tener que esperar al TTL de 2 minutos.
+/// </summary>
+public interface IIntegrationRateLimitCleaner
+{
+    void ClearRateLimitsForToken(Guid tokenId);
+}
+
+/// <summary>
+/// V-02.06 (MED-29): implementacion que comparte <see cref="IMemoryCache"/>
+/// con el middleware para invalidar los contadores de rate-limit asociados
+/// al token revocado/rotado.
+/// </summary>
+public sealed class IntegrationRateLimitCleaner : IIntegrationRateLimitCleaner
+{
+    private readonly IMemoryCache _cache;
+    private readonly IClock _clock;
+    private readonly object _rateLimitLock = new();
+
+    public IntegrationRateLimitCleaner(IMemoryCache cache, IClock clock)
+    {
+        _cache = cache;
+        _clock = clock;
+    }
+
+    public void ClearRateLimitsForToken(Guid tokenId)
+    {
+        var now = _clock.UtcNow;
+        var currentMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
+        var previousMinute = currentMinute.AddMinutes(-1);
+        var currentKey = $"{tokenId:N}:{currentMinute:yyyyMMddHHmm}";
+        var previousKey = $"{tokenId:N}:{previousMinute:yyyyMMddHHmm}";
+        lock (_rateLimitLock)
+        {
+            _cache.Remove(currentKey);
+            _cache.Remove(previousKey);
+        }
+    }
+}
+
 public sealed class IntegrationAuthMiddleware
 {
     private const string RedactedMarker = "[REDACTED]";
@@ -411,5 +454,4 @@ public sealed class IntegrationAuthMiddleware
         var currentMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
         return $"integration:invalid-auth:{client}:{currentMinute:yyyyMMddHHmm}";
     }
-
 }

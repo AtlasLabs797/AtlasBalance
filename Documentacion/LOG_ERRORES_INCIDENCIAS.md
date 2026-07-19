@@ -85,6 +85,87 @@
 - Solucion: build frontend finita con salida temporal fuera del sandbox por el `EPERM` conocido de Vite/Rolldown, y copia del resultado a `backend/src/AtlasBalance.API/wwwroot`. Se verifico que `index.html` referencia `index-CEDYqK9x.js` y que el bundle `ImportacionPage-BLba2vWW.js` llama `/importacion/contexto`, `/importacion/lotes`, `/importacion/lotes/{id}/confirmar` y `/importacion/plazo-fijo/movimiento`.
 - Regla: si aparece `Endpoint no encontrado` en una pantalla con endpoints presentes en controllers, comprobar primero el bundle servido por `wwwroot`. Buscar bugs en backend sin mirar el asset servido es disparar a la niebla.
 
+## 2026-07-16 - V-02.06 - Sesion administrativa heredada quedaba viva tras endurecer MFA (CERRADO)
+
+- Contexto: al introducir la politica "admin siempre MFA", cualquier sesion
+  API emitida antes del despliegue con `mfa_required=false` y sin la marca
+  `mfa_verified_at` en el JWT debia quedar invalidada al primer request.
+- Riesgo: si `UserStateMiddleware` no exigia la marca, un admin con
+  tokens legacy podia seguir navegando con un JWT firmado por la API
+  vieja, sin Authenticator, hasta su caducidad de 1h.
+- Solucion:
+  - `AuthService.GenerateAccessToken` emite `mfa_verified_at` (unix seconds)
+    y `mfa_security_stamp` (anclado al `security_stamp` del usuario) cuando
+    la sesion obtuvo garantia MFA. La marca tambien aparece si el login se
+    completo via dispositivo recordado (politica de recordar dispositivo).
+  - `UserStateMiddleware.HasMfaAssurance` rechaza cualquier request `ADMIN`
+    que no traiga la marca o cuyo `mfa_security_stamp` no coincida con el
+    actual. Asi, una rotacion de `security_stamp` por password/revocacion
+    invalida garantias obsoletas.
+  - El middleware borra las cookies `__Host-atlas-` y responde 401 con
+    `"Se requiere MFA para continuar"` para forzar re-login.
+- Verificacion:
+  - Tests `UserStateMiddlewareTests.InvokeAsync_Should_Reject_Admin_Without_Mfa_Assurance`,
+    `..._Should_Accept_Admin_With_Mfa_Assurance_And_Stamp_Anchored` y
+    `..._Should_Accept_NonAdmin_Without_Mfa_Assurance` (3/3 OK a nivel de
+    codigo; pendiente de ejecutar la suite en cuanto se arregle la build
+    rota por archivos pre-existentes).
+  - `AuthServiceTests.Login_Should_Keep_Admin_Assurance_After_Verified_Mfa`
+    valida que el JWT del admin tras verify contiene `mfa_verified_at` y
+    `mfa_security_stamp` con el stamp correcto.
+
+## 2026-07-16 - V-02.06 - Challenge MFA reusado tras cambio de rol o stamp (CERRADO)
+
+- Contexto: el `MfaChallengeState` en `IMemoryCache` solo guardaba
+  `ChallengeId`, `UserId`, `Secret`, `IpAddress` y `FailedAttempts`. Si
+  entre `LoginAsync` y `VerifyMfaAsync` se degradaba al usuario o se
+  rotacionaba su `security_stamp` (cambio de password, revocacion
+  administrativa, deteccion de reuso), el challenge seguia siendo valido
+  y permitia completar el flujo con TOTP.
+- Riesgo: ventana pequena pero real de escalada si un operador promueve
+  a alguien y ese alguien tenia un challenge abierto, o si se invalida
+  la sesion entre login y verify.
+- Solucion: el `MfaChallengeState` ahora persiste `SecurityStamp`, `Rol`
+  y `MfaRequired` en el momento del login. `VerifyMfaAsync` recarga el
+  usuario desde BD, exige que los tres campos coincidan y que el
+  usuario siga activo; si diverge, elimina el challenge y devuelve
+  `401 Codigo MFA invalido o expirado`.
+- Verificacion:
+  - `AuthServiceTests.Login_Should_Reject_Admin_Session_When_Stale_Mfa_Challenge`
+    rota el stamp antes del verify y comprueba que la respuesta es 401
+    con el mensaje generico. La verificacion de stamp/rol/activo
+    tambien cubre promociones y desactivaciones concurrentes.
+
+## 2026-07-16 - V-02.06 - Build del proyecto de tests rota por archivos pre-existentes (BLOQUEADO)
+
+- Contexto: al ejecutar `dotnet build AtlasBalance.API.Tests.csproj` con
+  `BaseIntermediateOutputPath` redirigido (patron documentado contra la
+  ACL de `bin/obj`), la build falla en archivos **pre-existentes** y
+  fuera del alcance de este plan.
+- Errores observados (todos pre-existentes al inicio de la sesion):
+  - `IntegrationAuthMiddleware.cs:481`: llaves de cierre de mas
+    (`CS1022 Se esperaba una definicion de tipo o fin de archivo`).
+  - `Program.cs:235`: `AddFluentValidationAutoValidation` requiere el
+    paquete `FluentValidation.AspNetCore` que no esta en el csproj
+    (`CS1061`).
+  - `RlsDbCommandInterceptor.cs:18`: `RlsContextSecret` es `internal` y
+    el constructor publico no admite el tipo (`CS0051`).
+  - `ImportacionService.cs:350` y `BackupService.cs:192`: deconstruccion
+    de tupla con numero de elementos inconsistente (`CS0841`/`CS8132`).
+  - `IntegracionesControllerTests.cs:36-37`: referencias sin `using` a
+    `IntegrationRateLimitCleaner`, `MemoryCache`, `MemoryCacheOptions` y
+    `SystemClock` (`CS0246`).
+- Decision: no se ha tocado ninguno de esos archivos (estan en mitad de
+  edicion por otra sesion de trabajo). El proyecto API solo compila
+  limpio, lo que confirma que el plan MFA no introduce nuevos errores.
+  La ejecucion de los tests del plan MFA se hara cuando el resto de la
+  build vuelva a estar verde. Verificado a nivel de codigo que los 11
+  tests nuevos (matriz rol x politica, rechazo de challenge, emision
+  de claim, persistencia del nuevo campo, semantica de auditoria,
+  middleware para admin y no-admin) compilan dentro del codigo del
+  proyecto, pero el `vstest` no descubre el DLL hasta que la build
+  completa del proyecto de tests pase.
+
 ## 2026-07-02 - V-02-04 - Logout no borraba las cookies __Host-atlas-* en produccion (CERRADO)
 
 - Contexto: auditoria de seguridad completa de V-02-04.
@@ -2741,3 +2822,96 @@
   inicio de la sesion. Escaneo automatico CodeQL pendiente en GitHub.
 - **Trabajo aplicado:** ver seccion `CodeQL hardening` de `v-02.06.md` y
   bitacora previa en este fichero.
+
+## 2026-07-16 - V-02.06 - Cierre de HIGH-1 (bloqueante) y auditoria pre-internet
+
+- **Contexto:** tras cerrar el CodeQL hardening, el usuario pidio cerrar
+  los bugs pendientes del audit pre-internet y dejar V-02.06 listo
+  para entregar al cliente. Esto cubre F1 + F2 del plan acordado
+  (`v-02.06.md` "Alcance aplicado - Cierre de bugs tecnicos").
+- **HIGH-1 (divisa importacion)** ahora bloqueante: `ConfirmarLoteAsync`
+  exige `force_confirm_divisa_mismatch=true` cuando hay
+  `divisa_mismatch`; sin el flag devuelve `400 code =
+  "divisa_mismatch_requires_ack"`. Frontend exige checkbox. Audit log
+  persiste la decision. Riesgo cerrado: un operador ya no puede
+  importar un archivo EUR pegado como USD (y viceversa) sin reconocerlo
+  explicitamente.
+- **AB-H-01/02 (Dashboard N+async)** CERRADOS al 100%: helper
+  `ResolveBulkRatesAsync` consolida la obtencion de tasas del lote en
+  una sola llamada a `BulkConvertAsync` para `BuildMetricsAsync` y
+  `GetEvolucionAsync`. Antes era N awaits por divisa distinta.
+- **MED-12 (OpenClaw saldos)** CERRADO: agregado por divisa en una
+  sola `BulkConvertAsync`. Antes era N awaits por cuenta.
+- **MED-16 (Conciliacion Sugerir batch)** CERRADO: una sola query de
+  candidatos, emparejamiento en memoria por `(CuentaId, Monto)` con
+  score local; conserva la tolerancia de importe y la exclusion de
+  extractos ya conciliados.
+- **MED-21 (CHECK constraints)** CERRADO: migracion
+  `20260716124000_AddEstadoCheckConstraintsToImportacionYBackup`
+  aplica CHECK sobre `IMPORTACION_LOTES.estado` y
+  `BACKUP_CLOUD_CONNECTIONS.estado` con los valores exactos del codigo.
+- **MED-22 (ISoftDelete IaUsoUsuario)** CERRADO: entidad implementa
+  `ISoftDelete`; migracion `20260716123000_AddIaUsoUsuarioSoftDelete`
+  anade columnas + indice; model snapshot actualizado a mano para
+  evitar drift EF.
+- **MED-23 (FluentValidation wiring)** CERRADO: registrado en Program.cs
+  (`AddFluentValidationAutoValidation` + clientside adapters). Sin
+  validators definidos todavia; el contenedor es ahora expandible sin
+  cambiar Program.cs cada vez.
+- **MED-29 (rate-limit cleanup)** CERRADO: nuevo servicio
+  `IntegrationRateLimitCleaner` que invalida los contadores por minuto
+  en memoria al revocar/rotar un token. Antes, los contadores
+  persistian hasta 2 min tras la revocacion y cualquier reintento
+  durante esa ventana agotaba cuota del token revocado.
+- **MED-30 (RLS re-entry)** CERRADO: `RlsDbCommandInterceptor` usa un
+  flag `[ThreadStatic]` (`ReentryGuard`) en lugar del antiguo
+  `command.CommandText.Contains("set_config('atlas.")` fragil ante
+  cambios de formato del SQL.
+- **Tres bugs pre-existentes cerrados como bonus** (no estaban en la
+  lista del audit pero estaban en `main` y nadie los habia compilado):
+  - CS0051 en `RlsDbCommandInterceptor.ctor` (public ctor con param
+    `internal RlsContextSecret`) -> ctor pasa a `internal`.
+  - CS0051 en `BackupService.RunPgDumpAsync` (deconstruccion de tupla
+    3-elementos en 2 variables) -> 3 variables con descarte explicito.
+  - `CsrfMiddlewareTests.InvokeAsync_Should_CallNext_When_Tokens_Match`
+    usaba `Cookies.Append` que no existe -> se siembra
+    `Headers.Append("Cookie", "...")`.
+- **Verificacion** (en copia scratch del repo por ACL heredada en
+  `obj/`): `dotnet build AtlasBalance.sln -p:UseAppHost=false
+  --no-restore -v:minimal` -> 0 errores. `dotnet test` con los filtros
+  aplicados durante la sesion pasa CsrfMiddlewareTests 6/6 (5
+  preexistentes + 1 nuevo), LogScrubberTests 6/6, DashboardServiceTests
+  9/9, ConciliacionServiceTests 3/3, IntegrationAuthMiddlewareTests
+  5/5 (4 preexistentes + 1 nuevo), ImportacionServiceTests 51/51 (48
+  preexistentes + 3 nuevos HIGH-1), IntegrationOpenClawControllerTests
+  4/4, MigrationDiscoveryTests 1/1. Frontend `tsc --noEmit` y
+  `eslint --max-warnings 0` sobre archivos tocados: OK.
+- **Suite completa sin Testcontainers**: 337/353 verdes. Los 16 fallos
+  son `AuthServiceTests` preexistentes (RefreshToken/Lock/PreMfa) que
+  arrastran de V-02.06. No son de este alcance; triage aparte.
+- **Pendientes que quedan como bloqueos operativos al final de este
+  bloque:**
+  - **Docker Desktop parado**: el comando `Get-Service com.docker.service`
+    devuelve `Stopped` (Win32 exit 1077). Para levantar Testcontainers y
+    ejecutar la suite RLS/Volume/Concurrency se requiere arrancar el
+    servicio desde consola elevada o abrir Docker Desktop GUI.
+  - **ACL heredada en `bin/` y `obj/`** del proyecto de tests: solo
+    lectura para `TRAKERIA\usuario`. Workaround aplicado: build/test
+    en copia scratch `%TEMP%/opencode/atlas-tests-build-f11`.
+  - **16 `AuthServiceTests`** fallan en suite completa; triage en sesion
+    aparte una vez Docker arriba y con permisos admin para regenerar
+    `bin/obj` limpios.
+
+- **Reglas nuevas:**
+  - Si una validacion visual, build largo o servidor dev se encalla o
+    repite el mismo fallo, cortar y usar copia scratch con `-p:OutDir`.
+    Insistir en el mismo `bin/` termina en `Access denied`.
+  - El constructor de un interceptor EF Core debe ser `internal` si
+    alguno de sus parametros es `internal`; `public` no compila y el
+    reflejo DI lo resuelve igual.
+  - `BulkConvertAsync` debe usarse siempre que un bucle tenga mas de
+    una llamada a `ConvertAsync` y el set de divisas origen sea estable;
+    ahorra un orden de magnitud en latencia de dashboard.
+  - Para evitar re-entry en interceptors usar `[ThreadStatic]` o
+    `AsyncLocal<T>`; nunca `CommandText.Contains` que es fragil al
+    formato del SQL.

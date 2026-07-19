@@ -1009,8 +1009,9 @@ Sanitizar texto arbitrario de excepciones no es una defensa seria. El stack de t
 - `REFRESH_TOKENS` incorpora `mfa_verified_at` mediante la migracion `20260520123000_AddRefreshTokenMfaAssurance`.
 - `AuthService.VerifyMfaAsync` emite refresh tokens con `mfa_verified_at` tras validar el codigo TOTP.
 - `AuthService.LoginAsync` tambien marca el refresh token cuando MFA es obligatorio y el login se acepta por `mfa_trusted` valido.
-- `AuthService.RefreshTokenAsync` rechaza y revoca tokens sin `mfa_verified_at` si `Security:RequireMfaForWebUsers=true`.
+- `AuthService.RefreshTokenAsync` rechaza y revoca tokens sin `mfa_verified_at` cuando la politica vigente (`RequiresMfaAsync`) lo exige; desde `V-02.06` esa politica devuelve `true` para todo `ADMIN` y para no-administradores cuya clave `require_mfa_for_non_admin_users` este en `true` en `CONFIGURACION` (con fallback a `Security:RequireMfaForWebUsers` si la BD no la tiene sembrada).
 - La rotacion de refresh preserva `mfa_verified_at` en el token de reemplazo.
+- El access token incluye los claims `mfa_verified_at` (unix seconds) y `mfa_security_stamp` (anclado al `security_stamp` del usuario) cuando la sesion obtuvo garantia MFA. `UserStateMiddleware` rechaza cualquier sesion `ADMIN` sin esa marca, lo que invalida inmediatamente cualquier JWT heredado de una version anterior a `V-02.06`.
 
 ### Por que
 
@@ -4133,7 +4134,8 @@ El calendario nativo del navegador no puede ajustarse al diseno Atlas de forma f
 ### Que cambio
 
 - `USUARIOS` incorpora `mfa_enabled`, `mfa_secret`, `mfa_enabled_at` y `mfa_last_accepted_step`.
-- `AuthService` exige MFA TOTP cuando `Security:RequireMfaForWebUsers=true`.
+- `AuthService.RequiresMfaAsync` centraliza la decision: `Rol=ADMIN` siempre MFA; para `GERENTE`/`EMPLEADO` consulta la clave `require_mfa_for_non_admin_users` en `CONFIGURACION`, con fallback fail-closed a `Security:RequireMfaForWebUsers` mientras la clave no este sembrada. Esto sustituye la politica global anterior.
+- `ConfiguracionController` persiste la nueva clave y emite una auditoria semantica `MFA_POLICY_UPDATED` cuando cambia, para que un operador pueda auditar el interruptor sin parsear el diff before/after de `UPDATE_CONFIGURACION`.
 - El login correcto con password crea un challenge temporal MFA y no emite JWT hasta validar el codigo.
 - Si el usuario aun no tenia MFA, el challenge entrega una clave TOTP para enrolamiento y la guarda protegida al verificar el primer codigo.
 - `TotpService` implementa RFC 6238 con HMAC-SHA1, periodo de 30 segundos, 6 digitos y tolerancia de un intervalo.

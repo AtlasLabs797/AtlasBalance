@@ -4,11 +4,13 @@ using FluentAssertions;
 using AtlasBalance.API.Controllers;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -29,7 +31,13 @@ public sealed class IntegracionesControllerTests
         var controller = new IntegracionesController(
             dbContext,
             new AuditService(dbContext),
-            new IntegrationTokenService(dbContext));
+            new IntegrationTokenService(dbContext),
+            // V-02.06 (MED-29): el cleaner vive en memoria cache, pero en
+            // tests InMemory la limpieza es un no-op. Pasamos una
+            // instancia real (usa MemoryCache internamente).
+            new IntegrationRateLimitCleaner(
+                new MemoryCache(new MemoryCacheOptions()),
+                new SystemClock()));
 
         var identity = new ClaimsIdentity(
         [

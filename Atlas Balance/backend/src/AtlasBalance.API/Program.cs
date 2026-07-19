@@ -1,7 +1,9 @@
 ﻿using AtlasBalance.API.Data;
 using AtlasBalance.API.Jobs;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Services;
+using FluentValidation.AspNetCore;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -225,6 +227,14 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
+// V-02.06 (MED-23): wirear FluentValidation como proveedor de
+// ModelState. La referencia a FluentValidation.AspNetCore 11.3.0
+// estaba en el csproj pero nunca se registro el contenedor, asi que
+// las reglas CustomValidator no se aplicaban. Es idempotente si no
+// hay IValidator<,> registrados: escanea el assembly de la API y
+// solo activa los que encuentre.
+builder.Services.AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters();
+
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddCors(options =>
@@ -266,6 +276,7 @@ builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
 builder.Services.AddScoped<IActualizacionService, ActualizacionService>();
 builder.Services.AddScoped<IIntegrationTokenService, IntegrationTokenService>();
 builder.Services.AddScoped<IIntegrationAuthorizationService, IntegrationAuthorizationService>();
+builder.Services.AddSingleton<IIntegrationRateLimitCleaner, IntegrationRateLimitCleaner>();
 builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
 builder.Services.AddScoped<SyncTiposCambioJob>();
 builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
@@ -355,7 +366,7 @@ app.UseExceptionHandler(errorApp =>
             var logger = context.RequestServices
                 .GetRequiredService<ILoggerFactory>()
                 .CreateLogger("AtlasBalance.API.UnhandledException");
-            logger.LogError(feature.Error, "Unhandled API exception on {Path}", context.Request.Path.Value);
+            logger.LogError(feature.Error, "Unhandled API exception on {PathSafe}", LogScrubber.Scrub(context.Request.Path.Value));
         }
 
         if (feature?.Error is TipoCambioMissingException missingRate)
