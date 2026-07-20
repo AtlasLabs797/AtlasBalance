@@ -41,7 +41,6 @@ public sealed class AuditService : IAuditService
 
         var detalles = TruncarDetalles(detallesJson);
         var ip = ParseIpAddress(ipAddress);
-        var hayTransaccionActiva = _dbContext.Database.CurrentTransaction is not null;
 
         var auditoria = new Auditoria
         {
@@ -57,17 +56,13 @@ public sealed class AuditService : IAuditService
 
         _dbContext.Auditorias.Add(auditoria);
 
-        if (hayTransaccionActiva)
-        {
-            // La auditoria se persiste en el mismo SaveChanges/Commit que el caller,
-            // garantizando atomicidad. Si la transaccion hace rollback, la auditoria
-            // tambien se descarta. Esto es la unica forma de que la tabla AUDITORIAS
-            // no mienta sobre operaciones revertidas.
-            return;
-        }
-
-        // Legacy / fuera de transaccion: persistir en commit propio. El caller debe
-        // migrar a una transaccion explicita para garantizar atomicidad.
+        // V-02.06 (PR F1): SaveChanges siempre. Dentro de una transaccion
+        // explicita del caller, SaveChanges encola la insercion en el ChangeTracker
+        // sin hacer commit; el Commit la persiste, y un rollback la descarta.
+        // Antes, dentro de transaccion se omitia el save y se quedaba en memoria,
+        // asi que ImportacionService.ConfirmarAsync y el movimiento de plazo fijo
+        // hacian `LogAsync` y luego solo `CommitAsync` -> la auditoria nunca se
+        // grababa.
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 

@@ -136,6 +136,72 @@
     con el mensaje generico. La verificacion de stamp/rol/activo
     tambien cubre promociones y desactivaciones concurrentes.
 
+## 2026-07-20 - V-02.06 - Reapertura del audit F1-F5 sobre el alcance cerrado (CERRADO)
+
+- Contexto: el 2026-07-16 el commit `a681433b` declaro cerrar F3 (admin
+  scripts) y F4 (Testcontainers). Al revisar el resultado contra el
+  codigo actual se encontraron 17 hallazgos del audit pre-internet que
+  la documentacion daba como cerrados pero que el codigo no habia
+  remediado: configuracion sin redaccion, cookie CSRF rechazada,
+  CHECK constraints de conciliacion, reentrada `[ThreadStatic]`,
+  firmas/claves no obligatorias, hash de dominios cruzados, scopes
+  vacios, transaccion sin SaveChanges, UsuarioId nulo en auditorias,
+  snapshot desalineado, DI del interceptor, parametros invalidos,
+  maximo firmado, version inconsistente, scanner no portable, timeouts,
+  selector de divisa sin enviar.
+- Solucion aplicada (resumen, ver detalles en
+  `Documentacion/Versiones/v-02.06.md`):
+  - `Program.cs` registra `RlsDbCommandInterceptor` con factory
+    explicita; el interceptor migra a `AsyncLocal<int>`.
+  - `AuditService.LogAsync` siempre `SaveChanges` (incluso bajo
+    transaccion del caller).
+  - `AuditSaveChangesInterceptor` toma `UsuarioId` del HttpContext y
+    redacta `Configuracion.Valor` cuando es secreto o clave sensible.
+  - `IntegracionesController.NormalizeEndpointScopes` preserva `[]` y
+    rechaza scopes desconocidos.
+  - CSRF: `getCsrfTokenFromCookie` admite Base64 estandar.
+  - Migracion correctiva `20260720090000_AlignConciliacionEstadosAndSnapshot`
+    alinea CHECK constraints con los estados reales, normaliza
+    `deleted_at` a `timestamp with time zone`, crea FK/indice por
+    `deleted_by_id`, anade predicado RLS
+    `atlas_security.can_reconcile_cuenta_*`.
+  - `HardenedConciliacionService` usa `Max(|monto|)` para la ventana
+    global.
+  - `AppDbContextModelSnapshot` re-sincronizado con soft delete +
+    unique partial index.
+  - `Start-WatchdogUpdate.ps1` retirado por decision de producto; el
+    `Watchdog` directo ahora exige `package_zip_path`, clave publica y
+    firma (`fail-closed`).
+  - `GoogleDriveBackupService.ImportAsync` valida `.enc` antes de
+    descifrar; el wrapper pasa a delegacion pura.
+  - Frontend: nueva seleccion de "Divisa de los importes" que envia
+    `divisa_esperada`; timeouts especificos para operaciones largas.
+  - `Check-VersionAlignment.ps1` unifica VERSION / props / package /
+    seed / release.yml.
+  - `Test-AtlasSecrets.ps1` reescrito con exclusion por segmentos
+    multiplataforma.
+- Verificacion:
+  - `dotnet build AtlasBalance.API` con
+    `-p:UseAppHost=false -p:BaseIntermediateOutputPath=... -p:OutputPath=...`
+    sobre `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207`
+    (ACL de `bin/` original persiste) -> 0 errores, 6 warnings
+    pre-existentes (Npgsql/Hangfire deprecaciones de V-02.04).
+  - `dotnet build AtlasBalance.Watchdog` con la misma redireccion ->
+    0 errores, 0 warnings.
+  - `tsc --noEmit` (frontend) -> 0 errores.
+  - `npm.cmd run lint --max-warnings 0` -> 0 errores.
+  - `Test-AtlasSecrets.ps1 -Root "C:\Proyectos\Atlas Balance Dev\Atlas Balance"`
+    -> 0 hallazgos en ~19 archivos analizados en ~0.22 s.
+  - `Check-VersionAlignment.ps1` -> 5 fuentes coinciden en V-02.06.
+- Bloqueos declarados:
+  - Suite PostgreSQL/Testcontainers no disponible en este host; las
+    regresiones que requieren DB real (CheckViolation, RLS, soft delete,
+    idempotencia, etc.) quedan como gate no verificable localmente.
+  - El proyecto `AtlasBalance.API.Tests` sigue con errores pre-existentes
+    ajenos a este pase (`LOG_ERRORES_INCIDENCIAS.md:139-167`); los
+    tests nuevos definidos en su dia quedan descubiertos al restaurar
+    esa build.
+
 ## 2026-07-16 - V-02.06 - Build del proyecto de tests rota por archivos pre-existentes (BLOQUEADO)
 
 - Contexto: al ejecutar `dotnet build AtlasBalance.API.Tests.csproj` con

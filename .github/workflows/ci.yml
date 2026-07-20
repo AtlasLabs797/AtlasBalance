@@ -60,6 +60,10 @@ jobs:
         shell: pwsh
         run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.ps1" -Root "."'
 
+      - name: Verify version alignment across sources
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1"'
+
       - name: Install frontend dependencies
         working-directory: "Atlas Balance/frontend"
         run: npm ci

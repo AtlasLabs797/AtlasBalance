@@ -206,7 +206,10 @@ export default function BackupsPage() {
     setCreating(true);
     setError(null);
     try {
-      await api.post('/backups/manual');
+      // V-02.06 (PR F1): el backup manual puede tardar varios minutos
+      // (pg_dump + cifrado + subida). El timeout global es 15s; lo
+      // sobreescribimos a 10 min solo para esta operacion.
+      await api.post('/backups/manual', undefined, { timeout: 600_000 });
       await fetchRows();
       await fetchConfig();
     } catch (err) {
@@ -293,7 +296,9 @@ export default function BackupsPage() {
     setRetryingBackupId(backup.id);
     setError(null);
     try {
-      await api.post(`/backups/${backup.id}/google-drive/retry`);
+      // V-02.06 (PR F1): reintento de subida a Drive puede tardar varios
+      // minutos (cifrado + subida del blob). Override a 10 min.
+      await api.post(`/backups/${backup.id}/google-drive/retry`, undefined, { timeout: 600_000 });
       await fetchRows();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo subir esta copia a Google Drive.'));
@@ -306,7 +311,9 @@ export default function BackupsPage() {
     setImportingFileId(file.file_id);
     setError(null);
     try {
-      await api.post('/backups/google-drive/import', { file_id: file.file_id });
+      // V-02.06 (PR F1): importacion desde Drive descarga, descifra y
+      // restaura el backup. Override a 10 min.
+      await api.post('/backups/google-drive/import', { file_id: file.file_id }, { timeout: 600_000 });
       await fetchRows();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo importar la copia desde Google Drive.'));

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, for example V-02-03"
+        description: "Version to publish, for example V-02-06"
         required: true
-        default: "V-02-03"
+        default: "V-02-06"
       runtime:
         description: "Runtime identifier"
         required: true
@@ -47,6 +47,10 @@ jobs:
           if ("${{ inputs.runtime }}" -ne "win-x64") {
             throw "Invalid runtime '${{ inputs.runtime }}'. Only win-x64 is allowed."
           }
+
+      - name: Verify version alignment across sources
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1"'
 
       - name: Restore backend
         run: |

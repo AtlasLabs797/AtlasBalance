@@ -95,7 +95,14 @@ public sealed class HardenedConciliacionService : IConciliacionService
         var cuentaIds = movimientos.Select(x => x.CuentaId).Distinct().ToList();
         var minMonto = movimientos.Min(x => x.Monto);
         var maxMonto = movimientos.Max(x => x.Monto);
-        var globalAmountTolerance = Math.Max(tolerance.Amount, Math.Abs(maxMonto) * tolerance.Percent);
+        // V-02.06 (PR F2): el rango global usa el maximo absoluto del lote
+        // (negativos y positivos). Antes se tomaba `maxMonto` (monto firmado)
+        // y despues se aplicaba Abs, lo que truncaba candidatos para lotes
+        // con negativos grandes y positivos pequenos (ej: lote con
+        // `-100000`/`10` -> ventana global de +-10 ignoraba un extracto a
+        // `-99500` aun siendo valido).
+        var maxAbsoluteMonto = movimientos.Max(x => Math.Abs(x.Monto));
+        var globalAmountTolerance = Math.Max(tolerance.Amount, maxAbsoluteMonto * tolerance.Percent);
         var minAmountGlobal = Math.Min(minMonto, maxMonto) - globalAmountTolerance;
         var maxAmountGlobal = Math.Max(minMonto, maxMonto) + globalAmountTolerance;
 

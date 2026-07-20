@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
@@ -56,28 +57,47 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         "PasswordHash", "MfaSecret", "TokenHash", "RefreshToken", "EndpointScopesJson"
     };
 
+    // V-02.06 (PR F1): claves de Configuracion que SIEMPRE deben excluirse
+    // del detalle de auditoria, aunque el caller haya guardado el valor en
+    // claro o no haya marcado EsSecreto. Mantener sincronizado con la lista
+    // de secretos de Program.ProtectExistingConfigurationSecrets.
+    private static readonly HashSet<string> ClavesConfigSecretas = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "smtp_password",
+        "exchange_rate_api_key",
+        "openrouter_api_key",
+        "openai_api_key",
+        "minimax_api_key",
+        "google_drive_oauth_client_secret",
+        "backup_cloud_encryption_key",
+        "github_update_token",
+        "jwt_signing_key",
+        "rls_context_secret",
+        "watchdog_shared_secret"
+    };
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<AuditSaveChangesInterceptor> _logger;
-    private readonly AsyncLocal<Guid?> _usuarioIdActual;
-    private readonly AsyncLocal<string?> _ipActual;
+    private readonly AsyncLocal<Guid?> _usuarioIdOverride;
+    private readonly AsyncLocal<string?> _ipOverride;
 
     public AuditSaveChangesInterceptor(IHttpContextAccessor httpContextAccessor, ILogger<AuditSaveChangesInterceptor> logger)
     {
         _httpContextAccessor = httpContextAccessor;
         _logger = logger;
-        _usuarioIdActual = new AsyncLocal<Guid?>();
-        _ipActual = new AsyncLocal<string?>();
+        _usuarioIdOverride = new AsyncLocal<Guid?>();
+        _ipOverride = new AsyncLocal<string?>();
     }
 
     /// <summary>
     /// Permite al caller fijar el usuario/IP para la operacion actual. Lo usan
-    /// IAuditService.LogAsync cuando se conoce la identidad. Si no se fija, se
-    /// toma del HttpContext en cada SaveChanges.
+    /// los procesos sin HttpContext (jobs, seeds) cuando quieren atribuir la
+    /// accion. Si no se fija, se toma del HttpContext.User en cada SaveChanges.
     /// </summary>
     public void SetContextoAuditoria(Guid? usuarioId, string? ipAddress)
     {
-        _usuarioIdActual.Value = usuarioId;
-        _ipActual.Value = ipAddress;
+        _usuarioIdOverride.Value = usuarioId;
+        _ipOverride.Value = ipAddress;
     }
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
@@ -111,8 +131,24 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
             return;
         }
 
-        Guid? usuarioId = _usuarioIdActual.Value;
-        string? ip = _ipActual.Value ?? _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+        // V-02.06 (PR F1): UsuarioId se deriva de la identidad de la peticion
+        // cuando no hay override explicito. Antes, este interceptor no leia
+        // claims y siempre escribia UsuarioId = null, lo que dejaba la
+        // auditoria automatica sin atribucion cuando SetContextoAuditoria no
+        // era llamado.
+        var httpContext = _httpContextAccessor.HttpContext;
+        Guid? usuarioId = _usuarioIdOverride.Value;
+        if (usuarioId is null && httpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            var raw = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                      ?? httpContext.User.FindFirstValue("sub");
+            if (Guid.TryParse(raw, out var parsed))
+            {
+                usuarioId = parsed;
+            }
+        }
+
+        string? ip = _ipOverride.Value ?? httpContext?.Connection.RemoteIpAddress?.ToString();
         var timestamp = DateTime.UtcNow;
 
         var entries = dbContext.ChangeTracker.Entries()
@@ -203,9 +239,21 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
     private static Dictionary<string, object?> CapturarValores(PropertyValues values)
     {
         var dict = new Dictionary<string, object?>();
+        bool redactConfigValor = ShouldRedactConfiguracionValor(values);
         foreach (var name in values.Properties.Select(p => p.Name))
         {
             if (ColumnasSecretas.Contains(name))
+            {
+                dict[name] = "[REDACTED]";
+                continue;
+            }
+            // V-02.06 (PR F1): Configuracion.Valor debe ocultarse cuando la fila
+            // es secreta o su Clave esta clasificada como sensible. Antes, el
+            // interceptor serializaba el valor real en DetallesJson de
+            // AUDITORIAS, dejando secretos originales/cifrados en la tabla de
+            // auditoria. Tambien redacta Clave para no filtrar el nombre del
+            // secreto (util en claro cuando Clave no es politica).
+            if (redactConfigValor && name.Equals("Valor", StringComparison.OrdinalIgnoreCase))
             {
                 dict[name] = "[REDACTED]";
                 continue;
@@ -232,6 +280,34 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
             dict[name] = v;
         }
         return dict;
+    }
+
+    private static bool ShouldRedactConfiguracionValor(PropertyValues values)
+    {
+        if (!values.Properties.Any(p => p.Name.Equals("Valor", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (values.Properties.Any(p => p.Name.Equals("EsSecreto", StringComparison.OrdinalIgnoreCase)))
+        {
+            var esSecreto = values["EsSecreto"];
+            if (esSecreto is bool b && b)
+            {
+                return true;
+            }
+        }
+
+        if (values.Properties.Any(p => p.Name.Equals("Clave", StringComparison.OrdinalIgnoreCase)))
+        {
+            var clave = values["Clave"] as string;
+            if (!string.IsNullOrEmpty(clave) && ClavesConfigSecretas.Contains(clave))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string Truncar(string s)

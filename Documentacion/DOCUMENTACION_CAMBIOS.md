@@ -8,6 +8,176 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-20 - V-02.06 - Cierre de hallazgos del PR anterior F1-F5
+
+**Version:** V-02.06
+
+**Trabajo realizado:**
+
+Sesion de cierre centrada en los cinco hallazgos (F1-F5) que quedaron abiertos
+en la revision del PR anterior. Todos son arreglos frontend + scanner + workflow
+sin tocar backend C# ni build de .NET. Se mantiene la politica anti-encallamiento
+de la rama V-02.06: nada de dotnet build, Docker ni servidores largos.
+
+### Bugs cerrados
+
+- **F1 - CSRF cookie parser (LOW-FE-4 evol.)** `Atlas Balance/frontend/src/App.tsx:46-78`:
+  la regex `^[A-Za-z0-9_-]+$` rechazaba Base64 estandar (sin admitir `+`, `/`,
+  `=`). El backend emite el token con `Convert.ToBase64String` (24 bytes ->
+  32 chars + `=`), asi que el frontend tiraba el token valido a `null`.
+  - Cambio: regex `^[A-Za-z0-9+/=]+$` (Base64 RFC 4648 §4), sigue estricta
+    (solo caracteres validos) pero admite padding `=` y los caracteres `+/`.
+  - `decodeURIComponent` ahora va envuelto en try/catch; si falla devuelve
+    `null` sin romper el bootstrap de sesion.
+  - Tamano minimo 32 conservado.
+
+- **F2 - Importacion sin `divisa_esperada` (HIGH-1 / bug 18)** `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`:
+  el POST a `/importacion/lotes` (~`validateImport`) enviaba `cuenta_id`,
+  `raw_data`, `separador`, `mapeo` y `tipo_origen` pero omitia
+  `divisa_esperada`. El backend entonces asumia la divisa de la cuenta y
+  la validacion HIGH-1 quedaba anulada.
+  - Nuevo estado `divisaEsperada` (string) inicializado al load a la
+    `divisa` de la cuenta seleccionada y reiniciado en `startNextImport`
+    y al cambiar de cuenta via `setCuenta`.
+  - Selector visible `Divisa de los importes` (AppSelect) poblado primero
+    desde `GET /api/divisas?activas=true&pageSize=500` y, como fallback,
+    desde las divisas de las cuentas del contexto o un set basico
+    `EUR/USD/GBP/ARS` para no bloquear si el endpoint no existe.
+  - Payload del POST en `validateImport` ahora incluye
+    `divisa_esperada: divisaEsperada || selectedCuenta?.divisa || null`.
+  - Logica previa del checkbox `forceConfirmDivisaMismatch` y la aceptacion
+    explicita del bloque `divisa_mismatch` se conserva intacta.
+
+- **F3 - Timeouts largos sin sobreescribir el global** `Atlas Balance/frontend/src/pages/BackupsPage.tsx`
+  y `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`:
+  el timeout global de `services/api.ts` es 15s (LOW-FE-2); cinco endpoints
+  lo sobrepasan en condiciones reales y morian con `ECONNABORTED`.
+  - `BackupsPage.createBackup` -> `/backups/manual`: `timeout: 600_000`
+    (10 min).
+  - `BackupsPage.retryDriveUpload` -> `/backups/{id}/google-drive/retry`:
+    `timeout: 600_000`.
+  - `BackupsPage.importDriveFile` -> `/backups/google-drive/import`:
+    `timeout: 600_000`.
+  - `ImportacionPage.validateImport` -> `/importacion/lotes`:
+    `timeout: 300_000` (5 min).
+  - `ImportacionPage.confirmImport` -> `/importacion/lotes/{id}/confirmar`:
+    `timeout: 300_000`.
+  - El global 15s NO se toca; los overrides son solo per-request.
+
+- **F4 - Scanner de secretos con IndexOf de strings hardcodeados**
+  `Atlas Balance/scripts/Test-AtlasSecrets.ps1`: el filtro de exclusion
+  comparaba subcadenas (`path.IndexOf("\\node_modules\\", OrdinalIgnoreCase)`
+  sobre la ruta completa, fragil ante separadores Linux y ante falsos
+  positivos cuando el nombre aparece como sufijo de archivo).
+  - Reescrito `Test-PathExcluded` y `Split-PathSegments` partiendo la ruta
+    por `[IO.Path]::DirectorySeparatorChar` y `AltDirectorySeparatorChar`
+    y comparando segmentos completos (`OrdinalIgnoreCase`).
+  - `Get-RelativeDisplayPath` tambien normaliza ambos separadores.
+  - `excludedSegments` pasa a `excludedSegmentNames` (lista de segmentos,
+    no substrings con barras).
+  - Stopwatch con timeout duro de 60s y salida acumulada
+    `Scanner: N archivos analizados, M excluidos por segmento (Ts)`.
+  - Verificado contra fixture en
+    `C:/Users/usuario/AppData/Local/Temp/2/opencode/atlas-scan-test`:
+    archivo bait en `Atlas Balance/scripts/secret-bait.ps1` -> EXITCODE=1,
+    archivo bait dentro de `node_modules/secret-lib/index.js` -> excluido
+    por segmento, EXITCODE=0.
+
+- **F5 - Default del workflow de release desalineado**
+  `.github/workflows/release.yml:9` decia `default: "V-02-03"` (version
+  que ya no es la actual). Cambiado a `default: "V-02-06"` y el texto de
+  ayuda a `"Version to publish, for example V-02-06"`. La entrada sigue
+  siendo `required: true`, asi que un dispatch manual puede sobreescribirla
+  sin tocar el default.
+
+### Bugs parciales (dejan trabajo para Fase 5 / V-02.07)
+
+- **Fase 5 - Playwright E2E + suite Docker**. La validacion visual del
+  nuevo selector `Divisa de los importes` y del checkbox
+  `forceConfirmDivisaMismatch` queda pendiente por la regla
+  anti-encallamiento de V-02.06 (Vite/Rolldown/Chromium `spawn EPERM`
+  en este host, Docker no disponible). Cuando vuelva a haber navegador
+  usable y Docker, anadir:
+  - Caso: importar un archivo con otra divisa y verificar que el selector
+    emite `divisa_mismatch=true` y exige el checkbox antes de confirmar.
+  - Caso: timeout de 5 min del POST de lote contra un dataset grande.
+- **Fase 5 - Reglas de exclusion de tests en el scanner.** El scanner
+  reescrito sigue marcando la conexion ficticia del archivo
+  `AtlasBalance.API.Tests/BackupServiceOwnerResolutionTests.cs`
+  (`Host=...;Password=...`) por la regex de connection-string. Es un
+  falso positivo conocido (test fixtures) y no estaba en F1-F5, pero
+  se anota para que la lista de exclusiones incorpore sufijos
+  `*Tests*.cs` o un directorio `tests/` en una pasada posterior.
+
+### Lint / typecheck / build ejecutados y resultado
+
+- `npx.cmd tsc --noEmit` en `Atlas Balance/frontend` con timeout 180s:
+  **EXITCODE=0** (sin errores).
+- `npm.cmd run lint` (eslint + `--max-warnings 0`) en
+  `Atlas Balance/frontend` con timeout 180s: **EXITCODE=0** (sin
+  advertencias).
+- `npm.cmd run build` en frontend: **NO ejecutado** por la regla
+  anti-encallamiento (Vite/Rolldown + Chromium `spawn EPERM` conocidos
+  en este host; ya documentados en `LOG_ERRORES_INCIDENCIAS.md`). La
+  verificacion queda en tsc + lint, suficiente para frontend puro.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".../Test-AtlasSecrets.ps1" -Root "C:/Proyectos/Atlas Balance Dev/Atlas Balance"`:
+  **Scanner: 19 archivos analizados, 0 excluidos por segmento (0,22s).
+  EXITCODE=0** (sin hallazgos). Contra el workspace completo
+  (`-Root "C:/Proyectos/Atlas Balance Dev"`) reporta 466 archivos
+  analizados en 2,87s y detecta el falso positivo conocido en
+  `BackupServiceOwnerResolutionTests.cs` (marcado para exclusion en Fase 5).
+- `dotnet build` / `dotnet test` / Docker: **NO ejecutados** segun la
+  consigna del usuario (no tocar backend).
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/App.tsx` (regex CSRF + try/catch).
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx` (estado
+  `divisaEsperada`, selector visible, payload con `divisa_esperada`,
+  reset en `setCuenta` y `startNextImport`, timeouts per-request).
+- `Atlas Balance/frontend/src/pages/BackupsPage.tsx` (timeouts
+  per-request en `createBackup`, `retryDriveUpload`, `importDriveFile`).
+- `Atlas Balance/scripts/Test-AtlasSecrets.ps1` (segmentos en vez de
+  substrings, fixture verificado, timeout 60s, metricas de salida).
+- `.github/workflows/release.yml` (default `V-02-06`).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada).
+
+### Archivos NO tocados intencionalmente
+
+- `Atlas Balance/backend/**` (C#): el alcance era frontend + scanner +
+  workflow. No se abrio ni un archivo .cs ni se ejecuto `dotnet build`
+  ni `dotnet test`.
+- `Atlas Balance/frontend/src/services/api.ts` (timeout global 15s):
+  se conserva tal cual; los overrides son per-request como pedia F3.
+- `Atlas Balance/frontend/src/types/index.ts` (tipos `ImportacionLote`
+  ya tenian `divisa_cuenta` / `divisa_esperada` / `divisa_mismatch`
+  del alcance HIGH-1 previo).
+- `Atlas Balance/VERSION`, `Directory.Build.props`,
+  `frontend/package.json` (V-02.06 ya estaba alineado en V-02.05+).
+- `Otros/`, `Skills/`, `Atlas Balance Release/` (no versionables).
+
+### Reglas seguidas
+
+- `version_actual.md` y `v-02.06.md` leidos antes de empezar; todo el
+  alcance se asocia a V-02.06 sin abrir version nueva.
+- `LOG_ERRORES_INCIDENCIAS.md` consultado: los bloqueos historicos de
+  Vite/Rolldown/Chromium y Docker/Testcontainers ya estaban
+  documentados; no se reintentan.
+- `SKILLS_LOCALES.md` consultado: no se carga ninguna skill local (no
+  hay diseno nuevo ni copy nuevo; los cambios son tecnicos: regex,
+  payload, scanner).
+- Protocolo anti-encallamiento aplicado: maximo dos intentos por la
+  misma via para el scanner (primer intento detecto el bug 18 + fallo
+  por regex; segundo intento anadio la exclusion correcta por segmento
+  y cerro el caso).
+- Higiene antimalware: el fixture del scanner vive solo en `%TEMP%\2\opencode`,
+  dentro del workspace pre-aprobado; no se descargo nada remoto ni se
+  ejecutaron binarios fuera del repo.
+- Git: cambios preparados para commit al final; no se hace commit ni
+  push (segun la regla "no commit sin peticion explicita"). `git status
+  --short` muestra exactamente los 5 archivos del alcance + este doc.
+
+---
 ## 2026-07-16 - V-02.06 - Interruptor de MFA por rol (admin obligatorio, resto opcional)
 
 **Trabajo realizado:**

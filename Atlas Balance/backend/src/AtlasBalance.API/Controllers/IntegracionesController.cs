@@ -122,6 +122,12 @@ public sealed class IntegracionesController : ControllerBase
             return BadRequest(new { error = validation });
         }
 
+        var unknownScope = FindUnknownScope(request.Scopes);
+        if (unknownScope is not null)
+        {
+            return BadRequest(new { error = $"Scope desconocido: '{unknownScope}'." });
+        }
+
         var creatorId = GetCurrentUserId();
         if (!creatorId.HasValue)
         {
@@ -199,6 +205,12 @@ public sealed class IntegracionesController : ControllerBase
         if (validation is not null)
         {
             return BadRequest(new { error = validation });
+        }
+
+        var unknownScope = FindUnknownScope(request.Scopes);
+        if (unknownScope is not null)
+        {
+            return BadRequest(new { error = $"Scope desconocido: '{unknownScope}'." });
         }
 
         var before = new
@@ -615,15 +627,56 @@ public sealed class IntegracionesController : ControllerBase
 
     private static IReadOnlyList<string> NormalizeEndpointScopes(IReadOnlyList<string>? scopes)
     {
+        // V-02.06 (PR F1): distinguir entre `null` (campo omitido en el request)
+        // y `[]` (cliente envia lista vacia). Antes ambas caian a
+        // `DefaultOpenClawScopes`, lo que derrotaba el deny-by-default del
+        // middleware y concedia todos los endpoints a un admin que desmarca
+        // todas las casillas o a un cliente API que envia `scopes: []`.
+        //
+        // - `null`        -> omitido por el caller -> defaults (compatibilidad).
+        // - `[]`          -> lista vacia intencional -> se respeta como vacia.
+        // - valores invalidos -> se filtran; si TODOS se filtran -> vacio (no defaults).
         var allowed = DefaultOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var normalized = (scopes is null || scopes.Count == 0 ? DefaultOpenClawScopes : scopes)
+
+        if (scopes is null)
+        {
+            return DefaultOpenClawScopes;
+        }
+
+        return scopes
             .Where(scope => !string.IsNullOrWhiteSpace(scope))
             .Select(scope => scope.Trim().ToLowerInvariant())
             .Where(scope => allowed.Contains(scope))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
 
-        return normalized.Count == 0 ? DefaultOpenClawScopes : normalized;
+    /// <summary>
+    /// V-02.06 (PR F1): rechaza scopes que no estan en <see cref="DefaultOpenClawScopes"/>.
+    /// Antes se descartaban silenciosamente y (peor) caian a defaults si todos
+    /// los scopes del caller eran invalidos. Devuelve el primer scope no
+    /// reconocido; el controller lo convierte en 400.
+    /// </summary>
+    private static string? FindUnknownScope(IReadOnlyList<string>? scopes)
+    {
+        if (scopes is null)
+        {
+            return null;
+        }
+        var allowed = DefaultOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in scopes)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+            var normalized = raw.Trim().ToLowerInvariant();
+            if (!allowed.Contains(normalized))
+            {
+                return raw;
+            }
+        }
+        return null;
     }
 
     private static IReadOnlyList<string> ParseEndpointScopes(string? rawJson)

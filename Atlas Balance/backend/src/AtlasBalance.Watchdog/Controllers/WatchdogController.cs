@@ -42,10 +42,20 @@ public sealed class WatchdogController : ControllerBase
             return BadRequest(new { error = "source_path y target_path son obligatorios" });
         }
 
-        if (!TryGetFullPath(request.SourcePath, out var sourcePath) ||
-            !TryGetFullPath(request.TargetPath, out var targetPath))
+        // V-02.06 (PR F3): la verificacion de firma requiere el ZIP firmado
+        // y su clave publica. Antes este endpoint aceptaba el campo opcional
+        // y el Watchdog pasaba a "modo legacy" sin firma; en produccion eso
+        // es exactamente el camino que puede instalar un ZIP manipulado.
+        if (string.IsNullOrWhiteSpace(request.PackageZipPath))
         {
-            return BadRequest(new { error = "source_path o target_path no es valido" });
+            return BadRequest(new { error = "package_zip_path es obligatorio. La actualizacion debe llegar firmada y su hash verificado contra BackupCloudCopy o el release de GitHub." });
+        }
+
+        if (!TryGetFullPath(request.SourcePath, out var sourcePath) ||
+            !TryGetFullPath(request.TargetPath, out var targetPath) ||
+            !TryGetFullPath(request.PackageZipPath, out var packageZipPath))
+        {
+            return BadRequest(new { error = "source_path, target_path o package_zip_path no son validos" });
         }
 
         if (!Directory.Exists(sourcePath))
@@ -58,7 +68,12 @@ public sealed class WatchdogController : ControllerBase
             return BadRequest(new { error = "source_path y target_path no pueden ser iguales" });
         }
 
-        var accepted = await _operationsService.StartUpdateAsync(sourcePath, targetPath, request.PackageZipPath, cancellationToken);
+        if (!System.IO.File.Exists(packageZipPath))
+        {
+            return BadRequest(new { error = $"package_zip_path no existe: '{packageZipPath}'" });
+        }
+
+        var accepted = await _operationsService.StartUpdateAsync(sourcePath, targetPath, packageZipPath, cancellationToken);
         if (!accepted)
         {
             return Conflict(new { error = "Ya hay una operacion watchdog en ejecucion o el paquete no paso la verificacion de integridad" });

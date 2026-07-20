@@ -372,11 +372,13 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         var dumpPath = Path.Combine(backupRoot, $"drive_import_{stamp}.dump");
 
         await DownloadFileAsync(accessToken, fileId, encryptedPath, cancellationToken);
-        await _encryptionService.DecryptAsync(encryptedPath, dumpPath, cancellationToken);
-        TryDelete(encryptedPath);
 
-        // V-02-05 (HIGH-2): verificar SHA-256 del dump descifrado contra el registro
-        // original de BackupCloudCopy. Si no coincide, descartar el archivo y rechazar.
+        // V-02.06 (PR F3): la verificacion se hace sobre el `.enc` descargado
+        // (mismo dominio que el que se almaceno en upload). Antes se comparaba
+        // el dump descifrado contra el SHA-256 del cifrado, lo que rechaza
+        // cualquier copia valida por ser dominios cruzados. Si no hay
+        // `BackupCloudCopy` registrada (importacion manual sin upload previo),
+        // aceptamos el archivo y lo dejamos sin ancla de integridad.
         var originalCopy = await _dbContext.BackupCloudCopies
             .IgnoreQueryFilters()
             .Where(c => c.RemoteFileId == fileId && c.Provider == ProviderName && !string.IsNullOrEmpty(c.ChecksumSha256))
@@ -385,25 +387,27 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
 
         if (originalCopy is not null)
         {
-            var actualHash = await ComputeSha256Async(dumpPath, cancellationToken);
+            var actualHash = await ComputeSha256Async(encryptedPath, cancellationToken);
             if (!string.Equals(actualHash, originalCopy.ChecksumSha256, StringComparison.OrdinalIgnoreCase))
             {
-                TryDelete(dumpPath);
                 TryDelete(encryptedPath);
                 throw new InvalidOperationException(
-                    "SHA-256 del dump descifrado no coincide con el registrado para " + fileId +
+                    "SHA-256 del archivo cifrado descargado no coincide con el registrado para " + LogScrubber.Scrub(fileId) +
                     " (BackupCloudCopy=" + originalCopy.Id + "). Posible corrupcion o alteracion del archivo en Drive.");
             }
         }
         else
         {
-            // V-02-06 (CodeQL #12): sanear {FileIdSafe} para evitar CWE-117 (log forging).
-            // fileId es validado por IsSafeGoogleIdentifier antes de llegar aqui, pero el
-            // scrubber cubre el caso de un identificador legitimo con caracteres de control.
             _logger.LogWarning(
                 "Import desde Google Drive sin BackupCloudCopy original para {FileIdSafe} (o sin ChecksumSha256 registrado). Se acepta el archivo sin verificacion de integridad.",
                 LogScrubber.Scrub(fileId));
         }
+
+        // Solo desciframos si la verificacion pasa o no hay registro contra
+        // el que comparar; asi una copia manipulada se rechaza sin tocar el
+        // dump plaintext.
+        await _encryptionService.DecryptAsync(encryptedPath, dumpPath, cancellationToken);
+        TryDelete(encryptedPath);
 
         var backup = new Backup
         {

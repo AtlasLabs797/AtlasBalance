@@ -55,7 +55,13 @@ builder.Host.UseSerilog((context, config) =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<SmtpTestRateLimit>();
-builder.Services.AddScoped<RlsDbCommandInterceptor>();
+// V-02.06 (PR F1): RlsContextSecret es internal y RlsDbCommandInterceptor tiene
+// ctor internal. La DI por defecto solo invoca constructores publicos, asi que
+// registramos una factory explicita que conserva la encapsulacion del secreto.
+builder.Services.AddScoped<RlsDbCommandInterceptor>(serviceProvider =>
+    new RlsDbCommandInterceptor(
+        serviceProvider.GetRequiredService<IHttpContextAccessor>(),
+        serviceProvider.GetRequiredService<RlsContextSecret>()));
 builder.Services.AddScoped<AuditSaveChangesInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options

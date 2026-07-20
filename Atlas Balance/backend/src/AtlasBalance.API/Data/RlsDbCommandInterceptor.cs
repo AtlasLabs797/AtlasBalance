@@ -132,23 +132,22 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
         ReentryGuard.IsActive;
 
     /// <summary>
-    /// V-02-06 (MED-30): marcador thread-static para detectar cuando un
-    /// comando se origina dentro del propio interceptor (el set_config
-    /// que publica contexto RLS). Anteriormente se evitaba la recursion
-    /// por una busqueda textual en CommandText, fragil ante cualquier
-    /// cambio de formato. El flag es robusto y no requiere inspeccionar
-    /// SQL del usuario.
+    /// V-02-06 (MED-30 + PR F1): marcador de reentrada que fluye por
+    /// `AsyncLocal` para sobrevivir a continuaciones de `await`. La version
+    /// previa usaba `[ThreadStatic]`, que no viaja con la continuacion y
+    /// deja el contador incoherente entre hilos (puede mantenerse positivo
+    /// en un hilo y decrementarse en otro). `AsyncLocal&lt;int&gt;` mantiene
+    /// el contador anidado por contexto logico.
     /// </summary>
     private static class ReentryGuard
     {
-        [ThreadStatic]
-        private static int _depth;
+        private static readonly AsyncLocal<int> _depth = new();
 
-        public static bool IsActive => _depth > 0;
+        public static bool IsActive => _depth.Value > 0;
 
-        public static void Enter() => _depth++;
+        public static void Enter() => _depth.Value++;
 
-        public static void Exit() => _depth--;
+        public static void Exit() => _depth.Value--;
     }
 
     // V-02-06 (RLS-UNIT-01): exponemos BuildContext como internal para que los

@@ -140,8 +140,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     {
         if (string.IsNullOrWhiteSpace(sourcePath) ||
             string.IsNullOrWhiteSpace(targetPath) ||
+            string.IsNullOrWhiteSpace(packageZipPath) ||
             !TryGetFullPath(sourcePath, out var fullSourcePath) ||
             !TryGetFullPath(targetPath, out var fullTargetPath) ||
+            !TryGetFullPath(packageZipPath, out _) ||
             !Directory.Exists(fullSourcePath))
         {
             return false;
@@ -156,8 +158,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
 
         // V-02-05 (CRIT-3): si la API nos pasa el path al ZIP original, lo verificamos
-        // antes de aplicar la actualizacion. Si la firma RSA esta configurada y falla,
-        // o si el ZIP esta fuera de UpdateSourceRoot, rechazamos.
+        // antes de aplicar la actualizacion. La verificacion es obligatoria: si
+        // el campo viene vacio o falta la clave publica configurada, se rechaza
+        // el update (fail-closed). Era el bypass que permitia instalar paquetes
+        // sin firma cuando faltaban los assets.
         var zipVerification = VerifyPackageZipIntegrity(packageZipPath);
         if (zipVerification is not null)
         {
@@ -1019,21 +1023,22 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     }
 
     /// <summary>
-    /// V-02-05 (CRIT-3): verifica la integridad del ZIP de actualizacion cuando la API
-    /// lo pasa. Rechaza el update si:
+    /// V-02-05 (CRIT-3) + V-02.06 (PR F3): verifica la integridad del ZIP de
+    /// actualizacion cuando la API lo pasa. Rechaza el update si:
+    ///   - el ZIP no se proporcino (fail-closed; no hay "modo legacy")
     ///   - el ZIP no existe
     ///   - el ZIP esta fuera de UpdateSourceRoot
-    ///   - el ZIP no tiene su .sig correspondiente dentro del root
+    ///   - falta la clave publica o el archivo .sig
     ///   - la firma RSA no valida contra la clave publica configurada
     ///
-    /// Devuelve null si la verificacion pasa o si no hay ZIP que verificar
-    /// (modo legacy). Devuelve un string con la razon si falla.
+    /// Devuelve null si la verificacion pasa. Devuelve un string con la
+    /// razon si falla.
     /// </summary>
     private string? VerifyPackageZipIntegrity(string? packageZipPath)
     {
         if (string.IsNullOrWhiteSpace(packageZipPath))
         {
-            return null;
+            return "package_zip_path obligatorio: actualizacion sin firma rechazada";
         }
 
         if (!TryGetFullPath(packageZipPath, out var fullZipPath))
@@ -1055,8 +1060,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         var publicKeyPem = _configuration["UpdateSecurity:ReleaseSigningPublicKeyPem"];
         if (string.IsNullOrWhiteSpace(publicKeyPem))
         {
-            _logger.LogWarning("UpdateSecurity:ReleaseSigningPublicKeyPem no configurada en Watchdog; se omite la verificacion de firma RSA del ZIP. Configure la clave para activar la verificacion end-to-end.");
-            return null;
+            return "UpdateSecurity:ReleaseSigningPublicKeyPem no configurada en Watchdog; firma no se puede verificar";
         }
 
         var signaturePath = fullZipPath + ".sig";

@@ -528,8 +528,22 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
                     b.HasKey("Id")
                         .HasName("pk_conciliaciones");
+
+                    b.HasIndex("DeletedAt")
+                        .HasDatabaseName("ix_conciliaciones_deleted_at");
+
+                    b.HasIndex("DeletedById")
+                        .HasDatabaseName("ix_conciliaciones_deleted_by_id");
 
                     b.HasIndex("ExtractoId")
                         .HasDatabaseName("ix_conciliaciones_extracto_id");
@@ -551,7 +565,8 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("MovimientoEsperadoId", "ExtractoId")
                         .IsUnique()
-                        .HasDatabaseName("ix_conciliaciones_movimiento_esperado_id_extracto_id");
+                        .HasDatabaseName("ix_conciliaciones_movimiento_esperado_id_extracto_id")
+                        .HasFilter("\"deleted_at\" IS NULL");
 
                     b.ToTable("CONCILIACIONES", (string)null);
                 });
@@ -2537,6 +2552,12 @@ namespace AtlasBalance.API.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_conciliaciones_cuentas_cuenta_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedById")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_conciliaciones_deleted_by_id");
 
                     b.HasOne("AtlasBalance.API.Models.Extracto", null)
                         .WithMany()

@@ -45,8 +45,12 @@ function DashboardRoute({ children }: { children: JSX.Element }) {
 
 function getCsrfTokenFromCookie(): string | null {
   const cookies = document.cookie.split(';').map((item) => item.trim());
-  // V-02-05 (LOW-FE-4): aceptar ambos prefijos (legacy csrf_token y __Host-atlas-csrf-token)
-  // y validar el formato (Base64URL >= 32 chars). Antes aceptabamos cualquier valor.
+  // V-02.05 (LOW-FE-4): aceptar ambos prefijos (legacy csrf_token y __Host-atlas-csrf-token)
+  // y validar el formato (Base64 estandar >= 32 chars). Antes aceptabamos cualquier valor.
+  // V-02.06 (PR F1): el backend emite Base64 estandar con Convert.ToBase64String,
+  // que SIEMPRE termina en '=' (24 bytes -> 32 chars + '='). La regex anterior
+  // rechazaba el valor porque no admitia '+', '/' ni '='. Se admite Base64
+  // estandar (RFC 4648 §4), sigue siendo estricta (solo caracteres validos).
   const tokenPair = cookies.find(
     (item) => item.startsWith('csrf_token=') || item.startsWith('__Host-atlas-csrf-token=')
   );
@@ -62,8 +66,13 @@ function getCsrfTokenFromCookie(): string | null {
     return null;
   }
 
-  const decoded = decodeURIComponent(rawValue);
-  if (!decoded || decoded.length < 32 || !/^[A-Za-z0-9_-]+$/.test(decoded)) {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawValue);
+  } catch {
+    return null;
+  }
+  if (!decoded || decoded.length < 32 || !/^[A-Za-z0-9+/=]+$/.test(decoded)) {
     return null;
   }
   return decoded;

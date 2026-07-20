@@ -179,6 +179,12 @@ export default function ImportacionPage() {
   // importar un archivo cuya divisa declarada no coincide con la divisa
   // de la cuenta. Sin esto el backend rechaza con 400.
   const [forceConfirmDivisaMismatch, setForceConfirmDivisaMismatch] = useState(false);
+  // V-02.06 (HIGH-1, bug 18): el POST de creacion de lote debe enviar la
+  // `divisa_esperada` declarada por el operador. Antes se omitia y el
+  // backend asumia la divisa de la cuenta, perdiendo la validacion contra
+  // pegados accidentales de otra divisa.
+  const [divisaEsperada, setDivisaEsperada] = useState('');
+  const [divisasDisponibles, setDivisasDisponibles] = useState<string[]>([]);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [validationPage, setValidationPage] = useState(1);
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
@@ -216,6 +222,47 @@ export default function ImportacionPage() {
         const initialCuenta = requestedCuenta ?? cuentas[0];
         if (initialCuenta) {
           setCuentaId(initialCuenta.id);
+          setDivisaEsperada(initialCuenta.divisa);
+        }
+
+        // V-02.06 (HIGH-1, bug 18): cargar la lista de monedas activas para
+        // alimentar el selector `Divisa de los importes`. Si el endpoint no
+        // existe o falla, se cae a las divisas presentes en las cuentas
+        // cargadas para no bloquear al operador.
+        try {
+          const { data: monedasResp } = await api.get<{ data?: { codigo: string }[] } | { codigos?: string[] }>(
+            '/divisas',
+            { params: { activas: true, pageSize: 500 } }
+          );
+          const payload: { codigo?: string }[] | undefined = (() => {
+            if (!monedasResp || typeof monedasResp !== 'object') return undefined;
+            if ('data' in monedasResp && Array.isArray(monedasResp.data)) return monedasResp.data;
+            if ('codigos' in monedasResp && Array.isArray(monedasResp.codigos)) {
+              return monedasResp.codigos.map((codigo) => ({ codigo }));
+            }
+            return undefined;
+          })();
+          const codigos = payload
+            ?.map((entry) => entry.codigo)
+            .filter((codigo): codigo is string => typeof codigo === 'string' && codigo.length > 0)
+            ?? [];
+          if (codigos.length > 0) {
+            setDivisasDisponibles(codigos);
+          } else {
+            throw new Error('endpoint sin monedas');
+          }
+        } catch {
+          const fallback = Array.from(
+            new Set(
+              cuentas
+                .map((cuenta) => cuenta.divisa)
+                .filter((codigo): codigo is string => typeof codigo === 'string' && codigo.length > 0)
+            )
+          );
+          if (fallback.length === 0) {
+            fallback.push('EUR', 'USD', 'GBP', 'ARS');
+          }
+          setDivisasDisponibles(fallback);
         }
       } catch (err: unknown) {
         if (!mounted) {
@@ -388,6 +435,12 @@ export default function ImportacionPage() {
 
   const setCuenta = (nextId: string) => {
     setCuentaId(nextId);
+    const nextCuenta = contexto.find((cuenta) => cuenta.id === nextId);
+    if (nextCuenta) {
+      setDivisaEsperada(nextCuenta.divisa);
+    } else {
+      setDivisaEsperada('');
+    }
     resetValidationState();
     setStep(1);
     const nextParams = new URLSearchParams(searchParams);
@@ -422,13 +475,23 @@ export default function ImportacionPage() {
     setConfirmResult(null);
 
     try {
+      // V-02.06 (PR F1): la creacion/validacion del lote puede tardar
+      // minutos en archivos grandes (parseo + validacion de filas + DB).
+      // Override a 5 min; el resto de llamadas conserva el timeout
+      // global de 15s de `services/api.ts`.
       const { data } = await api.post<ImportacionLoteDetalle>('/importacion/lotes', {
         cuenta_id: cuentaId,
         raw_data: rawData,
         separador: separator,
         mapeo: selectedMapeo,
         tipo_origen: 'PEGADO',
-      });
+        // V-02.06 (HIGH-1, bug 18): envia la divisa declarada por el operador.
+        // Si no se envia, el backend asume la de la cuenta y la validacion
+        // contra pegados accidentales queda anulada. Se envia aunque el
+        // selector coincida con la cuenta para que el backend pueda
+        // comparar y reportar `divisa_mismatch` cuando difieran.
+        divisa_esperada: divisaEsperada || selectedCuenta?.divisa || null,
+      }, { timeout: 300_000 });
 
       setCurrentLote(data.lote);
       setValidacion(data.validacion);
@@ -481,11 +544,13 @@ export default function ImportacionPage() {
     setSuccess(null);
 
     try {
+      // V-02.06 (PR F1): confirmacion del lote ejecuta insercion masiva
+      // + conciliacion. Override a 5 min.
       const { data } = await api.post<ImportConfirmResult>(`/importacion/lotes/${currentLote.id}/confirmar`, {
         filas_a_importar: selectedRows,
         acepta_advertencias: acceptWarnings,
         force_confirm_divisa_mismatch: forceConfirmDivisaMismatch,
-      });
+      }, { timeout: 300_000 });
 
       setConfirmResult(data);
       setSuccess(`Importación completada: ${data.filas_importadas} filas importadas.`);
@@ -512,6 +577,9 @@ export default function ImportacionPage() {
     setError(null);
     setStep(1);
     setActiveTab('nueva');
+    // V-02.06 (HIGH-1, bug 18): al iniciar una nueva importacion se
+    // reinicia el selector de divisa a la divisa de la cuenta actual.
+    setDivisaEsperada(selectedCuenta?.divisa ?? '');
   };
 
   const submitPlazoFijoMovimiento = async () => {
@@ -819,6 +887,19 @@ export default function ImportacionPage() {
               ]}
               onChange={(next) => {
                 setSeparator(next as 'tab' | 'comma' | 'semicolon');
+                resetValidationState();
+              }}
+            />
+
+            <AppSelect
+              label="Divisa de los importes"
+              value={divisaEsperada || selectedCuenta?.divisa || ''}
+              options={divisasDisponibles.map((codigo) => ({
+                value: codigo,
+                label: `${codigo}${selectedCuenta?.divisa === codigo ? ' (divisa de la cuenta)' : ''}`,
+              }))}
+              onChange={(next) => {
+                setDivisaEsperada(next);
                 resetValidationState();
               }}
             />
