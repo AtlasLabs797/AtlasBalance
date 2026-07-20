@@ -869,7 +869,12 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
     /// verificar la integridad del dump descifrado contra el ChecksumSha256
     /// del BackupCloudCopy original.
     /// </summary>
-    private static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
+    // V-02.06 (HIGH-2): exponer como internal para que los tests puedan
+    // verificar el helper de hashing que valida el SHA-256 del dump
+    // descifrado. El flujo integral (descarga + descifrado + verificacion)
+    // requiere mocks de HttpClient y IBackupEncryptionService y se cubre
+    // por tests de integracion contra el API real en F4.
+    internal static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
     {
         using var stream = File.OpenRead(path);
         using var sha = System.Security.Cryptography.SHA256.Create();
