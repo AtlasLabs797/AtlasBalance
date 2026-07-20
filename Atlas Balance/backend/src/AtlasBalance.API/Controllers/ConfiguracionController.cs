@@ -365,7 +365,7 @@ public sealed class ConfiguracionController : ControllerBase
     }
 
     private void Upsert(
-        IReadOnlyCollection<AtlasBalance.API.Models.Configuracion> existing,
+        ICollection<AtlasBalance.API.Models.Configuracion> existing,
         string key,
         string value,
         Guid? userId,
@@ -376,14 +376,16 @@ public sealed class ConfiguracionController : ControllerBase
         var item = existing.FirstOrDefault(x => x.Clave.Equals(key, StringComparison.OrdinalIgnoreCase));
         if (item is null)
         {
-            _dbContext.Configuraciones.Add(new AtlasBalance.API.Models.Configuracion
+            var created = new AtlasBalance.API.Models.Configuracion
             {
                 Clave = key,
                 Valor = storedValue,
                 EsSecreto = esSecreto,
                 FechaModificacion = now,
                 UsuarioModificacionId = userId
-            });
+            };
+            _dbContext.Configuraciones.Add(created);
+            existing.Add(created);
             return;
         }
 

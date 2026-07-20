@@ -18,7 +18,6 @@ import type {
   GoogleDriveLinkStatus,
   PaginatedResponse,
   SaveBackupConfigRequest,
-  WatchdogState,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatBytes, formatDateTime } from '@/utils/formatters';
@@ -206,10 +205,8 @@ export default function BackupsPage() {
     setCreating(true);
     setError(null);
     try {
-      // V-02.06 (PR F1): el backup manual puede tardar varios minutos
-      // (pg_dump + cifrado + subida). El timeout global es 15s; lo
-      // sobreescribimos a 10 min solo para esta operacion.
-      await api.post('/backups/manual', undefined, { timeout: 600_000 });
+      const { data } = await api.post<{ operation_id: string }>('/backups/manual');
+      await pollBackupOperation(data.operation_id);
       await fetchRows();
       await fetchConfig();
     } catch (err) {
@@ -311,9 +308,8 @@ export default function BackupsPage() {
     setImportingFileId(file.file_id);
     setError(null);
     try {
-      // V-02.06 (PR F1): importacion desde Drive descarga, descifra y
-      // restaura el backup. Override a 10 min.
-      await api.post('/backups/google-drive/import', { file_id: file.file_id }, { timeout: 600_000 });
+      const { data } = await api.post<{ operation_id: string }>('/backups/google-drive/import', { file_id: file.file_id });
+      await pollBackupOperation(data.operation_id);
       await fetchRows();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo importar la copia desde Google Drive.'));
@@ -322,26 +318,30 @@ export default function BackupsPage() {
     }
   };
 
-  const pollRestoreState = async () => {
+  const pollBackupOperation = async (operationId: string, restore = false) => {
     setOverlayVisible(true);
     setOverlayMessage('No cierres esta ventana; al terminar volveras al inicio de sesion.');
     const timeoutAt = Date.now() + 10 * 60 * 1000;
 
     while (Date.now() < timeoutAt) {
       try {
-        const { data } = await api.get<WatchdogState>('/sistema/estado');
-        const state = (data.estado ?? '').toUpperCase();
+        const { data } = await api.get<{ status: string; error?: string }>(`/backups/operations/${operationId}`);
+        const state = (data.status ?? '').toUpperCase();
         if (state === 'RUNNING') {
-          setOverlayMessage(data.mensaje || 'No cierres esta ventana; al terminar volveras al inicio de sesion.');
+          setOverlayMessage(restore ? 'Restauracion en curso; no cierres esta ventana.' : 'Operacion de backup en curso.');
         } else if (state === 'SUCCESS') {
-          setOverlayMessage('Restauracion completada. Volveras al inicio de sesion.');
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-          logout();
-          window.location.href = '/login';
+          if (restore) {
+            setOverlayMessage('Restauracion completada. Volveras al inicio de sesion.');
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+            logout();
+            window.location.href = '/login';
+          } else {
+            setOverlayVisible(false);
+          }
           return;
         } else if (state === 'FAILED') {
           setOverlayVisible(false);
-          setError(data.mensaje || 'La restauracion fallo. Revisa el estado del sistema antes de intentarlo de nuevo.');
+          setError(data.error || 'La operacion fallo. Revisa el estado del sistema antes de intentarlo de nuevo.');
           return;
         }
       } catch {
@@ -360,10 +360,10 @@ export default function BackupsPage() {
     setRestoring(true);
     setError(null);
     try {
-      await api.post(`/backups/${confirmTarget.id}/restaurar`, { confirmacion: 'RESTAURAR' });
+      const { data } = await api.post<{ operation_id: string }>(`/backups/${confirmTarget.id}/restaurar`, { confirmacion: 'RESTAURAR' });
       setConfirmTarget(null);
       setDoubleConfirmOpen(false);
-      await pollRestoreState();
+      await pollBackupOperation(data.operation_id, true);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo iniciar la restauracion.'));
     } finally {

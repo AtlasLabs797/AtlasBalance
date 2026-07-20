@@ -136,4 +136,41 @@ public sealed class IntegracionesControllerTests
         var storedPermission = await dbContext.IntegrationPermissions.SingleAsync();
         storedPermission.AccesoTipo.Should().Be("lectura");
     }
+
+    [Fact]
+    public async Task Crear_Should_Preserve_Empty_Endpoint_Scopes_As_No_Access()
+    {
+        await using var dbContext = BuildDbContext();
+        var controller = BuildController(dbContext);
+
+        var result = await controller.Crear(new CreateIntegrationTokenRequest
+        {
+            Nombre = "sin-endpoints",
+            PermisoLectura = true,
+            Permisos = [new SaveIntegrationPermissionRequest { AccesoTipo = "lectura" }],
+            Scopes = []
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+        (await dbContext.IntegrationTokens.SingleAsync()).EndpointScopesJson.Should().Be("[]");
+    }
+
+    [Fact]
+    public async Task Crear_Should_Reject_Unknown_Endpoint_Scope()
+    {
+        await using var dbContext = BuildDbContext();
+        var controller = BuildController(dbContext);
+
+        var result = await controller.Crear(new CreateIntegrationTokenRequest
+        {
+            Nombre = "scope-invalido",
+            PermisoLectura = true,
+            Permisos = [new SaveIntegrationPermissionRequest { AccesoTipo = "lectura" }],
+            Scopes = ["saldos", "inventado"]
+        }, CancellationToken.None);
+
+        JsonSerializer.Serialize(result.Should().BeOfType<BadRequestObjectResult>().Subject.Value)
+            .Should().Contain("Scope desconocido");
+        (await dbContext.IntegrationTokens.CountAsync()).Should().Be(0);
+    }
 }

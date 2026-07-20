@@ -9,6 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test:unit": "tsc -p tsconfig.test.json && node --test .test-dist/tests/importacionRequest.test.js",
     "test:e2e": "playwright test"
   },
   "dependencies": {

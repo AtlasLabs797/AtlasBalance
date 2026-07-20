@@ -178,7 +178,21 @@ public sealed class ActualizacionService : IActualizacionService
             return false;
         }
 
-        return await _watchdogClientService.SolicitarActualizacionAsync(finalSourcePath, finalTargetPath, finalZipPath, cancellationToken);
+        try
+        {
+            return await _watchdogClientService.SolicitarActualizacionAsync(finalSourcePath, finalTargetPath, finalZipPath, cancellationToken);
+        }
+        finally
+        {
+            // El Watchdog verifica ZIP y firma antes de responder al POST. El
+            // directorio extraido sigue vivo para el trabajo asincrono, pero
+            // los artefactos de descarga ya no son necesarios.
+            if (!string.IsNullOrWhiteSpace(finalZipPath))
+            {
+                TryDeleteFile(finalZipPath);
+                TryDeleteFile($"{finalZipPath}.sig");
+            }
+        }
     }
 
     private async Task<UpdatePreflight> BuildUpdatePreflightAsync(UpdateCheckPayload payload, CancellationToken cancellationToken)
@@ -344,10 +358,15 @@ public sealed class ActualizacionService : IActualizacionService
         var safeVersion = ToSafePathSegment(packageVersion);
         var packageRoot = Path.Combine(sourceRoot, safeVersion);
         var zipPath = Path.Combine(sourceRoot, $"{safeVersion}.zip");
+        var signaturePath = $"{zipPath}.sig";
+        var packageRootTouched = false;
+        var preparationSucceeded = false;
 
-        Directory.CreateDirectory(sourceRoot);
-        EnsurePathWithinRoot(packageRoot, sourceRoot);
-        EnsurePathWithinRoot(zipPath, sourceRoot);
+        try
+        {
+            Directory.CreateDirectory(sourceRoot);
+            EnsurePathWithinRoot(packageRoot, sourceRoot);
+            EnsurePathWithinRoot(zipPath, sourceRoot);
 
         var http = _httpClientFactory.CreateClient();
         http.Timeout = TimeSpan.FromMinutes(5);
@@ -396,17 +415,21 @@ public sealed class ActualizacionService : IActualizacionService
             return (null, null);
         }
 
-        if (!await VerifyAssetSignatureAsync(http, zipPath, payload.AssetSignatureDownloadUrl, token, cancellationToken))
+        var verifiedSignature = await VerifyAssetSignatureAsync(http, zipPath, payload.AssetSignatureDownloadUrl, token, cancellationToken);
+        if (verifiedSignature is null)
         {
             _logger.LogWarning("Asset de actualizacion rechazado por firma ausente o invalida.");
             TryDeleteFile(zipPath);
             return (null, null);
         }
 
+        await File.WriteAllBytesAsync(signaturePath, verifiedSignature, cancellationToken);
+
         if (Directory.Exists(packageRoot))
         {
             Directory.Delete(packageRoot, recursive: true);
         }
+        packageRootTouched = true;
 
         if (!TryExtractPackageSafely(zipPath, packageRoot))
         {
@@ -420,7 +443,21 @@ public sealed class ActualizacionService : IActualizacionService
             return (null, null);
         }
 
+        preparationSucceeded = true;
         return (resolvedPackageRoot, zipPath);
+        }
+        finally
+        {
+            if (!preparationSucceeded)
+            {
+                TryDeleteFile(zipPath);
+                TryDeleteFile(signaturePath);
+                if (packageRootTouched)
+                {
+                    TryDeleteDirectory(packageRoot);
+                }
+            }
+        }
     }
 
     private static bool IsGitHubApiEndpoint(Uri endpoint)
@@ -688,12 +725,12 @@ public sealed class ActualizacionService : IActualizacionService
         return string.Equals(actualHash, expectedHash.ToLowerInvariant(), StringComparison.Ordinal);
     }
 
-    private async Task<bool> VerifyAssetSignatureAsync(HttpClient http, string zipPath, string? signatureUrl, string? githubToken, CancellationToken cancellationToken)
+    private async Task<byte[]?> VerifyAssetSignatureAsync(HttpClient http, string zipPath, string? signatureUrl, string? githubToken, CancellationToken cancellationToken)
     {
         var publicKeyPem = ResolveReleaseSigningPublicKeyPem();
         if (string.IsNullOrWhiteSpace(publicKeyPem) || !IsOfficialReleaseSignatureUrl(signatureUrl))
         {
-            return false;
+            return null;
         }
 
         byte[] signature;
@@ -709,20 +746,20 @@ public sealed class ActualizacionService : IActualizacionService
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength is > 8192)
             {
-                return false;
+                return null;
             }
 
             var rawSignature = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             if (rawSignature.Length is 0 or > 8192)
             {
-                return false;
+                return null;
             }
 
             signature = NormalizeSignatureBytes(rawSignature);
         }
         catch
         {
-            return false;
+            return null;
         }
 
         try
@@ -730,11 +767,13 @@ public sealed class ActualizacionService : IActualizacionService
             using var rsa = RSA.Create();
             rsa.ImportFromPem(publicKeyPem.AsSpan());
             using var stream = File.OpenRead(zipPath);
-            return rsa.VerifyData(stream, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            return rsa.VerifyData(stream, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+                ? signature
+                : null;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
@@ -876,6 +915,21 @@ public sealed class ActualizacionService : IActualizacionService
             if (File.Exists(path))
             {
                 File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup only; the update is already rejected.
+        }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
             }
         }
         catch

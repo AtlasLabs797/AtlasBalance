@@ -199,8 +199,10 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         var entityName = entry.Entity.GetType().Name;
         var entidadId = TryGetId(entry);
 
-        var oldValues = entry.State == EntityState.Added ? null : CapturarValores(entry.OriginalValues);
-        var newValues = entry.State == EntityState.Deleted ? null : CapturarValores(entry.CurrentValues);
+        var redactConfigValor = ShouldRedactConfiguracionValor(entry.OriginalValues) ||
+                                ShouldRedactConfiguracionValor(entry.CurrentValues);
+        var oldValues = entry.State == EntityState.Added ? null : CapturarValores(entry.OriginalValues, redactConfigValor);
+        var newValues = entry.State == EntityState.Deleted ? null : CapturarValores(entry.CurrentValues, redactConfigValor);
 
         var detalles = new
         {
@@ -236,10 +238,9 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         return idProp.CurrentValue is Guid g ? g : null;
     }
 
-    private static Dictionary<string, object?> CapturarValores(PropertyValues values)
+    private static Dictionary<string, object?> CapturarValores(PropertyValues values, bool redactConfigValor)
     {
         var dict = new Dictionary<string, object?>();
-        bool redactConfigValor = ShouldRedactConfiguracionValor(values);
         foreach (var name in values.Properties.Select(p => p.Name))
         {
             if (ColumnasSecretas.Contains(name))

@@ -27,7 +27,11 @@ public sealed class MigrationDiscoveryTests
             "20260710092000_AddSoftDeleteToImportacionFilaColumnaExtraRevision",
             "20260716120000_HardenFinancialV0202Rls",
             "20260716123000_AddIaUsoUsuarioSoftDelete",
-            "20260716124000_AddEstadoCheckConstraintsToImportacionYBackup"
+            "20260716124000_AddEstadoCheckConstraintsToImportacionYBackup",
+            "20260720090000_AlignConciliacionEstadosAndSnapshot",
+            "20260720120000_RedactHistoricalConfigurationAudits",
+            "20260720130000_AddBackupOperations",
+            "20260720140000_AddImportacionIdempotency"
         ]);
     }
 }

@@ -139,7 +139,7 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
     /// en un hilo y decrementarse en otro). `AsyncLocal&lt;int&gt;` mantiene
     /// el contador anidado por contexto logico.
     /// </summary>
-    private static class ReentryGuard
+    internal static class ReentryGuard
     {
         private static readonly AsyncLocal<int> _depth = new();
 
@@ -179,6 +179,10 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
                 string.Equals(httpContext.Request.Method, "OPTIONS", StringComparison.OrdinalIgnoreCase);
             var scope = path.StartsWithSegments("/api/dashboard", StringComparison.OrdinalIgnoreCase)
                 ? "dashboard"
+                : path.StartsWithSegments("/api/conciliacion", StringComparison.OrdinalIgnoreCase)
+                    ? path.Value?.EndsWith("/resolver", StringComparison.OrdinalIgnoreCase) == true
+                        ? "reconcile-close"
+                        : "reconcile"
                 : path.StartsWithSegments("/api/exportaciones", StringComparison.OrdinalIgnoreCase)
                     ? "export"
                     : path.StartsWithSegments("/api/revision", StringComparison.OrdinalIgnoreCase)

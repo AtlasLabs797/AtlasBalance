@@ -50,7 +50,7 @@ jobs:
 
       - name: Verify version alignment across sources
         shell: pwsh
-        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1"'
+        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1" -ExpectedVersion "${{ inputs.version }}"'
 
       - name: Restore backend
         run: |
@@ -82,7 +82,9 @@ jobs:
 
       - name: Scan high-confidence secrets
         shell: pwsh
-        run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.ps1" -Root "."'
+        run: |
+          & "./Atlas Balance/scripts/Test-AtlasSecrets.Tests.ps1" -RepoRoot "."
+          & "./Atlas Balance/scripts/Test-AtlasSecrets.ps1" -Root "."
 
       - name: Install frontend dependencies
         working-directory: "Atlas Balance/frontend"
@@ -95,6 +97,10 @@ jobs:
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"
         run: npm run lint
+
+      - name: Test frontend import request contracts
+        working-directory: "Atlas Balance/frontend"
+        run: npm run test:unit
 
       - name: Build frontend
         working-directory: "Atlas Balance/frontend"

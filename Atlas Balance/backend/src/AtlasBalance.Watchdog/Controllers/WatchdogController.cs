@@ -20,12 +20,12 @@ public sealed class WatchdogController : ControllerBase
     [HttpPost("restaurar-backup")]
     public async Task<IActionResult> RestaurarBackup([FromBody] RestaurarBackupRequest? request, CancellationToken cancellationToken)
     {
-        if (request is null || string.IsNullOrWhiteSpace(request.BackupPath))
+        if (request is null || string.IsNullOrWhiteSpace(request.BackupPath) || request.OperationId is null || request.OperationId == Guid.Empty)
         {
-            return BadRequest(new { error = "backup_path es obligatorio" });
+            return BadRequest(new { error = "backup_path y operation_id son obligatorios" });
         }
 
-        var accepted = await _operationsService.StartRestoreAsync(request.BackupPath, cancellationToken);
+        var accepted = await _operationsService.StartRestoreAsync(request.BackupPath, request.OperationId.Value, cancellationToken);
         if (!accepted)
         {
             return Conflict(new { error = "Ya hay una operacion watchdog en ejecucion o backup invalido" });

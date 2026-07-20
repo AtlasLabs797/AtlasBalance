@@ -77,7 +77,10 @@ public sealed class UserStateMiddlewareTests
             return Task.CompletedTask;
         });
 
-        var context = BuildContext(user.Id, user.SecurityStamp);
+        // Un administrador con stamp vigente tambien debe acreditar el MFA que
+        // exigimos a todas las sesiones administrativas desde V-02.06.
+        var nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var context = BuildContextWithMfa(user.Id, user.SecurityStamp, user.SecurityStamp, nowUnix);
 
         await middleware.InvokeAsync(context, db);
 

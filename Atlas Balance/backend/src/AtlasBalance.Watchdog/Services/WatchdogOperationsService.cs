@@ -10,6 +10,8 @@ namespace AtlasBalance.Watchdog.Services;
 public interface IWatchdogOperationsService
 {
     Task<bool> StartRestoreAsync(string backupPath, CancellationToken cancellationToken);
+    Task<bool> StartRestoreAsync(string backupPath, Guid operationId, CancellationToken cancellationToken) =>
+        StartRestoreAsync(backupPath, cancellationToken);
     Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken);
 }
 
@@ -62,7 +64,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         _logger = logger;
     }
 
-    public async Task<bool> StartRestoreAsync(string backupPath, CancellationToken cancellationToken)
+    public Task<bool> StartRestoreAsync(string backupPath, CancellationToken cancellationToken) =>
+        StartRestoreAsync(backupPath, Guid.Empty, cancellationToken);
+
+    public async Task<bool> StartRestoreAsync(string backupPath, Guid operationId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(backupPath))
         {
@@ -100,7 +105,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         try
         {
             await _stateStore.SetAsync(
-                CreateState("RUNNING", "RESTORE_BACKUP", "Restauracion en progreso"),
+                CreateState("RUNNING", "RESTORE_BACKUP", "Restauracion en progreso", operationId),
                 cancellationToken);
         }
         catch
@@ -111,25 +116,31 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         _ = Task.Run(async () =>
         {
-            var finalState = CreateState("FAILED", "RESTORE_BACKUP", "Operacion interrumpida");
+            var finalState = CreateState("FAILED", "RESTORE_BACKUP", "Operacion interrumpida", operationId);
             try
             {
                 await StopApiServiceSafeAsync(CancellationToken.None);
                 var restoreResult = await RunPgRestoreAsync(fullBackupPath, CancellationToken.None);
                 finalState = restoreResult.Success
-                    ? CreateState("SUCCESS", "RESTORE_BACKUP", "Restauracion completada")
-                    : CreateState("FAILED", "RESTORE_BACKUP", "Error en pg_restore. Revise los logs protegidos del servidor.");
+                    ? CreateState("SUCCESS", "RESTORE_BACKUP", "Restauracion completada", operationId)
+                    : CreateState("FAILED", "RESTORE_BACKUP", "Error en pg_restore. Revise los logs protegidos del servidor.", operationId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Restore operation failed");
-                finalState = CreateState("FAILED", "RESTORE_BACKUP", "Error inesperado en restauracion. Revise los logs protegidos del servidor.");
+                finalState = CreateState("FAILED", "RESTORE_BACKUP", "Error inesperado en restauracion. Revise los logs protegidos del servidor.", operationId);
             }
             finally
             {
-                await StartApiServiceSafeAsync(CancellationToken.None);
-                await _stateStore.SetAsync(finalState, CancellationToken.None);
-                _operationLock.Release();
+                try
+                {
+                    await StartApiServiceSafeAsync(CancellationToken.None);
+                    await _stateStore.SetAsync(finalState, CancellationToken.None);
+                }
+                finally
+                {
+                    _operationLock.Release();
+                }
             }
         });
 
@@ -244,13 +255,19 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             }
             finally
             {
-                if (!apiStartedInOperation && !externalUpdater)
+                try
                 {
-                    await StartApiServiceSafeAsync(CancellationToken.None);
-                }
+                    if (!apiStartedInOperation && !externalUpdater)
+                    {
+                        await StartApiServiceSafeAsync(CancellationToken.None);
+                    }
 
-                await _stateStore.SetAsync(finalState, CancellationToken.None);
-                _operationLock.Release();
+                    await _stateStore.SetAsync(finalState, CancellationToken.None);
+                }
+                finally
+                {
+                    _operationLock.Release();
+                }
             }
         });
 
@@ -395,11 +412,12 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
     }
 
-    private static WatchdogState CreateState(string estado, string operacion, string mensaje) =>
+    private static WatchdogState CreateState(string estado, string operacion, string mensaje, Guid? operationId = null) =>
         new()
         {
             Estado = estado,
             Operacion = operacion,
+            OperationId = operationId,
             Mensaje = mensaje,
             UpdatedAt = DateTime.UtcNow
         };
@@ -1071,16 +1089,14 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         try
         {
-            var rsa = System.Security.Cryptography.RSA.Create();
+            using var rsa = System.Security.Cryptography.RSA.Create();
             rsa.ImportFromPem(publicKeyPem);
-            var zipBytes = File.ReadAllBytes(fullZipPath);
             var sigBytes = File.ReadAllBytes(signaturePath);
-            if (!rsa.VerifyData(zipBytes, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1))
+            using var zipStream = File.OpenRead(fullZipPath);
+            if (!rsa.VerifyData(zipStream, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1))
             {
-                rsa.Dispose();
                 return "Firma RSA invalida para el ZIP";
             }
-            rsa.Dispose();
             return null;
         }
         catch (Exception ex)

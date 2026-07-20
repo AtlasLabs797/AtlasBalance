@@ -292,6 +292,7 @@ builder.Services.AddScoped<BackupSchedulerJob>();
 builder.Services.AddScoped<ExportMensualJob>();
 builder.Services.AddScoped<PlazoFijoVencimientoJob>();
 builder.Services.AddScoped<AutoUpdateJob>();
+builder.Services.AddScoped<BackupOperationJob>();
 
 var app = builder.Build();
 

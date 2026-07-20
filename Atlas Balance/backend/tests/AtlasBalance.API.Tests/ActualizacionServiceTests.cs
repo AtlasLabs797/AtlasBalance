@@ -346,7 +346,8 @@ public sealed class ActualizacionServiceTests
         File.Exists(Path.Combine(watchdog.SourcePath, "scripts", "Actualizar-AtlasBalance.ps1")).Should().BeTrue();
         watchdog.TargetPath.Should().Be(configuredTarget);
         watchdog.PackageZipPath.Should().NotBeNull();
-        File.Exists(watchdog.PackageZipPath!).Should().BeTrue();
+        File.Exists(watchdog.PackageZipPath!).Should().BeFalse("el ZIP firmado se elimina tras la verificacion sincronica del Watchdog");
+        File.Exists($"{watchdog.PackageZipPath}.sig").Should().BeFalse("la firma temporal debe limpiarse junto al ZIP");
 
         Directory.Delete(root, recursive: true);
     }

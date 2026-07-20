@@ -186,6 +186,43 @@ public sealed class IntegrationAuthMiddlewareTests
         tokenService.ValidateCalls.Should().Be(2);
     }
 
+    [Fact]
+    public async Task Empty_Endpoint_Scopes_Should_Be_Denied_By_Real_Middleware()
+    {
+        await using var db = BuildDbContext();
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var clock = new FakeClock(DateTime.UtcNow);
+        var tokenService = new IntegrationTokenService(db);
+        const string plainToken = "sk_test_without_endpoint_scope";
+
+        db.IntegrationTokens.Add(new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "without-endpoint-scope",
+            TokenHash = tokenService.ComputeSha256(plainToken),
+            Estado = EstadoTokenIntegracion.Activo,
+            PermisoLectura = true,
+            EndpointScopesJson = "[]",
+            UsuarioCreadorId = Guid.NewGuid()
+        });
+        await db.SaveChangesAsync();
+
+        var nextCalled = false;
+        var middleware = new IntegrationAuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            cache,
+            clock);
+
+        var statusCode = await InvokeWithTokenAsync(middleware, db, tokenService, plainToken, CancellationToken.None);
+
+        statusCode.Should().Be(StatusCodes.Status403Forbidden);
+        nextCalled.Should().BeFalse();
+    }
+
     private static async Task<int> InvokeWithTokenAsync(
         IntegrationAuthMiddleware middleware,
         AppDbContext db,

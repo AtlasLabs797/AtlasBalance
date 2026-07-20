@@ -3,6 +3,7 @@ using AtlasBalance.Watchdog.Models;
 using AtlasBalance.Watchdog.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -15,8 +16,10 @@ public sealed class WatchdogOperationsServiceTests
         var root = CreateTempDirectory();
         var updateRoot = Path.Combine(root, "updates");
         var packagePath = Path.Combine(updateRoot, "V-99.00-win-x64");
+        var zipPath = Path.Combine(updateRoot, "V-99.00-win-x64.zip");
         var installPath = Path.Combine(root, "install");
         CreateReleasePackage(packagePath, "V-99.00");
+        var publicKeyPem = CreateSignedZip(zipPath);
         Directory.CreateDirectory(installPath);
 
         var staleFile = Path.Combine(installPath, "api", "old.dll");
@@ -30,9 +33,9 @@ public sealed class WatchdogOperationsServiceTests
         await File.WriteAllTextAsync(Path.Combine(installPath, "atlas-balance.runtime.json"), """{"Version":"V-01.09"}""");
 
         var stateStore = new FakeWatchdogStateStore();
-        var service = CreateService(stateStore, updateRoot, installPath);
+        var service = CreateServiceWithKey(stateStore, updateRoot, installPath, publicKeyPem);
 
-        var accepted = await service.StartUpdateAsync(packagePath, installPath, null, CancellationToken.None);
+        var accepted = await service.StartUpdateAsync(packagePath, installPath, zipPath, CancellationToken.None);
         var finalState = await stateStore.WaitForCompletionAsync();
         var updatedApi = await File.ReadAllTextAsync(Path.Combine(installPath, "api", "AtlasBalance.API.exe"));
         var updatedWatchdog = await File.ReadAllTextAsync(Path.Combine(installPath, "watchdog", "AtlasBalance.Watchdog.exe"));
@@ -232,6 +235,15 @@ public sealed class WatchdogOperationsServiceTests
         return ms.ToArray();
     }
 
+    private static string CreateSignedZip(string zipPath)
+    {
+        var bytes = BuildMinimalZip();
+        File.WriteAllBytes(zipPath, bytes);
+        using var rsa = RSA.Create(2048);
+        File.WriteAllBytes($"{zipPath}.sig", rsa.SignData(bytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
+        return rsa.ExportSubjectPublicKeyInfoPem();
+    }
+
     private static WatchdogOperationsService CreateService(
         FakeWatchdogStateStore stateStore,
         string? updateSourceRoot = null,
@@ -309,6 +321,61 @@ public sealed class WatchdogOperationsServiceTests
             }
 
             return await _completion.Task;
+        }
+    }
+
+    [Fact]
+    public async Task StartUpdateAsync_Should_Reject_Missing_Package_Zip_Path()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var updateRoot = Path.Combine(root, "updates");
+            var packageRoot = Path.Combine(updateRoot, "V-99.00-win-x64");
+            var installPath = Path.Combine(root, "install");
+            CreateReleasePackage(packageRoot, "V-99.00");
+            Directory.CreateDirectory(installPath);
+
+            var service = CreateServiceWithKey(
+                new FakeWatchdogStateStore(),
+                updateRoot,
+                installPath,
+                publicKeyPem: "not-used-when-path-is-missing");
+
+            var accepted = await service.StartUpdateAsync(packageRoot, installPath, null, CancellationToken.None);
+
+            accepted.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task StartUpdateAsync_Should_Reject_Missing_Public_Key()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var updateRoot = Path.Combine(root, "updates");
+            var packageRoot = Path.Combine(updateRoot, "V-99.00-win-x64");
+            var zipPath = Path.Combine(updateRoot, "V-99.00-win-x64.zip");
+            var installPath = Path.Combine(root, "install");
+            CreateReleasePackage(packageRoot, "V-99.00");
+            Directory.CreateDirectory(installPath);
+            File.WriteAllBytes(zipPath, BuildMinimalZip());
+            File.WriteAllBytes($"{zipPath}.sig", [1, 2, 3]);
+
+            var service = CreateService(new FakeWatchdogStateStore(), updateRoot, installPath);
+
+            var accepted = await service.StartUpdateAsync(packageRoot, installPath, zipPath, CancellationToken.None);
+
+            accepted.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
         }
     }
 }

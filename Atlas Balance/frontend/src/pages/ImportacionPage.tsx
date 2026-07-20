@@ -13,6 +13,10 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import {
+  buildConfirmImportacionLoteRequest,
+  buildCreateImportacionLoteRequest,
+} from '@/utils/importacionRequest';
 import type {
   ImportConfirmResult,
   ImportContextoResponse,
@@ -190,6 +194,8 @@ export default function ImportacionPage() {
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const createIdempotencyKeyRef = useRef(crypto.randomUUID());
+  const confirmIdempotencyKeyRef = useRef(crypto.randomUUID());
   const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [closeAttempted, setCloseAttempted] = useState(false);
   const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
@@ -230,10 +236,7 @@ export default function ImportacionPage() {
         // existe o falla, se cae a las divisas presentes en las cuentas
         // cargadas para no bloquear al operador.
         try {
-          const { data: monedasResp } = await api.get<{ data?: { codigo: string }[] } | { codigos?: string[] }>(
-            '/divisas',
-            { params: { activas: true, pageSize: 500 } }
-          );
+          const { data: monedasResp } = await api.get<{ codigos?: string[] }>('/cuentas/divisas-activas');
           const payload: { codigo?: string }[] | undefined = (() => {
             if (!monedasResp || typeof monedasResp !== 'object') return undefined;
             if ('data' in monedasResp && Array.isArray(monedasResp.data)) return monedasResp.data;
@@ -423,6 +426,10 @@ export default function ImportacionPage() {
   }, [autoCloseOnSuccess, cuentaId, importAlreadyConfirmed, isEmbedded]);
 
   const resetValidationState = () => {
+    // Una edicion crea una operacion distinta. Conservamos la clave solo
+    // para reintentar exactamente la misma peticion tras un timeout.
+    createIdempotencyKeyRef.current = crypto.randomUUID();
+    confirmIdempotencyKeyRef.current = crypto.randomUUID();
     setValidacion(null);
     setCurrentLote(null);
     setAcceptWarnings(false);
@@ -475,23 +482,16 @@ export default function ImportacionPage() {
     setConfirmResult(null);
 
     try {
-      // V-02.06 (PR F1): la creacion/validacion del lote puede tardar
-      // minutos en archivos grandes (parseo + validacion de filas + DB).
-      // Override a 5 min; el resto de llamadas conserva el timeout
-      // global de 15s de `services/api.ts`.
-      const { data } = await api.post<ImportacionLoteDetalle>('/importacion/lotes', {
-        cuenta_id: cuentaId,
-        raw_data: rawData,
-        separador: separator,
+      const request = buildCreateImportacionLoteRequest({
+        cuentaId,
+        rawData,
+        separator,
         mapeo: selectedMapeo,
-        tipo_origen: 'PEGADO',
-        // V-02.06 (HIGH-1, bug 18): envia la divisa declarada por el operador.
-        // Si no se envia, el backend asume la de la cuenta y la validacion
-        // contra pegados accidentales queda anulada. Se envia aunque el
-        // selector coincida con la cuenta para que el backend pueda
-        // comparar y reportar `divisa_mismatch` cuando difieran.
-        divisa_esperada: divisaEsperada || selectedCuenta?.divisa || null,
-      }, { timeout: 300_000 });
+        divisaEsperada,
+        divisaCuenta: selectedCuenta?.divisa,
+        idempotencyKey: createIdempotencyKeyRef.current,
+      });
+      const { data } = await api.post<ImportacionLoteDetalle>(request.url, request.body, request.config);
 
       setCurrentLote(data.lote);
       setValidacion(data.validacion);
@@ -544,13 +544,14 @@ export default function ImportacionPage() {
     setSuccess(null);
 
     try {
-      // V-02.06 (PR F1): confirmacion del lote ejecuta insercion masiva
-      // + conciliacion. Override a 5 min.
-      const { data } = await api.post<ImportConfirmResult>(`/importacion/lotes/${currentLote.id}/confirmar`, {
-        filas_a_importar: selectedRows,
-        acepta_advertencias: acceptWarnings,
-        force_confirm_divisa_mismatch: forceConfirmDivisaMismatch,
-      }, { timeout: 300_000 });
+      const request = buildConfirmImportacionLoteRequest({
+        loteId: currentLote.id,
+        filasAImportar: selectedRows,
+        aceptaAdvertencias: acceptWarnings,
+        forceConfirmDivisaMismatch,
+        idempotencyKey: confirmIdempotencyKeyRef.current,
+      });
+      const { data } = await api.post<ImportConfirmResult>(request.url, request.body, request.config);
 
       setConfirmResult(data);
       setSuccess(`Importación completada: ${data.filas_importadas} filas importadas.`);
@@ -577,6 +578,8 @@ export default function ImportacionPage() {
     setError(null);
     setStep(1);
     setActiveTab('nueva');
+    createIdempotencyKeyRef.current = crypto.randomUUID();
+    confirmIdempotencyKeyRef.current = crypto.randomUUID();
     // V-02.06 (HIGH-1, bug 18): al iniciar una nueva importacion se
     // reinicia el selector de divisa a la divisa de la cuenta actual.
     setDivisaEsperada(selectedCuenta?.divisa ?? '');

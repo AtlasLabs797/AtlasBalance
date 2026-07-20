@@ -137,6 +137,28 @@ public sealed class CsrfMiddlewareTests
         nextCalled.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task InvokeAsync_Should_Accept_Standard_Base64_Cookie_With_Plus_Slash_And_Padding()
+    {
+        var nextCalled = false;
+        var middleware = new CsrfMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            NullLogger<CsrfMiddleware>.Instance);
+        var token = Convert.ToBase64String(Enumerable.Repeat((byte)0xfb, 32).ToArray());
+        token.Should().Contain("+").And.Contain("/").And.EndWith("=");
+        var context = BuildContext("/api/usuarios", "POST", userAgent: "Mozilla/5.0");
+        context.Request.Headers.Append("Cookie", $"__Host-atlas-csrf-token={token}");
+        context.Request.Headers.Append("X-CSRF-Token", token);
+
+        await middleware.InvokeAsync(context, new CsrfService());
+
+        nextCalled.Should().BeTrue();
+    }
+
     private static DefaultHttpContext BuildContext(string path, string method, string userAgent)
     {
         var context = new DefaultHttpContext();

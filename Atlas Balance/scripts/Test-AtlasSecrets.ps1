@@ -12,24 +12,19 @@ $excludedSegmentNames = @(
     "node_modules",
     "bin",
     "obj",
-    "Atlas Balance Release",
-    "tools",
-    "pgdata"
+    "Atlas Balance Release"
 )
 
 # Regex de deteccion de secretos. Se mantiene como en la version previa.
 $patterns = @(
     @{ Name = "Atlas/OpenAI/OpenRouter token"; Regex = '(sk_atlas_balance_[A-Za-z0-9_-]{32,}|sk-or-v1-[A-Za-z0-9_-]{32,}|sk-proj-[A-Za-z0-9_-]{32,}|sk-[A-Za-z0-9_-]{48,})' },
-    @{ Name = "JWT or shared secret assignment"; Regex = '(JwtSettings__Secret|WatchdogSettings__SharedSecret|RlsContext__Secret|ATLAS_[A-Z0-9_]*SECRET)[^`r`n]{0,80}[:=][^`r`n]{12,}' },
+    @{ Name = "JWT or shared secret assignment"; Regex = '(JwtSettings__Secret|WatchdogSettings__SharedSecret|RlsContext__Secret|ATLAS_[A-Z0-9_]*SECRET)[^\r\n]{0,80}[:=][^\r\n]{12,}' },
     @{ Name = "Private key"; Regex = '-----BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY-----' },
-    @{ Name = "Connection string with password"; Regex = '(Host|Server)=.+;(Password|Pwd)=(?!\$|X{2,}\b|test\b|x\b|<)[^;`r`n]{12,}' }
+    @{ Name = "Connection string with password"; Regex = '(Host|Server)=[^;\r\n]+;(?:[^;\r\n]+;)*(Password|Pwd)=(?!\$|X{2,}\b|test\b|x\b|<|\.\.\.)[^;\r\n]{12,}' }
 )
 
 $allowedTemplateSuffixes = @(".template", ".example", ".sample")
 $hits = New-Object System.Collections.Generic.List[string]
-
-# Separadores validos para partir rutas (Windows + Linux).
-$sepChars = @([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
 
 function Split-PathSegments {
     param([string]$Path)
@@ -38,20 +33,8 @@ function Split-PathSegments {
         return @()
     }
 
-    # Normalizar separadores para que '/' y '\' se traten igual.
-    $normalized = $Path.Replace([IO.Path]::AltDirectorySeparatorChar, [IO.Path]::DirectorySeparatorChar)
-
-    # Quitar la raiz (letra de unidad Windows o '/') antes de partir por segmentos.
-    $qualifier = [IO.Path]::GetPathRoot($normalized)
-    if ($qualifier -and $normalized.StartsWith($qualifier, [StringComparison]::OrdinalIgnoreCase)) {
-        $normalized = $normalized.Substring($qualifier.Length)
-    }
-
-    if ([string]::IsNullOrEmpty($normalized)) {
-        return @()
-    }
-
-    $raw = $normalized.Split([IO.Path]::DirectorySeparatorChar, [StringSplitOptions]::RemoveEmptyEntries)
+    # [\\/] funciona con rutas Windows, Linux y rutas serializadas por CI.
+    $raw = [regex]::Split($Path, '[\\/]+')
     $segments = @()
     foreach ($segment in $raw) {
         if ($segment -in @('.', '..')) { continue }
@@ -71,7 +54,11 @@ function Test-PathExcluded {
         return $false
     }
 
-    $segments = Split-PathSegments -Path $FullPath
+    $relative = Get-RelativeDisplayPath -FullPath $FullPath -RootPath $RootPath
+    if ([IO.Path]::IsPathRooted($relative) -or $relative -eq '..' -or $relative -match '^\.\.[\\/]') {
+        return $false
+    }
+    $segments = Split-PathSegments -Path $relative
     foreach ($segment in $segments) {
         foreach ($excluded in $ExcludedSegmentNames) {
             if ([string]::Equals($segment, $excluded, [StringComparison]::OrdinalIgnoreCase)) {
@@ -93,16 +80,17 @@ function Get-RelativeDisplayPath {
         return ''
     }
 
-    $normalizedFull = $FullPath.Replace([IO.Path]::AltDirectorySeparatorChar, [IO.Path]::DirectorySeparatorChar)
-    $normalizedRoot = $RootPath.Replace([IO.Path]::AltDirectorySeparatorChar, [IO.Path]::DirectorySeparatorChar)
-    $trimmedRoot = $normalizedRoot.TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $separator = [string][IO.Path]::DirectorySeparatorChar
+    $normalizedRoot = [regex]::Replace($RootPath, '[\\/]+', $separator).TrimEnd([char]$separator)
+    $normalizedFull = [regex]::Replace($FullPath, '[\\/]+', $separator)
 
-    if ($normalizedFull.StartsWith($trimmedRoot, [StringComparison]::OrdinalIgnoreCase)) {
-        $relative = $normalizedFull.Substring($trimmedRoot.Length).TrimStart([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-        if ($relative.Length -gt 0) {
-            return $relative
-        }
+    if ([string]::Equals($normalizedFull, $normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) {
         return $normalizedFull
+    }
+
+    $rootPrefix = $normalizedRoot + $separator
+    if ($normalizedFull.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        return $normalizedFull.Substring($rootPrefix.Length)
     }
 
     return $normalizedFull
@@ -112,7 +100,9 @@ function Get-AtlasScanFiles {
     param(
         [string]$StartPath,
         [string]$RootPath,
-        [string[]]$ExcludedSegmentNames
+        [string[]]$ExcludedSegmentNames,
+        [System.Diagnostics.Stopwatch]$Stopwatch,
+        [int]$MaxSeconds
     )
 
     $stack = New-Object 'System.Collections.Generic.Stack[string]'
@@ -120,6 +110,9 @@ function Get-AtlasScanFiles {
     $collected = New-Object 'System.Collections.Generic.List[object]'
 
     while ($stack.Count -gt 0) {
+        if ($Stopwatch.Elapsed.TotalSeconds -gt $MaxSeconds) {
+            throw "Scanner abortado por timeout (>$MaxSeconds s) durante el barrido de archivos."
+        }
         $current = $stack.Pop()
         Get-ChildItem -LiteralPath $current -Force -ErrorAction SilentlyContinue | ForEach-Object {
             $path = $_.FullName
@@ -164,7 +157,7 @@ try {
     }
 
     foreach ($scanRoot in $recursiveScanRoots) {
-        $collected = Get-AtlasScanFiles -StartPath $scanRoot -RootPath $rootPath -ExcludedSegmentNames $excludedSegmentNames
+        $collected = Get-AtlasScanFiles -StartPath $scanRoot -RootPath $rootPath -ExcludedSegmentNames $excludedSegmentNames -Stopwatch $stopwatch -MaxSeconds $maxSeconds
         foreach ($item in $collected) {
             $files.Add($item)
         }
@@ -177,8 +170,7 @@ try {
             $path = $_.FullName
 
             if ($stopwatch.Elapsed.TotalSeconds -gt $maxSeconds) {
-                Write-Warning "Scanner abortado por timeout (>$maxSeconds s) durante el barrido de archivos."
-                return
+                throw "Scanner abortado por timeout (>$maxSeconds s) durante el analisis de archivos."
             }
 
             if ($seen.ContainsKey($path)) { return }

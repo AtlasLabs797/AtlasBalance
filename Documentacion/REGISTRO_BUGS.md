@@ -31,7 +31,9 @@
   alcance de identidad se difiere explicitamente para evitar romper
   autenticacion.
 
-### 2026-07-16 - V-02.06 - AppDbContextModelSnapshot desalineado
+## Cerrados en codigo con gate externo
+
+### 2026-07-16 - V-02.06 - Cerrado - AppDbContextModelSnapshot desalineado
 
 - **Contexto:** `tests/AtlasBalance.API.Tests/MigrationDiscoveryTests` y las
   migraciones V-02.05 confirman que las migraciones se descubren bien, pero
@@ -40,16 +42,13 @@
   `RevisionExtractoEstado` aunque el modelo actual los declara.
 - **Causa raiz:** las migraciones V-02.05 que anadieron esas columnas
   fueron manuscritas-SQL (sin scaffold EF) y no se reconcilio el snapshot.
-- **Pendiente para V-02.07:**
-  - Reconciliar el snapshot manualmente o regenerar el binario EF
-    correspondiente alineado con las columnas reales.
-  - Verificar que `dotnet ef migrations script` no recrea las columnas ya
-    presentes.
-  - Confirmar con un test runtime que `db.Database.Migrate()` sobre una
-    base vacia aplica el conjunto completo de migraciones incluyendo la
-    nueva `20260716120000_HardenFinancialV0202Rls`.
-- **Estado:** abierto. Por eso la migracion `HardenFinancialV0202Rls` es
-  manuscrita-SQL (mismo patron que las V-02.05) y no usa scaffold EF.
+- **Solucion:** el snapshot se reconcilio con soft-delete, FK, indices,
+  constraints, operaciones de backup e idempotencia de importacion.
+- **Estado:** cerrado en codigo y cubierto por discovery/model tests. La
+  aplicacion completa desde una base vacia sigue dentro del gate externo
+  PostgreSQL/Testcontainers de V-02.06.
+
+## Abiertos
 
 ### 2026-07-16 - V-02.06 - IMPORTACION_LOTES sin soft-delete
 
@@ -76,6 +75,11 @@
   - Falta validacion real en Windows instalacion reemplazando el Watchdog vivo mediante el helper externo.
 - Estado: abierto. GitHub `latest` ya apunta a `V-01.09-win-x64`; esto solo bloquea vender el upgrade desde cualquier version antigua como 100% one-click.
 
+## Auditoria F1-F5 de V-02.06
+
+Los hallazgos siguientes estan cerrados en codigo salvo que su estado indique
+un gate externo pendiente. Se conservan juntos para trazabilidad del plan.
+
 ### 2026-07-20 - V-02.06 - Auditoria automatica expone Configuracion.Valor en DetallesJson
 
 - Contexto: el interceptor `AuditSaveChangesInterceptor` serializa las
@@ -90,15 +94,16 @@
   `watchdog_shared_secret`); ademas extender la redaccion a jobs/setters
   para que `SetContextoAuditoria` siga siendo valido, y a jobs sin
   HttpContext.
-- Estado: abierto. Resolucion aplicada en este pase (PR F1): helper
-  `ShouldRedactConfiguracionValor` + lista `ClavesConfigSecretas`. Pendiente
-  la limpieza historica de filas `AUDITORIAS` con secretos en JSON;
-  recomendado script AD-HOC fuera de la release, no documentado aqui.
+- Estado: cerrado en codigo. El interceptor redacta cuando el estado anterior
+  o actual es secreto y la migracion irreversible
+  `20260720120000_RedactHistoricalConfigurationAudits` limpia solo las claves
+  sensibles historicas, sin imprimir valores ni destruir auditoria no secreta.
+  Aplicacion real pendiente del gate PostgreSQL de release.
 
 ### 2026-07-20 - V-02.06 - Parser CSRF frontend rechaza Base64 estandar
 
 - Contexto: `CsrfService.GenerateToken` emite `Convert.ToBase64String(32 bytes)`,
-  lo que SIEMPRE termina en `=` y puede contener `+` o `/`. El parser
+  lo que puede terminar en `=` y contener `+` o `/`. El parser
   `getCsrfTokenFromCookie` validaba contra `^[A-Za-z0-9_-]+$` (Base64URL sin
   padding), devolviendo `null` para cualquier cookie real.
 - Impacto: tras un reload, `csrfToken` queda `null` y las mutaciones envian
@@ -106,7 +111,8 @@
 - Resolucion aplicada en PR F1: regex cambiada a Base64 estandar RFC 4648 §4
   y `decodeURIComponent` envuelto en try/catch. Pendiente convidar a la
   documentacion V-02.05 (LOW-FE-4) que decia Base64URL.
-- Estado: cerrado en codigo; documentacion pendiente.
+- Estado: cerrado en codigo y documentacion; incluye regresiones con `+`,
+  `/`, `=` y reload.
 
 ### 2026-07-20 - V-02.06 - Estados de conciliacion chocan contra CHECK de PostgreSQL
 
@@ -135,11 +141,10 @@
 - Impacto: denegacion por defecto del middleware derrotada: un admin que
   desmarca todas las casillas, o un cliente API que envia `scopes: []`,
   recibe el acceso maximo en lugar de cero.
-- Resolucion aplicada en PR F1: `NormalizeEndpointScopes` preserva `[]`
-  como lista vacia y rechaza scopes desconocidos con 400 (pendiente
-  implementar; placeholder implementado en este pase). Pendiente test
-  regresion `Crear_Con_Scopes_Vacios` y `Actualizar_Con_Scopes_Vacios`.
-- Estado: codigo corregido; tests regresivos pendientes.
+- Resolucion aplicada: `NormalizeEndpointScopes` preserva `[]` y el controller
+  rechaza scopes desconocidos con 400. Tests de controller y middleware real
+  prueban cero acceso para la lista vacia.
+- Estado: cerrado; incluido en el bloque backend 120/120.
 
 ### 2026-07-20 - V-02.06 - Scanner de secretos no portable a Ubuntu
 
@@ -152,8 +157,8 @@
 - Resolucion aplicada en PR F5: exclusion por segmentos via
   `Split-PathSegments` que normaliza ambos separadores; stopwatch + timeout
   duro de 60 s; resumen `Scanner: N archivos analizados, M excluidos`.
-- Verificacion: el script reescrito corre en Windows PowerShell 5.1 y pasa
-  0/0 hallazgos contra el repo. Pendiente probar el equivalente en
+- Verificacion: el script reescrito corre en Windows PowerShell 5.1, sus
+  fixtures pasan y analiza 475 archivos sin hallazgos. Pendiente probarlo en
   GitHub Actions `ubuntu-24.04` con `pwsh` para confirmar portabilidad
   nativa (este host no tiene `pwsh` instalado).
 - Estado: cerrado en codigo; verificacion CI queda pendiente.
@@ -168,11 +173,12 @@
 - Impacto: pg_dump, descarga+cifrado de Drive o cargas grandes superan los
   15 s. El timeout cancela el token del backend, lo que produce un fallo
   visible aun cuando el proceso siga corriendo.
-- Resolucion aplicada en PR F4: overrides de 600 s para los 3 endpoints de
-  backup y 300 s para los 2 de importacion. Pendiente convertir el modelo
-  a operaciones asincronas (202 + operationId + polling) cuando el Watchdog
-  soporte monitorizacion; fuera del alcance de este pase.
-- Estado: cerrado en codigo; async jobs pendientes.
+- Resolucion aplicada: importacion usa timeout especifico de 300 s e
+  idempotencia; backup manual, import Drive y restore responden 202 con
+  `operation_id` y polling dedicado. Restore correlaciona ese id extremo a
+  extremo con Watchdog para no aceptar un estado global ajeno.
+- Estado: cerrado en codigo y pruebas focalizadas; round-trip Drive real sigue
+  siendo gate de release.
 
 ### 2026-07-20 - V-02.06 - Sources de version no se validaban en CI
 
@@ -223,13 +229,12 @@
   funcion, asi que un usuario con solo `puede_conciliar` o
   `puede_cerrar_conciliacion` pasaba el chequeo de servicio y encontraba
   `InsufficientPrivilege` en RLS.
-- Resolucion aplicada en PR F2: nueva funcion
-  `atlas_security.can_reconcile_cuenta(_by_id)` que respeta
-  pais/titular/cuenta y exige uno de los dos flags. Migracion
-  `20260720090000` reemplaza las policies de las dos tablas con el nuevo
-  predicado para INSERT/UPDATE/DELETE; SELECT sigue exigiendo
-  `can_read_cuenta_by_id`.
-- Estado: codigo corregido; tests PostgreSQL/Testcontainers pendientes.
+- Resolucion aplicada: predicados separados `can_reconcile_*` y
+  `can_close_reconciliation_*`. El scope `reconcile` no puede escribir
+  `resuelta` ni reabrirla; `reconcile-close` solo puede llevar ambas tablas a
+  `resuelta`. No se ensancha `can_write_cuenta_by_id`.
+- Estado: cerrado en codigo; PostgreSQL/Testcontainers sigue como gate para
+  demostrar las policies contra el motor real.
 
 ### 2026-07-20 - V-02.06 - Auditorias automaticas sin UsuarioId
 
@@ -308,20 +313,21 @@
 - Contexto: la creacion y confirmacion de lotes pueden recibir un timeout
   del navegador o de axios (15 s) y disparar reintentos del operador.
   No existe una clave de idempotencia que evite generar filas duplicadas.
-- Pendiente: aceptar `Idempotency-Key` por lote; devolver el mismo `lote_id`
-  en reintentos si la primera llamada persistio. Diferido: requiere
-  migracion para la tabla `IMPORTACION_LOTE_REQUESTS` y DTO adicional.
-- Estado: abierto. Documentado en `Documentacion/Versiones/v-02.06.md`
-  como limite del pase; queda para V-02.07.
+- Resolucion: migracion `20260720140000_AddImportacionIdempotency`, indice
+  unique parcial por usuario/clave, recuperacion de la carrera SELECT+INSERT y
+  replay de confirmacion solo con la misma clave y respuesta persistida.
+- Estado: cerrado en codigo y tests InMemory; carrera PostgreSQL real pendiente
+  del gate Testcontainers.
 
 ### 2026-07-20 - V-02.06 - Backup manual y Drive sin conversion a operaciones asincronas
 
-- Contexto: el timeout hard-cap de 600 s sigue dejando el navegador con
-  una peticion HTTP abierta hasta 10 min por backup manual o restore.
-- Pendiente: responder 202 + operationId; pollear `/watchdog/estado` o un
-  endpoint dedicado `/backups/operations/{id}`. Diferido a V-02.07 por
-  scope.
-- Estado: abierto.
+- Contexto: mantener una peticion HTTP abierta hacia backup/Drive/restore era
+  fragil ante timeouts y reinicios.
+- Resolucion: tabla `BACKUP_OPERATIONS`, jobs Hangfire para manual/Drive,
+  `202 + operation_id`, polling `/backups/operations/{id}` y correlacion
+  Watchdog para restore. La tabla cumple soft-delete, FK, indices y CHECKs.
+- Estado: cerrado en codigo; ejecucion real con pg_dump/Drive/pg_restore queda
+  como gate de release.
 
 ### 2026-05-10 - V-01.06 - Pendientes altos tras auditoria final
 

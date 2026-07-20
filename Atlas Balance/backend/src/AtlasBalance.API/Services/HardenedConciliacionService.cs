@@ -305,7 +305,7 @@ public sealed class HardenedConciliacionService : IConciliacionService
                 c.Id == m.CuentaId &&
                 _dbContext.PermisosUsuario.Any(p =>
                     p.UsuarioId == usuarioId &&
-                    (p.PuedeConciliar || p.PuedeCerrarConciliacion) &&
+                    p.PuedeConciliar &&
                     (p.PaisId == null || p.PaisId == c.PaisId) &&
                     (p.TitularId == null || p.TitularId == c.TitularId) &&
                     (p.CuentaId == null || p.CuentaId == c.Id))));
@@ -328,7 +328,7 @@ public sealed class HardenedConciliacionService : IConciliacionService
 
         var allowed = await _dbContext.PermisosUsuario.AnyAsync(p =>
             p.UsuarioId == usuarioId &&
-            (p.PuedeConciliar || p.PuedeCerrarConciliacion) &&
+            p.PuedeConciliar &&
             (p.PaisId == null || p.PaisId == cuenta.PaisId) &&
             (p.TitularId == null || p.TitularId == cuenta.TitularId) &&
             (p.CuentaId == null || p.CuentaId == cuenta.Id),

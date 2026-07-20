@@ -371,7 +371,10 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         var encryptedPath = Path.Combine(backupRoot, $"drive_import_{stamp}.dump.enc");
         var dumpPath = Path.Combine(backupRoot, $"drive_import_{stamp}.dump");
 
-        await DownloadFileAsync(accessToken, fileId, encryptedPath, cancellationToken);
+        var keepDump = false;
+        try
+        {
+            await DownloadFileAsync(accessToken, fileId, encryptedPath, cancellationToken);
 
         // V-02.06 (PR F3): la verificacion se hace sobre el `.enc` descargado
         // (mismo dominio que el que se almaceno en upload). Antes se comparaba
@@ -390,7 +393,6 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
             var actualHash = await ComputeSha256Async(encryptedPath, cancellationToken);
             if (!string.Equals(actualHash, originalCopy.ChecksumSha256, StringComparison.OrdinalIgnoreCase))
             {
-                TryDelete(encryptedPath);
                 throw new InvalidOperationException(
                     "SHA-256 del archivo cifrado descargado no coincide con el registrado para " + LogScrubber.Scrub(fileId) +
                     " (BackupCloudCopy=" + originalCopy.Id + "). Posible corrupcion o alteracion del archivo en Drive.");
@@ -407,8 +409,6 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         // el que comparar; asi una copia manipulada se rechaza sin tocar el
         // dump plaintext.
         await _encryptionService.DecryptAsync(encryptedPath, dumpPath, cancellationToken);
-        TryDelete(encryptedPath);
-
         var backup = new Backup
         {
             Id = Guid.NewGuid(),
@@ -446,7 +446,17 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
             JsonSerializer.Serialize(new { provider = ProviderName, file_id = fileId, file_name = metadata.Name }),
             cancellationToken);
 
+        keepDump = true;
         return backup;
+        }
+        finally
+        {
+            TryDelete(encryptedPath);
+            if (!keepDump)
+            {
+                TryDelete(dumpPath);
+            }
+        }
     }
 
     private async Task<OAuthConfig> LoadOAuthConfigAsync(CancellationToken cancellationToken)

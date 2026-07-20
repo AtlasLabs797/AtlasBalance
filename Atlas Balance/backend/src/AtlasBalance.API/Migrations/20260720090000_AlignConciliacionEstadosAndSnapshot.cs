@@ -61,6 +61,23 @@ namespace AtlasBalance.API.Migrations
             // 2) CHECK constraints alineados con el codigo del servicio.
             migrationBuilder.Sql(
                 """
+                UPDATE "CONCILIACIONES"
+                SET "estado" = CASE "estado"
+                    WHEN 'descartada' THEN 'excepcion'
+                    WHEN 'cerrada' THEN 'resuelta'
+                    ELSE "estado"
+                END
+                WHERE "estado" IN ('descartada', 'cerrada');
+
+                UPDATE "MOVIMIENTOS_ESPERADOS"
+                SET "estado" = CASE "estado"
+                    WHEN 'satisfecho' THEN 'conciliada'
+                    WHEN 'vencido' THEN 'excepcion'
+                    WHEN 'cancelado' THEN 'resuelta'
+                    ELSE "estado"
+                END
+                WHERE "estado" IN ('satisfecho', 'vencido', 'cancelado');
+
                 ALTER TABLE "CONCILIACIONES"
                     DROP CONSTRAINT IF EXISTS "ck_conciliaciones_estado";
                 ALTER TABLE "CONCILIACIONES"
@@ -82,7 +99,12 @@ namespace AtlasBalance.API.Migrations
                     IF NOT EXISTS (
                         SELECT 1 FROM pg_constraint
                         WHERE conname = 'fk_conciliaciones_deleted_by_id'
+                          AND conrelid = '"CONCILIACIONES"'::regclass
                     ) THEN
+                        UPDATE "CONCILIACIONES" c
+                        SET "deleted_by_id" = NULL
+                        WHERE c."deleted_by_id" IS NOT NULL
+                          AND NOT EXISTS (SELECT 1 FROM "USUARIOS" u WHERE u."id" = c."deleted_by_id");
                         ALTER TABLE "CONCILIACIONES"
                             ADD CONSTRAINT "fk_conciliaciones_deleted_by_id"
                             FOREIGN KEY ("deleted_by_id") REFERENCES "USUARIOS" ("id")
@@ -108,6 +130,7 @@ namespace AtlasBalance.API.Migrations
                     SELECT atlas_security.is_admin_or_system()
                         OR (
                             atlas_security.is_user_mode()
+                            AND current_setting('atlas.request_scope', true) = 'reconcile'
                             AND atlas_security.current_user_id() IS NOT NULL
                             AND EXISTS (
                                 SELECT 1
@@ -116,7 +139,28 @@ namespace AtlasBalance.API.Migrations
                                   AND (p.pais_id IS NULL OR p.pais_id = target_pais_id)
                                   AND (p.cuenta_id IS NULL OR p.cuenta_id = target_cuenta_id)
                                   AND (p.titular_id IS NULL OR p.titular_id = target_titular_id)
-                                  AND (p.puede_conciliar OR p.puede_cerrar_conciliacion)
+                                   AND p.puede_conciliar
+                            )
+                        )
+                $$;
+
+                CREATE OR REPLACE FUNCTION atlas_security.can_close_reconciliation(target_cuenta_id uuid, target_titular_id uuid, target_pais_id uuid)
+                RETURNS boolean
+                LANGUAGE sql
+                STABLE
+                AS $$
+                    SELECT atlas_security.is_admin_or_system()
+                        OR (
+                            atlas_security.is_user_mode()
+                            AND current_setting('atlas.request_scope', true) = 'reconcile-close'
+                            AND atlas_security.current_user_id() IS NOT NULL
+                            AND EXISTS (
+                                SELECT 1 FROM "PERMISOS_USUARIO" p
+                                WHERE p.usuario_id = atlas_security.current_user_id()
+                                  AND (p.pais_id IS NULL OR p.pais_id = target_pais_id)
+                                  AND (p.cuenta_id IS NULL OR p.cuenta_id = target_cuenta_id)
+                                  AND (p.titular_id IS NULL OR p.titular_id = target_titular_id)
+                                  AND p.puede_cerrar_conciliacion
                             )
                         )
                 $$;
@@ -149,15 +193,37 @@ namespace AtlasBalance.API.Migrations
                         )
                 $$;
 
-                ALTER FUNCTION atlas_security.can_reconcile_cuenta(uuid, uuid, uuid) OWNER TO atlas_owner;
-                ALTER FUNCTION atlas_security.can_reconcile_cuenta(uuid, uuid) OWNER TO atlas_owner;
-                ALTER FUNCTION atlas_security.can_reconcile_cuenta_by_id(uuid) OWNER TO atlas_owner;
-                REVOKE ALL ON FUNCTION atlas_security.can_reconcile_cuenta(uuid, uuid, uuid) FROM PUBLIC;
-                REVOKE ALL ON FUNCTION atlas_security.can_reconcile_cuenta(uuid, uuid) FROM PUBLIC;
-                REVOKE ALL ON FUNCTION atlas_security.can_reconcile_cuenta_by_id(uuid) FROM PUBLIC;
-                GRANT EXECUTE ON FUNCTION atlas_security.can_reconcile_cuenta(uuid, uuid, uuid) TO atlas_runtime;
-                GRANT EXECUTE ON FUNCTION atlas_security.can_reconcile_cuenta(uuid, uuid) TO atlas_runtime;
-                GRANT EXECUTE ON FUNCTION atlas_security.can_reconcile_cuenta_by_id(uuid) TO atlas_runtime;
+                CREATE OR REPLACE FUNCTION atlas_security.can_close_reconciliation_by_id(target_cuenta_id uuid)
+                RETURNS boolean
+                LANGUAGE sql
+                STABLE
+                AS $$
+                    SELECT atlas_security.is_admin_or_system()
+                        OR EXISTS (
+                            SELECT 1 FROM "CUENTAS" c
+                            WHERE c.id = target_cuenta_id
+                              AND atlas_security.can_close_reconciliation(c.id, c.titular_id, c.pais_id)
+                        )
+                $$;
+
+                -- Se conserva el EXECUTE predeterminado para PUBLIC, igual que
+                -- en los predicados RLS existentes. Las funciones no conceden
+                -- acceso por si mismas: validan el contexto firmado y permisos.
+                -- Evita acoplar la migracion a un nombre de rol de despliegue.
+
+                DROP POLICY IF EXISTS cuentas_select ON "CUENTAS";
+                CREATE POLICY cuentas_select ON "CUENTAS"
+                    FOR SELECT USING (
+                        atlas_security.is_admin_or_system()
+                        OR (
+                            deleted_at IS NULL
+                            AND (
+                                atlas_security.can_read_cuenta(id, titular_id, pais_id)
+                                OR atlas_security.can_reconcile_cuenta(id, titular_id, pais_id)
+                                OR atlas_security.can_close_reconciliation(id, titular_id, pais_id)
+                            )
+                        )
+                    );
                 """);
 
             // 5) Reescribir policies de CONCILIACIONES y MOVIMIENTOS_ESPERADOS
@@ -174,7 +240,9 @@ namespace AtlasBalance.API.Migrations
                 CREATE POLICY conciliaciones_select ON "CONCILIACIONES"
                     FOR SELECT USING (
                         deleted_at IS NULL
-                        AND atlas_security.can_read_cuenta_by_id(cuenta_id)
+                        AND (atlas_security.can_read_cuenta_by_id(cuenta_id)
+                             OR atlas_security.can_reconcile_cuenta_by_id(cuenta_id)
+                             OR atlas_security.can_close_reconciliation_by_id(cuenta_id))
                     );
                 CREATE POLICY conciliaciones_insert ON "CONCILIACIONES"
                     FOR INSERT WITH CHECK (
@@ -183,10 +251,14 @@ namespace AtlasBalance.API.Migrations
                 CREATE POLICY conciliaciones_update ON "CONCILIACIONES"
                     FOR UPDATE USING (
                         deleted_at IS NULL
-                        AND atlas_security.can_reconcile_cuenta_by_id(cuenta_id)
+                        AND (
+                            (atlas_security.can_reconcile_cuenta_by_id(cuenta_id) AND estado <> 'resuelta')
+                            OR atlas_security.can_close_reconciliation_by_id(cuenta_id)
+                        )
                     )
                     WITH CHECK (
-                        atlas_security.can_reconcile_cuenta_by_id(cuenta_id)
+                        (atlas_security.can_reconcile_cuenta_by_id(cuenta_id) AND estado <> 'resuelta')
+                        OR (atlas_security.can_close_reconciliation_by_id(cuenta_id) AND estado = 'resuelta')
                     );
                 CREATE POLICY conciliaciones_delete ON "CONCILIACIONES"
                     FOR DELETE USING (
@@ -204,7 +276,9 @@ namespace AtlasBalance.API.Migrations
                 CREATE POLICY movimientos_esperados_select ON "MOVIMIENTOS_ESPERADOS"
                     FOR SELECT USING (
                         deleted_at IS NULL
-                        AND atlas_security.can_read_cuenta_by_id(cuenta_id)
+                        AND (atlas_security.can_read_cuenta_by_id(cuenta_id)
+                             OR atlas_security.can_reconcile_cuenta_by_id(cuenta_id)
+                             OR atlas_security.can_close_reconciliation_by_id(cuenta_id))
                     );
                 CREATE POLICY movimientos_esperados_insert ON "MOVIMIENTOS_ESPERADOS"
                     FOR INSERT WITH CHECK (
@@ -213,10 +287,14 @@ namespace AtlasBalance.API.Migrations
                 CREATE POLICY movimientos_esperados_update ON "MOVIMIENTOS_ESPERADOS"
                     FOR UPDATE USING (
                         deleted_at IS NULL
-                        AND atlas_security.can_reconcile_cuenta_by_id(cuenta_id)
+                        AND (
+                            (atlas_security.can_reconcile_cuenta_by_id(cuenta_id) AND estado <> 'resuelta')
+                            OR atlas_security.can_close_reconciliation_by_id(cuenta_id)
+                        )
                     )
                     WITH CHECK (
-                        atlas_security.can_reconcile_cuenta_by_id(cuenta_id)
+                        (atlas_security.can_reconcile_cuenta_by_id(cuenta_id) AND estado <> 'resuelta')
+                        OR (atlas_security.can_close_reconciliation_by_id(cuenta_id) AND estado = 'resuelta')
                     );
                 CREATE POLICY movimientos_esperados_delete ON "MOVIMIENTOS_ESPERADOS"
                     FOR DELETE USING (
@@ -228,7 +306,8 @@ namespace AtlasBalance.API.Migrations
             // (deleted_at IS NULL) por si quedo sin el predicado.
             migrationBuilder.Sql(
                 """
-                CREATE UNIQUE INDEX IF NOT EXISTS "ix_conciliaciones_movimiento_esperado_id_extracto_id"
+                DROP INDEX IF EXISTS "ix_conciliaciones_movimiento_esperado_id_extracto_id";
+                CREATE UNIQUE INDEX "ix_conciliaciones_movimiento_esperado_id_extracto_id"
                 ON "CONCILIACIONES" ("movimiento_esperado_id", "extracto_id")
                 WHERE "deleted_at" IS NULL;
                 """);

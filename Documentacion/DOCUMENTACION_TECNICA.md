@@ -1,5 +1,25 @@
 # Documentacion tecnica
 
+## 2026-07-20 - V-02.06 - Operaciones largas, idempotencia y RLS
+
+- `BACKUP_OPERATIONS` persiste manual/Drive/restore con soft-delete, FK,
+  indices y estados controlados. Los endpoints devuelven 202 y el frontend
+  consulta `/api/backups/operations/{id}`.
+- Restore propaga el mismo `operation_id` al Watchdog y solo acepta el estado
+  que coincide; esto elimina la carrera con un SUCCESS/FAILED global anterior.
+- Creacion y confirmacion de lotes usan `Idempotency-Key`; el indice unique
+  resuelve carreras concurrentes y la confirmacion guarda su respuesta dentro
+  de la misma transaccion que extractos y estado final.
+- RLS diferencia `reconcile` de `reconcile-close`; cerrar solo permite el estado
+  `resuelta` y no amplifica `can_write_cuenta_by_id`.
+- La migracion historica de auditoria redacta exclusivamente configuraciones
+  sensibles o marcadas `EsSecreto`; es irreversible y no expone valores.
+
+Gates locales: suite backend completa sin Testcontainers 389/389,
+frontend unit/tsc/lint/build y scripts OK. PostgreSQL/Testcontainers y
+round-trip Drive/restore siguen obligatorios en CI por Docker local no
+disponible.
+
 ## 2026-07-04 - V-02-04 - Concurrencia del desglose de extractos
 
 ### Que cambio

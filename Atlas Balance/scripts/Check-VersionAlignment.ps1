@@ -1,99 +1,90 @@
 param(
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path,
+    [string]$ExpectedVersion
 )
 
 $ErrorActionPreference = "Stop"
 
-function Resolve-Value {
-    param(
-        [string]$Path,
-        [string]$Pattern
-    )
-    if (-not (Test-Path -LiteralPath $Path)) {
-        Write-Error "No se encuentra el archivo: $Path"
-        exit 2
-    }
-    $content = Get-Content -LiteralPath $Path -Raw
-    $match = [regex]::Match($content, $Pattern)
-    if (-not $match.Success) {
-        Write-Error "No se pudo extraer el patron '$Pattern' de $Path"
-        exit 2
-    }
-    return $match.Groups[1].Value.Trim()
+function Require-Path([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { throw "No se encuentra el archivo: $Path" }
 }
 
-$versionFile       = Join-Path $RepoRoot "Atlas Balance\VERSION"
-$buildPropsPath    = Join-Path $RepoRoot "Atlas Balance\Directory.Build.props"
-$packageJsonPath   = Join-Path $RepoRoot "Atlas Balance\frontend\package.json"
-$seedDataPath      = Join-Path $RepoRoot "Atlas Balance\backend\src\AtlasBalance.API\Data\SeedData.cs"
-$releaseWorkflow   = Join-Path $RepoRoot ".github\workflows\release.yml"
-
-$versionFileValue     = (Get-Content -LiteralPath $versionFile -Raw).Trim()
-$informationalVersion = Resolve-Value -Path $buildPropsPath -Pattern '<InformationalVersion>([^<]+)</InformationalVersion>'
-$appVersion           = Resolve-Value -Path $packageJsonPath -Pattern '"appVersion"\s*:\s*"([^"]+)"'
-$seedAppVersion       = Resolve-Value -Path $seedDataPath -Pattern '\["app_version"\]\s*=\s*\("([^"]+)"'
-
-# V-02.06 (PR F5): default del input `version` en el workflow de release.
-# Recorremos linea por linea para quedarnos con el `default:` que vive
-# dentro del input `version` (no el de `runtime` u otros).
-$releaseDefault = $null
-$expectingVersionDefault = $false
-foreach ($rawLine in (Get-Content -LiteralPath $releaseWorkflow)) {
-    $line = $rawLine.Trim()
-    if ($line -match '^version:\s*$') {
-        $expectingVersionDefault = $true
-        continue
-    }
-    if ($expectingVersionDefault -and $line -match 'default:\s*"([^"]+)"') {
-        $releaseDefault = $matches[1].Trim()
-        break
-    }
-}
-if (-not $releaseDefault) {
-    Write-Error "No se encontro el default del input `version` en $releaseWorkflow"
-    exit 2
+function Normalize-AtlasVersion([string]$Value) {
+    if ($Value -notmatch '^V-(\d{2})[-.](\d{2})$') { throw "Version Atlas invalida: '$Value'" }
+    return "V-$($matches[1]).$($matches[2])"
 }
 
-$expected = "V-02.06"
-$expectedTag = "V-02-06"  # nomenclatura usada por los nombres de paquete en GitHub Releases.
+$productRoot = Join-Path $RepoRoot "Atlas Balance"
+$versionPath = Join-Path $productRoot "VERSION"
+$propsPath = Join-Path $productRoot "Directory.Build.props"
+$packagePath = Join-Path $productRoot "frontend\package.json"
+$lockPath = Join-Path $productRoot "frontend\package-lock.json"
+$seedPath = Join-Path $productRoot "backend\src\AtlasBalance.API\Data\SeedData.cs"
+$releasePath = Join-Path $RepoRoot ".github\workflows\release.yml"
+$buildReleasePath = Join-Path $productRoot "scripts\Build-Release.ps1"
+$installerPath = Join-Path $productRoot "scripts\Instalar-AtlasBalance.ps1"
+$installPath = Join-Path $productRoot "scripts\install.ps1"
+
+@($versionPath, $propsPath, $packagePath, $lockPath, $seedPath, $releasePath, $buildReleasePath, $installerPath, $installPath) |
+    ForEach-Object { Require-Path $_ }
+
+$version = Normalize-AtlasVersion ((Get-Content -LiteralPath $versionPath -Raw).Trim())
+$expected = if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) { $version } else { Normalize-AtlasVersion $ExpectedVersion }
+$semantic = if ($expected -match '^V-(\d{2})\.(\d{2})$') { "$( [int]$matches[1] ).$( [int]$matches[2] ).0" } else { throw "Version inesperada" }
+$fileSemantic = "$semantic.0"
+$tagVersion = $expected.Replace('.', '-')
+
+[xml]$props = Get-Content -LiteralPath $propsPath -Raw
+$package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
+$lockContent = Get-Content -LiteralPath $lockPath -Raw
+$seed = Get-Content -LiteralPath $seedPath -Raw
+$release = Get-Content -LiteralPath $releasePath -Raw
+$buildRelease = Get-Content -LiteralPath $buildReleasePath -Raw
+$installer = Get-Content -LiteralPath $installerPath -Raw
+$install = Get-Content -LiteralPath $installPath -Raw
+
+$releaseDefaultMatch = [regex]::Match($release, '(?ms)^\s{6}version:\s*.*?^\s{8}default:\s*"([^"]+)"')
+$seedMatch = [regex]::Match($seed, '\["app_version"\]\s*=\s*\("([^"]+)"')
+$buildMatch = [regex]::Match($buildRelease, '\[string\]\$Version\s*=\s*"([^"]+)"')
+$installerMatch = [regex]::Match($installer, '\$AppVersion\s*=\s*"([^"]+)"')
+$installMatch = [regex]::Match($install, 'AtlasBalance-(V-\d{2}[-.]\d{2})-win-x64\.zip')
+$lockVersionMatch = [regex]::Match($lockContent, '(?m)^\s{2}"version":\s*"([^"]+)"')
+$lockRootVersionMatch = [regex]::Match($lockContent, '(?s)"packages"\s*:\s*\{\s*""\s*:\s*\{.*?"version"\s*:\s*"([^"]+)"')
+if (-not $releaseDefaultMatch.Success -or -not $seedMatch.Success -or -not $buildMatch.Success -or -not $installerMatch.Success -or -not $installMatch.Success -or -not $lockVersionMatch.Success -or -not $lockRootVersionMatch.Success) {
+    throw "No se pudieron extraer todas las fuentes de version."
+}
+
+$values = [ordered]@{
+    'VERSION' = $version
+    'InformationalVersion' = [string]$props.Project.PropertyGroup.InformationalVersion
+    'package.appVersion' = [string]$package.appVersion
+    'SeedData.app_version' = $seedMatch.Groups[1].Value
+    'release.default' = Normalize-AtlasVersion $releaseDefaultMatch.Groups[1].Value
+    'Build-Release.default' = Normalize-AtlasVersion $buildMatch.Groups[1].Value
+    'Instalar.default' = Normalize-AtlasVersion $installerMatch.Groups[1].Value
+    'install.default' = Normalize-AtlasVersion $installMatch.Groups[1].Value
+}
+$semanticValues = [ordered]@{
+    'Directory.Build.props Version' = [string]$props.Project.PropertyGroup.Version
+    'Directory.Build.props AssemblyVersion' = [string]$props.Project.PropertyGroup.AssemblyVersion
+    'Directory.Build.props FileVersion' = [string]$props.Project.PropertyGroup.FileVersion
+    'package.json version' = [string]$package.version
+    'package-lock.json version' = $lockVersionMatch.Groups[1].Value
+    'package-lock root version' = $lockRootVersionMatch.Groups[1].Value
+}
+
 $issues = New-Object System.Collections.Generic.List[string]
-
-if ($versionFileValue -ne $expected) {
-    $issues.Add("Atlas Balance/VERSION = '$versionFileValue' (esperado '$expected')")
+foreach ($entry in $values.GetEnumerator()) {
+    if ((Normalize-AtlasVersion ([string]$entry.Value)) -ne $expected) { $issues.Add("$($entry.Key) = '$($entry.Value)' (esperado '$expected')") }
 }
-if ($informationalVersion -ne $expected) {
-    $issues.Add("Directory.Build.props InformationalVersion = '$informationalVersion' (esperado '$expected')")
+foreach ($entry in $semanticValues.GetEnumerator()) {
+    $expectedValue = if ($entry.Key -match 'AssemblyVersion|FileVersion') { $fileSemantic } else { $semantic }
+    if ([string]$entry.Value -ne $expectedValue) { $issues.Add("$($entry.Key) = '$($entry.Value)' (esperado '$expectedValue')") }
 }
-if ($appVersion -ne $expected) {
-    $issues.Add("frontend/package.json appVersion = '$appVersion' (esperado '$expected')")
-}
-if ($seedAppVersion -ne $expected) {
-    $issues.Add("SeedData.cs app_version = '$seedAppVersion' (esperado '$expected')")
-}
-if ($releaseDefault -ne $expectedTag) {
-    $issues.Add("release.yml default version = '$releaseDefault' (esperado '$expectedTag')")
-}
-
-# Comprobacion cruzada de coherencia: si alguien cambia `V-02.06` por `V-02-07`
-# en una de las fuentes, debe cambiarlo en todas (incluido el tag del paquete).
-$expectedBase = "0206"
-$actualBases = @($versionFileValue, $informationalVersion, $appVersion, $seedAppVersion, $releaseDefault) |
-    ForEach-Object { ($_ -replace 'V-', '' -replace '[-.]', '') }
-$coherent = ($actualBases | Sort-Object -Unique) -join(',')
-if ($coherent -ne $expectedBase) {
-    $issues.Add("Las bases de version no convergen en $expectedBase. Valores unicos: $coherent")
-}
+if ($releaseDefaultMatch.Groups[1].Value -ne $tagVersion) { $issues.Add("release.default debe usar '$tagVersion'") }
 
 if ($issues.Count -gt 0) {
-    Write-Host "Verificacion de alineacion de version:"
-    Write-Host "  VERSION ........................ $versionFileValue"
-    Write-Host "  InformationalVersion ........... $informationalVersion"
-    Write-Host "  appVersion (frontend) .......... $appVersion"
-    Write-Host "  SeedData app_version ........... $seedAppVersion"
-    Write-Host "  release.yml default ............ $releaseDefault"
-    $msg = "Las siguientes fuentes no coinciden con ${expected}:`n - " + ($issues -join "`n - ")
-    Write-Error $msg
-    exit 1
+    throw "Fuentes de version desalineadas:`n - $($issues -join "`n - ")"
 }
 
-Write-Host "Alineacion de version OK: todas las fuentes declaran '${expected}'."
+Write-Host "Alineacion de version OK: $expected ($semantic)."

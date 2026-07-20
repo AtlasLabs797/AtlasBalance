@@ -8,6 +8,36 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-20 - V-02.06 - Verificacion adversarial y cierre tecnico F1-F5
+
+**Version:** V-02.06
+
+**Trabajo realizado:** auditoria con subagentes terra/sol y comprobacion final
+independiente. Se corrigieron factory DI/AsyncLocal/CSRF/scopes/auditoria,
+policies RLS separadas, snapshot y migraciones, idempotencia/atomicidad de
+importacion, jobs 202 de backup/Drive/restore, correlacion Watchdog, firma RSA
+streaming, cleanup, scanner portable, tests frontend y gate de version.
+
+**Archivos tocados:** backend API/Watchdog, migraciones `20260720090000`,
+`20260720120000`, `20260720130000`, `20260720140000`, snapshot, tests backend,
+frontend Importacion/Backups/App y helpers/tests, workflows CI/release, scripts
+de scanner/version, `.gitignore` y documentacion V-02.06.
+
+**Comandos y resultado:**
+
+- `dotnet test ... --filter <F1-F5>`: 120/120 OK.
+- recheck `ImportacionServiceTests|ManualProcessResponseTests`: 56/56 OK.
+- suite backend completa sin las cuatro clases Testcontainers: 389/389 OK.
+- regresiones MFA/configuracion tras corregir el diff de claves nuevas: 8/8 OK.
+- `npm.cmd run test:unit`: 3/3 OK; `tsc --noEmit`, lint y build Vite: OK.
+- `Check-VersionAlignment.ps1`, fixtures/scanner y `git diff --check`: OK.
+- Docker/Testcontainers: bloqueado por ACL/config y `docker_engine` denegado.
+
+**Pendientes:** ejecutar en CI PostgreSQL/Testcontainers, round-trip Drive y
+restore real, auditoria NuGet con red disponible y matriz Ubuntu/Windows. Hasta
+entonces V-02.06 no se considera publicable.
+
+---
 ## 2026-07-20 - V-02.06 - Cierre de hallazgos del PR anterior F1-F5
 
 **Version:** V-02.06
@@ -528,10 +558,9 @@ Frontend:
   incluidos en este alcance.
 
 **Pendientes al cierre de este bloque:**
-- F3 admin: ACL `bin/obj`, finalize-pending reescrito, arranque de
-  Docker Desktop y `Start-WatchdogUpdate.ps1`. Requiere consola elevada
-  en un host con permisos admin. Documentado en
-  `LOG_ERRORES_INCIDENCIAS.md` con scripts a ejecutar.
+- Nota historica F3: `Start-WatchdogUpdate.ps1` fue retirado y no debe
+  ejecutarse ni tratarse como ruta soportada. La validacion pendiente se hace
+  mediante el endpoint Watchdog firmado y el flujo normal de actualizacion.
 - F4: suite Testcontainers completa, QA visual Playwright sobre bundle
   50k filas, `npm.cmd audit`, `dotnet list package --vulnerable`.
   Depende de Docker Desktop arriba.

@@ -8,6 +8,22 @@ permissions:
   contents: read
 
 jobs:
+  policy-gates:
+    name: Policy gates (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Test secret scanner fixtures
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.Tests.ps1" -RepoRoot "."'
+      - name: Verify version alignment
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1"'
+
   verify:
     name: Build, test, and audit
     runs-on: ubuntu-24.04
@@ -75,6 +91,10 @@ jobs:
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"
         run: npm run lint
+
+      - name: Test frontend import request contracts
+        working-directory: "Atlas Balance/frontend"
+        run: npm run test:unit
 
       - name: Build frontend
         working-directory: "Atlas Balance/frontend"

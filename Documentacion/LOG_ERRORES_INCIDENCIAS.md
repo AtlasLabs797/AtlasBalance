@@ -1,5 +1,27 @@
 # Log de errores e incidencias
 
+## 2026-07-20 - V-02.06 - Verificacion orquestada F1-F5 (CODIGO CERRADO, GATES EXTERNOS ABIERTOS)
+
+- Causa: el commit `65dde0c5` declaraba cerrados 17 hallazgos, pero faltaban
+  pruebas y quedaban defectos reales: RLS confundia conciliacion/cierre, la
+  limpieza historica redactaba configuraciones no secretas, el snapshot omitia
+  jobs/idempotencia y restore consultaba estado Watchdog global sin correlacion.
+- Solucion: factories/AsyncLocal/CSRF/scopes/auditoria reforzados; migraciones y
+  RLS corregidas; idempotencia y transaccion de importacion cerradas; backup y
+  restore convertidos a operaciones 202 correlacionadas; firma RSA streaming,
+  cleanup, scanner multiplataforma y gate de versiones completados.
+- Verificacion local: suite backend completa sin Testcontainers 389/389,
+  incluido el job dedicado de import Drive; frontend unit 3/3, TypeScript,
+  lint y build Vite OK; scanner/fixtures, alineacion de version y
+  `git diff --check` OK.
+- Incidencia adicional cerrada: `ConfiguracionController.Upsert` no agregaba
+  claves recien creadas a la coleccion usada para el diff y podia omitir la
+  auditoria semantica MFA. Se corrigio y sus ocho regresiones pasan.
+- Bloqueo: Docker/PostgreSQL no accesible (`docker_engine` denegado), por lo que
+  migraciones, CHECK/RLS/unique parcial, limpieza historica, carrera real y
+  round-trip Drive/restore no estan verdes localmente. Deben pasar en CI antes
+  de publicar V-02.06. NU1900 impidio consultar advisories de NuGet.
+
 ## 2026-07-07 - V-01.02 - Estado Git local no fiable (CERRADO)
 
 - Contexto: en V-01.02 se reporto que `git status --short` listaba practicamente todo el arbol como `untracked`, indicando repositorio local inestable o copia recreada sin historial fiable.

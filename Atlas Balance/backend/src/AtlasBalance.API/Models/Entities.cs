@@ -197,6 +197,9 @@ public class ImportacionLote
     public string ResumenJson { get; set; } = "{}";
     public string ContenidoOriginal { get; set; } = string.Empty;
     public string LoteHash { get; set; } = string.Empty;
+    public string? IdempotencyKey { get; set; }
+    public string? ConfirmacionIdempotencyKey { get; set; }
+    public string? ConfirmacionResponseJson { get; set; }
     public string Estado { get; set; } = "validado";
     public int FilasTotal { get; set; }
     public int FilasValidas { get; set; }
@@ -481,6 +484,23 @@ public class Backup : ISoftDelete
     public TipoProceso Tipo { get; set; }
     public Guid? IniciadoPorId { get; set; }
     public string? Notas { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class BackupOperation : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public string Tipo { get; set; } = string.Empty;
+    public string Estado { get; set; } = "PENDING";
+    public Guid? UsuarioId { get; set; }
+    public Guid? BackupId { get; set; }
+    public string? Parametro { get; set; }
+    public string? ResultadoJson { get; set; }
+    public string? Error { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaInicio { get; set; }
+    public DateTime? FechaFin { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
 }
