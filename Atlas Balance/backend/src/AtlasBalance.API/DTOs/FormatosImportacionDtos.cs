@@ -47,3 +47,8 @@ public sealed class MapeoImportacionColumnaExtraPayload
     public int Indice { get; set; }
     public string? Etiqueta { get; set; }
 }
+
+public sealed class ListarColumnasExtraSugeridasResponse
+{
+    public IReadOnlyList<string> Data { get; set; } = Array.Empty<string>();
+}

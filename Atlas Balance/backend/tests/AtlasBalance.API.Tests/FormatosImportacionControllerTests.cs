@@ -86,6 +86,125 @@ public sealed class FormatosImportacionControllerTests
         });
     }
 
+    [Fact]
+    public async Task ListarColumnasExtraSugeridas_Should_Return_Distinct_Ordered_Names()
+    {
+        await using var db = BuildDbContext();
+        var controller = await BuildControllerAsync(db);
+
+        var cuenta = new Cuenta
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "Cuenta Test",
+            TitularId = Guid.NewGuid(),
+            PaisId = Guid.NewGuid(),
+            Divisa = "EUR",
+            Activa = true,
+        };
+        db.Cuentas.Add(cuenta);
+
+        var extractoA = new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuenta.Id,
+            Fecha = new DateOnly(2026, 7, 1),
+            Concepto = "Concepto A",
+            Monto = 100m,
+            Saldo = 100m,
+            FilaNumero = 1,
+            FechaCreacion = DateTime.UtcNow,
+        };
+        var extractoB = new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuenta.Id,
+            Fecha = new DateOnly(2026, 7, 2),
+            Concepto = "Concepto B",
+            Monto = 200m,
+            Saldo = 200m,
+            FilaNumero = 2,
+            FechaCreacion = DateTime.UtcNow,
+        };
+        db.Extractos.AddRange(extractoA, extractoB);
+        db.ExtractosColumnasExtra.AddRange(
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = extractoA.Id, NombreColumna = "referencia", Valor = "REF-1" },
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = extractoA.Id, NombreColumna = "cheque", Valor = "CHQ-1" },
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = extractoB.Id, NombreColumna = "referencia", Valor = "REF-2" },
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = extractoB.Id, NombreColumna = "documento", Valor = "DOC-1" },
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = extractoB.Id, NombreColumna = "", Valor = "" }
+        );
+        await db.SaveChangesAsync();
+
+        var result = await controller.ListarColumnasExtraSugeridas(CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = ok.Value.Should().BeOfType<ListarColumnasExtraSugeridasResponse>().Subject;
+        payload.Data.Should().BeEquivalentTo(new[] { "cheque", "documento", "referencia" });
+    }
+
+    [Fact]
+    public async Task ListarColumnasExtraSugeridas_Should_Exclude_Soft_Deleted_Rows()
+    {
+        await using var db = BuildDbContext();
+        var controller = await BuildControllerAsync(db);
+
+        var cuenta = new Cuenta
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "Cuenta Test",
+            TitularId = Guid.NewGuid(),
+            PaisId = Guid.NewGuid(),
+            Divisa = "EUR",
+            Activa = true,
+        };
+        db.Cuentas.Add(cuenta);
+
+        var extracto = new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuenta.Id,
+            Fecha = new DateOnly(2026, 7, 1),
+            Concepto = "Concepto",
+            Monto = 100m,
+            Saldo = 100m,
+            FilaNumero = 1,
+            FechaCreacion = DateTime.UtcNow,
+        };
+        db.Extractos.Add(extracto);
+        db.ExtractosColumnasExtra.AddRange(
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = extracto.Id, NombreColumna = "visible", Valor = "v" },
+            new ExtractoColumnaExtra
+            {
+                Id = Guid.NewGuid(),
+                ExtractoId = extracto.Id,
+                NombreColumna = "borrado",
+                Valor = "b",
+                DeletedAt = DateTime.UtcNow,
+                DeletedById = Guid.NewGuid(),
+            }
+        );
+        await db.SaveChangesAsync();
+
+        var result = await controller.ListarColumnasExtraSugeridas(CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = ok.Value.Should().BeOfType<ListarColumnasExtraSugeridasResponse>().Subject;
+        payload.Data.Should().BeEquivalentTo(new[] { "visible" });
+    }
+
+    [Fact]
+    public async Task ListarColumnasExtraSugeridas_Should_Return_Empty_When_No_Extras()
+    {
+        await using var db = BuildDbContext();
+        var controller = await BuildControllerAsync(db);
+
+        var result = await controller.ListarColumnasExtraSugeridas(CancellationToken.None);
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = ok.Value.Should().BeOfType<ListarColumnasExtraSugeridasResponse>().Subject;
+        payload.Data.Should().BeEmpty();
+    }
+
     private static async Task<FormatosImportacionController> BuildControllerAsync(AppDbContext db)
     {
         var adminId = Guid.NewGuid();

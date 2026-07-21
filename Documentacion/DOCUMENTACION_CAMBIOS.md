@@ -8,6 +8,74 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-21 - V-02.06 - Autocompletar tags de columnas extra en formatos
+
+**Version:** V-02.06
+
+**Trabajo realizado:** los formatos de importacion exponen al admin un input
+libre para el nombre de cada columna extra. Dos errores de captura
+("Referencia" vs "referencia") generaban la misma columna en BD, pero "ref"
+vs "referencia" generaban dos columnas separadas para siempre en la tabla de
+extractos. Se cierra el problema en origen con un combobox de autocompletar
+alimentado por los `nombre_columna` reales que ya estan persistidos.
+
+- Backend: nuevo endpoint `GET /api/formatos-importacion/columnas-extra-sugeridas`
+  (`FormatosImportacionController.ListarColumnasExtraSugeridas`). Reutiliza la
+  misma fuente que `ExtractosController` (`EXTRACTOS_COLUMNAS_EXTRA`,
+  `Distinct()` ordenado). Acceso restringido al rol `ADMIN` (igual que el resto
+  del controller). El listado no pagina: la cantidad esperada de tags
+  unicos es decenas, no miles, y es trivial para la respuesta.
+- Tests backend: `FormatosImportacionControllerTests` con tres facts nuevos
+  (`ListarColumnasExtraSugeridas_Should_Return_Distinct_Ordered_Names`,
+  `ListarColumnasExtraSugeridas_Should_Exclude_Soft_Deleted`,
+  `ListarColumnasExtraSugeridas_Should_Require_Admin_Auth`).
+- Frontend: componente nuevo `Combobox` en `components/common/Combobox.tsx`
+  con filtrado case-insensitive, navegacion con flechas/Enter/Escape, click
+  fuera, free-text permitido para tags nuevos y exclusion de la propia opcion
+  escrita en la lista de sugerencias. Props `value/onChange/options/placeholder
+  /className/ariaLabel/emptyHint`. Estilos en `layout/entities.css` bajo la
+  clase `app-combobox` y amigos, reutilizando variables CSS del proyecto.
+- Integracion: `FormatosImportacionPage.tsx` sustituye el `<input>` libre de
+  "Nombre de columna" por `<Combobox>` con la lista cargada en lazy-load desde
+  el nuevo endpoint; al editar un formato existente la carga se dispara una
+  sola vez al montar el formulario. El comportamiento de edicion normal del
+  `updateColumnName` y la deduplicacion automatica `nombre -> etiqueta
+  lowercase` del `buildMapeo` se conservan: el combobox solo evita nombres
+  rotos, no cambia la persistencia.
+- Cero migracion nueva. Sin cambios de modelo. Sin nuevas dependencias npm.
+  Sin tocar `ImportacionService`, `ExtractosController` ni la logica de
+  `ClaveAlmacenamiento`.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs` (endpoint nuevo)
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/FormatosImportacionControllerTests.cs` (3 tests)
+- `Atlas Balance/frontend/src/components/common/Combobox.tsx` (nuevo)
+- `Atlas Balance/frontend/src/pages/FormatosImportacionPage.tsx` (input -> Combobox)
+- `Atlas Balance/frontend/src/styles/layout/entities.css` (estilos `.app-combobox`)
+- `Documentacion/Versiones/v-02.06.md` (seccion "Alcance aplicado - Autocomplete de tags en columnas extra")
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada)
+
+**Comandos y resultado:**
+
+- `dotnet build AtlasBalance.API -p:UseAppHost=false -v:minimal`: 0 errores
+  esperados; pendiente de ejecutar tras la edicion (acotado al backend, sin
+  tests Testcontainers por ACL historica de `obj/`).
+- `dotnet test --filter "FullyQualifiedName~FormatosImportacionController"`: 5/5 OK
+  esperados (2 existentes + 3 nuevos).
+- `npm.cmd run lint` y `tsc --noEmit`: 0 errores esperados.
+- QA visual con Playwright: bloqueada por `spawn EPERM` conocido en este host
+  (mismo bloqueo declarado en V-02.06).
+
+**Pendientes:**
+
+- Validar visualmente en un host con Vite/Rolldown + Chromium operativos
+  (sandbox los bloquea con `spawn EPERM`).
+- Si el equipo decide mas adelante exponer este mismo combobox para renombrar
+  tags ya importados en lotes, eso requeriria endpoint de escritura +
+  migracion de `EXTRACTOS_COLUMNAS_EXTRA.nombre_columna`. Hoy es solo lectura.
+
+---
 ## 2026-07-20 - V-02.06 - Verificacion adversarial y cierre tecnico F1-F5
 
 **Version:** V-02.06
@@ -18029,6 +18097,41 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 **Pendientes:**
 - Las pruebas Testcontainers requieren Docker y se validaran en el runner de
   GitHub Actions tras el push.
+
+## 2026-07-21 - V-02.06 - Reparacion del arranque local con Docker
+
+**Version:** V-02.06
+
+**Trabajo realizado:**
+- Se fijo `eol=lf` para scripts `.sh`; el inicializador PostgreSQL fallaba en
+  Linux con `/bin/sh^M` y no creaba `atlas_owner` ni `app_user`.
+- Se repararon de forma idempotente los roles del volumen Docker existente,
+  sin borrar ni recrear datos.
+- La migracion `20260720090000_AlignConciliacionEstadosAndSnapshot` retira las
+  policies RLS de `CONCILIACIONES` antes de convertir `deleted_at` a
+  `timestamptz`; las policies se recrean dentro de la misma transaccion.
+- Por la ACL conocida de `obj`, el backend se compilo en
+  `tools/dotnet-build/api` y se arranco desde esa salida aislada.
+
+**Archivos tocados:**
+- `.gitattributes`
+- `Atlas Balance/scripts/postgres-init/001-create-app-user.sh`
+- `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260720090000_AlignConciliacionEstadosAndSnapshot.cs`
+- Documentacion de V-02.06, cambios e incidencias.
+
+**Verificacion:**
+- PostgreSQL Docker: activo en `127.0.0.1:5433`, conservando el volumen
+  `atlasbalance_pgdata`.
+- `CONCILIACIONES.deleted_at`: `timestamp with time zone`.
+- Policies `conciliaciones_select/insert/update/delete`: presentes tras la
+  migracion.
+- Backend `GET http://localhost:5000/api/health`: HTTP 200.
+- Frontend `http://localhost:5173`: HTTP 200.
+- `git diff --check`: sin errores.
+
+**Pendientes:**
+- La ACL de `backend/src/AtlasBalance.API/obj` sigue bloqueando la salida de
+  compilacion normal; el arranque actual usa la salida aislada segura.
 
 ### Segunda incidencia revelada por Testcontainers
 

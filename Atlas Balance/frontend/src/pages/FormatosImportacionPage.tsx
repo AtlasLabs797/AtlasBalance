@@ -1,6 +1,8 @@
 import { useEffect, useId, useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { AppSelect } from '@/components/common/AppSelect';
+import { Combobox } from '@/components/common/Combobox';
+import type { ComboboxOption } from '@/components/common/Combobox';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
@@ -124,6 +126,17 @@ export default function FormatosImportacionPage() {
   const [form, setForm] = useState<FormatoFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
+  const [suggestedTags, setSuggestedTags] = useState<ComboboxOption[]>([]);
+
+  const loadSuggestedTags = async () => {
+    try {
+      const { data } = await api.get<{ data: string[] }>('/formatos-importacion/columnas-extra-sugeridas');
+      const nombres = (data?.data ?? []).filter((nombre) => !!nombre && !!nombre.trim());
+      setSuggestedTags(nombres.map((nombre) => ({ value: nombre })));
+    } catch {
+      setSuggestedTags([]);
+    }
+  };
 
   const loadDivisas = async () => {
     try {
@@ -165,7 +178,10 @@ export default function FormatosImportacionPage() {
 
   useEffect(() => {
     void loadDivisas();
-  }, []);
+    if (isAdmin) {
+      void loadSuggestedTags();
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
     void loadData();
@@ -601,13 +617,14 @@ export default function FormatosImportacionPage() {
                       {col.tipo === 'base' ? (
                         <span>{col.nombre}</span>
                       ) : (
-                        <input
-                          type="text"
-                          aria-label={`Nombre de columna ${index}`}
-                          placeholder="Nombre de columna"
+                        <Combobox
                           value={col.nombre}
-                          onChange={(e) => updateColumnName(index, e.target.value)}
+                          options={suggestedTags}
+                          onChange={(next) => updateColumnName(index, next)}
+                          placeholder="Nombre de columna"
+                          ariaLabel={`Nombre de columna ${index}`}
                           className="formatos-column-input"
+                          emptyHint={`Crear "${col.nombre || 'nuevo tag'}" como columna nueva`}
                         />
                       )}
                     </span>
