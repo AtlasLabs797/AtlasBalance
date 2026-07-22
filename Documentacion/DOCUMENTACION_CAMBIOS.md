@@ -8,6 +8,139 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-21 - V-02.06 - Reintroduccion de los 6 formatos predefinidos del operador
+
+**Version:** V-02.06
+
+**Trabajo realizado:** tras el wipe de `FORMATOS_IMPORTACION` de la misma
+sesion, el operador decidio que los 6 formatos que habia creado a mano
+quedaran como predefinidos para futuras instalaciones. Se aniaden al
+array `DefaultFormatosImportacion` en `SeedData.cs` con los GUIDs que
+ya tenian en la BD, asi el seed los ignora por Id en esta instancia y
+los inserta en instalaciones limpias.
+
+### Formatos reintroducidos
+
+| Banco | Divisa | Tipo | GUID |
+|-------|--------|------|------|
+| BBVA Empresa | EUR | una_columna | `0ee8dcc6-10a3-49ed-9f5d-1a1ade414184` |
+| BBVA Particular | EUR | una_columna | `880fd93a-ba3c-4da2-b1b5-e8eda1b7ba40` |
+| BS Empresa | EUR | una_columna | `db0c6bfe-7643-40b6-b858-40de6e0cb185` |
+| BS Particular | EUR | una_columna | `ba73a117-b056-4f84-9ca2-9dd0a986d5d2` |
+| Banquinter Empresa | EUR | tres_columnas | `f5fd034b-8624-45a2-b365-62c7e9ad3d9a` |
+| Banquinter Particular | EUR | una_columna | `b455fc9c-bdd5-4f67-868b-534650ecb598` |
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`: array
+  pasa de `[]` a 6 entradas con el `mapeo_json` en snake_case que
+  produce `JsonNamingPolicy.SnakeCaseLower` (el mismo formato que
+  normaliza `FormatosImportacionController.NormalizeMapeoJson`).
+
+### Verificacion
+
+- `dotnet build AtlasBalance.API`: 0 errores.
+- Reinicio del backend (PID 14928 -> 15196): `/api/health` 200.
+- Post-reinicio SQL: 6 formatos, mismos GUIDs, sin duplicados. El seed
+  detecto que los 6 ya existian por Id y no los reinserto.
+- Las 5 cuentas demo sobreviven con `formato_id = NULL` (sin asignar a
+  ningun formato por ahora).
+
+### Implicacion para instalaciones nuevas
+
+Un cliente que instale Atlas Balance desde cero (`dotnet run` o
+instalador) recibira estos 6 formatos como parte del seed inicial y
+podra usarlos directamente al crear cuentas con el mismo banco y
+divisa. El operador puede editarlos, aniadir mas predefinidos o
+borrarlos desde la UI; los cambios no se sobreescriben en
+rearranques posteriores porque el seed los ignora por Id o por
+banco+divisa.
+
+---
+## 2026-07-21 - V-02.06 - Wipe de FORMATOS_IMPORTACION y vaciado de predefinidos
+
+**Version:** V-02.06
+
+**Trabajo realizado:** a peticion explicita del operador, hard wipe de la
+tabla `FORMATOS_IMPORTACION` (BD local Docker) y vaciado intencional del
+array `DefaultFormatosImportacion` en `SeedData.cs`. Los formatos creados
+a lo largo de V-02.06 (los 8 predefinidos mas los 3 custom
+"Empresa/Particular") ya no vuelven a aparecer en el siguiente arranque
+del backend. La operacion es destructiva e irreversible: no hay backup
+local, todo se reescribe a mano desde la UI o desde
+`Seeder.cs` cuando el operador quiera reintroducirlos.
+
+### SQL ejecutado (transaccional, con bypass temporal de FORCE RLS)
+
+```sql
+BEGIN;
+ALTER TABLE "CUENTAS" NO FORCE ROW LEVEL SECURITY;
+UPDATE "CUENTAS" SET formato_id = NULL WHERE formato_id IS NOT NULL; -- 3
+DELETE FROM "FORMATOS_IMPORTACION";                                    -- 11
+ALTER TABLE "CUENTAS" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "CUENTAS" FORCE ROW LEVEL SECURITY;
+COMMIT;
+```
+
+Notas:
+
+- La FK `fk_cuentas_formatos_importacion_formato_id` es `ON DELETE
+  RESTRICT`, por lo que el wipe directo falla con violacion si quedan
+  cuentas referenciando formatos. El UPDATE previo NULL-out es
+  obligatorio.
+- `CUENTAS` tiene `FORCE ROW LEVEL SECURITY` aplicado en V-02.06
+  (`20260716120000_HardenFinancialV0202Rls`). Las policies
+  `cuentas_select`/`cuentas_write` filtran por
+  `atlas_security.is_admin_or_system()`, que devuelve `false` en una
+  sesion psql pura. Sin el NO FORCE temporal, el UPDATE y la propia
+  lectura del problema seria invisibles. Esto esta documentado para que
+  la proxima vez que alguien limpie tablas RLS-forced sepa el patron.
+- Los IDs borrados coinciden con los que `SeedData` reintroducia: tras
+  vaciar el array `DefaultFormatosImportacion` y reiniciar el backend,
+  el seed no los recrea (verificado con `count(*) = 0`).
+
+### Cuentas demo
+
+Las 5 cuentas demo (Demo Atlas Labs Holding, Demo Operaciones Norte, Demo
+Laura Martin, Demo Sabadell Operativa EUR, Demo BBVA Nomina MXN, Demo
+Popular USD Reserva) sobreviven al wipe con `formato_id = NULL`. Esto es
+intencional: la FK perdura pero el puntero queda vacio. Si el operador
+quiere reasignarles formato, lo hara desde la UI de cuentas.
+
+### SeedData
+
+`AtlasBalance.API/Data/SeedData.cs:808-813`: `DefaultFormatosImportacion`
+pasa de 8 entradas a array vacio. Comentario en linea explicando por que
+y como reintroducir. `EnsureDefaultFormatosImportacion` y el record
+`DefaultFormatoImportacion` se conservan: el primero queda como no-op,
+el segundo queda listo para cuando se quieran aniadir predefinidos de
+nuevo.
+
+### Verificacion post-wipe
+
+- `dotnet build AtlasBalance.API`: 0 errores.
+- `dotnet run` con la nueva DLL: `/api/health` 200, `/api/formatos-importacion`
+  y `/api/formatos-importacion/columnas-extra-sugeridas` ambos devuelven
+  401 (esperado sin auth).
+- SQL: 0 filas en `FORMATOS_IMPORTACION`, 0 referencias `formato_id` en
+  `CUENTAS`.
+- Reinicio del backend no reproduce formatos.
+
+### Bloqueo / bloqueo-parcial
+
+- La operacion toca BD, no Docker ni migracion, por lo que no requiere
+  Testcontainers. Si en algun momento alguien quiere reproducir los
+  predefinidos exactos, los JSON de `mapeo_json` originales sobreviven
+  en `git log -p Documentacion/` antes de este commit.
+
+### Pendiente decidido
+
+- Reintroducir `DefaultFormatosImportacion` con los formatos finales del
+  operador (cuando termine de redefinirlos por la UI o por un seed a
+  medida). El registro `DefaultFormatoImportacion` sigue disponible para
+  no obligar a reescribir el andamio.
+
+---
 ## 2026-07-21 - V-02.06 - Autocompletar tags de columnas extra en formatos
 
 **Version:** V-02.06
