@@ -1,4 +1,3 @@
-using System.Text.Json.Serialization;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
 
@@ -46,10 +45,4 @@ public sealed class HardenedGoogleDriveBackupService : IGoogleDriveBackupService
 
     public Task<Backup> ImportAsync(string fileId, Guid? userId, HttpContext? httpContext, CancellationToken cancellationToken) =>
         _inner.ImportAsync(fileId, userId, httpContext, cancellationToken);
-
-    private sealed class GoogleTokenResponse
-    {
-        [JsonPropertyName("access_token")]
-        public string AccessToken { get; set; } = string.Empty;
-    }
 }

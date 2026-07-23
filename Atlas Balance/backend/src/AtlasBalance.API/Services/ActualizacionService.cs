@@ -570,9 +570,6 @@ public sealed class ActualizacionService : IActualizacionService
     private sealed class UpdateCheckPayload
     {
         public string? Version { get; init; }
-        public string? Message { get; init; }
-        public string? SourcePath { get; init; }
-        public string? TargetPath { get; init; }
         public string? AssetName { get; init; }
         public string? AssetDownloadUrl { get; init; }
         public string? AssetDigest { get; init; }
@@ -594,9 +591,6 @@ public sealed class ActualizacionService : IActualizacionService
             return new UpdateCheckPayload
             {
                 Version = TryGetString(root, "version", "version_disponible", "latest_version", "tag_name"),
-                Message = TryGetString(root, "message", "mensaje", "name", "body"),
-                SourcePath = TryGetString(root, "source_path", "sourcePath", "package_path"),
-                TargetPath = TryGetString(root, "target_path", "targetPath", "install_path"),
                 AssetName = asset.Name,
                 AssetDownloadUrl = asset.DownloadUrl,
                 AssetDigest = asset.Digest,

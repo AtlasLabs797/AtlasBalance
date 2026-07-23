@@ -15,10 +15,7 @@ public sealed class HardenedConciliacionService : IConciliacionService
     private const decimal DefaultToleranceAmount = 2m;
     private const decimal DefaultTolerancePercent = 0.01m;
 
-    private static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
+    private static readonly JsonSerializerOptions SnakeCaseJsonOptions = ConciliacionService.SnakeCaseJsonOptions;
 
     private readonly ConciliacionService _inner;
     private readonly AppDbContext _dbContext;

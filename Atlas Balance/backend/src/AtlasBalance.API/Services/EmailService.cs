@@ -59,34 +59,19 @@ public sealed class EmailService : IEmailService
             return;
         }
 
-        var smtpHost = await GetConfigValueAsync("smtp_host", cancellationToken);
-        if (string.IsNullOrWhiteSpace(smtpHost))
-        {
-            throw new InvalidOperationException("smtp_host no configurado para alerta de saldo bajo.");
-        }
-
-        var smtpPortRaw = await GetConfigValueAsync("smtp_port", cancellationToken) ?? "587";
-        var smtpUser = await GetConfigValueAsync("smtp_user", cancellationToken);
-        var smtpPassword = _secretProtector.UnprotectFromStorage(await GetConfigValueAsync("smtp_password", cancellationToken));
-        var smtpFrom = await GetConfigValueAsync("smtp_from", cancellationToken);
+        var smtp = await LoadSmtpConfigAsync("smtp_host no configurado para alerta de saldo bajo.", cancellationToken);
         var appBaseUrl = (await GetConfigValueAsync("app_base_url", cancellationToken))?.TrimEnd('/')
             ?? "https://localhost:5000";
-
-        if (string.IsNullOrWhiteSpace(smtpFrom))
-        {
-            smtpFrom = "noreply@atlasbalance.local";
-        }
 
         // V-02-05 (MED-5): validar smtpFrom contra CRLF y otros caracteres que
         // permitirian header injection. MailKit lo sanea, pero el contrato del
         // operador es "solo una direccion de email".
-        ValidateEmailAddress(smtpFrom, "smtp_from");
+        ValidateEmailAddress(smtp.From, "smtp_from");
 
-        var smtpPort = int.TryParse(smtpPortRaw, out var parsedPort) ? parsedPort : 587;
         var cuentaUrl = EscapeHtml($"{appBaseUrl}/cuentas/{cuentaId}");
 
         var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(smtpFrom));
+        message.From.Add(MailboxAddress.Parse(smtp.From));
         foreach (var recipient in recipients)
         {
             message.To.Add(MailboxAddress.Parse(recipient));
@@ -105,7 +90,7 @@ public sealed class EmailService : IEmailService
                 $"<p><a href=\"{cuentaUrl}\">Abrir cuenta</a></p>"
         }.ToMessageBody();
 
-        await SendMessageAsync(message, smtpHost, smtpPort, smtpUser, smtpPassword, cancellationToken);
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
     }
 
     public async Task SendPlazoFijoVencimientoAsync(
@@ -122,30 +107,15 @@ public sealed class EmailService : IEmailService
             return;
         }
 
-        var smtpHost = await GetConfigValueAsync("smtp_host", cancellationToken);
-        if (string.IsNullOrWhiteSpace(smtpHost))
-        {
-            throw new InvalidOperationException("smtp_host no configurado para alerta de plazo fijo.");
-        }
-
-        var smtpPortRaw = await GetConfigValueAsync("smtp_port", cancellationToken) ?? "587";
-        var smtpUser = await GetConfigValueAsync("smtp_user", cancellationToken);
-        var smtpPassword = _secretProtector.UnprotectFromStorage(await GetConfigValueAsync("smtp_password", cancellationToken));
-        var smtpFrom = await GetConfigValueAsync("smtp_from", cancellationToken);
+        var smtp = await LoadSmtpConfigAsync("smtp_host no configurado para alerta de plazo fijo.", cancellationToken);
         var appBaseUrl = (await GetConfigValueAsync("app_base_url", cancellationToken))?.TrimEnd('/')
             ?? "https://localhost:5000";
 
-        if (string.IsNullOrWhiteSpace(smtpFrom))
-        {
-            smtpFrom = "noreply@atlasbalance.local";
-        }
-
-        var smtpPort = int.TryParse(smtpPortRaw, out var parsedPort) ? parsedPort : 587;
         var cuentaUrl = EscapeHtml($"{appBaseUrl}/cuentas/{cuentaId}");
         var estadoTexto = estado == EstadoPlazoFijo.VENCIDO ? "vencido" : "próximo a vencer";
 
         var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(smtpFrom));
+        message.From.Add(MailboxAddress.Parse(smtp.From));
         foreach (var recipient in recipients)
         {
             message.To.Add(MailboxAddress.Parse(recipient));
@@ -162,15 +132,41 @@ public sealed class EmailService : IEmailService
                 $"<p><a href=\"{cuentaUrl}\">Abrir cuenta</a></p>"
         }.ToMessageBody();
 
-        await SendMessageAsync(message, smtpHost, smtpPort, smtpUser, smtpPassword, cancellationToken);
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
     }
 
     public async Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken)
     {
+        var smtp = await LoadSmtpConfigAsync("smtp_host no configurado.", cancellationToken);
+
+        var message = new MimeMessage();
+        message.From.Add(MailboxAddress.Parse(smtp.From));
+        message.To.Add(MailboxAddress.Parse(recipient));
+        message.Subject = "[Atlas Balance] Correo de prueba SMTP";
+        message.Body = new BodyBuilder
+        {
+            HtmlBody = $"<p>SMTP configurado correctamente.</p><p>Fecha UTC: {DateTime.UtcNow:O}</p>"
+        }.ToMessageBody();
+
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+    }
+
+    private async Task<string?> GetConfigValueAsync(string key, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Configuraciones
+            .Where(x => x.Clave == key)
+            .Select(x => x.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private readonly record struct SmtpConfig(string Host, int Port, string? User, string? Password, string From);
+
+    private async Task<SmtpConfig> LoadSmtpConfigAsync(string missingHostMessage, CancellationToken cancellationToken)
+    {
         var smtpHost = await GetConfigValueAsync("smtp_host", cancellationToken);
         if (string.IsNullOrWhiteSpace(smtpHost))
         {
-            throw new InvalidOperationException("smtp_host no configurado.");
+            throw new InvalidOperationException(missingHostMessage);
         }
 
         var smtpPortRaw = await GetConfigValueAsync("smtp_port", cancellationToken) ?? "587";
@@ -183,25 +179,7 @@ public sealed class EmailService : IEmailService
         }
 
         var smtpPort = int.TryParse(smtpPortRaw, out var parsedPort) ? parsedPort : 587;
-
-        var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(smtpFrom));
-        message.To.Add(MailboxAddress.Parse(recipient));
-        message.Subject = "[Atlas Balance] Correo de prueba SMTP";
-        message.Body = new BodyBuilder
-        {
-            HtmlBody = $"<p>SMTP configurado correctamente.</p><p>Fecha UTC: {DateTime.UtcNow:O}</p>"
-        }.ToMessageBody();
-
-        await SendMessageAsync(message, smtpHost, smtpPort, smtpUser, smtpPassword, cancellationToken);
-    }
-
-    private async Task<string?> GetConfigValueAsync(string key, CancellationToken cancellationToken)
-    {
-        return await _dbContext.Configuraciones
-            .Where(x => x.Clave == key)
-            .Select(x => x.Valor)
-            .FirstOrDefaultAsync(cancellationToken);
+        return new SmtpConfig(smtpHost, smtpPort, smtpUser, smtpPassword, smtpFrom);
     }
 
     private static async Task SendMessageAsync(

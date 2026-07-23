@@ -248,7 +248,7 @@ export function DatePickerField({
       <button
         ref={triggerRef}
         type="button"
-        className={`date-picker-trigger ${selectedDate ? '' : 'date-picker-trigger--empty'}`.trim()}
+        className={selectedDate ? 'date-picker-trigger' : 'date-picker-trigger date-picker-trigger--empty'}
         aria-label={label ? undefined : ariaLabel}
         aria-labelledby={label ? `${labelId} ${valueId}` : undefined}
         aria-expanded={isOpen}

@@ -3,7 +3,6 @@ namespace AtlasBalance.Watchdog.Models;
 public sealed class RestaurarBackupRequest
 {
     public string BackupPath { get; set; } = string.Empty;
-    public Guid? SolicitadoPorId { get; set; }
     public Guid? OperationId { get; set; }
 }
 

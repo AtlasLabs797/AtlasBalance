@@ -21,7 +21,7 @@ public interface IConciliacionService
 
 public sealed class ConciliacionService : IConciliacionService
 {
-    private static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
+    internal static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };

@@ -70,10 +70,6 @@ const restorePaths: Record<TabKey, string> = {
   usuarios: '/usuarios',
 };
 
-function formatDate(value: string) {
-  return formatDateTime(value);
-}
-
 export default function PapeleraPage() {
   const [tab, setTab] = useState<TabKey>('titulares');
   const [loading, setLoading] = useState(false);
@@ -230,7 +226,7 @@ export default function PapeleraPage() {
                         row.subtitulo
                       )}
                     </td>
-                    <td>{formatDate(row.deleted_at)}</td>
+                    <td>{formatDateTime(row.deleted_at)}</td>
                     <td className="users-row-actions">
                       <button
                         type="button"

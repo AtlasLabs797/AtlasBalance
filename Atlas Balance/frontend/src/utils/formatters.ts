@@ -190,20 +190,3 @@ export function formatRelativeTime(dateStr: string): string {
   if (diffDays < 7) return `hace ${diffDays}d`;
   return formatDate(dateStr);
 }
-
-const COLUMN_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-const COLUMN_NAMES: Record<string, string> = {
-  A: 'Fecha',
-  B: 'Concepto',
-  C: 'Monto',
-  D: 'Saldo',
-};
-
-export function getCellReference(filaNumero: number, columnIndex: number): string {
-  const letter = COLUMN_LETTERS[columnIndex] ?? `Col${columnIndex}`;
-  return `${letter}${filaNumero}`;
-}
-
-export function getColumnName(letter: string): string {
-  return COLUMN_NAMES[letter] ?? letter;
-}

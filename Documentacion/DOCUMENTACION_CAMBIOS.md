@@ -8,6 +8,122 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-23 - V-02.06 - Limpieza de codigo (/simplify): dead code y duplicacion en toda la base
+
+**Version:** V-02.06
+
+**Trabajo realizado:** a peticion del operador, barrido completo de la
+base de codigo (no solo el diff pendiente) con 13 agentes en paralelo
+(modelo Haiku) cubriendo Controllers, Services, Data/Models/Constants,
+DTOs, Jobs/Middleware, Watchdog, y todo el frontend (pages, components,
+hooks/stores/utils). Cada hallazgo se verifico manualmente con grep
+sobre el repo completo antes de aplicar el fix, para no borrar nada que
+la app siga usando.
+
+Se descarto explicitamente como falso positivo el patron
+`usePermisosStore((state) => state.permisos)` (sin asignar) presente en
+7 paginas + `App.tsx`: no es codigo muerto, es una suscripcion Zustand
+deliberada para forzar re-render cuando cambian los permisos, ya que los
+selectores hermanos (`canViewDashboard`, `canEditCuenta`, etc.) devuelven
+referencias de funcion estables que no disparan re-render por si solas.
+
+### Backend - codigo muerto eliminado
+
+- `HardenedGoogleDriveBackupService.cs`: clase anidada `GoogleTokenResponse` sin uso.
+- `PlazoFijoService.cs`: metodo `TrySendEmailAsync` obsoleto (sustituido por el flujo digest, nunca invocado).
+- `ActualizacionService.cs`: propiedades `Message`, `SourcePath`, `TargetPath` de `UpdateCheckPayload`, parseadas pero nunca leidas.
+- `AlertaService.cs`: `.Concat(Enumerable.Empty<string>())` sin efecto.
+- `AtlasBalance.Watchdog/Models/WatchdogContracts.cs`: propiedad `SolicitadoPorId` en `RestaurarBackupRequest`, nunca leida por el controller.
+- `AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`: metodo privado `PathsOverlap` sin ninguna llamada.
+
+### Backend - duplicacion consolidada
+
+- `ConciliacionService.cs` / `HardenedConciliacionService.cs`: `SnakeCaseJsonOptions` duplicado byte a byte; ahora `HardenedConciliacionService` reutiliza el `internal static` de `ConciliacionService` en vez de declarar el suyo.
+- `EmailService.cs`: las 3 rutas (`SendSaldoBajoAlertAsync`, `SendPlazoFijoVencimientoAsync`, `SendTestEmailAsync`) repetian identica carga de config SMTP (host/puerto/usuario/password/from + fallback). Extraido a `LoadSmtpConfigAsync(missingHostMessage, ct)` con `SmtpConfig` record struct; se preservo el mensaje de error especifico de cada ruta y que solo `SendSaldoBajoAlertAsync` valida `smtpFrom` (comportamiento identico al original, solo reorganizado).
+
+### Frontend - codigo muerto eliminado
+
+- `utils/formatters.ts`: `COLUMN_LETTERS`, `COLUMN_NAMES`, `getCellReference`, `getColumnName` (sin ninguna referencia en el repo).
+- `stores/paisScopeStore.ts`: export `usePaisScopeParams` sin uso (se conservo `readStoredPaisId`, que si se usa dos veces).
+- `pages/ExtractosPage.tsx`: estado `auditExtractoId` que solo existia para silenciar el warning de variable sin usar (se renderizaba oculto en un `<span className="sr-only">`); el id real se captura por closure en `onOpenAudit`, no se leia del estado en ningun otro sitio.
+- `pages/AlertasPage.tsx`, `AuditoriaPage.tsx`, `PapeleraPage.tsx`: wrappers triviales (`getErrorMessage`, `formatTimestamp`, `formatDate`) que solo delegaban a `extractErrorMessage`/`formatDateTime`; inlineados en sus llamadas.
+
+### Frontend - bug de alineacion corregido de paso
+
+- `components/integraciones/TokenList.tsx`: la fila del cuerpo tenia una celda `<td>{formatDateTime(token.fecha_creacion)}</td>` extra sin `<th>` correspondiente en la cabecera, desplazando "Expira", "Ultimo uso", "Scopes", etc. una columna a la derecha. Se detecto al investigar por que el campo no aparecia referenciado en ningun otro sitio; se elimino la celda.
+
+### Frontend - duplicacion consolidada
+
+- `components/dashboard/EvolucionChart.tsx`: tabla `sr-only` inline (22 lineas) identica byte a byte al componente `EvolutionDataTable` definido justo debajo; se reemplazo por `<EvolutionDataTable points={points} divisa={divisa} />`.
+- `components/common/DatePickerField.tsx`: `.trim()` redundante sobre un template string cuyo resultado nunca tiene espacio sobrante; simplificado a un ternario directo.
+
+### Hallazgos descartados (riesgo/alcance fuera de un pase automatico)
+
+- Consolidar `GetCurrentUserId()` duplicado en 10+ controllers, `NormalizePeriodo`/`GetPeriodStart`, `ParseArray`/`ParseJsonArray` y el patron `TryGetUser`/`TryGetActor`: mecanico pero toca autenticacion/autorizacion en muchos archivos a la vez; se deja para una tarea dedicada con revision humana.
+- Fusionar 3 pares de DTOs casi identicos (`TitularListItemResponse`/`TitularDetalleResponse`, tokens de integracion, `CuentaResumenResponse`/`CuentaResumenKpiResponse`): afecta contratos de API consumidos por el frontend; requiere coordinar ambos lados.
+- Unificar validadores de paths (`IsAllowedExportFile`/`IsAllowedBackupFile`): codigo de seguridad, se prefiere no tocarlo en un pase de limpieza generico.
+- Refactor de `ConfiguracionController.HasNullTextFields`, arrays duplicados en `RevisionService.cs` (variantes con/sin acento, mismo string en dos formas), estrategia de proveedor en `aiModels.ts`, badges en `Sidebar.tsx`: bajo valor o riesgo de cambiar comportamiento visible; no aplicados.
+- Varios hallazgos de "eficiencia" (queries secuenciales que podrian paralelizarse, N+1 potenciales en controllers): no son simplificaciones, son cambios de comportamiento/performance que requieren su propia verificacion; no aplicados en este pase.
+
+### Archivos tocados
+
+Backend: `HardenedGoogleDriveBackupService.cs`, `PlazoFijoService.cs`,
+`ActualizacionService.cs`, `AlertaService.cs`, `ConciliacionService.cs`,
+`HardenedConciliacionService.cs`, `EmailService.cs`,
+`AtlasBalance.Watchdog/Models/WatchdogContracts.cs`,
+`AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`.
+
+Frontend: `utils/formatters.ts`, `stores/paisScopeStore.ts`,
+`pages/ExtractosPage.tsx`, `pages/AlertasPage.tsx`,
+`pages/AuditoriaPage.tsx`, `pages/PapeleraPage.tsx`,
+`pages/FormatosImportacionPage.tsx`,
+`components/integraciones/TokenList.tsx`,
+`components/dashboard/EvolucionChart.tsx`,
+`components/common/DatePickerField.tsx`.
+
+### Verificacion
+
+- Bloqueo inicial: `dotnet build` sobre `obj/` del proyecto fallaba con
+  `Access to the path '...\obj\project.assets.json' is denied` incluso
+  con `--no-restore` y fuera del sandbox (bloqueo de archivo
+  preexistente, no relacionado con los cambios). Se rodeo redirigiendo
+  `BaseIntermediateOutputPath`/`BaseOutputPath` al scratchpad de la
+  sesion en vez de insistir sobre el `obj/` bloqueado.
+- `dotnet build AtlasBalance.API.csproj` (salida redirigida): 0 errores,
+  6 warnings preexistentes sin relacion (Hangfire/EF obsoletos).
+- `dotnet build AtlasBalance.Watchdog.csproj`: 0 errores, 0 warnings.
+- `dotnet build AtlasBalance.API.Tests.csproj`: 0 errores (confirma que
+  los tests siguen compilando tras quitar `SolicitadoPorId` y el metodo
+  `PathsOverlap`).
+- `dotnet test` filtrado a los servicios tocados
+  (`AlertaServiceTests`, `ConciliacionServiceTests`,
+  `HardenedConciliacionServiceTests`, `PlazoFijoServiceTests`,
+  `WatchdogClientServiceTests`, `WatchdogControllerTests`,
+  `WatchdogOperationsServiceTests`, `ActualizacionServiceTests`):
+  44/44 correctas, 0 fallos.
+- Frontend: `npm run lint` (ESLint, `--max-warnings 0`) sin errores;
+  `npx tsc --noEmit` sin errores.
+- Grep de verificacion sobre todo el repo tras cada eliminacion para
+  confirmar cero referencias colgantes.
+- No se ejecuto `npm run build` (Vite) ni se levanto servidor dev, per
+  protocolo anti-encallamiento del proyecto; el lint + typecheck
+  estrictos se consideraron suficientes para cambios de esta naturaleza
+  (eliminacion de codigo muerto y extraccion de duplicados, sin cambios
+  de comportamiento).
+
+### Pendiente
+
+- Los hallazgos descartados arriba (GetCurrentUserId, DTOs duplicados,
+  validadores de path, etc.) quedan como candidatos para una tarea de
+  refactor dedicada, no urgente.
+- No se realizo verificacion visual en navegador de las paginas
+  tocadas (Alertas, Auditoria, Papelera, Extractos, Importacion,
+  Formatos de Importacion, integraciones): los cambios son
+  extraccion/eliminacion de codigo sin alterar JSX visible salvo la
+  correccion de columnas en `TokenList.tsx`, que conviene confirmar
+  visualmente en el proximo arranque manual del frontend.
+
+---
 ## 2026-07-21 - V-02.06 - Reintroduccion de los 6 formatos predefinidos del operador
 
 **Version:** V-02.06

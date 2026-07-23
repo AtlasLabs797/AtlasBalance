@@ -427,15 +427,6 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         return text.Length <= maxLength ? text : text[..maxLength];
     }
 
-    private static bool PathsOverlap(string sourcePath, string targetPath)
-    {
-        var sourceWithSeparator = EnsureTrailingSeparator(sourcePath);
-        var targetWithSeparator = EnsureTrailingSeparator(targetPath);
-
-        return sourceWithSeparator.StartsWith(targetWithSeparator, StringComparison.OrdinalIgnoreCase) ||
-               targetWithSeparator.StartsWith(sourceWithSeparator, StringComparison.OrdinalIgnoreCase);
-    }
-
     private static string EnsureTrailingSeparator(string path)
     {
         return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)

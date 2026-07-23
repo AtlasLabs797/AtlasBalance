@@ -233,7 +233,6 @@ export default function FormatosImportacionPage() {
         nombre: col.nombre,
         tipo: 'extra',
         indice: col.indice,
-        etiqueta: col.etiqueta ?? '',
       }));
 
       const todasLasColumnas = [...columnasBase, ...columnasExtra].sort((a, b) => a.indice - b.indice);

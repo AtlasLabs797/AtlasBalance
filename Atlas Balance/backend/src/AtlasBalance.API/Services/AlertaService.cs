@@ -330,7 +330,6 @@ public sealed class AlertaService : IAlertaService
 
         return combined
             .Select(x => x.Email)
-            .Concat(Enumerable.Empty<string>())
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x)

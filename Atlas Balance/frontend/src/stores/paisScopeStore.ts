@@ -61,8 +61,3 @@ export const usePaisScopeStore = create<PaisScopeState>((set, get) => ({
     set({ selectedPaisId: readStoredPaisId(), paises: [], loading: false, lastError: null });
   },
 }));
-
-export const usePaisScopeParams = () =>
-  usePaisScopeStore((state) => ({
-    paisId: state.selectedPaisId || undefined,
-  }));
