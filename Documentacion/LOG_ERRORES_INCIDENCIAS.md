@@ -3003,3 +3003,27 @@
   - Para evitar re-entry en interceptors usar `[ThreadStatic]` o
     `AsyncLocal<T>`; nunca `CommandText.Contains` que es fragil al
     formato del SQL.
+
+## 2026-07-21 - V-02.06 - Arranque Docker bloqueado por CRLF y policy RLS (CERRADO)
+
+- **Sintomas:** PostgreSQL arrancaba, pero el backend fallaba primero porque
+  no existia `atlas_owner` y despues con PostgreSQL `0A000: cannot alter type
+  of a column used in a policy definition`.
+- **Causa 1:** `scripts/postgres-init/001-create-app-user.sh` tenia CRLF y el
+  contenedor Linux devolvia `/bin/sh^M: bad interpreter`; la inicializacion
+  quedaba incompleta aunque el servidor PostgreSQL siguiera activo.
+- **Causa 2:** la migracion de alineacion intentaba convertir
+  `CONCILIACIONES.deleted_at` antes de retirar las policies RLS que usaban la
+  columna.
+- **Solucion:** regla `*.sh text eol=lf`, normalizacion del inicializador,
+  ejecucion idempotente sobre el volumen existente y retirada de las cuatro
+  policies antes del `ALTER COLUMN`; el paso 5 de la misma migracion las
+  recrea.
+- **Verificacion:** volumen conservado; roles creados; columna convertida a
+  `timestamp with time zone`; cuatro policies presentes; backend y frontend
+  responden HTTP 200.
+- **Bloqueo secundario:** ACL conocida en `obj/Debug`; se uso salida aislada
+  `tools/dotnet-build/api` sin limpiar la carpeta bloqueada.
+- **Regla:** todo script montado en un contenedor Linux debe fijar `eol=lf` en
+  `.gitattributes`. Una migracion no puede alterar el tipo de una columna hasta
+  retirar policies, vistas o dependencias que la referencien.

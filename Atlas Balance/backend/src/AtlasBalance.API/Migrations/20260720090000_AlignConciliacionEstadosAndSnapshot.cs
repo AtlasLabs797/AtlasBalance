@@ -39,8 +39,16 @@ namespace AtlasBalance.API.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // 1) Normalizar deleted_at a timestamp with time zone.
+            // PostgreSQL no permite cambiar el tipo de una columna usada por
+            // una policy. Se retiran aqui y se recrean en el paso 5 dentro de
+            // la misma transaccion de la migracion.
             migrationBuilder.Sql(
                 """
+                DROP POLICY IF EXISTS conciliaciones_select ON "CONCILIACIONES";
+                DROP POLICY IF EXISTS conciliaciones_insert ON "CONCILIACIONES";
+                DROP POLICY IF EXISTS conciliaciones_update ON "CONCILIACIONES";
+                DROP POLICY IF EXISTS conciliaciones_delete ON "CONCILIACIONES";
+
                 DO $$
                 BEGIN
                     IF EXISTS (
