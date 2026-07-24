@@ -8,6 +8,67 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.06 - Rotacion del par de firma de release (clave privada anterior perdida)
+
+**Version:** V-02.06
+
+**Trabajo realizado:** la clave privada rotada en V-01.09 nunca llego a
+cargarse como GitHub Secret (o se perdio desde entonces) y el operador
+confirmo que ya no la tiene. Se genero un par RSA 4096 bits nuevo
+(`openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096`, salida
+PKCS#8) fuera del repositorio, en el scratchpad de la sesion. La clave
+publica se actualizo en los dos sitios donde vive hardcodeada:
+
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+  (`UpdateSecurity.ReleaseSigningPublicKeyPem`, forma JSON de una linea
+  con `\n` literales).
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+  (`$DefaultReleaseSigningPublicKeyPem`, here-string con saltos de
+  linea reales).
+
+`Atlas Balance/scripts/Actualizar-AtlasBalance.ps1` no necesito cambios:
+lee la clave publica del `appsettings.Production.json` ya desplegado en
+vez de tener una copia hardcodeada.
+
+**La clave privada nunca se escribio en el repositorio ni se imprimio
+en el chat.** Queda unicamente en un fichero local fuera de git que el
+operador debe mover a almacenamiento seguro (gestor de contrasenas o
+vault) y cargar el mismo valor como GitHub Secret
+`ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` (Settings -> Environments ->
+`release-signing` -> Secrets) por su cuenta: cargar secretos de firma
+es una accion de credenciales que le corresponde al operador, no al
+agente.
+
+**Verificacion ejecutada:**
+- `openssl pkey -pubin -in <clave-extraida-del-template> -pubout`:
+  PEM valido, identico byte a byte a la clave publica generada.
+- Extraccion y validacion identica desde `Instalar-AtlasBalance.ps1`
+  (mismo resultado).
+- Round-trip de firma real con las mismas APIs .NET que usa produccion
+  (`RSA.Create().ImportFromPem(...)`, `SignData`/`VerifyData` con
+  `SHA256`/`RSASignaturePadding.Pkcs1`, igual que
+  `Build-Release.ps1.Invoke-ReleaseSigner` y
+  `ActualizacionService.VerifyAssetSignatureAsync`): **firma generada
+  con la privada nueva se verifica correctamente con la publica
+  nueva**.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+
+**Pendientes (accion del operador, fuera de este repo):**
+- Guardar la clave privada en un vault/gestor de contrasenas seguro.
+- Cargarla como GitHub Secret `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`
+  en el entorno `release-signing`.
+- Re-disparar `workflow_dispatch` de `Release` una vez cargado el
+  secreto.
+- Si el equipo tiene instalaciones existentes de V-02-05 o anteriores
+  con el `ReleaseSigningPublicKeyPem` viejo desplegado, deberan
+  actualizar su `appsettings.Production.json` con la clave publica
+  nueva (o via `Actualizar-AtlasBalance.ps1`) antes de poder verificar
+  el `.sig` del paquete V-02.06 firmado con la clave rotada.
+
+---
 ## 2026-07-24 - V-02.06 - Release bloqueada en el ultimo paso: falta el secreto de firma en GitHub
 
 **Version:** V-02.06

@@ -19,24 +19,33 @@
   `WatchdogOperationsService.cs`, scripts de instalador/actualizador),
   pero el secreto de CI nunca quedo configurado (o se perdio/roto desde
   entonces).
-- **Por que no se resuelve aqui:** gestionar secretos de firma y
-  configuracion de GitHub Actions es una accion de credenciales que
-  corresponde al operador con acceso al repositorio, no a un agente.
-  No se genero ni se toco ninguna clave privada en esta sesion.
+- **Actualizacion 2026-07-24 (misma sesion):** el operador confirmo que
+  no conserva la clave privada anterior. Se genero un par RSA 4096
+  nuevo (`openssl genpkey`) fuera del repositorio; la clave publica se
+  actualizo en `appsettings.Production.json.template` e
+  `Instalar-AtlasBalance.ps1` (ver `DOCUMENTACION_CAMBIOS.md`,
+  2026-07-24, "Rotacion del par de firma de release") y se verifico con
+  un round-trip real de firma/verificacion usando las mismas APIs .NET
+  que produccion. La clave privada nunca se escribio en el repo ni se
+  imprimio en el chat.
+- **Por que la carga del secreto no se hizo aqui:** gestionar el
+  secreto `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en GitHub es una
+  accion de credenciales que corresponde al operador con acceso al
+  repositorio, no a un agente, aunque este haya generado la clave.
 - **Accion pendiente del operador:**
-  1. Si conserva la clave privada RSA guardada fuera del repo (segun
-     el pendiente de V-01.09): cargarla en GitHub -> repo
-     `AtlasLabs797/AtlasBalance` -> Settings -> Environments ->
-     `release-signing` -> Secrets -> `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
-  2. Si no la conserva: generar un par RSA nuevo (4096 bits,
-     `RSA.Create()` / `openssl genrsa`), cargar la privada como el
-     mismo secreto de GitHub y actualizar la clave publica en
-     `appsettings.Production.json` / plantillas del instalador para
-     que el actualizador siga verificando firmas correctamente.
+  1. Guardar la clave privada (entregada fuera del repo) en un
+     gestor de contrasenas o vault seguro.
+  2. Cargarla en GitHub -> repo `AtlasLabs797/AtlasBalance` -> Settings
+     -> Environments -> `release-signing` -> Secrets ->
+     `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
   3. Re-disparar `workflow_dispatch` de `Release` (version `V-02.06`,
      runtime `win-x64`, ref `V-02.06`) una vez cargado el secreto.
-- **Estado:** abierto, bloqueado en accion del operador. El resto de
-  V-02.06 (codigo, tests, npm audit) esta verde en CI.
+  4. Actualizar `appsettings.Production.json` con la clave publica
+     nueva en cualquier instalacion existente (V-02-05 o anterior)
+     antes de que pueda verificar el `.sig` de este release.
+- **Estado:** abierto, bloqueado en la carga del secreto por el
+  operador. El resto de V-02.06 (codigo, tests, npm audit, clave
+  publica) esta verde/listo.
 
 ### 2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7 pospuesta a V-02.07
 
