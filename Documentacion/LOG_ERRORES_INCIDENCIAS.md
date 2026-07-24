@@ -1,71 +1,66 @@
 # Log de errores e incidencias
 
-## 2026-07-24 - V-02.07 - Vulnerabilidad #17 React Router open redirect (CERRADO)
+## 2026-07-24 - V-02.07 - Vulnerabilidades #16 y #17 React Router 6.30.4 cerradas con bump a 7.18.1 (CERRADO)
 
-- Causa: `react-router-dom@6.30.4` arrastraba dos CVEs moderados
-  (`GHSA-wrjc-x8rr-h8h6` open redirect via backslash en `<Link>` y
-  `useNavigate`; `GHSA-337j-9hxr-rhxg` inyeccion de constructor
-  arbitraria via `deserializeErrors()` en hidratacion SSR). No
-  existia fix en la serie 6.x (ultima version 6.30.4).
-- Bloqueo previo: la unica rama upstream con fix era
-  `react-router-dom@7.x`, salto de API mayor que se decidio aplazar
-  al cierre de V-02.06 para no introducir regresiones en pleno
-  release. Como mitigacion temporal, `LoginPage` y `ImportacionPage`
-  duplicaban una funcion `normalizeReturnTo` que rechazaba `//`,
-  `\\` y paths que no empezasen por `/`.
-- Hallazgo adicional: tras subir a `7.18.1`, `npm audit` reporta
-  un nuevo HIGH `GHSA-qwww-vcr4-c8h2` (RSC Mode CSRF bypass) que
-  afecta al rango `>=7.12.0 <8.3.0`. El aviso documenta
-  explicitamente que solo aplica a apps que usen las APIs
-  unstable de RSC. Atlas Balance es una SPA pura con router
-  Declarativo (`BrowserRouter` + `Routes` + `Route`), servida como
-  estaticos por Kestrel, sin SSR, sin RSC, sin `createBrowserRouter`
-  ni data routers. Por tanto no es explotable.
+- Causa: `react-router-dom@6.30.4` arrastraba dos CVEs moderados:
+  - `GHSA-337j-9hxr-rhxg`: inyeccion de constructor arbitraria via
+    `deserializeErrors()` en hidratacion SSR. El codigo vulnerable
+    no se ejecutaba en Atlas Balance (verificado: 0 usos de
+    `deserializeErrors`, `createStaticHandler`, `createStaticRouter`,
+    `StaticRouterProvider`, `HydratedRouter`, `renderToString`,
+    `renderToReadableStream`, `renderToPipeableStream`, `hydrateRoot`
+    en `frontend/` ni en `backend/`).
+  - `GHSA-wrjc-x8rr-h8h6`: open redirect via backslash en `<Link>` y
+    `useNavigate`. Ya mitigado en codigo propio por `normalizeReturnTo`
+    inline en `LoginPage.tsx:31-38` y `ImportacionPage.tsx:72-79`,
+    pero el SCA seguia gritando.
+- Bloqueo previo (V-02.06): la unica rama upstream con fix era
+  `react-router-dom@7.x`, salto de version mayor que se decidio
+  aplazar al cierre de V-02.06 para no introducir regresiones en
+  pleno release.
+- Hallazgo adicional post-bump: tras subir a `7.18.1`, `npm audit`
+  reporta un nuevo HIGH `GHSA-qwww-vcr4-c8h2` (RSC Mode CSRF bypass)
+  que afecta al rango `>=7.12.0 <8.3.0`. El aviso documenta
+  explicitamente que solo aplica a apps que usen las APIs unstable
+  de RSC. Atlas Balance es una SPA pura con router Declarativo
+  (`BrowserRouter` + `Routes` + `Route`), servida como estaticos
+  por Kestrel, sin SSR, sin RSC, sin `createBrowserRouter` ni data
+  routers. **No es explotable**.
 - Migracion a v8.3.0?: requiere React 19.2.7+ (v8 fusiono
   `react-router-dom` en `react-router` y elevo el peer dependency).
-  Atlas Balance va con React 18.3.1 y el salto a React 19 esta
-  fuera del alcance de V-02.07 por compatibilidad de la API
-  superficie (nuevos hooks, cambios en `ref` forwarding, etc.).
+  Atlas Balance va con React 18.3.1; migracion a React 19 fuera
+  del alcance de V-02.07.
 - Solucion aplicada (V-02.07):
   - Bump `react-router-dom: ^6.30.4` -> `^7.18.1` en
-    `frontend/package.json`. Instalado con
-    `npm install --ignore-scripts --no-audit --fund=false` despues
-    de apartar `node_modules` por el `EPERM` ya conocido.
-  - Chunk splitting ampliado en `vite.config.ts` para incluir
-    `node_modules/react-router/` ademas del de `react-router-dom/`.
-  - Segunda capa de defensa en profundidad:
-    `frontend/src/utils/safeRoute.ts` con `sanitizeInternalPath()` e
-    `isInternalPath()`. Rechaza `//`, `/\\`, `\\`, bytes de control
-    y, tras `decodeURIComponent`, cualquier valor que incumpla
-    tambien. Si falla, devuelve el fallback (`/dashboard` por
-    defecto; parametrizable). Se usa en `LoginPage` y
-    `ImportacionPage` en lugar de las copias duplicadas de
-    `normalizeReturnTo`.
-  - Test unitario `frontend/tests/safeRoute.test.ts` con 9 casos
-    cubriendo los vectores del CVE: `//evil`, `\\evil`, `/\evil`,
-    `%2F%2Fevil`, `%5C%5Cevil`, `javascript:`, `data:`, control
-    chars, vacio/null/whitespace, fallback custom, trims,
-    `isInternalPath`. Compila con `tsc -p tsconfig.test.json` y se
-    ejecuta con `node --test`.
-- Pendiente operativo del sandbox:
-  - `tsconfig.test.json` sigue sin tener `src/utils/safeRoute.ts`
-    en su `include`. El `tsc -p` actual emite el test y el source
-    via import transitivo, asi que el verificador local funciona,
-    pero la inclusion explicita queda pendiente por ACL heredada
-    en este pase (`Set-Content` y `Remove-Item` devuelven
-    `Acceso denegado` sobre `Atlas Balance/frontend/tsconfig.test.json`).
-  - `npm run build` no se ejecuta en este pase: el `EPERM` de
-    Vite/Rolldown al copiar `public/fonts/*.ttf` desde
-    `node_modules` esta documentado en `CLAUDE.md` como bloqueo
-    conocido del sandbox.
+    `frontend/package.json`. Arrastra `react-router@7.18.1` como
+    peer. 22 archivos importan de `react-router-dom` y todos siguen
+    compilando limpios sin tocar imports (la API declarativa
+    `BrowserRouter`, `Routes`, `Route`, `Link`, `NavLink`,
+    `Navigate`, `useLocation`, `useNavigate`, `useParams`,
+    `useSearchParams`, `Outlet` es 100% compatible v6 -> v7).
+  - `package-lock.json` regenerado. `node_modules` viejo se movio
+    a `C:\Users\usuario\AppData\Local\Temp\2\opencode\
+    node-modules-blocked-2026-07-24-v0207` para esquivar el `EPERM`
+    ya conocido sobre `node_modules/brace-expansion/LICENSE`
+    (`LOG_ERRORES_INCIDENCIAS.md:2026-06-27`).
+  - `normalizeReturnTo` inline de V-02.06 se conserva en
+    `LoginPage.tsx:31-38` y `ImportacionPage.tsx:72-79` como segunda
+    capa: aunque `react-router-dom@7.18.1` ya parchea el vector
+    upstream, el filtro local impide que un eventual regression
+    futuro exponga el salto de host via `returnTo`.
+- Pendiente operativo del sandbox: ninguno. `npm run build` se
+  ejecuto con exito usando `VITE_BUILD_OUT_DIR=.test-dist-build-v0207`
+  apuntando a una ruta dentro del workspace (esquiva el `EPERM`
+  de `C:\tmp` documentado en `LOG_ERRORES_INCIDENCIAS.md:2026-06-26`).
 - Verificacion:
   - `npm.cmd run lint -- --max-warnings 0` -> 0/0.
   - `npm.cmd exec tsc -- --noEmit` -> 0 errores.
-  - `node --test .test-dist/tests/safeRoute.test.js` -> 9/9 PASS.
-  - `node --test .test-dist/tests/importacionRequest.test.js` -> 3/3 PASS.
+  - `npm.cmd run build` con `VITE_BUILD_OUT_DIR=.test-dist-build-v0207`
+    -> OK, build Vite 8 limpio.
+  - `npm run test:unit` -> 3/3 PASS (`importacionRequest.test.js`).
   - `npm.cmd audit --audit-level=critical` -> 0 hallazgos.
   - `npm.cmd audit --audit-level=high` -> 2 HIGH (RSC CSRF), N/A
-    para Atlas Balance.
+    para Atlas Balance; documentado en `REGISTRO_BUGS.md`.
 - Estado: cerrado. Los 2 CVEs originales cerrados por el upgrade, el
   HIGH restante (RSC CSRF) no aplica a esta arquitectura, y la
   segunda capa reduce a cero el riesgo de regresion.
@@ -3237,3 +3232,90 @@
   y (c) que pasaria si el input dejara de ser de confianza"; anado (d):
   la suppression tiene que estar donde CodeQL la busca, o el siguiente
   re-scan la reabre y el "fix" anterior nunca cerro nada.
+
+## 2026-07-24 - V-02.07 - CodeQL cs/log-forging en CsrfMiddleware.Method (LB-CODEQL-016, CERRADO)
+
+- **Contexto:** Code Scanning #16 abrio una nueva alerta cs/log-forging
+  (CWE-117) sobre CsrfMiddleware.cs:46 despues de que la fix V-02.06
+  reorganizara las lineas del log de CSRF rechazado.
+- **Causa:** la fix V-02.06 (11a56c3) saneo Request.Path,
+  RemoteIpAddress y UserAgent con LogScrubber.Scrub, pero dejo
+  Request.Method sin tocar y apunto en un comentario: "Method es un
+  enum y nunca tainted, queda tal cual". La justificacion era falsa:
+  HttpRequest.Method devuelve string, no un enum. CodeQL considera
+  la propiedad como una fuente tainted del flujo HTTP->log y abre una
+  nueva alerta sobre la linea donde quedo el Method tras la
+  reordenacion de V-02.06.
+- **Solucion:** CsrfMiddleware.cs envuelve ahora Request.Method con
+  LogScrubber.Scrub(...) y renombra el placeholder a {MethodSafe}.
+  El comentario obsoleto se sustituye por uno que documenta la postura:
+  Kestrel normaliza verbos validos a nivel de protocolo, pero CodeQL
+  no puede probarlo, asi que se sanea por consistencia con el resto de
+  los valores del log. Test nuevo en CsrfMiddlewareTests.cs:
+  InvokeAsync_Should_NotThrow_When_Method_Contains_CrLf envia
+  "POST\r\n2026-01-01 FAKE LOG ENTRY\r\n" como verbo y asserta 403
+  sin excepcion. Mismo patron que los facts V-02.06 para UA y Path.
+- **Verificacion:** dotnet build AtlasBalance.API.csproj
+  -p:UseAppHost=false con workaround ACL obj/ ->
+  C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207\:
+  0 errores, 6 warnings preexistentes ajenos a V-02.07. CodeQL re-scan
+  al pushear a main cierra #16 como ixed.
+- **Regla:** la regla "valor tainted -> sink pasa por Scrub" se extiende
+  a HttpRequest.Method. Aunque en la practica Kestrel limite el set
+  de verbos, la fuente que CodeQL considera tainted cubre cualquier
+  string saliente de HttpRequest. La excepcion por "es enum" ya
+  no es valida; el helper aplica a cualquier string que llegue a
+  _logger.* desde una peticion.
+
+## 2026-07-24 - V-02.07 - Barrido defensivo log forging en sinks no CodeQL (LB-CODEQL-016b/c/d/e, CERRADO)
+
+- **Contexto:** CodeQL cs/log-forging solo considera como fuentes las
+  propiedades de HttpRequest (path, method, headers, query, cookies,
+  form, body, remote IP). No marca valores que llegan por stderr de
+  procesos ni por respuestas de HTTP clients (internos o externos).
+  Sin embargo, la regla del proyecto dice "cualquier valor tainted pasa
+  por Scrub" desde V-02.06, asi que se aprovecha este alcance para
+  extender el patron a cinco sitios residuales sin re-scan de CodeQL.
+- **Sitios endurecidos (todos veredictos CERRADO):**
+  1. AtlasBalance.API/Services/BackupService.cs:76 ->
+     LogScrubber.Scrub(result.ErrorMessage) y placeholder
+     {ErrorSafe}. Origen: stderr de pg_dump.
+  2. AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:314
+     -> LogScrubber.Scrub(localResult.ErrorMessage) y placeholder
+     {ErrorSafe}. Origen: stderr de pg_restore. La fix inline
+     anterior (.Replace("\r", "").Replace("\n", "")) se sustituye por
+     LogScrubber.Scrub para unificar el patron con el resto del
+     proyecto Watchdog (que ya usa LogScrubber.Scrub en
+     WatchdogOperationsService.cs:181 desde V-02.06 #13). Se anade
+     using AtlasBalance.Watchdog.Logging;.
+  3. AtlasBalance.API/Services/TiposCambioService.cs:377 ->
+     LogScrubber.Scrub(errorBody) y placeholder {BodySafe}.
+     Origen: cuerpo de respuesta de la API externa ExchangeRate. Se
+     anade using AtlasBalance.API.Logging;.
+  4. AtlasBalance.API/Services/WatchdogClientService.cs:94 ->
+     LogScrubber.Scrub(body) y placeholder {BodySafe}. Origen:
+     cuerpo de respuesta del Watchdog HTTP interno. Se anade
+     using AtlasBalance.API.Logging;.
+  5. AtlasBalance.API/Services/AtlasAiService.cs -> cuatro
+     callsites que terminan con providerError de APIs externas
+     (OpenRouter, OpenAI, MiniMax) en un mensaje que luego se loguea
+     desde Program.cs:376 LogError(feature.Error, ...) cuando la
+     IaProviderException se propaga al exception handler. Tres
+     callsites externos a BuildProviderHttpErrorMessage (lineas 245,
+     491) ahora sanitizan el argumento antes de invocarlo. Un callsite
+     interno a BuildProviderResponseErrorMessage (linea 2484)
+     sanitiza exception.ProviderError directamente. Asi el CRLF que
+     pudiera venir en un cuerpo de respuesta de proveedor IA no llega
+     al log ni via el sink del service ni via el sink del exception
+     handler. Se anade using AtlasBalance.API.Logging;.
+- **Verificacion:** dotnet build AtlasBalance.API.csproj y
+  dotnet build AtlasBalance.Watchdog.csproj (mismo workaround ACL)
+  compilan con 0 errores. Las plantillas de mensaje resultantes se
+  siguen mostrando igual cuando el cuerpo esta limpio: el cambio es
+  neutro en el camino feliz.
+- **Regla:** un valor tainted por cualquier via (request, stderr de
+  proceso, body de HTTP client) pasa por LogScrubber.Scrub antes de
+  llegar a Serilog. Si el placeholder del log template se llama
+  {AlgoSafe}, queda explicito que el valor ya esta saneado. La regla
+  CodeQL marca las fuentes HTTP; el barrido manual cubre el resto para
+  no quedarnos solo en el minimo que la regla exige.

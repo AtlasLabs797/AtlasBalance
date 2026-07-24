@@ -72,6 +72,29 @@ public sealed class CsrfMiddlewareTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
 
+    // V-02.07 (CodeQL #16): HttpRequest.Method es string, no enum. CodeQL
+    // lo considera tainted aunque Kestrel normalice verbos validos, asi que
+    // el middleware lo envuelve con LogScrubber.Scrub antes de loguearlo.
+    // Este test fija esa garantia sobre el verbo, en paralelo al de UA y Path.
+    [Fact]
+    public async Task InvokeAsync_Should_NotThrow_When_Method_Contains_CrLf()
+    {
+        var middleware = new CsrfMiddleware(
+            _ => Task.CompletedTask,
+            NullLogger<CsrfMiddleware>.Instance);
+
+        var context = BuildContext(
+            "/api/usuarios",
+            "POST\r\n2026-01-01 FAKE LOG ENTRY\r\n",
+            userAgent: "Mozilla/5.0");
+        var csrf = new RejectingCsrfService();
+
+        var act = async () => await middleware.InvokeAsync(context, csrf);
+
+        await act.Should().NotThrowAsync();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
     [Fact]
     public async Task InvokeAsync_Should_CallNext_When_Method_IsGet()
     {

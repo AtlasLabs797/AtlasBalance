@@ -1,4 +1,5 @@
 using AtlasBalance.API.Data;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -375,9 +376,9 @@ public sealed class TiposCambioService : ITiposCambioService
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogWarning(
-                    "ExchangeRate API devolvió {StatusCode}. Body: {Body}",
+                    "ExchangeRate API devolvió {StatusCode}. Body: {BodySafe}",
                     (int)response.StatusCode,
-                    errorBody);
+                    LogScrubber.Scrub(errorBody));
                 return new SyncTiposCambioResult(false, 0, "No se pudo sincronizar con la API de tipos de cambio.");
             }
 

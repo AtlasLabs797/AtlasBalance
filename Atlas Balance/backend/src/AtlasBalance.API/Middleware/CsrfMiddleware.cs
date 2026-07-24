@@ -39,11 +39,13 @@ public sealed class CsrfMiddleware
                 // V-02-05 (MED-9): registrar el intento rechazado para visibilidad.
                 // V-02-06 (CodeQL #10/#11): sanear path/ip/ua antes de loguearlos para
                 // evitar CWE-117 (log forging) si el cliente envia CRLF en la URL o en
-                // cabeceras. Method es un enum y nunca tainted, queda tal cual.
+                // cabeceras.
+                // V-02.07 (CodeQL #16): HttpRequest.Method es string y CodeQL lo considera
+                // tainted aunque Kestrel normalice verbos validos. Mismo Scrub que el resto.
                 _logger.LogWarning(
-                    "CSRF rechazado: path={PathSafe} method={Method} ip={IpSafe} ua={UaSafe}",
+                    "CSRF rechazado: path={PathSafe} method={MethodSafe} ip={IpSafe} ua={UaSafe}",
                     LogScrubber.Scrub(context.Request.Path.Value),
-                    context.Request.Method,
+                    LogScrubber.Scrub(context.Request.Method),
                     LogScrubber.Scrub(context.Connection.RemoteIpAddress?.ToString()),
                     LogScrubber.Scrub(context.Request.Headers.UserAgent.ToString()));
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;

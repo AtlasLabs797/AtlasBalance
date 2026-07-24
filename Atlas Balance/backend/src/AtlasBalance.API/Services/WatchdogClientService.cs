@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Net;
 using System.Text.Json;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Logging;
 
 namespace AtlasBalance.API.Services;
 
@@ -91,7 +92,7 @@ public sealed class WatchdogClientService : IWatchdogClientService
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        _logger.LogWarning("Watchdog update request failed with status code {StatusCode}: {Body}", (int)response.StatusCode, body);
+        _logger.LogWarning("Watchdog update request failed with status code {StatusCode}: {BodySafe}", (int)response.StatusCode, LogScrubber.Scrub(body));
         return false;
     }
 

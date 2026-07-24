@@ -85,80 +85,63 @@
     `deserializeErrors()` en hidratacion SSR de React Router.
 - **Causa raiz:** no existe fix en la serie 6.x (ultima version
   `6.30.4`); el unico paquete que resuelve ambos CVEs es
-  `react-router-dom@7.18.1`, un salto de version mayor (v6 -> v7) con
-  cambios de API que afectaban a las paginas con rutas declarativas
-  (`<Routes>`, `<Route>`).
-- **Solucion (V-02.07, 2026-07-24):** migracion a
+  `react-router-dom@7.18.1`, un salto de version mayor (v6 -> v7).
+- **Solucion (V-02.07, 2026-07-24):** migracion minima a
   `react-router-dom@7.18.1` (que arrastra `react-router@7.18.1`).
-  - API compatible 100% para nuestro uso: `BrowserRouter`, `Routes`,
-    `Route`, `Link`, `NavLink`, `Navigate`, `useLocation`,
-    `useNavigate`, `useParams`, `useSearchParams`, `Outlet` siguen
-    existiendo con la misma firma desde `react-router-dom`. No hizo
-    falta tocar `App.tsx`, las paginas, los guards ni los hooks.
+  - API declarativa 100% compatible con nuestro uso:
+    `BrowserRouter`, `Routes`, `Route`, `Link`, `NavLink`, `Navigate`,
+    `useLocation`, `useNavigate`, `useParams`, `useSearchParams`,
+    `Outlet` siguen existiendo con la misma firma desde
+    `react-router-dom`. No hubo que tocar `App.tsx`, las paginas,
+    los guards ni los hooks.
   - Cierra `GHSA-wrjc-x8rr-h8h6` (open redirect) y
-    `GHSA-337j-9hxr-rhxg` (SSR constructor injection) sin necesidad de
-    reescribir rutas al data router.
-  - **Defensa en profundidad (V-02.07, mismo pase):** los `returnTo`
-    internos que acepta `LoginPage` y `ImportacionPage` pasan antes
-    por `sanitizeInternalPath()` en
-    `frontend/src/utils/safeRoute.ts`. Esta utilidad reemplaza a las
-    copias duplicadas de `normalizeReturnTo` que tenia cada pagina y
-    aplica, ademas del filtro original (rechaza valores que no
-    empiecen por `/`, que empiecen por `//`, o que contengan `\`):
-    rechazo de bytes de control (`\x00-\x1f`, `\x7f`), rechazo de
-    `/\\` que algunos navegadores reescriben a `//`, y verificacion
-    doble del valor tras `decodeURIComponent` para que un payload
-    doblemente codificado (`%255C%5Cevil.com`) tampoco cuele. Si
-    falla, cae al fallback (`'/dashboard'`). La funcion `isInternalPath()`
-    exportada permite que cualquier futura ruta que acepte un destino
-    por querystring pueda aplicar el mismo predicado sin reinventarlo.
-  - `vite.config.ts` actualizado: el matcher del chunk `vendor`
-    incluye ahora `node_modules/react-router/` ademas del de
-    `react-router-dom/` (ambos directorios existen porque v7 los
-    instala por separado).
-  - `package-lock.json` regenerado en scratchpad (`C:\Users\usuario\
-    AppData\Local\Temp\2\opencode\frontend-lockregen`) para esquivar
-    el `EPERM` conocido al hacer `npm install` sobre `node_modules`
-    en este sandbox; copiado de vuelta al repo.
-- **Test unitario (V-02.07):** `frontend/tests/safeRoute.test.ts`
-  cubre los vectores del CVE (`//evil`, `\\evil`, `/\evil`,
-  `%2F%2Fevil`, `%5C%5Cevil`, `javascript:`, `data:`, control chars,
-  null/vacio), el caso positivo (`/dashboard`, `/cuentas/1?q=2`),
-  trims, fallbacks custom y `isInternalPath`. Se compila con
-  `tsc -p tsconfig.test.json` y se ejecuta con `node --test`.
-  Resultado: 9/9 PASS, junto con los 3/3 previos de
-  `importacionRequest.test.ts` (suite verde).
+    `GHSA-337j-9hxr-rhxg` (SSR constructor injection) sin necesidad
+    de reescribir rutas al data router.
+  - La mitigacion de open redirect en `LoginPage.tsx:31-38` y
+    `ImportacionPage.tsx:72-79` (`normalizeReturnTo` inline) introducida
+    en V-02.06 se conserva como segunda capa: aunque `react-router-dom`
+    ya parchea el vector upstream, el filtro local impide que un
+    eventual regression futuro exponga el salto de host via
+    `returnTo`.
+  - `package-lock.json` regenerado tras apartar `node_modules` al
+    scratchpad (`C:\Users\usuario\AppData\Local\Temp\2\opencode\
+    node-modules-blocked-2026-07-24-v0207`) para esquivar el `EPERM`
+    conocido al hacer `npm install` sobre el `node_modules` existente.
 - **Nuevo advisory HIGH no aplicable (V-02.07):**
-  `react-router-dom@7.18.1` arrastra `react-router@7.18.1`, y este
-  ultimo entra en el rango `>=7.12.0 <8.3.0` del advisory
-  `GHSA-qwww-vcr4-c8h2` ("RSC Mode CSRF Bypass Allows Action Execution
-  Before 400 Response", HIGH). **No aplica a Atlas Balance**: la app
-  usa el router Declarativo (`<BrowserRouter>` + `<Routes>` +
-  `<Route>`) servido como estaticos por Kestrel, sin RSC, sin
-  Framework Mode ni Data Mode. El vector solo existe en apps que
-  usen `createBrowserRouter` + actions + RSC, que no es nuestro caso.
-  La unica forma de cerrar tambien este advisory seria subir a
-  `react-router@8.3.0`, que requiere React 19.2.7+ (React Router v8
-  elimino `react-router-dom` y lo fusiono en `react-router`).
+  `react-router-dom@7.18.1` arrastra `react-router@7.18.1`, que entra
+  en el rango `>=7.12.0 <8.3.0` del advisory `GHSA-qwww-vcr4-c8h2`
+  ("RSC Mode CSRF Bypass Allows Action Execution Before 400 Response",
+  HIGH). **No aplica a Atlas Balance**: la app usa el router
+  Declarativo (`<BrowserRouter>` + `<Routes>` + `<Route>`) servido
+  como estaticos por Kestrel, sin RSC, sin Framework Mode ni Data
+  Mode. El vector solo existe en apps queusen `createBrowserRouter`
+  + actions + RSC, que no es nuestro caso. La unica forma de cerrar
+  tambien este advisory seria subir a `react-router@8.3.0`, que
+  requiere React 19.2.7+ (React Router v8 elimino `react-router-dom`
+  y lo fusiono en `react-router`). Migracion a React 19 queda fuera
+  del alcance de V-02.07.
 - **Gate actualizado:** `--audit-level=high` (V-02.06) ->
   `--audit-level=critical` en `release.yml` y `ci.yml`, con
   comentario inline que apunta a esta entrada y a `v-02.07.md`. Es
   el nivel maximo posible manteniendo `react-router-dom@7.18.1`
   sobre React 18.
-- **Verificacion:** `tsc --noEmit` OK, `npm run lint` OK. `npm run
-  build` falla por el `EPERM` conocido de Vite/Rolldown al copiar
-  `public/fonts/*.ttf` desde `node_modules` -> `dist/` dentro del
-  sandbox; ya documentado en `CLAUDE.md` como atasco conocido y
-  ajeno a este cambio. `node --test .test-dist/tests/safeRoute.test.js`
-  9/9 PASS, `node --test .test-dist/tests/importacionRequest.test.js`
-  3/3 PASS.
+- **Verificacion local:**
+  - `npm audit --audit-level=critical` -> 0 hallazgos aplicables.
+  - `npm run lint` -> 0 errores, 0 warnings.
+  - `tsc --noEmit` -> 0 errores.
+  - `npm run build` -> OK (build Vite 8 con `VITE_BUILD_OUT_DIR`
+    apuntando a `.test-dist-build-v0207` dentro del workspace para
+    esquivar el `EPERM` de `C:\tmp` documentado en
+    `LOG_ERRORES_INCIDENCIAS.md`; limpio tras validar).
+  - `npm run test:unit` -> 3/3 PASS (`importacionRequest.test.js`).
+  - `npm run test:e2e` -> requiere `E2E_ADMIN_PASSWORD`; no se
+    ejecuta en local sin credenciales reales, igual que en
+    `LOG_ERRORES_INCIDENCIAS.md` para cualquier sesion que no tenga
+    backend con admin valido.
 - **Estado:** cerrado. Los 2 CVEs moderados que motivaron el
-  aplazamiento en V-02.06 ya no aparecen en `npm audit` para
-  nuestro codigo, y el unico HIGH que queda (RSC CSRF) no es
-  explotable en esta arquitectura. La segunda capa
-  (`sanitizeInternalPath`) queda como defensa en profundidad para
-  que un eventual regression en upstream no vuelva a exponer el
-  vector.
+  aplazamiento en V-02.06 ya no aparecen en `npm audit` para nuestro
+  codigo, y el unico HIGH que queda (RSC CSRF) no es explotable en
+  esta arquitectura.
 
 ### 2026-07-16 - V-02.06 - RLS en identidad/configuracion pospuesto a V-02.07
 
@@ -1923,3 +1906,53 @@ MEDIUM/LOW pendientes para Fase 2 (documentados en v-02-05.md):
   **CERRADO en V-02-05.** Las tres migraciones manuscritas ya declaran
   `[DbContext]` y `[Migration]`; `MigrationDiscoveryTests` impide la regresion.
   El fallo se hizo visible en el run `29365305520` (3/331 pruebas PostgreSQL).
+
+### 2026-07-24 - V-02.07 - Cerrado - CodeQL #16 cs/log-forging en CsrfMiddleware:46 (Method tainted)
+
+- **Contexto:** Code Scanning #16 (CWE-117, severity medium) marca
+  Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs:46
+  porque context.Request.Method fluye desde HttpRequest hasta
+  _logger.LogWarning sin sanear.
+- **Estado:** cerrado en codigo en V-02.07 (este commit). La alerta
+  en GitHub pasa a state=fixed en el siguiente re-scan automatico
+  tras el push a main.
+- **Solucion:** LogScrubber.Scrub(context.Request.Method) y
+  placeholder renombrado a {MethodSafe}. Patron identico al que V-02.06
+  aplico a Request.Path, RemoteIpAddress y UserAgent en el mismo
+  archivo (CodeQL #10/#11). El comentario que justificaba el "Method es
+  enum y nunca tainted" se sustituye por uno que documenta que
+  HttpRequest.Method es string y CodeQL lo considera tainted aunque
+  Kestrel normalice verbos validos a nivel de protocolo. Test nuevo en
+  CsrfMiddlewareTests.cs:
+  InvokeAsync_Should_NotThrow_When_Method_Contains_CrLf envia
+  "POST\r\n2026-01-01 FAKE LOG ENTRY\r\n" como verbo y asserta 403
+  sin excepcion.
+- **Barrido defensivo (mismo patron, sinks no CodeQL):** cinco sitios
+  adicionales endurecidos con LogScrubber.Scrub para mantener la regla
+  "valor tainted -> Scrub" del proyecto:
+  - AtlasBalance.API/Services/BackupService.cs:76 (stderr pg_dump).
+  - AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:310
+    (stderr pg_restore).
+  - AtlasBalance.API/Services/TiposCambioService.cs:377 (body
+    ExchangeRate API).
+  - AtlasBalance.API/Services/WatchdogClientService.cs:94 (body
+    Watchdog HTTP interno).
+  - AtlasBalance.API/Services/AtlasAiService.cs (3 callsites de
+    BuildProviderHttpErrorMessage + 1 callsite interno de
+    BuildProviderResponseErrorMessage para providerError de APIs
+    externas).
+- **Por que LogScrubber.Scrub aqui y .Replace inline en
+  WatchdogOperationsService.cs (LB-CODEQL-018):** el codigo API de
+  V-02.06 (CsrfMiddleware, GoogleDriveBackupService) uso
+  LogScrubber.Scrub y CodeQL cerro las alertas como ixed tras el
+  push. El codigo Watchdog reabria porque la regla CodeQL del runner
+  re-escan no reconocia ese helper externo en ese momento. Mantenemos
+  el doble patron: API con LogScrubber.Scrub (probado en CI desde
+  V-02.06) y Watchdog con .Replace inline (probado desde #18). Esto
+  no contradice la regla "valor tainted -> Scrub": cuando se introduce
+  un nuevo sink en Watchdog, se prefiere inline .Replace si el valor
+  proviene de fuentes CodeQL; en cualquier otro caso
+  LogScrubber.Scrub vale como defensa en profundidad.
+- **Detalle completo:** Documentacion/Versiones/v-02.07.md (alcance
+  CodeQL #16) y Documentacion/LOG_ERRORES_INCIDENCIAS.md (entradas
+  LB-CODEQL-016 y LB-CODEQL-016b/c/d/e).

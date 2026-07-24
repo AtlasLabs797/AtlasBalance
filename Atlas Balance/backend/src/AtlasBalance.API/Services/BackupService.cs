@@ -73,7 +73,7 @@ public sealed class BackupService : IBackupService
                 backup.Estado = EstadoProceso.FAILED;
                 backup.Notas = "La herramienta de copia fallo. Revisa el diagnostico protegido del servidor.";
                 await _dbContext.SaveChangesAsync(cancellationToken);
-                _logger.LogWarning("pg_dump fallo al crear backup {BackupId}: {Error}", backup.Id, result.ErrorMessage);
+                _logger.LogWarning("pg_dump fallo al crear backup {BackupId}: {ErrorSafe}", backup.Id, LogScrubber.Scrub(result.ErrorMessage));
                 throw new InvalidOperationException("No se pudo crear la copia de seguridad. Revisa la configuracion del servidor o avisa al administrador.");
             }
 

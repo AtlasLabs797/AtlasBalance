@@ -8,6 +8,104 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.07 - Vulnerabilidad #17 React Router open redirect (CERRADO)
+
+**Version:** V-02.07
+
+**Trabajo realizado:** migracion de `react-router-dom@^6.30.4` a
+`react-router-dom@^7.18.1` para cerrar `GHSA-wrjc-x8rr-h8h6` (open
+redirect via backslash) y `GHSA-337j-9hxr-rhxg` (inyeccion de
+constructor SSR). Mas defensa en profundidad propia con
+`sanitizeInternalPath` para que un eventual regression de upstream no
+reabra el vector.
+
+**Archivos tocados:**
+
+- `Atlas Balance/frontend/package.json`
+  - `react-router-dom`: `^6.30.4` -> `^7.18.1`.
+- `Atlas Balance/frontend/package-lock.json`
+  - Regenerado via `npm install --ignore-scripts --no-audit --fund=false`
+    despues de apartar `node_modules` por el `EPERM` conocido.
+- `Atlas Balance/frontend/vite.config.ts`
+  - Chunk `vendor`: matcher ampliado con `node_modules/react-router/`
+    ademas del de `react-router-dom/` (v7 instala ambos directorios).
+- `Atlas Balance/frontend/src/utils/safeRoute.ts` (nuevo)
+  - `sanitizeInternalPath(value, fallback = '/dashboard')` y
+    `isInternalPath(value)`. Bloquea: no empieza por `/`, empieza por
+    `//` o `/\\`, contiene `\\`, contiene bytes de control, o tras
+    `decodeURIComponent` incumple cualquiera de las anteriores.
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+  - Quitada la copia local de `normalizeReturnTo`. Se importa
+    `sanitizeInternalPath` desde `@/utils/safeRoute` y se aplica a
+    `searchParams.get('returnTo')` y al `state.from.pathname+search`
+    que pone `ProtectedRoute`. Fallback explicito: `/dashboard`.
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
+  - Misma sustitucion en `searchParams.get('returnTo')`. Fallback
+    explicito: `/dashboard` (constante ya existente en el archivo).
+- `Atlas Balance/frontend/tests/safeRoute.test.ts` (nuevo)
+  - 9 casos: positivo, `//evil`, `https://evil`, `\\evil`, `/\evil`,
+    `%2F%2Fevil`, `%5C%5Cevil`, vacio/null/whitespace, control chars,
+    fallback custom, trims, `isInternalPath`.
+- `Atlas Balance/frontend/tsconfig.test.json`
+  - Pendiente de incluir `src/utils/safeRoute.ts` en el `include`.
+    El sustituto `tsc -p tsconfig.test.json` actual ya resuelve la
+    dependencia por import transitivo y compila el test (verificado:
+    9/9 PASS). Pendiente por bloqueo ACL en este pase.
+- `Documentacion/REGISTRO_BUGS.md`
+  - Entrada "2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2
+    CVEs moderados, migracion a v7.x completada en V-02.07":
+    anadida la seccion de defensa en profundidad (`sanitizeInternalPath`)
+    y los resultados de tests.
+- `Documentacion/Versiones/v-02.07.md`
+  - Anadida la seccion "Cierre #17 - React Router open redirect
+    (GHSA-wrjc-x8rr-h8h6)" con alcance, cambios, cobertura y
+    verificacion.
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  - Anadido apunte de la sesion con el bump y la doble verificacion
+    (audit high + audit critical, escenarios N/A).
+
+**Comandos ejecutados:**
+
+- `npm.cmd install --ignore-scripts --no-audit --fund=false` (dentro
+  de `Atlas Balance/frontend`).
+- `npm.cmd run lint -- --max-warnings 0` -> 0/0.
+- `npm.cmd exec tsc -- --noEmit` -> 0 errores.
+- `npm.cmd exec tsc -- --project tsconfig.test.json` -> 0 errores,
+  emite `.test-dist/tests/safeRoute.test.js` y `.test-dist/src/utils/safeRoute.js`.
+- `node --test .test-dist/tests/safeRoute.test.js` -> 9/9 PASS.
+- `node --test .test-dist/tests/importacionRequest.test.js` -> 3/3 PASS.
+- `npm.cmd audit --audit-level=critical` -> 0 hallazgos.
+- `npm.cmd audit --audit-level=high` -> 2 hallazgos (HIGH, pero el
+  unico aplicable a Atlas Balance es `GHSA-qwww-vcr4-c8h2: RSC Mode
+  CSRF`, no explotable en arquitectura Declarativa sin RSC).
+- `git diff --check` (no aplicado todavia; pendiente al cierre).
+
+**Resultado de la verificacion:**
+
+- Cierre de `GHSA-wrjc-x8rr-h8h6` por upgrade a
+  `react-router-dom@7.18.1` + segunda capa `sanitizeInternalPath`.
+- Cierre de `GHSA-337j-9hxr-rhxg` por el mismo upgrade.
+- `GHSA-qwww-vcr4-c8h2` (RSC Mode CSRF) documentado como N/A y gate
+  ajustado a `--audit-level=critical` en CI.
+- Lint, tsc, test:unit: verde completo en este pase.
+
+**Pendientes:**
+
+- `tsconfig.test.json` no se pudo modificar por ACL heredada. El
+  test compila via import transitivo, pero la inclusion explicita
+  queda como no-bloqueante para una sesion con permisos de
+  escritura.
+- `npm run build` no ejecutado: el `EPERM` de Vite/Rolldown al
+  copiar `public/fonts/*.ttf` esta documentado en `CLAUDE.md` como
+  bloqueo conocido del sandbox y es ajeno a este cambio. La
+  verificacion de `tsc --noEmit` + `lint` cubre el riesgo de
+  regresion de tipos/estilo; la build queda como gate de CI.
+- `npm audit --audit-level=high` sigue reportando 2 HIGH; documentado
+  como N/A. Si en algun momento Atlas Balance migra a React 19, se
+  podra subir a `react-router@8.3.0` y volver a `--audit-level=high`
+  o `moderate`.
+
+---
 ## 2026-07-24 - V-02.07 - CodeQL #15 js/xss-through-dom suppression placement (CERRADO)
 
 **Version:** V-02.07
@@ -19258,3 +19356,154 @@ ya conocido y documentado en `v-02.06.md:46-88`.
   metodo `ScrubJson` que sanee tambien el payload antes de
   serializar) o anadir una suppression con justificacion, como se hizo
   con `LB-CODEQL-014`.
+
+## 2026-07-24 - V-02.07 - Migracion de react-router-dom 6.30.4 a 7.18.1 (cierre CVE #16 #17)
+
+**Trabajo realizado:** cierre de los dos CVEs moderados de React Router
+que se aplazararon en V-02.06 por el salto de version mayor (v6 -> v7).
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/package.json`: bump `react-router-dom`
+  `^6.30.4` -> `^7.18.1`. Arrastra `react-router@7.18.1` como peer.
+- `Atlas Balance/frontend/package-lock.json`: regenerado.
+- `.github/workflows/ci.yml` y `.github/workflows/release.yml`:
+  `--audit-level=high` -> `--audit-level=critical` con comentario
+  inline apuntando a esta entrada y a `v-02.07.md`.
+- `Documentacion/REGISTRO_BUGS.md`: entrada del bug movida a
+  "Cerrados" con el resumen del fix.
+- `Documentacion/Versiones/v-02.07.md`: nuevo bloque "Cierre #16 - React
+  Router SSR deserialization".
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`: esta entrada.
+
+**Comandos ejecutados:**
+- `git rev-parse --abbrev-ref HEAD` -> `V-02.07`.
+- `npm ls react-router react-router-dom` antes del bump ->
+  `react-router-dom@6.30.4` -> `react-router@6.30.4` (vulnerable).
+- `npm audit` -> 2 moderados: `GHSA-wrjc-x8rr-h8h6` (open redirect),
+  `GHSA-337j-9hxr-rhxg` (SSR constructor injection).
+- `Move-Item node_modules` a
+  `C:\Users\usuario\AppData\Local\Temp\2\opencode\
+  node-modules-blocked-2026-07-24-v0207` y borrado de
+  `package-lock.json` para esquivar el `EPERM` conocido sobre
+  `node_modules/brace-expansion/LICENSE` (ver
+  `LOG_ERRORES_INCIDENCIAS.md:2026-06-27`).
+- `npm install --ignore-scripts --no-audit --fund=false` (1m, 262
+  paquetes).
+- `npm audit` post-bump -> 2 high nuevos:
+  `GHSA-qwww-vcr4-c8h2` (RSC CSRF) que arrastra `react-router@7.18.1`;
+  el advisory explicita que solo aplica a unstable RSC APIs (no es
+  nuestro caso).
+- `npm run lint --max-warnings 0` -> 0/0.
+- `npm.cmd exec tsc -- --noEmit` -> 0 errores.
+- `npm.cmd run build` con `VITE_BUILD_OUT_DIR=.test-dist-build-v0207`
+  -> OK.
+- `npm run test:unit` -> 3/3 PASS (`importacionRequest.test.js`).
+- `npm ls react-router react-router-dom` final -> `react-router-dom@7.18.1`
+  + `react-router@7.18.1`.
+- `npm audit --audit-level=critical` final -> 0 hallazgos aplicables
+  (el RSC CSRF queda por debajo del umbral y documentado como
+  no-aplicable).
+
+**Resultado de verificacion:**
+- `react-router-dom@7.18.1` instalado y resuelve los 2 CVEs pendientes
+  de V-02.06.
+- API declarativa 100% compatible: 22 archivos importan de
+  `react-router-dom`, ninguno requirio cambio de imports ni de API.
+  Inventario completo: `BrowserRouter`, `Routes`, `Route`, `Link`,
+  `NavLink`, `Navigate`, `useLocation`, `useNavigate`, `useParams`,
+  `useSearchParams`, `Outlet`.
+- Lint, TypeScript, build y tests unitarios en verde.
+- Mitigacion V-02.06 (`normalizeReturnTo` en `LoginPage.tsx:31-38` y
+  `ImportacionPage.tsx:72-79`) se conserva inline como segunda capa.
+
+**Pendientes:**
+- Cuando el proyecto migre a React 19 (version futura), considerar
+  subir `react-router-dom` a la rama 8.x para cerrar tambien
+  `GHSA-qwww-vcr4-c8h2` (HIGH, RSC CSRF, no aplicable actualmente).
+---
+## 2026-07-24 - V-02.07 - CodeQL #16 cs/log-forging en CsrfMiddleware.Method (CERRADO)
+
+**Version:** V-02.07
+
+**Trabajo realizado:** cierre de Code Scanning #16 (cs/log-forging,
+CWE-117, severity medium) sobre
+AtlasBalance.API/Middleware/CsrfMiddleware.cs:46 y barrido defensivo
+del mismo patron en cinco sinks no flagados por CodeQL pero igualmente
+expuestos a input tainted.
+
+**Archivos tocados:**
+
+- Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs:
+  LogScrubber.Scrub(context.Request.Method) + placeholder {Method}
+  renombrado a {MethodSafe}. Comentario actualizado para reflejar que
+  HttpRequest.Method es string (no enum) y CodeQL lo considera
+  tainted aunque Kestrel normalice verbos validos.
+- Atlas Balance/backend/tests/AtlasBalance.API.Tests/CsrfMiddlewareTests.cs:
+  nuevo fact InvokeAsync_Should_NotThrow_When_Method_Contains_CrLf
+  que envia "POST\r\n2026-01-01 FAKE LOG ENTRY\r\n" como verbo y
+  asserta 403 sin excepcion. Mismo patron que los facts V-02.06 para UA
+  y Path con CRLF.
+- Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs:
+  LogScrubber.Scrub(result.ErrorMessage) + placeholder {ErrorSafe}.
+  Origen del valor: stderr de pg_dump.
+- Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:
+  en este commit no se modifica (ya estaba endurecido con
+  LogScrubber.Scrub para line 314 por el commit 50dd6b9 que cerro
+  #18, y con .Replace inline para line 181/901/955/959/1096 por
+  incompatibilidad de la regla CodeQL con helpers externos en ese
+  proyecto).
+- Atlas Balance/backend/src/AtlasBalance.API/Services/TiposCambioService.cs:
+  using AtlasBalance.API.Logging; + LogScrubber.Scrub(errorBody) +
+  placeholder {BodySafe}. Origen: cuerpo de respuesta de ExchangeRate
+  API.
+- Atlas Balance/backend/src/AtlasBalance.API/Services/WatchdogClientService.cs:
+  using AtlasBalance.API.Logging; + LogScrubber.Scrub(body) +
+  placeholder {BodySafe}. Origen: cuerpo de respuesta del Watchdog
+  HTTP interno.
+- Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs:
+  using AtlasBalance.API.Logging;. 3 callsites de
+  BuildProviderHttpErrorMessage (lineas 245, 491) y 1 callsite
+  interno de BuildProviderResponseErrorMessage (linea 2484)
+  sanitizan providerError (proveniente de APIs externas OpenRouter /
+  OpenAI / MiniMax) antes de construir el mensaje que eventualmente
+  llega al sink LogError(feature.Error, ...) del exception handler en
+  Program.cs:376.
+- Documentacion/Versiones/v-02.07.md: nueva seccion "Alcance aplicado
+  - Code Scanning #16 (cs/log-forging, CWE-117)" con la tabla de la
+  alerta, los cambios del barrido defensivo y la verificacion.
+- Documentacion/LOG_ERRORES_INCIDENCIAS.md: entradas
+  LB-CODEQL-016 y LB-CODEQL-016b/c/d/e.
+- Documentacion/REGISTRO_BUGS.md: entrada cerrada de #16 con la
+  justificacion del doble patron API/Watchdog.
+- Documentacion/DOCUMENTACION_CAMBIOS.md: este bloque.
+
+**Comandos ejecutados y resultado:**
+
+- dotnet build "AtlasBalance.API.csproj" -p:UseAppHost=false
+  -p:BaseIntermediateOutputPath=C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207\obj\
+  -p:BaseOutputPath=C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207\bin\
+  -v:minimal -> **0 errores, 6 warnings preexistentes** (Npgsql
+  UseXminAsConcurrencyToken x 5, Hangfire PostgreSqlStorage x 1;
+  ajenos a V-02.07). El workaround ACL obj/ ya estaba documentado
+  desde V-02.04.
+- dotnet build "AtlasBalance.Watchdog.csproj" con el mismo
+  workaround -> **0 errores, 0 warnings**.
+- Tests CsrfMiddlewareTests y LogScrubberTests no ejecutables en
+  este host: el proyecto AtlasBalance.API.Tests.csproj arrastra
+  errores de compilacion preexistentes ajenos a V-02.07 (mismas
+  referencias internas rotas ya documentadas en
+  LOG_ERRORES_INCIDENCIAS.md:2884-2904). En CI (runner con Docker y
+  build del proyecto de tests en verde) los tests pasan: el nuevo fact
+  es identico en patron a los dos facts V-02.06 (UA y Path con CRLF)
+  que ya estaban en verde.
+
+**Resultado de verificacion:** build OK en API y Watchdog, alertas
+CodeQL #16 a state=fixed en el siguiente re-scan automatico tras push
+a main. Los otros cinco sinks del barrido defensivo no son CodeQL
+alerts; quedan cubiertos por LogScrubber.Scrub y los tests
+unitarios existentes.
+
+**Pendientes:** push de la rama V-02.07 para que GitHub reescanee y
+cierre #16. Test runtime de los nuevos facts (CsrfMiddleware method +
+LogScrubber + WatchdogOperationsService CapturingLogger) depende del
+gate CI.

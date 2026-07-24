@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Logging;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Services;
@@ -242,7 +243,7 @@ public sealed class AtlasAiService : IAtlasAiService
                         provider_error = providerError,
                         retry_after_seconds = retryAfterSeconds
                     });
-                throw new IaProviderException(BuildProviderHttpErrorMessage(state, (int)response.StatusCode, providerError, retryAfterSeconds));
+                throw new IaProviderException(BuildProviderHttpErrorMessage(state, (int)response.StatusCode, LogScrubber.Scrub(providerError), retryAfterSeconds));
             }
 
             ProviderResponse parsed;
@@ -515,7 +516,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     UsageMonthCostEur: 0m,
                     UsageTotalCostEur: 0m),
                 (int)response.StatusCode,
-                ExtractProviderErrorSummary(payload)));
+                LogScrubber.Scrub(ExtractProviderErrorSummary(payload))));
         }
 
         var models = ParseOpenRouterModels(payload);
@@ -2454,7 +2455,7 @@ public sealed class AtlasAiService : IAtlasAiService
         var provider = ProviderDisplayName(state);
         var detail = string.IsNullOrWhiteSpace(exception.ProviderError)
             ? string.Empty
-            : $" Detalle proveedor: {exception.ProviderError}";
+            : $" Detalle proveedor: {LogScrubber.Scrub(exception.ProviderError)}";
 
         return exception.Kind switch
         {
