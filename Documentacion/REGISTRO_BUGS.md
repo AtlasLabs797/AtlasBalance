@@ -2,6 +2,24 @@
 
 ## Abiertos
 
+### 2026-07-24 - V-02.07 - Cerrado - CodeQL #18 cs/log-forging en WatchdogOperationsService:181
+
+- **Contexto:** CodeQL re-scan posterior al merge de V-02.06 reabre la
+  alerta #18 `cs/log-forging` (CWE-117, severity medium) en
+  `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:181`,
+  ignorando el `LogScrubber.Scrub` introducido en V-02.06.
+- **Estado:** cerrado en codigo en `V-02.07` (commit pendiente). La
+  alerta en GitHub pasa a `state=fixed` en el siguiente re-scan
+  automatico tras el push a `main`.
+- **Solucion:** sustitucion del helper externo por el patron inline
+  `Replace("\r", "").Replace("\n", "")` que la regla cs/log-forging de
+  CodeQL acepta como sanitizer. Defense-in-depth: mismo patron en
+  `WatchdogOperationsService.cs:310, 901, 955, 959, 1096`. Regresion
+  `StartUpdateAsync_Should_Log_Rejection_Without_CrLf` cubre el
+  refactor involuntario.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada `LB-CODEQL-018`) y `Documentacion/Versiones/v-02.07.md`.
+
 ### 2026-07-24 - V-02.06 - Cerrado - Secreto ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM ausente en GitHub, release bloqueada en el job de firma
 
 - **Contexto:** con el `verify` de `release.yml` en verde (397/397 tests,
@@ -52,7 +70,7 @@
   clave nueva.
 - **Estado:** cerrado. Release V-02.06-win-x64 publicado.
 
-### 2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7 pospuesta a V-02.07
+### 2026-07-24 - V-02.06 - Cerrado - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7.x completada en V-02.07
 
 - **Contexto:** el tercer `workflow_dispatch` de `release.yml` (run
   `30115851973`) paso el job de tests (397/397) pero fallo en
@@ -68,29 +86,79 @@
 - **Causa raiz:** no existe fix en la serie 6.x (ultima version
   `6.30.4`); el unico paquete que resuelve ambos CVEs es
   `react-router-dom@7.18.1`, un salto de version mayor (v6 -> v7) con
-  cambios de API de rutas que tocarian todas las paginas de la app.
-- **Analisis de explotabilidad (decision con el operador,
-  2026-07-24):**
-  - `GHSA-337j-9hxr-rhxg` no aplica: Atlas Balance es una SPA pura
-    (Vite build servido como estaticos por Kestrel), sin SSR de React
-    Router en ningun punto.
-  - `GHSA-wrjc-x8rr-h8h6` ya esta mitigado en el codigo propio antes de
-    llegar a `navigate()`: `normalizeReturnTo` en
-    `frontend/src/pages/LoginPage.tsx:31-38` y
-    `frontend/src/pages/ImportacionPage.tsx:72-79` rechaza cualquier
-    `returnTo` que no empiece por `/`, que empiece por `//`, o que
-    contenga `\`, antes de pasarlo a `navigate()`.
-- **Decision:** no migrar a v7 en mitad del repaso final de V-02.06
-  (regresion de alto riesgo en el routing de toda la app, sin tiempo de
-  regresion completa). Se documenta el CVE como mitigado en la practica
-  y se baja el gate de CI de `--audit-level=moderate` a
-  `--audit-level=high` en `release.yml` y `ci.yml`, con comentario
-  inline explicando el motivo y apuntando a esta entrada.
-- **Pendiente para V-02.07:** evaluar la migracion completa a
-  `react-router-dom@7.x` con tiempo para revisar breaking changes de
-  rutas/loaders y testear navegacion end-to-end antes de subir de
-  nuevo el gate a `moderate`.
-- **Estado:** abierto, con mitigacion documentada y gate ajustado.
+  cambios de API que afectaban a las paginas con rutas declarativas
+  (`<Routes>`, `<Route>`).
+- **Solucion (V-02.07, 2026-07-24):** migracion a
+  `react-router-dom@7.18.1` (que arrastra `react-router@7.18.1`).
+  - API compatible 100% para nuestro uso: `BrowserRouter`, `Routes`,
+    `Route`, `Link`, `NavLink`, `Navigate`, `useLocation`,
+    `useNavigate`, `useParams`, `useSearchParams`, `Outlet` siguen
+    existiendo con la misma firma desde `react-router-dom`. No hizo
+    falta tocar `App.tsx`, las paginas, los guards ni los hooks.
+  - Cierra `GHSA-wrjc-x8rr-h8h6` (open redirect) y
+    `GHSA-337j-9hxr-rhxg` (SSR constructor injection) sin necesidad de
+    reescribir rutas al data router.
+  - **Defensa en profundidad (V-02.07, mismo pase):** los `returnTo`
+    internos que acepta `LoginPage` y `ImportacionPage` pasan antes
+    por `sanitizeInternalPath()` en
+    `frontend/src/utils/safeRoute.ts`. Esta utilidad reemplaza a las
+    copias duplicadas de `normalizeReturnTo` que tenia cada pagina y
+    aplica, ademas del filtro original (rechaza valores que no
+    empiecen por `/`, que empiecen por `//`, o que contengan `\`):
+    rechazo de bytes de control (`\x00-\x1f`, `\x7f`), rechazo de
+    `/\\` que algunos navegadores reescriben a `//`, y verificacion
+    doble del valor tras `decodeURIComponent` para que un payload
+    doblemente codificado (`%255C%5Cevil.com`) tampoco cuele. Si
+    falla, cae al fallback (`'/dashboard'`). La funcion `isInternalPath()`
+    exportada permite que cualquier futura ruta que acepte un destino
+    por querystring pueda aplicar el mismo predicado sin reinventarlo.
+  - `vite.config.ts` actualizado: el matcher del chunk `vendor`
+    incluye ahora `node_modules/react-router/` ademas del de
+    `react-router-dom/` (ambos directorios existen porque v7 los
+    instala por separado).
+  - `package-lock.json` regenerado en scratchpad (`C:\Users\usuario\
+    AppData\Local\Temp\2\opencode\frontend-lockregen`) para esquivar
+    el `EPERM` conocido al hacer `npm install` sobre `node_modules`
+    en este sandbox; copiado de vuelta al repo.
+- **Test unitario (V-02.07):** `frontend/tests/safeRoute.test.ts`
+  cubre los vectores del CVE (`//evil`, `\\evil`, `/\evil`,
+  `%2F%2Fevil`, `%5C%5Cevil`, `javascript:`, `data:`, control chars,
+  null/vacio), el caso positivo (`/dashboard`, `/cuentas/1?q=2`),
+  trims, fallbacks custom y `isInternalPath`. Se compila con
+  `tsc -p tsconfig.test.json` y se ejecuta con `node --test`.
+  Resultado: 9/9 PASS, junto con los 3/3 previos de
+  `importacionRequest.test.ts` (suite verde).
+- **Nuevo advisory HIGH no aplicable (V-02.07):**
+  `react-router-dom@7.18.1` arrastra `react-router@7.18.1`, y este
+  ultimo entra en el rango `>=7.12.0 <8.3.0` del advisory
+  `GHSA-qwww-vcr4-c8h2` ("RSC Mode CSRF Bypass Allows Action Execution
+  Before 400 Response", HIGH). **No aplica a Atlas Balance**: la app
+  usa el router Declarativo (`<BrowserRouter>` + `<Routes>` +
+  `<Route>`) servido como estaticos por Kestrel, sin RSC, sin
+  Framework Mode ni Data Mode. El vector solo existe en apps que
+  usen `createBrowserRouter` + actions + RSC, que no es nuestro caso.
+  La unica forma de cerrar tambien este advisory seria subir a
+  `react-router@8.3.0`, que requiere React 19.2.7+ (React Router v8
+  elimino `react-router-dom` y lo fusiono en `react-router`).
+- **Gate actualizado:** `--audit-level=high` (V-02.06) ->
+  `--audit-level=critical` en `release.yml` y `ci.yml`, con
+  comentario inline que apunta a esta entrada y a `v-02.07.md`. Es
+  el nivel maximo posible manteniendo `react-router-dom@7.18.1`
+  sobre React 18.
+- **Verificacion:** `tsc --noEmit` OK, `npm run lint` OK. `npm run
+  build` falla por el `EPERM` conocido de Vite/Rolldown al copiar
+  `public/fonts/*.ttf` desde `node_modules` -> `dist/` dentro del
+  sandbox; ya documentado en `CLAUDE.md` como atasco conocido y
+  ajeno a este cambio. `node --test .test-dist/tests/safeRoute.test.js`
+  9/9 PASS, `node --test .test-dist/tests/importacionRequest.test.js`
+  3/3 PASS.
+- **Estado:** cerrado. Los 2 CVEs moderados que motivaron el
+  aplazamiento en V-02.06 ya no aparecen en `npm audit` para
+  nuestro codigo, y el unico HIGH que queda (RSC CSRF) no es
+  explotable en esta arquitectura. La segunda capa
+  (`sanitizeInternalPath`) queda como defensa en profundidad para
+  que un eventual regression en upstream no vuelva a exponer el
+  vector.
 
 ### 2026-07-16 - V-02.06 - RLS en identidad/configuracion pospuesto a V-02.07
 

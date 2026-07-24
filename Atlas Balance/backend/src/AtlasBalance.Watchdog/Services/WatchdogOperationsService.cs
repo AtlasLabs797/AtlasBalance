@@ -176,9 +176,13 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         var zipVerification = VerifyPackageZipIntegrity(packageZipPath);
         if (zipVerification is not null)
         {
-            // V-02-06 (CodeQL #13): sanear {ReasonSafe} para evitar CWE-117 (log forging).
-            // zipVerification se construye a partir de packageZipPath, que llega del caller API.
-            _logger.LogError("Update rechazado por verificacion de integridad del ZIP: {ReasonSafe}", LogScrubber.Scrub(zipVerification));
+            // V-02.07 (CodeQL #18): la regla cs/log-forging no reconoce helpers
+            // externos; el patron valido es encadenar Replace("\r", "").Replace("\n", "")
+            // inline justo antes del sink. zipVerification se construye a partir
+            // de packageZipPath, que es input del caller API (tainted).
+            _logger.LogError(
+                "Update rechazado por verificacion de integridad del ZIP: {Reason}",
+                (zipVerification ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
             return false;
         }
 
@@ -307,7 +311,9 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 return (true, null);
             }
 
-            _logger.LogWarning("pg_restore local fallo: {Error}. Se intentara fallback docker.", localResult.ErrorMessage);
+            _logger.LogWarning(
+                "pg_restore local fallo: {ErrorSafe}. Se intentara fallback docker.",
+                LogScrubber.Scrub(localResult.ErrorMessage));
         }
         else
         {
@@ -898,7 +904,9 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         if (!IsLocalHealthUrl(healthUrl))
         {
-            _logger.LogWarning("Health check rechazado por URL no local: {HealthUrlSafe}", LogScrubber.Scrub(healthUrl));
+            _logger.LogWarning(
+                "Health check rechazado por URL no local: {HealthUrlSafe}",
+                (healthUrl ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
             return false;
         }
 
@@ -952,11 +960,16 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 CopyFileIfExists(Path.Combine(rollbackPath, file), Path.Combine(installPath, file));
             }
 
-            _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
+            _logger.LogWarning(
+                "Rollback de binarios aplicado desde {RollbackPathSafe}",
+                (rollbackPath ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
         }
         catch (Exception rollbackEx)
         {
-            _logger.LogError(rollbackEx, "No se pudo aplicar rollback de binarios desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
+            _logger.LogError(
+                rollbackEx,
+                "No se pudo aplicar rollback de binarios desde {RollbackPathSafe}",
+                (rollbackPath ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
         }
     }
 
@@ -1093,7 +1106,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al verificar firma RSA del ZIP de actualizacion");
-            return "Error al verificar firma RSA: " + ex.Message;
+            return "Error al verificar firma RSA: " + (ex.Message ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty);
         }
     }
 

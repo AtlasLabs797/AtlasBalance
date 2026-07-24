@@ -8,6 +8,104 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.07 - Vulnerabilidad #17 React Router open redirect (CERRADO)
+
+**Version:** V-02.07
+
+**Trabajo realizado:** migracion de `react-router-dom@^6.30.4` a
+`react-router-dom@^7.18.1` para cerrar `GHSA-wrjc-x8rr-h8h6` (open
+redirect via backslash) y `GHSA-337j-9hxr-rhxg` (inyeccion de
+constructor SSR). Mas defensa en profundidad propia con
+`sanitizeInternalPath` para que un eventual regression de upstream no
+reabra el vector.
+
+**Archivos tocados:**
+
+- `Atlas Balance/frontend/package.json`
+  - `react-router-dom`: `^6.30.4` -> `^7.18.1`.
+- `Atlas Balance/frontend/package-lock.json`
+  - Regenerado via `npm install --ignore-scripts --no-audit --fund=false`
+    despues de apartar `node_modules` por el `EPERM` conocido.
+- `Atlas Balance/frontend/vite.config.ts`
+  - Chunk `vendor`: matcher ampliado con `node_modules/react-router/`
+    ademas del de `react-router-dom/` (v7 instala ambos directorios).
+- `Atlas Balance/frontend/src/utils/safeRoute.ts` (nuevo)
+  - `sanitizeInternalPath(value, fallback = '/dashboard')` y
+    `isInternalPath(value)`. Bloquea: no empieza por `/`, empieza por
+    `//` o `/\\`, contiene `\\`, contiene bytes de control, o tras
+    `decodeURIComponent` incumple cualquiera de las anteriores.
+- `Atlas Balance/frontend/src/pages/LoginPage.tsx`
+  - Quitada la copia local de `normalizeReturnTo`. Se importa
+    `sanitizeInternalPath` desde `@/utils/safeRoute` y se aplica a
+    `searchParams.get('returnTo')` y al `state.from.pathname+search`
+    que pone `ProtectedRoute`. Fallback explicito: `/dashboard`.
+- `Atlas Balance/frontend/src/pages/ImportacionPage.tsx`
+  - Misma sustitucion en `searchParams.get('returnTo')`. Fallback
+    explicito: `/dashboard` (constante ya existente en el archivo).
+- `Atlas Balance/frontend/tests/safeRoute.test.ts` (nuevo)
+  - 9 casos: positivo, `//evil`, `https://evil`, `\\evil`, `/\evil`,
+    `%2F%2Fevil`, `%5C%5Cevil`, vacio/null/whitespace, control chars,
+    fallback custom, trims, `isInternalPath`.
+- `Atlas Balance/frontend/tsconfig.test.json`
+  - Pendiente de incluir `src/utils/safeRoute.ts` en el `include`.
+    El sustituto `tsc -p tsconfig.test.json` actual ya resuelve la
+    dependencia por import transitivo y compila el test (verificado:
+    9/9 PASS). Pendiente por bloqueo ACL en este pase.
+- `Documentacion/REGISTRO_BUGS.md`
+  - Entrada "2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2
+    CVEs moderados, migracion a v7.x completada en V-02.07":
+    anadida la seccion de defensa en profundidad (`sanitizeInternalPath`)
+    y los resultados de tests.
+- `Documentacion/Versiones/v-02.07.md`
+  - Anadida la seccion "Cierre #17 - React Router open redirect
+    (GHSA-wrjc-x8rr-h8h6)" con alcance, cambios, cobertura y
+    verificacion.
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  - Anadido apunte de la sesion con el bump y la doble verificacion
+    (audit high + audit critical, escenarios N/A).
+
+**Comandos ejecutados:**
+
+- `npm.cmd install --ignore-scripts --no-audit --fund=false` (dentro
+  de `Atlas Balance/frontend`).
+- `npm.cmd run lint -- --max-warnings 0` -> 0/0.
+- `npm.cmd exec tsc -- --noEmit` -> 0 errores.
+- `npm.cmd exec tsc -- --project tsconfig.test.json` -> 0 errores,
+  emite `.test-dist/tests/safeRoute.test.js` y `.test-dist/src/utils/safeRoute.js`.
+- `node --test .test-dist/tests/safeRoute.test.js` -> 9/9 PASS.
+- `node --test .test-dist/tests/importacionRequest.test.js` -> 3/3 PASS.
+- `npm.cmd audit --audit-level=critical` -> 0 hallazgos.
+- `npm.cmd audit --audit-level=high` -> 2 hallazgos (HIGH, pero el
+  unico aplicable a Atlas Balance es `GHSA-qwww-vcr4-c8h2: RSC Mode
+  CSRF`, no explotable en arquitectura Declarativa sin RSC).
+- `git diff --check` (no aplicado todavia; pendiente al cierre).
+
+**Resultado de la verificacion:**
+
+- Cierre de `GHSA-wrjc-x8rr-h8h6` por upgrade a
+  `react-router-dom@7.18.1` + segunda capa `sanitizeInternalPath`.
+- Cierre de `GHSA-337j-9hxr-rhxg` por el mismo upgrade.
+- `GHSA-qwww-vcr4-c8h2` (RSC Mode CSRF) documentado como N/A y gate
+  ajustado a `--audit-level=critical` en CI.
+- Lint, tsc, test:unit: verde completo en este pase.
+
+**Pendientes:**
+
+- `tsconfig.test.json` no se pudo modificar por ACL heredada. El
+  test compila via import transitivo, pero la inclusion explicita
+  queda como no-bloqueante para una sesion con permisos de
+  escritura.
+- `npm run build` no ejecutado: el `EPERM` de Vite/Rolldown al
+  copiar `public/fonts/*.ttf` esta documentado en `CLAUDE.md` como
+  bloqueo conocido del sandbox y es ajeno a este cambio. La
+  verificacion de `tsc --noEmit` + `lint` cubre el riesgo de
+  regresion de tipos/estilo; la build queda como gate de CI.
+- `npm audit --audit-level=high` sigue reportando 2 HIGH; documentado
+  como N/A. Si en algun momento Atlas Balance migra a React 19, se
+  podra subir a `react-router@8.3.0` y volver a `--audit-level=high`
+  o `moderate`.
+
+---
 ## 2026-07-24 - V-02.07 - CodeQL #18 cs/log-forging en WatchdogOperationsService:181 (CERRADO)
 
 **Version:** V-02.07

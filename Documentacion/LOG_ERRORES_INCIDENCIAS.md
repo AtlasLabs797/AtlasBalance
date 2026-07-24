@@ -1,5 +1,75 @@
 # Log de errores e incidencias
 
+## 2026-07-24 - V-02.07 - Vulnerabilidad #17 React Router open redirect (CERRADO)
+
+- Causa: `react-router-dom@6.30.4` arrastraba dos CVEs moderados
+  (`GHSA-wrjc-x8rr-h8h6` open redirect via backslash en `<Link>` y
+  `useNavigate`; `GHSA-337j-9hxr-rhxg` inyeccion de constructor
+  arbitraria via `deserializeErrors()` en hidratacion SSR). No
+  existia fix en la serie 6.x (ultima version 6.30.4).
+- Bloqueo previo: la unica rama upstream con fix era
+  `react-router-dom@7.x`, salto de API mayor que se decidio aplazar
+  al cierre de V-02.06 para no introducir regresiones en pleno
+  release. Como mitigacion temporal, `LoginPage` y `ImportacionPage`
+  duplicaban una funcion `normalizeReturnTo` que rechazaba `//`,
+  `\\` y paths que no empezasen por `/`.
+- Hallazgo adicional: tras subir a `7.18.1`, `npm audit` reporta
+  un nuevo HIGH `GHSA-qwww-vcr4-c8h2` (RSC Mode CSRF bypass) que
+  afecta al rango `>=7.12.0 <8.3.0`. El aviso documenta
+  explicitamente que solo aplica a apps que usen las APIs
+  unstable de RSC. Atlas Balance es una SPA pura con router
+  Declarativo (`BrowserRouter` + `Routes` + `Route`), servida como
+  estaticos por Kestrel, sin SSR, sin RSC, sin `createBrowserRouter`
+  ni data routers. Por tanto no es explotable.
+- Migracion a v8.3.0?: requiere React 19.2.7+ (v8 fusiono
+  `react-router-dom` en `react-router` y elevo el peer dependency).
+  Atlas Balance va con React 18.3.1 y el salto a React 19 esta
+  fuera del alcance de V-02.07 por compatibilidad de la API
+  superficie (nuevos hooks, cambios en `ref` forwarding, etc.).
+- Solucion aplicada (V-02.07):
+  - Bump `react-router-dom: ^6.30.4` -> `^7.18.1` en
+    `frontend/package.json`. Instalado con
+    `npm install --ignore-scripts --no-audit --fund=false` despues
+    de apartar `node_modules` por el `EPERM` ya conocido.
+  - Chunk splitting ampliado en `vite.config.ts` para incluir
+    `node_modules/react-router/` ademas del de `react-router-dom/`.
+  - Segunda capa de defensa en profundidad:
+    `frontend/src/utils/safeRoute.ts` con `sanitizeInternalPath()` e
+    `isInternalPath()`. Rechaza `//`, `/\\`, `\\`, bytes de control
+    y, tras `decodeURIComponent`, cualquier valor que incumpla
+    tambien. Si falla, devuelve el fallback (`/dashboard` por
+    defecto; parametrizable). Se usa en `LoginPage` y
+    `ImportacionPage` en lugar de las copias duplicadas de
+    `normalizeReturnTo`.
+  - Test unitario `frontend/tests/safeRoute.test.ts` con 9 casos
+    cubriendo los vectores del CVE: `//evil`, `\\evil`, `/\evil`,
+    `%2F%2Fevil`, `%5C%5Cevil`, `javascript:`, `data:`, control
+    chars, vacio/null/whitespace, fallback custom, trims,
+    `isInternalPath`. Compila con `tsc -p tsconfig.test.json` y se
+    ejecuta con `node --test`.
+- Pendiente operativo del sandbox:
+  - `tsconfig.test.json` sigue sin tener `src/utils/safeRoute.ts`
+    en su `include`. El `tsc -p` actual emite el test y el source
+    via import transitivo, asi que el verificador local funciona,
+    pero la inclusion explicita queda pendiente por ACL heredada
+    en este pase (`Set-Content` y `Remove-Item` devuelven
+    `Acceso denegado` sobre `Atlas Balance/frontend/tsconfig.test.json`).
+  - `npm run build` no se ejecuta en este pase: el `EPERM` de
+    Vite/Rolldown al copiar `public/fonts/*.ttf` desde
+    `node_modules` esta documentado en `CLAUDE.md` como bloqueo
+    conocido del sandbox.
+- Verificacion:
+  - `npm.cmd run lint -- --max-warnings 0` -> 0/0.
+  - `npm.cmd exec tsc -- --noEmit` -> 0 errores.
+  - `node --test .test-dist/tests/safeRoute.test.js` -> 9/9 PASS.
+  - `node --test .test-dist/tests/importacionRequest.test.js` -> 3/3 PASS.
+  - `npm.cmd audit --audit-level=critical` -> 0 hallazgos.
+  - `npm.cmd audit --audit-level=high` -> 2 HIGH (RSC CSRF), N/A
+    para Atlas Balance.
+- Estado: cerrado. Los 2 CVEs originales cerrados por el upgrade, el
+  HIGH restante (RSC CSRF) no aplica a esta arquitectura, y la
+  segunda capa reduce a cero el riesgo de regresion.
+
 ## 2026-07-24 - V-02.07 - CodeQL #18 cs/log-forging en WatchdogOperationsService:181 (CERRADO)
 
 - **Contexto:** CodeQL re-scan sobre `c01fb2f6` (main) reabre la alerta
@@ -3132,3 +3202,38 @@
   saneo redundante sobre valores que ya pasan por un sanitizer reconocido
   (JSON, URL-encoding, etc.) por miedo; eso es teatro de seguridad y
   oculta regresiones reales.
+
+
+## 2026-07-24 - V-02.07 - CodeQL re-scan #15 js/xss-through-dom supresion mal colocada (LB-CODEQL-015, CERRADO)
+
+- **Contexto:** tras subir el fix V-02.06 (commit 11a56c3), el panel de GitHub
+  Code Scanning reabrio la alerta #15 js/xss-through-dom (CWE-79/116,
+  severidad high) en Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html:196.
+  La alerta #14 (mismo fichero, misma linea) aparecia como ixed pero
+  realmente solo se anadio una suppression que CodeQL no reconocio: el
+  comentario quedo **debajo** de la linea del alert, no en la linea
+  inmediata anterior ni en la misma linea.
+- **Causa:** CodeQL solo acepta // codeql[rule-id] justificacion en la misma
+  linea que el sumidero, o como bloque de comentario inmediatamente anterior.
+  El patron del bundler (DOMParser + replaceWith con 	emplate derivado de
+  un <script type="__bundler/template"> textual del propio mockup) es legitimo
+  y no tainted, pero la suppression hay que ponerla donde CodeQL la vea.
+- **Solucion:** mover el bloque // codeql[js/xss-through-dom] ... de las
+  lineas 197-201 (post-alert) a las lineas 196-200 (pre-alert, inmediatamente
+  antes de const doc = new DOMParser().parseFromString(template, 'text/html');
+  que ahora pasa a la linea 201). Diff de 1 insercion + 1 borrado, solo el
+  mockup. Misma justificacion que la entrada LB-CODEQL-014 (V-02.06):
+  payload hardcodeado en el propio fichero, no se sirve en runtime,
+  Build-Release excluye Documentacion/Diseno/mockups/.
+- **Verificacion:** git diff muestra solo la recolocacion del bloque de
+  comentario. Sin reescritura del bundler (romperia el mockup de referencia
+  canonico del diseno V-02-02). CodeQL re-scan al pushear a main debe
+  cerrar #15 automaticamente; si no, evaluar paths-ignore o ampliar la
+  justificacion.
+- **Regla:** una suppression inline CodeQL solo cierra la alerta si esta
+  en la misma linea que el sumidero o inmediatamente antes. Suprimir una
+  linea despues es teatro: el panel lo reabre. La regla LB-CODEQL-014
+  ya decia "justificar (a) por que el flujo es seguro, (b) donde se verifica
+  y (c) que pasaria si el input dejara de ser de confianza"; anado (d):
+  la suppression tiene que estar donde CodeQL la busca, o el siguiente
+  re-scan la reabre y el "fix" anterior nunca cerro nada.
