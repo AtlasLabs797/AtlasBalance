@@ -75,6 +75,7 @@ public sealed class ConfiguracionController : ControllerBase
                 AppUpdateAutoLastResult = GetValue(config, "app_update_auto_last_result"),
                 MfaRememberDeviceEnabled = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey), fallback: false),
                 MfaRememberDeviceDays = SecurityConfigurationDefaults.MfaRememberDeviceDays,
+                RequireMfaForNonAdminUsers = ParseBool(GetValue(config, SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey), fallback: true),
                 BackupPath = GetValue(config, "backup_path"),
                 ExportPath = GetValue(config, "export_path")
             },
@@ -185,7 +186,10 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "smtp_user", request.Smtp.User.Trim(), userId, now);
         if (!string.IsNullOrWhiteSpace(request.Smtp.Password))
         {
-            Upsert(config, "smtp_password", _secretProtector.ProtectForStorage(request.Smtp.Password), userId, now);
+            // Upsert() ya cifra los valores de claves sensibles (IsSensitiveConfigKey) antes
+            // de guardarlos: pasar aqui el valor en claro evita un doble cifrado que dejaria
+            // el secreto indescifrable para EmailService (que solo desencripta una vez).
+            Upsert(config, "smtp_password", request.Smtp.Password, userId, now);
         }
         Upsert(config, "smtp_from", request.Smtp.From.Trim(), userId, now);
 
@@ -193,13 +197,17 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
         Upsert(config, "app_update_auto_enabled", request.General.AppUpdateAutoEnabled ? "true" : "false", userId, now);
         Upsert(config, "app_update_auto_hour_utc", request.General.AppUpdateAutoHourUtc.ToString(CultureInfo.InvariantCulture), userId, now);
+        var previousRequireMfaForNonAdminUsers = ParseBool(
+            config.FirstOrDefault(x => x.Clave == SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey)?.Valor ?? string.Empty,
+            fallback: true);
         Upsert(config, SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, request.General.MfaRememberDeviceEnabled ? "true" : "false", userId, now);
+        Upsert(config, SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey, request.General.RequireMfaForNonAdminUsers ? "true" : "false", userId, now);
         Upsert(config, "backup_path", request.General.BackupPath.Trim(), userId, now);
         Upsert(config, "export_path", request.General.ExportPath.Trim(), userId, now);
         var exchangeApiKey = request.Exchange?.ApiKey;
         if (!string.IsNullOrWhiteSpace(exchangeApiKey))
         {
-            Upsert(config, "exchange_rate_api_key", _secretProtector.ProtectForStorage(exchangeApiKey), userId, now);
+            Upsert(config, "exchange_rate_api_key", exchangeApiKey, userId, now);
         }
 
         Upsert(config, "dashboard_color_ingresos", request.Dashboard.ColorIngresos.Trim(), userId, now);
@@ -213,17 +221,17 @@ public sealed class ConfiguracionController : ControllerBase
         var openRouterApiKey = aiRequest.OpenRouterApiKey;
         if (!string.IsNullOrWhiteSpace(openRouterApiKey))
         {
-            Upsert(config, "openrouter_api_key", _secretProtector.ProtectForStorage(openRouterApiKey), userId, now);
+            Upsert(config, "openrouter_api_key", openRouterApiKey, userId, now);
         }
         var openAiApiKey = aiRequest.OpenAiApiKey;
         if (!string.IsNullOrWhiteSpace(openAiApiKey))
         {
-            Upsert(config, "openai_api_key", _secretProtector.ProtectForStorage(openAiApiKey), userId, now);
+            Upsert(config, "openai_api_key", openAiApiKey, userId, now);
         }
         var miniMaxApiKey = aiRequest.MiniMaxApiKey;
         if (!string.IsNullOrWhiteSpace(miniMaxApiKey))
         {
-            Upsert(config, "minimax_api_key", _secretProtector.ProtectForStorage(miniMaxApiKey), userId, now);
+            Upsert(config, "minimax_api_key", miniMaxApiKey, userId, now);
         }
         Upsert(config, "ai_requests_per_minute", aiRequest.RequestsPorMinuto.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "ai_requests_per_hour", aiRequest.RequestsPorHora.ToString(CultureInfo.InvariantCulture), userId, now);
@@ -254,6 +262,30 @@ public sealed class ConfiguracionController : ControllerBase
                 after = RedactSensitiveConfig(after)
             }),
             cancellationToken);
+
+        // V-02.06: ademas de la auditoria generica, registramos un evento
+        // semantico cuando el interruptor de politica MFA cambia para que un
+        // operador pueda auditarlo sin parsear el diff completo.
+        var newRequireMfaForNonAdminUsers = ParseBool(
+            after.GetValueOrDefault(SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey) ?? string.Empty,
+            fallback: true);
+        if (previousRequireMfaForNonAdminUsers != newRequireMfaForNonAdminUsers)
+        {
+            await _auditService.LogAsync(
+                userId,
+                AuditActions.MfaPolicyUpdated,
+                "CONFIGURACION",
+                null,
+                HttpContext,
+                JsonSerializer.Serialize(new
+                {
+                    clave = SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey,
+                    antes = previousRequireMfaForNonAdminUsers,
+                    despues = newRequireMfaForNonAdminUsers,
+                    nota = "Los administradores siguen obligados a usar MFA independientemente de este interruptor."
+                }),
+                cancellationToken);
+        }
 
         return Ok(new { message = "Configuración actualizada" });
     }
@@ -336,7 +368,7 @@ public sealed class ConfiguracionController : ControllerBase
     }
 
     private void Upsert(
-        IReadOnlyCollection<AtlasBalance.API.Models.Configuracion> existing,
+        ICollection<AtlasBalance.API.Models.Configuracion> existing,
         string key,
         string value,
         Guid? userId,
@@ -347,14 +379,16 @@ public sealed class ConfiguracionController : ControllerBase
         var item = existing.FirstOrDefault(x => x.Clave.Equals(key, StringComparison.OrdinalIgnoreCase));
         if (item is null)
         {
-            _dbContext.Configuraciones.Add(new AtlasBalance.API.Models.Configuracion
+            var created = new AtlasBalance.API.Models.Configuracion
             {
                 Clave = key,
                 Valor = storedValue,
                 EsSecreto = esSecreto,
                 FechaModificacion = now,
                 UsuarioModificacionId = userId
-            });
+            };
+            _dbContext.Configuraciones.Add(created);
+            existing.Add(created);
             return;
         }
 

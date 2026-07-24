@@ -15,10 +15,7 @@ public sealed class HardenedConciliacionService : IConciliacionService
     private const decimal DefaultToleranceAmount = 2m;
     private const decimal DefaultTolerancePercent = 0.01m;
 
-    private static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
+    private static readonly JsonSerializerOptions SnakeCaseJsonOptions = ConciliacionService.SnakeCaseJsonOptions;
 
     private readonly ConciliacionService _inner;
     private readonly AppDbContext _dbContext;
@@ -73,22 +70,76 @@ public sealed class HardenedConciliacionService : IConciliacionService
             .OrderBy(x => x.FechaEsperada)
             .Take(1000)
             .ToListAsync(cancellationToken);
-        var created = new List<Conciliacion>();
+        if (movimientos.Count == 0)
+        {
+            return new ConciliacionSugerenciasResponse
+            {
+                MovimientosEvaluados = 0,
+                SugerenciasCreadas = 0,
+                Sugerencias = []
+            };
+        }
 
+        var tolerance = await GetToleranceAsync(cancellationToken);
+
+        // V-02.06 (MED-16): cargar TODOS los extractos candidatos en UNA sola
+        // query que cubra la ventana minima y maxima del lote, en lugar de N
+        // awaits por movimiento. Luego emparejamos en memoria por
+        // (CuentaId, Monto) usando tolerancia individual. Mantenemos la
+        // exclusion de extractos ya conciliados en la misma query.
+        var minFecha = movimientos.Min(x => x.FechaEsperada).AddDays(-ventanaDias);
+        var maxFecha = movimientos.Max(x => x.FechaEsperada).AddDays(ventanaDias);
+        var cuentaIds = movimientos.Select(x => x.CuentaId).Distinct().ToList();
+        var minMonto = movimientos.Min(x => x.Monto);
+        var maxMonto = movimientos.Max(x => x.Monto);
+        // V-02.06 (PR F2): el rango global usa el maximo absoluto del lote
+        // (negativos y positivos). Antes se tomaba `maxMonto` (monto firmado)
+        // y despues se aplicaba Abs, lo que truncaba candidatos para lotes
+        // con negativos grandes y positivos pequenos (ej: lote con
+        // `-100000`/`10` -> ventana global de +-10 ignoraba un extracto a
+        // `-99500` aun siendo valido).
+        var maxAbsoluteMonto = movimientos.Max(x => Math.Abs(x.Monto));
+        var globalAmountTolerance = Math.Max(tolerance.Amount, maxAbsoluteMonto * tolerance.Percent);
+        var minAmountGlobal = Math.Min(minMonto, maxMonto) - globalAmountTolerance;
+        var maxAmountGlobal = Math.Max(minMonto, maxMonto) + globalAmountTolerance;
+
+        var alreadyMatchedExtractos = _dbContext.Conciliaciones
+            .Where(x => x.ExtractoId != null && x.Estado == "conciliada")
+            .Select(x => x.ExtractoId!.Value);
+
+        var extractosCandidatos = await _dbContext.Extractos
+            .AsNoTracking()
+            .Where(x =>
+                cuentaIds.Contains(x.CuentaId) &&
+                x.Monto >= minAmountGlobal &&
+                x.Monto <= maxAmountGlobal &&
+                x.Fecha >= minFecha &&
+                x.Fecha <= maxFecha &&
+                !alreadyMatchedExtractos.Contains(x.Id))
+            .OrderBy(x => x.Fecha)
+            .ThenBy(x => x.FilaNumero)
+            .ToListAsync(cancellationToken);
+
+        var extractosPorCuentaYMonto = extractosCandidatos
+            .GroupBy(x => (x.CuentaId, x.Monto))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var existingPairs = await _dbContext.Conciliaciones
+            .Where(x => movimientos.Select(m => m.Id).Contains(x.MovimientoEsperadoId))
+            .ToDictionaryAsync(
+                x => (x.MovimientoEsperadoId, x.ExtractoId ?? Guid.Empty),
+                cancellationToken);
+
+        var created = new List<Conciliacion>();
         foreach (var movimiento in movimientos)
         {
-            var best = await FindBestMatchAsync(movimiento, ventanaDias, cancellationToken);
+            var best = FindBestMatchInMemory(movimiento, ventanaDias, tolerance, extractosPorCuentaYMonto);
             if (best is null)
             {
                 continue;
             }
 
-            var existing = await _dbContext.Conciliaciones
-                .FirstOrDefaultAsync(x =>
-                    x.MovimientoEsperadoId == movimiento.Id &&
-                    x.ExtractoId == best.Extracto.Id,
-                    cancellationToken);
-            if (existing is not null)
+            if (existingPairs.TryGetValue((movimiento.Id, best.Extracto.Id), out var existing))
             {
                 existing.Score = best.Score;
                 existing.DiferenciaDias = best.DiferenciaDias;
@@ -140,37 +191,48 @@ public sealed class HardenedConciliacionService : IConciliacionService
         };
     }
 
-    private async Task<MatchCandidate?> FindBestMatchAsync(MovimientoEsperado movimiento, int ventanaDias, CancellationToken cancellationToken)
+    private static MatchCandidate? FindBestMatchInMemory(
+        MovimientoEsperado movimiento,
+        int ventanaDias,
+        ConciliacionTolerance tolerance,
+        Dictionary<(Guid CuentaId, decimal Monto), List<Extracto>> extractosPorCuentaYMonto)
     {
         var start = movimiento.FechaEsperada.AddDays(-ventanaDias);
         var end = movimiento.FechaEsperada.AddDays(ventanaDias);
-        var tolerance = await GetToleranceAsync(cancellationToken);
         var amountTolerance = Math.Max(tolerance.Amount, Math.Abs(movimiento.Monto) * tolerance.Percent);
-        var minAmount = movimiento.Monto - amountTolerance;
-        var maxAmount = movimiento.Monto + amountTolerance;
-        var alreadyMatchedExtractos = _dbContext.Conciliaciones
-            .Where(x => x.ExtractoId != null && x.Estado == "conciliada")
-            .Select(x => x.ExtractoId!.Value);
-        var extractos = await _dbContext.Extractos
-            .AsNoTracking()
-            .Where(x =>
-                x.CuentaId == movimiento.CuentaId &&
-                x.Monto >= minAmount &&
-                x.Monto <= maxAmount &&
-                x.Fecha >= start &&
-                x.Fecha <= end &&
-                !alreadyMatchedExtractos.Contains(x.Id))
-            .OrderBy(x => x.Fecha)
-            .ThenBy(x => x.FilaNumero)
-            .ToListAsync(cancellationToken);
 
-        return extractos
+        // Empezamos probando con el monto exacto; si no hay match dentro de la
+        // ventana temporal, probamos con tolerancia ampliando el margen por
+        // (CuentaId) sobre los extractos ya cargados.
+        if (extractosPorCuentaYMonto.TryGetValue((movimiento.CuentaId, movimiento.Monto), out var exactos))
+        {
+            var candidato = exactos
+                .Where(x => x.Fecha >= start && x.Fecha <= end)
+                .Select(extracto => Score(movimiento, extracto, amountTolerance))
+                .Where(x => x.Score >= 70)
+                .OrderByDescending(x => x.Score)
+                .ThenBy(x => Math.Abs(x.DiferenciaDias))
+                .ThenBy(x => x.Extracto.Fecha)
+                .FirstOrDefault();
+            if (candidato is not null)
+            {
+                return candidato;
+            }
+        }
+
+        // Tolerancia: para cada extracto de la misma cuenta dentro del monto
+        // global (ya cargado), evaluamos el score individual.
+        var dentroDeVentana = extractosPorCuentaYMonto
+            .Where(kv => kv.Key.CuentaId == movimiento.CuentaId)
+            .SelectMany(kv => kv.Value)
+            .Where(x => x.Fecha >= start && x.Fecha <= end)
             .Select(extracto => Score(movimiento, extracto, amountTolerance))
             .Where(x => x.Score >= 70)
             .OrderByDescending(x => x.Score)
             .ThenBy(x => Math.Abs(x.DiferenciaDias))
             .ThenBy(x => x.Extracto.Fecha)
             .FirstOrDefault();
+        return dentroDeVentana;
     }
 
     private async Task<ConciliacionTolerance> GetToleranceAsync(CancellationToken cancellationToken)
@@ -240,7 +302,7 @@ public sealed class HardenedConciliacionService : IConciliacionService
                 c.Id == m.CuentaId &&
                 _dbContext.PermisosUsuario.Any(p =>
                     p.UsuarioId == usuarioId &&
-                    (p.PuedeConciliar || p.PuedeCerrarConciliacion) &&
+                    p.PuedeConciliar &&
                     (p.PaisId == null || p.PaisId == c.PaisId) &&
                     (p.TitularId == null || p.TitularId == c.TitularId) &&
                     (p.CuentaId == null || p.CuentaId == c.Id))));
@@ -263,7 +325,7 @@ public sealed class HardenedConciliacionService : IConciliacionService
 
         var allowed = await _dbContext.PermisosUsuario.AnyAsync(p =>
             p.UsuarioId == usuarioId &&
-            (p.PuedeConciliar || p.PuedeCerrarConciliacion) &&
+            p.PuedeConciliar &&
             (p.PaisId == null || p.PaisId == cuenta.PaisId) &&
             (p.TitularId == null || p.TitularId == cuenta.TitularId) &&
             (p.CuentaId == null || p.CuentaId == cuenta.Id),

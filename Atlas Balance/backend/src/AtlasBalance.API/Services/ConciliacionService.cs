@@ -21,7 +21,7 @@ public interface IConciliacionService
 
 public sealed class ConciliacionService : IConciliacionService
 {
-    private static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
+    internal static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
@@ -431,7 +431,7 @@ public sealed class ConciliacionService : IConciliacionService
             p.UsuarioId == usuarioId &&
             (cerrar
                 ? p.PuedeCerrarConciliacion
-                : (p.PuedeConciliar || p.PuedeCerrarConciliacion)) &&
+                : p.PuedeConciliar) &&
             (p.PaisId == null || p.PaisId == cuenta.PaisId) &&
             (p.TitularId == null || p.TitularId == cuenta.TitularId) &&
             (p.CuentaId == null || p.CuentaId == cuenta.Id),

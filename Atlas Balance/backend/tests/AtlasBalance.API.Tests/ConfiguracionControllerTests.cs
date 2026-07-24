@@ -47,6 +47,47 @@ public sealed class ConfiguracionControllerTests
         payload.General.AppUpdateCheckUrl.Should().Be(ConfigurationDefaults.UpdateCheckUrl);
         payload.General.MfaRememberDeviceEnabled.Should().BeFalse();
         payload.General.MfaRememberDeviceDays.Should().Be(SecurityConfigurationDefaults.MfaRememberDeviceDays);
+        payload.General.RequireMfaForNonAdminUsers.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Update_Should_Persist_RequireMfaForNonAdminUsers_And_Audit_Change()
+    {
+        // V-02.06: la politica operativa para gerentes/empleados vive en
+        // CONFIGURACION. El controller debe persistir el valor y registrar un
+        // evento semantico cuando cambia.
+        await using var db = BuildDbContext();
+        var controller = BuildController(db);
+
+        var result = await controller.Update(new UpdateConfiguracionRequest
+        {
+            Smtp = new UpdateSmtpConfigRequest
+            {
+                Host = "smtp.local",
+                Port = 587,
+                User = "user",
+                Password = "",
+                From = "noreply@test.local"
+            },
+            General = new UpdateGeneralConfigRequest
+            {
+                AppBaseUrl = "https://app.local",
+                AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
+                MfaRememberDeviceEnabled = true,
+                RequireMfaForNonAdminUsers = false,
+                BackupPath = "C:\\backups",
+                ExportPath = "C:\\exports"
+            },
+            Dashboard = new UpdateDashboardConfigRequest()
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var stored = await db.Configuraciones.SingleAsync(x => x.Clave == SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey);
+        stored.Valor.Should().Be("false");
+
+        var semanticAudit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.MfaPolicyUpdated);
+        semanticAudit.DetallesJson.Should().Contain("\"antes\":true");
+        semanticAudit.DetallesJson.Should().Contain("\"despues\":false");
     }
 
     [Fact]

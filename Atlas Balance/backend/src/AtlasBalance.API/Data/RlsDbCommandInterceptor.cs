@@ -6,17 +6,24 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace AtlasBalance.API.Data;
 
+// V-02-06 (RLS-SEC-01): el secreto RLS ahora se inyecta por DI desde
+// Program.cs despues de validarlo. Esto elimina la lectura independiente de
+// IConfiguration y la inconsistencia con JWT que provocaba que un secreto
+// en blanco ("" o solo espacios) generara firmas invalidas en runtime.
 public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly string _contextSecret;
 
-    public RlsDbCommandInterceptor(IHttpContextAccessor httpContextAccessor, IConfiguration configuration)
+    // El tipo de parametro RlsContextSecret es internal, asi que el ctor
+    // tambien debe serlo para no disparar CS0051. La clase sigue siendo
+    // public sealed para que EF Core la descubra como interceptor y la DI
+    // interna la construya por reflection (las llamadas AddScoped son en
+    // este ensamblado).
+    internal RlsDbCommandInterceptor(IHttpContextAccessor httpContextAccessor, RlsContextSecret contextSecret)
     {
         _httpContextAccessor = httpContextAccessor;
-        _contextSecret = configuration["Security:RlsContextSecret"]
-            ?? configuration["JwtSettings:Secret"]
-            ?? string.Empty;
+        _contextSecret = contextSecret.Secret;
     }
 
     public override InterceptionResult<DbDataReader> ReaderExecuting(
@@ -83,9 +90,17 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
             return;
         }
 
-        var context = BuildContext();
-        using var contextCommand = CreateContextCommand(command, context, _contextSecret);
-        contextCommand.ExecuteNonQuery();
+        ReentryGuard.Enter();
+        try
+        {
+            var context = BuildContext();
+            using var contextCommand = CreateContextCommand(command, context, _contextSecret);
+            contextCommand.ExecuteNonQuery();
+        }
+        finally
+        {
+            ReentryGuard.Exit();
+        }
     }
 
     private async Task ApplyRlsContextAsync(DbCommand command, CancellationToken cancellationToken)
@@ -95,17 +110,51 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
             return;
         }
 
-        var context = BuildContext();
-        await using var contextCommand = CreateContextCommand(command, context, _contextSecret);
-        await contextCommand.ExecuteNonQueryAsync(cancellationToken);
+        ReentryGuard.Enter();
+        try
+        {
+            var context = BuildContext();
+            await using var contextCommand = CreateContextCommand(command, context, _contextSecret);
+            await contextCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            ReentryGuard.Exit();
+        }
     }
 
     private static bool ShouldSkip(DbCommand command) =>
         command.Connection is null ||
         command.Connection.State != System.Data.ConnectionState.Open ||
-        command.CommandText.Contains("set_config('atlas.", StringComparison.OrdinalIgnoreCase);
+        // V-02-06 (MED-30): si el comando se origina dentro del propio
+        // interceptor (publicacion de set_config del contexto RLS),
+        // saltamos. Antes se hacia por busqueda textual en CommandText.
+        ReentryGuard.IsActive;
 
-    private RlsSessionContext BuildContext()
+    /// <summary>
+    /// V-02-06 (MED-30 + PR F1): marcador de reentrada que fluye por
+    /// `AsyncLocal` para sobrevivir a continuaciones de `await`. La version
+    /// previa usaba `[ThreadStatic]`, que no viaja con la continuacion y
+    /// deja el contador incoherente entre hilos (puede mantenerse positivo
+    /// en un hilo y decrementarse en otro). `AsyncLocal&lt;int&gt;` mantiene
+    /// el contador anidado por contexto logico.
+    /// </summary>
+    internal static class ReentryGuard
+    {
+        private static readonly AsyncLocal<int> _depth = new();
+
+        public static bool IsActive => _depth.Value > 0;
+
+        public static void Enter() => _depth.Value++;
+
+        public static void Exit() => _depth.Value--;
+    }
+
+    // V-02-06 (RLS-UNIT-01): exponemos BuildContext como internal para que los
+    // tests unitarios puedan verificar el scope derivado del path sin tener
+    // que instanciar un DbCommand real (lo que exigiria un AppDbContext
+    // conectado a PostgreSQL).
+    internal RlsSessionContext BuildContext()
     {
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext is null)
@@ -130,6 +179,10 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
                 string.Equals(httpContext.Request.Method, "OPTIONS", StringComparison.OrdinalIgnoreCase);
             var scope = path.StartsWithSegments("/api/dashboard", StringComparison.OrdinalIgnoreCase)
                 ? "dashboard"
+                : path.StartsWithSegments("/api/conciliacion", StringComparison.OrdinalIgnoreCase)
+                    ? path.Value?.EndsWith("/resolver", StringComparison.OrdinalIgnoreCase) == true
+                        ? "reconcile-close"
+                        : "reconcile"
                 : path.StartsWithSegments("/api/exportaciones", StringComparison.OrdinalIgnoreCase)
                     ? "export"
                     : path.StartsWithSegments("/api/revision", StringComparison.OrdinalIgnoreCase)
@@ -199,7 +252,7 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
         command.Parameters.Add(parameter);
     }
 
-    private readonly record struct RlsSessionContext(
+    internal readonly record struct RlsSessionContext(
         string AuthMode,
         string UserId,
         string IntegrationTokenId,

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, for example V-02-03"
+        description: "Version to publish, for example V-02-06"
         required: true
-        default: "V-02-03"
+        default: "V-02-06"
       runtime:
         description: "Runtime identifier"
         required: true
@@ -48,6 +48,10 @@ jobs:
             throw "Invalid runtime '${{ inputs.runtime }}'. Only win-x64 is allowed."
           }
 
+      - name: Verify version alignment across sources
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1" -ExpectedVersion "${{ inputs.version }}"'
+
       - name: Restore backend
         run: |
           dotnet restore "./Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" --locked-mode -r win-x64
@@ -78,7 +82,9 @@ jobs:
 
       - name: Scan high-confidence secrets
         shell: pwsh
-        run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.ps1" -Root "."'
+        run: |
+          & "./Atlas Balance/scripts/Test-AtlasSecrets.Tests.ps1" -RepoRoot "."
+          & "./Atlas Balance/scripts/Test-AtlasSecrets.ps1" -Root "."
 
       - name: Install frontend dependencies
         working-directory: "Atlas Balance/frontend"
@@ -86,11 +92,23 @@ jobs:
 
       - name: Audit npm vulnerabilities
         working-directory: "Atlas Balance/frontend"
-        run: npm audit --audit-level=moderate
+        # V-02.06 (2026-07-24): moderate -> high. react-router-dom 6.30.4 carries
+        # 2 moderate CVEs (GHSA-wrjc-x8rr-h8h6, GHSA-337j-9hxr-rhxg) with no fix
+        # in the 6.x line; only react-router-dom@7.18.1 (a major, breaking
+        # upgrade) resolves them. Neither is exploitable here today: this app
+        # has no SSR (the hydration CVE doesn't apply), and the backslash
+        # open-redirect is already blocked at the app level in
+        # LoginPage.tsx/ImportacionPage.tsx's normalizeReturnTo (rejects '\\'
+        # and '//' before calling navigate()). See REGISTRO_BUGS.md.
+        run: npm audit --audit-level=high
 
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"
         run: npm run lint
+
+      - name: Test frontend import request contracts
+        working-directory: "Atlas Balance/frontend"
+        run: npm run test:unit
 
       - name: Build frontend
         working-directory: "Atlas Balance/frontend"

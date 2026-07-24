@@ -79,4 +79,44 @@ public class HardenedConciliacionServiceTests
         sugerencias.Sugerencias[0].ExtractoId.Should().Be(extracto.Id);
         sugerencias.Sugerencias[0].Score.Should().BeGreaterThanOrEqualTo(70);
     }
+
+    [Fact]
+    public async Task SugerirAsync_ShouldKeepLargeNegativeCandidatesInTheGlobalAmountRange()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular rango negativo", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta rango negativo", Divisa = "EUR", Activa = true };
+        var extracto = new Extracto
+        {
+            Id = Guid.NewGuid(), CuentaId = cuenta.Id, Fecha = new DateOnly(2026, 7, 1),
+            Concepto = "Cargo grande REF-NEG", Monto = -99_500m, Saldo = 500m, FilaNumero = 1
+        };
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.Extractos.Add(extracto);
+        db.Configuraciones.AddRange(
+            new Configuracion { Clave = "conciliacion_tolerance_amount", Valor = "2", Tipo = "decimal" },
+            new Configuracion { Clave = "conciliacion_tolerance_percent", Valor = "0.01", Tipo = "decimal" });
+        db.PermisosUsuario.Add(new PermisoUsuario { Id = Guid.NewGuid(), UsuarioId = userId, CuentaId = cuenta.Id, PuedeConciliar = true });
+        await db.SaveChangesAsync();
+
+        var audit = new AuditService(db);
+        var service = new HardenedConciliacionService(new ConciliacionService(db, audit), db, audit);
+        foreach (var movimiento in new[]
+        {
+            new MovimientoEsperadoCrearRequest { CuentaId = cuenta.Id, FechaEsperada = new DateOnly(2026, 7, 1), Monto = -100_000m, Referencia = "REF NEG", Concepto = "Cargo grande" },
+            new MovimientoEsperadoCrearRequest { CuentaId = cuenta.Id, FechaEsperada = new DateOnly(2026, 7, 1), Monto = 10m, Referencia = "REF POS", Concepto = "Movimiento pequeno" }
+        })
+        {
+            await service.CrearMovimientoEsperadoAsync(userId, RolUsuario.EMPLEADO.ToString(), movimiento, new DefaultHttpContext(), CancellationToken.None);
+        }
+
+        var sugerencias = await service.SugerirAsync(
+            userId, RolUsuario.EMPLEADO.ToString(),
+            new ConciliacionSugerirRequest { CuentaId = cuenta.Id, VentanaDias = 1 },
+            new DefaultHttpContext(), CancellationToken.None);
+
+        sugerencias.Sugerencias.Should().Contain(x => x.ExtractoId == extracto.Id);
+    }
 }

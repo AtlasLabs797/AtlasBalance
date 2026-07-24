@@ -29,7 +29,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-02-03"
+$AppVersion = "V-02.06"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
@@ -37,18 +37,18 @@ $GeneratedPostgresAdminPassword = ""
 $ExistingUsersDetected = $false
 $DefaultReleaseSigningPublicKeyPem = @"
 -----BEGIN PUBLIC KEY-----
-MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvnPPH5nmqhYfCxeazYo2
-Ul59S/+nUWPz6/uAFORGFrayrCgt4vfZE8lVUES/Z7aJni9Uc0cXMREVNApOchim
-FWc9t2E/7lXwMRvmTfkcKGDCxPaTcy8zHg2rt3cFME+JuojShU868DddmhnWMRzd
-zRtgKaWdS2URKXKIyUz6mfYHnGbEaBGnFCCsVCPryPL2fRbsNUT0yAj5pI9xWedR
-nzEk6AXG7FIKPWNprmS+JxWvQMgj7JTQ5dGZIm/eEvGT53J5weYO3a6OHZE8vl9k
-MpR2uLbmK1mDoTRHlRp0eBMfYrZVpnfvmUTMOB4g1gDA+a0zchWUitiyc47Tx5ad
-qEzsmrHe+iAROECSIOjQkTJow9cevU6yM+SBK+jtEw2Ns3/vmGe/FG7BsO/BUozX
-QzmkUVfdmbSRROhJ13JKfnjEHQGv8VTXo7DTlcOlFUcZokXkffhb0VS2DaOFjdX+
-WJrj0IeqT24J1CLucny3E8c76kzsn1dx4ybSUHcrW9ta95U6WIaKc80FwNk0TqeC
-65Ok59XOv3wdrLBcadTakihYLvshclECEJSxHv7f+b3Z7rUUHt2BeKZiTjIe6UWk
-pN4BVT5MX0SezTg/VU20SHxJYmWVIe4i1tVugahlNjkLfudexE4rCwngP/pbLH4J
-at7bxvLDo5k3O5J1Sej7rnkCAwEAAQ==
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxhpPLjgCCcX1jyi/BGyE
+SMVCmgibdtH6VRap66R24sABZUzS0uF4sSGfii/9gH76MbyJBx82RVy9E5Ffg9IP
+hTLlXhCICf2Jgq7x1X1hrxvSX1xHIF0L7FKO1sOTYVDjWCTywZ4Inb4QZaScIh2d
+HvOZpJ7UqFrYwyMRlj6haoTqOrVeXWLWeInfacq+ujBJsylk0T+3J6L0J3sST8nh
+ofI8PU1hN5Dsj6CpRP1KROAYlAmRmpnIAkIhLtNTMBrlabm82/+rTCOJJksr81tU
+IRdrZuyOvfrDwsm+oQPz8d4PcvAQFKvTscHI8MFE7pvza9+vG2UNlcMxSaR4SgL1
+lySo8DDCPU9UKU4RqGZRyuB6RF0Ne0EP4oUd0zi2wIUj4FNfntrrw8o57t7vWRGA
+3f3CpQB0kOyeImDmniEkrdSB4LAPYTup+vkp2Dlzsh0vn+wLirHfCV1zRDtANfOU
++F5bfSXIFdLGtCtDVFhsNYE/tEdXSB+JXtztxkpqKTouTo4drnG0OZmiLxBq1pP6
+12hXvWWiQstA29R2oHidxZAdw7r75Xqu0jwQKtpORTjXvsDERmaE7HRDKxUXD0CC
+8SZKYqXRVrPhG6BPkonf3f7BMUNx14LG6GXWE6uTNCvLqsNinFa7iQfrMeN3qTV/
+UWsagyNIy7PBlmnPJBzNv68CAwEAAQ==
 -----END PUBLIC KEY-----
 "@
 $ReleaseSigningPublicKeyPem = if ([string]::IsNullOrWhiteSpace($env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM)) { $DefaultReleaseSigningPublicKeyPem } else { $env:ATLAS_RELEASE_SIGNING_PUBLIC_KEY_PEM -replace "\\n", "`n" }
@@ -499,7 +499,8 @@ function Write-AppSettings {
         [string]$CertPath,
         [string]$CertPassword,
         [string]$JwtSecret,
-        [string]$WatchdogSecret
+        [string]$WatchdogSecret,
+        [string]$RlsContextSecret
     )
 
     $stateFile = Join-Path $InstallPath "watchdog-state.json"
@@ -553,6 +554,11 @@ function Write-AppSettings {
         }
         Security = [ordered]@{
             RequireMfaForWebUsers = $true
+            # V-02-06 (RLS-SEC-01): clave independiente del secreto JWT para
+            # firmar contextos RLS. Se genera siempre aleatoria en instalacion
+            # nueva; la persistencia la gestiona Actualizar-AtlasBalance.ps1
+            # para instalaciones existentes.
+            RlsContextSecret = $RlsContextSecret
         }
         ForwardedHeaders = [ordered]@{
             KnownProxies = $forwardedKnownProxies
@@ -881,6 +887,10 @@ if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = New-RandomS
 if ([string]::IsNullOrWhiteSpace($PostgresInstallPath)) { $PostgresInstallPath = Join-Path $InstallPath "postgresql\16" }
 if ([string]::IsNullOrWhiteSpace($PostgresDataPath)) { $PostgresDataPath = Join-Path $InstallPath "postgres-data" }
 $jwtSecret = New-RandomSecret 64
+# V-02-06 (RLS-SEC-01): el secreto RLS debe ser independiente del JWT. Se
+# genera aleatorio y se persiste en el appsettings efectivo durante la
+# generacion de configuracion mas abajo.
+$rlsContextSecret = New-RandomSecret 64
 $watchdogSecret = New-RandomSecret 64
 $certPassword = New-RandomSecret 40
 
@@ -951,7 +961,8 @@ Write-AppSettings `
     -CertPath $certPath `
     -CertPassword $effectiveCertPassword `
     -JwtSecret $jwtSecret `
-    -WatchdogSecret $watchdogSecret
+    -WatchdogSecret $watchdogSecret `
+    -RlsContextSecret $rlsContextSecret
 
 $apiExe = Join-Path $apiPath "AtlasBalance.API.exe"
 $watchdogExe = Join-Path $watchdogPath "AtlasBalance.Watchdog.exe"

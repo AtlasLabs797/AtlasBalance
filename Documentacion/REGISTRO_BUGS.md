@@ -2,6 +2,161 @@
 
 ## Abiertos
 
+### 2026-07-24 - V-02.06 - Cerrado - Secreto ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM ausente en GitHub, release bloqueada en el job de firma
+
+- **Contexto:** con el `verify` de `release.yml` en verde (397/397 tests,
+  npm audit en `high`, lint/build limpios), el cuarto
+  `workflow_dispatch` (run `30116776847`) llego al job `package` y fallo
+  en el primer paso, `Ensure signing key exists`:
+  `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM secret is required for a
+  public release.` El secreto llega vacio desde el entorno
+  `release-signing` de GitHub Actions.
+- **Causa raiz:** el par RSA de firma se roto en V-01.09
+  (`REGISTRO_BUGS.md:629-638`, 2026-06-01) y quedo como "pendiente
+  operativo" cargar la clave privada nueva como GitHub Secret y guardar
+  copia segura fuera del repo. La clave publica correspondiente si esta
+  en el repo (`appsettings.json`, `ActualizacionService.cs`,
+  `WatchdogOperationsService.cs`, scripts de instalador/actualizador),
+  pero el secreto de CI nunca quedo configurado (o se perdio/roto desde
+  entonces).
+- **Actualizacion 2026-07-24 (misma sesion):** el operador confirmo que
+  no conserva la clave privada anterior. Se genero un par RSA 4096
+  nuevo (`openssl genpkey`) fuera del repositorio; la clave publica se
+  actualizo en `appsettings.Production.json.template` e
+  `Instalar-AtlasBalance.ps1` (ver `DOCUMENTACION_CAMBIOS.md`,
+  2026-07-24, "Rotacion del par de firma de release") y se verifico con
+  un round-trip real de firma/verificacion usando las mismas APIs .NET
+  que produccion. La clave privada nunca se escribio en el repo ni se
+  imprimio en el chat.
+- **Por que la carga del secreto no se hizo aqui:** gestionar el
+  secreto `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en GitHub es una
+  accion de credenciales que corresponde al operador con acceso al
+  repositorio, no a un agente, aunque este haya generado la clave.
+- **Accion pendiente del operador:**
+  1. Guardar la clave privada (entregada fuera del repo) en un
+     gestor de contrasenas o vault seguro.
+  2. Cargarla en GitHub -> repo `AtlasLabs797/AtlasBalance` -> Settings
+     -> Environments -> `release-signing` -> Secrets ->
+     `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+  3. Re-disparar `workflow_dispatch` de `Release` (version `V-02.06`,
+     runtime `win-x64`, ref `V-02.06`) una vez cargado el secreto.
+  4. Actualizar `appsettings.Production.json` con la clave publica
+     nueva en cualquier instalacion existente (V-02-05 o anterior)
+     antes de que pueda verificar el `.sig` de este release.
+- **Cierre 2026-07-24:** el operador cargo el secreto en GitHub. Quinto
+  `workflow_dispatch` (run `30118432377`): `verify` y `package` en
+  verde completo, incluidos `Ensure signing key exists`, `Build signed
+  package` y `Publish GitHub Release`. Release publicado en
+  `https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-02.06-win-x64`
+  con `AtlasBalance-V-02.06-win-x64.zip` y `.zip.sig` firmados con la
+  clave nueva.
+- **Estado:** cerrado. Release V-02.06-win-x64 publicado.
+
+### 2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7 pospuesta a V-02.07
+
+- **Contexto:** el tercer `workflow_dispatch` de `release.yml` (run
+  `30115851973`) paso el job de tests (397/397) pero fallo en
+  `Audit npm vulnerabilities` (`npm audit --audit-level=moderate`).
+  Tres hallazgos high (axios, brace-expansion, postcss) ya se habian
+  resuelto localmente por commits/instalaciones previas sin llegar a
+  commitear el `package-lock.json` actualizado; quedan 2 moderados en
+  `react-router-dom@6.30.4`:
+  - `GHSA-wrjc-x8rr-h8h6`: open redirect via backslash en `<Link>` y
+    `useNavigate`.
+  - `GHSA-337j-9hxr-rhxg`: inyeccion de constructor arbitraria via
+    `deserializeErrors()` en hidratacion SSR de React Router.
+- **Causa raiz:** no existe fix en la serie 6.x (ultima version
+  `6.30.4`); el unico paquete que resuelve ambos CVEs es
+  `react-router-dom@7.18.1`, un salto de version mayor (v6 -> v7) con
+  cambios de API de rutas que tocarian todas las paginas de la app.
+- **Analisis de explotabilidad (decision con el operador,
+  2026-07-24):**
+  - `GHSA-337j-9hxr-rhxg` no aplica: Atlas Balance es una SPA pura
+    (Vite build servido como estaticos por Kestrel), sin SSR de React
+    Router en ningun punto.
+  - `GHSA-wrjc-x8rr-h8h6` ya esta mitigado en el codigo propio antes de
+    llegar a `navigate()`: `normalizeReturnTo` en
+    `frontend/src/pages/LoginPage.tsx:31-38` y
+    `frontend/src/pages/ImportacionPage.tsx:72-79` rechaza cualquier
+    `returnTo` que no empiece por `/`, que empiece por `//`, o que
+    contenga `\`, antes de pasarlo a `navigate()`.
+- **Decision:** no migrar a v7 en mitad del repaso final de V-02.06
+  (regresion de alto riesgo en el routing de toda la app, sin tiempo de
+  regresion completa). Se documenta el CVE como mitigado en la practica
+  y se baja el gate de CI de `--audit-level=moderate` a
+  `--audit-level=high` en `release.yml` y `ci.yml`, con comentario
+  inline explicando el motivo y apuntando a esta entrada.
+- **Pendiente para V-02.07:** evaluar la migracion completa a
+  `react-router-dom@7.x` con tiempo para revisar breaking changes de
+  rutas/loaders y testear navegacion end-to-end antes de subir de
+  nuevo el gate a `moderate`.
+- **Estado:** abierto, con mitigacion documentada y gate ajustado.
+
+### 2026-07-16 - V-02.06 - RLS en identidad/configuracion pospuesto a V-02.07
+
+- **Contexto:** la auditoria RLS de V-02.06 discutio aplicar RLS a
+  `USUARIOS`, `REFRESH_TOKENS`, `INTEGRATION_TOKENS` y `CONFIGURACION`
+  (esta ultima con secretos como `smtp_password`, claves IA y
+  `backup_cloud_encryption_key`).
+- **Causa raiz:** el contexto RLS firmado solo identifica `user_id` despues
+  del login. Login, MFA, refresh y la validacion de tokens de integracion
+  ejecutan `SELECT` y `UPDATE` sobre esas tablas antes de que el contexto
+  pueda restringirlas. Ademas, RLS en PostgreSQL filtra filas pero no puede
+  ocultar columnas: una vez una policy `USING (...)` admite la fila, un
+  `SELECT *` devuelve `password_hash`, `mfa_secret`, `token_hash`, etc.
+  Limitar esas columnas requiere GRANT a nivel de columna, vistas o una
+  API de funciones dedicada.
+- **Pendiente para V-02.07:**
+  - Disenar y aplicar policies que cubran el login flow (incluyendo
+    `is_auth_flow`) sin romper autenticacion ni MFA setup/recovery.
+  - Evaluar si conviene llevar secretos a una tabla paralela
+    `CONFIGURACION_SECRETS` accesible solo por admin/system o usar
+    GRANTs a nivel de columna sobre `CONFIGURACION` con `es_secreto=true`.
+  - Aplicar `SELECT` admin-only en `USUARIOS` y `INTEGRATION_TOKENS`
+    con auto-lectura por su creador/usuario, y `INSERT/UPDATE` admin-only.
+  - Anadir tests de regresion para login/MFA/refresh/integraciones con
+    las nuevas policies.
+- **Estado:** abierto. V-02.06 solo activa FORCE RLS + soft-delete
+  backstop en las tablas financieras y mejora el backup/restore; el
+  alcance de identidad se difiere explicitamente para evitar romper
+  autenticacion.
+
+## Cerrados en codigo con gate externo
+
+### 2026-07-16 - V-02.06 - Cerrado - AppDbContextModelSnapshot desalineado
+
+- **Contexto:** `tests/AtlasBalance.API.Tests/MigrationDiscoveryTests` y las
+  migraciones V-02.05 confirman que las migraciones se descubren bien, pero
+  `AppDbContextModelSnapshot.cs` todavia omite `DeletedAt`/`DeletedById` en
+  `Conciliacion`, `ImportacionLoteFila`, `ExtractoColumnaExtra` y
+  `RevisionExtractoEstado` aunque el modelo actual los declara.
+- **Causa raiz:** las migraciones V-02.05 que anadieron esas columnas
+  fueron manuscritas-SQL (sin scaffold EF) y no se reconcilio el snapshot.
+- **Solucion:** el snapshot se reconcilio con soft-delete, FK, indices,
+  constraints, operaciones de backup e idempotencia de importacion.
+- **Estado:** cerrado en codigo y cubierto por discovery/model tests. La
+  aplicacion completa desde una base vacia sigue dentro del gate externo
+  PostgreSQL/Testcontainers de V-02.06.
+
+## Abiertos
+
+### 2026-07-16 - V-02.06 - IMPORTACION_LOTES sin soft-delete
+
+- **Contexto:** la entidad `IMPORTACION_LOTES` no implementa `ISoftDelete`
+  en el modelo y no tiene columnas `deleted_at`/`deleted_by_id`.
+- **Causa raiz:** se creo en la migracion V-02.02 sin columnas de
+  soft-delete, y nadie ha anadido esa capacidad todavia.
+- **Pendiente para V-02.07:**
+  - Anadir `deleted_at`/`deleted_by_id` con migracion que respete el
+    snapshot EF ya reconciliado.
+  - Aplicar `ISoftDelete` en `ImportacionLote.cs` (heredar de entidad base
+    o aplicar el filtro global via `AppDbContext`).
+  - Extender la policy SELECT de la tabla con `deleted_at IS NULL`.
+- **Estado:** abierto. En V-02.06 la policy nueva solo separa
+  SELECT/INSERT/UPDATE/DELETE con `can_read_cuenta_by_id` /
+  `can_write_cuenta_by_id`, sin filtro soft-delete (que requiere la
+  columna).
+
 ### 2026-05-22 - V-01.09 - Bootstrap desde Watchdog antiguo pendiente
 
 - Contexto: tras implementar el update online de paquete completo, quedan dos bloqueos fuera del codigo nuevo.
@@ -9,6 +164,260 @@
   - Una instalacion que todavia ejecuta un Watchdog anterior al fix no puede usar ese Watchdog viejo para actualizarse de forma completa; puede requerir un primer `update.cmd` manual o una ruta puente.
   - Falta validacion real en Windows instalacion reemplazando el Watchdog vivo mediante el helper externo.
 - Estado: abierto. GitHub `latest` ya apunta a `V-01.09-win-x64`; esto solo bloquea vender el upgrade desde cualquier version antigua como 100% one-click.
+
+## Auditoria F1-F5 de V-02.06
+
+Los hallazgos siguientes estan cerrados en codigo salvo que su estado indique
+un gate externo pendiente. Se conservan juntos para trazabilidad del plan.
+
+### 2026-07-20 - V-02.06 - Auditoria automatica expone Configuracion.Valor en DetallesJson
+
+- Contexto: el interceptor `AuditSaveChangesInterceptor` serializa las
+  propiedades old/new de `Configuracion` (incluyendo `Valor`) a
+  `AUDITORIAS.DetallesJson` sin redaccion. `Program.ProtectExistingConfigurationSecrets`
+  actualiza `Valor` durante upgrades con secretos legacy ya en claro.
+- Pendiente: redaccion de `Valor` cuando `EsSecreto=true` o cuando `Clave`
+  coincide con la lista clasificada (`smtp_password`, `exchange_rate_api_key`,
+  `openrouter_api_key`, `openai_api_key`, `minimax_api_key`,
+  `google_drive_oauth_client_secret`, `backup_cloud_encryption_key`,
+  `github_update_token`, `jwt_signing_key`, `rls_context_secret`,
+  `watchdog_shared_secret`); ademas extender la redaccion a jobs/setters
+  para que `SetContextoAuditoria` siga siendo valido, y a jobs sin
+  HttpContext.
+- Estado: cerrado en codigo. El interceptor redacta cuando el estado anterior
+  o actual es secreto y la migracion irreversible
+  `20260720120000_RedactHistoricalConfigurationAudits` limpia solo las claves
+  sensibles historicas, sin imprimir valores ni destruir auditoria no secreta.
+  Aplicacion real pendiente del gate PostgreSQL de release.
+
+### 2026-07-20 - V-02.06 - Parser CSRF frontend rechaza Base64 estandar
+
+- Contexto: `CsrfService.GenerateToken` emite `Convert.ToBase64String(32 bytes)`,
+  lo que puede terminar en `=` y contener `+` o `/`. El parser
+  `getCsrfTokenFromCookie` validaba contra `^[A-Za-z0-9_-]+$` (Base64URL sin
+  padding), devolviendo `null` para cualquier cookie real.
+- Impacto: tras un reload, `csrfToken` queda `null` y las mutaciones envian
+  sin `X-CSRF-Token`, lo que `CsrfMiddleware` rechaza con 403.
+- Resolucion aplicada en PR F1: regex cambiada a Base64 estandar RFC 4648 §4
+  y `decodeURIComponent` envuelto en try/catch. Pendiente convidar a la
+  documentacion V-02.05 (LOW-FE-4) que decia Base64URL.
+- Estado: cerrado en codigo y documentacion; incluye regresiones con `+`,
+  `/`, `=` y reload.
+
+### 2026-07-20 - V-02.06 - Estados de conciliacion chocan contra CHECK de PostgreSQL
+
+- Contexto: `ConciliacionService` y `HardenedConciliacionService` escriben
+  `sugerida`, `conciliada`, `excepcion` y `resuelta` en
+  `MOVIMIENTOS_ESPERADOS.estado` y `CONCILIACIONES.estado`. La migracion
+  V-02.05 (`20260710091000_AddConciliacionSoftDeleteAndEstadoCheck`) dejo
+  CHECK constraints con otros valores (`pendiente/satisfecho/vencido/cancelado`
+  y `sugerida/conciliada/descartada/cerrada`).
+- Impacto: cualquier sugerir/confirmar/excepcion/resolver sobre PostgreSQL
+  produce `CheckViolation`. InMemory lo aceptaba, por lo que los tests no
+  detectaban el bug.
+- Resolucion aplicada en PR F2: nueva migracion
+  `20260720090000_AlignConciliacionEstadosAndSnapshot` reemplaza los CHECK
+  con los estados reales y normaliza `deleted_at` a `timestamp with time
+  zone`. Pendiente PostgreSQL/Testcontainers para validar el round-trip
+  crear->sugerir->confirmar->excepcion->resolver; queda bloqueado por
+  Docker no disponible.
+- Estado: codigo corregido; validacion runtime bloqueada por Docker.
+
+### 2026-07-20 - V-02.06 - Scopes vacios degeneraban en acceso total
+
+- Contexto: `IntegracionesController.NormalizeEndpointScopes` sustituia
+  `scopes = []` por `DefaultOpenClawScopes`, y lo mismo hacia cuando ningun
+  scope era valido.
+- Impacto: denegacion por defecto del middleware derrotada: un admin que
+  desmarca todas las casillas, o un cliente API que envia `scopes: []`,
+  recibe el acceso maximo en lugar de cero.
+- Resolucion aplicada: `NormalizeEndpointScopes` preserva `[]` y el controller
+  rechaza scopes desconocidos con 400. Tests de controller y middleware real
+  prueban cero acceso para la lista vacia.
+- Estado: cerrado; incluido en el bloque backend 120/120.
+
+### 2026-07-20 - V-02.06 - Scanner de secretos no portable a Ubuntu
+
+- Contexto: `Test-AtlasSecrets.ps1` usaba comparaciones literales con
+  backslash para exclusiones (`"\bin\"`, `"\node_modules\"` etc.). En
+  runners Ubuntu esos matches no encajan rutas Linux.
+- Impacto: el scan podia aceptar archivos que deberia haber excluido
+  (bin, obj). El reverso (excluir los raices `Atlas Balance/backend/src`,
+  `backend/tests`, etc.) no esta demostrado, pero el riesgo existia.
+- Resolucion aplicada en PR F5: exclusion por segmentos via
+  `Split-PathSegments` que normaliza ambos separadores; stopwatch + timeout
+  duro de 60 s; resumen `Scanner: N archivos analizados, M excluidos`.
+- Verificacion: el script reescrito corre en Windows PowerShell 5.1, sus
+  fixtures pasan y analiza 475 archivos sin hallazgos. Pendiente probarlo en
+  GitHub Actions `ubuntu-24.04` con `pwsh` para confirmar portabilidad
+  nativa (este host no tiene `pwsh` instalado).
+- Estado: cerrado en codigo; verificacion CI queda pendiente.
+
+### 2026-07-20 - V-02.06 - Timeout global 15 s cancela backup/Drive/import
+
+- Contexto: el cliente axios impose `timeout: 15_000` desde `api.ts`.
+  `BackupsPage` llamaba `/backups/manual`, `/backups/google-drive/import`
+  y `/backups/{id}/google-drive/retry` sin override; `ImportacionPage`
+  tampoco lo hacia con `/importacion/lotes` y
+  `/importacion/lotes/{id}/confirmar`.
+- Impacto: pg_dump, descarga+cifrado de Drive o cargas grandes superan los
+  15 s. El timeout cancela el token del backend, lo que produce un fallo
+  visible aun cuando el proceso siga corriendo.
+- Resolucion aplicada: importacion usa timeout especifico de 300 s e
+  idempotencia; backup manual, import Drive y restore responden 202 con
+  `operation_id` y polling dedicado. Restore correlaciona ese id extremo a
+  extremo con Watchdog para no aceptar un estado global ajeno.
+- Estado: cerrado en codigo y pruebas focalizadas; round-trip Drive real sigue
+  siendo gate de release.
+
+### 2026-07-20 - V-02.06 - Sources de version no se validaban en CI
+
+- Contexto: VERSION, Directory.Build.props, package.json y SeedData pueden
+  divergir silenciosamente. release.yml ofrecia `V-02-03` como default.
+- Impacto: una rama V-02.06 podia salir con UI/script reportando V-02-04
+  o sin filtrar el default para el operador.
+- Resolucion aplicada en PR F5: `Check-VersionAlignment.ps1` valida las
+  cinco fuentes (incluyendo `release.yml.inputs.version.default`); alineado
+  en V-02.06; enganchado a `ci.yml` y `release.yml`.
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Google Drive import comparaba hash de dominios cruzados
+
+- Contexto: `UploadBackupAsync` guardaba `copy.ChecksumSha256 = encrypted.Sha256Hex`
+  (SHA-256 del `.enc`). `GoogleDriveBackupService.ImportAsync` descargaba el
+  `.enc`, lo descifraba y comparaba el hash del dump plaintext contra el del
+  cifrado. El wrapper `HardenedGoogleDriveBackupService` validaba el `.enc`
+  pero el servicio interno repetia la comparacion incorrecta.
+- Impacto: cualquier copia subida por el propio servicio era rechazada como
+  corrupta al importarse.
+- Resolucion aplicada en PR F3: `GoogleDriveBackupService.ImportAsync` valida
+  el hash del `.enc` ANTES de descifrar y elimina la comparacion plaintext.
+  El wrapper pasa a ser un pass-through puro; deja de buscar el estado
+  inexistente `ACTIVE`.
+- Estado: cerrado en codigo; pendiente PostgreSQL/Testcontainers para validar
+  el round-trip completo con cifrado.
+
+### 2026-07-20 - V-02.06 - Auditoria semantica no se persistia bajo transaccion explicita
+
+- Contexto: `AuditService.LogAsync` omitia `SaveChangesAsync` cuando
+  `_dbContext.Database.CurrentTransaction` era no nulo, esperando a que el
+  caller guardase la auditoria en su propio SaveChanges. Varios callers
+  (`ImportacionService.ConfirmarAsync`,
+  `ImportacionService.PlazoFijoMovimientoAsync`) hacian
+  `SaveChanges` + `LogAsync` + `CommitAsync`, dejando `importacion_confirmada`
+  e `importacion_plazo_fijo_movimiento` solo en memoria.
+- Resolucion aplicada en PR F1: `LogAsync` ahora ejecuta `SaveChangesAsync`
+  siempre. Bajo transaccion, SaveChanges encola la insercion en
+  ChangeTracker; el Commit persiste y el rollback la descarta.
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Policies RLS no reconocian flags de conciliacion
+
+- Contexto: `can_write_cuenta_by_id` solo validaba `puede_agregar_lineas`,
+  `puede_editar_lineas`, `puede_eliminar_lineas`, `puede_importar`. Las
+  policies de `CONCILIACIONES` y `MOVIMIENTOS_ESPERADOS` delegaban en esa
+  funcion, asi que un usuario con solo `puede_conciliar` o
+  `puede_cerrar_conciliacion` pasaba el chequeo de servicio y encontraba
+  `InsufficientPrivilege` en RLS.
+- Resolucion aplicada: predicados separados `can_reconcile_*` y
+  `can_close_reconciliation_*`. El scope `reconcile` no puede escribir
+  `resuelta` ni reabrirla; `reconcile-close` solo puede llevar ambas tablas a
+  `resuelta`. No se ensancha `can_write_cuenta_by_id`.
+- Estado: cerrado en codigo; PostgreSQL/Testcontainers sigue como gate para
+  demostrar las policies contra el motor real.
+
+### 2026-07-20 - V-02.06 - Auditorias automaticas sin UsuarioId
+
+- Contexto: `AuditSaveChangesInterceptor` solo obtenia la IP de
+  `HttpContext`, no del usuario. `SetContextoAuditoria` era el unico camino
+  para atribuir las entradas automaticas, y nadie lo llamaba.
+- Impacto: `UsuarioId = null` en auditorias de cambios web -> filtro de
+  usuario inutil, forense ciega.
+- Resolucion aplicada en PR F1: el interceptor ahora lee
+  `ClaimTypes.NameIdentifier` y `sub` del HttpContext; mantiene override
+  explicito para jobs/seed.
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Snapshot de Conciliacion desalineado con soft delete
+
+- Contexto: `AppDbContextModelSnapshot` registraba el unique index sin
+  filtro `deleted_at IS NULL` y no declaraba las propiedades
+  `DeletedAt`/`DeletedById`, FK ni indice por `DeletedById`.
+- Impacto: `dotnet ef migrations script` podria recrear columnas/index ya
+  presentes en una base upgraded; ya ocurrido en V-02.05.
+- Resolucion aplicada en PR F2: snapshot sincronizado a mano con soft
+  delete, FK, indices y filtro parcial.
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Constructor RLS no resoluble por DI
+
+- Contexto: `RlsDbCommandInterceptor` se registraba via `AddScoped<T>()`
+  pero su unico constructor era `internal`, y `RlsContextSecret` (parametro)
+  tambien `internal`. El contenedor `Microsoft.Extensions.DependencyInjection`
+  selecciona constructores publicos, asi que la primera resolucion de
+  `AppDbContext` lanzaba excepcion o devolvia null.
+- Resolucion aplicada en PR F1: factory explicita en
+  `Program.cs.AddScoped` que conserva los tipos internal sin publicar el
+  ctor.
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Bootstrap legacy del watchdog invocaba parametros inexistentes
+
+- Contexto: `Start-WatchdogUpdate.ps1` invocaba
+  `Actualizar-AtlasBalance.ps1 -SkipWatchdog -SourcePath -PackageZipPath`,
+  pero el actualizador solo declaraba `InstallPath`, `SkipBackup`,
+  `PromptForDbOwnerCredentials`, `DbOwnerUser`. PowerShell rechaza el
+  binding y el script nunca aplicaba el paquete. Ademas, permitia continuar
+  sin clave publica o sin firma.
+- Resolucion aplicada en PR F3: `Start-WatchdogUpdate.ps1` retirado segun
+  decision del usuario; `Actualizar-AtlasBalance.ps1` queda con su contrato
+  `InstallPath/SkipBackup/PromptForDbOwnerCredentials/DbOwnerUser` intacto.
+  Endurecimiento de `WatchdogController.ActualizarApp` exige
+  `package_zip_path`, `VerifyPackageZipIntegrity` trata
+  `packageZipPath`/clave publica nulos como error (fail-closed).
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Tolerancia global de conciliacion truncaba negativos
+
+- Contexto: `HardenedConciliacionService.SugerirAsync` calculaba
+  `Math.Abs(maxMonto)` siendo `maxMonto` el maximo firmado del lote. Para
+  un lote con `-100000` y `10`, el resultado era 10 -> la ventana global
+  quedaba en +-10 y un extracto a `-99500` quedaba fuera antes del matching
+  individual.
+- Resolucion aplicada en PR F2: el rango global ahora usa el maximo ABSOLUTO
+  del lote (positivos y negativos), alineado con la tolerancia individual.
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Selector de divisa no se enviaba al crear lote
+
+- Contexto: `ImportacionPage` posteaba `/api/importacion/lotes` sin
+  `divisa_esperada`, por lo que `divisa_mismatch` quedaba siempre `false`
+  y el checkbox bloqueante nunca se mostraba al operador.
+- Resolucion aplicada en PR F4: nuevo estado `divisaEsperada` inicializado
+  con la divisa de la cuenta; selector visible; payload del POST incluye
+  `divisa_esperada`; reset al cambiar de cuenta o iniciar nuevo lote.
+- Estado: cerrado.
+
+### 2026-07-20 - V-02.06 - Idempotencia de lotes no aplicada
+
+- Contexto: la creacion y confirmacion de lotes pueden recibir un timeout
+  del navegador o de axios (15 s) y disparar reintentos del operador.
+  No existe una clave de idempotencia que evite generar filas duplicadas.
+- Resolucion: migracion `20260720140000_AddImportacionIdempotency`, indice
+  unique parcial por usuario/clave, recuperacion de la carrera SELECT+INSERT y
+  replay de confirmacion solo con la misma clave y respuesta persistida.
+- Estado: cerrado en codigo y tests InMemory; carrera PostgreSQL real pendiente
+  del gate Testcontainers.
+
+### 2026-07-20 - V-02.06 - Backup manual y Drive sin conversion a operaciones asincronas
+
+- Contexto: mantener una peticion HTTP abierta hacia backup/Drive/restore era
+  fragil ante timeouts y reinicios.
+- Resolucion: tabla `BACKUP_OPERATIONS`, jobs Hangfire para manual/Drive,
+  `202 + operation_id`, polling `/backups/operations/{id}` y correlacion
+  Watchdog para restore. La tabla cumple soft-delete, FK, indices y CHECKs.
+- Estado: cerrado en codigo; ejecucion real con pg_dump/Drive/pg_restore queda
+  como gate de release.
 
 ### 2026-05-10 - V-01.06 - Pendientes altos tras auditoria final
 
@@ -20,6 +429,42 @@
 - Estado: solo queda abierta la validacion visual con datos de volumen (sesion de navegador real con 50k filas en el grid). Los otros dos pendientes estan cerrados con evidencia.
 
 ## Cerrados
+
+### 2026-07-24 - V-02.06 - Cerrado - Endpoint de autocomplete devolvia tipo anonimo en vez del DTO documentado
+
+- **Contexto:** el primer `workflow_dispatch` real de `release.yml` sobre
+  `V-02.06` corrio la suite xUnit por primera vez desde que se anadio
+  `GET /api/formatos-importacion/columnas-extra-sugeridas`
+  (2026-07-23/24) y fallaron los 3 tests de
+  `FormatosImportacionControllerTests` para ese endpoint.
+- **Causa raiz:** el controller devolvia `Ok(new { data = nombres })`
+  (tipo anonimo) en vez de `Ok(new ListarColumnasExtraSugeridasResponse
+  { Data = nombres })`, aunque el DTO ya existia. Nunca se detecto en
+  este sandbox porque el proyecto de tests compilaba pero no podia
+  *ejecutarse* (ACL de `obj/bin`, `hostpolicy.dll` no encontrado).
+- **Solucion:** `FormatosImportacionController.ListarColumnasExtraSugeridas`
+  ahora devuelve el DTO. El JSON de red no cambia (`PropertyNamingPolicy
+  = SnakeCaseLower` global serializa `Data` igual que el `data` del
+  objeto anonimo), asi que el frontend no necesito cambios.
+- **Estado:** cerrado. Pendiente de confirmar en el siguiente run de CI.
+
+### 2026-07-24 - V-02.06 - Cerrado - SeedDataTests probaba un catalogo de bancos historico ya reemplazado
+
+- **Contexto:** mismo run de CI. Fallaron 3 tests de `SeedDataTests`
+  que esperaban 8 formatos predefinidos historicos (Sabadell, BBVA
+  EUR/MXN, Banco Caribe, Banco Popular).
+- **Causa raiz:** el wipe + reintroduccion de formatos del 2026-07-21
+  reemplazo `SeedData.DefaultFormatosImportacion` por los 6 formatos
+  reales del operador (BBVA/BS/Banquinter Empresa y Particular, EUR),
+  pero `SeedDataTests.cs` nunca se actualizo porque el proyecto de
+  tests no podia ejecutarse en este sandbox (mismo bloqueo de ACL que
+  el hallazgo anterior).
+- **Solucion:** los 3 tests se reescribieron contra el catalogo actual
+  de 6 formatos, incluida la asercion de `MapeoJson` sobre "Banquinter
+  Empresa" (antes apuntaba a la inexistente "BBVA MXN") y el Id fijo de
+  colision (`0ee8dcc6-...`, el Id real de "BBVA Empresa" en vez del
+  historico de "Sabadell").
+- **Estado:** cerrado. Pendiente de confirmar en el siguiente run de CI.
 
 ### 2026-07-07 - V-01.02 - Cerrado - Estado Git local no fiable
 
@@ -1311,13 +1756,17 @@ publico; los 11 HIGH requieren arreglo antes de exponer a internet.
   maliciosos firmados o no. **CERRADO en V-02-05 (CRIT-3)**. Watchdog ahora
   verifica firma RSA contra `UpdateSecurity:ReleaseSigningPublicKeyPem`.
 
-### HIGH (cerrados en V-02-05)
+### HIGH (cerrados en V-02-05 / V-02.06)
 
 - **AB-H-01 - Dashboard aborta con 409 entero si una tasa falta (H1 review).**
-  **PARCIALMENTE CERRADO en V-02-05**. `BulkConvertAsync` y `TryConvertAsync`
-  disponibles; `GetSaldosDivisaAsync` y `BuildPlazosFijosResumenAsync` los usan.
-  Resto (`GetPrincipalAsync`, `GetEvolucionAsync`) en Fase 1.
-- **AB-H-02 - N+async en Dashboard (H2 review).** **PARCIALMENTE CERRADO**
+  **CERRADO en V-02.06**. `BulkConvertAsync` se aplica ahora en
+  `GetSaldosDivisaAsync`, `BuildPlazosFijosResumenAsync`,
+  `BuildMetricsAsync` y `GetEvolucionAsync` mediante el helper
+  `DashboardService.ResolveBulkRatesAsync`. Tolerancia a tasas faltantes
+  sin abortar el dashboard. Verificacion: 9/9 DashboardServiceTests OK y
+  9/9 Nuevo `ResolveBulkRatesAsync` ejercita el patron en
+  `GetPrincipalAsync_Should_Aggregate_CurrentBalances_And_PeriodFlows_In_TargetCurrency`.
+- **AB-H-02 - N+async en Dashboard (H2 review).** **CERRADO en V-02.06**
   con el mismo alcance que AB-H-01.
 - **AB-H-03 - Google Drive restore sin SHA-256 post-descifrado.** **CERRADO en
   V-02-05**. El checksum se compara tras descifrar el dump. El helper quedó

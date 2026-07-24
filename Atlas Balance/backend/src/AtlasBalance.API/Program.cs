@@ -1,7 +1,9 @@
 ﻿using AtlasBalance.API.Data;
 using AtlasBalance.API.Jobs;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Services;
+using FluentValidation.AspNetCore;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -53,7 +55,13 @@ builder.Host.UseSerilog((context, config) =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<SmtpTestRateLimit>();
-builder.Services.AddScoped<RlsDbCommandInterceptor>();
+// V-02.06 (PR F1): RlsContextSecret es internal y RlsDbCommandInterceptor tiene
+// ctor internal. La DI por defecto solo invoca constructores publicos, asi que
+// registramos una factory explicita que conserva la encapsulacion del secreto.
+builder.Services.AddScoped<RlsDbCommandInterceptor>(serviceProvider =>
+    new RlsDbCommandInterceptor(
+        serviceProvider.GetRequiredService<IHttpContextAccessor>(),
+        serviceProvider.GetRequiredService<RlsContextSecret>()));
 builder.Services.AddScoped<AuditSaveChangesInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options
@@ -64,13 +72,14 @@ builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
             serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
 var jwtSecret = ResolveJwtSecret(builder.Configuration, builder.Environment);
-var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, jwtSecret);
-// V-02-05 (MED-7): advertir si RlsContextSecret == JwtSettings:Secret en produccion.
-// Deberian ser claves distintas para que comprometer una no exponga la otra.
-if (!builder.Environment.IsDevelopment() && string.Equals(rlsContextSecret, jwtSecret, StringComparison.Ordinal))
-{
-    Console.Error.WriteLine("[WARN] RlsContextSecret coincide con JwtSettings:Secret. Configure Security:RlsContextSecret como clave independiente para reducir el blast radius ante compromiso.");
-}
+var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, builder.Environment, jwtSecret);
+// V-02-06 (RLS-SEC-01): unificar resolucion y validacion del secreto RLS.
+// Ya no se permite que Program.cs y el interceptor lean IConfiguration por
+// separado: el secreto se valida una unica vez y se inyecta por DI. Si el
+// operador no define Security:RlsContextSecret, mantenemos el fallback al
+// secreto JWT solo en Development; en Produccion exigimos clave propia para
+// que comprometer JWT no permita forjar contextos RLS.
+builder.Services.AddSingleton(new AtlasBalance.API.Data.RlsContextSecret(rlsContextSecret));
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "atlas-balance-api";
 var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "atlas-balance-app";
 
@@ -224,6 +233,14 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
+// V-02.06 (MED-23): wirear FluentValidation como proveedor de
+// ModelState. La referencia a FluentValidation.AspNetCore 11.3.0
+// estaba en el csproj pero nunca se registro el contenedor, asi que
+// las reglas CustomValidator no se aplicaban. Es idempotente si no
+// hay IValidator<,> registrados: escanea el assembly de la API y
+// solo activa los que encuentre.
+builder.Services.AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters();
+
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddCors(options =>
@@ -265,6 +282,7 @@ builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
 builder.Services.AddScoped<IActualizacionService, ActualizacionService>();
 builder.Services.AddScoped<IIntegrationTokenService, IntegrationTokenService>();
 builder.Services.AddScoped<IIntegrationAuthorizationService, IntegrationAuthorizationService>();
+builder.Services.AddSingleton<IIntegrationRateLimitCleaner, IntegrationRateLimitCleaner>();
 builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
 builder.Services.AddScoped<SyncTiposCambioJob>();
 builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
@@ -274,6 +292,7 @@ builder.Services.AddScoped<BackupSchedulerJob>();
 builder.Services.AddScoped<ExportMensualJob>();
 builder.Services.AddScoped<PlazoFijoVencimientoJob>();
 builder.Services.AddScoped<AutoUpdateJob>();
+builder.Services.AddScoped<BackupOperationJob>();
 
 var app = builder.Build();
 
@@ -354,7 +373,7 @@ app.UseExceptionHandler(errorApp =>
             var logger = context.RequestServices
                 .GetRequiredService<ILoggerFactory>()
                 .CreateLogger("AtlasBalance.API.UnhandledException");
-            logger.LogError(feature.Error, "Unhandled API exception on {Path}", context.Request.Path.Value);
+            logger.LogError(feature.Error, "Unhandled API exception on {PathSafe}", LogScrubber.Scrub(context.Request.Path.Value));
         }
 
         if (feature?.Error is TipoCambioMissingException missingRate)
@@ -526,18 +545,48 @@ static string ResolveJwtSecret(IConfiguration configuration, IHostEnvironment en
     return generated;
 }
 
-static string ResolveRlsContextSecret(IConfiguration configuration, string jwtSecret)
+// V-02-06 (RLS-SEC-01): resolucion unica del secreto RLS, antes separada
+// entre Program.cs y el interceptor. Ahora el secreto saneado se inyecta al
+// interceptor via DI para evitar la inconsistencia que permitia arrancar
+// con un secreto en blanco o solo espacios y obtener firmas vacias.
+static string ResolveRlsContextSecret(IConfiguration configuration, IHostEnvironment environment, string jwtSecret)
 {
     var configured = configuration["Security:RlsContextSecret"];
-    if (string.IsNullOrWhiteSpace(configured))
+    var trimmed = configured?.Trim();
+
+    if (!string.IsNullOrEmpty(trimmed))
     {
-        // V-02-05 (MED-7): por defecto cae al secreto JWT para simplificar el
-        // despliegue, pero si el operador rota el secreto JWT debe rotar tambien
-        // el RlsContextSecret. Logueamos warning en produccion para que sea
-        // visible.
+        if (environment.IsDevelopment())
+        {
+            return trimmed;
+        }
+
+        // Reutilizamos la misma politica fail-closed que Production ya exige
+        // para JWT y Watchdog: longitud minima 32 y rechazo de placeholders.
+        RejectUnsafeProductionSecret(
+            "Security:RlsContextSecret",
+            trimmed,
+            32);
+        if (string.Equals(trimmed, jwtSecret, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Security:RlsContextSecret debe ser distinto de JwtSettings:Secret fuera de Development. " +
+                "Comprometer el secreto JWT no debe permitir forjar contextos RLS.");
+        }
+        return trimmed;
+    }
+
+    if (environment.IsDevelopment())
+    {
+        // Mantenemos el fallback al JWT solo en dev para no romper `dotnet
+        // run` cuando el operador aun no ha generado su appsettings propio.
         return jwtSecret;
     }
-    return configured;
+
+    throw new InvalidOperationException(
+        "Security:RlsContextSecret debe estar configurado fuera de Development. " +
+        "Genera una clave aleatoria de al menos 32 caracteres y distinala de JwtSettings:Secret. " +
+        "Si necesitas migrar una instalacion existente, Actualizar-AtlasBalance.ps1 puede generarla.");
 }
 
 static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)
@@ -690,9 +739,19 @@ static string ResolveMigrationConnectionString(
         return configuredMigrationConnection;
     }
 
+    // V-02-06 (BACKUP-02): en produccion exigimos una MigrationConnection
+    // explicita para que migraciones, semilla del secreto RLS y concesiones
+    // de privilegios usen el rol owner. Caer al runtime deja al usuario
+    // app_user manejando migraciones, lo que ya ha provocado errores de
+    // "permission denied for table __EFMigrationsHistory" en instalaciones
+    // legacy. El actualizador es responsable de regenerar esta cadena en
+    // upgrades antes de llegar aqui.
     if (!environment.IsDevelopment())
     {
-        return runtimeConnectionString;
+        throw new InvalidOperationException(
+            "ConnectionStrings:MigrationConnection es obligatorio fuera de Development. " +
+            "Configuralo con un usuario owner (atlas_balance_owner) y una password dedicada. " +
+            "Si vienes de una version anterior, Actualizar-AtlasBalance.ps1 puede regenerarlo.");
     }
 
     var runtimeBuilder = new NpgsqlConnectionStringBuilder(runtimeConnectionString);

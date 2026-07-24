@@ -16,7 +16,8 @@
     "BaseUrl": "https://CAMBIAR_HOST_PUBLICO_AQUI"
   },
   "Security": {
-    "RequireMfaForWebUsers": true
+    "RequireMfaForWebUsers": true,
+    "RlsContextSecret": "GENERAR-CLAVE-RLS-DISTINTA-DE-JWT-MINIMO-32-CARACTERES-AQUI"
   },
   "ForwardedHeaders": {
     "KnownProxies": [ "127.0.0.1" ],
@@ -41,7 +42,7 @@
     "UpdateToken": "PEGAR_TOKEN_FINE_GRAINED_READ_ONLY_O_USAR_VARIABLE_GITHUB_UPDATE_TOKEN"
   },
   "UpdateSecurity": {
-    "ReleaseSigningPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvnPPH5nmqhYfCxeazYo2\nUl59S/+nUWPz6/uAFORGFrayrCgt4vfZE8lVUES/Z7aJni9Uc0cXMREVNApOchim\nFWc9t2E/7lXwMRvmTfkcKGDCxPaTcy8zHg2rt3cFME+JuojShU868DddmhnWMRzd\nzRtgKaWdS2URKXKIyUz6mfYHnGbEaBGnFCCsVCPryPL2fRbsNUT0yAj5pI9xWedR\nnzEk6AXG7FIKPWNprmS+JxWvQMgj7JTQ5dGZIm/eEvGT53J5weYO3a6OHZE8vl9k\nMpR2uLbmK1mDoTRHlRp0eBMfYrZVpnfvmUTMOB4g1gDA+a0zchWUitiyc47Tx5ad\nqEzsmrHe+iAROECSIOjQkTJow9cevU6yM+SBK+jtEw2Ns3/vmGe/FG7BsO/BUozX\nQzmkUVfdmbSRROhJ13JKfnjEHQGv8VTXo7DTlcOlFUcZokXkffhb0VS2DaOFjdX+\nWJrj0IeqT24J1CLucny3E8c76kzsn1dx4ybSUHcrW9ta95U6WIaKc80FwNk0TqeC\n65Ok59XOv3wdrLBcadTakihYLvshclECEJSxHv7f+b3Z7rUUHt2BeKZiTjIe6UWk\npN4BVT5MX0SezTg/VU20SHxJYmWVIe4i1tVugahlNjkLfudexE4rCwngP/pbLH4J\nat7bxvLDo5k3O5J1Sej7rnkCAwEAAQ==\n-----END PUBLIC KEY-----"
+    "ReleaseSigningPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxhpPLjgCCcX1jyi/BGyE\nSMVCmgibdtH6VRap66R24sABZUzS0uF4sSGfii/9gH76MbyJBx82RVy9E5Ffg9IP\nhTLlXhCICf2Jgq7x1X1hrxvSX1xHIF0L7FKO1sOTYVDjWCTywZ4Inb4QZaScIh2d\nHvOZpJ7UqFrYwyMRlj6haoTqOrVeXWLWeInfacq+ujBJsylk0T+3J6L0J3sST8nh\nofI8PU1hN5Dsj6CpRP1KROAYlAmRmpnIAkIhLtNTMBrlabm82/+rTCOJJksr81tU\nIRdrZuyOvfrDwsm+oQPz8d4PcvAQFKvTscHI8MFE7pvza9+vG2UNlcMxSaR4SgL1\nlySo8DDCPU9UKU4RqGZRyuB6RF0Ne0EP4oUd0zi2wIUj4FNfntrrw8o57t7vWRGA\n3f3CpQB0kOyeImDmniEkrdSB4LAPYTup+vkp2Dlzsh0vn+wLirHfCV1zRDtANfOU\n+F5bfSXIFdLGtCtDVFhsNYE/tEdXSB+JXtztxkpqKTouTo4drnG0OZmiLxBq1pP6\n12hXvWWiQstA29R2oHidxZAdw7r75Xqu0jwQKtpORTjXvsDERmaE7HRDKxUXD0CC\n8SZKYqXRVrPhG6BPkonf3f7BMUNx14LG6GXWE6uTNCvLqsNinFa7iQfrMeN3qTV/\nUWsagyNIy7PBlmnPJBzNv68CAwEAAQ==\n-----END PUBLIC KEY-----"
   },
   "DataProtection": {
     "KeysPath": "C:\\ProgramData\\AtlasBalance\\keys"

@@ -13,6 +13,10 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import {
+  buildConfirmImportacionLoteRequest,
+  buildCreateImportacionLoteRequest,
+} from '@/utils/importacionRequest';
 import type {
   ImportConfirmResult,
   ImportContextoResponse,
@@ -175,11 +179,23 @@ export default function ImportacionPage() {
   const [lotes, setLotes] = useState<ImportacionLote[]>([]);
   const [loadingLotes, setLoadingLotes] = useState(false);
   const [acceptWarnings, setAcceptWarnings] = useState(false);
+  // V-02.06 (HIGH-1, bloqueante): aceptacion explicita de que se quiere
+  // importar un archivo cuya divisa declarada no coincide con la divisa
+  // de la cuenta. Sin esto el backend rechaza con 400.
+  const [forceConfirmDivisaMismatch, setForceConfirmDivisaMismatch] = useState(false);
+  // V-02.06 (HIGH-1, bug 18): el POST de creacion de lote debe enviar la
+  // `divisa_esperada` declarada por el operador. Antes se omitia y el
+  // backend asumia la divisa de la cuenta, perdiendo la validacion contra
+  // pegados accidentales de otra divisa.
+  const [divisaEsperada, setDivisaEsperada] = useState('');
+  const [divisasDisponibles, setDivisasDisponibles] = useState<string[]>([]);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [validationPage, setValidationPage] = useState(1);
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const createIdempotencyKeyRef = useRef(crypto.randomUUID());
+  const confirmIdempotencyKeyRef = useRef(crypto.randomUUID());
   const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [closeAttempted, setCloseAttempted] = useState(false);
   const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
@@ -212,6 +228,44 @@ export default function ImportacionPage() {
         const initialCuenta = requestedCuenta ?? cuentas[0];
         if (initialCuenta) {
           setCuentaId(initialCuenta.id);
+          setDivisaEsperada(initialCuenta.divisa);
+        }
+
+        // V-02.06 (HIGH-1, bug 18): cargar la lista de monedas activas para
+        // alimentar el selector `Divisa de los importes`. Si el endpoint no
+        // existe o falla, se cae a las divisas presentes en las cuentas
+        // cargadas para no bloquear al operador.
+        try {
+          const { data: monedasResp } = await api.get<{ codigos?: string[] }>('/cuentas/divisas-activas');
+          const payload: { codigo?: string }[] | undefined = (() => {
+            if (!monedasResp || typeof monedasResp !== 'object') return undefined;
+            if ('data' in monedasResp && Array.isArray(monedasResp.data)) return monedasResp.data;
+            if ('codigos' in monedasResp && Array.isArray(monedasResp.codigos)) {
+              return monedasResp.codigos.map((codigo) => ({ codigo }));
+            }
+            return undefined;
+          })();
+          const codigos = payload
+            ?.map((entry) => entry.codigo)
+            .filter((codigo): codigo is string => typeof codigo === 'string' && codigo.length > 0)
+            ?? [];
+          if (codigos.length > 0) {
+            setDivisasDisponibles(codigos);
+          } else {
+            throw new Error('endpoint sin monedas');
+          }
+        } catch {
+          const fallback = Array.from(
+            new Set(
+              cuentas
+                .map((cuenta) => cuenta.divisa)
+                .filter((codigo): codigo is string => typeof codigo === 'string' && codigo.length > 0)
+            )
+          );
+          if (fallback.length === 0) {
+            fallback.push('EUR', 'USD', 'GBP', 'ARS');
+          }
+          setDivisasDisponibles(fallback);
         }
       } catch (err: unknown) {
         if (!mounted) {
@@ -372,9 +426,14 @@ export default function ImportacionPage() {
   }, [autoCloseOnSuccess, cuentaId, importAlreadyConfirmed, isEmbedded]);
 
   const resetValidationState = () => {
+    // Una edicion crea una operacion distinta. Conservamos la clave solo
+    // para reintentar exactamente la misma peticion tras un timeout.
+    createIdempotencyKeyRef.current = crypto.randomUUID();
+    confirmIdempotencyKeyRef.current = crypto.randomUUID();
     setValidacion(null);
     setCurrentLote(null);
     setAcceptWarnings(false);
+    setForceConfirmDivisaMismatch(false);
     setSelectedRows([]);
     setValidationPage(1);
     setConfirmResult(null);
@@ -383,6 +442,12 @@ export default function ImportacionPage() {
 
   const setCuenta = (nextId: string) => {
     setCuentaId(nextId);
+    const nextCuenta = contexto.find((cuenta) => cuenta.id === nextId);
+    if (nextCuenta) {
+      setDivisaEsperada(nextCuenta.divisa);
+    } else {
+      setDivisaEsperada('');
+    }
     resetValidationState();
     setStep(1);
     const nextParams = new URLSearchParams(searchParams);
@@ -417,18 +482,22 @@ export default function ImportacionPage() {
     setConfirmResult(null);
 
     try {
-      const { data } = await api.post<ImportacionLoteDetalle>('/importacion/lotes', {
-        cuenta_id: cuentaId,
-        raw_data: rawData,
-        separador: separator,
+      const request = buildCreateImportacionLoteRequest({
+        cuentaId,
+        rawData,
+        separator,
         mapeo: selectedMapeo,
-        tipo_origen: 'PEGADO',
+        divisaEsperada,
+        divisaCuenta: selectedCuenta?.divisa,
+        idempotencyKey: createIdempotencyKeyRef.current,
       });
+      const { data } = await api.post<ImportacionLoteDetalle>(request.url, request.body, request.config);
 
       setCurrentLote(data.lote);
       setValidacion(data.validacion);
       setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
       setAcceptWarnings(false);
+      setForceConfirmDivisaMismatch(false);
       setValidationPage(1);
       setActiveTab('lote');
       setStep(2);
@@ -450,6 +519,16 @@ export default function ImportacionPage() {
       return;
     }
 
+    // V-02.06 (HIGH-1, bloqueante): si el backend marco el lote con
+    // `divisa_mismatch`, exigimos aceptacion explicita via checkbox
+    // antes de enviar `force_confirm_divisa_mismatch: true`.
+    if (currentLote.divisa_mismatch && !forceConfirmDivisaMismatch) {
+      setError(
+        `La divisa declarada (${currentLote.divisa_esperada ?? '?'}) no coincide con la divisa de la cuenta (${currentLote.divisa_cuenta}). Marca la confirmación explícita para importar de todas formas.`,
+      );
+      return;
+    }
+
     const confirmed = await confirm({
       title: 'Confirmar importación',
       message: `Se importarán ${selectedValidRowsCount} ${selectedValidRowsCount === 1 ? 'fila' : 'filas'} a la cuenta seleccionada. Esta acción escribe movimientos en el extracto. ¿Continuar?`,
@@ -465,10 +544,14 @@ export default function ImportacionPage() {
     setSuccess(null);
 
     try {
-      const { data } = await api.post<ImportConfirmResult>(`/importacion/lotes/${currentLote.id}/confirmar`, {
-        filas_a_importar: selectedRows,
-        acepta_advertencias: acceptWarnings,
+      const request = buildConfirmImportacionLoteRequest({
+        loteId: currentLote.id,
+        filasAImportar: selectedRows,
+        aceptaAdvertencias: acceptWarnings,
+        forceConfirmDivisaMismatch,
+        idempotencyKey: confirmIdempotencyKeyRef.current,
       });
+      const { data } = await api.post<ImportConfirmResult>(request.url, request.body, request.config);
 
       setConfirmResult(data);
       setSuccess(`Importación completada: ${data.filas_importadas} filas importadas.`);
@@ -487,6 +570,7 @@ export default function ImportacionPage() {
     setValidacion(null);
     setCurrentLote(null);
     setAcceptWarnings(false);
+    setForceConfirmDivisaMismatch(false);
     setSelectedRows([]);
     setValidationPage(1);
     setConfirmResult(null);
@@ -494,6 +578,11 @@ export default function ImportacionPage() {
     setError(null);
     setStep(1);
     setActiveTab('nueva');
+    createIdempotencyKeyRef.current = crypto.randomUUID();
+    confirmIdempotencyKeyRef.current = crypto.randomUUID();
+    // V-02.06 (HIGH-1, bug 18): al iniciar una nueva importacion se
+    // reinicia el selector de divisa a la divisa de la cuenta actual.
+    setDivisaEsperada(selectedCuenta?.divisa ?? '');
   };
 
   const submitPlazoFijoMovimiento = async () => {
@@ -690,6 +779,7 @@ export default function ImportacionPage() {
                               setValidacion(data.validacion);
                               setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
                               setAcceptWarnings(false);
+                              setForceConfirmDivisaMismatch(false);
                               setConfirmResult(null);
                               setStep(2);
                               setActiveTab('lote');
@@ -800,6 +890,19 @@ export default function ImportacionPage() {
               ]}
               onChange={(next) => {
                 setSeparator(next as 'tab' | 'comma' | 'semicolon');
+                resetValidationState();
+              }}
+            />
+
+            <AppSelect
+              label="Divisa de los importes"
+              value={divisaEsperada || selectedCuenta?.divisa || ''}
+              options={divisasDisponibles.map((codigo) => ({
+                value: codigo,
+                label: `${codigo}${selectedCuenta?.divisa === codigo ? ' (divisa de la cuenta)' : ''}`,
+              }))}
+              onChange={(next) => {
+                setDivisaEsperada(next);
                 resetValidationState();
               }}
             />
@@ -989,6 +1092,24 @@ export default function ImportacionPage() {
                 />
                 Acepto importar {selectedWarningRowsCount} fila{selectedWarningRowsCount === 1 ? '' : 's'} con avisos.
               </label>
+            )}
+
+            {currentLote?.divisa_mismatch === true && !importAlreadyConfirmed && (
+              <div className="import-warning-accept" role="alert">
+                <p className="auth-error" style={{ margin: '0 0 0.5rem 0' }}>
+                  Aviso de divisa: la cuenta destino opera en{' '}
+                  <strong>{currentLote.divisa_cuenta}</strong> pero declaraste pegar datos en{' '}
+                  <strong>{currentLote.divisa_esperada ?? '?'}</strong>. Si confirmas, los importes quedaran registrados con tu declaracion.
+                </p>
+                <label style={{ display: 'block', marginTop: '0.25rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={forceConfirmDivisaMismatch}
+                    onChange={(event) => setForceConfirmDivisaMismatch(event.target.checked)}
+                  />
+                  Confirmo que quiero importar este archivo en {currentLote.divisa_esperada ?? '?'} aunque la cuenta sea {currentLote.divisa_cuenta}.
+                </label>
+              </div>
             )}
 
             {confirmResult && (

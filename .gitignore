@@ -30,6 +30,7 @@ Atlas Balance/backend/src/AtlasBalance.API/wwwroot/logos/
 Atlas Balance/frontend/node_modules/
 Atlas Balance/frontend/node_modules.blocked-*/
 Atlas Balance/frontend/dist/
+Atlas Balance/frontend/.test-dist/
 
 # IDE
 .idea/

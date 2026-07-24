@@ -30,10 +30,6 @@ function mapColumnaNombre(columna: string | null): string {
   return columna;
 }
 
-function formatTimestamp(value: string): string {
-  return formatDateTime(value);
-}
-
 function parseDetallesJson(raw: string | null): string | null {
   if (!raw) return null;
   try {
@@ -311,7 +307,7 @@ export default function AuditoriaPage() {
                                 {expandedRows[row.id] ? 'Ocultar' : 'Ver'}
                               </button>
                             </td>
-                            <td>{formatTimestamp(row.timestamp)}</td>
+                            <td>{formatDateTime(row.timestamp)}</td>
                             <td>{row.usuario_nombre ?? 'Sistema'}</td>
                             <td>{row.tipo_accion}</td>
                             <td>{row.cuenta_nombre ? `${row.titular_nombre ?? 'Sin titular'} - ${row.cuenta_nombre}` : 'Sin cuenta'}</td>

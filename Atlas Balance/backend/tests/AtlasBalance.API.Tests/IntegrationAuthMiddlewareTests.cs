@@ -186,6 +186,43 @@ public sealed class IntegrationAuthMiddlewareTests
         tokenService.ValidateCalls.Should().Be(2);
     }
 
+    [Fact]
+    public async Task Empty_Endpoint_Scopes_Should_Be_Denied_By_Real_Middleware()
+    {
+        await using var db = BuildDbContext();
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var clock = new FakeClock(DateTime.UtcNow);
+        var tokenService = new IntegrationTokenService(db);
+        const string plainToken = "sk_test_without_endpoint_scope";
+
+        db.IntegrationTokens.Add(new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "without-endpoint-scope",
+            TokenHash = tokenService.ComputeSha256(plainToken),
+            Estado = EstadoTokenIntegracion.Activo,
+            PermisoLectura = true,
+            EndpointScopesJson = "[]",
+            UsuarioCreadorId = Guid.NewGuid()
+        });
+        await db.SaveChangesAsync();
+
+        var nextCalled = false;
+        var middleware = new IntegrationAuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            cache,
+            clock);
+
+        var statusCode = await InvokeWithTokenAsync(middleware, db, tokenService, plainToken, CancellationToken.None);
+
+        statusCode.Should().Be(StatusCodes.Status403Forbidden);
+        nextCalled.Should().BeFalse();
+    }
+
     private static async Task<int> InvokeWithTokenAsync(
         IntegrationAuthMiddleware middleware,
         AppDbContext db,
@@ -234,5 +271,36 @@ public sealed class IntegrationAuthMiddlewareTests
 
         public Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)
             => Task.FromResult(false);
+    }
+
+    // -----------------------------------------------------------------------
+    // V-02.06 (MED-29): cuando un token se revoca o rota, los contadores
+    // de rate-limit por minuto en memoria deben invalidarse. Sin esto,
+    // un atacante podria acumular cuota en un minuto y consumirla
+    // varios minutos despues aunque el token estuviera revocado.
+    // -----------------------------------------------------------------------
+    [Fact]
+    public void IntegrationRateLimitCleaner_Should_Remove_Counters_For_Token()
+    {
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var clock = new FakeClock(new DateTime(2026, 4, 18, 11, 5, 0, DateTimeKind.Utc));
+        var cleaner = new IntegrationRateLimitCleaner(cache, clock);
+        var tokenId = Guid.NewGuid();
+
+        // Sembramos manualmente los contadores current/previous del minuto
+        // en curso para ese token, simulando uso previo.
+        var currentKey = $"{tokenId:N}:{clock.UtcNow:yyyyMMddHHmm}";
+        var previousMinute = clock.UtcNow.AddMinutes(-1);
+        var previousKey = $"{tokenId:N}:{previousMinute:yyyyMMddHHmm}";
+        cache.Set(currentKey, 42, TimeSpan.FromMinutes(2));
+        cache.Set(previousKey, 13, TimeSpan.FromMinutes(2));
+
+        cache.Get<int>(currentKey).Should().Be(42);
+        cache.Get<int>(previousKey).Should().Be(13);
+
+        cleaner.ClearRateLimitsForToken(tokenId);
+
+        cache.TryGetValue<int>(currentKey, out _).Should().BeFalse();
+        cache.TryGetValue<int>(previousKey, out _).Should().BeFalse();
     }
 }

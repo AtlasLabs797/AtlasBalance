@@ -2,6 +2,7 @@
 using System.ServiceProcess;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AtlasBalance.Watchdog.Logging;
 using AtlasBalance.Watchdog.Models;
 
 namespace AtlasBalance.Watchdog.Services;
@@ -9,6 +10,8 @@ namespace AtlasBalance.Watchdog.Services;
 public interface IWatchdogOperationsService
 {
     Task<bool> StartRestoreAsync(string backupPath, CancellationToken cancellationToken);
+    Task<bool> StartRestoreAsync(string backupPath, Guid operationId, CancellationToken cancellationToken) =>
+        StartRestoreAsync(backupPath, cancellationToken);
     Task<bool> StartUpdateAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken);
 }
 
@@ -61,7 +64,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         _logger = logger;
     }
 
-    public async Task<bool> StartRestoreAsync(string backupPath, CancellationToken cancellationToken)
+    public Task<bool> StartRestoreAsync(string backupPath, CancellationToken cancellationToken) =>
+        StartRestoreAsync(backupPath, Guid.Empty, cancellationToken);
+
+    public async Task<bool> StartRestoreAsync(string backupPath, Guid operationId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(backupPath))
         {
@@ -99,7 +105,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         try
         {
             await _stateStore.SetAsync(
-                CreateState("RUNNING", "RESTORE_BACKUP", "Restauracion en progreso"),
+                CreateState("RUNNING", "RESTORE_BACKUP", "Restauracion en progreso", operationId),
                 cancellationToken);
         }
         catch
@@ -110,25 +116,31 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         _ = Task.Run(async () =>
         {
-            var finalState = CreateState("FAILED", "RESTORE_BACKUP", "Operacion interrumpida");
+            var finalState = CreateState("FAILED", "RESTORE_BACKUP", "Operacion interrumpida", operationId);
             try
             {
                 await StopApiServiceSafeAsync(CancellationToken.None);
                 var restoreResult = await RunPgRestoreAsync(fullBackupPath, CancellationToken.None);
                 finalState = restoreResult.Success
-                    ? CreateState("SUCCESS", "RESTORE_BACKUP", "Restauracion completada")
-                    : CreateState("FAILED", "RESTORE_BACKUP", "Error en pg_restore. Revise los logs protegidos del servidor.");
+                    ? CreateState("SUCCESS", "RESTORE_BACKUP", "Restauracion completada", operationId)
+                    : CreateState("FAILED", "RESTORE_BACKUP", "Error en pg_restore. Revise los logs protegidos del servidor.", operationId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Restore operation failed");
-                finalState = CreateState("FAILED", "RESTORE_BACKUP", "Error inesperado en restauracion. Revise los logs protegidos del servidor.");
+                finalState = CreateState("FAILED", "RESTORE_BACKUP", "Error inesperado en restauracion. Revise los logs protegidos del servidor.", operationId);
             }
             finally
             {
-                await StartApiServiceSafeAsync(CancellationToken.None);
-                await _stateStore.SetAsync(finalState, CancellationToken.None);
-                _operationLock.Release();
+                try
+                {
+                    await StartApiServiceSafeAsync(CancellationToken.None);
+                    await _stateStore.SetAsync(finalState, CancellationToken.None);
+                }
+                finally
+                {
+                    _operationLock.Release();
+                }
             }
         });
 
@@ -139,8 +151,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     {
         if (string.IsNullOrWhiteSpace(sourcePath) ||
             string.IsNullOrWhiteSpace(targetPath) ||
+            string.IsNullOrWhiteSpace(packageZipPath) ||
             !TryGetFullPath(sourcePath, out var fullSourcePath) ||
             !TryGetFullPath(targetPath, out var fullTargetPath) ||
+            !TryGetFullPath(packageZipPath, out _) ||
             !Directory.Exists(fullSourcePath))
         {
             return false;
@@ -155,12 +169,16 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
 
         // V-02-05 (CRIT-3): si la API nos pasa el path al ZIP original, lo verificamos
-        // antes de aplicar la actualizacion. Si la firma RSA esta configurada y falla,
-        // o si el ZIP esta fuera de UpdateSourceRoot, rechazamos.
+        // antes de aplicar la actualizacion. La verificacion es obligatoria: si
+        // el campo viene vacio o falta la clave publica configurada, se rechaza
+        // el update (fail-closed). Era el bypass que permitia instalar paquetes
+        // sin firma cuando faltaban los assets.
         var zipVerification = VerifyPackageZipIntegrity(packageZipPath);
         if (zipVerification is not null)
         {
-            _logger.LogError("Update rechazado por verificacion de integridad del ZIP: {Reason}", zipVerification);
+            // V-02-06 (CodeQL #13): sanear {ReasonSafe} para evitar CWE-117 (log forging).
+            // zipVerification se construye a partir de packageZipPath, que llega del caller API.
+            _logger.LogError("Update rechazado por verificacion de integridad del ZIP: {ReasonSafe}", LogScrubber.Scrub(zipVerification));
             return false;
         }
 
@@ -237,13 +255,19 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             }
             finally
             {
-                if (!apiStartedInOperation && !externalUpdater)
+                try
                 {
-                    await StartApiServiceSafeAsync(CancellationToken.None);
-                }
+                    if (!apiStartedInOperation && !externalUpdater)
+                    {
+                        await StartApiServiceSafeAsync(CancellationToken.None);
+                    }
 
-                await _stateStore.SetAsync(finalState, CancellationToken.None);
-                _operationLock.Release();
+                    await _stateStore.SetAsync(finalState, CancellationToken.None);
+                }
+                finally
+                {
+                    _operationLock.Release();
+                }
             }
         });
 
@@ -388,11 +412,12 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         }
     }
 
-    private static WatchdogState CreateState(string estado, string operacion, string mensaje) =>
+    private static WatchdogState CreateState(string estado, string operacion, string mensaje, Guid? operationId = null) =>
         new()
         {
             Estado = estado,
             Operacion = operacion,
+            OperationId = operationId,
             Mensaje = mensaje,
             UpdatedAt = DateTime.UtcNow
         };
@@ -400,15 +425,6 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     private static string Trim(string text, int maxLength)
     {
         return text.Length <= maxLength ? text : text[..maxLength];
-    }
-
-    private static bool PathsOverlap(string sourcePath, string targetPath)
-    {
-        var sourceWithSeparator = EnsureTrailingSeparator(sourcePath);
-        var targetWithSeparator = EnsureTrailingSeparator(targetPath);
-
-        return sourceWithSeparator.StartsWith(targetWithSeparator, StringComparison.OrdinalIgnoreCase) ||
-               targetWithSeparator.StartsWith(sourceWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string EnsureTrailingSeparator(string path)
@@ -882,7 +898,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         if (!IsLocalHealthUrl(healthUrl))
         {
-            _logger.LogWarning("Health check rechazado por URL no local: {HealthUrl}", healthUrl);
+            _logger.LogWarning("Health check rechazado por URL no local: {HealthUrlSafe}", LogScrubber.Scrub(healthUrl));
             return false;
         }
 
@@ -936,11 +952,11 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 CopyFileIfExists(Path.Combine(rollbackPath, file), Path.Combine(installPath, file));
             }
 
-            _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPath}", rollbackPath);
+            _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
         }
         catch (Exception rollbackEx)
         {
-            _logger.LogError(rollbackEx, "No se pudo aplicar rollback de binarios desde {RollbackPath}", rollbackPath);
+            _logger.LogError(rollbackEx, "No se pudo aplicar rollback de binarios desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
         }
     }
 
@@ -1016,21 +1032,22 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
     }
 
     /// <summary>
-    /// V-02-05 (CRIT-3): verifica la integridad del ZIP de actualizacion cuando la API
-    /// lo pasa. Rechaza el update si:
+    /// V-02-05 (CRIT-3) + V-02.06 (PR F3): verifica la integridad del ZIP de
+    /// actualizacion cuando la API lo pasa. Rechaza el update si:
+    ///   - el ZIP no se proporcino (fail-closed; no hay "modo legacy")
     ///   - el ZIP no existe
     ///   - el ZIP esta fuera de UpdateSourceRoot
-    ///   - el ZIP no tiene su .sig correspondiente dentro del root
+    ///   - falta la clave publica o el archivo .sig
     ///   - la firma RSA no valida contra la clave publica configurada
     ///
-    /// Devuelve null si la verificacion pasa o si no hay ZIP que verificar
-    /// (modo legacy). Devuelve un string con la razon si falla.
+    /// Devuelve null si la verificacion pasa. Devuelve un string con la
+    /// razon si falla.
     /// </summary>
     private string? VerifyPackageZipIntegrity(string? packageZipPath)
     {
         if (string.IsNullOrWhiteSpace(packageZipPath))
         {
-            return null;
+            return "package_zip_path obligatorio: actualizacion sin firma rechazada";
         }
 
         if (!TryGetFullPath(packageZipPath, out var fullZipPath))
@@ -1052,8 +1069,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         var publicKeyPem = _configuration["UpdateSecurity:ReleaseSigningPublicKeyPem"];
         if (string.IsNullOrWhiteSpace(publicKeyPem))
         {
-            _logger.LogWarning("UpdateSecurity:ReleaseSigningPublicKeyPem no configurada en Watchdog; se omite la verificacion de firma RSA del ZIP. Configure la clave para activar la verificacion end-to-end.");
-            return null;
+            return "UpdateSecurity:ReleaseSigningPublicKeyPem no configurada en Watchdog; firma no se puede verificar";
         }
 
         var signaturePath = fullZipPath + ".sig";
@@ -1064,16 +1080,14 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         try
         {
-            var rsa = System.Security.Cryptography.RSA.Create();
+            using var rsa = System.Security.Cryptography.RSA.Create();
             rsa.ImportFromPem(publicKeyPem);
-            var zipBytes = File.ReadAllBytes(fullZipPath);
             var sigBytes = File.ReadAllBytes(signaturePath);
-            if (!rsa.VerifyData(zipBytes, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1))
+            using var zipStream = File.OpenRead(fullZipPath);
+            if (!rsa.VerifyData(zipStream, sigBytes, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1))
             {
-                rsa.Dispose();
                 return "Firma RSA invalida para el ZIP";
             }
-            rsa.Dispose();
             return null;
         }
         catch (Exception ex)

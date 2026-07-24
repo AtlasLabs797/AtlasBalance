@@ -190,6 +190,21 @@ public sealed class FormatosImportacionController : ControllerBase
         return Ok(new { message = "Formato restaurado" });
     }
 
+    [HttpGet("columnas-extra-sugeridas")]
+    public async Task<IActionResult> ListarColumnasExtraSugeridas(CancellationToken cancellationToken)
+    {
+        var nombres = await (
+                from extra in _dbContext.ExtractosColumnasExtra
+                join extracto in _dbContext.Extractos on extra.ExtractoId equals extracto.Id
+                where extra.NombreColumna != ""
+                select extra.NombreColumna)
+            .Distinct()
+            .OrderBy(nombre => nombre)
+            .ToListAsync(cancellationToken);
+
+        return Ok(new ListarColumnasExtraSugeridasResponse { Data = nombres });
+    }
+
     private static IQueryable<FormatoImportacion> ApplySorting(IQueryable<FormatoImportacion> query, string sortBy, bool desc)
     {
         return (sortBy.ToLowerInvariant(), desc) switch

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Fragment } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AxiosError } from 'axios';
@@ -176,10 +176,17 @@ export default function CuentaDetailPage() {
   const canFlagRows = canEditCell('flagged');
   const canSelectRows = canDeleteRows || canFlagRows;
 
+  const loadCuentaDataRequestIdRef = useRef(0);
+
   const loadCuentaData = useCallback(async () => {
     if (!id || !allowedDashboard) {
       return;
     }
+
+    // Guarda anti-carrera: si el usuario cambia de pagina rapido, una respuesta
+    // que tarda mas puede llegar despues de una peticion posterior y pisar datos
+    // mas nuevos. Solo la peticion mas reciente puede aplicar su resultado.
+    const requestId = ++loadCuentaDataRequestIdRef.current;
 
     setLoading(true);
     setError(null);
@@ -193,11 +200,19 @@ export default function CuentaDetailPage() {
         }),
       ]);
 
+      if (loadCuentaDataRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setSummary(summaryRes.data);
       setRows(rowsRes.data.data ?? []);
       setRowsTotal(rowsRes.data.total ?? rowsRes.data.data?.length ?? 0);
       setRowsTotalPages(Math.max(1, rowsRes.data.total_pages ?? 1));
     } catch (err) {
+      if (loadCuentaDataRequestIdRef.current !== requestId) {
+        return;
+      }
+
       if (err instanceof AxiosError && err.response?.status === 403) {
         setForbidden(true);
         setSummary(null);
@@ -209,7 +224,9 @@ export default function CuentaDetailPage() {
 
       setError(extractErrorMessage(err, 'No se pudo cargar la cuenta'));
     } finally {
-      setLoading(false);
+      if (loadCuentaDataRequestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId]);
 

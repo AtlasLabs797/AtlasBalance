@@ -1,16 +1,23 @@
 # Atlas Balance - instalacion y actualizaciones
 
-Version actual del paquete: `V-01.09`.
+Version actual del paquete: `V-02.06`.
 
-No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-01.09-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-02.06-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+
+Desde V-02.06, crear una copia manual, importar una copia desde Drive o iniciar
+una restauracion responde inmediatamente y muestra el progreso. Puedes cerrar
+la espera si es necesario: el trabajo continua en el servidor y su estado se
+consulta por identificador de operacion. En importacion, selecciona siempre
+"Divisa de los importes"; si no coincide con la cuenta, la confirmacion queda
+bloqueada hasta que aceptes expresamente la advertencia.
 
 Si la API queda detras de proxy inverso, configura `ForwardedHeaders:KnownProxies` o `ForwardedHeaders:KnownNetworks` en `appsettings.Production.json`. Sin eso, auditoria y limites por cliente pueden ver solo la IP del proxy; confiar todos los `X-Forwarded-For` seria igual de malo, porque el cliente podria falsearlos.
 
 ## Que queda preparado
 
-La version `V-01.09` deja el proyecto listo para generar un paquete instalable de Windows:
+La version `V-02.06` deja el proyecto listo para generar un paquete instalable de Windows:
 
-- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-01.09-win-x64.zip`.
+- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-02.06-win-x64.zip`.
 - `install.cmd`: instalador de un clic.
 - `update.cmd`: actualizador de un clic.
 - `uninstall.cmd`: desinstalador de un clic.
@@ -362,7 +369,7 @@ Si alguien te dice "copia encima toda la carpeta y ya", dile que no. Eso es exac
 - `SeedAdmin:Password` y passwords de usuario requieren minimo 12 caracteres.
 - El reset/cambio de password invalida sesiones anteriores; despues de actualizar a esta version, los tokens antiguos sin `security_stamp` no sirven.
 - PostgreSQL aplica Row Level Security con politicas por usuario, integracion, admin y operaciones internas. El contexto va firmado; el rol runtime de la app no debe tener `BYPASSRLS` ni ser owner de las tablas.
-- MFA web es obligatorio cuando `Security:RequireMfaForWebUsers=true`. Desde `V-02-02`, el recuerdo de dispositivo dura 90 dias, queda habilitado por defecto en configuracion nueva, persiste tras logout y puede revocarse por dispositivo o invalidarse al rotar `security_stamp`.
+- MFA web es obligatorio por defecto. Desde `V-02.06`, los administradores siempre deben usar Authenticator; la obligatoriedad para gerentes y empleados la decide el administrador desde Configuracion > General + SMTP con el interruptor "Exigir Authenticator a gerentes y empleados". Independientemente del ajuste, los administradores nunca pueden iniciar sesion sin haber pasado el codigo TOTP o un dispositivo recordado valido. Desde `V-02-02`, el recuerdo de dispositivo dura 90 dias, queda habilitado por defecto en configuracion nueva, persiste tras logout y puede revocarse por dispositivo o invalidarse al rotar `security_stamp`.
 - `backup_path` y `export_path` deben ser rutas absolutas sin `..`.
 - La URL de actualizaciones queda limitada al repo oficial de Atlas Balance en GitHub por HTTPS y el paquete online debe venir firmado con `.zip.sig`.
 - `config\INSTALL_CREDENTIALS_ONCE.txt` se crea para el arranque inicial con ACL limitada a Administrators/SYSTEM y se programa para borrado automatico en 24 horas. No lo uses como almacen de secretos.

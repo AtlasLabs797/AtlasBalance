@@ -8,6 +8,22 @@ permissions:
   contents: read
 
 jobs:
+  policy-gates:
+    name: Policy gates (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Test secret scanner fixtures
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.Tests.ps1" -RepoRoot "."'
+      - name: Verify version alignment
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1"'
+
   verify:
     name: Build, test, and audit
     runs-on: ubuntu-24.04
@@ -60,17 +76,27 @@ jobs:
         shell: pwsh
         run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.ps1" -Root "."'
 
+      - name: Verify version alignment across sources
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1"'
+
       - name: Install frontend dependencies
         working-directory: "Atlas Balance/frontend"
         run: npm ci
 
       - name: Audit npm vulnerabilities
         working-directory: "Atlas Balance/frontend"
-        run: npm audit --audit-level=moderate
+        # V-02.06 (2026-07-24): moderate -> high. See release.yml for the
+        # react-router-dom rationale (REGISTRO_BUGS.md has full detail).
+        run: npm audit --audit-level=high
 
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"
         run: npm run lint
+
+      - name: Test frontend import request contracts
+        working-directory: "Atlas Balance/frontend"
+        run: npm run test:unit
 
       - name: Build frontend
         working-directory: "Atlas Balance/frontend"

@@ -3,6 +3,7 @@ using System.Text.Json;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Constants;
+using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -30,12 +31,18 @@ public sealed class IntegracionesController : ControllerBase
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
     private readonly IIntegrationTokenService _integrationTokenService;
+    private readonly IIntegrationRateLimitCleaner _rateLimitCleaner;
 
-    public IntegracionesController(AppDbContext dbContext, IAuditService auditService, IIntegrationTokenService integrationTokenService)
+    public IntegracionesController(
+        AppDbContext dbContext,
+        IAuditService auditService,
+        IIntegrationTokenService integrationTokenService,
+        IIntegrationRateLimitCleaner rateLimitCleaner)
     {
         _dbContext = dbContext;
         _auditService = auditService;
         _integrationTokenService = integrationTokenService;
+        _rateLimitCleaner = rateLimitCleaner;
     }
 
     [HttpGet]
@@ -113,6 +120,12 @@ public sealed class IntegracionesController : ControllerBase
         if (validation is not null)
         {
             return BadRequest(new { error = validation });
+        }
+
+        var unknownScope = FindUnknownScope(request.Scopes);
+        if (unknownScope is not null)
+        {
+            return BadRequest(new { error = $"Scope desconocido: '{unknownScope}'." });
         }
 
         var creatorId = GetCurrentUserId();
@@ -194,6 +207,12 @@ public sealed class IntegracionesController : ControllerBase
             return BadRequest(new { error = validation });
         }
 
+        var unknownScope = FindUnknownScope(request.Scopes);
+        if (unknownScope is not null)
+        {
+            return BadRequest(new { error = $"Scope desconocido: '{unknownScope}'." });
+        }
+
         var before = new
         {
             token.Nombre,
@@ -240,6 +259,12 @@ public sealed class IntegracionesController : ControllerBase
         {
             return NotFound(new { error = "Token no encontrado" });
         }
+
+        // V-02.06 (MED-29): limpiar contadores de rate-limit en memoria
+        // para que un token revocado deje de "consumir" cuota del minuto
+        // actual y del anterior. Sin esto, un atacante podria reusar la
+        // ventana de 2 minutos para agotar la cuota global.
+        _rateLimitCleaner.ClearRateLimitsForToken(id);
 
         await _auditService.LogAsync(
             GetCurrentUserId(),
@@ -294,6 +319,12 @@ public sealed class IntegracionesController : ControllerBase
         };
 
         _dbContext.IntegrationTokens.Add(newToken);
+
+        // V-02.06 (MED-29): la rotacion equivale a revocar el token viejo.
+        // Limpiamos sus contadores para que el nuevo token arranque sin
+        // arrastre de cuota del anterior.
+        _rateLimitCleaner.ClearRateLimitsForToken(oldToken.Id);
+
         var oldPermissions = await _dbContext.IntegrationPermissions
             .AsNoTracking()
             .Where(x => x.TokenId == oldToken.Id)
@@ -596,15 +627,56 @@ public sealed class IntegracionesController : ControllerBase
 
     private static IReadOnlyList<string> NormalizeEndpointScopes(IReadOnlyList<string>? scopes)
     {
+        // V-02.06 (PR F1): distinguir entre `null` (campo omitido en el request)
+        // y `[]` (cliente envia lista vacia). Antes ambas caian a
+        // `DefaultOpenClawScopes`, lo que derrotaba el deny-by-default del
+        // middleware y concedia todos los endpoints a un admin que desmarca
+        // todas las casillas o a un cliente API que envia `scopes: []`.
+        //
+        // - `null`        -> omitido por el caller -> defaults (compatibilidad).
+        // - `[]`          -> lista vacia intencional -> se respeta como vacia.
+        // - valores invalidos -> se filtran; si TODOS se filtran -> vacio (no defaults).
         var allowed = DefaultOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var normalized = (scopes is null || scopes.Count == 0 ? DefaultOpenClawScopes : scopes)
+
+        if (scopes is null)
+        {
+            return DefaultOpenClawScopes;
+        }
+
+        return scopes
             .Where(scope => !string.IsNullOrWhiteSpace(scope))
             .Select(scope => scope.Trim().ToLowerInvariant())
             .Where(scope => allowed.Contains(scope))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
 
-        return normalized.Count == 0 ? DefaultOpenClawScopes : normalized;
+    /// <summary>
+    /// V-02.06 (PR F1): rechaza scopes que no estan en <see cref="DefaultOpenClawScopes"/>.
+    /// Antes se descartaban silenciosamente y (peor) caian a defaults si todos
+    /// los scopes del caller eran invalidos. Devuelve el primer scope no
+    /// reconocido; el controller lo convierte en 400.
+    /// </summary>
+    private static string? FindUnknownScope(IReadOnlyList<string>? scopes)
+    {
+        if (scopes is null)
+        {
+            return null;
+        }
+        var allowed = DefaultOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in scopes)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+            var normalized = raw.Trim().ToLowerInvariant();
+            if (!allowed.Contains(normalized))
+            {
+                return raw;
+            }
+        }
+        return null;
     }
 
     private static IReadOnlyList<string> ParseEndpointScopes(string? rawJson)

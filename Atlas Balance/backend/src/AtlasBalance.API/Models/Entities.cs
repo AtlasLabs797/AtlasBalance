@@ -197,6 +197,9 @@ public class ImportacionLote
     public string ResumenJson { get; set; } = "{}";
     public string ContenidoOriginal { get; set; } = string.Empty;
     public string LoteHash { get; set; } = string.Empty;
+    public string? IdempotencyKey { get; set; }
+    public string? ConfirmacionIdempotencyKey { get; set; }
+    public string? ConfirmacionResponseJson { get; set; }
     public string Estado { get; set; } = "validado";
     public int FilasTotal { get; set; }
     public int FilasValidas { get; set; }
@@ -331,7 +334,11 @@ public class Auditoria
     public string? DetallesJson { get; set; }
 }
 
-public class IaUsoUsuario
+// V-02.06 (MED-22): ISoftDelete explicito para alinear con las demas
+// entidades que persisten uso/contadores historicos. Aplica el filtro
+// global del AppDbContext (DeletedAt IS NULL) y permite conservar el
+// mes cerrado cuando un usuario se desactiva/borra.
+public class IaUsoUsuario : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid UsuarioId { get; set; }
@@ -343,6 +350,8 @@ public class IaUsoUsuario
     public decimal CosteEstimadoEur { get; set; }
     public DateTime FechaUltimoUsoUtc { get; set; }
     public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
 }
 
 public class IntegrationToken : ISoftDelete
@@ -475,6 +484,23 @@ public class Backup : ISoftDelete
     public TipoProceso Tipo { get; set; }
     public Guid? IniciadoPorId { get; set; }
     public string? Notas { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedById { get; set; }
+}
+
+public class BackupOperation : ISoftDelete
+{
+    public Guid Id { get; set; }
+    public string Tipo { get; set; } = string.Empty;
+    public string Estado { get; set; } = "PENDING";
+    public Guid? UsuarioId { get; set; }
+    public Guid? BackupId { get; set; }
+    public string? Parametro { get; set; }
+    public string? ResultadoJson { get; set; }
+    public string? Error { get; set; }
+    public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    public DateTime? FechaInicio { get; set; }
+    public DateTime? FechaFin { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedById { get; set; }
 }

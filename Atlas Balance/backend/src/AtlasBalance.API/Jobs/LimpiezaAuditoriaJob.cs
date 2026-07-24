@@ -4,6 +4,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Jobs;
 
+// Excepcion intencional a la regla de soft delete universal de CLAUDE.md: las tablas
+// de auditoria existen para trazar acciones pasadas, no para ser restauradas, y
+// conservarlas indefinidamente via soft delete las haria crecer sin limite. Se purgan
+// con hard delete tras RetentionDays dias como politica de retencion deliberada.
 public sealed class LimpiezaAuditoriaJob
 {
     public const int RetentionDays = 28;

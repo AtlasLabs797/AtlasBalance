@@ -237,27 +237,17 @@ public sealed class DashboardService : IDashboardService
 
         var accountCurrency = cuentas.ToDictionary(x => x.CuentaId, x => x.Divisa);
 
-        // V-02-05 (HIGH-4/10): precomputar tasas una sola vez por divisa origen, no por
-        // cada fila. Tasas faltantes quedan en 0m (marcador) y el bucle las trata como
-        // 0 sin abortar el dashboard.
-        var tasasPendientes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var tasaPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-        var uniqueDivisas = cuentas.Select(x => x.Divisa)
-            .Where(x => !string.Equals(x, targetCurrency, StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        foreach (var div in uniqueDivisas)
-        {
-            try
-            {
-                tasaPorDivisa[div] = await _tiposCambioService.ConvertAsync(1m, div, targetCurrency, cancellationToken);
-            }
-            catch (TipoCambioMissingException)
-            {
-                tasaPorDivisa[div] = 0m;
-                tasasPendientes.Add(div);
-            }
-        }
+        // V-02-06 (AB-H-01): consolidar la obtencion de tasas en UNA llamada
+        // BulkConvertAsync en lugar de N awaits. Si falta la tasa para una
+        // divisa concreta, el helper devuelve 0m y la fila se omite del
+        // total convertido sin abortar la evolucion completa.
+        var tasaPorDivisa = await ResolveBulkRatesAsync(
+            cuentas.Select(x => x.Divisa)
+                .Where(x => !string.Equals(x, targetCurrency, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            targetCurrency,
+            cancellationToken);
         decimal ConvertInPlace(decimal amount, string divisa)
         {
             if (string.Equals(divisa, targetCurrency, StringComparison.OrdinalIgnoreCase)) return amount;
@@ -498,28 +488,22 @@ public sealed class DashboardService : IDashboardService
         var saldosDisponiblesPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         var saldosInmovilizadosPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
-        // V-02-03 (H4): precomputar las tasas de cambio por par (origen, destino)
-        // una sola vez para evitar N awaits por cuenta. Tambien tolera tasas
-        // faltantes: si no existe tasa, marca la fila con tasa_pendiente y la
-        // omite del total convertido sin abortar el dashboard completo.
+        // V-02-06 (AB-H-01): consolidar la obtencion de tasas en UNA llamada
+        // BulkConvertAsync en lugar de N awaits individuales. Misma
+        // tolerancia a tasas faltantes (queda 0m y la fila se omite del
+        // total convertido sin abortar el dashboard). Reduce la latencia
+        // del dashboard a una lectura del catalogo de tasas por divisa.
         var uniqueDivisasInvolucradas = cuentas
             .Select(x => x.Divisa)
             .Where(x => !string.Equals(x, targetCurrency, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var tasaPorDivisa = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-        foreach (var div in uniqueDivisasInvolucradas)
-        {
-            try
-            {
-                tasaPorDivisa[div] = await _tiposCambioService.ConvertAsync(1m, div, targetCurrency, cancellationToken);
-            }
-            catch (TipoCambioMissingException)
-            {
-                tasaPorDivisa[div] = 0m; // marcador de tasa faltante
-            }
-        }
+        var tasaPorDivisa = await ResolveBulkRatesAsync(
+            uniqueDivisasInvolucradas,
+            targetCurrency,
+            cancellationToken);
+
 
         foreach (var cuenta in cuentas)
         {
@@ -610,6 +594,32 @@ public sealed class DashboardService : IDashboardService
         return tasaPorDivisa.TryGetValue(divisa, out var tasa) && tasa > 0m
             ? amount * tasa
             : 0m;
+    }
+
+    /// <summary>
+    /// V-02.06 (AB-H-01): resuelve un mapa de tasas (divisaOrigen -> tasa)
+    /// en UNA sola llamada a <see cref="ITiposCambioService.BulkConvertAsync"/>.
+    /// Cada entrada del diccionario de entrada lleva monto 1m; el resultado
+    /// es la propia tasa 1->destino. Tasas faltantes quedan en 0m para que
+    /// los llamadores las puedan detectar sin lanzar excepciones.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, decimal>> ResolveBulkRatesAsync(
+        IReadOnlyList<string> uniqueDivisas,
+        string targetCurrency,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (uniqueDivisas.Count == 0)
+        {
+            return result;
+        }
+        var probe = uniqueDivisas.ToDictionary(d => d, _ => 1m, StringComparer.OrdinalIgnoreCase);
+        var bulk = await _tiposCambioService.BulkConvertAsync(probe, targetCurrency, cancellationToken);
+        foreach (var (divisa, rate) in bulk)
+        {
+            result[divisa] = rate ?? 0m;
+        }
+        return result;
     }
 
     private async Task<DashboardPlazosFijosResumenResponse> BuildPlazosFijosResumenAsync(

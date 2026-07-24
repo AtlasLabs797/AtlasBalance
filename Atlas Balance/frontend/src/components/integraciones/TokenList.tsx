@@ -102,7 +102,6 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
                   <div className="import-muted">{token.descripcion || 'Sin descripción'}</div>
                 </td>
                 <td>{formatTokenEstado(token.estado)}</td>
-                <td>{formatDateTime(token.fecha_creacion)}</td>
                 <td>{token.fecha_expiracion ? formatDateTime(token.fecha_expiracion) : 'Sin expiracion'}</td>
                 <td>
                   {token.fecha_ultima_uso ? formatDateTime(token.fecha_ultima_uso) : 'Sin uso'}

@@ -218,13 +218,13 @@ public sealed class AuthService : IAuthService
         UserSessionState.EnsureSecurityStamp(usuario);
         ClearLoginFailures(normalizedEmail, ipAddress);
 
-        var mfaRequired = RequiresMfa(usuario);
+        var mfaRequired = await RequiresMfaAsync(usuario, cancellationToken);
         var rememberDeviceEnabled = mfaRequired && await IsMfaRememberDeviceEnabledAsync(cancellationToken);
         var trustedMfaTokenValid = rememberDeviceEnabled &&
             await TryUseTrustedMfaDeviceAsync(usuario, trustedMfaToken, now, ipAddress, userAgent, cancellationToken);
         if (mfaRequired && !trustedMfaTokenValid)
         {
-            var challenge = CreateMfaChallenge(usuario, ipAddress);
+            var challenge = CreateMfaChallenge(usuario, ipAddress, mfaRequired);
             await _dbContext.SaveChangesAsync(cancellationToken);
             await _auditService.LogAsync(
                 usuario.Id,
@@ -235,7 +235,9 @@ public sealed class AuthService : IAuthService
                 JsonSerializer.Serialize(new
                 {
                     email = normalizedEmail,
-                    setup_required = challenge.SetupRequired
+                    setup_required = challenge.SetupRequired,
+                    rol = usuario.Rol.ToString(),
+                    policy_source = "configuration_or_admin"
                 }),
                 cancellationToken);
 
@@ -256,7 +258,11 @@ public sealed class AuthService : IAuthService
 
         usuario.FechaUltimaLogin = now;
         ClearMfaFailures(usuario.Id);
-        var tokens = await IssueTokensAsync(usuario, ipAddress, cancellationToken, mfaVerifiedAt: mfaRequired ? now : null);
+        var tokens = await IssueTokensAsync(
+            usuario,
+            ipAddress,
+            cancellationToken,
+            mfaVerifiedAt: mfaRequired ? now : null);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await _auditService.LogAsync(
             usuario.Id,
@@ -299,6 +305,19 @@ public sealed class AuthService : IAuthService
         {
             RemoveMfaChallenge(challengeId);
             throw new AuthException("Usuario no valido", StatusCodes.Status401Unauthorized);
+        }
+
+        // V-02.06: la politica MFA puede cambiar entre login y verificacion.
+        // Re-evaluamos rol + estado del usuario y comparamos el security stamp
+        // capturado en el challenge. Si cualquiera de los tres diverge, el
+        // challenge queda invalidado.
+        if (string.IsNullOrWhiteSpace(challenge.SecurityStamp) ||
+            !string.Equals(challenge.SecurityStamp, usuario.SecurityStamp, StringComparison.Ordinal) ||
+            challenge.Rol != usuario.Rol ||
+            !usuario.Activo)
+        {
+            RemoveMfaChallenge(challengeId);
+            throw new AuthException("Codigo MFA invalido o expirado", StatusCodes.Status401Unauthorized);
         }
 
         var now = DateTime.UtcNow;
@@ -486,7 +505,7 @@ public sealed class AuthService : IAuthService
                 throw new AuthException("Refresh token inválido o expirado", StatusCodes.Status401Unauthorized);
             }
 
-            if (RequiresMfa(usuario) && storedToken.MfaVerifiedAt is null)
+            if (await RequiresMfaAsync(usuario, cancellationToken) && storedToken.MfaVerifiedAt is null)
             {
                 storedToken.RevocadoEn = now;
                 await _dbContext.SaveChangesAsync(cancellationToken);
@@ -516,7 +535,7 @@ public sealed class AuthService : IAuthService
                 IpAddress = ParseIpAddress(ipAddress)
             });
 
-            var accessToken = GenerateAccessToken(usuario);
+            var accessToken = GenerateAccessToken(usuario, storedToken.MfaVerifiedAt);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             if (tx is not null)
@@ -658,7 +677,7 @@ public sealed class AuthService : IAuthService
 
         var now = DateTime.UtcNow;
         DateTime? currentSessionMfaVerifiedAt = null;
-        if (RequiresMfa(usuario))
+        if (await RequiresMfaAsync(usuario, cancellationToken))
         {
             currentSessionMfaVerifiedAt = await ResolveCurrentSessionMfaVerifiedAtAsync(userId, currentRefreshToken, usuario.SecurityStamp, now, cancellationToken);
             if (currentSessionMfaVerifiedAt is null)
@@ -679,7 +698,7 @@ public sealed class AuthService : IAuthService
             refreshToken.RevocadoEn = now;
         }
 
-        var accessToken = GenerateAccessToken(usuario);
+        var accessToken = GenerateAccessToken(usuario, currentSessionMfaVerifiedAt);
         var newRefreshToken = GenerateRefreshToken();
         _dbContext.RefreshTokens.Add(new RefreshToken
         {
@@ -731,6 +750,8 @@ public sealed class AuthService : IAuthService
             .Where(p => p.UsuarioId == usuario.Id)
             .ToListAsync(cancellationToken);
 
+        var mfaRequiredForUser = await RequiresMfaAsync(usuario, cancellationToken);
+
         var permisosResponse = permisos.Select(p =>
         {
             var preferencia = preferencias.FirstOrDefault(pref =>
@@ -773,6 +794,7 @@ public sealed class AuthService : IAuthService
                 PrimerLogin = usuario.PrimerLogin,
                 PuedeUsarIa = usuario.PuedeUsarIa,
                 MfaEnabled = usuario.MfaEnabled,
+                MfaRequired = mfaRequiredForUser,
                 FechaCreacion = usuario.FechaCreacion,
                 FechaUltimaLogin = usuario.FechaUltimaLogin
             },
@@ -786,7 +808,7 @@ public sealed class AuthService : IAuthService
         CancellationToken cancellationToken,
         DateTime? mfaVerifiedAt = null)
     {
-        var accessToken = GenerateAccessToken(usuario);
+        var accessToken = GenerateAccessToken(usuario, mfaVerifiedAt);
         var refreshToken = GenerateRefreshToken();
         var now = DateTime.UtcNow;
 
@@ -806,13 +828,56 @@ public sealed class AuthService : IAuthService
         return (accessToken, refreshToken);
     }
 
-    private bool RequiresMfa(Usuario usuario)
+    private async Task<bool> RequiresMfaAsync(Usuario usuario, CancellationToken cancellationToken)
     {
-        return usuario.Activo &&
-               _configuration.GetValue("Security:RequireMfaForWebUsers", true);
+        if (!usuario.Activo)
+        {
+            return false;
+        }
+
+        // V-02.06: los administradores siempre necesitan MFA, sin importar la
+        // configuracion operativa. Esto protege la gestion de usuarios y la
+        // configuracion ante cualquier intento de relajar la politica.
+        if (usuario.Rol == RolUsuario.ADMIN)
+        {
+            return true;
+        }
+
+        var stored = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Where(x => x.Clave == SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey)
+            .Select(x => x.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(stored) && bool.TryParse(stored, out var explicitValue))
+        {
+            return explicitValue;
+        }
+
+        // Fallback: si la BD no tiene la clave sembrada todavia, mantenemos el
+        // comportamiento historico de appsettings.json. Asi una migracion en
+        // marcha no desactiva MFA por accidente.
+        return _configuration.GetValue("Security:RequireMfaForWebUsers", true);
     }
 
-    private MfaChallengeState CreateMfaChallenge(Usuario usuario, string? ipAddress)
+    private bool RequiresMfa(Usuario usuario)
+    {
+        // Sobrecarga sincrona usada por rutas que no requieren re-leer la BD
+        // cuando el caller ya conoce la politica vigente.
+        if (!usuario.Activo)
+        {
+            return false;
+        }
+
+        if (usuario.Rol == RolUsuario.ADMIN)
+        {
+            return true;
+        }
+
+        return _configuration.GetValue("Security:RequireMfaForWebUsers", true);
+    }
+
+    private MfaChallengeState CreateMfaChallenge(Usuario usuario, string? ipAddress, bool mfaRequired)
     {
         var setupRequired = !usuario.MfaEnabled || string.IsNullOrWhiteSpace(usuario.MfaSecret);
         var secret = setupRequired
@@ -831,7 +896,10 @@ public sealed class AuthService : IAuthService
             Secret: secret,
             SetupRequired: setupRequired,
             IpAddress: ipAddress,
-            FailedAttempts: 0);
+            FailedAttempts: 0,
+            SecurityStamp: usuario.SecurityStamp,
+            Rol: usuario.Rol,
+            MfaRequired: mfaRequired);
 
         StoreMfaChallenge(challenge);
         return challenge;
@@ -888,7 +956,7 @@ public sealed class AuthService : IAuthService
             .Replace('/', '_');
     }
 
-    private string GenerateAccessToken(Usuario usuario)
+    private string GenerateAccessToken(Usuario usuario, DateTime? mfaVerifiedAt = null)
     {
         UserSessionState.EnsureSecurityStamp(usuario);
         var jwtSecret = _configuration["JwtSettings:Secret"]
@@ -914,6 +982,18 @@ public sealed class AuthService : IAuthService
             claims.Add(new Claim(
                 AuthClaimNames.PasswordChangedAt,
                 new DateTimeOffset(usuario.PasswordChangedAt.Value).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+        }
+
+        // V-02.06: si la sesion obtuvo garantia MFA, llevamos la marca al JWT
+        // para que UserStateMiddleware pueda exigirla a administradores en cada
+        // request sin esperar a un re-login. Tambien ancla la marca al security
+        // stamp para invalidar garantias obsoletas tras una rotacion.
+        if (mfaVerifiedAt.HasValue)
+        {
+            claims.Add(new Claim(
+                AuthClaimNames.MfaVerifiedAt,
+                new DateTimeOffset(mfaVerifiedAt.Value).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+            claims.Add(new Claim(AuthClaimNames.MfaSecurityStamp, usuario.SecurityStamp));
         }
 
         var token = new JwtSecurityToken(
@@ -1230,7 +1310,10 @@ internal sealed record MfaChallengeState(
     string Secret,
     bool SetupRequired,
     string? IpAddress,
-    int FailedAttempts);
+    int FailedAttempts,
+    string SecurityStamp,
+    RolUsuario Rol,
+    bool MfaRequired);
 
 internal sealed record TrustedMfaDeviceIssue(
     string Token,

@@ -30,6 +30,19 @@ function Convert-SecureStringToPlain {
     }
 }
 
+# V-02-06 (RLS-SEC-01): generador local de secretos aleatorios criptograficos.
+# Mantenido igual que New-RandomSecret del instalador para no acoplar
+# dependencias. La funcion NO imprime ni devuelve el valor por stdout para
+# evitar que quede en transcript/logs; el caller debe persistirlo y nunca
+# devolverlo al usuario.
+function New-RandomSecret {
+    param([int]$Length)
+    if ($Length -lt 32) { $Length = 32 }
+    $bytes = New-Object byte[] $Length
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=').Substring(0, $Length)
+}
+
 function Get-RelativePathCompat {
     param([string]$BasePath, [string]$FullPath)
 
@@ -321,6 +334,52 @@ function Resolve-BackupConnection {
     return $defaultConnection
 }
 
+# V-02-06 (BACKUP-02): devuelve una cadena de conexion owner completa o vacia,
+# reutilizando la misma cascada que Resolve-BackupConnection. Solo se usa para
+# rellenar appsettings.Production.json cuando el operador nunca configuro
+# ConnectionStrings:MigrationConnection. No imprime credenciales.
+function Resolve-MigrationConnectionForConfig {
+    param([string]$ApiConfigPath)
+
+    if (-not (Test-Path -LiteralPath $ApiConfigPath)) {
+        return ""
+    }
+
+    $apiConfig = Read-JsonFile -Path $ApiConfigPath
+    $watchdogPath = Join-Path (Split-Path -Parent $ApiConfigPath) "..\watchdog\appsettings.Production.json"
+    $watchdogPath = [IO.Path]::GetFullPath($watchdogPath)
+    $watchdogConfig = if (Test-Path -LiteralPath $watchdogPath) { Read-JsonFile -Path $watchdogPath } else { [pscustomobject]@{} }
+    $installPath = Split-Path -Parent (Split-Path -Parent $ApiConfigPath)
+
+    try {
+        $ownerConn = Resolve-BackupConnection `
+            -ApiConfig $apiConfig `
+            -WatchdogConfig $watchdogConfig `
+            -InstallPath $installPath
+    } catch {
+        return ""
+    }
+
+    if (-not $ownerConn -or $ownerConn.Source -eq "DefaultConnection") {
+        return ""
+    }
+
+    $host = [string]$ownerConn.Host
+    $port = if ([int]$ownerConn.Port -gt 0) { [int]$ownerConn.Port } else { 5432 }
+    $database = [string]$ownerConn.Database
+    $user = [string]$ownerConn.Username
+    $password = [string]$ownerConn.Password
+    if ([string]::IsNullOrWhiteSpace($user) -or [string]::IsNullOrWhiteSpace($password) -or [string]::IsNullOrWhiteSpace($database)) {
+        return ""
+    }
+
+    # sslmode=require si el host no es localhost/127.0.0.1, igual que el
+    # instalador. Mantener consistencia para que la API y el actualizador
+    # usen el mismo modo SSL.
+    $sslMode = if ($host -eq "localhost" -or $host -eq "127.0.0.1") { "" } else { ";sslmode=require" }
+    return "Host=$host;Port=$port;Database=$database;Username=$user;Password=$password$sslMode"
+}
+
 function Find-PostgresDump {
     param([string]$ConfiguredBinPath)
 
@@ -541,14 +600,60 @@ function Update-ProductionConfigDefaults {
     Ensure-JsonObjectProperty -Object $apiConfig -Name "UpdateSecurity"
     Ensure-JsonObjectProperty -Object $apiConfig -Name "DataProtection"
 
+    # V-02-06 (BACKUP-02): persistir ConnectionStrings:MigrationConnection
+    # cuando el operador la dejo vacia en una instalacion legacy. Solo se
+    # rellena si se ha podido resolver un owner por las vias ya existentes
+    # (MigrationConnection > env > INSTALL_CREDENTIALS_ONCE > prompt > runtime).
+    # La cadena nunca se imprime; se escribe atomica y protege via la ACL
+    # que el instalador ya aplica al appsettings de produccion.
+    $ownerResolved = Resolve-MigrationConnectionForConfig -ApiConfigPath $ApiConfigPath
+    Ensure-JsonObjectProperty -Object $apiConfig -Name "ConnectionStrings"
+    Ensure-JsonObjectProperty -Object $apiConfig.ConnectionStrings -Name "MigrationConnection"
+    $existingMigration = [string]$apiConfig.ConnectionStrings.MigrationConnection
+    if ([string]::IsNullOrWhiteSpace($existingMigration) -and -not [string]::IsNullOrWhiteSpace($ownerResolved)) {
+        $apiConfig.ConnectionStrings.MigrationConnection = $ownerResolved
+        $changed = $true
+        Write-Host "ConnectionStrings:MigrationConnection regenerado en appsettings.Production.json (no se imprime)." -ForegroundColor Cyan
+    }
+
     $useReverseProxy = $Runtime -and $Runtime.UseReverseProxy
     $apiPort = if ($Runtime -and $Runtime.ApiPort) { [int]$Runtime.ApiPort } else { 443 }
     $internalApiPort = if ($Runtime -and $Runtime.InternalApiPort) { [int]$Runtime.InternalApiPort } else { 5000 }
-    $apiHealthUrl = if ($useReverseProxy) { "http://localhost:$internalApiPort/api/health" } elseif ($apiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost:$apiPort/api/health" }
+    $apiHealthUrl = if ($useReverseProxy) { "http://localhost:$internalApiPort/api/health" } elseif ($apiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$apiPort/api/health" }
     $appBaseUrl = if ($Runtime -and $Runtime.AppUrl) { [string]$Runtime.AppUrl } else { "" }
     $publicKey = Get-PackagedReleasePublicKey -ApiSource $ApiSource
 
     $changed = (Set-JsonDefault -Object $apiConfig.Security -Name "RequireMfaForWebUsers" -Value $true) -or $changed
+
+    # V-02-06 (RLS-SEC-01): persistir Security:RlsContextSecret si la
+    # instalacion viene de versiones anteriores que no lo generaban. Solo se
+    # escribe cuando esta vacio; nunca se rota ni se imprime. El valor se
+    # queda dentro del mismo appsettings al que ya tienen acceso Administradores
+    # y SYSTEM. Mantenemos el JWT y el secreto RLS siempre distintos.
+    $rlsHasProperty = $apiConfig.Security.PSObject.Properties.Name -contains "RlsContextSecret"
+    $rlsCurrent = if ($rlsHasProperty) { [string]$apiConfig.Security.RlsContextSecret } else { "" }
+    $jwtCurrent = [string]$apiConfig.JwtSettings.Secret
+    $needsRls = [string]::IsNullOrWhiteSpace($rlsCurrent) `
+        -or $rlsCurrent -eq $jwtCurrent `
+        -or $rlsCurrent.Length -lt 32
+    if ($needsRls -and -not [string]::IsNullOrWhiteSpace($jwtCurrent)) {
+        $newSecret = New-RandomSecret 64
+        if ($rlsHasProperty) {
+            $apiConfig.Security.RlsContextSecret = $newSecret
+        } else {
+            $apiConfig.Security | Add-Member -NotePropertyName "RlsContextSecret" -NotePropertyValue $newSecret -Force
+        }
+        $changed = $true
+        Write-Host "Security:RlsContextSecret generado y persistido en appsettings.Production.json (no se imprime)." -ForegroundColor Cyan
+    } elseif (-not $needsRls) {
+        # Asegurar que la clave existe aun cuando ya estaba rellenada (defensivo
+        # para upgrades que borraron la entrada manualmente).
+        if (-not $rlsHasProperty) {
+            $newSecret = New-RandomSecret 64
+            $apiConfig.Security | Add-Member -NotePropertyName "RlsContextSecret" -NotePropertyValue $newSecret -Force
+            $changed = $true
+        }
+    }
     if (-not [string]::IsNullOrWhiteSpace($appBaseUrl)) {
         $changed = (Set-JsonDefault -Object $apiConfig.App -Name "BaseUrl" -Value $appBaseUrl) -or $changed
     }

@@ -1,5 +1,25 @@
 # Documentacion tecnica
 
+## 2026-07-20 - V-02.06 - Operaciones largas, idempotencia y RLS
+
+- `BACKUP_OPERATIONS` persiste manual/Drive/restore con soft-delete, FK,
+  indices y estados controlados. Los endpoints devuelven 202 y el frontend
+  consulta `/api/backups/operations/{id}`.
+- Restore propaga el mismo `operation_id` al Watchdog y solo acepta el estado
+  que coincide; esto elimina la carrera con un SUCCESS/FAILED global anterior.
+- Creacion y confirmacion de lotes usan `Idempotency-Key`; el indice unique
+  resuelve carreras concurrentes y la confirmacion guarda su respuesta dentro
+  de la misma transaccion que extractos y estado final.
+- RLS diferencia `reconcile` de `reconcile-close`; cerrar solo permite el estado
+  `resuelta` y no amplifica `can_write_cuenta_by_id`.
+- La migracion historica de auditoria redacta exclusivamente configuraciones
+  sensibles o marcadas `EsSecreto`; es irreversible y no expone valores.
+
+Gates locales: suite backend completa sin Testcontainers 389/389,
+frontend unit/tsc/lint/build y scripts OK. PostgreSQL/Testcontainers y
+round-trip Drive/restore siguen obligatorios en CI por Docker local no
+disponible.
+
 ## 2026-07-04 - V-02-04 - Concurrencia del desglose de extractos
 
 ### Que cambio
@@ -1009,8 +1029,9 @@ Sanitizar texto arbitrario de excepciones no es una defensa seria. El stack de t
 - `REFRESH_TOKENS` incorpora `mfa_verified_at` mediante la migracion `20260520123000_AddRefreshTokenMfaAssurance`.
 - `AuthService.VerifyMfaAsync` emite refresh tokens con `mfa_verified_at` tras validar el codigo TOTP.
 - `AuthService.LoginAsync` tambien marca el refresh token cuando MFA es obligatorio y el login se acepta por `mfa_trusted` valido.
-- `AuthService.RefreshTokenAsync` rechaza y revoca tokens sin `mfa_verified_at` si `Security:RequireMfaForWebUsers=true`.
+- `AuthService.RefreshTokenAsync` rechaza y revoca tokens sin `mfa_verified_at` cuando la politica vigente (`RequiresMfaAsync`) lo exige; desde `V-02.06` esa politica devuelve `true` para todo `ADMIN` y para no-administradores cuya clave `require_mfa_for_non_admin_users` este en `true` en `CONFIGURACION` (con fallback a `Security:RequireMfaForWebUsers` si la BD no la tiene sembrada).
 - La rotacion de refresh preserva `mfa_verified_at` en el token de reemplazo.
+- El access token incluye los claims `mfa_verified_at` (unix seconds) y `mfa_security_stamp` (anclado al `security_stamp` del usuario) cuando la sesion obtuvo garantia MFA. `UserStateMiddleware` rechaza cualquier sesion `ADMIN` sin esa marca, lo que invalida inmediatamente cualquier JWT heredado de una version anterior a `V-02.06`.
 
 ### Por que
 
@@ -3192,6 +3213,31 @@ El detalle importante: un cliente SQL con credenciales runtime puede ejecutar `S
 - RLS no reemplaza permisos de controlador. Si alguien elimina checks en C#, sigue siendo un bug aunque PostgreSQL bloquee parte del dano.
 - En contenedores dev antiguos puede no existir rol `postgres` porque se crearon con `app_user` como superusuario. La migracion activa RLS y firma de contexto, pero la separacion fuerte owner/runtime exige migrar ownership con un rol administrador o recrear la base con el Docker/instalador nuevo.
 
+### V-02.06 - RLS hardening financiero y unificacion del secreto RLS
+
+- **Migracion** `20260716120000_HardenFinancialV0202Rls`: anade `FORCE ROW LEVEL SECURITY` en `IMPORTACION_LOTES`, `IMPORTACION_LOTE_FILAS`, `MOVIMIENTOS_ESPERADOS` y `CONCILIACIONES` (la migracion que las creo, `20260629090000_FinancialHardeningV0202`, solo hizo `ENABLE`). Separa las policies previas `FOR ALL` en `SELECT`/`INSERT`/`UPDATE`/`DELETE` con sus `USING`/`WITH CHECK` correspondientes, y aniade `deleted_at IS NULL` en el `SELECT` de `IMPORTACION_LOTE_FILAS`, `MOVIMIENTOS_ESPERADOS`, `CONCILIACIONES`, `EXTRACTOS_COLUMNAS_EXTRA` y `REVISION_EXTRACTO_ESTADOS`. La migracion es manuscrita-SQL (mismo patron que las V-02.05) porque `AppDbContextModelSnapshot.cs` esta desalineado con el modelo y un scaffold EF podria recrear columnas ya existentes.
+- **`RlsContextSecret` por DI**: nuevo contenedor `AtlasBalance.API.Data.RlsContextSecret`. El interceptor ya no lee `IConfiguration` por su cuenta; `Program.cs.ResolveRlsContextSecret` lo construye una sola vez, en Production exige `>=32 chars`, no placeholder y distinto del secreto JWT (excepcion explicita en lugar de warning en stderr). En Development conserva el fallback al JWT para que `dotnet run` siga funcionando.
+- **`BackupService.ResolveDumpConnection`** (ahora `internal` para tests): orden `ConnectionStrings:MigrationConnection` -> `WatchdogSettings:DbOwnerUser/Password` -> `DefaultConnection`. Si solo existe el rol runtime, `RunPgDumpAsync` aborta con mensaje claro en lugar de ejecutar `pg_dump` filtrado por FORCE RLS.
+- **`MigrationConnection` obligatorio fuera de Development**: `Program.cs.ResolveMigrationConnectionString` ya no devuelve la cadena runtime cuando falta; lanza `InvalidOperationException` con procedimiento de actualizacion.
+- **Instalador / actualizador**: `Instalar-AtlasBalance.ps1` genera `Security:RlsContextSecret` aleatorio y lo persiste; `Actualizar-AtlasBalance.ps1` lo regenera cuando falta o coincide con JWT, y rellena `ConnectionStrings:MigrationConnection` reusando la cascada owner ya existente. Ninguno imprime credenciales.
+- **Tests nuevos**:
+  - `tests/AtlasBalance.API.Tests/Rls/RlsContextSignerTests.cs`: 6 facts (payload canonico, secreto vacio, vector fijo contra `HMACSHA256` directo, determinismo, sensibilidad por cada campo).
+  - `tests/AtlasBalance.API.Tests/Rls/RlsDbCommandInterceptorContextTests.cs`: 6 facts sobre `BuildContext` (system, anonimo, auth, dashboard, write, revision) sin necesidad de PostgreSQL.
+  - `tests/AtlasBalance.API.Tests/BackupServiceOwnerResolutionTests.cs`: 3 facts (sin owner, con `MigrationConnection`, con `WatchdogSettings.DbOwner*`).
+  - `tests/AtlasBalance.API.Tests/MigrationDiscoveryTests.cs`: exige la nueva migracion.
+  - `tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`: inventario ampliado a 23 tablas (incluye las 4 financieras del V-02.02, `EXTRACTOS_DESGLOSES`, `BACKUP_CLOUD_*`).
+
+### Deuda diferida a V-02.07
+
+- RLS en `USUARIOS`, `REFRESH_TOKENS`, `INTEGRATION_TOKENS` y
+  `CONFIGURACION`. Requiere diseno previo del flujo `is_auth_flow` y
+  funciones que limiten columnas (RLS solo filtra filas). Si se aplica
+  una policy amplia para no romper login, el aislamiento es debil.
+- Reconciliacion de `AppDbContextModelSnapshot.cs` con los cambios
+  `deleted_at` de V-02.05.
+- `ISoftDelete` en `IMPORTACION_LOTES` y filtro `deleted_at IS NULL` en
+  su policy `SELECT`.
+
 ### Verificacion
 
 - `dotnet build '.\Atlas Balance\backend\src\AtlasBalance.API\AtlasBalance.API.csproj' -c Release --no-restore`: OK.
@@ -4108,7 +4154,8 @@ El calendario nativo del navegador no puede ajustarse al diseno Atlas de forma f
 ### Que cambio
 
 - `USUARIOS` incorpora `mfa_enabled`, `mfa_secret`, `mfa_enabled_at` y `mfa_last_accepted_step`.
-- `AuthService` exige MFA TOTP cuando `Security:RequireMfaForWebUsers=true`.
+- `AuthService.RequiresMfaAsync` centraliza la decision: `Rol=ADMIN` siempre MFA; para `GERENTE`/`EMPLEADO` consulta la clave `require_mfa_for_non_admin_users` en `CONFIGURACION`, con fallback fail-closed a `Security:RequireMfaForWebUsers` mientras la clave no este sembrada. Esto sustituye la politica global anterior.
+- `ConfiguracionController` persiste la nueva clave y emite una auditoria semantica `MFA_POLICY_UPDATED` cuando cambia, para que un operador pueda auditar el interruptor sin parsear el diff before/after de `UPDATE_CONFIGURACION`.
 - El login correcto con password crea un challenge temporal MFA y no emite JWT hasta validar el codigo.
 - Si el usuario aun no tenia MFA, el challenge entrega una clave TOTP para enrolamiento y la guarda protegida al verificar el primer codigo.
 - `TotpService` implementa RFC 6238 con HMAC-SHA1, periodo de 30 segundos, 6 digitos y tolerancia de un intervalo.

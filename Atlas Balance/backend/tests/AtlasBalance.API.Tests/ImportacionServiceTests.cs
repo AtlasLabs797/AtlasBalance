@@ -1803,6 +1803,146 @@ public class ImportacionServiceTests
         return (userId, cuenta.Id);
     }
 
+    // -----------------------------------------------------------------------
+    // V-02.06 (HIGH-1, bloqueante): cuando el lote se creo con una
+    // divisa_esperada distinta de la divisa de la cuenta, el backend exige
+    // `force_confirm_divisa_mismatch=true` en la peticion de confirmacion.
+    // Las regresiones siguientes blindan ambos extremos del contrato.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ConfirmarLoteAsync_Should_Reject_With_400_When_DivisaMismatch_Without_ForceConfirm()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+
+        // El lote se crea con USD pero la cuenta es EUR -> el backend
+        // debe guardar divisa_mismatch=true en el resumen y exigir ack.
+        var lote = await service.CrearLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            new ImportacionLoteCrearRequest
+            {
+                CuentaId = cuentaId,
+                RawData = string.Join('\n', [
+                    "22/04/2026\tMovimiento completo\t100\t500",
+                ]),
+                Separador = "tab",
+                Mapeo = DefaultMapeo(),
+                DivisaEsperada = "USD"
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        lote.Lote.DivisaMismatch.Should().BeTrue();
+        lote.Lote.DivisaCuenta.Should().Be("EUR");
+        lote.Lote.DivisaEsperada.Should().Be("USD");
+
+        var act = () => service.ConfirmarLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            lote.Lote.Id,
+            new ImportacionLoteConfirmarRequest
+            {
+                FilasAImportar = [1],
+                AceptaAdvertencias = false,
+                ForceConfirmDivisaMismatch = false
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ImportacionException>();
+        ex.Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        ex.Which.Code.Should().Be("divisa_mismatch_requires_ack");
+        ex.Which.Message.Should().Contain("divisa");
+    }
+
+    [Fact]
+    public async Task ConfirmarLoteAsync_Should_Accept_When_DivisaMismatch_With_ForceConfirm()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+
+        var lote = await service.CrearLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            new ImportacionLoteCrearRequest
+            {
+                CuentaId = cuentaId,
+                RawData = string.Join('\n', [
+                    "22/04/2026\tMovimiento completo USD\t100\t500",
+                ]),
+                Separador = "tab",
+                Mapeo = DefaultMapeo(),
+                DivisaEsperada = "USD"
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        lote.Lote.DivisaMismatch.Should().BeTrue();
+
+        var confirmacion = await service.ConfirmarLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            lote.Lote.Id,
+            new ImportacionLoteConfirmarRequest
+            {
+                FilasAImportar = [1],
+                AceptaAdvertencias = false,
+                ForceConfirmDivisaMismatch = true
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        confirmacion.FilasImportadas.Should().Be(1);
+        var loteRecargado = await db.ImportacionLotes.IgnoreQueryFilters().FirstAsync(x => x.Id == lote.Lote.Id);
+        loteRecargado.Estado.Should().Be("confirmado");
+    }
+
+    [Fact]
+    public async Task ConfirmarLoteAsync_Should_Allow_When_DivisaEsperada_Matches_Cuenta_Without_ForceConfirm()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
+        var service = new ImportacionService(db, new AuditService(db));
+
+        // Divisa esperada coincide con la cuenta -> NO debe bloquear.
+        var lote = await service.CrearLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            new ImportacionLoteCrearRequest
+            {
+                CuentaId = cuentaId,
+                RawData = string.Join('\n', [
+                    "22/04/2026\tMovimiento EUR\t100\t500",
+                ]),
+                Separador = "tab",
+                Mapeo = DefaultMapeo(),
+                DivisaEsperada = "EUR"
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        lote.Lote.DivisaMismatch.Should().BeFalse();
+
+        var confirmacion = await service.ConfirmarLoteAsync(
+            userId,
+            RolUsuario.EMPLEADO.ToString(),
+            lote.Lote.Id,
+            new ImportacionLoteConfirmarRequest
+            {
+                FilasAImportar = [1],
+                AceptaAdvertencias = false,
+                ForceConfirmDivisaMismatch = false
+            },
+            new DefaultHttpContext(),
+            CancellationToken.None);
+
+        confirmacion.FilasImportadas.Should().Be(1);
+    }
+
     private static MapeoColumnasRequest DefaultMapeo() =>
         new()
         {

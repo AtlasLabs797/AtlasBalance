@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -186,9 +187,16 @@ public sealed class BackupService : IBackupService
 
     private async Task<(bool Success, string? ErrorMessage)> RunPgDumpAsync(string backupPath, CancellationToken cancellationToken)
     {
-        var connectionString = _configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("DefaultConnection no configurado");
-        var conn = ParsePostgresConnection(connectionString);
+        // V-02.06 (BACKUP-01): forzar la conexion owner para que pg_dump pueda
+        // atravesar FORCE ROW LEVEL SECURITY. Sin conexion owner el dump queda
+        // filtrado por las policies del rol runtime y el backup es inutil.
+        var (conn, isOwner, _) = ResolveDumpConnection();
+        if (!isOwner)
+        {
+            return (false,
+                "No se encontro ConnectionStrings:MigrationConnection ni credenciales owner en WatchdogSettings. " +
+                "Configure MigrationConnection para que el backup completo funcione con RLS activo.");
+        }
 
         var executable = ResolveConfiguredExecutable(_configuration["WatchdogSettings:PostgresBinPath"], "pg_dump.exe");
         if (string.IsNullOrWhiteSpace(executable))
@@ -214,7 +222,7 @@ public sealed class BackupService : IBackupService
             return (true, null);
         }
 
-        _logger.LogWarning("pg_dump local falló: {Error}. Se intentará fallback docker.", localResult.ErrorMessage);
+        _logger.LogWarning("pg_dump local falló: {ErrorSafe}. Se intentará fallback docker.", LogScrubber.Scrub(localResult.ErrorMessage));
         return await RunPgDumpViaDockerAsync(backupPath, conn, cancellationToken);
     }
 
@@ -247,6 +255,40 @@ public sealed class BackupService : IBackupService
         return cpResult.Success
             ? (true, null)
             : (false, $"Fallback docker copy falló: {cpResult.ErrorMessage}");
+    }
+
+    // V-02-06 (BACKUP-01): resuelve la cadena owner en este orden para no
+    // depender del rol runtime. MigrationConnection es la fuente canonica;
+    // si no existe, se intenta WatchdogSettings (que el instalador ya
+    // escribe) como fallback. Nunca se devuelve el runtime como owner.
+    internal ((string Host, int Port, string Database, string User, string Password) Connection, bool IsOwner, string? Source) ResolveDumpConnection()
+    {
+        var migration = _configuration.GetConnectionString("MigrationConnection");
+        if (!string.IsNullOrWhiteSpace(migration))
+        {
+            return (ParsePostgresConnection(migration), true, "MigrationConnection");
+        }
+
+        var dbOwnerUser = _configuration["WatchdogSettings:DbOwnerUser"];
+        var dbOwnerPassword = _configuration["WatchdogSettings:DbOwnerPassword"];
+        var defaultConn = _configuration.GetConnectionString("DefaultConnection");
+        if (!string.IsNullOrWhiteSpace(dbOwnerUser)
+            && !string.IsNullOrWhiteSpace(dbOwnerPassword)
+            && !string.IsNullOrWhiteSpace(defaultConn))
+        {
+            var parsed = ParsePostgresConnection(defaultConn);
+            return (
+                (parsed.Host, parsed.Port, parsed.Database, dbOwnerUser, dbOwnerPassword),
+                true,
+                "WatchdogSettings.DbOwner*");
+        }
+
+        if (string.IsNullOrWhiteSpace(defaultConn))
+        {
+            return (default, false, null);
+        }
+
+        return (ParsePostgresConnection(defaultConn), false, "DefaultConnection");
     }
 
     private static async Task<(bool Success, string? ErrorMessage)> RunProcessAsync(

@@ -21,7 +21,19 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setUsuario: (usuario, csrfToken) =>
     set((state) => ({
-      usuario,
+      // V-02.06: el backend ahora expone si el usuario actual esta obligado a
+      // usar Authenticator. Mantenemos el valor en el store para que ProtectedRoute
+      // y la pantalla de login puedan forzar el flujo MFA sin revalidar en cada
+      // navegacion. Si el backend no lo manda (versiones antiguas), caemos a
+      // una politica conservadora: cualquier usuario con mfa_enabled=true queda
+      // marcado como obligatorio (compatible con el comportamiento previo).
+      usuario: {
+        ...usuario,
+        mfa_required:
+          typeof usuario.mfa_required === 'boolean'
+            ? usuario.mfa_required
+            : usuario.mfa_enabled,
+      },
       csrfToken: csrfToken ?? state.csrfToken,
       isAuthenticated: true,
       isLoading: false,

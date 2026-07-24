@@ -29,6 +29,7 @@ public sealed class AuthUsuarioResponse
     public bool PrimerLogin { get; set; }
     public bool PuedeUsarIa { get; set; }
     public bool MfaEnabled { get; set; }
+    public bool MfaRequired { get; set; }
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaUltimaLogin { get; set; }
 }

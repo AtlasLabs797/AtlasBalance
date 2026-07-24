@@ -4,11 +4,13 @@ using FluentAssertions;
 using AtlasBalance.API.Controllers;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -29,7 +31,13 @@ public sealed class IntegracionesControllerTests
         var controller = new IntegracionesController(
             dbContext,
             new AuditService(dbContext),
-            new IntegrationTokenService(dbContext));
+            new IntegrationTokenService(dbContext),
+            // V-02.06 (MED-29): el cleaner vive en memoria cache, pero en
+            // tests InMemory la limpieza es un no-op. Pasamos una
+            // instancia real (usa MemoryCache internamente).
+            new IntegrationRateLimitCleaner(
+                new MemoryCache(new MemoryCacheOptions()),
+                new SystemClock()));
 
         var identity = new ClaimsIdentity(
         [
@@ -127,5 +135,42 @@ public sealed class IntegracionesControllerTests
 
         var storedPermission = await dbContext.IntegrationPermissions.SingleAsync();
         storedPermission.AccesoTipo.Should().Be("lectura");
+    }
+
+    [Fact]
+    public async Task Crear_Should_Preserve_Empty_Endpoint_Scopes_As_No_Access()
+    {
+        await using var dbContext = BuildDbContext();
+        var controller = BuildController(dbContext);
+
+        var result = await controller.Crear(new CreateIntegrationTokenRequest
+        {
+            Nombre = "sin-endpoints",
+            PermisoLectura = true,
+            Permisos = [new SaveIntegrationPermissionRequest { AccesoTipo = "lectura" }],
+            Scopes = []
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+        (await dbContext.IntegrationTokens.SingleAsync()).EndpointScopesJson.Should().Be("[]");
+    }
+
+    [Fact]
+    public async Task Crear_Should_Reject_Unknown_Endpoint_Scope()
+    {
+        await using var dbContext = BuildDbContext();
+        var controller = BuildController(dbContext);
+
+        var result = await controller.Crear(new CreateIntegrationTokenRequest
+        {
+            Nombre = "scope-invalido",
+            PermisoLectura = true,
+            Permisos = [new SaveIntegrationPermissionRequest { AccesoTipo = "lectura" }],
+            Scopes = ["saldos", "inventado"]
+        }, CancellationToken.None);
+
+        JsonSerializer.Serialize(result.Should().BeOfType<BadRequestObjectResult>().Subject.Value)
+            .Should().Contain("Scope desconocido");
+        (await dbContext.IntegrationTokens.CountAsync()).Should().Be(0);
     }
 }

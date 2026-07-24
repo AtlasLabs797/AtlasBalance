@@ -32,6 +32,7 @@ public sealed class GeneralConfigResponse
     public string AppUpdateAutoLastResult { get; set; } = string.Empty;
     public bool MfaRememberDeviceEnabled { get; set; }
     public int MfaRememberDeviceDays { get; set; } = SecurityConfigurationDefaults.MfaRememberDeviceDays;
+    public bool RequireMfaForNonAdminUsers { get; set; } = true;
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
 }
@@ -75,6 +76,7 @@ public sealed class UpdateGeneralConfigRequest
     public bool AppUpdateAutoEnabled { get; set; }
     public int AppUpdateAutoHourUtc { get; set; } = 3;
     public bool MfaRememberDeviceEnabled { get; set; }
+    public bool RequireMfaForNonAdminUsers { get; set; } = true;
     public string BackupPath { get; set; } = string.Empty;
     public string ExportPath { get; set; } = string.Empty;
 }

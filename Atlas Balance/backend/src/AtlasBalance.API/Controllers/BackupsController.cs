@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
+using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +24,7 @@ public sealed class BackupsController : ControllerBase
     private readonly IBackupConfigurationService _backupConfigurationService;
     private readonly IGoogleDriveBackupService _googleDriveBackupService;
     private readonly ILogger<BackupsController> _logger;
+    private readonly IBackgroundJobClient? _backgroundJobs;
 
     public BackupsController(
         AppDbContext dbContext,
@@ -29,7 +32,8 @@ public sealed class BackupsController : ControllerBase
         IWatchdogClientService watchdogClientService,
         IBackupConfigurationService backupConfigurationService,
         IGoogleDriveBackupService googleDriveBackupService,
-        ILogger<BackupsController>? logger = null)
+        ILogger<BackupsController>? logger = null,
+        IBackgroundJobClient? backgroundJobs = null)
     {
         _dbContext = dbContext;
         _backupService = backupService;
@@ -37,6 +41,7 @@ public sealed class BackupsController : ControllerBase
         _backupConfigurationService = backupConfigurationService;
         _googleDriveBackupService = googleDriveBackupService;
         _logger = logger ?? NullLogger<BackupsController>.Instance;
+        _backgroundJobs = backgroundJobs;
     }
 
     [HttpGet]
@@ -134,22 +139,59 @@ public sealed class BackupsController : ControllerBase
     [HttpPost("manual")]
     public async Task<IActionResult> BackupManual(CancellationToken cancellationToken)
     {
+        if (_backgroundJobs is null)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "El procesador de operaciones no esta disponible." });
+        }
+
+        var operation = await CreateOperationAsync("MANUAL", null, cancellationToken);
+        var userId = operation.UsuarioId;
         try
         {
-            var backup = await _backupService.CreateBackupAsync(TipoProceso.MANUAL, GetCurrentUserId(), cancellationToken);
-            return Ok(new
-            {
-                backup.Id,
-                Estado = backup.Estado.ToString(),
-                RutaArchivo = Path.GetFileName(backup.RutaArchivo),
-                backup.TamanioBytes
-            });
+            _backgroundJobs.Enqueue<BackupOperationJob>(job => job.ExecuteManualAsync(operation.Id, userId, CancellationToken.None));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Fallo al crear backup manual");
-            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "No se pudo crear la copia de seguridad. Revisa la configuracion del servidor o avisa al administrador." });
+            await MarkOperationFailedAsync(operation, "No se pudo encolar la operacion.", CancellationToken.None);
+            _logger.LogError(ex, "No se pudo encolar el backup manual {OperationId}", operation.Id);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "No se pudo iniciar la copia de seguridad.", operation_id = operation.Id });
         }
+        return Accepted(new { operation_id = operation.Id, status = operation.Estado });
+    }
+
+    [HttpGet("operations/{id:guid}")]
+    public async Task<IActionResult> GetOperation(Guid id, CancellationToken cancellationToken)
+    {
+        var operation = await _dbContext.BackupOperations.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (operation is null)
+        {
+            return NotFound(new { error = "Operacion no encontrada." });
+        }
+
+        if (operation.Tipo == "RESTORE" && operation.Estado == "RUNNING")
+        {
+            var watchdog = await _watchdogClientService.GetEstadoAsync(cancellationToken);
+            var watchdogState = watchdog.Estado?.ToUpperInvariant();
+            if (watchdog.OperationId == operation.Id && watchdogState is "SUCCESS" or "FAILED")
+            {
+                var tracked = await _dbContext.BackupOperations.FirstAsync(x => x.Id == id, cancellationToken);
+                tracked.Estado = watchdogState;
+                tracked.Error = watchdogState == "FAILED" ? watchdog.Mensaje : null;
+                tracked.FechaFin = DateTime.UtcNow;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                operation = tracked;
+            }
+        }
+
+        return Ok(new
+        {
+            operation_id = operation.Id,
+            type = operation.Tipo,
+            status = operation.Estado,
+            backup_id = operation.BackupId,
+            error = operation.Error,
+            result = operation.ResultadoJson
+        });
     }
 
     [HttpPost("google-drive/link/start")]
@@ -234,22 +276,24 @@ public sealed class BackupsController : ControllerBase
             return BadRequest(new { error = "Debe indicar el archivo de Google Drive." });
         }
 
+        if (_backgroundJobs is null)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "El procesador de operaciones no esta disponible." });
+        }
+
+        var operation = await CreateOperationAsync("DRIVE_IMPORT", request.FileId, cancellationToken);
+        var userId = operation.UsuarioId;
         try
         {
-            var backup = await _googleDriveBackupService.ImportAsync(request.FileId, GetCurrentUserId(), HttpContext, cancellationToken);
-            return Ok(new
-            {
-                backup.Id,
-                Estado = backup.Estado.ToString(),
-                RutaArchivo = Path.GetFileName(backup.RutaArchivo),
-                backup.TamanioBytes
-            });
+            _backgroundJobs.Enqueue<BackupOperationJob>(job => job.ExecuteDriveImportAsync(operation.Id, request.FileId, userId, CancellationToken.None));
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "No se pudo importar copia desde Google Drive");
-            return BadRequest(new { error = "No se pudo importar la copia desde Google Drive." });
+            await MarkOperationFailedAsync(operation, "No se pudo encolar la operacion.", CancellationToken.None);
+            _logger.LogError(ex, "No se pudo encolar el import de Drive {OperationId}", operation.Id);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "No se pudo iniciar la importacion de Google Drive.", operation_id = operation.Id });
         }
+        return Accepted(new { operation_id = operation.Id, status = operation.Estado });
     }
 
     [HttpPost("{id:guid}/restaurar")]
@@ -284,17 +328,69 @@ public sealed class BackupsController : ControllerBase
             return BadRequest(new { error = "El archivo de la copia de seguridad no existe en disco." });
         }
 
-        var accepted = await _watchdogClientService.SolicitarRestauracionAsync(backup.RutaArchivo, GetCurrentUserId(), cancellationToken);
+        var operation = await CreateOperationAsync("RESTORE", backup.Id.ToString("N"), cancellationToken, backup.Id);
+        bool accepted;
+        try
+        {
+            accepted = await _watchdogClientService.SolicitarRestauracionAsync(
+                backup.RutaArchivo,
+                operation.UsuarioId,
+                operation.Id,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await MarkOperationFailedAsync(operation, "El servicio de mantenimiento no esta disponible.", CancellationToken.None);
+            _logger.LogError(ex, "No se pudo solicitar restauracion para la operacion {OperationId}", operation.Id);
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "El servicio de mantenimiento no esta disponible.", operation_id = operation.Id });
+        }
+
         if (!accepted)
         {
-            return StatusCode(StatusCodes.Status502BadGateway, new { error = "El servicio de mantenimiento rechazo la restauracion." });
+            await MarkOperationFailedAsync(operation, "El servicio de mantenimiento rechazo la restauracion.", CancellationToken.None);
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "El servicio de mantenimiento rechazo la restauracion.", operation_id = operation.Id });
         }
+
+        operation.Estado = "RUNNING";
+        operation.FechaInicio = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return Accepted(new
         {
             message = "Restauración iniciada",
-            backup_id = backup.Id
+            backup_id = backup.Id,
+            operation_id = operation.Id,
+            status = operation.Estado
         });
+    }
+
+    private async Task<BackupOperation> CreateOperationAsync(
+        string type,
+        string? parameter,
+        CancellationToken cancellationToken,
+        Guid? backupId = null)
+    {
+        var operation = new BackupOperation
+        {
+            Id = Guid.NewGuid(),
+            Tipo = type,
+            Estado = "PENDING",
+            UsuarioId = GetCurrentUserId(),
+            BackupId = backupId,
+            Parametro = parameter,
+            FechaCreacion = DateTime.UtcNow
+        };
+        _dbContext.BackupOperations.Add(operation);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return operation;
+    }
+
+    private async Task MarkOperationFailedAsync(BackupOperation operation, string error, CancellationToken cancellationToken)
+    {
+        operation.Estado = "FAILED";
+        operation.Error = error;
+        operation.FechaFin = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private Guid? GetCurrentUserId()

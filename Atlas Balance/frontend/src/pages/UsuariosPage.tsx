@@ -18,7 +18,25 @@ interface UsuarioRow {
   primer_login: boolean;
   puede_usar_ia: boolean;
   mfa_enabled: boolean;
+  mfa_required: boolean;
   deleted_at: string | null;
+}
+
+function mfaLabel(row: UsuarioRow): string {
+  if (row.mfa_required && row.mfa_enabled) {
+    return 'Obligatorio · configurado';
+  }
+  if (row.mfa_required && !row.mfa_enabled) {
+    return 'Obligatorio · pendiente';
+  }
+  if (!row.mfa_required && row.mfa_enabled) {
+    return 'Opcional · configurado';
+  }
+  return 'No requerido';
+}
+
+function mfaRequiredForCandidate(rows: UsuarioRow[], id: string): boolean {
+  return rows.some((row) => row.id === id && row.mfa_required);
 }
 
 interface DeleteCandidate {
@@ -276,7 +294,7 @@ export default function UsuariosPage() {
                   </td>
                   <td>{row.primer_login ? 'Pendiente' : 'Completado'}</td>
                   <td>{row.puede_usar_ia ? 'Sí' : 'No'}</td>
-                  <td>{row.mfa_enabled ? 'Activo' : 'Pendiente'}</td>
+                  <td>{mfaLabel(row)}</td>
                   <td className="users-row-actions">
                     <button
                       type="button"
@@ -417,7 +435,12 @@ export default function UsuariosPage() {
             <p>
               Vas a quitar el Authenticator de <strong>{mfaCandidate.email}</strong>.
             </p>
-            <p>Se cerraran sus sesiones activas y tendra que configurar MFA de nuevo al entrar.</p>
+            {mfaCandidate && mfaRequiredForCandidate(rows, mfaCandidate.id) ? (
+              <p>Este usuario es administrador o la politica actual le obliga a usar Authenticator. Tras la revocacion debera configurarlo de nuevo al iniciar sesion.</p>
+            ) : (
+              <p>El usuario no esta obligado a usar Authenticator por la politica actual. La revocacion solo borra el Authenticator configurado.</p>
+            )}
+            <p>Se cerraran sus sesiones activas en cualquier caso.</p>
             <div className="users-form-actions">
               <button
                 type="button"

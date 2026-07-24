@@ -13,6 +13,11 @@ namespace AtlasBalance.API.Controllers;
 [Route("api/auditoria")]
 public sealed class AuditoriaController : ControllerBase
 {
+    // Limite duro para exportar CSV: evita materializar en memoria un resultado sin
+    // acotar si el filtro es demasiado amplio. Si se supera, se pide estrechar el filtro
+    // en vez de truncar el export en silencio.
+    private const int MaxExportRows = 50_000;
+
     private readonly AppDbContext _db;
 
     public AuditoriaController(AppDbContext db)
@@ -125,6 +130,15 @@ public sealed class AuditoriaController : ControllerBase
         CancellationToken ct = default)
     {
         var query = BuildFilteredAuditoriaQuery(usuarioId, cuentaId, paisId, tipoAccion, fechaDesde, fechaHasta);
+        var totalMatching = await query.CountAsync(ct);
+        if (totalMatching > MaxExportRows)
+        {
+            return BadRequest(new
+            {
+                error = $"El filtro seleccionado incluye {totalMatching} registros, por encima del limite de {MaxExportRows} para exportar a CSV. Estrecha el rango de fechas u otros filtros.",
+            });
+        }
+
         var rawRows = await query
             .OrderByDescending(x => x.Timestamp)
             .Select(x => new RawAuditoriaRow

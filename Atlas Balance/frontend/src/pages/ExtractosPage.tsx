@@ -87,12 +87,10 @@ export default function ExtractosPage() {
     setAuditData([]);
     setAuditError(null);
     setAuditColumn(null);
-    setAuditExtractoId(null);
   };
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [auditColumn, setAuditColumn] = useState<string | null>(null);
-  const [auditExtractoId, setAuditExtractoId] = useState<string | null>(null);
   const [desgloseRow, setDesgloseRow] = useState<Extracto | null>(null);
   const [desgloseData, setDesgloseData] = useState<ExtractoDesgloseResumen | null>(null);
   const [desgloseLoading, setDesgloseLoading] = useState(false);
@@ -412,7 +410,6 @@ export default function ExtractosPage() {
     setAuditError(null);
     setAuditData([]);
     setAuditColumn(column);
-    setAuditExtractoId(row.id);
     // F-NEW-14 (V-02-03): cancelar peticion pendiente si el usuario abre
     // otra celda antes de que llegue la primera. Evita que la respuesta
     // tardia se cargue en el modal equivocado.
@@ -697,7 +694,6 @@ export default function ExtractosPage() {
         onClose={onCloseDesglose}
         onSave={onSaveDesglose}
       />
-      {auditExtractoId && <span className="sr-only">{auditExtractoId}</span>}
     </section>
   );
 }

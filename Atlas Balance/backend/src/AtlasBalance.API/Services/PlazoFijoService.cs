@@ -228,38 +228,6 @@ public sealed class PlazoFijoService : IPlazoFijoService
         return true;
     }
 
-    private async Task<bool> TrySendEmailAsync(Cuenta cuenta, Titular titular, DateOnly fechaVencimiento, EstadoPlazoFijo estado, CancellationToken cancellationToken)
-    {
-        var recipients = await _dbContext.Usuarios
-            .Where(u => u.Activo && u.Rol == RolUsuario.ADMIN)
-            .Select(u => u.Email.ToLower())
-            .ToListAsync(cancellationToken);
-
-        if (recipients.Count == 0)
-        {
-            _logger.LogWarning("No se envia email de plazo fijo: cuenta_id={CuentaId} sin destinatarios admin activos", cuenta.Id);
-            return false;
-        }
-
-        try
-        {
-            await _emailService.SendPlazoFijoVencimientoAsync(
-                recipients,
-                titular.Nombre,
-                cuenta.Nombre,
-                cuenta.Id,
-                fechaVencimiento,
-                estado,
-                cancellationToken);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Fallo al enviar email de plazo fijo. cuenta_id={CuentaId}", cuenta.Id);
-            return false;
-        }
-    }
-
     private static EstadoPlazoFijo? ResolveEstado(DateOnly fechaVencimiento, DateOnly hoy)
     {
         if (fechaVencimiento <= hoy)

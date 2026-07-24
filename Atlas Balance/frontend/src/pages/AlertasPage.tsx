@@ -63,10 +63,6 @@ const EMPTY_FORM: SaveAlertaPayload = {
   destinatario_usuario_ids: [],
 };
 
-function getErrorMessage(error: unknown, fallback: string) {
-  return extractErrorMessage(error, fallback);
-}
-
 export default function AlertasPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const isAdmin = usuario?.rol === 'ADMIN';
@@ -144,7 +140,7 @@ export default function AlertasPage() {
       setAlertas(alertasRes.data);
       hydrateForms(alertasRes.data);
     } catch (loadError: unknown) {
-      setError(getErrorMessage(loadError, 'No se pudo cargar la configuración de alertas.'));
+      setError(extractErrorMessage(loadError, 'No se pudo cargar la configuración de alertas.'));
     } finally {
       setConfigLoading(false);
     }
@@ -183,7 +179,7 @@ export default function AlertasPage() {
       setFeedback('Alerta global guardada.');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (saveError: unknown) {
-      setError(getErrorMessage(saveError, 'No se pudo guardar la alerta global.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta global.'));
     } finally {
       setSaving(false);
     }
@@ -213,7 +209,7 @@ export default function AlertasPage() {
       setCuentaForm(EMPTY_FORM);
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (saveError: unknown) {
-      setError(getErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta.'));
     } finally {
       setSaving(false);
     }
@@ -243,7 +239,7 @@ export default function AlertasPage() {
       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (saveError: unknown) {
-      setError(getErrorMessage(saveError, 'No se pudo guardar la alerta por tipo.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta por tipo.'));
     } finally {
       setSaving(false);
     }
@@ -294,7 +290,7 @@ export default function AlertasPage() {
       setFeedback('Alerta eliminada.');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
     } catch (deleteError: unknown) {
-      setError(getErrorMessage(deleteError, 'No se pudo eliminar la alerta.'));
+      setError(extractErrorMessage(deleteError, 'No se pudo eliminar la alerta.'));
     } finally {
       setSaving(false);
     }

@@ -113,6 +113,14 @@ public static class SeedData
     private static void EnsureDefaultConfiguraciones(AppDbContext context, Guid? seedActorId, DateTime now, IConfiguration? configuration)
     {
         var appBaseUrl = ResolveConfiguredAppBaseUrl(configuration) ?? "https://caja.empresa.local";
+        // V-02.06: la politica MFA por rol vive en CONFIGURACION. Si el operador
+        // conserva Security:RequireMfaForWebUsers=true (recomendado y valor por
+        // defecto en appsettings.json/appsettings.Production.json.template) la
+        // opcion para no administradores se siembra como "true". Si un dia se baja
+        // el flag del appsettings, SeedData lo respeta para no introducir un
+        // cambio brusco al migrar.
+        var fallbackRequireMfa = configuration?.GetValue("Security:RequireMfaForWebUsers", true) ?? true;
+        var requireMfaDefault = fallbackRequireMfa ? "true" : "false";
         var configuraciones = new Dictionary<string, (string Valor, string Tipo, string Descripcion)>
         {
             ["app_base_url"] = (appBaseUrl, "string", "URL base de la aplicacion"),
@@ -134,7 +142,13 @@ public static class SeedData
             ["google_drive_folder_id"] = ("", "string", "Carpeta de Google Drive para backups"),
             ["backup_cloud_encryption_key"] = ("", "string", "Clave protegida de cifrado para backups en nube"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
-            ["app_version"] = ("V-02-04", "string", "Version instalada"),
+            // V-02.06 (PR F5): el seed debe estar alineado con el paquete que
+            // el operador esta ejecutando. Mantener "V-02-04" provoca que el
+            // default de versiones y el campo "app_version" que reportan
+            // servicios como ActualizacionService.Invoke o SettingsTray queden
+            // una version atras del runtime real. Se actualiza a V-02.06, que
+            // es el InformationalVersion declarado en Directory.Build.props.
+            ["app_version"] = ("V-02.06", "string", "Version instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["app_update_auto_enabled"] = ("false", "bool", "Aplicar automaticamente releases firmados de GitHub"),
             ["app_update_auto_hour_utc"] = ("3", "int", "Hora UTC minima para la comprobacion automatica diaria"),
@@ -142,6 +156,7 @@ public static class SeedData
             ["app_update_auto_last_started_utc"] = ("", "datetime", "Ultima actualizacion automatica iniciada en UTC"),
             ["app_update_auto_last_result"] = ("", "string", "Ultimo resultado de actualizacion automatica"),
             [SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey] = ("true", "bool", "Permite recordar dispositivos MFA durante 90 dias"),
+            [SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey] = (requireMfaDefault, "bool", "Exige Authenticator a gerentes y empleados; los administradores siempre deben usarlo"),
             ["smtp_host"] = ("", "string", "Host SMTP"),
             ["smtp_port"] = ("587", "int", "Puerto SMTP"),
             ["smtp_user"] = ("", "string", "Usuario SMTP"),
@@ -790,71 +805,63 @@ public static class SeedData
         set.Add(entity);
     }
 
+    // V-02.06 (2026-07-21): predefinidos reintroducidos tras el wipe del
+    // mismo dia. Operador decidio que BBVA Empresa/Particular, BS
+    // Empresa/Particular y Banquinter Empresa/Particular vuelvan a salir
+    // por defecto en instalaciones nuevas. Los GUIDs son los mismos que
+    // ya tienen en la BD del operador, asi que una instalacion con esos
+    // formatos ya creados no duplica (el seed los ignora por Id).
+    // Si se quieren aniadir mas predefinidos en el futuro, mantener el
+    // patron: GUID fijo, snake_case en mapeo_json, comentario del banco.
     private static readonly IReadOnlyList<DefaultFormatoImportacion> DefaultFormatosImportacion =
     [
         new(
-            "e1b2cba0-60bd-4854-9b24-d2e88763fa5d",
-            "Sabadell",
-            "Sabadell",
+            "0ee8dcc6-10a3-49ed-9f5d-1a1ade414184",
+            "BBVA Empresa",
+            "BBVA Empresa",
             "EUR",
             """
-            {"tipo_monto":"una_columna","fecha":0,"concepto":1,"monto":3,"saldo":4,"columnas_extra":[{"nombre":"Fecha Valor","indice":2},{"nombre":"Desglose","indice":5},{"nombre":"Documento","indice":6},{"nombre":"Cuenta","indice":7},{"nombre":"Comentario","indice":8},{"nombre":"Columna","indice":9}]}
+            {"tipo_monto":"una_columna","fecha":0,"concepto":3,"monto":6,"saldo":7,"columnas_extra":[{"nombre":"Fecha Valor","indice":1,"etiqueta":"fecha valor"},{"nombre":"Codigo","indice":2,"etiqueta":"codigo"},{"nombre":"Observaciones","indice":4,"etiqueta":"observaciones"},{"nombre":"Referencia","indice":5,"etiqueta":"referencia"},{"nombre":"Divisa","indice":8,"etiqueta":"divisa"},{"nombre":"Factura","indice":9,"etiqueta":"factura"},{"nombre":"Referencia 2","indice":10,"etiqueta":"referencia 2"}]}
             """),
         new(
-            "b93a72f5-f2b1-4f7d-b1a6-661dac305696",
-            "BBVA",
-            "BBVA",
+            "880fd93a-ba3c-4da2-b1b5-e8eda1b7ba40",
+            "BBVA Particular",
+            "BBVA Particular",
             "EUR",
             """
-            {"tipo_monto":"una_columna","fecha":0,"concepto":3,"monto":6,"saldo":7,"columnas_extra":[{"nombre":"Fecha Valor","indice":1},{"nombre":"Codigo","indice":2},{"nombre":"Observaciones 1","indice":4},{"nombre":"Observaciones 2","indice":5},{"nombre":"Desglose","indice":8},{"nombre":"Documento","indice":9},{"nombre":"Cuenta","indice":10}]}
+            {"tipo_monto":"una_columna","fecha":1,"concepto":2,"monto":4,"saldo":6,"columnas_extra":[{"nombre":"Fecha Valor","indice":0,"etiqueta":"fecha valor"},{"nombre":"Observaciones","indice":3,"etiqueta":"observaciones"},{"nombre":"Referencia 2","indice":5,"etiqueta":"referencia 2"},{"nombre":"Divisa","indice":7,"etiqueta":"divisa"},{"nombre":"Referencia","indice":8,"etiqueta":"referencia"}]}
             """),
         new(
-            "8d7bd2be-834b-4222-845b-94f12bd450a5",
-            "Banquinter",
-            "Banquinter",
+            "db0c6bfe-7643-40b6-b858-40de6e0cb185",
+            "BS Empresa",
+            "BS Empresa",
             "EUR",
             """
-            {"tipo_monto":"una_columna","fecha":0,"concepto":4,"monto":8,"saldo":9,"columnas_extra":[{"nombre":"Fecha Valor","indice":1},{"nombre":"Clave","indice":2},{"nombre":"Referencia","indice":3},{"nombre":"Descripcion","indice":5}]}
+            {"tipo_monto":"una_columna","fecha":0,"concepto":1,"monto":3,"saldo":4,"columnas_extra":[{"nombre":"Fecha Valor","indice":2,"etiqueta":"fecha valor"},{"nombre":"Factura","indice":5,"etiqueta":"factura"},{"nombre":"Referencia","indice":6,"etiqueta":"referencia"}]}
             """),
         new(
-            "4d0bbbf2-03a0-4f22-887e-3eb6d1a5730a",
-            "BBVA",
-            "BBVA",
-            "MXN",
+            "ba73a117-b056-4f84-9ca2-9dd0a986d5d2",
+            "BS Particular",
+            "BS Particular",
+            "EUR",
             """
-            {"tipo_monto":"dos_columnas","fecha":0,"concepto":1,"ingreso":3,"egreso":2,"saldo":4}
+            {"tipo_monto":"una_columna","fecha":0,"concepto":1,"monto":3,"saldo":4,"columnas_extra":[{"nombre":"Fecha Valor","indice":2,"etiqueta":"fecha valor"},{"nombre":"Referencia","indice":5,"etiqueta":"referencia"},{"nombre":"Referencia 2","indice":6,"etiqueta":"referencia 2"}]}
             """),
         new(
-            "e1789b1e-aa3a-40a3-b0e4-a1060eb208a0",
-            "Banco Caribe",
-            "Banco Caribe",
-            "DOP",
+            "f5fd034b-8624-45a2-b365-62c7e9ad3d9a",
+            "Banquinter Empresa",
+            "Banquinter Empresa",
+            "EUR",
             """
-            {"tipo_monto":"dos_columnas","fecha":0,"concepto":1,"ingreso":4,"egreso":3,"saldo":5,"columnas_extra":[{"nombre":"Cheque","indice":2}]}
+            {"tipo_monto":"tres_columnas","fecha":0,"concepto":5,"ingreso":8,"egreso":7,"monto":9,"saldo":10,"columnas_extra":[{"nombre":"Fecha Valor","indice":1,"etiqueta":"fecha valor"},{"nombre":"Codigo","indice":2,"etiqueta":"codigo"},{"nombre":"Referencia 2","indice":3,"etiqueta":"referencia 2"},{"nombre":"Referencia","indice":4,"etiqueta":"referencia"},{"nombre":"Factura","indice":6,"etiqueta":"factura"}]}
             """),
         new(
-            "2f4f4189-ab4c-4ee6-bc02-08ff2229660f",
-            "Banco Caribe",
-            "Banco Caribe",
-            "USD",
+            "b455fc9c-bdd5-4f67-868b-534650ecb598",
+            "Banquinter Particular",
+            "Banquinter Particular",
+            "EUR",
             """
-            {"tipo_monto":"dos_columnas","fecha":0,"concepto":1,"ingreso":4,"egreso":3,"saldo":5,"columnas_extra":[{"nombre":"Cheque","indice":2}]}
-            """),
-        new(
-            "841fd198-fb75-4a75-8773-d139c4f3d095",
-            "Banco Popular",
-            "Banco Popular",
-            "DOP",
-            """
-            {"tipo_monto":"una_columna","fecha":0,"concepto":4,"monto":5,"saldo":6,"columnas_extra":[{"nombre":"Fecha Efectiva","indice":1},{"nombre":"Nro. cheque","indice":2},{"nombre":"Nro Referencia","indice":3}]}
-            """),
-        new(
-            "5b4ba06c-a56e-44c0-9422-352117394a96",
-            "Banco Popular",
-            "Banco Popular",
-            "USD",
-            """
-            {"tipo_monto":"una_columna","fecha":0,"concepto":4,"monto":5,"saldo":6,"columnas_extra":[{"nombre":"Fecha efectiva","indice":1},{"nombre":"Nro. cheque","indice":2},{"nombre":"Nro. referencia","indice":3}]}
+            {"tipo_monto":"una_columna","fecha":0,"concepto":2,"monto":3,"saldo":4,"columnas_extra":[{"nombre":"Fecha Valor","indice":1,"etiqueta":"fecha valor"},{"nombre":"Divisa","indice":5,"etiqueta":"divisa"}]}
             """)
     ];
 

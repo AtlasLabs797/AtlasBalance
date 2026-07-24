@@ -100,11 +100,14 @@ public sealed class UsuariosController : ControllerBase
                 PrimerLogin = u.PrimerLogin,
                 PuedeUsarIa = u.PuedeUsarIa,
                 MfaEnabled = u.MfaEnabled,
+                MfaRequired = u.Rol == RolUsuario.ADMIN,
                 FechaCreacion = u.FechaCreacion,
                 FechaUltimaLogin = u.FechaUltimaLogin,
                 DeletedAt = u.DeletedAt
             })
             .ToListAsync(cancellationToken);
+
+        await AplicaPoliticaMfaAsync(data, cancellationToken);
 
         return Ok(new PaginatedResponse<UsuarioListItemResponse>
         {
@@ -135,7 +138,7 @@ public sealed class UsuariosController : ControllerBase
 
         var permisos = await LoadPermisosAsync(id, cancellationToken);
 
-        return Ok(new UsuarioDetalleResponse
+        var detalle = new UsuarioDetalleResponse
         {
             Usuario = new UsuarioListItemResponse
             {
@@ -147,13 +150,46 @@ public sealed class UsuariosController : ControllerBase
                 PrimerLogin = usuario.PrimerLogin,
                 PuedeUsarIa = usuario.PuedeUsarIa,
                 MfaEnabled = usuario.MfaEnabled,
+                MfaRequired = usuario.Rol == RolUsuario.ADMIN,
                 FechaCreacion = usuario.FechaCreacion,
                 FechaUltimaLogin = usuario.FechaUltimaLogin,
                 DeletedAt = usuario.DeletedAt
             },
             Emails = emails,
             Permisos = permisos
-        });
+        };
+
+        await AplicaPoliticaMfaAsync(new[] { detalle.Usuario }, cancellationToken);
+        return Ok(detalle);
+    }
+
+    private async Task AplicaPoliticaMfaAsync(IReadOnlyList<UsuarioListItemResponse> items, CancellationToken cancellationToken)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        var requireNonAdmin = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Where(x => x.Clave == SecurityConfigurationDefaults.MfaRequireForNonAdminUsersKey)
+            .Select(x => x.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+        var requireNonAdminEffective = !(!string.IsNullOrWhiteSpace(requireNonAdmin) && bool.TryParse(requireNonAdmin, out var explicitValue) ? explicitValue : true);
+
+        foreach (var item in items)
+        {
+            if (item.Rol.Equals(RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                item.MfaRequired = true;
+                continue;
+            }
+
+            // V-02.06: el campo MfaRequired del listado refleja la politica
+            // vigente. Para no administradores, depende del interruptor
+            // almacenado en CONFIGURACION (con fallback seguro true).
+            item.MfaRequired = !requireNonAdminEffective;
+        }
     }
 
     [HttpGet("{id:guid}/permisos")]

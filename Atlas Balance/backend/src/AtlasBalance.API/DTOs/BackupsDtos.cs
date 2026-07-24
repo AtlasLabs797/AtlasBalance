@@ -99,6 +99,7 @@ public sealed class WatchdogStateResponse
 {
     public string Estado { get; set; } = "IDLE";
     public string? Operacion { get; set; }
+    public Guid? OperationId { get; set; }
     public string? Mensaje { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

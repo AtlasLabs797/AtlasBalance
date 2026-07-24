@@ -8,6 +8,8 @@ namespace AtlasBalance.API.Services;
 public interface IWatchdogClientService
 {
     Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken);
+    Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, Guid operationId, CancellationToken cancellationToken) =>
+        SolicitarRestauracionAsync(backupPath, solicitadoPorId, cancellationToken);
     Task<bool> SolicitarActualizacionAsync(string? sourcePath, string? targetPath, string? packageZipPath, CancellationToken cancellationToken);
     Task<WatchdogStateResponse> GetEstadoAsync(CancellationToken cancellationToken);
     Task<bool> EstaDisponibleAsync(CancellationToken cancellationToken);
@@ -31,7 +33,10 @@ public sealed class WatchdogClientService : IWatchdogClientService
         _logger = logger;
     }
 
-    public async Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken)
+    public Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, CancellationToken cancellationToken) =>
+        SolicitarRestauracionAsync(backupPath, solicitadoPorId, Guid.Empty, cancellationToken);
+
+    public async Task<bool> SolicitarRestauracionAsync(string backupPath, Guid? solicitadoPorId, Guid operationId, CancellationToken cancellationToken)
     {
         var secret = _configuration["WatchdogSettings:SharedSecret"];
         if (string.IsNullOrWhiteSpace(secret))
@@ -46,7 +51,8 @@ public sealed class WatchdogClientService : IWatchdogClientService
         request.Content = JsonContent.Create(new
         {
             backupPath,
-            solicitadoPorId
+            solicitadoPorId,
+            operationId
         });
 
         var response = await http.SendAsync(request, cancellationToken);
