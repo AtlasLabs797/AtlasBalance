@@ -2,6 +2,42 @@
 
 ## Abiertos
 
+### 2026-07-24 - V-02.06 - Secreto ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM ausente en GitHub, release bloqueada en el job de firma
+
+- **Contexto:** con el `verify` de `release.yml` en verde (397/397 tests,
+  npm audit en `high`, lint/build limpios), el cuarto
+  `workflow_dispatch` (run `30116776847`) llego al job `package` y fallo
+  en el primer paso, `Ensure signing key exists`:
+  `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM secret is required for a
+  public release.` El secreto llega vacio desde el entorno
+  `release-signing` de GitHub Actions.
+- **Causa raiz:** el par RSA de firma se roto en V-01.09
+  (`REGISTRO_BUGS.md:629-638`, 2026-06-01) y quedo como "pendiente
+  operativo" cargar la clave privada nueva como GitHub Secret y guardar
+  copia segura fuera del repo. La clave publica correspondiente si esta
+  en el repo (`appsettings.json`, `ActualizacionService.cs`,
+  `WatchdogOperationsService.cs`, scripts de instalador/actualizador),
+  pero el secreto de CI nunca quedo configurado (o se perdio/roto desde
+  entonces).
+- **Por que no se resuelve aqui:** gestionar secretos de firma y
+  configuracion de GitHub Actions es una accion de credenciales que
+  corresponde al operador con acceso al repositorio, no a un agente.
+  No se genero ni se toco ninguna clave privada en esta sesion.
+- **Accion pendiente del operador:**
+  1. Si conserva la clave privada RSA guardada fuera del repo (segun
+     el pendiente de V-01.09): cargarla en GitHub -> repo
+     `AtlasLabs797/AtlasBalance` -> Settings -> Environments ->
+     `release-signing` -> Secrets -> `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`.
+  2. Si no la conserva: generar un par RSA nuevo (4096 bits,
+     `RSA.Create()` / `openssl genrsa`), cargar la privada como el
+     mismo secreto de GitHub y actualizar la clave publica en
+     `appsettings.Production.json` / plantillas del instalador para
+     que el actualizador siga verificando firmas correctamente.
+  3. Re-disparar `workflow_dispatch` de `Release` (version `V-02.06`,
+     runtime `win-x64`, ref `V-02.06`) una vez cargado el secreto.
+- **Estado:** abierto, bloqueado en accion del operador. El resto de
+  V-02.06 (codigo, tests, npm audit) esta verde en CI.
+
 ### 2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7 pospuesta a V-02.07
 
 - **Contexto:** el tercer `workflow_dispatch` de `release.yml` (run

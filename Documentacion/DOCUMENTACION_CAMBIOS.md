@@ -8,6 +8,41 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.06 - Release bloqueada en el ultimo paso: falta el secreto de firma en GitHub
+
+**Version:** V-02.06
+
+**Trabajo realizado:** el cuarto `workflow_dispatch` de `release.yml`
+(run `30116776847`) dejo el job `verify` completamente en verde: build,
+397/397 tests backend (incluidas las 6 correcciones de esta sesion),
+auditoria NuGet, scanner de secretos, `npm audit --audit-level=high`,
+lint, tests unitarios frontend y build de frontend, todo OK. El job
+`package` fallo en el primer paso (`Ensure signing key exists`): el
+secreto `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` del entorno
+`release-signing` de GitHub Actions esta vacio.
+
+Esto no es un bug de codigo: es el pendiente operativo que V-01.09 ya
+habia dejado anotado (`REGISTRO_BUGS.md:629-638`, "cargar la nueva
+privada en GitHub Secret") y que nunca se completo (o se perdio desde
+entonces). Gestionar ese secreto es una accion de credenciales que le
+corresponde al operador, no a este agente; no se genero ni se toco
+ninguna clave privada.
+
+**Archivos tocados:** ninguno (hallazgo documentado, sin cambio de
+codigo).
+
+**Resultado:** V-02.06 queda con todo el codigo, tests y auditorias en
+verde en CI (rama `V-02.06` push `95fd921f`), pero la publicacion del
+GitHub Release queda bloqueada hasta que el operador cargue el secreto
+de firma. Ver `Documentacion/REGISTRO_BUGS.md` (entrada del mismo dia)
+para el procedimiento exacto.
+
+**Pendientes:**
+- Operador: cargar/rotar `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` en
+  GitHub (Settings -> Environments -> `release-signing` -> Secrets).
+- Re-disparar `workflow_dispatch` de `Release` tras cargar el secreto.
+
+---
 ## 2026-07-24 - V-02.06 - npm audit: fix axios/postcss/brace-expansion, gate ajustado para react-router-dom
 
 **Version:** V-02.06
