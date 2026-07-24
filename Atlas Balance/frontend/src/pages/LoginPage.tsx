@@ -11,6 +11,7 @@ import { useUiStore } from '@/stores/uiStore';
 import type { LoginResponse } from '@/types';
 import { IconMoon, IconSun } from '@/components/Icons';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { sanitizeInternalPath } from '@/utils/safeRoute';
 
 interface LoginForm {
   email: string;
@@ -28,15 +29,6 @@ interface MfaChallenge {
   rememberDeviceDays: number;
 }
 
-function normalizeReturnTo(value: string | null): string | null {
-  const candidate = value?.trim();
-  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\')) {
-    return null;
-  }
-
-  return candidate;
-}
-
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,9 +36,12 @@ export default function LoginPage() {
   // F-NEW-1 (V-02-03): ProtectedRoute redirige con state.from cuando el usuario
   // intenta entrar a una ruta protegida sin sesion. Asi, tras hacer login
   // lo mandamos de vuelta a donde queria ir, no siempre a /dashboard.
+  // V-02.07 (#17): sanitizeInternalPath cierra el open redirect del CVE
+  // GHSA-wrjc-x8rr-h8h6 aunque react-router-dom volviese a fallar.
   const stateFrom = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
   const fromReturnTo = stateFrom?.pathname ? `${stateFrom.pathname ?? ''}${stateFrom.search ?? ''}` : null;
-  const returnTo = normalizeReturnTo(searchParams.get('returnTo')) ?? normalizeReturnTo(fromReturnTo);
+  const candidateReturnTo = sanitizeInternalPath(searchParams.get('returnTo'), '') || sanitizeInternalPath(fromReturnTo, '');
+  const returnTo = candidateReturnTo || '/dashboard';
   const setUsuario = useAuthStore((state) => state.setUsuario);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);

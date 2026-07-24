@@ -17,6 +17,7 @@ import {
   buildConfirmImportacionLoteRequest,
   buildCreateImportacionLoteRequest,
 } from '@/utils/importacionRequest';
+import { sanitizeInternalPath } from '@/utils/safeRoute';
 import type {
   ImportConfirmResult,
   ImportContextoResponse,
@@ -67,15 +68,6 @@ function getValidationStatusLabel(row: ImportValidationRow): string {
   }
 
   return 'Valida';
-}
-
-function normalizeReturnTo(value: string | null): string {
-  const candidate = value?.trim();
-  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\')) {
-    return DEFAULT_RETURN_TO;
-  }
-
-  return candidate;
 }
 
 function detectSeparator(lines: string[]): 'tab' | 'comma' | 'semicolon' {
@@ -160,7 +152,9 @@ export default function ImportacionPage() {
   const preselectedCuentaId = searchParams.get('cuentaId');
   const autoCloseOnSuccess = searchParams.get('autoClose') === '1';
   const isEmbedded = searchParams.get('embedded') === '1';
-  const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
+  // V-02.07 (#17): sanitizeInternalPath cierra el open redirect del CVE
+  // GHSA-wrjc-x8rr-h8h6 aunque react-router-dom volviese a fallar.
+  const returnTo = sanitizeInternalPath(searchParams.get('returnTo'), DEFAULT_RETURN_TO);
   const usuario = useAuthStore((state) => state.usuario);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const rawDataId = useId();
