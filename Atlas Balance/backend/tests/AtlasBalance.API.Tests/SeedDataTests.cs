@@ -30,20 +30,19 @@ public sealed class SeedDataTests
         SeedData.Initialize(db, BuildSeedConfiguration());
 
         var formatos = db.FormatosImportacion.ToList();
-        formatos.Should().HaveCount(8);
-        formatos.Should().Contain(f => f.BancoNombre == "Sabadell" && f.Divisa == "EUR");
-        formatos.Should().Contain(f => f.BancoNombre == "BBVA" && f.Divisa == "EUR");
-        formatos.Should().Contain(f => f.BancoNombre == "BBVA" && f.Divisa == "MXN");
-        formatos.Should().Contain(f => f.BancoNombre == "Banco Caribe" && f.Divisa == "DOP");
-        formatos.Should().Contain(f => f.BancoNombre == "Banco Caribe" && f.Divisa == "USD");
-        formatos.Should().Contain(f => f.BancoNombre == "Banco Popular" && f.Divisa == "DOP");
-        formatos.Should().Contain(f => f.BancoNombre == "Banco Popular" && f.Divisa == "USD");
+        formatos.Should().HaveCount(6);
+        formatos.Should().Contain(f => f.BancoNombre == "BBVA Empresa" && f.Divisa == "EUR");
+        formatos.Should().Contain(f => f.BancoNombre == "BBVA Particular" && f.Divisa == "EUR");
+        formatos.Should().Contain(f => f.BancoNombre == "BS Empresa" && f.Divisa == "EUR");
+        formatos.Should().Contain(f => f.BancoNombre == "BS Particular" && f.Divisa == "EUR");
+        formatos.Should().Contain(f => f.BancoNombre == "Banquinter Empresa" && f.Divisa == "EUR");
+        formatos.Should().Contain(f => f.BancoNombre == "Banquinter Particular" && f.Divisa == "EUR");
 
-        var bbvaMxn = formatos.Single(f => f.BancoNombre == "BBVA" && f.Divisa == "MXN");
-        using var doc = JsonDocument.Parse(bbvaMxn.MapeoJson);
-        doc.RootElement.GetProperty("tipo_monto").GetString().Should().Be("dos_columnas");
-        doc.RootElement.GetProperty("ingreso").GetInt32().Should().Be(3);
-        doc.RootElement.GetProperty("egreso").GetInt32().Should().Be(2);
+        var banquinterEmpresa = formatos.Single(f => f.BancoNombre == "Banquinter Empresa" && f.Divisa == "EUR");
+        using var doc = JsonDocument.Parse(banquinterEmpresa.MapeoJson);
+        doc.RootElement.GetProperty("tipo_monto").GetString().Should().Be("tres_columnas");
+        doc.RootElement.GetProperty("ingreso").GetInt32().Should().Be(8);
+        doc.RootElement.GetProperty("egreso").GetInt32().Should().Be(7);
 
         db.Configuraciones
             .Single(c => c.Clave == "app_update_check_url")
@@ -83,9 +82,9 @@ public sealed class SeedDataTests
         SeedData.Initialize(db);
 
         db.Usuarios.Should().HaveCount(1);
-        db.FormatosImportacion.IgnoreQueryFilters().Should().HaveCount(8);
+        db.FormatosImportacion.IgnoreQueryFilters().Should().HaveCount(6);
         db.FormatosImportacion
-            .Single(f => f.BancoNombre == "BBVA" && f.Divisa == "EUR")
+            .Single(f => f.BancoNombre == "BBVA Empresa" && f.Divisa == "EUR")
             .UsuarioCreadorId
             .Should()
             .Be(adminId);
@@ -107,7 +106,7 @@ public sealed class SeedDataTests
         });
         db.FormatosImportacion.Add(new FormatoImportacion
         {
-            Id = Guid.Parse("e1b2cba0-60bd-4854-9b24-d2e88763fa5d"),
+            Id = Guid.Parse("0ee8dcc6-10a3-49ed-9f5d-1a1ade414184"),
             Nombre = "Formato legado",
             BancoNombre = null,
             Divisa = null,
@@ -119,7 +118,7 @@ public sealed class SeedDataTests
         var act = () => SeedData.Initialize(db);
 
         act.Should().NotThrow();
-        db.FormatosImportacion.IgnoreQueryFilters().Should().HaveCount(8);
+        db.FormatosImportacion.IgnoreQueryFilters().Should().HaveCount(6);
     }
 
     [Fact]

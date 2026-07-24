@@ -202,7 +202,7 @@ public sealed class FormatosImportacionController : ControllerBase
             .OrderBy(nombre => nombre)
             .ToListAsync(cancellationToken);
 
-        return Ok(new { data = nombres });
+        return Ok(new ListarColumnasExtraSugeridasResponse { Data = nombres });
     }
 
     private static IQueryable<FormatoImportacion> ApplySorting(IQueryable<FormatoImportacion> query, string sortBy, bool desc)

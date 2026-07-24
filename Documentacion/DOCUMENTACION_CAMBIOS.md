@@ -8,6 +8,64 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.06 - Fix de dos regresiones detectadas por el primer run real de CI
+
+**Version:** V-02.06
+
+**Trabajo realizado:** el primer `workflow_dispatch` de `release.yml` sobre
+`V-02.06` (run `30115135682`) fue la primera ejecucion real de la suite
+xUnit completa desde el wipe+reintroduccion de formatos (2026-07-21) y
+desde el endpoint de autocomplete (mismo dia): en este sandbox el
+proyecto de tests nunca pudo *ejecutarse* (compilaba pero el test host no
+encontraba `hostpolicy.dll` por la ACL conocida de `obj/bin`), asi que
+estas dos regresiones quedaron sin detectar hasta que Ubuntu-runner las
+corrio de verdad. El job `Test backend` fallo con 6 tests en rojo:
+
+1. **`FormatosImportacionController.ListarColumnasExtraSugeridas`
+   devolvia un tipo anonimo en vez del DTO documentado.** El endpoint
+   hacia `Ok(new { data = nombres })` en vez de
+   `Ok(new ListarColumnasExtraSugeridasResponse { Data = nombres })`,
+   aunque el DTO ya existia (`FormatosImportacionDtos.cs`) y los 3 tests
+   de `FormatosImportacionControllerTests` lo esperaban. Se corrigio el
+   controller para usar el DTO. Verificado que el JSON de red no cambia:
+   `Program.cs` usa `PropertyNamingPolicy = SnakeCaseLower` global, asi
+   que `Data` serializa igual que `data` en el objeto anonimo anterior;
+   `FormatosImportacionPage.tsx` sigue leyendo `{ data: string[] }` sin
+   cambios.
+2. **`SeedDataTests` probaba un seed de bancos que ya no existe.** Tres
+   tests (`Initialize_Should_Seed_Default_Bank_Formats_When_Installing_From_Zero`,
+   `..._Without_Duplicating_Existing_Data`,
+   `..._When_Fixed_Id_Already_Exists`) seguian verificando el set
+   historico de 8 formatos (Sabadell, BBVA EUR/MXN, Banco Caribe,
+   Banco Popular) que existia antes del wipe del 2026-07-21. Nunca se
+   actualizaron cuando `SeedData.DefaultFormatosImportacion` paso a los
+   6 formatos reales (BBVA/BS/Banquinter Empresa y Particular, todos
+   EUR) porque, otra vez, el proyecto de tests nunca corrio en este
+   sandbox tras ese cambio. Se reescribieron los tres tests para
+   verificar los 6 formatos reales (incluida la asercion de
+   `MapeoJson` sobre "Banquinter Empresa" en vez de la inexistente
+   "BBVA MXN"), y el test de colision por Id fijo ahora usa
+   `0ee8dcc6-10a3-49ed-9f5d-1a1ade414184` (el Id real de "BBVA
+   Empresa" en el array actual) en vez del Id historico de "Sabadell".
+
+**Archivos tocados:**
+- `backend/src/AtlasBalance.API/Controllers/FormatosImportacionController.cs`
+- `backend/tests/AtlasBalance.API.Tests/SeedDataTests.cs`
+
+**Verificacion:** no se pudo recompilar el proyecto de tests en este
+host (mismo problema de restauracion en paralelo poco fiable documentado
+en la entrada anterior; 2 intentos, mismo patron de error en archivos no
+tocados por este cambio). Los cambios se verificaron leyendo el codigo
+real: la logica de matching de `EnsureDefaultFormatosImportacion` (match
+por Id primero, luego por banco+divisa case-insensitive) y el array
+`DefaultFormatosImportacion` actual, linea por linea. El gate real es el
+job `Test backend` de CI al reintentar el `workflow_dispatch`.
+
+**Pendientes:**
+- Confirmar en el proximo run de `release.yml` que `Test backend` pasa
+  y que el job `package` firma y publica el Release.
+
+---
 ## 2026-07-24 - V-02.06 - Repaso final antes de publicar y disparo de release
 
 **Version:** V-02.06

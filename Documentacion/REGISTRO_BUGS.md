@@ -340,6 +340,42 @@ un gate externo pendiente. Se conservan juntos para trazabilidad del plan.
 
 ## Cerrados
 
+### 2026-07-24 - V-02.06 - Cerrado - Endpoint de autocomplete devolvia tipo anonimo en vez del DTO documentado
+
+- **Contexto:** el primer `workflow_dispatch` real de `release.yml` sobre
+  `V-02.06` corrio la suite xUnit por primera vez desde que se anadio
+  `GET /api/formatos-importacion/columnas-extra-sugeridas`
+  (2026-07-23/24) y fallaron los 3 tests de
+  `FormatosImportacionControllerTests` para ese endpoint.
+- **Causa raiz:** el controller devolvia `Ok(new { data = nombres })`
+  (tipo anonimo) en vez de `Ok(new ListarColumnasExtraSugeridasResponse
+  { Data = nombres })`, aunque el DTO ya existia. Nunca se detecto en
+  este sandbox porque el proyecto de tests compilaba pero no podia
+  *ejecutarse* (ACL de `obj/bin`, `hostpolicy.dll` no encontrado).
+- **Solucion:** `FormatosImportacionController.ListarColumnasExtraSugeridas`
+  ahora devuelve el DTO. El JSON de red no cambia (`PropertyNamingPolicy
+  = SnakeCaseLower` global serializa `Data` igual que el `data` del
+  objeto anonimo), asi que el frontend no necesito cambios.
+- **Estado:** cerrado. Pendiente de confirmar en el siguiente run de CI.
+
+### 2026-07-24 - V-02.06 - Cerrado - SeedDataTests probaba un catalogo de bancos historico ya reemplazado
+
+- **Contexto:** mismo run de CI. Fallaron 3 tests de `SeedDataTests`
+  que esperaban 8 formatos predefinidos historicos (Sabadell, BBVA
+  EUR/MXN, Banco Caribe, Banco Popular).
+- **Causa raiz:** el wipe + reintroduccion de formatos del 2026-07-21
+  reemplazo `SeedData.DefaultFormatosImportacion` por los 6 formatos
+  reales del operador (BBVA/BS/Banquinter Empresa y Particular, EUR),
+  pero `SeedDataTests.cs` nunca se actualizo porque el proyecto de
+  tests no podia ejecutarse en este sandbox (mismo bloqueo de ACL que
+  el hallazgo anterior).
+- **Solucion:** los 3 tests se reescribieron contra el catalogo actual
+  de 6 formatos, incluida la asercion de `MapeoJson` sobre "Banquinter
+  Empresa" (antes apuntaba a la inexistente "BBVA MXN") y el Id fijo de
+  colision (`0ee8dcc6-...`, el Id real de "BBVA Empresa" en vez del
+  historico de "Sabadell").
+- **Estado:** cerrado. Pendiente de confirmar en el siguiente run de CI.
+
 ### 2026-07-07 - V-01.02 - Cerrado - Estado Git local no fiable
 
 - Contexto: en V-01.02 se reporto que `git status --short` listaba practicamente todo el arbol como `untracked`, indicando repositorio local inestable.
