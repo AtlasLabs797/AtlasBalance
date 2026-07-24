@@ -8,6 +8,42 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.06 - Tercera regresion de test detectada por CI: AlertaServiceTests
+
+**Version:** V-02.06
+
+**Trabajo realizado:** el segundo `workflow_dispatch` (run `30115591071`)
+paso las 6 correcciones anteriores (396/397 tests OK) pero encontro un
+tercer test obsoleto: `AlertaServiceTests.EvaluateSaldoPostAsync_Should_Not_Update_LastAlert_When_Email_Fails`
+esperaba `FechaUltimaAlerta` en `null` cuando el email fallaba — el
+comportamiento *previo* al fix de seguridad del 2026-07-24 (commit
+`47c5f135`), que deliberadamente movio el registro del cooldown a antes
+del intento de envio para evitar el retry-storm contra un SMTP caido.
+El test nunca se actualizo para reflejar ese cambio intencional por el
+mismo motivo que los dos hallazgos anteriores: el proyecto de tests no
+podia ejecutarse en este sandbox.
+
+**Solucion:** se renombro el test a
+`EvaluateSaldoPostAsync_Should_Update_LastAlert_Even_When_Email_Fails` y
+se invirtio la asercion a `.Should().NotBeNull()`, siguiendo el mismo
+patron ya usado en `EvaluateSaldoPostAsync_Should_Isolate_Cooldown_By_Scope`
+(linea 122) para verificar "se registro sin importar el valor exacto".
+La aserccion de auditoria vacia se mantiene igual (el codigo retorna
+antes del `_auditService.LogAsync` cuando el envio de email lanza).
+
+**Archivos tocados:**
+- `backend/tests/AtlasBalance.API.Tests/AlertaServiceTests.cs`
+
+**Verificacion:** mismo bloqueo de compilacion en este sandbox que las
+dos entradas anteriores de hoy (restauracion en paralelo poco fiable);
+verificado leyendo `AlertaService.cs:144-150` linea por linea. El gate
+real es el tercer `workflow_dispatch`.
+
+**Pendientes:**
+- Confirmar que el tercer run de `release.yml` deja `Test backend` en
+  397/397 y que el job `package` firma y publica el Release.
+
+---
 ## 2026-07-24 - V-02.06 - Fix de dos regresiones detectadas por el primer run real de CI
 
 **Version:** V-02.06

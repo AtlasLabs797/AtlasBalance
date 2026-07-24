@@ -210,7 +210,7 @@ public class AlertaServiceTests
     }
 
     [Fact]
-    public async Task EvaluateSaldoPostAsync_Should_Not_Update_LastAlert_When_Email_Fails()
+    public async Task EvaluateSaldoPostAsync_Should_Update_LastAlert_Even_When_Email_Fails()
     {
         await using var db = BuildDbContext();
 
@@ -258,7 +258,7 @@ public class AlertaServiceTests
 
         await sut.EvaluateSaldoPostAsync(cuentaId, actorId, CancellationToken.None);
 
-        (await db.AlertasSaldo.SingleAsync(x => x.Id == alertaId)).FechaUltimaAlerta.Should().BeNull();
+        (await db.AlertasSaldo.SingleAsync(x => x.Id == alertaId)).FechaUltimaAlerta.Should().NotBeNull();
         auditService.Entries.Should().BeEmpty();
     }
 
