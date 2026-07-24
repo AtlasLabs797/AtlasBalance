@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, for example V-02-06"
+        description: "Version to publish, for example V-02-07"
         required: true
-        default: "V-02-06"
+        default: "V-02-07"
       runtime:
         description: "Runtime identifier"
         required: true

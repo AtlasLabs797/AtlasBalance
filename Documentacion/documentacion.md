@@ -1,8 +1,8 @@
 # Atlas Balance - instalacion y actualizaciones
 
-Version actual del paquete: `V-02.06`.
+Version actual del paquete: `V-02.07`.
 
-No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-02.06-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
+No uses el ZIP `main` de GitHub como instalador de servidor. Ese ZIP es codigo fuente. El instalador valido para esta version es `AtlasBalance-V-02.07-win-x64.zip` y, al descomprimirlo, debe contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y los wrappers `.cmd`.
 
 Desde V-02.06, crear una copia manual, importar una copia desde Drive o iniciar
 una restauracion responde inmediatamente y muestra el progreso. Puedes cerrar
@@ -15,9 +15,9 @@ Si la API queda detras de proxy inverso, configura `ForwardedHeaders:KnownProxie
 
 ## Que queda preparado
 
-La version `V-02.06` deja el proyecto listo para generar un paquete instalable de Windows:
+La version `V-02.07` deja el proyecto listo para generar un paquete instalable de Windows:
 
-- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-02.06-win-x64.zip`.
+- `scripts/Build-Release.ps1`: crea el paquete `Atlas Balance Release/AtlasBalance-V-02.07-win-x64.zip`.
 - `install.cmd`: instalador de un clic.
 - `update.cmd`: actualizador de un clic.
 - `uninstall.cmd`: desinstalador de un clic.

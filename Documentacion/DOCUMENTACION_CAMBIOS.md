@@ -8,6 +8,35 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.07 - Apertura del ciclo y alineamiento de metadata de version
+
+**Version:** V-02.07
+
+**Trabajo realizado:** apertura del ciclo de trabajo `V-02.07` sobre la rama `V-02.07`. Se alinean las fuentes de version que apuntaban a `V-02.06` para que toda la metadata runtime, instalador, CI y documentacion apunte a `V-02.07`. No hay cambios funcionales, migraciones ni paquete de release en esta apertura. Cambios:
+
+- `Atlas Balance/Directory.Build.props`: `<Version>` 2.7.0, `<AssemblyVersion>`/`<FileVersion>` 2.7.0.0, `<InformationalVersion>` `V-02.07`.
+- `Atlas Balance/frontend/package.json`: `version` 2.7.0 y `appVersion` `V-02.07`.
+- `Atlas Balance/frontend/package-lock.json`: version raiz 2.7.0 (solo entradas raiz; dependencias de terceros intactas).
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`: `app_version` por defecto `V-02.07` y comentario alineado.
+- `Atlas Balance/scripts/Build-Release.ps1`: parametro `-Version` por defecto `V-02.07`.
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`: `$AppVersion` por defecto `V-02.07`.
+- `Atlas Balance/scripts/install.ps1`: mensaje de error con paquete esperado `AtlasBalance-V-02.07-win-x64.zip`.
+- `.github/workflows/release.yml`: descripcion y default del input `version` a `V-02-07`.
+- `Documentacion/documentacion.md`: punteros de version actual y nombre del paquete actualizados.
+- `Documentacion/Versiones/v-02.07.md`: ya existia como registro de apertura.
+- `Documentacion/Versiones/version_actual.md`: ya apuntaba a V-02.07.
+
+**Archivos tocados:** los listados arriba.
+
+**Comandos ejecutados:** solo `git diff` para verificar cambios. No se compilo ni se instalaron dependencias.
+
+**Resultado de verificacion:** los punteros runtime de `Directory.Build.props`, `package.json`, `SeedData.cs`, los defaults de scripts y CI y la documentacion activa coinciden en `V-02.07`. Las referencias historicas a `V-02.06` en changelog, registro de bugs, log de errores, comentarios de codigo, migraciones, tests y entradas previas de `DOCUMENTACION_CAMBIOS.md` se conservan sin tocar.
+
+**Pendientes:**
+- Generar paquete `AtlasBalance-V-02.07-win-x64.zip` cuando se cierren los pendientes de V-02.06 (gates PostgreSQL/Testcontainers, validacion de restauracion de backups).
+- Mantener `Documentacion/Versiones/v-02.07.md` como bitacora viva del ciclo.
+
+---
 ## 2026-07-24 - V-02.06 - Release V-02.06-win-x64 publicado
 
 **Version:** V-02.06
