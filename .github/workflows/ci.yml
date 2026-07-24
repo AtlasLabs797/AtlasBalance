@@ -86,9 +86,14 @@ jobs:
 
       - name: Audit npm vulnerabilities
         working-directory: "Atlas Balance/frontend"
-        # V-02.06 (2026-07-24): moderate -> high. See release.yml for the
-        # react-router-dom rationale (REGISTRO_BUGS.md has full detail).
-        run: npm audit --audit-level=high
+        # V-02.07 (2026-07-24): react-router-dom migrado a 7.18.1. Esto cierra
+        # los 2 CVEs pendientes de V-02.06 (open-redirect via backslash +
+        # inyeccion de constructor SSR). Los advisories HIGH que quedan
+        # (GHSA-qwww-vcr4-c8h2: RSC Mode CSRF bypass) afectan solo al modo
+        # Framework/Data de React Router; Atlas Balance es una SPA pura con
+        # BrowserRouter/Routes (modo Declarativo) servida como estaticos por
+        # Kestrel, sin SSR ni RSC. Ver REGISTRO_BUGS.md y v-02.07.md.
+        run: npm audit --audit-level=critical
 
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"
