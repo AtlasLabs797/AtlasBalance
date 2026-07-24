@@ -8,6 +8,59 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.06 - Repaso final antes de publicar y disparo de release
+
+**Version:** V-02.06
+
+**Trabajo realizado:** a peticion del operador, ultimo repaso de toda la
+base antes de generar el paquete de release, hacer push a GitHub y
+publicar el Release. Se reviso que `VERSION`, `Directory.Build.props` y
+`frontend/package.json` siguieran alineados (`Check-VersionAlignment.ps1`
+OK), que no quedaran cambios sin commitear (working tree limpio salvo
+esta documentacion) y que los dos bugs "Abiertos" en
+`REGISTRO_BUGS.md` (RLS de identidad/configuracion e
+`IMPORTACION_LOTES` sin soft-delete) siguieran siendo deuda pospuesta a
+V-02.07 de forma deliberada, no bloqueos olvidados.
+
+Se detecto que `Documentacion/Versiones/v-02.06.md` no tenia entrada para
+los tres ultimos commits (`d1014f1b` fix RLS, `449ffd9b` limpieza,
+`47c5f135` revision de seguridad) aunque si estaban en este fichero; se
+anadio una seccion de cierre en `v-02.06.md` con el resumen y la
+verificacion final.
+
+**Verificacion ejecutada:**
+- `dotnet build AtlasBalance.API.csproj` (proyecto aislado): 0 errores,
+  6 warnings preexistentes.
+- `dotnet build AtlasBalance.Watchdog.csproj`: 0 errores, 0 warnings.
+- Compilar el `.sln` completo en un solo comando fue inconsistente en
+  este host (restauracion en paralelo poco fiable entre intentos, no un
+  error de codigo real); se corto tras el segundo intento segun el
+  protocolo anti-encallamiento y se verifico cada proyecto por separado.
+- `npx tsc --noEmit` (frontend): 0 errores.
+- `npm run lint` (`--max-warnings 0`): 0 errores.
+- `npm run test:unit`: 3/3 OK.
+- `Test-AtlasSecrets.ps1`: 19 archivos analizados, 0 hallazgos.
+- `Check-VersionAlignment.ps1 -ExpectedVersion V-02.06`: alineacion OK.
+
+**Sobre el paquete de release:** `scripts/Build-Release.ps1` exige
+`ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` para generar un paquete
+publicable (sin ella solo permite `-AllowUnsignedLocal`, explicitamente
+no publicable). Esa clave vive como secreto de entorno
+`release-signing` en GitHub Actions, no en este host. Por diseno del
+propio proyecto (`.github/workflows/release.yml`), la generacion y
+firma del paquete se hace en CI via `workflow_dispatch`, no en local.
+
+**Archivos tocados:**
+- `Documentacion/Versiones/v-02.06.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Pendientes:**
+- Push de la rama `V-02.06` a `origin`.
+- Disparo de `workflow_dispatch` sobre `release.yml` (version
+  `V-02.06`, runtime `win-x64`) para que CI compile, teste con
+  Testcontainers reales, firme y publique el GitHub Release.
+
+---
 ## 2026-07-23 - V-02.06 - Limpieza de codigo (/simplify): dead code y duplicacion en toda la base
 
 **Version:** V-02.06
