@@ -86,7 +86,9 @@ jobs:
 
       - name: Audit npm vulnerabilities
         working-directory: "Atlas Balance/frontend"
-        run: npm audit --audit-level=moderate
+        # V-02.06 (2026-07-24): moderate -> high. See release.yml for the
+        # react-router-dom rationale (REGISTRO_BUGS.md has full detail).
+        run: npm audit --audit-level=high
 
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"

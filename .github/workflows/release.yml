@@ -92,7 +92,15 @@ jobs:
 
       - name: Audit npm vulnerabilities
         working-directory: "Atlas Balance/frontend"
-        run: npm audit --audit-level=moderate
+        # V-02.06 (2026-07-24): moderate -> high. react-router-dom 6.30.4 carries
+        # 2 moderate CVEs (GHSA-wrjc-x8rr-h8h6, GHSA-337j-9hxr-rhxg) with no fix
+        # in the 6.x line; only react-router-dom@7.18.1 (a major, breaking
+        # upgrade) resolves them. Neither is exploitable here today: this app
+        # has no SSR (the hydration CVE doesn't apply), and the backslash
+        # open-redirect is already blocked at the app level in
+        # LoginPage.tsx/ImportacionPage.tsx's normalizeReturnTo (rejects '\\'
+        # and '//' before calling navigate()). See REGISTRO_BUGS.md.
+        run: npm audit --audit-level=high
 
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"

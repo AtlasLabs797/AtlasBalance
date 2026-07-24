@@ -8,6 +8,43 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.06 - npm audit: fix axios/postcss/brace-expansion, gate ajustado para react-router-dom
+
+**Version:** V-02.06
+
+**Trabajo realizado:** el tercer `workflow_dispatch` (run `30115851973`)
+paso `Test backend` (397/397) pero fallo en `Audit npm vulnerabilities`.
+`package-lock.json` en el working tree ya tenia axios, postcss y
+brace-expansion en versiones seguras (de una instalacion local previa
+nunca commiteada); se confirmo con `npm audit --package-lock-only` en
+una copia aislada en el scratchpad (el `node_modules` real esta
+bloqueado por algo tipo antivirus/ACL: `npm audit fix` fallaba con
+`EPERM` al hacer `unlink` dentro de `node_modules`, incluso con
+`--package-lock-only`, porque sigue tocando `node_modules/.package-lock.json`).
+Quedaban 2 CVEs moderados en `react-router-dom@6.30.4` sin fix en la
+serie 6.x. Se consulto al operador: decidio documentar el riesgo como
+mitigado (ver `REGISTRO_BUGS.md`, entrada 2026-07-24) y bajar el gate de
+`--audit-level=moderate` a `--audit-level=high` en vez de forzar la
+migracion a v7 en mitad del repaso final.
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/package-lock.json` (commiteado por primera vez
+  con axios/postcss/brace-expansion en versiones seguras)
+- `.github/workflows/release.yml`
+- `.github/workflows/ci.yml`
+- `Documentacion/REGISTRO_BUGS.md`
+
+**Verificacion:** `npm audit --package-lock-only` en el `package-lock.json`
+resultante confirma 0 vulnerabilidades high/critical, 2 moderadas
+(react-router-dom, con mitigacion documentada y gate ajustado).
+
+**Pendientes:**
+- Migrar a `react-router-dom@7.x` en V-02.07 y volver a subir el gate a
+  `moderate`.
+- Confirmar en el cuarto `workflow_dispatch` que `Audit npm
+  vulnerabilities` pasa y que la release se firma y publica.
+
+---
 ## 2026-07-24 - V-02.06 - Tercera regresion de test detectada por CI: AlertaServiceTests
 
 **Version:** V-02.06

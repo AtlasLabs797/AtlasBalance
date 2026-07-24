@@ -2,6 +2,46 @@
 
 ## Abiertos
 
+### 2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7 pospuesta a V-02.07
+
+- **Contexto:** el tercer `workflow_dispatch` de `release.yml` (run
+  `30115851973`) paso el job de tests (397/397) pero fallo en
+  `Audit npm vulnerabilities` (`npm audit --audit-level=moderate`).
+  Tres hallazgos high (axios, brace-expansion, postcss) ya se habian
+  resuelto localmente por commits/instalaciones previas sin llegar a
+  commitear el `package-lock.json` actualizado; quedan 2 moderados en
+  `react-router-dom@6.30.4`:
+  - `GHSA-wrjc-x8rr-h8h6`: open redirect via backslash en `<Link>` y
+    `useNavigate`.
+  - `GHSA-337j-9hxr-rhxg`: inyeccion de constructor arbitraria via
+    `deserializeErrors()` en hidratacion SSR de React Router.
+- **Causa raiz:** no existe fix en la serie 6.x (ultima version
+  `6.30.4`); el unico paquete que resuelve ambos CVEs es
+  `react-router-dom@7.18.1`, un salto de version mayor (v6 -> v7) con
+  cambios de API de rutas que tocarian todas las paginas de la app.
+- **Analisis de explotabilidad (decision con el operador,
+  2026-07-24):**
+  - `GHSA-337j-9hxr-rhxg` no aplica: Atlas Balance es una SPA pura
+    (Vite build servido como estaticos por Kestrel), sin SSR de React
+    Router en ningun punto.
+  - `GHSA-wrjc-x8rr-h8h6` ya esta mitigado en el codigo propio antes de
+    llegar a `navigate()`: `normalizeReturnTo` en
+    `frontend/src/pages/LoginPage.tsx:31-38` y
+    `frontend/src/pages/ImportacionPage.tsx:72-79` rechaza cualquier
+    `returnTo` que no empiece por `/`, que empiece por `//`, o que
+    contenga `\`, antes de pasarlo a `navigate()`.
+- **Decision:** no migrar a v7 en mitad del repaso final de V-02.06
+  (regresion de alto riesgo en el routing de toda la app, sin tiempo de
+  regresion completa). Se documenta el CVE como mitigado en la practica
+  y se baja el gate de CI de `--audit-level=moderate` a
+  `--audit-level=high` en `release.yml` y `ci.yml`, con comentario
+  inline explicando el motivo y apuntando a esta entrada.
+- **Pendiente para V-02.07:** evaluar la migracion completa a
+  `react-router-dom@7.x` con tiempo para revisar breaking changes de
+  rutas/loaders y testear navegacion end-to-end antes de subir de
+  nuevo el gate a `moderate`.
+- **Estado:** abierto, con mitigacion documentada y gate ajustado.
+
 ### 2026-07-16 - V-02.06 - RLS en identidad/configuracion pospuesto a V-02.07
 
 - **Contexto:** la auditoria RLS de V-02.06 discutio aplicar RLS a
