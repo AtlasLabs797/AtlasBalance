@@ -8,6 +8,56 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.06 - Release V-02.06-win-x64 publicado
+
+**Version:** V-02.06
+
+**Trabajo realizado:** con el secreto `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM`
+ya cargado por el operador en el entorno `release-signing` de GitHub,
+se disparo un quinto `workflow_dispatch` de `release.yml` (version
+`V-02.06`, runtime `win-x64`, ref `V-02.06`). Job `verify` completo en
+verde (build, 397/397 tests backend con Testcontainers/PostgreSQL
+real, auditoria NuGet, scanner de secretos, `npm audit --audit-level=high`,
+lint, tests unitarios y build de frontend). Job `package` completo en
+verde: `Ensure signing key exists`, `Build signed package` y
+`Publish GitHub Release`.
+
+**Resultado:** GitHub Release `V-02.06-win-x64` publicado como
+`latest` en
+`https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-02.06-win-x64`,
+con los assets `AtlasBalance-V-02.06-win-x64.zip` y
+`AtlasBalance-V-02.06-win-x64.zip.sig` firmados con el par RSA rotado
+en esta misma sesion.
+
+**Resumen de todo el repaso final de V-02.06 (esta sesion, 2026-07-24):**
+1. Revision de estado y documentacion, verificacion estatica
+   (build API/Watchdog aislado, tsc, lint, test:unit, scanner de
+   secretos, alineacion de version).
+2. Push de la rama y primer disparo de release -> 6 tests backend en
+   rojo (nunca ejecutados antes en este sandbox por bloqueo de ACL):
+   corregidos en 2 commits (DTO de autocomplete, catalogo de formatos
+   en `SeedDataTests`, cooldown de `AlertaService`).
+3. Segundo bloqueo: `npm audit` en `moderate` fallaba por
+   react-router-dom 6.30.4 (fix real solo vive en v7, breaking cambio).
+   Decision con el operador: mitigacion documentada + gate bajado a
+   `high`, migracion a v7 pospuesta a V-02.07.
+4. Tercer bloqueo: secreto de firma ausente en GitHub (pendiente
+   operativo abierto desde V-01.09 y nunca cerrado). Se roto un par
+   RSA 4096 nuevo, se actualizo la clave publica en el repo, y el
+   operador cargo la privada como GitHub Secret.
+5. Quinto `workflow_dispatch`: release publicado.
+
+**Pendientes que quedan para V-02.07 (documentados en REGISTRO_BUGS.md):**
+- RLS de identidad/configuracion (`USUARIOS`, `REFRESH_TOKENS`,
+  `INTEGRATION_TOKENS`, `CONFIGURACION`).
+- `IMPORTACION_LOTES` sin soft-delete.
+- Migracion de `react-router-dom` a v7.x y vuelta del gate de npm audit
+  a `moderate`.
+- Instalaciones existentes (V-02-05 o anteriores) necesitan actualizar
+  su `ReleaseSigningPublicKeyPem` local a la clave nueva antes de poder
+  verificar la firma de este paquete.
+
+---
 ## 2026-07-24 - V-02.06 - Rotacion del par de firma de release (clave privada anterior perdida)
 
 **Version:** V-02.06

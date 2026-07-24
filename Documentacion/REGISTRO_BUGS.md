@@ -2,7 +2,7 @@
 
 ## Abiertos
 
-### 2026-07-24 - V-02.06 - Secreto ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM ausente en GitHub, release bloqueada en el job de firma
+### 2026-07-24 - V-02.06 - Cerrado - Secreto ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM ausente en GitHub, release bloqueada en el job de firma
 
 - **Contexto:** con el `verify` de `release.yml` en verde (397/397 tests,
   npm audit en `high`, lint/build limpios), el cuarto
@@ -43,9 +43,14 @@
   4. Actualizar `appsettings.Production.json` con la clave publica
      nueva en cualquier instalacion existente (V-02-05 o anterior)
      antes de que pueda verificar el `.sig` de este release.
-- **Estado:** abierto, bloqueado en la carga del secreto por el
-  operador. El resto de V-02.06 (codigo, tests, npm audit, clave
-  publica) esta verde/listo.
+- **Cierre 2026-07-24:** el operador cargo el secreto en GitHub. Quinto
+  `workflow_dispatch` (run `30118432377`): `verify` y `package` en
+  verde completo, incluidos `Ensure signing key exists`, `Build signed
+  package` y `Publish GitHub Release`. Release publicado en
+  `https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-02.06-win-x64`
+  con `AtlasBalance-V-02.06-win-x64.zip` y `.zip.sig` firmados con la
+  clave nueva.
+- **Estado:** cerrado. Release V-02.06-win-x64 publicado.
 
 ### 2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7 pospuesta a V-02.07
 
