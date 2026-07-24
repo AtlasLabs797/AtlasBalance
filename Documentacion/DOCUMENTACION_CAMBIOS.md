@@ -18393,3 +18393,148 @@ Detalle completo: `Documentacion/REVIEW_REPORT_2026-06-30.md`. Recomendacion: pr
 - Se anadio `MigrationDiscoveryTests`: falla si esas migraciones vuelven a
   desaparecer del ensamblado de migraciones.
 - Verificacion local del nuevo guard: **1/1 OK**.
+
+---
+## 2026-07-24 - V-02.06 - Revision de seguridad de toda la base (/code-review) y correccion de hallazgos
+
+**Version:** V-02.06
+
+**Trabajo realizado:** a peticion del operador, revision de seguridad y
+correctitud de toda la base (no solo el diff pendiente): 12 agentes en
+paralelo (modelo Haiku) cubriendo auth/CSRF/TOTP, integracion OpenClaw +
+Watchdog, RLS y capa de datos (incluidas las migraciones de RLS), controllers,
+services, jobs de Hangfire y todo el frontend. Cada hallazgo se verifico
+manualmente leyendo el codigo real (y, cuando aplicaba, sus llamadores) antes
+de aceptarlo o descartarlo, y los 9 que sobrevivieron la verificacion se
+corrigieron en la misma sesion.
+
+**Falsos positivos descartados tras verificar el codigo real** (no se tocaron):
+- `UsuarioModal.tsx`: el payload de edicion envia `password` y
+  `password_nueva` con el mismo valor, pero `UpdateUsuarioRequest` no tiene
+  propiedad `Password` — System.Text.Json la ignora, no hay bug.
+- `PlazoFijoService.ResolveEstado`: el agente confundio `DateOnly.DayNumber`
+  (recuento absoluto desde 0001-01-01) con dia-del-anio; no hay problema de
+  frontera de anio.
+- `ExtractoTable.openInsertDraftBelow`: el agente asumio orden ascendente;
+  con el orden real (`fila_numero` descendente) y el shift-up del backend
+  (`ExtractosController.Crear`), `insertBeforeFilaNumero = row.fila_numero`
+  si inserta la fila nueva debajo de la fila ancla.
+- `LimpiezaRefreshTokensJob`: el agente asumio que la fila debia desaparecer
+  para que la revocacion surtiera efecto; `AuthService` valida
+  `RevocadoEn.HasValue` en cada uso, independientemente de si el job de
+  limpieza ya borro la fila.
+- `BackupService.CreateBackupAsync`: el agente pidio validar rol admin en el
+  servicio; `BackupsController` ya tiene `[Authorize(Roles = "ADMIN")]` a
+  nivel de clase.
+- `SmtpTestRateLimit`: bypass si `userId` es null; `ConfiguracionController`
+  tambien tiene `[Authorize(Roles = "ADMIN")]` a nivel de clase, por lo que
+  `userId` no deberia ser null en la practica.
+- `UsuariosController.CatalogosPermisos`: posible fuga de titulares/cuentas
+  borrados; `AppDbContext` ya aplica un query filter global de soft-delete
+  via reflexion (linea 596), por lo que ya estan filtrados.
+
+### Correcciones aplicadas
+
+1. **`ConfiguracionController.cs`** (HIGH): `UpdateConfiguracion` cifraba el
+   password SMTP y las API keys (OpenRouter/OpenAI/MiniMax/exchange-rate) con
+   `_secretProtector.ProtectForStorage()` antes de pasarlas a `Upsert()`, que
+   vuelve a cifrarlas porque `IsSensitiveConfigKey` matchea la misma clave.
+   `EmailService` solo desencripta una vez, asi que el secreto quedaba
+   indescifrable en cada guardado de configuracion. Se elimino el cifrado en
+   el llamador; `Upsert()` sigue siendo el unico punto que cifra.
+2. **`CuentaDetailPage.tsx`** (HIGH): `loadCuentaData` no tenia guarda contra
+   respuestas obsoletas; paginacion rapida podia pisar datos nuevos con una
+   respuesta antigua que llega tarde. Se anadio un contador de peticion
+   (`useRef`) que descarta cualquier respuesta que no sea la de la ultima
+   peticion emitida.
+3. **`AlertaService.cs`** (MEDIUM): el cooldown de alerta de saldo bajo solo
+   se registraba tras un envio de email exitoso; si el SMTP fallaba, la
+   alerta se reintentaba en cada ciclo de evaluacion sin backoff. Se movio el
+   registro del cooldown a antes del intento de envio.
+4. **`BackupEncryptionService.cs`** (MEDIUM, seguridad criptografica):
+   `BuildChunkNonce` sobrescribia 8 de los 12 bytes del nonce por-archivo con
+   el contador de fragmento, dejando solo 32 bits reales de entropia (riesgo
+   de reutilizacion de nonce en AES-GCM entre backups distintos con la misma
+   clave). Se separo en `BuildChunkNonceLegacyV1` (sin cambios, solo para
+   poder seguir descifrando backups `.enc` ya existentes) y
+   `BuildChunkNonceV2` (conserva 64 bits de entropia real, el contador solo
+   ocupa los ultimos 4 bytes). El formato de fichero ahora versiona el header
+   (`ATLASBKP1` legado / `ATLASBKP2` nuevo) para que `DecryptAsync` elija el
+   derivador de nonce correcto segun la version detectada.
+5. **`IntegrationAuthMiddleware.cs`** (MEDIUM, seguridad): `TokenAllowsEndpoint`
+   permitia la request cuando `ResolveEndpointScope` devolvia null (path sin
+   segmento reconocido bajo el prefijo OpenClaw), contradiciendo el
+   deny-by-default documentado en el propio comentario `SECURITY (C1)`. Hoy
+   no es explotable (ninguna ruta real del controller cae en ese caso), pero
+   quedaba como trampa para una futura ruta. Se invirtio la condicion:
+   ahora deniega si el endpoint no resuelve.
+6. **`paisScopeStore.ts` / `api.ts`** (LOW/MEDIUM, privacidad): el scope de
+   pais seleccionado quedaba en `localStorage` tras el logout (el `clear()`
+   del store solo releia el valor persistido en vez de borrarlo, y
+   `clearSessionState` en `api.ts` nunca llamaba a este store). En una app
+   LAN con equipos compartidos, el pais del usuario anterior quedaba
+   precargado para el siguiente login. Se corrigio `clear()` para borrar la
+   clave de `localStorage` y se anadio la llamada a `clearSessionState`.
+7. **Migracion `20260724090000_FixExportacionesWriteRlsDeletedAtCheck.cs`**
+   (LOW/MEDIUM, RLS): la policy `exportaciones_write` (creada en
+   `20260522103000_HardenRlsSoftDeleteBackstop`) exigia `deleted_at IS NULL`
+   en el `USING` pero no en el `WITH CHECK`. No era explotable hoy (el
+   `USING` ya filtra antes de que se evalue `WITH CHECK` en un UPDATE, y un
+   INSERT siempre deja `deleted_at` en NULL), pero quedaba asimetrica frente
+   al resto de policies del mismo fichero. Nueva migracion manuscrita-SQL
+   (mismo patron que las anteriores de RLS) que recrea la policy con el
+   `WITH CHECK` alineado.
+8. **`LimpiezaAuditoriaJob.cs`** (LOW, convenciones): purga las tablas de
+   auditoria con `ExecuteDeleteAsync` (hard delete), lo que contradice la
+   regla de soft-delete universal de `CLAUDE.md` si no se documenta como
+   excepcion deliberada. Se anadio un comentario explicando que es una
+   politica de retencion intencional (28 dias) y no un descuido.
+9. **`AuditoriaController.cs`** (LOW, eficiencia): `ExportarCsv` no tenia
+   limite de filas; con un filtro amplio podia materializar en memoria un
+   resultado sin acotar. Se anadio `MaxExportRows = 50_000` con un `Count()`
+   previo que devuelve 400 pidiendo estrechar el filtro si se supera, en vez
+   de truncar el export en silencio.
+
+**Archivos tocados:**
+- `backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `backend/src/AtlasBalance.API/Controllers/AuditoriaController.cs`
+- `backend/src/AtlasBalance.API/Services/AlertaService.cs`
+- `backend/src/AtlasBalance.API/Services/BackupEncryptionService.cs`
+- `backend/src/AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`
+- `backend/src/AtlasBalance.API/Jobs/LimpiezaAuditoriaJob.cs`
+- `backend/src/AtlasBalance.API/Migrations/20260724090000_FixExportacionesWriteRlsDeletedAtCheck.cs` (nuevo)
+- `frontend/src/pages/CuentaDetailPage.tsx`
+- `frontend/src/stores/paisScopeStore.ts`
+- `frontend/src/services/api.ts`
+
+**Comandos ejecutados:**
+```
+dotnet build -p:UseAppHost=false -p:BaseIntermediateOutputPath=<ruta aislada> -p:BaseOutputPath=<ruta aislada>
+npx tsc --noEmit -p tsconfig.json
+npm run lint
+```
+
+**Resultado de verificacion:**
+- Backend: `dotnet build` en 0 errores (los 6 warnings CS0618 son
+  preexistentes, no relacionados con estos cambios).
+- Frontend: `tsc --noEmit` sin errores; `eslint --max-warnings 0` sin salida
+  (limpio).
+- No se ejecuto verificacion visual en navegador ni se aplico la migracion
+  nueva contra una base de datos real en esta sesion (solo compilacion y
+  tipos). La migracion de RLS queda pendiente de `dotnet ef database update`
+  en el proximo arranque con Postgres disponible.
+- La ACL de `backend/src/AtlasBalance.API/obj` seguia bloqueando la
+  compilacion normal (mismo bloqueo ya documentado arriba); se uso de nuevo
+  una ruta de salida aislada.
+
+**Pendientes:**
+- Aplicar la migracion `20260724090000_FixExportacionesWriteRlsDeletedAtCheck`
+  contra la base de datos (via `dotnet ef database update` o al arrancar la
+  API) y confirmar en `psql` que la policy `exportaciones_write` quedo con el
+  `WITH CHECK` corregido.
+- Verificacion manual en navegador de los tres cambios de frontend
+  (paginacion de `CuentaDetailPage`, logout limpiando el scope de pais)
+  sigue pendiente.
+- Revisar si backups `.enc` ya existentes en produccion siguen siendo
+  descifrables (deberian, por el versionado de formato) la primera vez que
+  se restaure uno tras esta actualizacion.

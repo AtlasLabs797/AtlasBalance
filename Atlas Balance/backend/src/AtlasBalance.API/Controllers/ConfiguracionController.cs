@@ -186,7 +186,10 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "smtp_user", request.Smtp.User.Trim(), userId, now);
         if (!string.IsNullOrWhiteSpace(request.Smtp.Password))
         {
-            Upsert(config, "smtp_password", _secretProtector.ProtectForStorage(request.Smtp.Password), userId, now);
+            // Upsert() ya cifra los valores de claves sensibles (IsSensitiveConfigKey) antes
+            // de guardarlos: pasar aqui el valor en claro evita un doble cifrado que dejaria
+            // el secreto indescifrable para EmailService (que solo desencripta una vez).
+            Upsert(config, "smtp_password", request.Smtp.Password, userId, now);
         }
         Upsert(config, "smtp_from", request.Smtp.From.Trim(), userId, now);
 
@@ -204,7 +207,7 @@ public sealed class ConfiguracionController : ControllerBase
         var exchangeApiKey = request.Exchange?.ApiKey;
         if (!string.IsNullOrWhiteSpace(exchangeApiKey))
         {
-            Upsert(config, "exchange_rate_api_key", _secretProtector.ProtectForStorage(exchangeApiKey), userId, now);
+            Upsert(config, "exchange_rate_api_key", exchangeApiKey, userId, now);
         }
 
         Upsert(config, "dashboard_color_ingresos", request.Dashboard.ColorIngresos.Trim(), userId, now);
@@ -218,17 +221,17 @@ public sealed class ConfiguracionController : ControllerBase
         var openRouterApiKey = aiRequest.OpenRouterApiKey;
         if (!string.IsNullOrWhiteSpace(openRouterApiKey))
         {
-            Upsert(config, "openrouter_api_key", _secretProtector.ProtectForStorage(openRouterApiKey), userId, now);
+            Upsert(config, "openrouter_api_key", openRouterApiKey, userId, now);
         }
         var openAiApiKey = aiRequest.OpenAiApiKey;
         if (!string.IsNullOrWhiteSpace(openAiApiKey))
         {
-            Upsert(config, "openai_api_key", _secretProtector.ProtectForStorage(openAiApiKey), userId, now);
+            Upsert(config, "openai_api_key", openAiApiKey, userId, now);
         }
         var miniMaxApiKey = aiRequest.MiniMaxApiKey;
         if (!string.IsNullOrWhiteSpace(miniMaxApiKey))
         {
-            Upsert(config, "minimax_api_key", _secretProtector.ProtectForStorage(miniMaxApiKey), userId, now);
+            Upsert(config, "minimax_api_key", miniMaxApiKey, userId, now);
         }
         Upsert(config, "ai_requests_per_minute", aiRequest.RequestsPorMinuto.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(config, "ai_requests_per_hour", aiRequest.RequestsPorHora.ToString(CultureInfo.InvariantCulture), userId, now);

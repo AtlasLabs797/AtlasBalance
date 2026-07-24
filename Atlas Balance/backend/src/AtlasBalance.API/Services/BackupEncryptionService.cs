@@ -19,7 +19,12 @@ public sealed record EncryptedBackupFile(string Path, long SizeBytes, string Sha
 
 public sealed class BackupEncryptionService : IBackupEncryptionService
 {
-    private static readonly byte[] Magic = "ATLASBKP1"u8.ToArray();
+    // V-02.06: BuildChunkNonceLegacyV1 solo dejaba 4 bytes reales de baseNonce (los otros 8
+    // los pisaba el contador), desperdiciando entropia del nonce de AES-GCM. Los backups ya
+    // cifrados con el formato V1 siguen siendo descifrables: el header identifica la version
+    // y selecciona el derivador de nonce correspondiente. Los backups nuevos usan V2.
+    private static readonly byte[] MagicV1 = "ATLASBKP1"u8.ToArray();
+    private static readonly byte[] MagicV2 = "ATLASBKP2"u8.ToArray();
     private const int ChunkSize = 1024 * 1024;
     private const int TagSize = 16;
     private const int NonceSize = 12;
@@ -49,7 +54,7 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
         await using (var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true))
         await using (var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize, useAsync: true))
         {
-            await destination.WriteAsync(Magic, cancellationToken);
+            await destination.WriteAsync(MagicV2, cancellationToken);
             await destination.WriteAsync(baseNonce, cancellationToken);
 
             var plain = new byte[ChunkSize];
@@ -66,9 +71,9 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
                     break;
                 }
 
-                var nonce = BuildChunkNonce(baseNonce, counter++);
+                var nonce = BuildChunkNonceV2(baseNonce, counter++);
                 using var aes = new AesGcm(key, TagSize);
-                aes.Encrypt(nonce, plain.AsSpan(0, read), cipher.AsSpan(0, read), tag, Magic);
+                aes.Encrypt(nonce, plain.AsSpan(0, read), cipher.AsSpan(0, read), tag, MagicV2);
 
                 BinaryPrimitives.WriteInt32BigEndian(lengthBytes, read);
                 await destination.WriteAsync(lengthBytes, cancellationToken);
@@ -93,9 +98,22 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
         await using var source = new FileStream(encryptedPath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true);
         await using var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize, useAsync: true);
 
-        var header = new byte[Magic.Length];
+        var header = new byte[MagicV2.Length];
         await ReadExactAsync(source, header, cancellationToken);
-        if (!header.AsSpan().SequenceEqual(Magic))
+
+        byte[] aad;
+        Func<byte[], ulong, byte[]> buildNonce;
+        if (header.AsSpan().SequenceEqual(MagicV2))
+        {
+            aad = MagicV2;
+            buildNonce = BuildChunkNonceV2;
+        }
+        else if (header.AsSpan().SequenceEqual(MagicV1))
+        {
+            aad = MagicV1;
+            buildNonce = BuildChunkNonceLegacyV1;
+        }
+        else
         {
             throw new InvalidOperationException("El backup cifrado no tiene un formato reconocido.");
         }
@@ -121,9 +139,9 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
             await ReadExactAsync(source, tag, cancellationToken);
             await ReadExactAsync(source, cipher.AsMemory(0, length), cancellationToken);
 
-            var nonce = BuildChunkNonce(baseNonce, counter++);
+            var nonce = buildNonce(baseNonce, counter++);
             using var aes = new AesGcm(key, TagSize);
-            aes.Decrypt(nonce, cipher.AsSpan(0, length), tag, plain.AsSpan(0, length), Magic);
+            aes.Decrypt(nonce, cipher.AsSpan(0, length), tag, plain.AsSpan(0, length), aad);
             await destination.WriteAsync(plain.AsMemory(0, length), cancellationToken);
         }
     }
@@ -191,11 +209,32 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
             "Intervencion manual requerida.");
     }
 
-    private static byte[] BuildChunkNonce(byte[] baseNonce, ulong counter)
+    // Formato legado (ATLASBKP1): pisaba los 8 bytes centrales del baseNonce de 12 bytes
+    // con un contador de 8 bytes, dejando solo 4 bytes (32 bits) de entropia real por
+    // archivo. Se conserva sin cambios, solo para poder descifrar backups ya existentes.
+    private static byte[] BuildChunkNonceLegacyV1(byte[] baseNonce, ulong counter)
     {
         var nonce = new byte[NonceSize];
         Buffer.BlockCopy(baseNonce, 0, nonce, 0, NonceSize);
         BinaryPrimitives.WriteUInt64BigEndian(nonce.AsSpan(4), counter);
+        return nonce;
+    }
+
+    // V-02.06: conserva los primeros 8 bytes (64 bits) del baseNonce aleatorio y solo
+    // pisa los ultimos 4 bytes con el contador de fragmento. A 1 MiB por fragmento, un
+    // contador de 32 bits cubre hasta 4 EiB por backup, muy por encima de cualquier
+    // tamano real, y sube la entropia efectiva del nonce de 32 a 64 bits.
+    private static byte[] BuildChunkNonceV2(byte[] baseNonce, ulong counter)
+    {
+        if (counter > uint.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "El backup supera el numero maximo de fragmentos cifrables (4294967295) con el esquema de nonce actual.");
+        }
+
+        var nonce = new byte[NonceSize];
+        Buffer.BlockCopy(baseNonce, 0, nonce, 0, NonceSize);
+        BinaryPrimitives.WriteUInt32BigEndian(nonce.AsSpan(NonceSize - 4), (uint)counter);
         return nonce;
     }
 

@@ -142,6 +142,13 @@ public sealed class AlertaService : IAlertaService
         }
         else
         {
+            // Se registra el intento (cooldown) antes de enviar: si el SMTP esta caido, el
+            // fallo no debe dejar el cooldown sin marcar, o la alerta se reintentaria en
+            // cada ciclo de evaluacion en lugar de esperar el cooldown configurado.
+            alertaAplicable.FechaUltimaAlerta = now;
+            await UpsertCuentaCooldownAsync(cooldownKey, now, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
             try
             {
                 await _emailService.SendSaldoBajoAlertAsync(
@@ -165,10 +172,6 @@ public sealed class AlertaService : IAlertaService
                 return;
             }
         }
-
-        alertaAplicable.FechaUltimaAlerta = now;
-        await UpsertCuentaCooldownAsync(cooldownKey, now, cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(
             actorUserId,

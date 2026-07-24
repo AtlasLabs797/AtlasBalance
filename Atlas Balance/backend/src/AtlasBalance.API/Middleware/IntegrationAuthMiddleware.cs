@@ -273,8 +273,12 @@ public sealed class IntegrationAuthMiddleware
             return false;
         }
 
+        // Deny-by-default: si el path no resuelve a un segmento de endpoint conocido,
+        // no hay forma de comprobar el scope del token, asi que se deniega en vez de
+        // permitir. Esto cierra el hueco de una futura ruta bajo este prefijo cuyo
+        // path ResolveEndpointScope no sepa parsear a un segmento no nulo.
         var endpoint = ResolveEndpointScope(path);
-        return endpoint is null || scopes.Contains(endpoint, StringComparer.OrdinalIgnoreCase);
+        return endpoint is not null && scopes.Contains(endpoint, StringComparer.OrdinalIgnoreCase);
     }
 
     private static string? ResolveEndpointScope(PathString path)

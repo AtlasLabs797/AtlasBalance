@@ -58,6 +58,10 @@ export const usePaisScopeStore = create<PaisScopeState>((set, get) => ({
   },
 
   clear: () => {
-    set({ selectedPaisId: readStoredPaisId(), paises: [], loading: false, lastError: null });
+    // Debe borrar tambien el localStorage: si no, el pais seleccionado por el
+    // usuario anterior queda persistido y se carga para el siguiente usuario
+    // que inicie sesion en el mismo navegador (maquina compartida en LAN).
+    localStorage.removeItem(STORAGE_KEY);
+    set({ selectedPaisId: '', paises: [], loading: false, lastError: null });
   },
 }));

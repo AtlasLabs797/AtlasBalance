@@ -1,6 +1,7 @@
 ﻿import axios from 'axios';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PermisoUsuario, Usuario } from '@/types';
@@ -33,6 +34,7 @@ const clearSessionState = () => {
   useAuthStore.getState().logout();
   usePermisosStore.getState().clear();
   useAlertasStore.getState().clear();
+  usePaisScopeStore.getState().clear();
 };
 
 const pushErrorToast = (message: string) => {
