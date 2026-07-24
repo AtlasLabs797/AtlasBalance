@@ -8,6 +8,72 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.07 - CodeQL #15 js/xss-through-dom suppression placement (CERRADO)
+
+**Version:** V-02.07
+
+**Trabajo realizado:** recolocar la suppression inline que el commit V-02.06
+`11a56c3` anadio en el mockup HTML para que CodeQL la reconozca. La alerta
+#15 (`js/xss-through-dom`, CWE-79/116, severidad high) en
+`Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html:196`
+sigue abierta en el panel de Code Scanning porque el comentario
+`// codeql[js/xss-through-dom]` quedo debajo del sumidero en linea 197.
+CodeQL solo acepta suppressions en la misma linea que el alert o
+inmediatamente antes; en una linea posterior no las reconoce.
+
+**Archivos tocados:**
+
+- `Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html`
+  - Bloque `// codeql[js/xss-through-dom] ...` movido de lineas 197-201
+    (post-alert) a lineas 196-200 (pre-alert). El sumidero
+    `const doc = new DOMParser().parseFromString(template, 'text/html');`
+    pasa a linea 201. Diff: 1 insercion + 1 borrado.
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  - Entrada `2026-07-24 - V-02.07 - CodeQL re-scan #15
+    js/xss-through-dom supresion mal colocada (LB-CODEQL-015, CERRADO)`
+    con contexto, causa, solucion, verificacion y regla nueva
+    ("suppression tiene que estar donde CodeQL la busca").
+- `Documentacion/Versiones/v-02.07.md`
+  - Bloque `Cierre CodeQL #15 - js/xss-through-dom suppression placement`
+    con alcance, cambios, verificacion y archivos tocados.
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+  - Esta entrada.
+
+**Justificacion (literal, ya aprobada en V-02.06):** el `template` que llega
+a `DOMParser.parseFromString` se construye desde un payload JSON literal
+declarado en el propio fichero (`<script type="__bundler/template">`),
+no acepta input externo. El mockup no se sirve en runtime (verificado:
+`Build-Release` excluye `Documentacion/Diseno/mockups/`; `wwwroot/` no
+se genera). Patron de bundler self-contained del mockup de referencia
+canonico del diseno V-02-02.
+
+**Comandos ejecutados:**
+
+- `gh api /repos/AtlasLabs797/AtlasBalance/code-scanning/alerts/15`
+  -> state=open, line 196 col 51-59. Confirmado que la alerta sigue
+  viva en el panel.
+- `git diff -- Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html`
+  -> 1 insercion + 1 borrado, solo recolocacion del bloque de comentario.
+- `git diff --stat` confirma que no se tocan otros archivos de la
+  aplicacion; solo el mockup y los tres Markdown de documentacion.
+
+**Verificacion:**
+
+- Sin reescritura del bundler: habria roto el mockup de referencia del
+  diseno V-02-02 (declarado en `DOCUMENTACION_TECNICA.md:4450`).
+- Sin `paths-ignore`: no es necesario porque la suppression bien
+  colocada cierra el alert.
+- CodeQL re-scan automatico al pushear a `main` debe cerrar #15; si no,
+  re-evaluar `paths-ignore` para `Documentacion/Diseno/mockups/` en
+  `.github/codeql/config.yml` como ultimo recurso.
+
+**Pendiente no bloqueante:**
+
+- Confirmar `state=fixed` en el panel tras el re-scan (no automatico,
+  esperar minutos). Si no cierra, abrir issue nuevo y aplicar
+  `paths-ignore`.
+
+---
 ## 2026-07-24 - V-02.07 - Vulnerabilidad #17 React Router open redirect (CERRADO)
 
 **Version:** V-02.07

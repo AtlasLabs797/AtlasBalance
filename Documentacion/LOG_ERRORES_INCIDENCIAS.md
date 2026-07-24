@@ -3206,21 +3206,21 @@
 
 ## 2026-07-24 - V-02.07 - CodeQL re-scan #15 js/xss-through-dom supresion mal colocada (LB-CODEQL-015, CERRADO)
 
-- **Contexto:** tras subir el fix V-02.06 (commit 11a56c3), el panel de GitHub
-  Code Scanning reabrio la alerta #15 js/xss-through-dom (CWE-79/116,
-  severidad high) en Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html:196.
-  La alerta #14 (mismo fichero, misma linea) aparecia como ixed pero
+- **Contexto:** tras subir el fix V-02.06 (commit `11a56c3`), el panel de GitHub
+  Code Scanning reabrio la alerta #15 `js/xss-through-dom` (CWE-79/116,
+  severidad high) en `Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html:196`.
+  La alerta #14 (mismo fichero, misma linea) aparecia como `fixed` pero
   realmente solo se anadio una suppression que CodeQL no reconocio: el
   comentario quedo **debajo** de la linea del alert, no en la linea
   inmediata anterior ni en la misma linea.
-- **Causa:** CodeQL solo acepta // codeql[rule-id] justificacion en la misma
+- **Causa:** CodeQL solo acepta `// codeql[rule-id] justificacion` en la misma
   linea que el sumidero, o como bloque de comentario inmediatamente anterior.
-  El patron del bundler (DOMParser + replaceWith con 	emplate derivado de
-  un <script type="__bundler/template"> textual del propio mockup) es legitimo
+  El patron del bundler (`DOMParser + replaceWith` con `template` derivado de
+  un `<script type="__bundler/template">` textual del propio mockup) es legitimo
   y no tainted, pero la suppression hay que ponerla donde CodeQL la vea.
-- **Solucion:** mover el bloque // codeql[js/xss-through-dom] ... de las
+- **Solucion:** mover el bloque `// codeql[js/xss-through-dom] ...` de las
   lineas 197-201 (post-alert) a las lineas 196-200 (pre-alert, inmediatamente
-  antes de const doc = new DOMParser().parseFromString(template, 'text/html');
+  antes de `const doc = new DOMParser().parseFromString(template, 'text/html');`
   que ahora pasa a la linea 201). Diff de 1 insercion + 1 borrado, solo el
   mockup. Misma justificacion que la entrada LB-CODEQL-014 (V-02.06):
   payload hardcodeado en el propio fichero, no se sirve en runtime,
