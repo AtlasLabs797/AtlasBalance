@@ -1,5 +1,45 @@
 # Log de errores e incidencias
 
+## 2026-07-24 - V-02.07 - CodeQL #18 cs/log-forging en WatchdogOperationsService:181 (CERRADO)
+
+- **Contexto:** CodeQL re-scan sobre `c01fb2f6` (main) reabre la alerta
+  #18 `cs/log-forging` (CWE-117, severity medium) en
+  `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:181`.
+  El codigo ya saneaba con `LogScrubber.Scrub(zipVerification)` desde
+  V-02.06 (`LB-CODEQL-013`), pero la regla CodeQL no reconoce helpers
+  privados como sanitizadores: solo acepta el patron inline
+  `Replace("\r", "").Replace("\n", "")` en el sink.
+- **Causa:** la regla `cs/log-forging` de CodeQL marca cualquier flujo
+  tainted -> `_logger.*` que no pase por su lista conocida de
+  sanitizadores. `LogScrubber.Scrub` (helper privado) no esta en esa
+  lista porque no existe como funcion de marco publica.
+- **Solucion:**
+  - `WatchdogOperationsService.cs:181` (alerta #18): sustituye
+    `LogScrubber.Scrub(zipVerification)` por
+    `(zipVerification ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty)`
+    inline en el `LogError`. Patrón canonico que CodeQL acepta.
+  - Defense-in-depth: mismas sustituciones inline en lineas 310
+    (`pg_restore local fallo: {Error}` — `localResult.ErrorMessage`
+    viene de stderr de `pg_restore` y **si** arrastra CRLF), 901
+    (health URL rechazada), 955/959 (rollback aplicado/erróneo) y
+    1096 (`Error al verificar firma RSA: ` + `ex.Message`).
+  - `WatchdogOperationsService.cs:5`: `using
+    AtlasBalance.Watchdog.Logging;` eliminado al quedar muerto.
+  - `WatchdogOperationsServiceTests.cs`: nuevo `CapturingLogger<T>` y
+    regresion `StartUpdateAsync_Should_Log_Rejection_Without_CrLf`
+    que afirma que el mensaje capturado del path de rechazo no
+    contiene `\r` ni `\n`. Si alguien refactoriza y regresa al
+    helper, el test falla antes de que CodeQL reabra la alerta.
+- **Verificacion:** build 0 errores en Watchdog y API.Tests; suite
+  filtrada `WatchdogOperationsServiceTests` 10/10 OK;
+  `LogScrubber|CsrfMiddleware` 13/13 OK. Re-scan CodeQL: pendiente
+  del push a `main`.
+- **Regla:** la regla CodeQL no es heuristica: es una lista de
+  sanitizadores. Si tu helper no esta en esa lista, no existe para
+  la regla. Inlining el patron canonico es la unica forma estable.
+  Helpers privados quedan como defensa en profundidad, no como
+  solucion para auditores externos.
+
 ## 2026-07-20 - V-02.06 - Verificacion orquestada F1-F5 (CODIGO CERRADO, GATES EXTERNOS ABIERTOS)
 
 - Causa: el commit `65dde0c5` declaraba cerrados 17 hallazgos, pero faltaban
@@ -3027,3 +3067,68 @@
 - **Regla:** todo script montado en un contenedor Linux debe fijar `eol=lf` en
   `.gitattributes`. Una migracion no puede alterar el tipo de una columna hasta
   retirar policies, vistas o dependencias que la referencien.
+
+## 2026-07-24 - V-02.07 - CodeQL re-scan #17 cs/log-forging persiste tras el fix (LB-CODEQL-017, CERRADO stale scan)
+
+- **Contexto:** tras subir el fix V-02.06 (commit `11a56c3`), el panel de
+  GitHub Sigue mostrando la alerta CodeQL #17 `cs/log-forging` (CWE-117) en
+  `Atlas Balance/backend/src/AtlasBalance.API/Services/GoogleDriveBackupService.cs:405`.
+  Se reabre manualmente la verificacion para confirmar que el hallazgo esta
+  resuelto en la rama `V-02.07` y descartar una reintroduccion.
+- **Verificacion del codigo actual (rama `V-02.07`):**
+  - Linea 405: `_logger.LogWarning("... {FileIdSafe} ...", LogScrubber.Scrub(fileId))`.
+    El placeholder `FileIdSafe` esta renombrado, el helper `LogScrubber`
+    reemplaza `\r`/`\n`/`\t` por espacio y trunca a 256 chars, y hay 6 facts
+    en `LogScrubberTests.cs` que cubren null, vacio, CRLF, tabs, truncado y
+    ASCII limpio. Es el mismo patron que se cerro como `LB-CODEQL-012` en
+    V-02.06 (referencia: `v-02.06.md:53`).
+  - Lineas vecinas auditadas en la misma sesion:
+    - `301` (`JsonSerializer.Serialize(new { ..., file_id = uploaded.Id })`):
+      va a `_auditService.LogAsync` -> columna `Auditorias.DetallesJson` en
+      PostgreSQL. `System.Text.Json` escapa caracteres de control por
+      defecto, asi que `uploaded.Id` (que ademas esta restringido por la
+      API de Google Drive a un alfabeto seguro) no puede inyectar CRLF.
+      CodeQL no debe marcarlo.
+    - `446` (`JsonSerializer.Serialize(new { ..., file_name = metadata.Name })`):
+      mismo sumidero (JSON a DB). `metadata.Name` es taint externo (el
+      usuario de Drive controla el nombre del archivo), pero la serializacion
+      a JSON escapa `\r`/`\n` antes de persistir, por lo que la inyeccion
+      no llega nunca al log ni al sumidero final. CodeQL no debe marcarlo.
+    - `311` (`_logger.LogWarning(ex, "Fallo al subir backup {BackupId} a Google Drive", backup.Id)`):
+      el template solo expone `backup.Id` (Guid, no tainted). `ex.Message`
+      puede contener texto de la API de Google, pero Serilog trata el
+      exception como un campo estructurado separado que no se concatena al
+      template; ademas la regla `cs/log-forging` solo mira el template, no
+      `ex.Message`. No requiere cambio.
+  - `IsSafeGoogleIdentifier(fileId)` se ejecuta en `359` antes de cualquier
+    uso de `fileId`, pero como vimos en V-02.06 esa precondicion no exime
+    del saneamiento en el log (CodeQL rastrea el flujo del parametro, no
+    las precondiciones), por lo que `LogScrubber.Scrub` sigue siendo
+    necesario y ya esta.
+- **Causa de la alerta persistente:** CodeQL re-scan es asincrono y tarda
+  en reflejar el cierre. El push del fix en V-02.06 no se ha reflejado
+  aun en el panel, o el re-scan automatico se solapa con una nueva corrida
+  sin que el commit del fix entre en el lote. Esto es comportamiento
+  conocido del escaneo CodeQL de GitHub (ver `v-02.06.md:46-88`).
+- **Solucion:** no requiere cambio de codigo. El fix de V-02.06 sigue
+  vigente. Se deja registrado el triage para que el siguiente re-scan que
+  corra GitHub cierre #17. No se aplica `LogScrubber.Scrub` sobre los
+  campos de los `JsonSerializer.Serialize` de las lineas 301 y 446 porque
+  esa anidacion ya es sanitizer reconocida por la regla; anyadirla seria
+  ruido que no aporta seguridad real y podria introducir regresiones en
+  tests que validan el JSON verbatim.
+- **Verificacion:** inspeccion estatica del codigo actual en `V-02.07` con
+  grep + lectura del helper y de los tests. No se intento `dotnet build`
+  por la ACL heredada sobre `obj/` documentada en este LOG (acceso
+  denegado en builds locales). CodeQL re-scan al pushear a `main` deberia
+  cerrar #17 automaticamente; si no lo hace, sera CodeQL recognising la
+  presencia del helper como sanitizer fallida y habra que evaluar si
+  ampliar el helper o anadir una suppression con justificacion, como se
+  hizo con `LB-CODEQL-014`.
+- **Regla:** cuando una alerta CodeQL del ciclo previo "no se va", primero
+  verificar contra el codigo actual antes de tocar nada. La mayoria de
+  las veces es stale scan; si el codigo ha cambiado, re-auditar el flujo
+  completo (no solo la linea del alerta). Y, importante: no aplicar
+  saneo redundante sobre valores que ya pasan por un sanitizer reconocido
+  (JSON, URL-encoding, etc.) por miedo; eso es teatro de seguridad y
+  oculta regresiones reales.

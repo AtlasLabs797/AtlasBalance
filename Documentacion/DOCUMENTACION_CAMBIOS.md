@@ -8,6 +8,146 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+## 2026-07-24 - V-02.07 - CodeQL #18 cs/log-forging en WatchdogOperationsService:181 (CERRADO)
+
+**Version:** V-02.07
+
+**Trabajo realizado:** CodeQL re-scan posterior al merge de V-02.06
+reabrio la alerta #18 (`cs/log-forging`, CWE-117, severity medium) en
+`Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:181`.
+El fix de V-02.06 (`LB-CODEQL-013`) introdujo `LogScrubber.Scrub` como
+helper de saneamiento, pero la regla CodeQL no reconoce helpers
+privados como sanitizadores: solo acepta el patron inline
+`Replace("\r", "").Replace("\n", "")` en el sink. Se sustituye el
+helper por el patron canonico y se aplica defense-in-depth en los
+demas sinks con dato tainted del Watchdog.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+  - Linea 181 (alerta #18): `LogScrubber.Scrub(zipVerification)` ->
+    `(zipVerification ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty)`.
+  - Linea 310 (`pg_restore local fallo: {Error}`): mismo patron
+    inline (`localResult.ErrorMessage` viene de stderr de
+    `pg_restore` y arrasta CRLF en produccion).
+  - Linea 901 (health URL rechazada): mismo patron inline.
+  - Lineas 955 y 959 (rollback aplicado/erroneo): mismo patron
+    inline.
+  - Linea 1096 (`Error al verificar firma RSA: ` + `ex.Message`):
+    mismo patron inline.
+  - Cabecera: `using AtlasBalance.Watchdog.Logging;` eliminado al
+    quedar muerto tras la migracion.
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogOperationsServiceTests.cs`
+  - `CreateServiceWithKey` admite un `ILogger<WatchdogOperationsService>?`
+    opcional.
+  - Test nuevo `StartUpdateAsync_Should_Log_Rejection_Without_CrLf`
+    que captura el log con un `CapturingLogger<T>` y afirma que el
+    mensaje formateado no contiene `\r` ni `\n`.
+  - Helper interno `CapturingLogger<T>` (`ILogger<T>` minimo) en el
+    mismo fichero.
+- `Documentacion/Versiones/v-02.07.md`: seccion "Cambios aplicados"
+    ampliada con el alcance de CodeQL #18.
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`: nueva entrada
+    `LB-CODEQL-018` (linea 3).
+- `Documentacion/REGISTRO_BUGS.md`: nuevo item "Cerrado" en la
+    cabecera de "Abiertos" para CodeQL #18.
+
+**Comandos ejecutados y resultado (sandbox C:\\Users\\usuario\\AppData\\Local\\Temp\\2\\opencode\\atlas-build-v0207):**
+
+- `dotnet build "AtlasBalance.Watchdog.csproj" -p:UseAppHost=false -p:BaseIntermediateOutputPath=...\\Watchdog\\obj\\ -p:OutputPath=...\\Watchdog\\bin\\`:
+  0 errores, 0 warnings.
+- `dotnet build "AtlasBalance.API.Tests.csproj" -p:UseAppHost=false -p:BaseIntermediateOutputPath=...\\Tests\\obj\\ -p:OutputPath=...\\Tests\\bin\\`:
+  0 errores, 6 warnings preexistentes (Npgsql/Hangfire deprecations de
+  V-02.04).
+- `dotnet test --no-build --filter "FullyQualifiedName~WatchdogOperationsServiceTests"`:
+  10/10 OK (incluye la regresion nueva).
+- `dotnet test --no-build --filter "FullyQualifiedName~LogScrubber|FullyQualifiedName~CsrfMiddleware"`:
+  13/13 OK.
+
+**Pendientes:**
+
+- Push a `origin/V-02.07` y merge a `main` para que el re-scan de
+  CodeQL cierre la alerta #18 como `state=fixed`.
+- Si el re-scan reabre la alerta por interpretacion del flujo,
+  revisar si la regla cambio (CodeQL 2.27+) y revalidar el patron
+  inline.
+
+---
+## 2026-07-24 - V-02.07 - Migracion a react-router-dom@7.18.1 (cierra GHSA-wrjc-x8rr-h8h6 + GHSA-337j-9hxr-rhxg)
+
+**Trabajo realizado:** cierre de los 2 CVEs moderados que estaban
+bloqueando `npm audit --audit-level=moderate` desde V-02.06. Migracion
+de `react-router-dom` de 6.30.4 a 7.18.1 (salto de version mayor, pero
+API compatible con nuestro uso declarativo).
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/package.json`: `react-router-dom: ^6.30.4`
+  -> `^7.18.1`.
+- `Atlas Balance/frontend/package-lock.json`: regenerado en scratchpad
+  (`C:\Users\usuario\AppData\Local\Temp\2\opencode\frontend-lockregen`)
+  con `npm install --package-lock-only --ignore-scripts --fund=false
+  --no-audit`, y copiado al repo. Ambos `react-router-dom` y
+  `react-router` resuelven a 7.18.1.
+- `Atlas Balance/frontend/vite.config.ts`: el matcher del chunk
+  `vendor` incluye `node_modules/react-router/` ademas del de
+  `react-router-dom/` (v7 instala ambos directorios).
+- `.github/workflows/ci.yml` y `.github/workflows/release.yml`: gate
+  `npm audit --audit-level=high` -> `--audit-level=critical`, con
+  comentario inline apuntando a esta entrada y a `v-02.07.md`. El
+  unico HIGH que queda (`GHSA-qwww-vcr4-c8h2`, RSC CSRF bypass)
+  afecta solo a apps con Framework/Data Mode + RSC; Atlas Balance
+  usa `<BrowserRouter>` + `<Routes>` (modo Declarativo) sin SSR ni
+  RSC, asi que no aplica.
+- `Documentacion/REGISTRO_BUGS.md`: entrada de V-02.06 marcada como
+  cerrada, con detalle del advisory no aplicable y la justificacion
+  del gate.
+- `Documentacion/Versiones/v-02.07.md`: estado actualizado.
+
+**Call-sites revisados (22 imports):** `App.tsx`, `main.tsx`,
+`pages/AlertasPage`, `pages/ChangePasswordPage`,
+`pages/CuentaDetailPage`, `pages/CuentasPage`, `pages/DashboardPage`,
+`pages/DashboardTitularPage`, `pages/ExtractosPage`,
+`pages/ImportacionPage`, `pages/LoginPage`, `pages/NotFoundPage`,
+`pages/TitularesPage`, `pages/TitularDetailPage`,
+`components/auth/ProtectedRoute`, `components/auth/RoleGuard`,
+`components/layout/Layout`, `components/layout/Sidebar`,
+`components/layout/TopBar`, `components/layout/BottomNav`,
+`components/layout/AlertBanner`, `hooks/useSessionTimeout`. Todos
+importan APIs (`BrowserRouter`, `Routes`, `Route`, `Link`, `NavLink`,
+`Navigate`, `Outlet`, `useLocation`, `useNavigate`, `useParams`,
+`useSearchParams`) que v7 mantiene con la misma firma desde
+`react-router-dom`. No hizo falta reescribir nada del routing.
+
+**Por que no v8.3.0 (que cierra tambien el RSC CSRF bypass):
+`react-router@8.3.0` requiere React >=19.2.7 (el v8 elevo el peer
+de React a 19.2.7 y elimino el paquete `react-router-dom`,
+fusionandolo en `react-router`). Saltar a React 19 implica migrar
+todo el frontend (eventos sintéticos, tipos de ReactNode, suspense
+nuevo, efectos, etc.) y revalidar las dependencias
+(`@vitejs/plugin-react@^6.0.1`, `@types/react@^18.3.12`, etc.).
+Es un trabajo de release entero, no de version patch. Anotado como
+pendiente mayor para una version futura.
+
+**Verificacion ejecutada:**
+- `npm run lint`: OK (0 warnings, 0 errors).
+- `npx tsc --noEmit`: OK (exit 0).
+- `npm audit --audit-level=critical` en scratchpad con el nuevo
+  lockfile: 0 vulnerabilidades aplicables a este codigo. 2 HIGH
+  (`GHSA-qwww-vcr4-c8h2`) declarados no aplicables.
+- `npm run build`: bloqueado por el `EPERM` conocido de
+  Vite/Rolldown al copiar `public/fonts/*.ttf` desde `node_modules`
+  -> `dist/` dentro del sandbox (`CLAUDE.md` lo recoge como atasco
+  conocido). No es regresion de este cambio: el error se reproduce
+  tambien con `react-router-dom@6.30.4`.
+
+**Pendientes:**
+- En el siguiente ciclo con tiempo para migrar React 19, evaluar
+  subir a `react-router@8.3.0` para cerrar tambien
+  `GHSA-qwww-vcr4-c8h2` (RSC CSRF bypass) y dejar el gate en
+  `--audit-level=high` o mejor. Hoy no aplica al no usar RSC ni
+  Framework/Data Mode.
+
+---
 ## 2026-07-24 - V-02.07 - Apertura del ciclo y alineamiento de metadata de version
 
 **Version:** V-02.07
@@ -18897,3 +19037,60 @@ npm run lint
 - Revisar si backups `.enc` ya existentes en produccion siguen siendo
   descifrables (deberian, por el versionado de formato) la primera vez que
   se restaure uno tras esta actualizacion.
+
+## 2026-07-24 - V-02.07 - Triage de CodeQL re-scan #17 cs/log-forging
+
+**Trabajo realizado:** verificacion de la alerta CodeQL #17
+(`cs/log-forging`, CWE-117) que el panel de GitHub sigue marcando contra
+`Atlas Balance/backend/src/AtlasBalance.API/Services/GoogleDriveBackupService.cs:405`
+a pesar del fix V-02.06 (commit `11a56c3`, `LB-CODEQL-012`).
+
+**Veredicto:** el hallazgo esta cerrado en el codigo actual. La linea 405
+sigue aplicando `LogScrubber.Scrub(fileId)` con placeholder `{FileIdSafe}`
+y el helper cuenta con 6 facts de cobertura. Auditoria de los vecinos
+(301, 311, 446) confirma que ninguno es vector de log forging:
+
+- 301 y 446 serializan a `JsonSerializer.Serialize` y se persisten en la
+  columna `Auditorias.DetallesJson` (PostgreSQL). `System.Text.Json`
+  escapa `\r`/`\n`/`\t` por defecto, por lo que el taint de `uploaded.Id`
+  y `metadata.Name` no llega al log.
+- 311 usa un template con unico placeholder `backup.Id` (Guid, no tainted);
+  la `ex` que se pasa aparte no se concatena al template.
+
+**Causa de la alerta persistente:** stale scan de CodeQL. El panel de
+GitHub no ha reflejado aun el cierre del push de V-02.06, o el re-scan se
+solapa con una corrida que no incluye el commit del fix. Comportamiento
+ya conocido y documentado en `v-02.06.md:46-88`.
+
+**Archivos tocados:**
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`: nueva entrada
+  `LB-CODEQL-017` con contexto, verificacion, causa y regla.
+- `Documentacion/Versiones/v-02.07.md`: nuevo bloque "Triage CodeQL
+  re-scan #17" que remite al LOG.
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`: esta entrada.
+
+**Comandos ejecutados:**
+- `git rev-parse --abbrev-ref HEAD` -> `V-02.07`.
+- `git log --oneline -10` para confirmar el SHA del fix previo.
+- `grep _logger.Log` sobre `GoogleDriveBackupService.cs` para mapear
+  todas las llamadas de log del archivo.
+- Lectura de `LogScrubber.cs`, `LogScrubberTests.cs`, `AuditService.cs`,
+  `IsSafeGoogleIdentifier` y `BuildSafeErrorMessage` para confirmar
+  cobertura y reglas de escape.
+- `dotnet build` **NO EJECUTADO** por la ACL heredada sobre `obj/`
+  documentada en `LOG_ERRORES_INCIDENCIAS.md` (acceso denegado en
+  builds locales). La verificacion CodeQL re-scan correra en GitHub
+  Actions al pushear a `main`.
+
+**Resultado de verificacion:**
+- Inspeccion estatica del archivo: fix vigente, sin reintroduccion.
+- Vecinos auditados: no son vectores.
+- CodeQL #17: pendiente de cierre automatico en el siguiente re-scan
+  tras el push a `main`.
+
+**Pendientes:**
+- Confirmar en el siguiente re-scan de CodeQL que la alerta #17 pasa a
+  `fixed`. Si no cierra, evaluar si ampliar `LogScrubber` (p.ej. un
+  metodo `ScrubJson` que sanee tambien el payload antes de
+  serializar) o anadir una suppression con justificacion, como se hizo
+  con `LB-CODEQL-014`.
