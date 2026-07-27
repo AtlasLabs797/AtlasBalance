@@ -1,5 +1,27 @@
 # Documentacion tecnica
 
+## 2026-07-27 - V-02.07 - Fuente unica del logo SVG
+
+- El SVG del logo de Atlas Balance vive en
+  `Documentacion/Diseno/brand/atlas-balance-logo.svg` como fuente unica
+  de verdad. Antes vivia en
+  `Atlas Balance/frontend/public/logos/Atlas Balance.svg`, donde se
+  servia como peticion HTTP separada por el favicon y la mascara CSS
+  del sidebar / login.
+- Desde V-02.07 el SVG va inlineado:
+  - Favicon en `frontend/index.html` (data URL, conserva la media
+    query de tema oscuro).
+  - Mascara CSS en `frontend/src/styles/variables.css` (variable
+    `--logo-mask` que consume `.app-brand-logo` y `.auth-logo-image`).
+- `Atlas Balance/frontend/public/logos/` queda solo con PNGs
+  (`Atlas Balance.png` para `apple-touch-icon`, `Atlas Labs.png` para
+  el footer del login). El SVG ya no se sirve como asset en runtime.
+- Si cambia el logo: editar la fuente en
+  `Documentacion/Diseno/brand/atlas-balance-logo.svg`, regenerar el
+  PNG en `frontend/public/logos/Atlas Balance.png` si hace falta, y
+  actualizar las dos copias inlineadas (`<link rel="icon">` en
+  `index.html` y `--logo-mask` en `variables.css`).
+
 ## 2026-07-20 - V-02.06 - Operaciones largas, idempotencia y RLS
 
 - `BACKUP_OPERATIONS` persiste manual/Drive/restore con soft-delete, FK,

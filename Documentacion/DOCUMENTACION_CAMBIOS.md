@@ -9,6 +9,63 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-27 - V-02.07 - Inline del logo SVG critico (favicon + brand mark)
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+- Eliminar una peticion HTTP redundante por navegacion inlineando el unico SVG critico above-the-fold: `Atlas Balance.svg` (1,3 KB).
+- El SVG se usaba en 3 sitios, todos above-the-fold:
+  1. `<link rel="icon">` en `index.html` (favicon, en cada navegacion).
+  2. `mask: url(...)` en `.app-brand-logo` (sidebar, primer pantallazo del dashboard).
+  3. `mask: url(...)` en `.auth-logo-image` (login, primer pantallazo de la app).
+- El SVG solo necesita silueta para `mask` (el color viene del `background`), asi que la version inlineada para CSS prescinde del bloque `<style>` interno; el favicon si conserva el bloque con la media query de `prefers-color-scheme: dark` para que el icono de la pestaña respete el tema.
+- Mover `Atlas Balance/frontend/public/logos/Atlas Balance.svg` a `Documentacion/Diseno/brand/atlas-balance-logo.svg` como fuente unica de verdad. `public/logos/` queda solo con PNGs (`Atlas Balance.png`, `Atlas Labs.png`).
+- No se tocan `lucide-react` (ya pre-cargado en `icons-*.js` via `modulepreload`) ni `Icons.tsx` (JSX `<svg>` literal inlineado en el bundle).
+
+**Archivos tocados:**
+- `Atlas Balance/frontend/index.html` (linea 19: `<link rel="icon">` con data URL inline).
+- `Atlas Balance/frontend/src/styles/variables.css` (anadida variable `--logo-mask` en el `:root`).
+- `Atlas Balance/frontend/src/styles/layout/shell.css` (`.app-brand-logo` usa `var(--logo-mask)`).
+- `Atlas Balance/frontend/src/styles/auth.css` (`.auth-logo-image` usa `var(--logo-mask)`).
+- `Atlas Balance/frontend/public/logos/Atlas Balance.svg` (**eliminado**, movido a Documentacion).
+- `Documentacion/Diseno/brand/atlas-balance-logo.svg` (**nuevo**, fuente del logo).
+- `Documentacion/Versiones/v-02.07.md` (bloque de cierre).
+- `Documentacion/DOCUMENTACION_TECNICA.md` (nota de fuente unica del logo).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (este bloque).
+
+**Comandos ejecutados:**
+- `Get-ChildItem`, `Select-String`, `Move-Item`, `Get-Content`, `npm.cmd run lint -- --max-warnings 0`, `npm.cmd exec tsc -- --noEmit`, `npm.cmd run build` (con `VITE_BUILD_OUT_DIR` en `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-logo\`, workaround del `EPERM` conocido al escribir en `frontend/dist/`), servidor estatico Python finito en `127.0.0.1:5180` con timeout para `curl.exe` del HTML y CSS resultantes.
+
+**Resultado de verificacion (mediciones antes/despues):**
+
+| Metrica | Antes | Despues | Delta |
+|---|---|---|---|
+| `index.html` (dist) | 2213 bytes | 3557 bytes | +1344 bytes (favicon inline) |
+| CSS bundle (dist) | 193892 bytes | 196521 bytes | +2629 bytes (logo-mask inline, ~140 bytes de duplicacion autoprefixer en `-webkit-mask:var(--logo-mask)` — quirk de lightningcss, inocuo) |
+| Referencias a `/logos/Atlas Balance.svg` en HTML servido | 1 | 0 | -1 |
+| Referencias a `/logos/Atlas Balance.svg` en CSS servido | 4 (2 selectores x mask + -webkit-mask) | 0 | -4 |
+| Referencias a `data:image/svg` en HTML servido | 0 | 1 | +1 |
+| Referencias a `data:image/svg` en CSS servido | 0 | 1 (definicion de `--logo-mask`) | +1 |
+
+**Peticiones HTTP eliminadas por carga de pagina:** 1 en cada ruta (login, dashboard, cualquier navegacion) — el favicon SVG ya no se pide como archivo externo.
+**Peticiones CSS eliminadas:** 1 (la mascara del logo) — la mascara viaja inlineada en el bundle CSS cacheado inmutablemente por `Cache-Control: public, max-age=31536000, immutable` que ya emite el backend para `/assets/*`.
+
+**Verificacion:**
+- `npm.cmd run lint -- --max-warnings 0`: 0 errores, 0 warnings.
+- `npm.cmd exec tsc -- --noEmit`: 0 errores.
+- `npm.cmd run build`: 0 errores, 2540 modulos transformados, 3.46 s.
+- Servidor estatico finito en `127.0.0.1:5180` (`SimpleHTTPRequestHandler` con `socket.timeout = 5`), `curl.exe` a `/` y a `/assets/index-DGpROBdj.css`. Resultado: 0 hits de `/logos/Atlas Balance.svg` en HTML y CSS; 1 hit de `data:image/svg` en cada uno (favicon + variable).
+- `Select-String -Path "Atlas Balance/frontend/src" -Pattern "Atlas Balance.svg"`: 0 hits en codigo fuente.
+
+**Bloqueado:**
+- Verificacion e2e con Playwright que cuente `requests.filter(r => r.url().includes('Atlas Balance.svg'))` requiere un servidor de larga duracion y cae fuera del protocolo anti-encallamiento de AGENTS.md §8. La inspeccion estatica del HTML+CSS servidos cubre el mismo objetivo (verificar que 0 referencias externas lleguen al cliente) sin arrancar Vite dev ni un stack completo.
+
+**Pendiente:**
+- Ninguno. La optimizacion esta cerrada y verificada por inspeccion estatica + build limpio.
+
+---
+
 ## 2026-07-27 - V-02.07 - Unificacion de instrucciones de proyecto en AGENTS.md
 
 **Version:** V-02.07
