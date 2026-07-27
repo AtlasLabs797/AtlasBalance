@@ -9,6 +9,48 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-27 - V-02.07 - Unificacion de instrucciones de proyecto en AGENTS.md
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+- Fusion de los 4 archivos de instrucciones (`CLAUDE.md` y `AGENTS.md` en raiz + los dos duplicados dentro de `Atlas Balance/`) en un unico documento canonico: `AGENTS.md` en la raiz. Antes habia ~90% de contenido duplicado entre raiz y subcarpeta, con divergencias reales (la copia de `Atlas Balance/` tenia estructura desactualizada, sin `Constants/`, con `appsettings.Development.json` en vez del `.template`, y sin la seccion de higiene antimalware).
+- **De 4 archivos a 2.** `CLAUDE.md` (raiz) queda como puntero de 4 lineas al canonico; Claude Code lee `CLAUDE.md`, Codex y OpenCode leen `AGENTS.md`, y ambos acaban en el mismo texto. `Atlas Balance/AGENTS.md` y `Atlas Balance/CLAUDE.md` se **eliminan**: los agentes cargan solos los archivos de instrucciones de directorios padre (Claude Code lee los `CLAUDE.md` ascendentes; Codex fusiona los `AGENTS.md` desde la raiz del repo hasta el cwd), asi que una copia anidada no aportaba nada y solo servia para divergir. El origen de los 4 archivos era esa multiplicacion: 2 niveles de carpeta x 2 convenciones de agente.
+- Regla anadida al encabezado del canonico: no crear copias en subcarpetas.
+- Contenido nuevo anadido: seccion "Como trabajar" con los cuatro principios de las guidelines Karpathy (pensar antes de codificar, simplicidad primero, cambios quirurgicos, ejecucion por objetivos) mas tabla de anti-patrones y tabla de conversion de tareas imperativas en objetivos verificables.
+- Reorganizacion sin perdida: se anadio numeracion de secciones, una seccion "Antes de tocar codigo" con el checklist de arranque (version_actual.md -> LOG_ERRORES -> SKILLS_LOCALES -> asociar version), y se absorbio la regla de timeouts que solo existia en el `AGENTS.md` de raiz. Se elimino la duplicacion de las reglas anti-encallamiento, que estaban repetidas en tres sitios (protocolo, testing y AGENTS raiz).
+
+**Rutas corregidas frente a la version anterior:**
+- `tests/` estaba colgando de `Atlas Balance/` cuando en realidad vive en `Atlas Balance/backend/tests/AtlasBalance.API.Tests`.
+- Anadidos al arbol: `Logging/`, `Properties/`, `ConfigurationDefaults.cs`, `appsettings.Production.json.template`, `.env.example`, `tools/`, `global.json`, `README.md`, `PRODUCT.md`, `CONTRIBUTING.md`, `SECURITY.md`.
+- `Documentacion/` ahora lista los archivos que las propias reglas obligan a mantener (`DOCUMENTACION_TECNICA.md`, `DOCUMENTACION_USUARIO.md`, `LOG_ERRORES_INCIDENCIAS.md`, `REGISTRO_BUGS.md`, `SKILLS_LOCALES.md`), que antes se mencionaban en prosa pero no aparecian en el arbol.
+- Comandos frecuentes: anadidos `dotnet test`, `npm run lint`, `npm run test:unit` y `Check-VersionAlignment.ps1`; ejemplo de `Build-Release.ps1` actualizado de `V-02-03` a `V-02-07`.
+- `Otros/` y `Skills/` marcados como "fuera de Git, solo en algunos checkouts" (no existen en este clone; estan en `.gitignore`).
+- Ejemplo de rama de GitHub actualizado de `v1.0.0` a `V-02.07`, que es el formato real que usa el repo.
+- Stack: "Vite 8" verificado contra `frontend/package.json` (`vite ^8.0.16`), se mantiene.
+
+**Archivos tocados:**
+- `AGENTS.md` (raiz) - reescrito completo, ahora canonico.
+- `CLAUDE.md` (raiz) - reducido a puntero.
+- `Atlas Balance/AGENTS.md` - **eliminado** (`git rm`).
+- `Atlas Balance/CLAUDE.md` - **eliminado** (`git rm`).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (este bloque).
+
+**Comandos ejecutados:**
+- Inspeccion de estructura real con `ls` sobre raiz, `Atlas Balance/`, `backend/src`, `backend/tests`, `frontend/src`, `Documentacion/`, `Documentacion/Versiones/` y `scripts/`.
+- `node -e "require('./package.json')"` sobre `Atlas Balance/frontend` para leer scripts npm reales.
+- Sin builds ni tests: el cambio es solo documentacion, no toca codigo.
+
+**Resultado de verificacion:**
+- Verificado: todas las rutas y comandos del nuevo `AGENTS.md` contrastados contra el arbol real del repositorio.
+- Verificado: `ls "Atlas Balance"` no devuelve ya ningun `AGENTS.md`/`CLAUDE.md`; el arbol del canonico ya no los menciona.
+- No aplica: lint/build/tests, no hay cambio de codigo.
+
+**Pendientes:**
+- Nada impide reintroducir un `CLAUDE.md` con reglas sueltas en una subcarpeta y volver a la divergencia. Queda como regla escrita en el encabezado del canonico, no como enforcement automatico.
+
+---
+
 ## 2026-07-27 - V-02.07 - Auditoria IDOR y cierre de recomendacion V-01.06
 
 **Version:** V-02.07
