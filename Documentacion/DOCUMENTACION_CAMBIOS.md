@@ -8,6 +8,48 @@ Regla de trabajo desde ahora:
 - No cerrar una tarea sin dejar evidencia de verificacion.
 
 ---
+
+## 2026-07-27 - V-02.07 - Auditoria IDOR y cierre de recomendacion V-01.06
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+- Auditoria estatica de IDOR sobre los 22 controllers + 4 services de autorizacion. Veredicto: IDOR bien cubierto en V-02.07 con tres capas de defensa (auth JWT/cookies, autorizacion por servicio, RLS en BD como backstop).
+- Verificacion de los 4 huecos que quedaron pendientes en el plan: `ConciliacionController`, `DashboardController`, `SistemaController`/`FormatosImportacionController`/`NotificacionesAdminController`/`PaisesController`, e `IntegracionesController`. **Los cuatro estan limpios**: cada `{id:guid}` pasa por `CanAccess*Async` o por un role gate `ADMIN`.
+- Cierre de la recomendacion V-01.06 (`DOCUMENTACION_CAMBIOS.md:7278`): tests xUnit de IDOR a nivel de controller para `Titulares`, `Cuentas` y `Revision`. 10 facts nuevos:
+  - `CuentasControllerTests.cs`: 3 facts (`Obtener`/`Resumen` con cuenta fuera de scope, `Obtener` con titular soft-deleted).
+  - `TitularesControllerTests.cs` (nuevo): 4 facts (`Obtener` con titular fuera de scope, soft-deleted, admin bypass, `Listar` filtrando scope).
+  - `RevisionControllerTests.cs` (nuevo): 3 facts (`ActualizarEstado` con extracto fuera de scope -> 403, payload nulo -> 400, happy path).
+
+**Archivos tocados:**
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/CuentasControllerTests.cs` (3 facts nuevos).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/TitularesControllerTests.cs` (nuevo, 4 facts).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RevisionControllerTests.cs` (nuevo, 3 facts + stubs `StubUserAccessService`/`StubRevisionService`).
+- `Documentacion/Versiones/v-02.07.md` (bloque "Cierre de la recomendacion IDOR V-01.06").
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md` (entrada `LB-IDOR-001`).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (este bloque).
+
+**Comandos ejecutados:**
+- `dotnet build "Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj\ -p:BaseOutputPath=...bin\` sobre `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-idor-v0207` -> 0 errores, 6 warnings preexistentes.
+- `dotnet restore "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -p:BaseIntermediateOutputPath=...test-obj\` -> OK.
+- `dotnet build "Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --no-restore -p:UseAppHost=false -p:BaseIntermediateOutputPath=...test-obj\ -p:BaseOutputPath=...test-bin\` -> 0 errores, 6 warnings preexistentes.
+- `dotnet test --filter "FullyQualifiedName~TitularesControllerTests|FullyQualifiedName~CuentasControllerTests|FullyQualifiedName~RevisionControllerTests"` -> **18/18 PASS**.
+- `dotnet test --filter` ampliada a `UserAccessServiceTests|ManualProcessResponseTests|ConciliacionServiceTests|DashboardServiceTests|IntegrationAuthorizationServiceTests|IntegrationAuthMiddlewareTests` -> **59/59 PASS**, sin regresiones.
+
+**Resultado de verificacion:**
+- IDOR cubre los 4 huecos pendientes sin necesidad de fix nuevo.
+- Tests a nivel de controller ahora existen para `Titulares`, `Cuentas` y `Revision` (los tres controllers que mas exponen IDs de recursos del usuario).
+- El proyecto de tests **compila limpio** en este host por primera vez desde V-02.06: el truco fue no pasar `--packages` al restore (con `--packages` el restore quedaba incompleto y faltaban xunit/FluentAssertions en el feed local).
+
+**Pendientes:**
+- El proyecto de tests sigue arrastrando errores preexistentes de V-02.06 (`LOG_ERRORES_INCIDENCIAS.md:139-167`) que se manifiestan si se omite el flag de restore correcto. Documentado.
+- La regla "controller nuevo con `{id:guid}` debe tener test IDOR" queda pendiente de enforcement automatico (no implementado; queda como recordatorio para code review).
+
+**Decisiones tecnicas:**
+- Para `RevisionControllerTests` se opta por un stub `IRevisionService` que simula el `UnauthorizedAccessException` que `RevisionService.SetEstadoAsync` lanza cuando `CanReviewCuentaAsync` devuelve false. Asi el test verifica la propagacion controller -> servicio sin necesitar BD real para revision.
+- Para los tests de `Titulares` y `Cuentas` se usan `AppDbContext` InMemory + `ClaimsPrincipal` simulando un `GERENTE` con `PermisosUsuario` para un titular/cuenta ajeno. Patron identico al existente en `CuentasControllerTests.cs:269-286` (helper `BuildController`).
+
+---
 ## 2026-07-24 - V-02.07 - Vulnerabilidad #17 React Router open redirect (CERRADO)
 
 **Version:** V-02.07

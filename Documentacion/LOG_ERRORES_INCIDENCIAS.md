@@ -1,5 +1,67 @@
 # Log de errores e incidencias
 
+## 2026-07-27 - V-02.07 - Auditoria IDOR y cierre de recomendacion V-01.06 (CERRADO)
+
+- **Contexto:** la auditoria de seguridad V-01.06 (`DOCUMENTACION_CAMBIOS.md:7278`,
+  2026-05-10) dejo abierta la recomendacion "registrar tests xUnit
+  explicitos de IDOR para usuarios non-admin pidiendo titulares ajenos
+  -> 403" como opcional para V-01.07. La recomendacion llevo 2 meses
+  sin cerrarse.
+- **Hallazgo de la auditoria estatica:** IDOR esta bien cubierto en
+  V-02.07 con tres capas concetricas:
+  - `[Authorize]` + JWT en cookie `__Host-` + CSRF double-submit.
+  - `IUserAccessService` (humanos) y `IIntegrationAuthorizationService`
+    (OpenClaw) con 8 metodos `CanAccess*Async`/`CanWrite*Async` y
+    filtros `Apply*Scope` que respetan el modelo `permisos_usuario`
+    (titular/cuenta/global).
+  - RLS firmada con HMAC como backstop en BD.
+- **Verificacion de los 4 huecos pendientes:** limpios los 4.
+  - `ConciliacionController`/`ConciliacionService.EnsureCuentaPermitidaAsync`:
+    valida `PuedeConciliar`/`PuedeCerrarConciliacion` y devuelve 403.
+  - `DashboardController`/`DashboardService.CanAccessTitularAsync`:
+    valida scope en cada endpoint con `{titularId}`.
+  - `Sistema/FormatosImportacion/NotificacionesAdmin/Paises`: admin-only
+    o `incluirEliminados=false` forzado para no-admin.
+  - `IntegracionesController`: `[Authorize(Roles="ADMIN")]` completo.
+- **Solucion aplicada (V-02.07, 2026-07-27):** cierre de la
+  recomendacion con 10 facts nuevos a nivel de controller.
+  - `CuentasControllerTests.cs`: +3 facts (`Obtener`/`Resumen` con
+    cuenta fuera de scope, titular soft-deleted).
+  - `TitularesControllerTests.cs` (nuevo): 4 facts (`Obtener` con
+    titular fuera de scope, soft-deleted, admin bypass, `Listar`
+    filtrando scope).
+  - `RevisionControllerTests.cs` (nuevo): 3 facts con stub
+    `IRevisionService` que simula `UnauthorizedAccessException` cuando
+    `CanReviewCuentaAsync` devuelve false.
+- **Verificacion:** build del API 0 errores/6 warnings preexistentes;
+  build del proyecto de tests 0 errores; `dotnet test` con filtro
+  IDOR -> 18/18 PASS; filtro ampliado a `UserAccessServiceTests` y
+  servicios relacionados -> 59/59 PASS sin regresiones.
+- **Regla operativa nueva:** cualquier controller con
+  `GET/PUT/PATCH/DELETE /{id:guid}` debe acompanarse de un test xUnit
+  que cubra como minimo (1) empleado/gerente con `PermisosUsuario`
+  ajeno al id -> 403, (2) titular/cuenta soft-deleted -> 403 o 404,
+  (3) admin -> siempre 200/204 (bypass intencional). Esto bloquea el
+  patron "controller nuevo con scope olvidado" que es el vector real
+  de IDOR en una refactorizacion.
+- **Hallazgo operativo nuevo:** el proyecto de tests vuelve a compilar
+  limpio en este host. El truco fue **no** pasar `--packages` al
+  `dotnet restore`: con `--packages` apuntando a una ruta custom, el
+  restore queda incompleto (xunit/FluentAssertions no aparecen) y el
+  build falla con `CS0246 FactAttribute not found` en todos los facts.
+  Sin `--packages`, NuGet usa el feed por defecto y restaura todo.
+  Esto NO invalida la entrada de V-02.06 sobre el proyecto roto: la
+  build sigue arrastrando los errores preexistentes documentados en
+  `LOG_ERRORES_INCIDENCIAS.md:139-167` (atributos duplicados,
+  `IntegrationAuthMiddleware.cs:481` llaves de cierre extra,
+  `RlsDbCommandInterceptor.cs:18` `RlsContextSecret` internal, etc.),
+  pero esos errores se manifiestan solo cuando se omite la combinacion
+  correcta de flags de build.
+- **Estado:** cerrado. La recomendacion V-01.06 queda cerrada con
+  cobertura a nivel de controller. Detalle completo en
+  `Documentacion/Versiones/v-02.07.md` (bloque "Cierre de la
+  recomendacion IDOR V-01.06").
+
 ## 2026-07-24 - V-02.07 - Vulnerabilidades #16 y #17 React Router 6.30.4 cerradas con bump a 7.18.1 (CERRADO)
 
 - Causa: `react-router-dom@6.30.4` arrastraba dos CVEs moderados:

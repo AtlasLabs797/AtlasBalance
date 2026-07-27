@@ -266,6 +266,145 @@ public sealed class CuentasControllerTests
         summary.PlazoFijo.CuentaReferenciaNombre.Should().BeNull();
     }
 
+    [Fact]
+    public async Task Obtener_Should_Return_Forbid_When_Cuenta_Is_Outside_User_Scope()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularPermitidoId = Guid.NewGuid();
+        var titularBloqueadoId = Guid.NewGuid();
+        var cuentaPermitidaId = Guid.NewGuid();
+        var cuentaBloqueadaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.idor.cuentas@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente IDOR Cuentas",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.AddRange(
+            new Titular { Id = titularPermitidoId, Nombre = "Titular Permitido", Tipo = TipoTitular.EMPRESA },
+            new Titular { Id = titularBloqueadoId, Nombre = "Titular Bloqueado", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaPermitidaId, TitularId = titularPermitidoId, Nombre = "Cuenta Permitida", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaBloqueadaId, TitularId = titularBloqueadoId, Nombre = "Cuenta Bloqueada", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            TitularId = titularPermitidoId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var permitida = await controller.Obtener(cuentaPermitidaId, false, CancellationToken.None);
+        var bloqueada = await controller.Obtener(cuentaBloqueadaId, false, CancellationToken.None);
+
+        permitida.Should().BeOfType<OkObjectResult>();
+        bloqueada.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task Resumen_Should_Return_Forbid_When_Cuenta_Is_Outside_User_Scope()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularPermitidoId = Guid.NewGuid();
+        var titularBloqueadoId = Guid.NewGuid();
+        var cuentaBloqueadaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.idor.resumen@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente IDOR Resumen",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.AddRange(
+            new Titular { Id = titularPermitidoId, Nombre = "Titular Permitido", Tipo = TipoTitular.EMPRESA },
+            new Titular { Id = titularBloqueadoId, Nombre = "Titular Bloqueado", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaBloqueadaId,
+            TitularId = titularBloqueadoId,
+            Nombre = "Cuenta Bloqueada",
+            Divisa = "EUR",
+            Activa = true
+        });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            TitularId = titularPermitidoId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Resumen(cuentaBloqueadaId, "1m", CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task Obtener_Should_Return_Forbid_When_Titular_Is_SoftDeleted_For_NonAdmin()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.idor.softdeleted@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente IDOR SoftDeleted",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular Eliminado",
+            Tipo = TipoTitular.EMPRESA,
+            DeletedAt = DateTime.UtcNow
+        });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Huérfana",
+            Divisa = "EUR",
+            Activa = true
+        });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            TitularId = titularId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Obtener(cuentaId, false, CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
     private static CuentasController BuildController(AppDbContext db, Guid userId, RolUsuario role = RolUsuario.ADMIN)
     {
         var controller = new CuentasController(db, new UserAccessService(db), new AuditService(db), new NoOpPlazoFijoService());
