@@ -1,7 +1,7 @@
 ﻿{
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_app;Password=CAMBIAR_PASSWORD_APP_AQUI",
-    "MigrationConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_owner;Password=CAMBIAR_PASSWORD_OWNER_AQUI"
+    "DefaultConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_app;Password=CAMBIAR_PASSWORD_APP_AQUI;Application Name=AtlasBalance.API;Maximum Pool Size=20;Minimum Pool Size=0",
+    "MigrationConnection": "Host=localhost;Port=5432;Database=atlas_balance;Username=atlas_balance_owner;Password=CAMBIAR_PASSWORD_OWNER_AQUI;Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum Pool Size=0"
   },
   "JwtSettings": {
     "Secret": "GENERAR-CLAVE-SECRETA-MINIMO-32-CARACTERES-AQUI",

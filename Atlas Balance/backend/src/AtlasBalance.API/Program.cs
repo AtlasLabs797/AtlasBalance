@@ -224,7 +224,10 @@ builder.Services.AddHangfire(config => config
     .UsePostgreSqlStorage(options =>
         options.UseNpgsqlConnection(builder.Configuration.GetConnectionString("DefaultConnection")),
         CreateHangfireStorageOptions()));
-builder.Services.AddHangfireServer();
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = builder.Configuration.GetValue("Database:HangfireWorkerCount", 2);
+});
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

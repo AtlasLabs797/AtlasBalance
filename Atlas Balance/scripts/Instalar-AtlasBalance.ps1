@@ -512,8 +512,8 @@ function Write-AppSettings {
     # V-02-05 (CONFIG-002): anadir sslmode=require a la connection string cuando el
     # host NO es localhost. Para localhost (caso comun) el SSL es opcional.
     $sslMode = if ($DbHost -eq "localhost" -or $DbHost -eq "127.0.0.1") { "" } else { ";sslmode=require" }
-    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword$sslMode"
-    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword$sslMode"
+    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword$sslMode;Application Name=AtlasBalance.API;Maximum Pool Size=20;Minimum Pool Size=0"
+    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword$sslMode;Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum Pool Size=0"
     $forwardedKnownProxies = if ($UseReverseProxy) { @($ReverseProxyIp) } else { @() }
     $allowedHosts = if ($UseReverseProxy) {
         "$effectivePublicHost;$ServerName;localhost"

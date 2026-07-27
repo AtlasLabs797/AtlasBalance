@@ -117,6 +117,9 @@ function Parse-ConnectionString {
         Database = if ($map.ContainsKey("database")) { $map["database"] } else { "atlas_balance" }
         Username = if ($map.ContainsKey("username")) { $map["username"] } elseif ($map.ContainsKey("user id")) { $map["user id"] } else { "atlas_balance_app" }
         Password = if ($map.ContainsKey("password")) { $map["password"] } else { "" }
+        ApplicationName = if ($map.ContainsKey("application name")) { $map["application name"] } else { "" }
+        MaximumPoolSize = if ($map.ContainsKey("maximum pool size")) { $map["maximum pool size"] } else { "" }
+        MinimumPoolSize = if ($map.ContainsKey("minimum pool size")) { $map["minimum pool size"] } else { "" }
     }
 }
 
@@ -377,7 +380,10 @@ function Resolve-MigrationConnectionForConfig {
     # instalador. Mantener consistencia para que la API y el actualizador
     # usen el mismo modo SSL.
     $sslMode = if ($host -eq "localhost" -or $host -eq "127.0.0.1") { "" } else { ";sslmode=require" }
-    return "Host=$host;Port=$port;Database=$database;Username=$user;Password=$password$sslMode"
+    $applicationName = if ([string]::IsNullOrWhiteSpace($ownerConn.ApplicationName)) { "AtlasBalance.Migrate" } else { $ownerConn.ApplicationName }
+    $maximumPoolSize = if ([string]::IsNullOrWhiteSpace($ownerConn.MaximumPoolSize)) { "4" } else { $ownerConn.MaximumPoolSize }
+    $minimumPoolSize = if ([string]::IsNullOrWhiteSpace($ownerConn.MinimumPoolSize)) { "0" } else { $ownerConn.MinimumPoolSize }
+    return "Host=$host;Port=$port;Database=$database;Username=$user;Password=$password$sslMode;Application Name=$applicationName;Maximum Pool Size=$maximumPoolSize;Minimum Pool Size=$minimumPoolSize"
 }
 
 function Find-PostgresDump {

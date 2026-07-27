@@ -3381,3 +3381,101 @@
   {AlgoSafe}, queda explicito que el valor ya esta saneado. La regla
   CodeQL marca las fuentes HTTP; el barrido manual cubre el resto para
   no quedarnos solo en el minimo que la regla exige.
+
+## 2026-07-28 - V-02.07 - Pool Npgsql explicito y WorkerCount Hangfire (CERRADO)
+
+- **Causa:** la documentacion (`Documentacion/SPEC.md:175,199` y la nota
+  "16" en `SPEC.md:4253`) afirmaba que el pool Npgsql estaba fijado a
+  20 conexiones, pero las cadenas reales en
+  `AtlasBalance.API/appsettings.Production.json.template:3-4`,
+  `AtlasBalance.API/appsettings.Development.json.template:3-4`,
+  `Atlas Balance/scripts/Instalar-AtlasBalance.ps1:514-516` y
+  `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1:341-381` no
+  declaraban ningun parametro de pool. En la practica Npgsql aplicaba
+  los defaults de version 8.0.6 (`Pooling=true`, `Maximum Pool
+  Size=100`, `Minimum Pool Size=0`), por lo que la documentacion y el
+  runtime divergian: 20 declarado, 100 efectivo. Ademas, Hangfire se
+  registraba con `AddHangfireServer()` sin opciones
+  (`Program.cs:236`), heredando el `WorkerCount` por defecto de
+  Hangfire 1.8.23 (`min(ProcessorCount * 5, 20)`). En una maquina de
+  cuatro nucleos eso son 20 workers compitiendo por el mismo pool.
+- **Solucion aplicada:**
+  1. `AtlasBalance.API/appsettings.Production.json.template:3-4` y
+     `AtlasBalance.API/appsettings.Development.json.template:3-4`
+     declaran `Application Name=AtlasBalance.API;Maximum Pool
+     Size=20;Minimum Pool Size=0` en `DefaultConnection` y
+     `Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum
+     Pool Size=0` en `MigrationConnection`. Los valores de pool se
+     inyectan despues de `sslmode` para que el orden de la cadena siga
+     siendo estable entre el instalador y el actualizador.
+  2. `AtlasBalance.API/Program.cs:236-239` sustituye
+     `AddHangfireServer()` por
+     `AddHangfireServer(options => { options.WorkerCount =
+     builder.Configuration.GetValue("Database:HangfireWorkerCount",
+     2); })`. El default de 2 sirve a 4-8 usuarios con margen para
+     backup, export y la cola de OpenClaw. Se deja como tunnable por
+     configuracion para subirlo en V-02.08 con datos reales.
+  3. `Atlas Balance/scripts/Instalar-AtlasBalance.ps1:515-516` escribe
+     los mismos parametros de pool en `$connection` y
+     `$migrationConnection`. Las instalaciones nuevas arrancan ya con
+     la politica explicita.
+  4. `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1:114-122`
+     extiende `Parse-ConnectionString` para reconocer `Application
+     Name`, `Maximum Pool Size` y `Minimum Pool Size` y preservarlos
+     cuando se regenera una cadena. `Actualizar-AtlasBalance.ps1:383-386`
+     hace que `Resolve-MigrationConnectionForConfig` inyecte los
+     defaults (`AtlasBalance.Migrate` / 4 / 0) si la cadena resuelta
+     por la cascada BACKUP-02 no los trae. Asi un upgrade de una
+     instalacion legacy deja la `MigrationConnection` lista sin
+     intervencion manual.
+  5. `Documentacion/SPEC.md:175,199,4253` se reescribe para distinguir
+     `DefaultConnection` (20) y `MigrationConnection` (4), mencionar
+     `Application Name` y `Hangfire WorkerCount`, y dejar de afirmar
+     "20 conexiones" a secas.
+- **Verificacion:**
+  - `dotnet build AtlasBalance.API.csproj -p:UseAppHost=false
+    -p:BaseIntermediateOutputPath=...\obj\
+    -p:BaseOutputPath=...\bin\` redirigido a
+    `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-pool\`
+    por la ACL conocida de `bin/obj`: **0 errores, mismos 6 warnings
+    preexistentes** (5 `UseXminAsConcurrencyToken` obsoleto + 1
+    `PostgreSqlStorage` obsoleto). No hay warnings nuevos.
+  - `dotnet build AtlasBalance.Watchdog.csproj` con la misma
+    redireccion: **0 errores, 0 warnings**. El Watchdog no consume
+    pool Npgsql directamente (lanza `pg_dump`/`pg_ctl` como procesos
+    externos), asi que no necesita configuracion de pool.
+  - La suite backend filtrada no Testcontainers no se ha podido
+    ejecutar en este host por el gate conocido de
+    `AtlasBalance.API.Tests.csproj` documentado en
+    `LOG_ERRORES_INCIDENCIAS.md:441-469` (BLOQUEADO desde 2026-07-16
+    V-02.06) y `Documentacion/Versiones/v-02.07.md:83-92`. Confirmado
+    en esta sesion: `dotnet test` sobre el proyecto de tests reporta
+    961 errores `CS0234`/`CS0246` (namespaces y atributos xunit sin
+    `using`) que afectan a `AtlasBalance.API/Migrations/*.cs` cuando
+    el proyecto de tests intenta reconstruir dependencias. Los
+    archivos que rompen (`IntegrationAuthMiddleware.cs:481`,
+    `Program.cs:235`, `RlsDbCommandInterceptor.cs:18`,
+    `ImportacionService.cs:350`, `BackupService.cs:192`,
+    `IntegracionesControllerTests.cs:36-37` y el resto del lote) son
+    **pre-existentes** a este alcance y no se han tocado. La build del
+    proyecto API solo compila limpio, lo que confirma que los cambios
+    de este alcance (templates + script + `Program.cs` con `GetValue`
+    y default explicito) no introducen regresiones. La suite pasa en
+    CI; la validacion automatica queda bloqueada por el gate hasta
+    que se cierre la deuda pre-existente.
+  - `grep -n "Maximum Pool Size" Atlas Balance` devuelve solo las dos
+    plantillas, `Instalar-AtlasBalance.ps1:515-516` y
+    `Actualizar-AtlasBalance.ps1:386`. No hay referencias en codigo
+    C#.
+  - `git diff --check`: OK.
+- **Riesgo conocido:** no se valida concurrencia real (8 usuarios +
+  backup + OpenClaw) porque Docker/Testcontainers no esta disponible
+  en este host. Queda como pendiente para V-02.08 medir
+  `pg_stat_activity`, `max_connections` y contadores Npgsql en una
+  instalacion real, igual que la recomendacion general que origino este
+  alcance (capturar `SHOW max_connections`, `WorkerCount` real,
+  duracion de jobs y RPS).
+- **Bloqueo:** ninguno en este alcance. La decision de quedarnos en
+  `Maximum Pool Size=20` y `WorkerCount=2` es provisional hasta
+  tener metricas; ambas son configurables sin recompilar
+  (`Database:HangfireWorkerCount` y los parametros de la cadena).

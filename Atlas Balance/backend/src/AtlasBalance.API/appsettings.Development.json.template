@@ -1,7 +1,7 @@
 ﻿{
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=app_user;Password=<password-local-postgres-app>",
-    "MigrationConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=atlas_owner;Password=<password-local-postgres-owner>"
+    "DefaultConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=app_user;Password=<password-local-postgres-app>;Application Name=AtlasBalance.API;Maximum Pool Size=20;Minimum Pool Size=0",
+    "MigrationConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=atlas_owner;Password=<password-local-postgres-owner>;Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum Pool Size=0"
   },
   "JwtSettings": {
     "Secret": "<clave-local-minimo-32-caracteres>",
