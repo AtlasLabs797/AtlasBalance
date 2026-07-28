@@ -1,5 +1,6 @@
-﻿using System.Text;
+using System.Text;
 using FluentAssertions;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
@@ -8,6 +9,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -52,6 +55,12 @@ public class AuthServiceTests
         return new AppDbContext(options);
     }
 
+    private static CacheService BuildCacheService(AppDbContext db) =>
+        new(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance);
+
+    private static IOptions<CachingOptions> BuildCachingOptions() =>
+        Options.Create(new CachingOptions());
+
     [Fact]
     public async Task Login_Should_Lock_Account_On_Fifth_Bad_Password()
     {
@@ -70,7 +79,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
 
         for (var i = 1; i <= 4; i++)
         {
@@ -82,7 +91,7 @@ public class AuthServiceTests
         Func<Task> fifthAttempt = () => sut.LoginAsync(user.Email, "BadPass!", "127.0.0.1", CancellationToken.None);
         var locked = await fifthAttempt.Should().ThrowAsync<AuthException>();
         locked.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
-        locked.Which.Message.Should().Be("Credenciales inválidas");
+        locked.Which.Message.Should().Be("Credenciales inv�lidas");
 
         var persisted = await db.Usuarios.FirstAsync(x => x.Id == user.Id);
         persisted.FailedLoginAttempts.Should().Be(5);
@@ -108,13 +117,13 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
 
         Func<Task> action = () => sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
         var exception = await action.Should().ThrowAsync<AuthException>();
         exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
-        exception.Which.Message.Should().Be("Credenciales inválidas");
+        exception.Which.Message.Should().Be("Credenciales inv�lidas");
     }
 
     [Fact]
@@ -137,7 +146,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
 
         var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
@@ -162,7 +171,7 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), cache);
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions(), cache);
         const string sharedIp = "10.10.10.10";
 
         for (var i = 0; i < 20; i++)
@@ -195,7 +204,7 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), cache);
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions(), cache);
         const string sharedIp = "10.10.10.11";
 
         for (var i = 0; i < 19; i++)
@@ -241,7 +250,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
 
         var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
@@ -277,13 +286,13 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         preMfaLogin.MfaRequired.Should().BeFalse();
         preMfaLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();
         var preMfaRefreshHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(preMfaLogin.RefreshToken!))).ToLowerInvariant();
 
-        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var mfaLogin = await mfaSut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
         mfaLogin.MfaRequired.Should().BeTrue();
@@ -318,7 +327,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
 
@@ -362,7 +371,7 @@ public class AuthServiceTests
         db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "true" });
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
         var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, false, "127.0.0.1", CancellationToken.None);
@@ -405,11 +414,11 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
         preMfaLogin.MfaRequired.Should().BeFalse();
 
-        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         Func<Task> changePassword = () => mfaSut.ChangePasswordAsync(
             user.Id,
             "OldPass123!Ab",
@@ -449,12 +458,12 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var preMfaSut = new AuthService(db, BuildConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var preMfaLogin = await preMfaSut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
         preMfaLogin.MfaRequired.Should().BeFalse();
         preMfaLogin.RefreshToken.Should().NotBeNullOrWhiteSpace();
 
-        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var mfaSut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         Func<Task> changePassword = () => mfaSut.ChangePasswordAsync(
             user.Id,
             "OldPass123!Ab",
@@ -490,7 +499,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
         var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, false, "127.0.0.1", CancellationToken.None);
@@ -530,7 +539,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
 
         for (var i = 1; i <= 5; i++)
         {
@@ -571,7 +580,7 @@ public class AuthServiceTests
         db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "false" });
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
 
         var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, "opaque-token");
 
@@ -601,7 +610,7 @@ public class AuthServiceTests
         db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "false" });
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
 
@@ -632,7 +641,7 @@ public class AuthServiceTests
         db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "true" });
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
         var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, true, "127.0.0.1", CancellationToken.None, "UnitTest Browser");
@@ -670,7 +679,7 @@ public class AuthServiceTests
         db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "true" });
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
         var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, true, "127.0.0.1", CancellationToken.None);
@@ -703,7 +712,7 @@ public class AuthServiceTests
         db.Configuraciones.Add(new Configuracion { Clave = SecurityConfigurationDefaults.MfaRememberDeviceEnabledKey, Valor = "true" });
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(login.MfaSecret!, DateTime.UtcNow);
         var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, true, "127.0.0.1", CancellationToken.None);
@@ -744,7 +753,7 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         var expiredTrustedToken = SeedTrustedMfaDevice(db, user, DateTime.UtcNow.AddSeconds(-1));
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
 
         var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None, expiredTrustedToken);
 
@@ -774,7 +783,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
         var originalStamp = user.SecurityStamp;
         var result = await sut.ChangePasswordAsync(user.Id, "OldPass123!Ab", "NewPass12345!", "127.0.0.1", null, CancellationToken.None);
 
@@ -805,7 +814,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
         user.LockedUntil = DateTime.UtcNow.AddMinutes(30);
@@ -834,7 +843,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "OldPass123!Ab", "127.0.0.1", CancellationToken.None);
         var previousHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(login.RefreshToken!))).ToLowerInvariant();
 
@@ -868,7 +877,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var refreshHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(login.RefreshToken!))).ToLowerInvariant();
         var storedToken = await db.RefreshTokens.SingleAsync(x => x.TokenHash == refreshHash);
@@ -906,7 +915,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var stampAfterLogin = (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp;
 
@@ -942,7 +951,7 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
         var revokedUserId = await sut.LogoutAsync(login.RefreshToken, CancellationToken.None);
@@ -1020,7 +1029,7 @@ public class AuthServiceTests
         }
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildRequireNonAdminMfaConfig(requireNonAdmin), new AuditService(db), new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildRequireNonAdminMfaConfig(requireNonAdmin), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
         var result = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
 
         if (rol == RolUsuario.ADMIN)
@@ -1068,7 +1077,7 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         var enrolledSecret = user.MfaSecret!;
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(enrolledSecret, DateTime.UtcNow);
 
@@ -1106,7 +1115,7 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         var enrolledSecret = user.MfaSecret!;
-        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector());
+        var sut = new AuthService(db, BuildMfaConfig(), new AuditService(db), secretProtector: new PlainTextSecretProtector(), cacheService: BuildCacheService(db), cachingOptions: BuildCachingOptions());
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var code = TotpService.GenerateCode(enrolledSecret, DateTime.UtcNow);
         var verified = await sut.VerifyMfaAsync(login.MfaChallengeId!, code, false, "127.0.0.1", CancellationToken.None);

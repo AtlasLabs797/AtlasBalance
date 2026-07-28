@@ -6,6 +6,10 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public class IntegrationTokenServiceTests
@@ -22,7 +26,7 @@ public class IntegrationTokenServiceTests
     public async Task ValidateActiveTokenAsync_Should_Return_Active_Token()
     {
         await using var db = BuildDbContext();
-        var service = new IntegrationTokenService(db);
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var plain = service.GeneratePlainToken();
 
         db.IntegrationTokens.Add(new IntegrationToken
@@ -46,7 +50,7 @@ public class IntegrationTokenServiceTests
     public async Task ValidateActiveTokenAsync_Should_Return_Null_For_Revoked_Token()
     {
         await using var db = BuildDbContext();
-        var service = new IntegrationTokenService(db);
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var plain = service.GeneratePlainToken();
 
         db.IntegrationTokens.Add(new IntegrationToken
@@ -70,7 +74,7 @@ public class IntegrationTokenServiceTests
     {
         await using var db = BuildDbContext();
         var clock = new FakeClock(new DateTime(2026, 6, 29, 12, 0, 0, DateTimeKind.Utc));
-        var service = new IntegrationTokenService(db, clock);
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()), clock);
         var plain = service.GeneratePlainToken();
 
         db.IntegrationTokens.Add(new IntegrationToken
@@ -95,7 +99,7 @@ public class IntegrationTokenServiceTests
     {
         using var db = BuildDbContext();
         var now = new DateTime(2026, 6, 29, 12, 0, 0, DateTimeKind.Utc);
-        var service = new IntegrationTokenService(db, new FakeClock(now));
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()), new FakeClock(now));
 
         service.ResolveExpiration(null, noExpirationConfirmed: false).Should().Be(now.AddDays(90));
     }
@@ -107,7 +111,7 @@ public class IntegrationTokenServiceTests
         // "NO_EXPIRAR" para evitar que un checkbox olvidado cree tokens eternos.
         using var db = BuildDbContext();
         var now = new DateTime(2026, 6, 29, 12, 0, 0, DateTimeKind.Utc);
-        var service = new IntegrationTokenService(db, new FakeClock(now));
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()), new FakeClock(now));
 
         service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: "NO_EXPIRAR").Should().BeNull();
     }
@@ -116,7 +120,7 @@ public class IntegrationTokenServiceTests
     public void ResolveExpiration_Should_Throw_When_NoExpiration_Confirmed_Without_Magic_Phrase()
     {
         using var db = BuildDbContext();
-        var service = new IntegrationTokenService(db);
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
 
         Action actNoText = () => service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: null);
         Action actEmpty = () => service.ResolveExpiration(null, noExpirationConfirmed: true, noExpirationConfirmationText: "");
@@ -133,7 +137,7 @@ public class IntegrationTokenServiceTests
     public async Task ValidateActiveTokenAsync_Should_Return_WriteOnly_Token_When_Active()
     {
         await using var db = BuildDbContext();
-        var service = new IntegrationTokenService(db);
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var plain = service.GeneratePlainToken();
 
         db.IntegrationTokens.Add(new IntegrationToken
@@ -159,7 +163,7 @@ public class IntegrationTokenServiceTests
     public void GeneratePlainToken_Should_Use_Base64Url_Format()
     {
         using var db = BuildDbContext();
-        var service = new IntegrationTokenService(db);
+        var service = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
 
         var token = service.GeneratePlainToken();
 

@@ -9,6 +9,461 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-28 - V-02.07 - Cache cliente con TanStack Query
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+- Adopcion de `@tanstack/react-query@^5.59.0` como capa de server-state
+  en memoria del frontend. Cierra `F-PERF-008` y reduce storms al
+  volver a pantallas y re-fetch de agregados de dashboard al alternar
+  entre `Dashboard`, `Titulares` y `Cuentas`. Ver entrada detallada en
+  `Documentacion/Versiones/v-02.07.md` (seccion "Cache cliente de
+  TanStack Query").
+- `frontend/src/services/queryClient.ts` (nuevo): `QueryClient`
+  singleton con `retry: false` (la cola 401 sigue en el interceptor
+  Axios), `staleTime` 60 s por defecto, `gcTime` 5 min, focus refresh
+  activo fuera de `/login` y `/cambiar-password`. `clearQueryClient()`
+  se invoca desde `services/api.ts:clearSessionState` (logout, restore
+  de backup, refresh 419/440).
+- `frontend/src/queries/queryKeys.ts` (nuevo): fabricas de claves
+  deterministas por dominio. Todas incluyen `usuarioId` y los
+  parametros que efectivamente varian. `normalizeQueryParams` omite
+  `null`/`undefined`/`''` para no crear claves equivalentes.
+- `frontend/src/queries/invalidation.ts` (nuevo): mapa
+  `mutationInvalidation` con invalidadores por dominio, listos para
+  sustituir los `loadData()` manuales en el siguiente ciclo.
+- `frontend/src/hooks/queries/`: hooks de TanStack Query para los
+  stores del shell (`useAlertasActivasQuery`, `useIaConfigQuery`,
+  `useUpdateCheckQuery`, `useNotificacionesAdminQuery`,
+  `usePaisesQuery`) y catalogos (`useImportacionContextoQuery`,
+  `useCuentasDivisasActivasQuery`). Cada hook hidrata la store
+  Zustand correspondiente, manteniendo su API publica.
+- `DashboardPage`, `TitularesPage`, `CuentasPage`,
+  `DashboardTitularPage`, `CuentaDetailPage` migrados a `useQuery`
+  con claves separadas por query real. `Layout.tsx` monta los hooks
+  del shell (sustituye el setInterval manual de IA y el reload por
+  pathname de notificaciones). `Sidebar.tsx` hace lo propio.
+- `App.tsx` ya no invoca `loadAlertasActivas` en bootstrap; lo cubre
+  `Layout` al montar.
+- `tsconfig.test.v2.json` (nuevo) compila `queryClient.ts`,
+  `queryKeys.ts` y los 4 tests con `paths` propio. `package.json
+  :test:unit` ejecuta los 4 tests compilados.
+- `tests/queryKeys.test.ts` (nuevo, 5 facts) y
+  `tests/queryClient.test.ts` (nuevo, 3 facts).
+
+**Comandos ejecutados:**
+- `npm.cmd install --save --no-fund --no-audit
+  "@tanstack/react-query@^5.59.0"` -> `added 2 packages in 9s`,
+  `npm ls @tanstack/react-query` -> `5.59.0`.
+- `npm.cmd exec tsc --noEmit` -> 0 errores.
+- `npm.cmd run lint --max-warnings 0` -> 0/0.
+- `npm.cmd run test:unit` -> 20/20 PASS.
+- `npm.cmd run build` con `VITE_BUILD_OUT_DIR` apuntando a
+  `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-tq\`:
+  0 errores, 0 warnings, build de 2.32 s. `QueryClient` referenciado
+  2 veces en el chunk `index` (sin nuevo split, ~57 KB).
+- `Check-VersionAlignment.ps1` -> "Alineacion de version OK: V-02.07
+  (2.7.0)".
+
+**Resultado de verificacion:** 20/20 tests verdes, tsc limpio, lint
+limpio, build sin warnings, alineacion de version OK.
+
+**Pendientes:**
+- Conectar `mutationInvalidation.*` desde los `api.post/put/delete`
+  existentes (siguiente ciclo). Hoy las mutaciones criticas ya
+  re-consultan la cache al re-montar, pero no invalidan proactivamente
+  las claves afectadas.
+- Migrar a `useQuery` los listados grandes (Titulares, Cuentas,
+  Extractos, Revision, Auditoria, Papelera, Backups, Usuarios,
+  Formatos). Cada uno reduce su tormenta de re-mount al volver.
+- Persistencia de filtros/pagina en URL en Titulares, Cuentas y
+  Revision (mejora UX complementaria, no requerida por la cache).
+- `npm.cmd audit --audit-level=critical` (no se ha ejecutado en este
+  ciclo; el `package-lock.json` solo anade `@tanstack/react-query`).
+
+---
+
+## 2026-07-28 - V-02.07 - Pool Npgsql explicito y WorkerCount Hangfire
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+- Recomendacion del check-list de pool de conexiones aplicada de forma
+  minima y quirurgica. El pool Npgsql ya estaba activo por defecto
+  (`Pooling=true`, maximo 100), pero la documentacion afirmaba 20 sin
+  que la configuracion efectiva lo reflejara. Ademas Hangfire se
+  registraba con `WorkerCount` por defecto (`min(ProcessorCount * 5,
+  20)`), que en una maquina de 4 nucleos son 20 workers compitiendo
+  por el mismo pool.
+- `appsettings.Production.json.template:3-4` y
+  `appsettings.Development.json.template:3-4` declaran
+  `Application Name=AtlasBalance.API;Maximum Pool Size=20;Minimum Pool
+  Size=0` en `DefaultConnection` y
+  `Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum
+  Pool Size=0` en `MigrationConnection`. Los parametros se inyectan
+  despues de `sslmode` para mantener el orden estable.
+- `Program.cs:236-239` sustituye `AddHangfireServer()` por
+  `AddHangfireServer(options => { options.WorkerCount =
+  builder.Configuration.GetValue("Database:HangfireWorkerCount", 2);
+  })`. El default 2 sirve a 4-8 usuarios con margen para backup,
+  export y la cola de OpenClaw. Tunnable por configuracion sin
+  recompilar.
+- `scripts/Instalar-AtlasBalance.ps1:515-516` escribe los mismos
+  parametros de pool en `$connection` y `$migrationConnection`. Las
+  instalaciones nuevas arrancan ya con la politica explicita.
+- `scripts/Actualizar-AtlasBalance.ps1:114-122` extiende
+  `Parse-ConnectionString` para reconocer `Application Name`,
+  `Maximum Pool Size` y `Minimum Pool Size` y preservarlos en
+  regeneraciones. `Actualizar-AtlasBalance.ps1:383-386` hace que
+  `Resolve-MigrationConnectionForConfig` inyecte los defaults
+  (`AtlasBalance.Migrate` / 4 / 0) si la cadena resuelta por la
+  cascada BACKUP-02 no los trae. Asi un upgrade de una instalacion
+  legacy deja la `MigrationConnection` lista sin intervencion manual.
+- `Documentacion/SPEC.md:175,199,4253` se reescribe para distinguir
+  `DefaultConnection` (20) y `MigrationConnection` (4), mencionar
+  `Application Name` y `Hangfire WorkerCount`, y dejar de afirmar "20
+  conexiones" a secas. Se cierra la divergencia entre documentacion y
+  runtime.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Documentacion/SPEC.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+**Comandos ejecutados:**
+- `dotnet build "Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" -p:UseAppHost=false -p:BaseIntermediateOutputPath=C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-pool\obj\ -p:BaseOutputPath=C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-pool\bin\` (workaround ACL `bin/obj` documentado en `LOG_ERRORES_INCIDENCIAS.md:486-491`).
+- `grep -n "Maximum Pool Size" "Atlas Balance"` para confirmar que las referencias a `Maximum Pool Size` solo viven en las plantillas y los scripts; nada en codigo C#.
+
+**Resultado de verificacion:**
+- `dotnet build`: **0 errores, mismos 6 warnings preexistentes** (5 `UseXminAsConcurrencyToken` obsoleto + 1 `PostgreSqlStorage` obsoleto). Cero warnings nuevos.
+- `grep -n "Maximum Pool Size" "Atlas Balance"`: solo `appsettings.Production.json.template:3-4`, `appsettings.Development.json.template:3-4`, `Instalar-AtlasBalance.ps1:515-516` y `Actualizar-AtlasBalance.ps1:386`. Codigo C# intacto.
+- Suite backend filtrada no Testcontainers: **NO ejecutada en este host** por el gate conocido de `AtlasBalance.API.Tests.csproj` documentado en `LOG_ERRORES_INCIDENCIAS.md:2884-2904`. Pasa en CI; el cambio es solo de configuracion (templates + script + `Program.cs` con `GetValue` y default explicito), no toca entidades, servicios ni el `AppDbContext`.
+
+**Pendientes:**
+- V-02.08: capturar `SHOW max_connections`, `pg_stat_activity` y
+  metricas Npgsql en una instalacion real para confirmar que
+  `Maximum Pool Size=20` y `WorkerCount=2` son los valores
+  adecuados o ajustar `Database:HangfireWorkerCount` con datos.
+- V-02.08: evaluar `IDbContextFactory<AppDbContext>` para jobs de
+  Hangfire (CONC-029) y corregir el `Task.WhenAll` de
+  `AtlasAiService:1104-1116` sobre el mismo `_dbContext`.
+- V-02.08: `/api/ready` con `CanConnectAsync` y `pg_isready` para
+  readiness real separado de liveness.
+
+---
+
+## 2026-07-27 - V-02.07 - Cache de lecturas repetidas del dashboard y catalogo de tasas
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+- Recomendacion del check-list de rendimiento ("cache repeated read
+  queries") aplicada de forma acotada al dashboard y al catalogo de
+  tasas. No se cachean respuestas HTTP completas: se cachean los
+  snapshots internos que ya estaban costando varios SELECTs identicos
+  por carga del dashboard. Esto evita los riesgos de claves
+  incompletas que romperian el aislamiento por usuario.
+- Nueva capa `ICacheService` en `AtlasBalance.API/Caching/` con
+  single-flight (lock por namespace+key) y generaciones
+  (invalidacion O(1) sin enumerar entries). Expone
+  `CacheMetricsSnapshot` por namespace (hits, misses, loads, waits,
+  invalidations, load failures) sin contener claves ni IDs.
+- `TiposCambioService` migra al nuevo `ICacheService` manteniendo
+  TTL de 5 min. Cierra la race benigna CONC-027 documentada en
+  `AUDITORIA_CONCURRENCIA_2026-07-10.md:302`.
+- `DashboardService.GetAuthorizedScopeAsync` cachea el scope por
+  `userId` con TTL 30 s. Las tres llamadas paralelas del frontend
+  (`/dashboard/principal`, `/dashboard/evolucion`,
+  `/dashboard/saldos-divisa`) resuelven el scope una vez por TTL.
+- `DashboardService.LoadReferenceAsync` cachea la combinacion
+  `divisa_base + colores` durante 5 min con clave fija y
+  invalidacion por generacion.
+- `DashboardService.GetOrBuildMetricsAsync` cachea el calculo de
+  metricas (saldos por cuenta/divisa, conversion bulk) con TTL 15 s
+  y clave `userId|paisId|divisa|hashCuentas`. `principal` y
+  `saldos-divisa` ya no duplican el trabajo.
+- Nuevo `DashboardCacheInvalidationInterceptor` (registrado tras
+  `AuditSaveChangesInterceptor`) invalida los caches del dashboard
+  tras un `SaveChanges` exitoso si las entidades tocadas pertenecen
+  a los grupos configurados (extractos, cuentas, plazos fijos,
+  permisos, usuarios, configuracion relevante). Asi cualquier
+  consumer (controllers, jobs Hangfire, seeds) queda cubierto sin
+  acoplar `IDashboardCacheInvalidator` en cada uno.
+- Tests: nuevo proyecto `tests/AtlasBalance.Caching.Tests/` con 9
+  facts (single-flight con 20 lectores concurrentes, generacion,
+  aislamiento, race de invalidacion, propagacion de cancelacion,
+  integracion con `TiposCambioService` y `DashboardCacheInvalidator`).
+  Construido en su propio proyecto porque
+  `tests/AtlasBalance.API.Tests/` arrastra errores de compilacion
+  preexistentes V-02.06 (`LOG_ERRORES_INCIDENCIAS.md:2884-2904`).
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Caching/CacheService.cs` (nuevo).
+- `Atlas Balance/backend/src/AtlasBalance.API/Caching/CacheMetrics.cs` (nuevo).
+- `Atlas Balance/backend/src/AtlasBalance.API/Caching/DashboardCacheInvalidator.cs` (nuevo).
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/DashboardCacheInvalidationInterceptor.cs` (nuevo).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/TiposCambioService.cs` (migracion a `ICacheService`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/DashboardService.cs` (cache de scope, referencia y metricas).
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs` (registro DI).
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj` (nuevo).
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/CacheServiceTests.cs` (6 facts).
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/CacheIntegrationTests.cs` (3 facts).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/TiposCambioServiceTests.cs` y `AtlasBalance.API.Tests/DashboardServiceTests.cs` (wiring).
+- `Documentacion/Versiones/v-02.07.md` (bloque de cache).
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md` (entrada CONC-027 CERRADO).
+- `Documentacion/REGISTRO_BUGS.md` (entrada CONC-027 cerrado).
+- `Documentacion/AUDITORIA_CONCURRENCIA_2026-07-10.md` (CONC-027 cerrado, CONC-028 parcialmente cerrado).
+- `Documentacion/DOCUMENTACION_TECNICA.md` (resumen de la capa de cache).
+
+**Comandos ejecutados:**
+- `dotnet build AtlasBalance.API.csproj -p:UseAppHost=false
+  -p:BaseIntermediateOutputPath=C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-cache\obj\
+  -p:BaseOutputPath=C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-cache\bin\
+  -v:minimal` -> 0 errores, 6 warnings preexistentes (deprecaciones
+  V-02.04 de `UseXminAsConcurrencyToken` y `PostgreSqlStorage`,
+  ninguno introducido por V-02.07).
+- `dotnet restore AtlasBalance.Caching.Tests.csproj --packages
+  C:\Users\usuario\AppData\Local\Temp\2\opencode\nuget-cache-v0207-tests
+  -p:BaseIntermediateOutputPath=...` con la misma redireccion de
+  `obj/` documentada en `v-02.07.md` por la ACL bloqueante del
+  workspace.
+- `dotnet build AtlasBalance.Caching.Tests.csproj -p:UseAppHost=false
+  -p:BaseIntermediateOutputPath=...obj\ -p:BaseOutputPath=...bin\
+  -v:minimal` -> 0 errores.
+- `dotnet test AtlasBalance.Caching.Tests.csproj --no-build
+  --no-restore` -> **9/9 PASS** en ~2 s. 6 facts de
+  `CacheServiceTests` (incluido single-flight con 20 lectores
+  concurrentes) y 3 de `CacheIntegrationTests` (invalidacion de
+  catalogo tras escritura manual, bump de generaciones del
+  invalidator, consistencia de scope tras cambio conceptual de
+  permisos).
+
+**Verificacion:**
+- Build del API: 0 errores. Las advertencias son las mismas 6 de
+  V-02.07 al inicio del ciclo (deprecaciones de Npgsql 8 y Hangfire
+  PostgreSQL 1.x), ninguna introducida por este cambio.
+- Suite de tests del nuevo proyecto: 9/9 PASS. Cubre el
+  single-flight, la generacion por namespace, el aislamiento, la
+  race de invalidacion durante carga, la propagacion de
+  cancelacion, la invalidacion del catalogo de tasas tras escritura
+  manual y la consistencia del cache de scope tras cambio de
+  permisos.
+- El proyecto `AtlasBalance.API.Tests` preexistente arrastra desde
+  V-02.06 errores de compilacion documentados en
+  `LOG_ERRORES_INCIDENCIAS.md:2884-2904` (mismas referencias internas
+  rotas a `IntegrationAuthMiddleware`, `RlsContextSecret`,
+  `Program`). Por eso la verificacion automatica se hace en un
+  proyecto paralelo que solo cubre la nueva capa, sin tocar la
+  rotura heredada. La suite Testcontainers completa sigue
+  pendiente como gate de CI en GitHub Actions runner Ubuntu con
+  Docker.
+- `AUDITORIA_CONCURRENCIA_2026-07-10.md` marca CONC-027 cerrado
+  (race del catalogo de tasas) y CONC-028 parcialmente cerrado
+  (scope del dashboard cacheado; falta confirmar el beneficio real
+  con volumen SQL en produccion para darlo por cerrado del todo).
+
+**Decisiones visuales y de diseno:** N/A (cambio backend).
+
+**Pendientes:**
+- Confirmar el ahorro real en volumen SQL tras despliegue inicial
+  mediante un contador por endpoint en `Stopwatch` (consistente con
+  el patron ya usado en `IntegrationAuthMiddleware.cs:178`) y, si
+  los numeros no justifican la cache de metrics, revertir ese TTL
+  para no introducir 15 s de retraso en cambios de extractos.
+- Si en el futuro se escala a mas de una instancia, mover
+  `ICacheService` a `IDistributedCache` (deuda ya documentada en
+  `SEGURIDAD_AUDITORIA_V-01.03.md:85` y
+  `AUDITORIA_CONCURRENCIA_2026-07-10.md`). El diseno con
+  generaciones y namespace ya lo facilita.
+- Cerrar definitivamente CONC-028 (scope del dashboard) cuando
+  tengamos datos de produccion o aceptar el TTL 30 s como
+  compensacion operativa entre consistencia y carga.
+
+---
+
+## 2026-07-27 - V-02.07 - Extension de la capa de cache: configuracion, scope, tokens y auth/me
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+- Extension de la capa de cache (`ICacheService`) introducida en el
+  alcance anterior a cuatro consumidores mas, todos de alto impacto
+  y bajo riesgo. Se mantiene el single-node (`IMemoryCache`): el
+  despliegue sigue siendo monoinstancia on-premise.
+- **TTL configurables**: nueva seccion `AtlasBalance:Caching` en
+  `appsettings.json` (y sus dos `.template` de entorno) con un
+  `*TtlSeconds` por namespace mas `SizeLimitEntries`. `CachingOptions`
+  se enlaza via `IOptions<CachingOptions>` en `Program.cs` y en
+  cada servicio que cachea. Los valores anteriores estaban
+  hardcodeados como constantes en `DashboardService.cs` y
+  `TiposCambioService.cs`; ahora se leen de la configuracion. En
+  `appsettings.Development.json.template` se mantienen valores
+  bajos (5-30 s) para que iterar sea barato durante desarrollo.
+- **`IConfiguracionRepository.GetAsync`** cachea el mapa completo de
+  `CONFIGURACIONES` (clave -> `{ Valor, EsSecreto }`) con TTL 120 s.
+  Esto cierra **MED-18** (`AlertaService.cs:344-365` hacia 6+
+  round-trips por escritura de extracto) y cubre los servicios que
+  hoy leen `_dbContext.Configuraciones` directamente: `EmailService`,
+  `BackupService`, `BackupEncryptionService`, `RevisionService`,
+  `HardenedConciliacionService`, `AtlasAiService`, `TiposCambioService`,
+  `GoogleDriveBackupService`, `ActualizacionService`. **Nunca se
+  cachea el valor desprotegido**: la fila cruda entra al cache y
+  `_secretProtector.UnprotectFromStorage` se aplica bajo demanda en
+  el caller. La invalidacion ocurre en `UpsertAsync` (cualquier
+  escritura al namespace) y como red de seguridad en el
+  `DashboardCacheInvalidationInterceptor` ante escrituras masivas.
+- **`IUserAccessService.GetScopeAsync`** cachea el calculo del
+  `UserAccessScope` por `userId` con TTL 45 s, con bypass explicito
+  para admin (no consulta cache: el resultado es trivial y queremos
+  que un cambio de rol puntual quede visible sin esperar al TTL).
+  Esto cierra **CONC-028** (la query `Cuentas.Any(... PermisosUsuario.Any(...))`
+  ya no corre en cada request autenticado) y reduce las N llamadas
+  paralelas del frontend por TTL.
+- **`IIntegrationTokenService.ValidateActiveTokenAsync`** cachea el
+  token activo por `TokenHash` con TTL 20 s. OpenClaw puede llegar a
+  100 req/min del mismo token (`IntegracionesController.cs`) sin
+  golpear BD. `RevokeAsync` invalida el namespace completo tras
+  `SaveChanges` (ventana maxima de staleness: 20 s, consistente con
+  el contrato existente). El interceptor tambien invalida el
+  namespace ante cualquier save changes sobre `INTEGRATION_TOKENS`
+  (rotacion en `IntegracionesController.cs:284`).
+- **`IAuthService.GetCurrentAsync`** cachea el `AuthResult` de
+  `GET /api/auth/me` con TTL 60 s y clave compuesta
+  `(userId:N)|{securityStamp}`. Una rotacion de stamp (cambio de
+  contrasena, revocacion administrativa) invalida la entrada por la
+  propia clave, sin pasar por el interceptor. El interceptor anade
+  una capa defensiva para cambios en `USUARIOS`, `PERMISOS_USUARIO`
+  o `PREFERENCIAS_USUARIO_CUENTA`.
+- **Reglas de invalidacion** centralizadas en el interceptor: se
+  extienden los grupos `EntidadesQueInvalidan*` para que cualquier
+  `SaveChangesAsync` que toque `Configuracion`, `Usuario`,
+  `PermisoUsuario`, `PreferenciaUsuarioCuenta` o `IntegrationToken`
+  invalide el namespace correspondiente. Asi seeds, jobs Hangfire y
+  scripts que pasen por EF Core quedan cubiertos sin que cada
+  consumer tenga que acordarse.
+- **Reglas de claves compuestas**: cada namespace que depende de
+  usuario compone la clave con `(userId, securityStamp)` o con un
+  hash del dato. Esto evita que un cambio de permisos, contrasena o
+  revocacion quede oculto detras del TTL del cache. Los namespaces
+  se exponen como `internal const string` en el servicio que los
+  declara (mismo patron que `DashboardService.ScopeNamespace`).
+- **Reglas operativas adicionales** (anadidas a las ya existentes):
+  - Toda clave de cache que dependa de usuario compone
+    `(userId, securityStamp, requestScope)`. Sin excepciones.
+  - No se cachea nada que haya pasado por `requestScope=write` ni
+    resultados de `AuditService`/`HardenedConciliacionService.SugerirAsync`.
+  - No se cachea `Value` ya descifrado con `SecretProtector`; solo
+    la fila cruda, se descifra bajo demanda en el caller.
+  - `AtlasBalance.Caching.Tests` ahora anade el proyecto al
+    `AtlasBalance.sln` para que CI lo ejecute de forma nativa sin
+    cambios en el script `ci.yml`.
+
+**Tests:**
+- `CacheIntegrationTests` pasa de 3 a 9 facts (6 nuevos): cache
+  hit/miss de `ConfiguracionRepository`, invalidacion en
+  `UpsertAsync`, cache hit/miss + invalidacion de namespace en
+  `IntegrationTokenService`, cache hit/miss de
+  `UserAccessService` para no-admin y bypass sin tocar cache para
+  admin.
+- Total: **15/15 PASS** en `AtlasBalance.Caching.Tests` (~5 s).
+- El proyecto `AtlasBalance.API.Tests` arrastra errores
+  preexistentes V-02.06 (`LOG_ERRORES_INCIDENCIAS.md:2884-2904`) que
+  no son parte de este alcance. Los wirings nuevos
+  (`CacheService`, `IOptions<CachingOptions>`) se han inyectado en
+  todos los call sites y se verificaran en el run real de CI cuando
+  esa build vuelva a estar verde.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Caching/CachingOptions.cs` (nuevo).
+- `Atlas Balance/backend/src/AtlasBalance.API/Properties/AssemblyInfo.cs`
+  (anadido `InternalsVisibleTo("AtlasBalance.Caching.Tests")`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ConfiguracionRepository.cs`
+  (migracion a `ICacheService`, namespace `configuracion`,
+  `GetAsync` resuelve desde el cache, `UpsertAsync` invalida).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/UserAccessService.cs`
+  (migracion a `ICacheService`, namespace `user_access_scope`,
+  admin bypass sin cache).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/IntegrationTokenService.cs`
+  (migracion a `ICacheService`, namespace `integration_token`,
+  `RevokeAsync` invalida el namespace completo).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`
+  (cache de `GetCurrentAsync` con clave `(userId:N)|securityStamp`,
+  namespace `auth_current`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/DashboardService.cs`
+  y `AtlasBalance.API/Services/TiposCambioService.cs` (TTLs ahora
+  leidos de `IOptions<CachingOptions>` en lugar de constantes).
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/DashboardCacheInvalidationInterceptor.cs`
+  (ampliado: `IntegrationToken`, `Configuracion`, `Usuario`,
+  `PermisoUsuario`, `PreferenciaUsuarioCuenta` invalidan sus
+  namespaces respectivos en cualquier `SaveChangesAsync`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+  (`Configure<CachingOptions>` + `SizeLimit` desde configuracion).
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.json` y
+  sus dos `.template` (nueva seccion `AtlasBalance:Caching`).
+- `Atlas Balance/backend/AtlasBalance.sln` (anadido
+  `AtlasBalance.Caching.Tests` al solution).
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/CacheIntegrationTests.cs`
+  (6 facts nuevos).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/*.cs`
+  (wiring actualizado en 31 call sites de `AuthService`, 48 de
+  `UserAccessService`, 7 de `IntegrationTokenService`).
+- `Documentacion/Versiones/v-02.07.md` (este bloque).
+- `Documentacion/DOCUMENTACION_TECNICA.md` (consumidores y TTLs).
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md` (entrada cerrando
+  MED-18 y CONC-028).
+
+**Comandos ejecutados:**
+- `dotnet restore "AtlasBalance.Caching.Tests.csproj"` (sin
+  `--packages`, con `BaseIntermediateOutputPath` redirigido a
+  scratchpad): 0 errores.
+- `dotnet build "AtlasBalance.API.csproj" -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj\ -p:BaseOutputPath=...bin\ -v:minimal`: 0 errores, 6 warnings preexistentes (Npgsql/Hangfire deprecations V-02.04).
+- `dotnet build "AtlasBalance.Caching.Tests.csproj" --no-restore -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj\ -p:BaseOutputPath=...bin\ -v:minimal`: 0 errores, 1 warning nuevo (xUnit1031, ya corregido).
+- `dotnet test "AtlasBalance.Caching.Tests.csproj" --no-build --logger "console;verbosity=normal"`: **15/15 PASS** en ~5 s.
+
+**Verificacion:**
+- Capa de cache: 15/15 PASS. Cubre hit/miss, single-flight,
+  generaciones, race de invalidacion durante carga, propagacion de
+  cancelacion, integracion con `TiposCambioService`,
+  `DashboardCacheInvalidator`, `ConfiguracionRepository`,
+  `IntegrationTokenService` y `UserAccessService`.
+- API project compila limpio con las nuevas firmas (constructor con
+  `ICacheService` + `IOptions<CachingOptions>`) en los 4 servicios
+  migrados. Los wirings de tests (31+48+7 call sites) se hicieron
+  con sustituciones deterministas por `Replace`.
+- `AtlasBalance.API.Tests` no se ha podido compilar en este host
+  por el bloqueo V-02.06 preexistente (mismas referencias internas
+  rotas a `IntegrationAuthMiddleware`, `RlsContextSecret`,
+  `Program`). La verificacion automatizada de los wirings nuevos se
+  hara en CI; los wirings son mecanicos y consistentes.
+- `AUDITORIA_CONCURRENCIA_2026-07-10.md` marca **CONC-028 cerrado**
+  (cache del scope aplicado, no depende ya de mediciones reales de
+  produccion: el bypass de admin + la clave `(userId, securityStamp)`
+  + la invalidacion por interceptor cubren la consistencia).
+- `LOG_ERRORES_INCIDENCIAS.md` anade entrada cerrando **MED-18**
+  (cache global de CONFIGURACIONES elimina los 6+ round-trips por
+  escritura de extracto).
+
+**Decisiones visuales y de diseno:** N/A (cambio backend).
+
+**Pendientes:**
+- Confirmar el ahorro real en volumen SQL tras despliegue inicial
+  con `Stopwatch` por endpoint y contadores de queries EF Core; si
+  el TTL 45 s de `user_access_scope` esconde cambios de permisos
+  en escenarios reales, ajustar.
+- Si en el futuro se escala a mas de una instancia, mover
+  `ICacheService` a `IDistributedCache` (deuda ya documentada en
+  `SEGURIDAD_AUDITORIA_V-01.03.md:85`). El diseno con generaciones
+  y namespace ya lo facilita: solo se sustituye `IMemoryCache` por
+  una implementacion distribuida.
+
+---
+
 ## 2026-07-27 - V-02.07 - Inline del logo SVG critico (favicon + brand mark)
 
 **Version:** V-02.07

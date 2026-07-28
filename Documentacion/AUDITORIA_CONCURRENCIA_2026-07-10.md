@@ -305,6 +305,14 @@ Estado de cada hallazgo del informe anterior, referenciado por su severidad y or
 - **Descripción**: `GetRateCatalogAsync` cachea 5 min. Si dos requests llegan a la vez con cache miss, ambos hacen query y ambos escriben en cache. No destructivo (mismos datos). Pero si `InvalidateCache` se llama entre la query de A y el `Set` de A, A repuebla con datos viejos justo antes del invalidate. Próximo request leerá cache stale hasta el siguiente TTL.
 - **Fix recomendado**: usar `IMemoryCache.GetOrCreateAsync` con `SlidingExpiration` o un lock de doble-check.
 - **Esfuerzo**: 1h.
+- **Estado 2026-07-27 (V-02.07)**: **CERRADO**. `TiposCambioService`
+  migra a la nueva capa `ICacheService.GetOrLoadAsync` con lock por
+  namespace+key (single-flight) e invalidacion por generacion (no
+  enumeracion). El test
+  `CacheServiceTests.Concurrent_Invalidate_During_Load_Should_Not_Repopulate_Stale_Data`
+  cubre el escenario; 9/9 PASS en
+  `tests/AtlasBalance.Caching.Tests`. Detalle en
+  `LOG_ERRORES_INCIDENCIAS.md` (entrada CONC-027).
 
 ### CONC-028 — `GetAuthenticatedScopeAsync` con EXISTS pesado en dashboard (LOW)
 
@@ -312,6 +320,33 @@ Estado de cada hallazgo del informe anterior, referenciado por su severidad y or
 - **Descripción**: La query de `cuentaIdsList` tiene un `Cuentas.Any(c => ... PermisosUsuario.Any(p => ...) AND)`. Es un SQL complejo, no N+1 de EF, pero un usuario con 50 permisos y 200 cuentas puede disparar un plan pesado. Además, se repite en cada `GetPrincipalAsync` (cada carga del dashboard).
 - **Fix recomendado**: cachear el `DashboardScope` en `IMemoryCache` con TTL corto (30s) e invalidar al modificar permisos. O materializar un join en una CTE y cachearlo por usuario.
 - **Esfuerzo**: 3h.
+- **Estado 2026-07-27 (V-02.07)**: **CERRADO**. El scope esta
+  cacheado en `DashboardService.GetAuthorizedScopeAsync` con TTL
+  30 s y clave por `userId` (`CacheNamespace(ScopeNamespace)`), e
+  invalidado por el nuevo `DashboardCacheInvalidationInterceptor`
+  cuando hay escrituras sobre `PermisoUsuario`,
+  `PreferenciaUsuarioCuenta`, `Usuario`, `Cuenta`, `Titular` o
+  `Pais`. Ademas, en este mismo ciclo el alcance se ha extendido a
+  `IUserAccessService.GetScopeAsync` (TTL 45 s en
+  `CachingOptions.UserScopeTtl`, clave por `userId:N`, bypass
+  explicito para admin) con tests que cubren tanto el path con
+  cache como el bypass. La combinacion de:
+
+  - `DashboardService.GetAuthorizedScopeAsync` (TTL 30 s) para el
+    path del dashboard;
+  - `IUserAccessService.GetScopeAsync` (TTL 45 s, cache + bypass
+    admin) para el resto de endpoints autenticados;
+  - invalidacion por interceptor en cualquier save changes sobre
+    `PermisoUsuario`, `PreferenciaUsuarioCuenta`, `Usuario`,
+    `Cuenta`, `Titular` o `Pais`;
+  - `DashboardCacheInvalidationInterceptor` tambien invalida el
+    `UserAccessService.Namespace` cuando invalida el scope del
+    dashboard;
+
+  cubre la consistencia sin depender de mediciones de produccion.
+  El ahorro concreto (15-40 ms por request en p50 estimado) se
+  confirma al despliegue inicial; si fuera bajo, ajustar el TTL en
+  `appsettings.Production.json` (sin redeploy de codigo).
 
 ### CONC-029 — `AppDbContext` no usa `IDbContextFactory` y la API es `AddDbContext` (LOW)
 

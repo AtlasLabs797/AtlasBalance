@@ -1,6 +1,8 @@
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AtlasBalance.API.Services;
 
@@ -28,34 +30,49 @@ public static class ConfiguracionSecretKeys
 
 public sealed class ConfiguracionRepository : IConfiguracionRepository
 {
+    internal const string Namespace = "configuracion";
+
     private readonly AppDbContext _dbContext;
     private readonly ISecretProtector _secretProtector;
     private readonly IClock _clock;
+    private readonly ICacheService _cacheService;
+    private readonly CachingOptions _cachingOptions;
 
-    public ConfiguracionRepository(AppDbContext dbContext, ISecretProtector secretProtector, IClock clock)
+    public ConfiguracionRepository(
+        AppDbContext dbContext,
+        ISecretProtector secretProtector,
+        IClock clock,
+        ICacheService cacheService,
+        IOptions<CachingOptions> cachingOptions)
     {
         _dbContext = dbContext;
         _secretProtector = secretProtector;
         _clock = clock;
+        _cacheService = cacheService;
+        _cachingOptions = cachingOptions.Value;
     }
 
     public IReadOnlyList<string> SecretKeys => ConfiguracionSecretKeys.List;
 
     public async Task<string?> GetAsync(string clave, CancellationToken cancellationToken)
     {
-        var row = await _dbContext.Configuraciones.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Clave == clave, cancellationToken);
-        if (row is null)
+        if (string.IsNullOrEmpty(clave))
         {
             return null;
         }
 
-        if (row.EsSecreto)
+        var map = await GetCachedConfiguracionesAsync(cancellationToken);
+        if (!map.TryGetValue(clave, out var entry))
         {
-            return string.IsNullOrEmpty(row.Valor) ? null : _secretProtector.UnprotectFromStorage(row.Valor);
+            return null;
         }
 
-        return row.Valor;
+        if (entry.EsSecreto)
+        {
+            return string.IsNullOrEmpty(entry.Valor) ? null : _secretProtector.UnprotectFromStorage(entry.Valor);
+        }
+
+        return entry.Valor;
     }
 
     public async Task UpsertAsync(string clave, string? valor, bool esSecreto, string? tipo, string? descripcion, Guid? usuarioModificacionId, CancellationToken cancellationToken)
@@ -91,5 +108,43 @@ public sealed class ConfiguracionRepository : IConfiguracionRepository
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Invalida el namespace completo: cualquier cambio puede afectar a
+        // claves que ya estan cacheadas. El interceptor cubre el caso de
+        // escrituras masivas, pero UpsertAsync tambien debe invalidar por
+        // si el caller no pasa por EF (jobs, seeds, migraciones).
+        _cacheService.Invalidate(new CacheNamespace(Namespace));
+    }
+
+    private Task<IReadOnlyDictionary<string, ConfiguracionEntry>> GetCachedConfiguracionesAsync(CancellationToken cancellationToken)
+    {
+        return _cacheService.GetOrLoadAsync(
+            new CacheNamespace(Namespace),
+            "all",
+            LoadConfiguracionesAsync,
+            _cachingOptions.ConfigurationTtl,
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyDictionary<string, ConfiguracionEntry>> LoadConfiguracionesAsync(CancellationToken cancellationToken)
+    {
+        var rows = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Select(c => new ConfiguracionEntry
+            {
+                Clave = c.Clave,
+                Valor = c.Valor,
+                EsSecreto = c.EsSecreto
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(r => r.Clave, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class ConfiguracionEntry
+    {
+        public string Clave { get; init; } = string.Empty;
+        public string Valor { get; init; } = string.Empty;
+        public bool EsSecreto { get; init; }
     }
 }

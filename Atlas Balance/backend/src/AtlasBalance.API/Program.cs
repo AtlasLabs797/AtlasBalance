@@ -1,4 +1,5 @@
-﻿using AtlasBalance.API.Data;
+﻿using AtlasBalance.API.Caching;
+using AtlasBalance.API.Data;
 using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Logging;
 using AtlasBalance.API.Middleware;
@@ -63,13 +64,15 @@ builder.Services.AddScoped<RlsDbCommandInterceptor>(serviceProvider =>
         serviceProvider.GetRequiredService<IHttpContextAccessor>(),
         serviceProvider.GetRequiredService<RlsContextSecret>()));
 builder.Services.AddScoped<AuditSaveChangesInterceptor>();
+builder.Services.AddScoped<DashboardCacheInvalidationInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options
         .UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
         .UseSnakeCaseNamingConvention()
         .AddInterceptors(
             serviceProvider.GetRequiredService<RlsDbCommandInterceptor>(),
-            serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+            serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>(),
+            serviceProvider.GetRequiredService<DashboardCacheInvalidationInterceptor>()));
 
 var jwtSecret = ResolveJwtSecret(builder.Configuration, builder.Environment);
 var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, builder.Environment, jwtSecret);
@@ -134,6 +137,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddMemoryCache();
+builder.Services.Configure<CachingOptions>(builder.Configuration.GetSection(CachingOptions.SectionName));
+builder.Services.AddSingleton<ICacheService>(sp =>
+    new CacheService(
+        sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<CacheService>(),
+        new CacheServiceOptions
+        {
+            SizeLimit = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CachingOptions>>().Value.SizeLimitEntries
+        }));
+builder.Services.AddSingleton<IDashboardCacheInvalidator, DashboardCacheInvalidator>();
 ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("AtlasBalance");

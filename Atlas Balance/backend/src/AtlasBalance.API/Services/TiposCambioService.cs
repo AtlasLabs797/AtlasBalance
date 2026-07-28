@@ -1,8 +1,10 @@
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
@@ -24,7 +26,8 @@ public interface ITiposCambioService
 
 public sealed class TiposCambioService : ITiposCambioService
 {
-    private const string CacheKey = "tipos_cambio_rates";
+    internal const string Namespace = "tipos_cambio_rates";
+    private const string CacheKey = "catalog";
     private const string ExchangeRateClient = "exchange-rate-api";
     private const string ExchangeRateApiKeyConfig = "exchange_rate_api_key";
     // V-02-05 (MED-10/11): acotar tasas razonables. EUR/USD tipico 0.5-2.0, criptomonedas
@@ -35,23 +38,32 @@ public sealed class TiposCambioService : ITiposCambioService
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
     private readonly AppDbContext _dbContext;
-    private readonly IMemoryCache _cache;
+    private readonly ICacheService _cacheService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<TiposCambioService> _logger;
     private readonly ISecretProtector _secretProtector;
+    private readonly CachingOptions _cachingOptions;
 
     public TiposCambioService(
         AppDbContext dbContext,
-        IMemoryCache cache,
+        ICacheService cacheService,
         IHttpClientFactory httpClientFactory,
         ILogger<TiposCambioService> logger,
-        ISecretProtector secretProtector)
+        ISecretProtector secretProtector,
+        IOptions<CachingOptions> cachingOptions)
     {
         _dbContext = dbContext;
-        _cache = cache;
+        _cacheService = cacheService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _secretProtector = secretProtector;
+        _cachingOptions = cachingOptions.Value;
+    }
+
+    private void InvalidateCache()
+    {
+        _cacheService.Invalidate(new CacheNamespace(Namespace));
+        _cacheService.Invalidate(new CacheNamespace(DashboardService.MetricsNamespace));
     }
 
     public async Task<decimal> ConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken)
@@ -447,11 +459,16 @@ public sealed class TiposCambioService : ITiposCambioService
 
     private async Task<RateCatalog> GetRateCatalogAsync(CancellationToken cancellationToken)
     {
-        if (_cache.TryGetValue<RateCatalog>(CacheKey, out var cached) && cached is not null)
-        {
-            return cached;
-        }
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(Namespace),
+            CacheKey,
+            BuildRateCatalogAsync,
+            _cachingOptions.TiposCambioTtl,
+            cancellationToken);
+    }
 
+    private async Task<RateCatalog> BuildRateCatalogAsync(CancellationToken cancellationToken)
+    {
         var rawRates = await _dbContext.TiposCambio
             .AsNoTracking()
             .Select(x => new { x.DivisaOrigen, x.DivisaDestino, x.Tasa })
@@ -486,13 +503,8 @@ public sealed class TiposCambioService : ITiposCambioService
             AddGraphEdge(graph, to, from, inverseRate);
         }
 
-        var catalog = new RateCatalog(rates, graph);
-
-        _cache.Set(CacheKey, catalog, CacheDuration);
-        return catalog;
+        return new RateCatalog(rates, graph);
     }
-
-    private void InvalidateCache() => _cache.Remove(CacheKey);
 
     private async Task SyncDefaultDashboardCurrencyAsync(CancellationToken cancellationToken)
     {

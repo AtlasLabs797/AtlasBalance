@@ -1,12 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -198,15 +200,17 @@ public class TiposCambioServiceTests
     private static TiposCambioService BuildService(AppDbContext db, HttpMessageHandler? handler = null)
     {
         var cache = new MemoryCache(new MemoryCacheOptions());
+        var cacheService = new CacheService(cache, NullLogger<CacheService>.Instance);
         var client = handler is null ? new HttpClient() : new HttpClient(handler);
         client.BaseAddress = new Uri("https://example.invalid/");
 
         return new TiposCambioService(
             db,
-            cache,
+            cacheService,
             new StaticHttpClientFactory(client),
             NullLogger<TiposCambioService>.Instance,
-            new PlainTextSecretProtector());
+            new PlainTextSecretProtector(),
+            Options.Create(new CachingOptions()));
     }
 
     private sealed class StaticHttpClientFactory : IHttpClientFactory

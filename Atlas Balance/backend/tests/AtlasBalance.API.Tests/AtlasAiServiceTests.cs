@@ -10,6 +10,10 @@ using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public class AtlasAiServiceTests
@@ -51,7 +55,7 @@ public class AtlasAiServiceTests
             db,
             new StaticHttpClientFactory(),
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(
@@ -102,7 +106,7 @@ public class AtlasAiServiceTests
             db,
             new StaticHttpClientFactory(),
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(
@@ -165,7 +169,7 @@ public class AtlasAiServiceTests
             db,
             new StaticHttpClientFactory(),
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(
@@ -193,7 +197,7 @@ public class AtlasAiServiceTests
             db,
             new StaticHttpClientFactory(),
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.GetConfigAsync(
@@ -220,7 +224,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None, "../bad model");
@@ -243,7 +247,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Dame una receta de cocina con pollo", "127.0.0.1", CancellationToken.None);
@@ -272,7 +276,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         await sut.AskAsync(AdminScope(userId), question, "127.0.0.1", CancellationToken.None);
@@ -294,7 +298,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Gastos del mes", "127.0.0.1", CancellationToken.None);
@@ -320,7 +324,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Gastos del mes", "127.0.0.1", CancellationToken.None);
@@ -358,7 +362,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Cuanto se pago en seguros?", "127.0.0.1", CancellationToken.None);
@@ -412,7 +416,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -459,7 +463,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Que cuentas han tenido mas gastos este trimestre?", "127.0.0.1", CancellationToken.None);
@@ -508,7 +512,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(
@@ -560,7 +564,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(
@@ -609,7 +613,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Que titulares han tenido mas gastos este trimestre?", "127.0.0.1", CancellationToken.None);
@@ -641,7 +645,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Que cuentas han tenido mas gastos este trimestre?", "127.0.0.1", CancellationToken.None);
@@ -662,7 +666,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -699,7 +703,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -750,7 +754,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Saldo actual de mis cuentas", "127.0.0.1", CancellationToken.None);
@@ -879,7 +883,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         await sut.AskAsync(
@@ -915,7 +919,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Dime gastos y claves", "127.0.0.1", CancellationToken.None);
@@ -942,7 +946,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -967,7 +971,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -995,7 +999,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1021,7 +1025,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1048,7 +1052,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1071,7 +1075,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Consulta privada de nominas", "127.0.0.1", CancellationToken.None);
@@ -1093,7 +1097,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Consulta privada de saldos", "127.0.0.1", CancellationToken.None);
@@ -1120,7 +1124,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Consulta privada de saldos", "127.0.0.1", CancellationToken.None);
@@ -1163,7 +1167,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1186,7 +1190,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen mensual privado", "127.0.0.1", CancellationToken.None);
@@ -1229,7 +1233,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1249,7 +1253,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1271,7 +1275,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen mensual privado", "127.0.0.1", CancellationToken.None);
@@ -1297,7 +1301,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen mensual privado", "127.0.0.1", CancellationToken.None);
@@ -1325,7 +1329,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen mensual", "127.0.0.1", CancellationToken.None);
@@ -1353,7 +1357,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen mensual", "127.0.0.1", CancellationToken.None);
@@ -1394,7 +1398,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen mensual", "127.0.0.1", CancellationToken.None);
@@ -1413,7 +1417,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1442,7 +1446,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1473,7 +1477,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1497,7 +1501,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1536,7 +1540,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1564,7 +1568,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1588,7 +1592,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(
@@ -1615,7 +1619,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(
@@ -1644,7 +1648,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1669,7 +1673,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var act = () => sut.AskAsync(AdminScope(userId), "Gastos del mes", "127.0.0.1", CancellationToken.None);
@@ -1695,7 +1699,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
@@ -1743,7 +1747,7 @@ public class AtlasAiServiceTests
             db,
             httpFactory,
             new PlainTextSecretProtector(),
-            new UserAccessService(db),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
             new AuditService(db));
 
         var result = await sut.AskAsync(AdminScope(userId), "Seguro volumen", "127.0.0.1", CancellationToken.None);

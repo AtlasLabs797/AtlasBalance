@@ -1,5 +1,79 @@
 # Documentacion tecnica
 
+## 2026-07-27 - V-02.07 - Capa de cache para lecturas repetidas
+
+- La API corre en una sola instancia Windows on-premise y solo tiene
+  `IMemoryCache` (registrado en `Program.cs:136`). Esto encaja con la
+  arquitectura single-node documentada en `SPEC.md` y la auditoria
+  pre-internet (`SEGURIDAD_AUDITORIA_V-01.03.md:85` ya preveia que,
+  si algun dia se escala, esta capa habra que moverla a Redis).
+- `AtlasBalance.API/Caching/CacheService.cs` envuelve `IMemoryCache`
+  con `GetOrLoadAsync<T>(namespace, key, loader, ttl, ct)`. Aplica
+  single-flight con un `SemaphoreSlim` por `namespace+key` (asi N
+  peticiones concurrentes con cache miss hacen UNA sola consulta) y
+  mantiene una generacion por namespace (cada escritura bumpea el
+  contador y todas las claves cacheadas quedan invalidadas sin
+  enumerar `IMemoryCache`).
+- `AtlasBalance.API/Caching/DashboardCacheInvalidator.cs` expone la
+  fachada de invalidacion: `InvalidateDashboardScope`,
+  `InvalidateDashboardReference`, `InvalidateDashboardMetrics`.
+- `AtlasBalance.API/Data/DashboardCacheInvalidationInterceptor.cs` es
+  un `SaveChangesInterceptor` registrado tras
+  `AuditSaveChangesInterceptor` que invalida los caches del dashboard
+  tras un `SaveChanges` exitoso si las entidades tocadas pertenecen
+  a los grupos configurados (extractos, cuentas, plazos fijos,
+  permisos, usuarios, configuracion relevante). Asi cualquier ruta
+  (controllers, jobs Hangfire, seeds) queda cubierta sin acoplar la
+  fachada en cada consumer.
+- Consumidores actuales:
+  - `TiposCambioService` usa `ICacheService` para el catalogo de
+    tasas (TTL 5 min). Cierra la race benigna CONC-027 que
+    documentaba `AUDITORIA_CONCURRENCIA_2026-07-10.md:302`.
+  - `DashboardService` cachea el `Scope` por `userId` (TTL 30 s), la
+    referencia `divisa_base + colores` (TTL 5 min) y las `Metrics`
+    (TTL 15 s, clave `userId|paisId|divisa|hashCuentas`). Esto
+    reduce las tres llamadas paralelas del frontend en
+    `DashboardPage.tsx:161` (y equivalentes en `CuentasPage.tsx:313`
+    y `TitularesPage.tsx:195`) a una sola familia de lecturas por
+    TTL.
+  - `ConfiguracionRepository` cachea el mapa completo de
+    `CONFIGURACIONES` (TTL 120 s). Cierra MED-18: los 6+ round-trips
+    por escritura de extracto (`AlertaService.cs:344-365`) y los
+    servicios que releen SMTP/IA/backup pasan a 1 consulta por TTL.
+    La fila cruda entra al cache; `_secretProtector.UnprotectFromStorage`
+    se aplica bajo demanda en el caller (nunca se cachea plaintext).
+  - `UserAccessService.GetScopeAsync` cachea el `UserAccessScope`
+    por `userId` (TTL 45 s) con bypass explicito para admin. Cierra
+    CONC-028: la query `Cuentas.Any(... PermisosUsuario.Any(...))`
+    ya no corre en cada request autenticado.
+  - `IntegrationTokenService.ValidateActiveTokenAsync` cachea el
+    token activo por `TokenHash` (TTL 20 s). OpenClaw llega a
+    100 req/min del mismo token sin golpear BD. `RevokeAsync`
+    invalida el namespace completo tras `SaveChanges` (ventana
+    maxima 20 s).
+  - `AuthService.GetCurrentAsync` cachea el `AuthResult` de
+    `GET /api/auth/me` con TTL 60 s y clave compuesta
+    `(userId:N)|{securityStamp}`. La rotacion de stamp invalida la
+    entrada por la propia clave; el interceptor anade una capa
+    defensiva ante cambios en `USUARIOS`/`PERMISOS_USUARIO`/
+    `PREFERENCIAS_USUARIO_CUENTA`.
+- `IMemoryCache` queda por proceso. El helper expone
+  `GetMetricsSnapshot(string)` con hits, misses, loads, single-flight
+  waits, invalidations y load failures agregados por namespace, sin
+  contener claves ni IDs (cero leakage a logs).
+- Tests: `tests/AtlasBalance.Caching.Tests/` (15/15 PASS). Cubre
+  single-flight concurrente, generacion por namespace, aislamiento
+  entre namespaces, race invalidar durante carga, propagacion de
+  cancelacion, invalidacion del catalogo de tasas tras escritura
+  manual, bump de generaciones al invalidar, consistencia del cache
+  de scope tras cambio conceptual de permisos, hit/miss + invalidacion
+  de `ConfiguracionRepository` y `IntegrationTokenService`, bypass
+  admin sin tocar cache en `UserAccessService`.
+- TTLs: configurables via `appsettings.json` ->
+  `AtlasBalance:Caching` (ver `CachingOptions.cs`). En Development
+  se usan valores bajos (5-30 s) para iterar rapido; en Production
+  los valores por defecto se mantienen (15-300 s segun volatilidad).
+
 ## 2026-07-27 - V-02.07 - Fuente unica del logo SVG
 
 - El SVG del logo de Atlas Balance vive en

@@ -189,6 +189,26 @@
   aplicacion completa desde una base vacia sigue dentro del gate externo
   PostgreSQL/Testcontainers de V-02.06.
 
+## Cerrados en V-02.07
+
+### 2026-07-27 - V-02.07 - Cerrado - CONC-027 cache de tipos de cambio con race benigno
+
+- **Contexto:** la auditoria de concurrencia 2026-07-10
+  (`AUDITORIA_CONCURRENCIA_2026-07-10.md:302`) documentaba que
+  `TiposCambioService.GetRateCatalogAsync` podia repoblar la cache con
+  datos viejos cuando `InvalidateCache` se ejecutaba entre la query y
+  el `_cache.Set` del hilo lector.
+- **Causa raiz:** patron check-then-act sobre `IMemoryCache` sin lock.
+- **Solucion aplicada:** `TiposCambioService` migra a la nueva capa
+  `ICacheService.GetOrLoadAsync` con single-flight (lock por
+  namespace+key) y generaciones (invalidation O(1) sin enumerar
+  entries). El escenario de regresion queda cubierto por
+  `CacheServiceTests.Concurrent_Invalidate_During_Load_Should_Not_Repopulate_Stale_Data`
+  y `CacheIntegrationTests.TiposCambio_Invalidate_Should_Refresh_After_Manual_Write`
+  en el proyecto nuevo `tests/AtlasBalance.Caching.Tests/` (9/9 PASS).
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada CONC-027) y `Documentacion/Versiones/v-02.07.md`.
+
 ## Abiertos
 
 ### 2026-07-16 - V-02.06 - IMPORTACION_LOTES sin soft-delete

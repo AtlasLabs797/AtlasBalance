@@ -1,4 +1,5 @@
 using FluentAssertions;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -23,13 +25,16 @@ public class DashboardServiceTests
     private static DashboardService BuildService(AppDbContext db)
     {
         var cache = new MemoryCache(new MemoryCacheOptions());
+        var cacheService = new CacheService(cache, NullLogger<CacheService>.Instance);
+        var cachingOptions = Options.Create(new CachingOptions());
         var tiposCambioService = new TiposCambioService(
             db,
-            cache,
+            cacheService,
             new StaticHttpClientFactory(),
             NullLogger<TiposCambioService>.Instance,
-            new PlainTextSecretProtector());
-        return new DashboardService(db, tiposCambioService);
+            new PlainTextSecretProtector(),
+            cachingOptions);
+        return new DashboardService(db, cacheService, tiposCambioService, cachingOptions);
     }
 
     private static void SeedDashboardConfig(AppDbContext db, Guid adminId)

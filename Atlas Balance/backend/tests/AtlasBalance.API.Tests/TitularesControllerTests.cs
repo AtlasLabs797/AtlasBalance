@@ -10,6 +10,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public sealed class TitularesControllerTests
@@ -184,7 +188,7 @@ public sealed class TitularesControllerTests
 
     private static TitularesController BuildController(AppDbContext db, Guid userId, RolUsuario role)
     {
-        var controller = new TitularesController(db, new UserAccessService(db), new AuditService(db));
+        var controller = new TitularesController(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())), new AuditService(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

@@ -13,6 +13,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public sealed class IntegracionesControllerTests

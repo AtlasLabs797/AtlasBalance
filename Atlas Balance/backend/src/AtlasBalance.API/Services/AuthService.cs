@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
@@ -11,6 +12,7 @@ using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace AtlasBalance.API.Services;
@@ -30,6 +32,16 @@ public interface IAuthService
 
 public sealed class AuthService : IAuthService
 {
+    /// <summary>
+    /// Namespace de cache para el payload de <c>GET /api/auth/me</c>. El TTL
+    /// se compone con <c>securityStamp</c> para que un cambio de contrasena
+    /// o de permisos del usuario invalide la entrada sin necesidad de bump.
+    /// Adicionalmente, el <c>DashboardCacheInvalidationInterceptor</c>
+    /// invalida este namespace tras cambios en <c>USUARIOS</c>,
+    /// <c>PERMISOS_USUARIO</c> o <c>PREFERENCIAS_USUARIO_CUENTA</c>.
+    /// </summary>
+    internal const string AuthCurrentNamespace = "auth_current";
+
     private const int MaxFailedLoginAttempts = 5;
     private const int MaxLoginFailuresPerClientAndEmail = 5;
     private const int MaxLoginFailuresPerClient = 20;
@@ -50,19 +62,25 @@ public sealed class AuthService : IAuthService
     private readonly IAuditService _auditService;
     private readonly IMemoryCache _cache;
     private readonly ISecretProtector _secretProtector;
+    private readonly ICacheService _cacheService;
+    private readonly CachingOptions _cachingOptions;
 
     public AuthService(
         AppDbContext dbContext,
         IConfiguration configuration,
         IAuditService auditService,
         ISecretProtector secretProtector,
+        ICacheService cacheService,
+        IOptions<CachingOptions> cachingOptions,
         IMemoryCache? cache = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _auditService = auditService;
         _cache = cache ?? FallbackMemoryCache;
-        // V-02-05 (MED-1): el protector es obligatorio. Si DI no lo inyecta, el
+        _cacheService = cacheService;
+        _cachingOptions = cachingOptions.Value;
+        // V-02.05 (MED-1): el protector es obligatorio. Si DI no lo inyecta, el
         // constructor falla ruidosamente en lugar de degradar a PassthroughSecretProtector
         // (que almacena secretos en claro). Solo se permite explicitamente via constructor
         // con un protector de testing (en cuyo caso el caller debe responsabilizarse).
@@ -74,11 +92,11 @@ public sealed class AuthService : IAuthService
         {
             throw new InvalidOperationException("PassthroughSecretProtector detectado. Esto almacenaria secretos en claro. Use DataProtectionSecretProtector.");
         }
-        _secretProtector = secretProtector;
+_secretProtector = secretProtector;
     }
 
     /// <summary>
-    /// V-02-05 (MED-1): los tests unitarios pueden necesitar el passthrough. Lo activan
+    /// V-02.05 (MED-1): los tests unitarios pueden necesitar el passthrough. Lo activan
     /// explicitamente. En produccion esto queda siempre en false.
     /// </summary>
     public static bool AllowPassthroughSecretProtector { get; set; }
@@ -649,7 +667,18 @@ public sealed class AuthService : IAuthService
             throw new AuthException("Usuario no encontrado", StatusCodes.Status404NotFound);
         }
 
-        return await BuildAuthResultAsync(usuario, accessToken: null, refreshToken: null, cancellationToken);
+        // Clave compuesta con securityStamp: un cambio de contrasena o
+        // rotacion del stamp invalida la entrada cacheada sin pasar por el
+        // interceptor. El interceptor anade una capa defensiva por si la
+        // rotacion del stamp no ocurre (p.ej. solo cambian permisos).
+        var cacheKey = $"{userId:N}|{usuario.SecurityStamp}";
+
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(AuthCurrentNamespace),
+            cacheKey,
+            ct => BuildAuthResultAsync(usuario, accessToken: null, refreshToken: null, ct),
+            _cachingOptions.AuthCurrentTtl,
+            cancellationToken);
     }
 
     public async Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken)

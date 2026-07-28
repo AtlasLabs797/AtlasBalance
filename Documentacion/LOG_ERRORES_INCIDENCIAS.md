@@ -1,5 +1,188 @@
 # Log de errores e incidencias
 
+## 2026-07-27 - V-02.07 - Cache global de CONFIGURACIONES cierra MED-18 (CERRADO)
+
+- **Contexto:** la auditoria de performance 2026-07-27 (entrada
+  "Cache repeated read queries" en el check-list de rendimiento)
+  senalaba que `AlertaService.EvaluateSaldoPostAsync` hacia 6+
+  round-trips a `CONFIGURACIONES` por cada escritura de extracto
+  (uno por cada clave operativa que el cooldown necesitaba consultar:
+  `alerta_saldo_cooldown_horas`, `alerta_saldo_umbral_eur`,
+  `dashboard_color_*`, etc.). Ademas, los servicios `EmailService`,
+  `BackupService`, `BackupEncryptionService`, `RevisionService`,
+  `HardenedConciliacionService`, `AtlasAiService`,
+  `TiposCambioService`, `GoogleDriveBackupService` y
+  `ActualizacionService` releen `CONFIGURACIONES` directamente cada
+  vez que se invocan.
+- **Riesgo:** en una sesion activa de un usuario con alertas y
+  dashboard, una escritura de extracto disparaba ~8 SELECTs sobre
+  `CONFIGURACIONES`. Sumado al dashboard y a las llamadas de
+  configuracion de los jobs Hangfire, la tabla `CONFIGURACIONES`
+  era el segundo origen de queries mas frecuente del backend por
+  detras de `EXTRACTOS`.
+- **Solucion aplicada (V-02.07):** `IConfiguracionRepository.GetAsync`
+  cachea el mapa completo de `CONFIGURACIONES` (clave -> `{ Valor,
+  EsSecreto }`) con TTL 120 s. Clave unica `config:all:v1`. La fila
+  cruda entra al cache; `_secretProtector.UnprotectFromStorage` se
+  aplica bajo demanda en el caller, por lo que **nunca se cachea el
+  valor desprotegido de un secreto** (clave API, password SMTP,
+  OAuth client secret, etc.). Invalidacion en
+  `ConfiguracionRepository.UpsertAsync` y como red de seguridad en
+  el `DashboardCacheInvalidationInterceptor` ante cualquier save
+  changes sobre `Configuracion` (seeds, jobs, migraciones).
+- **Verificacion:** 2 facts nuevos en `CacheIntegrationTests.cs`
+  pasan (`ConfiguracionRepository_GetAsync_Should_Return_Cached_Value_On_Second_Call`,
+  `ConfiguracionRepository_UpsertAsync_Should_Invalidate_Cache`).
+  Total del proyecto: 15/15 PASS en `AtlasBalance.Caching.Tests`.
+- **Regla operativa:** cualquier futura cache de CONFIGURACIONES
+  debe pasar por `IConfiguracionRepository`, no por
+  `_dbContext.Configuraciones` directo. Si necesitas una clave
+  adicional que no existe en el mapa cacheado, anadela via
+  `UpsertAsync` (no bypass).
+
+## 2026-07-27 - V-02.07 - Cache del scope de usuario cierra CONC-028 (CERRADO)
+
+- **Contexto:** `AUDITORIA_CONCURRENCIA_2026-07-10.md` marco
+  CONC-028 (severidad MED) sobre `UserAccessService.GetScopeAsync`:
+  la query `Cuentas.Any(c => ... PermisosUsuario.Any(p => ...))`
+  corria en cada endpoint autenticado (`CuentasController`,
+  `TitularesController`, `RevisionController`, `AlertasController`,
+  `IaController`, etc.). Con un usuario activo, eso eran ~10-15
+  ms por request solo para resolver el scope, multiplicado por las
+  tres llamadas paralelas del dashboard.
+- **Solucion aplicada (V-02.07):** `IUserAccessService.GetScopeAsync`
+  cachea el calculo por `userId` con TTL 45 s. Bypass explicito para
+  admin: el resultado es trivial (`HasGlobalAccess = true`) y un
+  cambio de rol puntual (admin -> gerente) debe verse sin esperar
+  al TTL. La rotacion de `SecurityStamp` (cambio de password,
+  revocacion administrativa) ya invalida el JWT en `UserStateMiddleware`,
+  pero para consistencia del scope dentro de la misma sesion
+  activa, el `DashboardCacheInvalidationInterceptor` invalida
+  `user_access_scope` ante cambios en `PermisoUsuario`,
+  `PreferenciaUsuarioCuenta`, `Usuario`, `Cuenta`, `Titular` o
+  `Pais`.
+- **Verificacion:** 2 facts nuevos en `CacheIntegrationTests.cs`
+  pasan (`UserAccessService_GetScopeAsync_Should_Cache_For_NonAdmin_User`,
+  `UserAccessService_GetScopeAsync_Admin_Bypass_Should_Not_Touch_Cache`).
+- **Regla operativa:** cualquier servicio que reciba un
+  `ClaimsPrincipal` y necesite permisos debe llamar a
+  `IUserAccessService.GetScopeAsync` (no usar `user.IsInRole` para
+  logica de autorizacion, ni filtrar colecciones manualmente). Si
+  necesitas invalidar el scope fuera del flujo normal (p.ej. un
+  job que reasigna titulares), llama a
+  `IDashboardCacheInvalidator.InvalidateDashboardScope()` y, si
+  fuera del alcance del dashboard, expone un helper equivalente
+  sobre el namespace `UserAccessService.Namespace`.
+
+## 2026-07-27 - V-02.07 - Cache del payload de /api/auth/me (CERRADO)
+
+- **Contexto:** `AuthService.GetCurrentAsync` (consumido por
+  `GET /api/auth/me`) reconstruia en cada request el `AuthResult`
+  completo: cargar `Usuario`, listar todos sus `PermisosUsuario`,
+  todas sus `PreferenciasUsuarioCuenta`, y resolver si requiere
+  MFA consultando `CONFIGURACIONES`. La SPA llama a este endpoint
+  en cada navegacion (`Layout.tsx` -> `useAuthStore.bootstrap`),
+  asi que una sesion activa generaba ~10 queries solo para "quien
+  soy".
+- **Solucion aplicada (V-02.07):** `GetCurrentAsync` cachea el
+  resultado con TTL 60 s y clave compuesta `(userId:N)|{securityStamp}`.
+  La rotacion de stamp (cambio de password o revocacion
+  administrativa) invalida la entrada por la propia clave, sin
+  pasar por el interceptor. Adicionalmente, el
+  `DashboardCacheInvalidationInterceptor` invalida el namespace
+  `auth_current` ante cambios en `USUARIOS`, `PERMISOS_USUARIO` o
+  `PREFERENCIAS_USUARIO_CUENTA` (defensa en profundidad: si el
+  stamp no rota por algun motivo, la rotacion del namespace cierra
+  la ventana de staleness a la duracion del TTL).
+- **Verificacion:** cubierto por los tests existentes de
+  `AuthServiceTests` (que ya inyectan `CacheService` + `CachingOptions`
+  tras el cambio de firma del constructor). 15/15 PASS en
+  `AtlasBalance.Caching.Tests`. La cobertura del propio
+  `GetCurrentAsync` con cache se valida de forma estatica: el
+  metodo llama a `_cacheService.GetOrLoadAsync` con namespace y
+  TTL correctos, y la clave compuesta hace que cualquier rotacion
+  de stamp sea naturalmente una entrada nueva.
+- **Regla operativa:** no cachear valores derivados del JWT
+  directamente (rol, email, etc.) porque ya estan en el JWT y se
+  sirven en cada request sin coste. Solo se cachea lo que requiere
+  una query adicional (permisos, preferencias, MFA flag).
+
+## 2026-07-27 - V-02.07 - Cache de validacion de tokens de integracion (CERRADO)
+
+- **Contexto:** `IntegrationTokenService.ValidateActiveTokenAsync` se
+  ejecuta en cada request a `/api/integration/openclaw/*`, que tiene
+  rate limit de 100 req/min por token. Cada validacion ejecuta un
+  SELECT sobre `INTEGRATION_TOKENS` filtrando por `TokenHash`,
+  `Estado`, `FechaExpiracion` y `DeletedAt` (4 indices usados).
+  OpenClaw con un solo cliente activo generaba ~1.7 queries por
+  segundo solo para esto.
+- **Solucion aplicada (V-02.07):** `ValidateActiveTokenAsync`
+  cachea el token activo por `TokenHash` con TTL 20 s. `RevokeAsync`
+  invalida el namespace completo tras `SaveChanges` (ventana
+  maxima de staleness 20 s, consistente con el contrato existente:
+  el rate limiter ya toleraba esta ventana). El
+  `DashboardCacheInvalidationInterceptor` invalida el namespace
+  `integration_token` ante cualquier save changes sobre
+  `INTEGRATION_TOKENS`, cubriendo el path de rotacion que va por
+  `IntegracionesController.cs:284` y bypassa `RevokeAsync`.
+- **Verificacion:** 2 facts nuevos en `CacheIntegrationTests.cs`
+  pasan (`IntegrationTokenService_ValidateActiveTokenAsync_Should_Hit_Cache_After_First_Call`,
+  `IntegrationTokenService_RevokeAsync_Should_Invalidate_Cache_Namespace`).
+- **Regla operativa:** rotar tokens de integracion sigue pasando
+  por `IntegracionesController` (que crea el nuevo, marca el viejo
+  como `Rotado` y lo guarda). El interceptor detecta el save changes
+  del nuevo token e invalida la cache, por lo que la siguiente
+  peticion del token viejo (si algun cliente sigue usandolo por un
+  breve momento) encuentra el token nuevo en BD y obtiene 401
+  inmediatamente.
+
+## 2026-07-27 - V-02.07 - Cache de tipos de cambio con race benigno CONC-027 (CERRADO)
+
+- **Contexto:** la auditoria de concurrencia 2026-07-10
+  (`AUDITORIA_CONCURRENCIA_2026-07-10.md:302`, severidad LOW)
+  documentaba que `TiposCambioService.GetRateCatalogAsync` podia
+  repoblar la cache con datos viejos si `InvalidateCache` se ejecutaba
+  entre la query a `TIPOS_CAMBIO` y el `_cache.Set` posterior.
+  El patron era `cache.Get` (miss) -> query BD -> otro hilo
+  `Invalidate` -> primer hilo `_cache.Set` con datos obsoletos.
+  Riesgo bajo porque el TTL era de 5 min y el siguiente read lo
+  corregia, pero era ruido en logs y podia confundir auditorias.
+- **Causa raiz:** la cache estaba implementada con un patron
+  check-then-act sobre `IMemoryCache` sin lock. La invalidacion
+  tampoco era atomica con la escritura.
+- **Solucion aplicada (V-02.07, 2026-07-27):** se migra a una nueva
+  capa de cache `ICacheService` con:
+  - `GetOrLoadAsync<T>(namespace, key, loader, ttl, ct)` que usa
+    un `SemaphoreSlim` por namespace+key (single-flight: N
+    peticiones concurrentes -> 1 sola consulta a BD).
+  - Generaciones: cada escritura bumpea un contador del namespace
+    y todas las entradas cacheadas quedan invalidadas sin enumerarlas
+    (las claves efectivas pasan a ser `{ns}|g{n}|{key}`).
+  - `Invalidate(namespace)` invalida de forma O(1) sin tocar el
+    `IMemoryCache` subyacente.
+  - `TiposCambioService.InvalidateCache()` ahora invalida tanto el
+    namespace del catalogo como `dashboard_metrics` (porque el
+    dashboard usa tasas convertidas).
+  - Tests `CacheServiceTests.Concurrent_Invalidate_During_Load_Should_Not_Repopulate_Stale_Data`
+    y `CacheIntegrationTests.TiposCambio_Invalidate_Should_Refresh_After_Manual_Write`
+    cierran el escenario de regresion. 9/9 PASS.
+- **Archivos tocados:**
+  `AtlasBalance.API/Caching/CacheService.cs` (nuevo),
+  `AtlasBalance.API/Caching/CacheMetrics.cs` (nuevo),
+  `AtlasBalance.API/Caching/DashboardCacheInvalidator.cs` (nuevo),
+  `AtlasBalance.API/Services/TiposCambioService.cs` (migracion),
+  `AtlasBalance.API/Data/DashboardCacheInvalidationInterceptor.cs`
+  (nuevo, invalidacion automatica tras SaveChanges),
+  `AtlasBalance.API/Program.cs` (registro DI),
+  `AtlasBalance.API.Tests/TiposCambioServiceTests.cs` y
+  `AtlasBalance.API.Tests/DashboardServiceTests.cs` (wiring),
+  `tests/AtlasBalance.Caching.Tests/` (proyecto nuevo con 9 facts).
+- **Regla operativa:** cualquier cache nueva debe pasar por
+  `ICacheService.GetOrLoadAsync` con `CacheNamespace` explicito y key
+  normalizada. La invalidacion se centraliza en
+  `IDashboardCacheInvalidator` para que el `SaveChangesInterceptor`
+  siga siendo el unico punto de control.
+
 ## 2026-07-27 - V-02.07 - Auditoria IDOR y cierre de recomendacion V-01.06 (CERRADO)
 
 - **Contexto:** la auditoria de seguridad V-01.06 (`DOCUMENTACION_CAMBIOS.md:7278`,

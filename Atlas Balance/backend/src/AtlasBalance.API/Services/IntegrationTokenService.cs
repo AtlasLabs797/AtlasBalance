@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AtlasBalance.API.Services;
 
@@ -20,12 +22,22 @@ public interface IIntegrationTokenService
 
 public sealed class IntegrationTokenService : IIntegrationTokenService
 {
+    internal const string Namespace = "integration_token";
+
     private readonly AppDbContext _dbContext;
     private readonly IClock _clock;
+    private readonly ICacheService _cacheService;
+    private readonly CachingOptions _cachingOptions;
 
-    public IntegrationTokenService(AppDbContext dbContext, IClock? clock = null)
+    public IntegrationTokenService(
+        AppDbContext dbContext,
+        ICacheService cacheService,
+        IOptions<CachingOptions> cachingOptions,
+        IClock? clock = null)
     {
         _dbContext = dbContext;
+        _cacheService = cacheService;
+        _cachingOptions = cachingOptions.Value;
         _clock = clock ?? new SystemClock();
     }
 
@@ -55,6 +67,16 @@ public sealed class IntegrationTokenService : IIntegrationTokenService
 
         var tokenHash = ComputeSha256(plainToken.Trim());
 
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(Namespace),
+            tokenHash,
+            ct => LoadActiveTokenAsync(tokenHash, ct),
+            _cachingOptions.IntegrationTokenTtl,
+            cancellationToken);
+    }
+
+    private async Task<IntegrationToken?> LoadActiveTokenAsync(string tokenHash, CancellationToken cancellationToken)
+    {
         return await _dbContext.IntegrationTokens
             .FirstOrDefaultAsync(x =>
                 x.TokenHash == tokenHash &&
@@ -108,6 +130,13 @@ public sealed class IntegrationTokenService : IIntegrationTokenService
         token.Estado = EstadoTokenIntegracion.Revocado;
         token.FechaRevocacion = _clock.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // Tras revocar, los tokens cacheados por hash deben invalidarse para
+        // que la siguiente validacion no devuelva un token que ya no es valido.
+        // Usamos la generacion por namespace porque no siempre tenemos acceso
+        // al hash desde el ID.
+        _cacheService.Invalidate(new CacheNamespace(Namespace));
+
         return true;
     }
 }

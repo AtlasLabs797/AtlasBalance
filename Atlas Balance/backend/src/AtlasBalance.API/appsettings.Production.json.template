@@ -27,6 +27,19 @@
     "UseSystemProxy": false,
     "ProxyUrl": ""
   },
+  "AtlasBalance": {
+    "Caching": {
+      "ConfigurationTtlSeconds": 120,
+      "UserScopeTtlSeconds": 45,
+      "IntegrationTokenTtlSeconds": 20,
+      "DashboardScopeTtlSeconds": 30,
+      "DashboardReferenceTtlSeconds": 300,
+      "DashboardMetricsTtlSeconds": 15,
+      "AuthCurrentTtlSeconds": 60,
+      "TiposCambioTtlSeconds": 300,
+      "SizeLimitEntries": 4096
+    }
+  },
   "WatchdogSettings": {
     "BaseUrl": "http://localhost:5001",
     "SharedSecret": "GENERAR-SHARED-SECRET-MINIMO-32-CARACTERES-AQUI",
