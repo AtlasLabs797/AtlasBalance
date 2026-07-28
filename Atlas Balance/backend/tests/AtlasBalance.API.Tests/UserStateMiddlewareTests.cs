@@ -6,6 +6,7 @@ using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -42,7 +43,8 @@ public sealed class UserStateMiddlewareTests
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        },
+            NullLogger<UserStateMiddleware>.Instance);
 
         var context = BuildContext(user.Id, "old-stamp");
 
@@ -75,7 +77,8 @@ public sealed class UserStateMiddlewareTests
             nextCalled = true;
             context.Response.StatusCode = StatusCodes.Status204NoContent;
             return Task.CompletedTask;
-        });
+        },
+            NullLogger<UserStateMiddleware>.Instance);
 
         // Un administrador con stamp vigente tambien debe acreditar el MFA que
         // exigimos a todas las sesiones administrativas desde V-02.06.
@@ -113,7 +116,8 @@ public sealed class UserStateMiddlewareTests
         {
             nextCalled = true;
             return Task.CompletedTask;
-        });
+        },
+            NullLogger<UserStateMiddleware>.Instance);
 
         var context = BuildContext(user.Id, user.SecurityStamp);
 
@@ -148,7 +152,8 @@ public sealed class UserStateMiddlewareTests
             nextCalled = true;
             context.Response.StatusCode = StatusCodes.Status204NoContent;
             return Task.CompletedTask;
-        });
+        },
+            NullLogger<UserStateMiddleware>.Instance);
 
         var nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
         var context = BuildContextWithMfa(user.Id, user.SecurityStamp, user.SecurityStamp, nowUnix);
@@ -185,7 +190,8 @@ public sealed class UserStateMiddlewareTests
             nextCalled = true;
             context.Response.StatusCode = StatusCodes.Status204NoContent;
             return Task.CompletedTask;
-        });
+        },
+            NullLogger<UserStateMiddleware>.Instance);
 
         var context = BuildContextWithRole(user.Id, user.SecurityStamp, nameof(RolUsuario.EMPLEADO));
 

@@ -151,7 +151,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var normalizedMap = NormalizeMap(request.Mapeo);
@@ -705,7 +705,7 @@ public sealed class ImportacionService : IImportacionService
         CancellationToken cancellationToken,
         IReadOnlyList<FilaValidacionResponse>? persistedValidationRows)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var separator = persistedValidationRows is null
@@ -943,7 +943,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
         if (ResolveTipoCuenta(cuenta) != TipoCuenta.PLAZO_FIJO)
         {
             throw new ImportacionException("Esta operacion solo aplica a cuentas de plazo fijo", StatusCodes.Status400BadRequest);

@@ -1,4 +1,4 @@
-# Registro de bugs
+﻿# Registro de bugs
 
 ## Abiertos
 
@@ -208,6 +208,232 @@
   en el proyecto nuevo `tests/AtlasBalance.Caching.Tests/` (9/9 PASS).
 - **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
   (entrada CONC-027) y `Documentacion/Versiones/v-02.07.md`.
+
+### 2026-07-29 - V-02.07 - Cerrado - Fragmento de clave API del proveedor de IA filtrado al cliente (severidad ALTA)
+
+- **Contexto:** auditoria de mensajes de error sensibles y fugas de
+  datos, sobre `Services/AtlasAiService.cs` y
+  `Controllers/IaController.cs`.
+- **Hallazgo:** un 401 real del proveedor
+  (`{"error":{"message":"Incorrect API key provided:
+  sk-proj-abc123XYZ"}}`, placeholder) atravesaba
+  `ExtractProviderErrorSummary` y `ShortProviderPayload` sin ser
+  redactado, porque el regex de redaccion esperaba la credencial
+  pegada a la palabra clave. El fragmento llegaba al usuario final vía
+  `IaController` ([Authorize] generico, no solo ADMIN) en un 502.
+- **Solucion aplicada:** eliminado el sufijo `{detail}` de los
+  mensajes de error del proveedor; `ShortProviderPayload` redacta ahora
+  tambien por forma de credencial (`sk-proj-`, `sk-or-v1-`, `sk-`,
+  `hf_`, `gsk_`, `xai-`, `AIza`); `ILogger<AtlasAiService>` inyectado
+  para que el detalle quede en Serilog ademas de en auditoria.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. Riesgo residual aceptado y documentado para
+  prefijos de credencial fuera de la lista cubierta.
+
+### 2026-07-29 - V-02.07 - Cerrado - Sourcemaps publicados en produccion (severidad MEDIA)
+
+- **Contexto:** auditoria de mensajes de error sensibles y fugas de
+  datos, sobre `frontend/vite.config.ts` y
+  `Atlas Balance/scripts/Build-Release.ps1`.
+- **Hallazgo:** `sourcemap: 'hidden'` no impide servir `.map`, y
+  `Build-Release.ps1` copiaba `dist` completo a `wwwroot` sin filtrar,
+  exponiendo `/assets/<chunk>.js.map` con el TypeScript original.
+- **Solucion aplicada:** borrado explicito de los `.map` del
+  `wwwroot` publicado tras la copia, con verificacion posterior que
+  lanza excepcion si queda alguno.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado en codigo. Pendiente: `Build-Release.ps1` no se
+  ha ejecutado contra una release real; solo se valido su sintaxis.
+
+### 2026-07-29 - V-02.07 - Cerrado - Error boundary volcaba el stack al navegador y reportaba a endpoint inexistente (severidad MEDIA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/src/components/common/AppErrorBoundary.tsx`.
+- **Hallazgo:** `console.error` activo en produccion mas
+  `sendBeacon` apuntando a `/api/telemetria/errores`, ruta que no
+  existia en el backend. El detalle acababa en la consola del cliente
+  sin dejar registro en servidor.
+- **Solucion aplicada:** eliminado el `console.error`. Endpoint nuevo
+  `POST /api/telemetria/errores` (`Controllers/TelemetriaController.cs`
+  + `DTOs/TelemetriaDtos.cs`), `[AllowAnonymous]`, 20 reportes/IP/min,
+  recorte de longitud, saneado CR/LF, siempre 204. Excluido de
+  `CsrfMiddleware` y `PrimerLoginMiddleware`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado en codigo. Pendiente: no se probo el endpoint en
+  runtime contra un backend levantado.
+
+### 2026-07-29 - V-02.07 - Cerrado - Sin error boundary raiz ni handlers globales (severidad MEDIA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/src/App.tsx` y `frontend/src/main.tsx`.
+- **Hallazgo:** el boundary solo envolvia el contenido de cada ruta;
+  un fallo en layout/providers/`App` dejaba pantalla en blanco sin
+  captura ni reporte. No habia `unhandledrejection` ni `window.onerror`.
+- **Solucion aplicada:** `AppErrorBoundary` envuelve ahora todo el
+  arbol en `main.tsx` (por fuera de `QueryClientProvider` y
+  `BrowserRouter`); listeners de `unhandledrejection` y `error`
+  anadidos. Logica de envio centralizada en
+  `src/utils/reportClientError.ts` (nuevo), tope de 10 reportes por
+  carga de pagina.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `npm run lint` 0/0, `npm run test:unit` 22/22,
+  `npm run build` OK. Sin prueba manual de un crash real en navegador.
+
+### 2026-07-29 - V-02.07 - Cerrado - `ValidationProblemDetails` por defecto exponia detalles internos (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Program.cs`.
+- **Hallazgo:** sin `InvalidModelStateResponseFactory`,
+  `[ApiController]` devolvia `traceId`, URL `type` de rfc7231, tipos
+  .NET (`System.Guid`) y PascalCase (`RawData`) en vez del contrato
+  snake_case.
+- **Solucion aplicada:** `InvalidModelStateResponseFactory` devuelve
+  400 con mensaje generico; detalle real del ModelState va al log
+  saneado por `LogScrubber.Scrub`. Verificado que `errorMessage.ts` no
+  dependia del formato anterior.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `dotnet build`: 0 errores.
+
+### 2026-07-29 - V-02.07 - Cerrado - `JwtBearer.IncludeErrorDetails` en `WWW-Authenticate` (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre la
+  configuracion de JwtBearer en `Program.cs`.
+- **Hallazgo:** `IncludeErrorDetails` en su default `true` filtraba el
+  motivo exacto del rechazo del token y el timestamp exacto de
+  expiracion en el header `WWW-Authenticate`.
+- **Solucion aplicada:** `options.IncludeErrorDetails =
+  builder.Environment.IsDevelopment();`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `dotnet build`: 0 errores.
+
+### 2026-07-29 - V-02.07 - Cerrado - `UserStateMiddleware` distinguia el motivo del rechazo de sesion (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Middleware/UserStateMiddleware.cs`.
+- **Hallazgo:** cuatro mensajes distintos segun la causa (token
+  invalido, sesion invalida, cuenta bloqueada, MFA pendiente),
+  filtrando a quien posee un token robado por que dejo de funcionar.
+- **Solucion aplicada:** mensaje unico "La sesion ya no es valida.
+  Vuelve a iniciar sesion." para las cuatro ramas; motivo real al log
+  via `ILogger<UserStateMiddleware>` inyectado, saneado por
+  `LogScrubber.Scrub`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `UserStateMiddlewareTests.cs` (5 sitios
+  actualizados), `dotnet test tests/AtlasBalance.API.Tests`: 427/427
+  PASS.
+
+### 2026-07-29 - V-02.07 - Cerrado - Rate limit de integracion revelaba la cifra exacta (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`.
+- **Hallazgo:** mensaje "RATE_LIMITED: Mas de 100 requests por minuto
+  para este token" revelaba el limite exacto configurado.
+- **Solucion aplicada:** mensaje reescrito sin la cifra exacta.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-29 - V-02.07 - Cerrado - El build de produccion no eliminaba `console.*` (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/vite.config.ts`.
+- **Hallazgo:** sin `esbuild.drop`, terser ni `minify`, el bundle de
+  produccion conservaba `console.error`/`console.log`/`debugger`. Un
+  primer intento con `esbuild: { drop: [...] }` no funciono: Vite 8
+  usa oxc por defecto y descarta esas opciones en silencio (aviso
+  "Both esbuild and oxc options were set").
+- **Solucion aplicada:** `build.rollupOptions.output.minify = {
+  compress: { dropConsole: true, dropDebugger: true } }` (mecanismo
+  nativo de oxc, solo bajo `build.*`, no afecta a dev).
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. Bundle verificado: 0 `console.error`, 0
+  `console.log`, 0 `debugger`.
+
+### 2026-07-29 - V-02.07 - Cerrado - Sin limite explicito de tamano de request (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Program.cs`.
+- **Hallazgo:** sin `MaxRequestBodySize`, Kestrel aplicaba su default
+  de 30.000.000 bytes, y un cuerpo excesivo caia en el 500 generico
+  del handler global en vez de un 413.
+- **Solucion aplicada:** `MaxRequestBodySize` a 10 MiB, mas rama nueva
+  en el handler global que devuelve el `StatusCode` real de
+  `BadHttpRequestException` sin `ex.Message`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado en codigo. Pendiente: no probado en runtime
+  contra un payload real de importacion grande.
+
+### 2026-07-29 - V-02.07 - Cerrado - `FluentValidation.AspNetCore` registrado sin ningun `AbstractValidator<T>` (severidad BAJA)
+
+- **Contexto:** detectado durante la auditoria de mensajes de error
+  sensibles, al revisar `Program.cs`.
+- **Hallazgo:** `AddFluentValidationAutoValidation()` estaba
+  registrado en `Program.cs`, pero no existia ningun
+  `AbstractValidator<T>` en todo el backend. Configuracion muerta: el
+  registro escaneaba el assembly y no activaba nada.
+- **Causa raiz:** V-02.06 lo cableo para cerrar el hallazgo MED-23
+  (`DTOs sin atributos de validacion`), cuyo enunciado admitia dos
+  vias alternativas: registrar FluentValidation **o** anadir
+  atributos. Se hicieron las dos, pero solo la segunda llego a
+  producir validacion real; el wiring quedo como andamiaje vacio.
+- **Riesgo:** ninguno de seguridad. Deuda de codigo y una dependencia
+  NuGet sin uso (superficie de suministro innecesaria).
+- **Solucion aplicada:** eliminado el `using FluentValidation.AspNetCore`
+  y la llamada
+  `AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters()`
+  de `Program.cs`, y retirada la `PackageReference` de
+  `AtlasBalance.API.csproj`. Regenerados con `--force-evaluate` los
+  cuatro `packages.lock.json` afectados (API y los dos proyectos de
+  test, que arrastraban FluentValidation de forma transitiva; el
+  Watchdog no estaba afectado). Se dejo un comentario en `Program.cs`
+  explicando que MED-23 sigue cerrado por la via de los
+  DataAnnotations, para que nadie lo reanada creyendo que se reabre.
+- **Verificacion:** `dotnet restore --locked-mode -r win-x64` (la ruta
+  exacta que usa `Build-Release.ps1`) sigue en verde; 427/427 tests de
+  API y 15/15 de caching. Comprobado por grep que nadie inyecta
+  `IValidator` en `src/` ni en `tests/`.
+
+### 2026-07-29 - V-02.07 - Cerrado - `[Required]` sobre `Guid` no-nullable en `ImportacionDtos.cs` nunca falla (severidad BAJA)
+
+- **Contexto:** detectado durante la auditoria de mensajes de error
+  sensibles, al revisar `DTOs/ImportacionDtos.cs`.
+- **Hallazgo:** `[Required]` aplicado sobre un `Guid` no-nullable. Un
+  `Guid` (`struct`) nunca es `null`: un `cuenta_id` ausente se
+  deserializa a `Guid.Empty`, asi que el atributo no podia fallar
+  nunca. Validacion inefectiva que daba falsa sensacion de cobertura.
+  Afectaba a tres DTOs, no a uno: `ImportacionValidarRequest`,
+  `ImportacionConfirmarRequest` e
+  `ImportacionPlazoFijoMovimientoRequest`.
+- **Riesgo:** bajo. No habia agujero de seguridad: `Guid.Empty` no
+  casa con ninguna cuenta y `EnsureCuentaPermitidaAsync` lanzaba
+  `ImportacionException("Cuenta no encontrada o inactiva", 404)`. El
+  defecto real era semantico: un campo obligatorio ausente devolvia
+  404 en vez de 400.
+- **Solucion aplicada:** las tres propiedades pasan a `Guid?`
+  manteniendo `[Required]`, con lo que la validacion de ModelState si
+  dispara y devuelve el 400 generico. En los tres puntos de lectura de
+  `ImportacionService` se usa `request.CuentaId ?? Guid.Empty` en vez
+  de `.Value`: si algun camino interno se saltara la validacion de
+  modelo, cae en el 404 limpio que ya existia en lugar de reventar con
+  un `InvalidOperationException` y un 500.
+- **Fuera de alcance deliberado:** `ImportacionLoteCrearRequest.CuentaId`
+  sigue siendo `Guid` sin `[Required]`. No tenia el defecto (no
+  prometia una validacion inexistente), asi que no se toco.
+- **Verificacion:** 427/427 tests de API. Los tests construyen estos
+  requests con inicializadores de objeto y `Guid` convierte
+  implicitamente a `Guid?`, por lo que ninguno necesito cambios.
+  Comprobado ademas que el frontend nunca envia estas peticiones sin
+  cuenta: `ImportacionPage.tsx` condiciona `canValidate` y
+  `canSubmitPlazoFijo` a que `cuentaId` tenga valor.
 
 ## Abiertos
 

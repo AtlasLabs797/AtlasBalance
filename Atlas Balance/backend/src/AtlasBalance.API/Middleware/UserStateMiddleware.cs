@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,16 @@ public static class HttpContextItemKeys
 public sealed class UserStateMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<UserStateMiddleware> _logger;
+
+    // V-02.07: la respuesta al cliente es siempre esta, sea cual sea el motivo del
+    // rechazo. Para el usuario legitimo la accion es la misma en todos los casos
+    // (volver a iniciar sesion), y distinguirlos solo le dice a quien posee un token
+    // robado por que dejo de funcionar. Es la misma politica que ya aplica el login,
+    // que enmascara deliberadamente cuenta inexistente, bloqueada y password
+    // incorrecta bajo un unico "Credenciales invalidas". El motivo real se registra
+    // en el log del servidor.
+    private const string RejectionMessage = "La sesion ya no es valida. Vuelve a iniciar sesion.";
 
     private static readonly HashSet<string> ExcludedPaths = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -27,9 +38,10 @@ public sealed class UserStateMiddleware
         "/api/health"
     };
 
-    public UserStateMiddleware(RequestDelegate next)
+    public UserStateMiddleware(RequestDelegate next, ILogger<UserStateMiddleware> logger)
     {
         _next = next;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext context, AppDbContext dbContext)
@@ -163,11 +175,20 @@ public sealed class UserStateMiddleware
         return Guid.TryParse(raw, out userId);
     }
 
-    private static async Task RejectAsync(HttpContext context, string error)
+    private async Task RejectAsync(HttpContext context, string reason)
     {
+        // El motivo concreto solo va al log del servidor. path/ip se sanean para
+        // evitar log forging (CWE-117), igual que en CsrfMiddleware; reason es
+        // siempre un literal interno, no entra input del cliente.
+        _logger.LogWarning(
+            "Sesion rechazada: motivo={Reason} path={PathSafe} ip={IpSafe}",
+            reason,
+            LogScrubber.Scrub(context.Request.Path.Value),
+            LogScrubber.Scrub(context.Connection.RemoteIpAddress?.ToString()));
+
         DeleteAuthCookies(context);
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        await context.Response.WriteAsJsonAsync(new { error });
+        await context.Response.WriteAsJsonAsync(new { error = RejectionMessage });
     }
 
     // Borra las cookies de sesion usando el nombre real segun entorno. En produccion

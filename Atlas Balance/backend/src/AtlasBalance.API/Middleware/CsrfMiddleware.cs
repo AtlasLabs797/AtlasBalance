@@ -9,12 +9,17 @@ public sealed class CsrfMiddleware
     private readonly ILogger<CsrfMiddleware> _logger;
 
     // login/mfa/refresh: el cliente aun no posee csrf_token; refresh-token se protege via SameSite=Strict.
+    // V-02.07: telemetria/errores se excluye porque el frontend la envia con
+    // navigator.sendBeacon, que no permite cabeceras personalizadas y por tanto no
+    // puede mandar X-CSRF-Token. El endpoint no lee ni modifica datos: solo escribe
+    // una linea de log acotada, asi que el riesgo de CSRF es despreciable.
     private static readonly HashSet<string> ExcludedPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "/api/auth/login",
         "/api/auth/mfa/verify",
         "/api/auth/refresh-token",
-        "/api/health"
+        "/api/health",
+        "/api/telemetria/errores"
     };
 
     public CsrfMiddleware(RequestDelegate next, ILogger<CsrfMiddleware> logger)

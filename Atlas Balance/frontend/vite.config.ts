@@ -162,6 +162,11 @@ export default defineConfig({
     reportCompressedSize: false,
     rollupOptions: {
       output: {
+        // V-02-07: defensa en profundidad para que ningun console.* ni
+        // debugger sobreviva al bundle de produccion. build.rollupOptions
+        // solo se usa al construir el bundle (vite build), nunca en el
+        // servidor de desarrollo, asi que no afecta al modo dev.
+        minify: { compress: { dropConsole: true, dropDebugger: true } },
         manualChunks(id) {
           if (id.includes('node_modules/recharts')) return 'charts';
           if (id.includes('node_modules/zustand')) return 'state';

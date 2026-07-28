@@ -4,7 +4,6 @@ using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Logging;
 using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Services;
-using FluentValidation.AspNetCore;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -26,6 +25,14 @@ builder.WebHost.ConfigureKestrel(options =>
 {
     // V-02-05 (LOW-BE-1): no enviar el header "Server: Kestrel" en respuestas.
     options.AddServerHeader = false;
+    // V-02-07: el default de Kestrel (30 MB) queda muy por encima de lo que la
+    // API realmente necesita. El unico payload grande es la importacion, que
+    // limita RawData a 5 MB (ver ImportacionService.MaxRawDataLength), pero el
+    // JSON completo (RawData escapado como string + resto de campos) puede
+    // crecer bastante sobre esos 5 MB crudos si el contenido tiene comillas,
+    // barras invertidas o saltos de linea. 10 MB da el doble de holgura sobre
+    // el limite real sin dejar los 30 MB por defecto abiertos.
+    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024;
 });
 AddExternalDevelopmentSecrets(builder.Configuration, builder.Environment, "AtlasBalance.API.Development.json");
 
@@ -106,6 +113,10 @@ if (!builder.Environment.IsDevelopment())
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // V-02-07: el default del framework es true y filtra en el header
+        // WWW-Authenticate el motivo exacto del fallo (firma invalida, timestamp
+        // de expiracion, etc). Solo lo dejamos activo en Development.
+        options.IncludeErrorDetails = builder.Environment.IsDevelopment();
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
@@ -247,15 +258,36 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    })
+    // V-02-07: el default de [ApiController] devuelve ValidationProblemDetails,
+    // que filtra traceId, la url type de rfc7231, tipos .NET y nombres de
+    // propiedad C# en PascalCase. Sustituimos por un cuerpo generico y
+    // logueamos el detalle real del ModelState en el servidor.
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("AtlasBalance.API.ModelValidation");
+            var invalidFields = string.Join(", ", context.ModelState
+                .Where(entry => entry.Value?.Errors.Count > 0)
+                .Select(entry => LogScrubber.Scrub(entry.Key)));
+            logger.LogWarning("ModelState invalido en {PathSafe} para los campos: {InvalidFields}",
+                LogScrubber.Scrub(context.HttpContext.Request.Path.Value),
+                invalidFields);
+
+            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new { error = "Los datos enviados no son validos. Revisa el formulario e intentalo de nuevo." });
+        };
     });
 
-// V-02.06 (MED-23): wirear FluentValidation como proveedor de
-// ModelState. La referencia a FluentValidation.AspNetCore 11.3.0
-// estaba en el csproj pero nunca se registro el contenedor, asi que
-// las reglas CustomValidator no se aplicaban. Es idempotente si no
-// hay IValidator<,> registrados: escanea el assembly de la API y
-// solo activa los que encuentre.
-builder.Services.AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters();
+// V-02.07: se retira el wiring de FluentValidation que V-02.06 anadio por
+// MED-23. Nunca llego a existir ni un solo AbstractValidator<T> en el backend,
+// asi que registraba un escaneo de assembly que no activaba nada. MED-23 sigue
+// cerrado: la validacion real de los DTOs son los DataAnnotations
+// ([Required], [MaxLength], [Range]), que es la otra via que el propio hallazgo
+// daba por valida. Si algun dia hace falta FluentValidation, se vuelve a anadir
+// junto con los validadores, no antes.
 
 if (builder.Environment.IsDevelopment())
 {
@@ -412,6 +444,18 @@ app.UseExceptionHandler(errorApp =>
                 error = "El registro fue modificado por otro usuario. Recarga los datos y vuelve a intentarlo.",
                 code = "concurrency_conflict"
             });
+            return;
+        }
+
+        // V-02-07: BadHttpRequestException (p.ej. body demasiado grande) traia su
+        // propio StatusCode y caia en el 500 generico de abajo, lo que es
+        // enganoso. Message no se expone porque puede llevar detalle tecnico
+        // del limite y del parseo.
+        if (feature?.Error is Microsoft.AspNetCore.Http.BadHttpRequestException badRequest)
+        {
+            context.Response.StatusCode = badRequest.StatusCode;
+            context.Response.ContentType = "application/json; charset=utf-8";
+            await context.Response.WriteAsJsonAsync(new { error = "La solicitud no pudo ser procesada." });
             return;
         }
 

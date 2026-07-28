@@ -171,7 +171,10 @@ public sealed class IntegrationAuthMiddleware
                 null,
                 _clock.UtcNow);
             context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-            await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("RATE_LIMITED: Mas de 100 requests por minuto para este token"));
+            // V-02.07: no revelar la cifra exacta del limite en la respuesta. El
+            // valor real es configurable y queda en el log del servidor; anunciarlo
+            // solo sirve para que un cliente abusivo ajuste su ritmo.
+            await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("RATE_LIMITED: Demasiadas peticiones para este token. Reintenta mas tarde."));
             return;
         }
 

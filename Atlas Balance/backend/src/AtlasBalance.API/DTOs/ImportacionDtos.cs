@@ -28,8 +28,12 @@ public sealed class MapeoColumnasRequest
 
 public sealed class ImportacionValidarRequest
 {
+    // V-02.07: nullable a proposito. [Required] sobre un Guid no-nullable nunca
+    // falla, porque un cuenta_id ausente se deserializa a Guid.Empty y no a null:
+    // el atributo prometia una validacion que no existia y el campo ausente
+    // acababa dando un 404 "Cuenta no encontrada" en vez de un 400.
     [System.ComponentModel.DataAnnotations.Required]
-    public Guid CuentaId { get; set; }
+    public Guid? CuentaId { get; set; }
     [System.ComponentModel.DataAnnotations.MaxLength(5 * 1024 * 1024)]
     public string RawData { get; set; } = string.Empty;
     [System.ComponentModel.DataAnnotations.MaxLength(8)]
@@ -40,8 +44,12 @@ public sealed class ImportacionValidarRequest
 
 public sealed class ImportacionConfirmarRequest
 {
+    // V-02.07: nullable a proposito. [Required] sobre un Guid no-nullable nunca
+    // falla, porque un cuenta_id ausente se deserializa a Guid.Empty y no a null:
+    // el atributo prometia una validacion que no existia y el campo ausente
+    // acababa dando un 404 "Cuenta no encontrada" en vez de un 400.
     [System.ComponentModel.DataAnnotations.Required]
-    public Guid CuentaId { get; set; }
+    public Guid? CuentaId { get; set; }
     [System.ComponentModel.DataAnnotations.MaxLength(5 * 1024 * 1024)]
     public string RawData { get; set; } = string.Empty;
     [System.ComponentModel.DataAnnotations.MaxLength(8)]
@@ -54,8 +62,12 @@ public sealed class ImportacionConfirmarRequest
 
 public sealed class ImportacionPlazoFijoMovimientoRequest
 {
+    // V-02.07: nullable a proposito. [Required] sobre un Guid no-nullable nunca
+    // falla, porque un cuenta_id ausente se deserializa a Guid.Empty y no a null:
+    // el atributo prometia una validacion que no existia y el campo ausente
+    // acababa dando un 404 "Cuenta no encontrada" en vez de un 400.
     [System.ComponentModel.DataAnnotations.Required]
-    public Guid CuentaId { get; set; }
+    public Guid? CuentaId { get; set; }
     [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.MaxLength(16)]
     public string TipoMovimiento { get; set; } = "INGRESO";
     public DateOnly Fecha { get; set; }

@@ -1,5 +1,191 @@
 # Documentacion tecnica
 
+## 2026-07-29 - V-02.07 - Cierre de los dos defectos pendientes de la auditoria de errores
+
+- **Que:** se corrigen los dos defectos que la auditoria de mensajes
+  de error dejo abiertos. Ninguno era fuga de datos; los dos eran
+  validacion que aparentaba existir y no existia.
+- **Por que:** ambos daban falsa sensacion de cobertura. Un lector del
+  codigo veia `AddFluentValidationAutoValidation()` y `[Required]` y
+  asumia validacion activa donde no habia ninguna.
+- **Como (FluentValidation):** retirados el `using`, la llamada de
+  registro en `Program.cs` y la `PackageReference` del `.csproj`.
+  Como `Directory.Build.props` fija
+  `RestorePackagesWithLockFile=true` y `Build-Release.ps1` restaura en
+  `--locked-mode`, quitar el paquete obliga a regenerar los
+  `packages.lock.json`: se hizo con `dotnet restore --force-evaluate`
+  en API, `AtlasBalance.API.Tests` y `AtlasBalance.Caching.Tests` (los
+  dos ultimos arrastraban FluentValidation transitivamente via
+  `ProjectReference`). El Watchdog no estaba afectado. Sin ese paso, la
+  release habria fallado en el primer `restore`.
+- **Como (`[Required]` sobre `Guid`):** las tres propiedades
+  `CuentaId` de `ImportacionValidarRequest`,
+  `ImportacionConfirmarRequest` e
+  `ImportacionPlazoFijoMovimientoRequest` pasan a `Guid?` conservando
+  `[Required]`. En `ImportacionService` las lecturas usan
+  `request.CuentaId ?? Guid.Empty` en lugar de `.Value`, para que un
+  camino interno que no pase por validacion de modelo degrade al 404
+  ya existente en vez de producir un 500.
+- **Efecto observable:** una peticion de importacion sin `cuenta_id`
+  pasa de devolver 404 "Cuenta no encontrada o inactiva" a devolver el
+  400 generico de datos invalidos, que es lo correcto. El frontend no
+  se ve afectado: nunca envia estas peticiones sin cuenta.
+- **Deuda relacionada no tocada:** `ImportacionLoteCrearRequest.CuentaId`
+  sigue siendo `Guid` sin `[Required]`. No prometia validacion, asi que
+  no entraba en el alcance de estos dos defectos.
+
+## 2026-07-29 - V-02.07 - Auditoria de mensajes de error sensibles y fugas de datos, con correcciones
+
+- Auditoria de mensajes de error y fugas de datos hacia el cliente:
+  respuestas HTTP de error, `console.*` del navegador, bundle de
+  produccion (sourcemaps y JS minificado) y el comportamiento por
+  defecto de ASP.NET Core (`ValidationProblemDetails`,
+  `WWW-Authenticate`). 10 hallazgos corregidos (1 ALTA, 3 MEDIA, 6
+  BAJA), 2 defectos preexistentes dejados como pendientes (no son
+  fugas de datos), y una decision de producto documentada sin cambio
+  de codigo.
+- **Fragmento de clave API filtrado al cliente
+  (`Services/AtlasAiService.cs`, severidad ALTA).** Un 401 real del
+  proveedor de IA (formato `{"error":{"message":"Incorrect API key
+  provided: sk-proj-abc123XYZ"}}`, placeholder inventado) atravesaba
+  `ExtractProviderErrorSummary` y `ShortProviderPayload` sin
+  redactarse: el regex de redaccion esperaba la credencial pegada a la
+  palabra clave, y con el texto real de OpenAI redactaba "provided:"
+  dejando la clave intacta. El fragmento llegaba al usuario final via
+  `IaController` (`[Authorize]` generico, no solo ADMIN) en el campo
+  `error` de un 502. Correccion: (a) eliminado el sufijo `{detail}` de
+  `BuildProviderHttpErrorMessage` y `BuildProviderResponseErrorMessage`
+  (el parametro `providerError` se conserva para
+  `IsOpenRouterDataPolicyError`/`IsOpenRouterModelRestrictionError`,
+  que lo siguen usando para clasificar); (b) `ShortProviderPayload`
+  redacta ahora tambien por forma de credencial (`sk-proj-`,
+  `sk-or-v1-`, `sk-`, `hf_`, `gsk_`, `xai-`, `AIza`); (c) se inyecto
+  `ILogger<AtlasAiService>` (no existia) para que el detalle quede en
+  Serilog ademas de en la auditoria de BD, que era el unico rastro
+  tras quitar el detalle del cliente. Riesgo residual aceptado: un
+  prefijo fuera de esa lista seguiria llegando a log/auditoria, ambos
+  de acceso exclusivo de administrador on-premise.
+- **Sourcemaps publicados en produccion (`vite.config.ts`,
+  `scripts/Build-Release.ps1`, severidad MEDIA).** `sourcemap:
+  'hidden'` solo omite el comentario `sourceMappingURL`, no impide
+  servir el `.map`; `Build-Release.ps1` copiaba `dist` completo a
+  `wwwroot` sin filtrar. Correccion: borrado explicito de `.map` del
+  `wwwroot` publicado tras la copia (no `Copy-Item -Exclude`, no
+  filtra de forma fiable en copias recursivas), con
+  `-ErrorAction Stop` y verificacion posterior que rompe la release si
+  queda alguno.
+- **Error boundary con `console.error` en produccion y `sendBeacon` a
+  ruta inexistente (`AppErrorBoundary.tsx`, severidad MEDIA).** El
+  detalle completo del error acababa en la consola del cliente y no
+  quedaba registro en servidor porque `/api/telemetria/errores` no
+  existia (verificado por grep en `backend/src`). Correccion:
+  eliminado el `console.error`; endpoint nuevo
+  `Controllers/TelemetriaController.cs` + `DTOs/TelemetriaDtos.cs`
+  (`POST /api/telemetria/errores`, `[AllowAnonymous]`, 20
+  reportes/IP/min via `IMemoryCache`, recorte de longitud, saneado
+  CR/LF, siempre 204). El DTO fija nombres con `[JsonPropertyName]`
+  porque el frontend envia camelCase y la politica global es
+  SnakeCaseLower; el payload viaja en `Blob` `application/json` porque
+  `sendBeacon` con string suelto manda `text/plain` y no bindea. Ruta
+  excluida de `CsrfMiddleware` (`sendBeacon` no puede mandar
+  `X-CSRF-Token`) y de `PrimerLoginMiddleware` (debe funcionar con
+  cambio de password pendiente).
+- **Sin error boundary raiz ni handlers globales (`main.tsx`,
+  `App.tsx`, severidad MEDIA).** El boundary solo envolvia cada ruta;
+  un fallo en layout/providers/`App` dejaba pantalla en blanco sin
+  captura. Correccion: `AppErrorBoundary` envuelve ahora todo el arbol
+  en `main.tsx` (fuera de `QueryClientProvider` y `BrowserRouter`);
+  listeners de `unhandledrejection` y `error` anadidos. Logica de
+  envio centralizada en el modulo nuevo `src/utils/reportClientError.ts`,
+  con tope de 10 reportes por carga de pagina, sin escribir nunca en
+  consola.
+- **`ValidationProblemDetails` por defecto (`Program.cs`, severidad
+  BAJA).** Sin `InvalidModelStateResponseFactory`, `[ApiController]`
+  devolvia `traceId`, URL `type` rfc7231, tipos .NET (`System.Guid`) y
+  PascalCase (`RawData`) en vez del contrato snake_case. Correccion:
+  `InvalidModelStateResponseFactory` devuelve 400 con mensaje generico
+  y loguea el ModelState real saneado por `LogScrubber.Scrub`.
+  Verificado antes de aplicarlo que `errorMessage.ts` no dependia del
+  formato anterior (lee `payload.errors` con degradacion limpia, no
+  usa `traceId`).
+- **`JwtBearer.IncludeErrorDetails` (`Program.cs`, severidad BAJA).**
+  El default `true` del framework exponia en `WWW-Authenticate` el
+  motivo exacto del rechazo y el timestamp exacto de expiracion.
+  Correccion: `options.IncludeErrorDetails =
+  builder.Environment.IsDevelopment();`.
+- **`UserStateMiddleware` distinguia el motivo del rechazo
+  (severidad BAJA).** Cuatro mensajes distintos ("Token de usuario
+  invalido", "La sesion ya no es valida", "Usuario bloqueado
+  temporalmente por intentos fallidos", "Se requiere MFA para
+  continuar") revelaban a quien posee un token robado por que dejo de
+  funcionar. Correccion: mensaje unico "La sesion ya no es valida.
+  Vuelve a iniciar sesion." y motivo real al log via
+  `ILogger<UserStateMiddleware>` inyectado (no existia), con path e IP
+  saneados por `LogScrubber.Scrub`. Verificado que el frontend no
+  ramifica por ninguno de los cuatro mensajes anteriores.
+- **Rate limit de integracion con cifra exacta
+  (`IntegrationAuthMiddleware`, severidad BAJA).** El mensaje
+  "RATE_LIMITED: Mas de 100 requests por minuto para este token"
+  revelaba el limite configurado. Correccion: mensaje sin cifra.
+- **Build de produccion sin eliminar `console.*` (`vite.config.ts`,
+  severidad BAJA).** Sin `esbuild.drop`/terser/`minify`. Un primer
+  intento con `esbuild: { drop: [...] }` no funciono: Vite 8 usa
+  rolldown/oxc por defecto y descarta esas opciones en silencio con el
+  aviso "Both esbuild and oxc options were set" (verificado
+  empiricamente: seguian 9 `console.error` en el bundle). Correccion:
+  `build.rollupOptions.output.minify = { compress: { dropConsole:
+  true, dropDebugger: true } }`, mecanismo nativo de oxc, solo bajo
+  `build.*` (no afecta a dev). Verificado en el bundle: 0
+  `console.error`, 0 `console.log`, 0 `debugger`.
+- **Sin limite explicito de tamano de request (`Program.cs`, severidad
+  BAJA).** Sin `MaxRequestBodySize`, Kestrel usaba su default de
+  30.000.000 bytes, y un cuerpo excesivo caia en el 500 generico del
+  handler global. Correccion: `MaxRequestBodySize` a 10 MiB (el unico
+  endpoint de payload grande es importacion, limitado a 5 MiB de
+  `RawData`) mas rama nueva en el handler global que devuelve el
+  `StatusCode` real de `BadHttpRequestException` sin `ex.Message`.
+- **Cambios en tests.** Los constructores de `AtlasAiService` y
+  `UserStateMiddleware` ganaron un parametro `ILogger`: 50 sitios
+  actualizados en `AtlasAiServiceTests.cs` y 5 en
+  `UserStateMiddlewareTests.cs` con `NullLogger<T>.Instance`. 4 tests
+  de `AtlasAiServiceTests.cs` que asertaban que el detalle del
+  proveedor SI aparecia en el mensaje (codificaban la fuga como
+  comportamiento esperado) se reescribieron para verificar la
+  propiedad correcta: mensaje al usuario sin texto del proveedor,
+  entrada de auditoria con el texto conservado.
+- **Auditado y correcto, sin cambios.** Los 23 controllers usan DTOs
+  con allowlist explicita (0 `return Ok(entidad)`); ningun hash de
+  password, token, secreto MFA, CSRF ni refresh token OAuth llega al
+  cliente. `ConfiguracionController` y `GoogleDriveBackupService` ya
+  redactaban secretos. Login con anti-enumeracion robusta (hash
+  senuelo). Kestrel con `AddServerHeader = false`. Los 4 middleware
+  devolvian literales fijos. Mensajes de Postgres nunca propagados. El
+  Watchdog usa 13 literales fijos y seguros. El `console.error` de
+  `api.ts` esta dentro de `import.meta.env.DEV`, saneado, y desaparece
+  por dead-code elimination.
+- **Decision de producto, no se toca.** `ExportacionesController`
+  resuelve el nombre completo de quien genero una exportacion, y
+  `ExtractosDtos` expone GUIDs de usuario en
+  `CheckedById`/`FlaggedById`/`UsuarioId` a usuarios no-admin dentro de
+  su propio scope. Se dejan como estan: 4-8 usuarios de la misma
+  empresa que ya comparten acceso a esas cuentas, funcionalidad
+  deseada.
+- **Defectos detectados y no corregidos (van a `REGISTRO_BUGS.md` como
+  pendientes).** `FluentValidation.AspNetCore` registrado con
+  `AddFluentValidationAutoValidation()` en `Program.cs` sin que exista
+  ningun `AbstractValidator<T>` en todo el backend (configuracion
+  muerta). `[Required]` sobre un `Guid` no-nullable en
+  `DTOs/ImportacionDtos.cs` que nunca falla porque el valor jamas es
+  null (validacion inefectiva).
+- **Verificacion:** build de `AtlasBalance.API` (0 errores, 6 warnings
+  preexistentes), `AtlasBalance.API.Tests` 427/427,
+  `AtlasBalance.Caching.Tests` 15/15, `npm run lint` limpio (0
+  warnings), `npm run test:unit` 22/22, `npm run build` compila con
+  bundle verificado sin `console.*` ni `debugger`. Pendiente sin
+  verificar: endpoints en caliente (sin backend/Postgres levantados),
+  ejecucion real de `Build-Release.ps1`, y el limite de 10 MiB de
+  `MaxRequestBodySize` contra un payload real.
+
 ## 2026-07-28 - V-02.07 - Segunda tanda de la auditoria de autenticacion: blocklist, latencia, rehash BCrypt e IP de sesion
 
 - Segunda tanda sobre los 7 hallazgos BAJOS que quedo abiertos tras la
