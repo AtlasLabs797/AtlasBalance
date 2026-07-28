@@ -211,6 +211,173 @@
 
 ## Abiertos
 
+### 2026-07-28 - V-02.07 - Cerrado - Lista de contrasenas comunes 93% inefectiva (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre
+  `Constants/SecurityPolicy.cs`.
+- **Hallazgo:** la lista de contrasenas comunes tiene 105 entradas,
+  pero el chequeo de longitud minima (12 caracteres) se ejecuta antes
+  y rechaza las cortas, asi que solo 7 entradas son alcanzables:
+  `administrator`, `micontrasena`, `atlasbalance`,
+  `atlasbalance2024`, `atlasbalance2025`, `atlasbalance2026`,
+  `tesoreria123`.
+- **Riesgo:** no es una vulnerabilidad porque la longitud minima ya
+  bloquea a las demas, pero la lista da una falsa sensacion de
+  cobertura frente a las 98 entradas restantes que nunca se llegan a
+  evaluar.
+- **Opciones:** rellenarla con entradas de 12+ caracteres reales,
+  integrar HIBP k-anonymity, o recortarla a las 7 entradas utiles.
+- **Solucion aplicada (2026-07-28, segunda tanda):** lista reescrita
+  con 154 entradas, todas de 12+ caracteres, sin duplicados. Vista
+  `internal static IReadOnlySet<string> CommonPasswordsView` para
+  tests, `HashSet` sigue `private`. Test
+  `CommonPasswords_AllEntries_MeetMinimumLength` recorre la lista
+  entera contra el gate de longitud para que no vuelva a degradarse
+  en silencio.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Blocklist de contrasenas comunes 93% inefectiva") y
+  `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-28 - V-02.07 - Cerrado - Enumeracion de usuarios por latencia en login (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre el flujo de
+  login.
+- **Hallazgo:** si el email no existe o la cuenta esta bloqueada,
+  `BCrypt.Verify` no llega a ejecutarse (~250 ms de diferencia
+  medible). Los mensajes de error si son identicos.
+- **Riesgo:** un atacante puede diferenciar "usuario no existe /
+  bloqueado" de "password incorrecta" midiendo latencia, aunque el
+  mensaje de error no cambie.
+- **Opciones:** anadir un hash dummy (`BCrypt.Verify` contra un hash
+  fijo) en la rama de usuario inexistente para igualar el tiempo de
+  respuesta.
+- **Solucion aplicada (2026-07-28, segunda tanda):** `DummyPasswordHash`
+  (hash BCrypt sobre bytes aleatorios, generado una vez al arrancar)
+  se verifica en la rama de email inexistente y en la de cuenta
+  bloqueada de `LoginAsync`. Revision adversarial encontro la misma
+  falta en la rama de cuenta bloqueada de `ChangePasswordAsync`;
+  tambien corregida.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Enumeracion de usuarios por latencia en login y en
+  cambiar-password") y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-28 - V-02.07 - Cerrado - Sin rehash automatico de BCrypt (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre el
+  almacenamiento de contrasenas.
+- **Hallazgo:** no existe `PasswordNeedsRehash`, asi que subir el
+  `workFactor` de BCrypt en el futuro no migraria los hashes
+  existentes; se quedarian en el factor con el que se crearon.
+- **Riesgo:** bajo hoy (no hay plan de subir el work factor), pero es
+  deuda que hay que resolver antes de cualquier cambio de politica de
+  hashing.
+- **Solucion aplicada (2026-07-28, segunda tanda):** rehash oportunista
+  tras login correcto con `BCrypt.PasswordNeedsRehash`. Constante
+  `PasswordWorkFactor = 12` en `AuthService`, reusada tambien en
+  `ChangePasswordAsync` (antes tenia el 12 como literal suelto).
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Sin rehash automatico de BCrypt") y
+  `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-28 - V-02.07 - Rate limiting de login/MFA en `IMemoryCache` de proceso (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo:** el rate limiting de login y MFA vive en `IMemoryCache`
+  de proceso: si algun dia se escala a varias instancias, los
+  contadores no se comparten entre ellas.
+- **Riesgo:** irrelevante hoy (instancia unica on-premise). Pasaria a
+  ser explotable (bypass de rate limit repartiendo requests entre
+  instancias) si se escala horizontalmente.
+- **Estado:** abierto, severidad BAJA. Revisado en la segunda tanda
+  (2026-07-28) y dejado abierto por decision deliberada: instancia
+  unica on-premise, anadir estado distribuido seria complejidad
+  especulativa sin caso de uso actual. Misma familia de deuda que la
+  migracion a Redis/`IDistributedCache` ya documentada para la capa de
+  cache (`SEGURIDAD_AUDITORIA_V-01.03.md:85`).
+
+### 2026-07-28 - V-02.07 - Cerrado con matiz - Sesiones no ancladas a IP ni User-Agent (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo:** solo el challenge MFA compara IP/UA, y unicamente
+  durante los 5 minutos que dura ese challenge. `IpAddress` y
+  `UserAgentSummary` se guardan en el refresh token pero nunca se
+  comparan en el resto del ciclo de vida de la sesion.
+- **Riesgo:** un access/refresh token robado sigue siendo valido
+  desde cualquier IP o dispositivo hasta que expire o se cierre
+  sesion.
+- **Solucion aplicada (2026-07-28, segunda tanda), con matiz:**
+  `RefreshTokenAsync` audita el evento `SESSION_IP_CHANGED` cuando la
+  IP del refresh token difiere de la actual (normalizando IPv4
+  mapeada a IPv6 antes de comparar). Decision explicita: **no se
+  invalida la sesion ni se ancla al User-Agent.** Anclar por IP
+  expulsaria a usuarios legitimos con VPN/DHCP/salto de red; anclar
+  por User-Agent romperia con cada auto-actualizacion del navegador.
+  El rastro de auditoria es lo que aporta valor de investigacion sin
+  romper el uso legitimo. Anclar tambien el User-Agent exigiria una
+  columna nueva en `REFRESH_TOKENS` y su migracion; queda fuera de
+  este alcance.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Sesiones sin rastro de cambio de IP") y
+  `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado con el matiz de que la sesion sigue sin
+  invalidarse por cambio de IP/UA; es la mitigacion decidida, no una
+  correccion pendiente.
+
+### 2026-07-28 - V-02.07 - No es bug (diagnostico erroneo) - `MaxAge` de la cookie `csrf_token` inconsistente con el access token (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo original:** la cookie `csrf_token` tiene `MaxAge` de 7
+  dias mientras el access token dura 1h.
+- **Riesgo original estimado:** inconsistencia cosmetica, no
+  explotable con `SameSite=Strict`.
+- **Revision 2026-07-28 (segunda tanda):** el fallo de CSRF devuelve
+  **403**, y el interceptor de `frontend/src/services/api.ts` solo
+  auto-recupera en 401, 419 y 440. Si se acortara la cookie CSRF a 1h
+  para igualarla al access token, un usuario inactivo mas de 1h con
+  el refresh token todavia vivo fallaria con 403 sin recuperacion
+  automatica en su siguiente operacion. Los 7 dias actuales coinciden
+  con la vida del refresh token, que es la vida real de la sesion:
+  el comportamiento actual es correcto por diseno, no una
+  inconsistencia.
+- **Estado:** cerrado como diagnostico erroneo. No se cambia nada en
+  el codigo.
+
+### 2026-07-28 - V-02.07 - Sin tests de frontend para auth (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo:** no existe ningun `*.test.tsx` ni `*.spec.tsx` en
+  `Atlas Balance/frontend/src`. El flujo de login/MFA/cambio de
+  password del frontend no tiene cobertura automatizada propia.
+- **Riesgo:** regresiones de UI/UX en el flujo de auth solo se
+  detectan por QA manual.
+- **Estado:** abierto, severidad BAJA. Revisado en la segunda tanda
+  (2026-07-28) y dejado abierto por decision deliberada: el runner
+  actual es `tsc + node --test`, sin jsdom ni testing-library; cubrir
+  componentes React exige infraestructura de testing nueva, que es
+  trabajo aparte de esta auditoria.
+
+### 2026-07-28 - V-02.07 - Asimetria residual de escrituras a BD en el login (severidad BAJA)
+
+- **Contexto:** revision adversarial durante la segunda tanda de la
+  auditoria de autenticacion, tras cerrar la enumeracion de usuarios
+  por latencia (ver arriba).
+- **Hallazgo:** en `LoginAsync`, la rama de password incorrecta hace
+  un `SaveChangesAsync` extra para persistir `FailedLoginAttempts`,
+  mas su registro de auditoria; las ramas de email inexistente y
+  cuenta bloqueada no tocan la BD (no hay contador que actualizar).
+  Tras igualar el coste de BCrypt entre las tres ramas, queda esta
+  diferencia de round-trips a BD, del orden de milisegundos o menos.
+- **Riesgo:** teorico. La senal es mucho mas pequena que la de
+  latencia de BCrypt (~250 ms) que ya se corrigio, y queda sepultada
+  bajo el jitter de red normal de cualquier despliegue real.
+- **Decision:** no se persigue. Igualarla exigiria anadir escrituras
+  ficticias a BD en las ramas que no las necesitan, complejidad que no
+  se justifica frente a una senal indetectable en la practica.
+- **Estado:** abierto, severidad BAJA.
+
 ### 2026-07-16 - V-02.06 - IMPORTACION_LOTES sin soft-delete
 
 - **Contexto:** la entidad `IMPORTACION_LOTES` no implementa `ISoftDelete`

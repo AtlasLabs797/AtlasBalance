@@ -1,5 +1,349 @@
 # Log de errores e incidencias
 
+## 2026-07-28 - V-02.07 - Blocklist de contrasenas comunes 93% inefectiva por el gate de longitud minima (CERRADO)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion sobre
+  `AtlasBalance.API/Constants/SecurityPolicy.cs`, hallazgo BAJO
+  documentado en la tanda anterior de esta misma sesion.
+- **Causa:** `TryValidatePassword` rechaza por longitud minima (12
+  caracteres, `MinPasswordLength`) antes de comparar contra la lista
+  `CommonPasswords`. De las 105 entradas originales, solo 7 tenian 12+
+  caracteres y eran alcanzables; las otras 98 eran codigo muerto que
+  nunca se llegaba a evaluar.
+- **Impacto:** severidad BAJA. No era una vulnerabilidad activa (la
+  longitud minima ya bloqueaba a las demas), pero la lista daba una
+  falsa sensacion de cobertura frente a filtraciones conocidas.
+- **Solucion aplicada:** lista reescrita con **154 entradas, todas de
+  12+ caracteres, sin duplicados** (verificado programaticamente: 154
+  literales, 154 unicas bajo comparacion case-insensitive, 0 por
+  debajo de 12). Contenido: variantes de 12+ caracteres de las
+  contrasenas mas repetidas en filtraciones conocidas (top
+  SecLists/rockyou/Common-Credentials) mas variantes en espanol y
+  especificas de Atlas Balance. El `HashSet` `CommonPasswords` sigue
+  `private`; se anadio `internal static IReadOnlySet<string>
+  CommonPasswordsView` solo para que los tests puedan recorrerlo. Se
+  eligio la vista de solo lectura en vez de hacer el `HashSet`
+  `internal` porque un campo mutable visible a todo el ensamblado
+  permitiria que codigo futuro hiciera `Clear()` y desactivara la
+  blocklist en silencio.
+- **Verificacion:** archivo nuevo
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SecurityPolicyTests.cs`
+  con 6 facts. El clave es
+  `CommonPasswords_AllEntries_MeetMinimumLength`, que recorre la lista
+  entera y falla si alguien vuelve a colar una entrada corta,
+  impidiendo que la lista vuelva a convertirse en codigo muerto.
+  `dotnet test tests/AtlasBalance.API.Tests`: 427/427 PASS.
+- **Regla operativa:** cuando una validacion compuesta rechaza por un
+  gate temprano (longitud, formato, tipo), cualquier lista o regla que
+  dependa de pasar ese gate primero debe cumplirlo en el 100% de sus
+  entradas. Un test que recorra la coleccion entera contra el gate es
+  la unica forma de que esa invariante no se rompa en silencio con el
+  tiempo. No se integro HIBP k-anonymity en este alcance; sigue
+  anotado en el codigo como la solucion real para produccion.
+
+## 2026-07-28 - V-02.07 - Enumeracion de usuarios por latencia en login y en cambiar-password (CERRADO)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion sobre
+  `AtlasBalance.API/Services/AuthService.cs`, hallazgo BAJO
+  documentado en la tanda anterior de esta misma sesion.
+- **Causa:** en `LoginAsync`, si el email no existia o la cuenta
+  estaba bloqueada, el codigo devolvia el error sin llegar a ejecutar
+  `BCrypt.Verify`, que cuesta ~250 ms. Los mensajes de error ya eran
+  identicos entre ramas, pero la diferencia de latencia delataba cual
+  de las dos rutas se habia tomado. La misma omision existia en la
+  rama de cuenta bloqueada de `ChangePasswordAsync` (detectada por
+  revision adversarial durante esta tanda, no en la auditoria
+  original).
+- **Impacto:** severidad BAJA. Un atacante podia diferenciar "usuario
+  no existe / cuenta bloqueada" de "password incorrecta" midiendo
+  tiempo de respuesta, aunque el mensaje de error no cambiara.
+- **Solucion aplicada:** se anadio `DummyPasswordHash` en
+  `AuthService.cs`, un hash BCrypt derivado de bytes aleatorios
+  generado una vez al arrancar el servicio (no es un secreto, no
+  corresponde a ninguna contrasena real), calculado con el mismo
+  `PasswordWorkFactor`. Se verifica contra el en la rama de email
+  inexistente y en la rama de cuenta bloqueada de `LoginAsync`, y en
+  la rama de cuenta bloqueada de `ChangePasswordAsync`, para que las
+  tres ramas paguen el mismo coste de BCrypt que la rama de password
+  incorrecta.
+- **Verificacion:** test
+  `Login_Should_Cost_The_Same_Whether_Or_Not_The_Email_Exists` y
+  `ChangePassword_Should_Cost_The_Same_When_The_Account_Is_Locked` en
+  `AuthServiceTests.cs`. Comparan el tiempo de una rama contra la
+  otra (margen del 50%) en vez de fijar un umbral absoluto, porque un
+  umbral absoluto podria seguir en verde por cualquier otra lentitud
+  ajena al codigo; incluyen calentamiento previo para no medir
+  inicializacion estatica ni JIT. Ejecutados 3 veces seguidas sin
+  fallos. `dotnet test tests/AtlasBalance.API.Tests`: 427/427 PASS.
+- **Regla operativa:** cualquier rama de un flujo de autenticacion que
+  responda "credenciales invalidas" sin ejecutar la verificacion de
+  contrasena real debe pagar un coste equivalente contra un hash
+  senuelo. Aplica a login, cambio de password y cualquier endpoint
+  futuro que verifique una contrasena existente.
+
+## 2026-07-28 - V-02.07 - Sin rehash automatico de BCrypt (CERRADO)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion sobre
+  el almacenamiento de contrasenas en `AuthService.cs`, hallazgo BAJO
+  documentado en la tanda anterior de esta misma sesion.
+- **Causa:** no existia ninguna llamada a
+  `BCrypt.PasswordNeedsRehash`, asi que subir el work factor de BCrypt
+  en el futuro no migraria los hashes existentes; se quedarian
+  indefinidamente con el factor con el que se crearon.
+- **Impacto:** severidad BAJA (no hay plan actual de subir el work
+  factor), pero era deuda que habria bloqueado cualquier cambio futuro
+  de politica de hashing sin una migracion manual de toda la tabla de
+  usuarios.
+- **Solucion aplicada:** tras un login correcto, si
+  `BCrypt.PasswordNeedsRehash(usuario.PasswordHash, PasswordWorkFactor)`
+  es true, la contrasena en claro (ya validada) se rehashea con el
+  work factor vigente; es el unico momento del ciclo de vida en el que
+  el servicio dispone de la contrasena en claro. Se introdujo la
+  constante `PasswordWorkFactor = 12` dentro de `AuthService` y se
+  reuso tambien en `ChangePasswordAsync`, que antes tenia el valor 12
+  como literal suelto, para que ambos no puedan divergir con el
+  tiempo.
+- **Verificacion:** test
+  `Login_Should_Rehash_A_Password_Stored_With_An_Older_Work_Factor` en
+  `AuthServiceTests.cs`. `dotnet test tests/AtlasBalance.API.Tests`:
+  427/427 PASS.
+- **Regla operativa:** cualquier libreria de hashing con work factor
+  configurable (BCrypt, Argon2, scrypt) necesita un rehash oportunista
+  en el momento de login exitoso desde el dia uno, no como mejora
+  posterior. Es la unica ventana en la que el servicio tiene la
+  contrasena en claro ya validada.
+
+## 2026-07-28 - V-02.07 - Sesiones sin rastro de cambio de IP (CERRADO con matiz: no se invalida la sesion)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion,
+  hallazgo BAJO "sesiones no ancladas a IP ni User-Agent" documentado
+  en la tanda anterior de esta misma sesion.
+- **Causa:** `IpAddress` y `UserAgentSummary` se guardaban en el
+  refresh token al emitirlo, pero nunca se comparaban contra la
+  peticion actual fuera de la ventana de 5 minutos del challenge MFA.
+  Un access/refresh token robado seguia siendo valido desde cualquier
+  IP o dispositivo hasta que expirara o se cerrara sesion, sin dejar
+  ningun rastro de que la IP habia cambiado.
+- **Impacto:** severidad BAJA. No es una vulnerabilidad de por si (la
+  decision de no anclar la sesion a la IP es deliberada, ver mas
+  abajo), pero la ausencia total de rastro dificultaba investigar un
+  posible robo de sesion despues del hecho.
+- **Solucion aplicada:** `RefreshTokenAsync` compara la IP almacenada
+  en el refresh token con la IP actual de la peticion y, si difieren,
+  audita el evento nuevo `SESSION_IP_CHANGED` (constante nueva
+  `AuditActions.SessionIpChanged` en `Constants/AuditActions.cs`), con
+  `ip_anterior` y `refresh_token_id` en el detalle.
+- **Decision explicita: NO se invalida la sesion.** Atar la sesion a
+  la IP expulsaria a usuarios legitimos con VPN, DHCP o salto de red
+  entre redes; atarla al User-Agent la romperia con cada
+  auto-actualizacion del navegador. Dejar rastro auditable es lo que
+  aporta valor de investigacion sin romper el uso legitimo. Solo se
+  compara la IP: anclar tambien el User-Agent exigiria anadir una
+  columna a `REFRESH_TOKENS` y su migracion correspondiente; no se
+  hizo en este alcance.
+- **Normalizacion de IP:** se anadio `NormalizeIpForComparison` porque
+  una misma maquina puede llegar como `10.0.0.1` (via
+  X-Forwarded-For, que esta habilitado) o como `::ffff:10.0.0.1` (por
+  socket dual-mode directo), y `System.Net.IPAddress.Equals` los
+  considera direcciones distintas porque cambia la familia. Sin
+  normalizar se generarian alertas de cambio de IP falsas en cada
+  peticion desde la misma maquina, y una auditoria con ruido no sirve
+  para investigar nada.
+- **Verificacion:** tests
+  `RefreshToken_Should_Audit_An_Ip_Change_Without_Closing_The_Session`,
+  `RefreshToken_Should_Not_Audit_When_Only_The_Ipv4_Mapping_Differs`,
+  `RefreshToken_Should_Not_Audit_When_The_Ip_Is_Unchanged` en
+  `AuthServiceTests.cs`. `dotnet test tests/AtlasBalance.API.Tests`:
+  427/427 PASS.
+- **Regla operativa:** anclar una sesion a un dato de red (IP,
+  User-Agent) es una decision de producto con trade-off explicito
+  entre seguridad y disponibilidad para usuarios legitimos con
+  redes dinamicas. Cuando se decide no anclar, dejar auditoria del
+  cambio es el minimo razonable para no perder trazabilidad. Comparar
+  IPs sin normalizar variantes IPv4-mapeada-a-IPv6 genera falsos
+  positivos sistematicos en cualquier red con NAT64 o balanceadores
+  dual-stack.
+
+## 2026-07-28 - V-02.07 - Logout no invalidaba el access token en servidor (CERRADO)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre
+  `AtlasBalance.API/Services/AuthService.cs`, metodo `LogoutAsync`.
+- **Causa:** `LogoutAsync` solo marcaba `RevocadoEn` en el refresh
+  token presentado. No rotaba el `SecurityStamp` del usuario. Como
+  `UserStateMiddleware` valida en cada request que el claim
+  `security_stamp` del JWT coincida con el de BD, y ese stamp no
+  cambiaba, un access token capturado antes del logout seguia siendo
+  aceptado por la API hasta 60 minutos. El borrado de cookies era
+  solo del lado del navegador.
+- **Impacto:** severidad MEDIA. Un access token robado (XSS, log,
+  proxy, dispositivo compartido) seguia siendo valido durante toda su
+  vida util aunque el usuario legitimo cerrara sesion creyendo que
+  cortaba el acceso.
+- **Solucion aplicada:** `LogoutAsync` ahora (a) exige que el refresh
+  token presentado este vivo (no revocado y no caducado) antes de
+  actuar, (b) rota el `SecurityStamp` via
+  `UserSessionState.RotateSecurityStamp`, (c) revoca todos los
+  refresh tokens activos del usuario, y (d) re-ancla los
+  `MfaTrustedDevices` vivos al stamp nuevo. Consecuencia funcional:
+  cerrar sesion ahora cierra TODAS las sesiones del usuario en todos
+  los dispositivos, cubriendo tambien la ausencia de una funcion
+  explicita de "cerrar sesion en todas partes".
+- **Detalle del re-anclaje MFA:** los `MfaTrustedDevices` estan
+  anclados al `SecurityStamp`; sin re-anclarlos, rotar el stamp
+  habria cancelado el "recordar este dispositivo" en cada logout,
+  regresionando el comportamiento fijado en V-01.09 ("logout conserva
+  la cookie `mfa_trusted`"). El re-anclaje solo alcanza a los
+  dispositivos con `RevokedAt == null`, no caducados, del mismo
+  usuario y con `SecurityStamp == previousStamp` (el stamp anterior,
+  capturado antes de rotarlo). Ese ultimo filtro es imprescindible:
+  un cambio de contrasena, un reset por admin, una revocacion
+  administrativa o una deteccion de reuso de refresh token rotan el
+  `SecurityStamp` sin tocar `MFA_TRUSTED_DEVICES`, dejando esos
+  dispositivos invalidados de forma implicita; sin filtrar por
+  `previousStamp`, un logout rutinario posterior los readoptaria como
+  confiables otra vez, anulando esa invalidacion.
+- **Detalle del requisito "refresh token vivo":** evita que alguien
+  con una copia antigua y ya revocada del token pueda forzar el
+  cierre de sesion del usuario legitimo de forma repetida (DoS de
+  sesion).
+- **Verificacion:** 3 facts nuevos en `AuthServiceTests.cs`
+  (`Logout_Should_Rotate_Security_Stamp_And_Revoke_Every_Active_Session`,
+  `Logout_Should_Keep_Trusted_Mfa_Devices_Anchored_To_The_New_Stamp`,
+  `Logout_Should_Ignore_An_Already_Revoked_Refresh_Token`).
+  `dotnet test tests/AtlasBalance.API.Tests`: 415/415 PASS.
+- **Regla operativa:** cualquier flujo que revoque/cierre sesion debe
+  rotar `SecurityStamp` para invalidar tokens ya emitidos, no solo
+  marcar el refresh token como revocado. Si el flujo debe preservar
+  algun estado anclado al stamp (dispositivos MFA recordados), ese
+  estado se re-ancla explicitamente al stamp nuevo en la misma
+  operacion.
+
+## 2026-07-28 - V-02.07 - `cambiar-password` permitia fuerza bruta sobre la contrasena actual (CERRADO)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre
+  `AtlasBalance.API/Services/AuthService.cs`, metodo
+  `ChangePasswordAsync`.
+- **Causa:** la verificacion de `passwordActual` con BCrypt no
+  incrementaba `FailedLoginAttempts`, no consultaba `LockedUntil` y no
+  registraba nada en auditoria.
+- **Impacto:** severidad MEDIA. Con una sesion robada (cookie/token
+  capturado) se podia adivinar la contrasena actual del usuario sin
+  limite de intentos ni rastro en auditoria, a diferencia del login
+  que ya tenia bloqueo tras 5 fallos.
+- **Solucion aplicada:** se comprueba `LockedUntil` antes de verificar
+  (responde 423 Locked si la cuenta esta bloqueada, incluso con la
+  contrasena correcta); al fallar se incrementa
+  `FailedLoginAttempts`, se bloquea la cuenta 30 minutos al quinto
+  fallo, y se auditan los eventos `LOGIN_FAILED` (con motivo
+  `password_actual_incorrecta`) y `ACCOUNT_LOCKED`. Al acertar se
+  resetean el contador y el bloqueo. Reutiliza las constantes ya
+  existentes `MaxFailedLoginAttempts` (5) y `LockDuration` (30 min),
+  las mismas del login.
+- **Verificacion:** 2 facts nuevos en `AuthServiceTests.cs`
+  (`ChangePassword_Should_Lock_Account_After_Repeated_Bad_Current_Password`,
+  `ChangePassword_Should_Reject_While_Account_Is_Locked`). `dotnet
+  test tests/AtlasBalance.API.Tests`: 415/415 PASS.
+- **Regla operativa:** cualquier endpoint que verifique una
+  contrasena existente (no solo login) debe pasar por el mismo
+  circuito de `FailedLoginAttempts`/`LockedUntil`/auditoria que el
+  login. Verificar una contrasena sin contar intentos es una puerta
+  de fuerza bruta con otro nombre.
+
+## 2026-07-28 - V-02.07 - Proyecto de tests no compilaba: constructor de `IntegrationTokenService` desactualizado en `IntegracionesControllerTests` (CERRADO)
+
+- **Contexto:** al intentar ejecutar `dotnet test
+  tests/AtlasBalance.API.Tests` para verificar la auditoria de
+  autenticacion, la compilacion fallaba antes de llegar a correr
+  ningun test.
+- **Causa:** el commit `f05b0dd` ("V-02.07: extender capa de cache a
+  configuracion, scope, tokens y auth/me") anadio los parametros
+  `ICacheService` y `IOptions<CachingOptions>` al constructor de
+  `IntegrationTokenService` pero no actualizo la llamada en
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/IntegracionesControllerTests.cs`
+  (linea ~37). Error `CS7036` (parametro requerido sin valor).
+  Preexistente a esta sesion, ajeno a la auditoria de autenticacion,
+  pero bloqueaba toda verificacion por tests del proyecto completo.
+- **Solucion:** se pasan `CacheService` construido con `MemoryCache` y
+  `Options.Create(new CachingOptions())` al constructor, el mismo
+  patron que ya usaba `AuthServiceTests` para el mismo tipo de
+  dependencia.
+- **Verificacion:** `dotnet build` limpio; `dotnet test
+  tests/AtlasBalance.API.Tests`: 415/415 PASS.
+- **Regla operativa:** cuando un constructor de servicio gana un
+  parametro nuevo, buscar TODOS los call sites en tests (no solo los
+  que se estan tocando en ese cambio) antes de dar la tarea por
+  cerrada. `grep -rn "new IntegrationTokenService("` habria detectado
+  esto en el commit `f05b0dd`.
+
+## 2026-07-28 - V-02.07 - Dos tests fallaban por codificacion corrupta en literal esperado (CERRADO)
+
+- **Contexto:** tras reparar la compilacion del proyecto de tests,
+  `dotnet test tests/AtlasBalance.API.Tests` reportaba 2 fallos en
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`,
+  lineas 94 y 126.
+- **Causa:** el literal esperado `"Credenciales invalidas"` estaba
+  guardado con el caracter de reemplazo U+FFFD (bytes `ef bf bd`) en
+  lugar de la `a` con tilde. Se verifico con `git show HEAD` que los
+  bytes ya estaban corruptos antes de esta sesion (no es una
+  regresion de esta auditoria). Hacia fallar
+  `Login_Should_Lock_Account_On_Fifth_Bad_Password` y
+  `Login_Should_Not_Reveal_When_User_Is_Already_Locked` porque el
+  literal esperado nunca podia coincidir con el mensaje real
+  devuelto por el servicio.
+- **Solucion:** restaurado el caracter correcto en ambos literales.
+- **Verificacion:** `dotnet test tests/AtlasBalance.API.Tests`:
+  415/415 PASS (0 fallos, 0 omitidas).
+- **Regla operativa:** si un test falla comparando un mensaje con
+  tildes y el diff no es visualmente obvio, revisar los bytes crudos
+  del literal (`git show HEAD:<archivo> | xxd` o equivalente) antes
+  de asumir que el mensaje del servicio cambio. La codificacion rota
+  en el archivo fuente es una causa tan probable como un cambio de
+  comportamiento real.
+
+## 2026-07-28 - V-02.07 - `LogoutAsync` re-anclaba `MfaTrustedDevices` huerfanos sin filtrar por el stamp previo (CERRADO)
+
+- **Contexto:** introducido durante la propia correccion de
+  `LogoutAsync` documentada mas arriba en esta misma sesion
+  (auditoria de autenticacion y sesion). Detectado por revision
+  adversarial del diff antes de integrar, sin llegar a produccion.
+- **Causa:** el re-anclaje de `MfaTrustedDevices` al `SecurityStamp`
+  nuevo filtraba solo por `RevokedAt == null` y no caducado, sin
+  exigir que el dispositivo tuviera el `SecurityStamp` anterior
+  (`previousStamp`).
+- **Impacto:** un cambio de contrasena, un reset por admin, una
+  revocacion administrativa o una deteccion de reuso de refresh token
+  rotan el `SecurityStamp` sin tocar `MFA_TRUSTED_DEVICES`; los
+  dispositivos con el stamp viejo quedan invalidados de forma
+  implicita (`RevokedAt == null` pero rechazados por
+  `TryUseTrustedMfaDeviceAsync` al no calzar el stamp). Sin el filtro
+  por `previousStamp`, un logout rutinario posterior los readoptaba y
+  volvia a darlos por confiables, anulando el efecto del cambio de
+  contrasena defensivo. Escenario concreto: el dispositivo B esta
+  confiado; el usuario cambia la contrasena desde el dispositivo A
+  porque sospecha que le han robado la sesion (esto deja B huerfano y
+  obligado a repetir MFA); mas tarde A cierra sesion con normalidad y
+  ese logout resucitaba a B, que volvia a saltarse el desafio MFA. Es
+  decir, cambiar la contrasena dejaba de expulsar al dispositivo del
+  atacante.
+- **Solucion aplicada:** `LogoutAsync` captura el `SecurityStamp`
+  vigente como `previousStamp` antes de rotarlo, y el re-anclaje pasa
+  a exigir las cuatro condiciones: `RevokedAt == null`, no caducado,
+  del mismo usuario y `SecurityStamp == previousStamp`.
+- **Verificacion:** test de regresion
+  `Logout_Should_Not_Revive_Trusted_Devices_Orphaned_By_A_Password_Change`
+  en
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`,
+  comprobado que falla con el codigo defectuoso y pasa con el
+  corregido. `dotnet test tests/AtlasBalance.API.Tests`: 415/415
+  PASS.
+- **Regla operativa:** cuando un re-anclaje o una reactivacion se
+  dispara desde un flujo "inocuo" (logout rutinario), filtrar siempre
+  por el valor previo exacto del campo que ancla la invalidacion
+  (aqui, `SecurityStamp == previousStamp`), no solo por el estado
+  "vivo" del registro. Un registro puede estar `RevokedAt == null` y
+  aun asi estar invalidado implicitamente por desincronizacion con
+  otro campo.
+
 ## 2026-07-27 - V-02.07 - Cache global de CONFIGURACIONES cierra MED-18 (CERRADO)
 
 - **Contexto:** la auditoria de performance 2026-07-27 (entrada

@@ -1,5 +1,160 @@
 # Documentacion tecnica
 
+## 2026-07-28 - V-02.07 - Segunda tanda de la auditoria de autenticacion: blocklist, latencia, rehash BCrypt e IP de sesion
+
+- Segunda tanda sobre los 7 hallazgos BAJOS que quedo abiertos tras la
+  auditoria de autenticacion anterior (misma sesion). Cierra 4, cierra
+  1 mas como diagnostico erroneo, deja 2 abiertos por decision
+  deliberada y anade 1 hallazgo BAJO nuevo.
+- **Blocklist de contrasenas comunes
+  (`Constants/SecurityPolicy.cs`).** `TryValidatePassword` rechaza por
+  longitud minima (12 caracteres) antes de comparar contra
+  `CommonPasswords`, asi que de las 105 entradas originales solo 7
+  tenian 12+ caracteres y eran alcanzables; las otras 98 eran codigo
+  muerto. Se reescribio la lista con 154 entradas, todas de 12+
+  caracteres, sin duplicados (verificado programaticamente). El
+  `HashSet` sigue `private`; se anadio `internal static
+  IReadOnlySet<string> CommonPasswordsView` solo para tests, en vez de
+  hacer el `HashSet` `internal`, porque un campo mutable visible a
+  todo el ensamblado permitiria a codigo futuro vaciarlo con
+  `Clear()` y desactivar la blocklist en silencio. HIBP sigue sin
+  integrarse (anotado en el codigo como la solucion real de
+  produccion).
+- **Enumeracion de usuarios por latencia
+  (`Services/AuthService.cs`).** Si el email no existia o la cuenta
+  estaba bloqueada, `LoginAsync` no llegaba a ejecutar `BCrypt.Verify`
+  (~250 ms de diferencia medible respecto a "password incorrecta"),
+  aunque el mensaje de error fuera identico. Se anadio
+  `DummyPasswordHash` (hash BCrypt sobre bytes aleatorios generados al
+  arrancar, no es un secreto ni corresponde a ninguna contrasena
+  real) y se verifica contra el en las ramas de email inexistente y
+  cuenta bloqueada de `LoginAsync`. La misma omision existia en la
+  rama de cuenta bloqueada de `ChangePasswordAsync` (encontrada por
+  revision adversarial); tambien corregida.
+- **Rehash oportunista de BCrypt.** Tras un login correcto, si
+  `BCrypt.PasswordNeedsRehash(hash, PasswordWorkFactor)` es true, la
+  contrasena en claro ya validada se rehashea con el work factor
+  vigente (unico momento en que el servicio dispone de ella). Se
+  introdujo la constante `PasswordWorkFactor = 12` dentro de
+  `AuthService`, reusada tambien en `ChangePasswordAsync` (que antes
+  tenia el 12 como literal suelto), para que ambos valores no puedan
+  divergir.
+- **Cambio de IP en la sesion (`RefreshTokenAsync`).** Compara la IP
+  guardada en el refresh token con la IP actual y, si difieren,
+  audita el evento nuevo `SESSION_IP_CHANGED`
+  (`Constants/AuditActions.cs`). Decision explicita: **no se invalida
+  la sesion.** Anclar por IP expulsaria a usuarios legitimos con
+  VPN/DHCP/salto de red; anclar por User-Agent romperia con cada
+  auto-actualizacion del navegador. El rastro de auditoria es lo que
+  aporta valor sin romper el uso legitimo. Se anadio
+  `NormalizeIpForComparison` porque una misma maquina puede llegar
+  como `10.0.0.1` (X-Forwarded-For) o `::ffff:10.0.0.1` (socket
+  dual-mode), y `IPAddress.Equals` los trata como distintos; sin
+  normalizar se generarian alertas falsas y una auditoria con ruido no
+  sirve para investigar. Solo se compara IP: anclar tambien
+  User-Agent exigiria columna nueva en `REFRESH_TOKENS` y su
+  migracion, fuera de este alcance.
+- **Cookie `csrf_token` con `MaxAge` de 7 dias: cerrado como
+  diagnostico erroneo, no como bug.** El fallo de CSRF devuelve 403,
+  y el interceptor de `frontend/src/services/api.ts` solo
+  auto-recupera en 401, 419 y 440. Acortar la cookie CSRF a 1h
+  rompería con 403 sin recuperacion automatica a cualquier usuario
+  inactivo mas de 1h con el refresh token todavia vivo. Los 7 dias
+  actuales coinciden con la vida del refresh token, que es la vida
+  real de la sesion; el comportamiento actual es correcto.
+- **Hallazgo nuevo (BAJO) - asimetria de escrituras a BD en el
+  login.** Encontrado por revision adversarial: tras igualar el coste
+  de BCrypt, la rama de password incorrecta sigue haciendo un
+  `SaveChangesAsync` extra (contador de intentos) que las ramas de
+  email inexistente y cuenta bloqueada no hacen. Diferencia del orden
+  de milisegundos o menos, sepultada por el jitter de red normal; no
+  se persigue.
+- Quedan abiertos por decision deliberada (no deuda olvidada): rate
+  limiting en `IMemoryCache` de proceso, no distribuido (instancia
+  unica on-premise) y ausencia de tests de auth en frontend (el
+  runner actual `tsc + node --test` no tiene jsdom/testing-library).
+- Tests nuevos: 6 en `AuthServiceTests.cs`
+  (`Login_Should_Cost_The_Same_Whether_Or_Not_The_Email_Exists`,
+  `Login_Should_Rehash_A_Password_Stored_With_An_Older_Work_Factor`,
+  `RefreshToken_Should_Audit_An_Ip_Change_Without_Closing_The_Session`,
+  `RefreshToken_Should_Not_Audit_When_Only_The_Ipv4_Mapping_Differs`,
+  `RefreshToken_Should_Not_Audit_When_The_Ip_Is_Unchanged`,
+  `ChangePassword_Should_Cost_The_Same_When_The_Account_Is_Locked`) y
+  6 en `SecurityPolicyTests.cs` (archivo nuevo). Los tests de latencia
+  comparan una rama contra la otra (margen del 50%) en vez de un
+  umbral absoluto, con calentamiento previo; ejecutados 3 veces
+  seguidas sin fallos.
+- Verificacion: `AtlasBalance.API.Tests` 427/427 PASS,
+  `AtlasBalance.Caching.Tests` 15/15 PASS. Total 442/442.
+
+## 2026-07-28 - V-02.07 - Auditoria de autenticacion y sesion: logout invalida el access token, cambiar-password con limite de intentos
+
+- Auditoria de `AtlasBalance.API/Services/AuthService.cs` centrada en
+  logout y cambio de password. Dos correcciones de severidad MEDIA.
+- **`LogoutAsync`.** Antes solo marcaba `RevocadoEn` en el refresh
+  token presentado; el `SecurityStamp` del usuario no cambiaba, y
+  como `UserStateMiddleware` valida el claim `security_stamp` del JWT
+  contra BD en cada request, un access token capturado antes del
+  logout seguia siendo aceptado hasta 60 minutos (el borrado de
+  cookies solo pasaba en el navegador). Ahora `LogoutAsync`:
+  1. exige que el refresh token presentado este vivo (no revocado, no
+     caducado) antes de actuar;
+  2. captura el `SecurityStamp` vigente como `previousStamp` y rota
+     el `SecurityStamp` via `UserSessionState.RotateSecurityStamp`;
+  3. revoca todos los refresh tokens activos del usuario;
+  4. re-ancla al stamp nuevo solo los `MfaTrustedDevices` que cumplen
+     las cuatro condiciones: `RevokedAt == null`, no caducados, del
+     mismo usuario y `SecurityStamp == previousStamp`.
+
+  El punto 4 es necesario porque los dispositivos MFA recordados
+  estan anclados al `SecurityStamp`; sin re-anclarlos, rotar el stamp
+  en cada logout habria regresionado el comportamiento fijado en
+  V-01.09 ("logout conserva la cookie `mfa_trusted`"). El filtro por
+  `previousStamp` es el que evita que ese mismo re-anclaje deshaga
+  otras invalidaciones: un cambio de contrasena, un reset por admin,
+  una revocacion administrativa o una deteccion de reuso de refresh
+  token rotan el `SecurityStamp` sin tocar `MFA_TRUSTED_DEVICES`,
+  dejando esos dispositivos invalidados de forma implicita
+  (`RevokedAt == null` pero con el stamp viejo). Sin el filtro, un
+  logout rutinario posterior los readoptaria como confiables otra
+  vez, anulando esa invalidacion. Efecto funcional: cerrar sesion
+  cierra ahora TODAS las sesiones del usuario en todos los
+  dispositivos.
+- **`ChangePasswordAsync`.** La verificacion de `passwordActual` con
+  BCrypt no pasaba por el circuito de `FailedLoginAttempts`/
+  `LockedUntil`/auditoria que ya tenia el login, permitiendo fuerza
+  bruta sobre la contrasena actual con una sesion robada. Ahora
+  reutiliza `MaxFailedLoginAttempts` (5) y `LockDuration` (30 min):
+  comprueba `LockedUntil` antes de verificar (423 Locked si ya esta
+  bloqueada), incrementa el contador al fallar, bloquea al quinto
+  fallo, audita `LOGIN_FAILED` (motivo `password_actual_incorrecta`)
+  y `ACCOUNT_LOCKED`, y resetea contador/bloqueo al acertar.
+- Tests nuevos en `AuthServiceTests.cs`:
+  `Logout_Should_Rotate_Security_Stamp_And_Revoke_Every_Active_Session`,
+  `Logout_Should_Keep_Trusted_Mfa_Devices_Anchored_To_The_New_Stamp`,
+  `Logout_Should_Ignore_An_Already_Revoked_Refresh_Token`,
+  `ChangePassword_Should_Lock_Account_After_Repeated_Bad_Current_Password`,
+  `ChangePassword_Should_Reject_While_Account_Is_Locked`.
+- De paso se repararon dos bloqueos incidentales que impedian
+  verificar por tests (ninguno relacionado con la auditoria en si):
+  el constructor de `IntegrationTokenService` en
+  `IntegracionesControllerTests.cs` no se habia actualizado tras el
+  commit `f05b0dd` (le anadio `ICacheService` +
+  `IOptions<CachingOptions>`), y dos literales esperados en
+  `AuthServiceTests.cs` (lineas 94 y 126) tenian el caracter de
+  reemplazo U+FFFD en vez de la tilde de "invalidas", corrupcion
+  preexistente confirmada con `git show HEAD`.
+- Verificacion: `AtlasBalance.API.Tests` 415/415 PASS,
+  `AtlasBalance.Caching.Tests` 15/15 PASS. Total 430/430.
+- Hallazgos NO corregidos en este alcance (documentados en
+  `REGISTRO_BUGS.md` como pendientes abiertos, severidad BAJA): lista
+  de contrasenas comunes 93% inefectiva por el gate de longitud
+  minima, enumeracion de usuarios por latencia en login (falta hash
+  dummy), sin `PasswordNeedsRehash` para BCrypt, rate limiting en
+  `IMemoryCache` de proceso (no compartido si se escala), sesiones
+  sin anclaje a IP/User-Agent, `MaxAge` de `csrf_token` inconsistente
+  con el access token, sin tests de frontend para auth.
+
 ## 2026-07-27 - V-02.07 - Capa de cache para lecturas repetidas
 
 - La API corre en una sola instancia Windows on-premise y solo tiene

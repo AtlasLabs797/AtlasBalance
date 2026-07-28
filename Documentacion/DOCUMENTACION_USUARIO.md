@@ -119,6 +119,8 @@ Despues de verificarlo, la casilla `Recordar este dispositivo durante 90 dias` a
 
 Cerrar sesion ya no borra el dispositivo recordado. Se volvera a pedir MFA cuando pasen esos 90 dias, borres cookies, cambies de navegador/equipo, un administrador revoque el Authenticator, cambie la contrasena o rote la seguridad del usuario. Si necesitas cortar todos los dispositivos recordados de un usuario, un administrador puede revocar el Authenticator desde `Usuarios`.
 
+Desde V-02.07, al cerrar sesion se cierran TODAS las sesiones abiertas de ese usuario en todos los dispositivos, no solo la actual. El dispositivo recordado para el codigo de Authenticator se conserva igualmente: cerrar sesion no te va a volver a pedir el QR ni la clave manual en el siguiente acceso desde ese mismo dispositivo.
+
 ## Paises en cuentas
 
 En `Cuentas`, cada cuenta puede tener un pais opcional. Las cuentas antiguas quedan sin pais para no romper datos existentes.
@@ -485,6 +487,9 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 - Al iniciar sesion, Atlas Balance puede pedir un codigo MFA de 6 digitos.
 - En el primer acceso con MFA, la pantalla muestra una clave para guardarla en una app de autenticacion. Despues hay que escribir el codigo generado para terminar el login.
 - Si se cambian permisos, email o datos de un usuario, sus sesiones abiertas se cierran y tendra que entrar de nuevo.
+- Desde V-02.07, cerrar sesion cierra todas las sesiones abiertas del usuario en todos los dispositivos, no solo la sesion actual. El dispositivo recordado para el codigo de Authenticator no se pierde al cerrar sesion.
+- Desde V-02.07, si al cambiar la contrasena escribes 5 veces mal la contrasena actual, la cuenta se bloquea 30 minutos, igual que en el login.
+- Desde V-02.07, las contrasenas nuevas se comparan contra una lista mas amplia de contrasenas filtradas comunes. Alguna contrasena que antes se aceptaba puede rechazarse ahora por "demasiado comun"; en ese caso, elige otra que no sea una variante obvia de una palabra o frase habitual.
 - No guardes contrasenas en documentos.
 - No pegues tokens ni credenciales en tickets, logs o notas.
 - Las credenciales iniciales de instalacion deben tratarse como temporales y cambiarse en el primer acceso.

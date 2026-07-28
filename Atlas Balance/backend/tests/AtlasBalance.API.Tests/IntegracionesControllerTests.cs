@@ -34,7 +34,10 @@ public sealed class IntegracionesControllerTests
         var controller = new IntegracionesController(
             dbContext,
             new AuditService(dbContext),
-            new IntegrationTokenService(dbContext),
+            new IntegrationTokenService(
+                dbContext,
+                new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance),
+                Options.Create(new CachingOptions())),
             // V-02.06 (MED-29): el cleaner vive en memoria cache, pero en
             // tests InMemory la limpieza es un no-op. Pasamos una
             // instancia real (usa MemoryCache internamente).

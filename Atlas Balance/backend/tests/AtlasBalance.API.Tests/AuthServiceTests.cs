@@ -91,7 +91,7 @@ public class AuthServiceTests
         Func<Task> fifthAttempt = () => sut.LoginAsync(user.Email, "BadPass!", "127.0.0.1", CancellationToken.None);
         var locked = await fifthAttempt.Should().ThrowAsync<AuthException>();
         locked.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
-        locked.Which.Message.Should().Be("Credenciales inv�lidas");
+        locked.Which.Message.Should().Be("Credenciales inválidas");
 
         var persisted = await db.Usuarios.FirstAsync(x => x.Id == user.Id);
         persisted.FailedLoginAttempts.Should().Be(5);
@@ -123,7 +123,7 @@ public class AuthServiceTests
 
         var exception = await action.Should().ThrowAsync<AuthException>();
         exception.Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
-        exception.Which.Message.Should().Be("Credenciales inv�lidas");
+        exception.Which.Message.Should().Be("Credenciales inválidas");
     }
 
     [Fact]
@@ -958,6 +958,306 @@ public class AuthServiceTests
 
         revokedUserId.Should().Be(user.Id);
         (await db.RefreshTokens.SingleAsync()).RevocadoEn.Should().NotBeNull();
+    }
+
+    // V-02.07: la invariante real no es "tarda algo", es que la rama de email
+    // inexistente cueste lo MISMO que la de password incorrecta. Por eso el test
+    // compara ambas en vez de fijar un umbral absoluto, que podria seguir en verde
+    // por cualquier otra lentitud ajena. Se calienta primero para no medir la
+    // inicializacion estatica de DummyPasswordHash ni el JIT. El margen del 50% es
+    // amplio: ambas rutas estan dominadas por el mismo BCrypt (~250 ms), asi que el
+    // cociente real ronda 1.
+    [Fact]
+    public async Task Login_Should_Cost_The_Same_Whether_Or_Not_The_Email_Exists()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("timing@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+
+        // Calentamiento: fuerza la inicializacion estatica y el JIT de BCrypt.
+        await Assert.ThrowsAsync<AuthException>(() =>
+            sut.LoginAsync(user.Email, "WrongPassword!1", "10.99.0.7", CancellationToken.None));
+
+        var knownEmail = System.Diagnostics.Stopwatch.StartNew();
+        await Assert.ThrowsAsync<AuthException>(() =>
+            sut.LoginAsync(user.Email, "WrongPassword!2", "10.99.0.7", CancellationToken.None));
+        knownEmail.Stop();
+
+        var unknownEmail = System.Diagnostics.Stopwatch.StartNew();
+        await Assert.ThrowsAsync<AuthException>(() =>
+            sut.LoginAsync("no-existe@test.local", "WrongPassword!2", "10.99.0.7", CancellationToken.None));
+        unknownEmail.Stop();
+
+        unknownEmail.ElapsedMilliseconds.Should().BeGreaterThan(
+            (long)(knownEmail.ElapsedMilliseconds * 0.5),
+            "un email inexistente debe pagar el mismo BCrypt que uno existente con password incorrecta");
+    }
+
+    // V-02.07: rehash oportunista. Una cuenta con un hash de work factor antiguo
+    // debe migrar sola en su siguiente login correcto.
+    [Fact]
+    public async Task Login_Should_Rehash_A_Password_Stored_With_An_Older_Work_Factor()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("rehash@test.local");
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Valid1234!Ab", workFactor: 10);
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        BCrypt.Net.BCrypt.PasswordNeedsRehash(persisted.PasswordHash, 12).Should().BeFalse();
+        BCrypt.Net.BCrypt.Verify("Valid1234!Ab", persisted.PasswordHash).Should().BeTrue();
+    }
+
+    // V-02.07: el cambio de IP entre emision y uso del refresh token se audita,
+    // pero NO invalida la sesion: atarla a la IP expulsaria a usuarios legitimos
+    // con VPN, DHCP o salto de red.
+    [Fact]
+    public async Task RefreshToken_Should_Audit_An_Ip_Change_Without_Closing_The_Session()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("ip-change@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "10.0.0.1", CancellationToken.None);
+
+        var refreshed = await sut.RefreshTokenAsync(login.RefreshToken!, "10.0.0.99", CancellationToken.None);
+
+        refreshed.AccessToken.Should().NotBeNullOrWhiteSpace();
+        (await db.Auditorias.AnyAsync(x => x.TipoAccion == AuditActions.SessionIpChanged)).Should().BeTrue();
+    }
+
+    // V-02.07: la misma maquina puede llegar como 10.0.0.1 (X-Forwarded-For) o como
+    // ::ffff:10.0.0.1 (socket dual-mode). No debe generar una alerta de cambio de IP.
+    [Fact]
+    public async Task RefreshToken_Should_Not_Audit_When_Only_The_Ipv4_Mapping_Differs()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("ip-mapped@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "::ffff:10.0.0.1", CancellationToken.None);
+
+        await sut.RefreshTokenAsync(login.RefreshToken!, "10.0.0.1", CancellationToken.None);
+
+        (await db.Auditorias.AnyAsync(x => x.TipoAccion == AuditActions.SessionIpChanged)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RefreshToken_Should_Not_Audit_When_The_Ip_Is_Unchanged()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("ip-same@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "10.0.0.1", CancellationToken.None);
+
+        await sut.RefreshTokenAsync(login.RefreshToken!, "10.0.0.1", CancellationToken.None);
+
+        (await db.Auditorias.AnyAsync(x => x.TipoAccion == AuditActions.SessionIpChanged)).Should().BeFalse();
+    }
+
+    // V-02.07: logout rota el security stamp. Sin esta rotacion el access token
+    // JWT ya emitido seguia siendo aceptado por UserStateMiddleware hasta 1h
+    // despues de cerrar sesion, porque logout solo borraba cookies del navegador.
+    [Fact]
+    public async Task Logout_Should_Rotate_Security_Stamp_And_Revoke_Every_Active_Session()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("logout-stamp@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        var sessionA = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var sessionB = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.2", CancellationToken.None);
+        var stampBeforeLogout = (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp;
+
+        var revokedUserId = await sut.LogoutAsync(sessionA.RefreshToken, CancellationToken.None);
+
+        revokedUserId.Should().Be(user.Id);
+        (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp.Should().NotBe(stampBeforeLogout);
+        (await db.RefreshTokens.Where(rt => rt.UsuarioId == user.Id).ToListAsync())
+            .Should().OnlyContain(rt => rt.RevocadoEn != null);
+
+        // La otra sesion queda cerrada tambien: es el "cerrar sesion en todas partes".
+        await Assert.ThrowsAsync<AuthException>(() =>
+            sut.RefreshTokenAsync(sessionB.RefreshToken!, "127.0.0.2", CancellationToken.None));
+    }
+
+    // V-02.07: la rotacion del stamp no debe cancelar el recuerdo MFA del
+    // navegador. Los dispositivos de confianza estan anclados al stamp, asi que
+    // logout los re-ancla al nuevo. Protege el comportamiento fijado en V-01.09
+    // ("logout conserva la cookie mfa_trusted").
+    [Fact]
+    public async Task Logout_Should_Keep_Trusted_Mfa_Devices_Anchored_To_The_New_Stamp()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("logout-trusted@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        var session = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var loggedIn = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        SeedTrustedMfaDevice(db, loggedIn, DateTime.UtcNow.AddDays(30));
+
+        await sut.LogoutAsync(session.RefreshToken, CancellationToken.None);
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        var device = await db.MfaTrustedDevices.SingleAsync(x => x.UsuarioId == user.Id);
+        device.RevokedAt.Should().BeNull();
+        device.SecurityStamp.Should().Be(persisted.SecurityStamp);
+    }
+
+    // V-02.07: el re-anclaje de logout NO debe resucitar dispositivos que ya
+    // quedaron huerfanos por una rotacion anterior (cambio de contrasena, reset
+    // por admin, reuso de refresh). Esos dispositivos deben seguir exigiendo MFA:
+    // si un logout rutinario posterior los readoptara, cambiar la contrasena por
+    // sospecha de robo dejaria de expulsar al dispositivo del atacante.
+    [Fact]
+    public async Task Logout_Should_Not_Revive_Trusted_Devices_Orphaned_By_A_Password_Change()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("logout-orphan@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+
+        // Dispositivo confiado anclado al stamp vigente en ese momento.
+        var loggedIn = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        SeedTrustedMfaDevice(db, loggedIn, DateTime.UtcNow.AddDays(30));
+        var orphanedStamp = loggedIn.SecurityStamp;
+
+        // El cambio de contrasena rota el stamp y deja el dispositivo huerfano.
+        var afterChange = await sut.ChangePasswordAsync(
+            user.Id, "Valid1234!Ab", "BrandNew!Password9", "127.0.0.1", null, CancellationToken.None);
+
+        // Un logout rutinario posterior no debe readoptarlo.
+        await sut.LogoutAsync(afterChange.RefreshToken, CancellationToken.None);
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        var device = await db.MfaTrustedDevices.SingleAsync(x => x.UsuarioId == user.Id);
+        device.SecurityStamp.Should().Be(orphanedStamp);
+        device.SecurityStamp.Should().NotBe(persisted.SecurityStamp);
+    }
+
+    // V-02.07: un refresh token ya revocado no autoriza otra rotacion. Si la
+    // autorizase, cualquiera con una copia antigua podria expulsar al usuario
+    // legitimo de forma repetida.
+    [Fact]
+    public async Task Logout_Should_Ignore_An_Already_Revoked_Refresh_Token()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("logout-replay@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+        var session = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+
+        await sut.LogoutAsync(session.RefreshToken, CancellationToken.None);
+        var stampAfterLogout = (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp;
+
+        var secondAttempt = await sut.LogoutAsync(session.RefreshToken, CancellationToken.None);
+
+        secondAttempt.Should().BeNull();
+        (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp.Should().Be(stampAfterLogout);
+    }
+
+    // V-02.07: verificar passwordActual comparte el lockout del login. Antes no
+    // contaba intentos ni auditaba el fallo, asi que una sesion robada permitia
+    // fuerza bruta ilimitada y silenciosa sobre la contrasena actual.
+    [Fact]
+    public async Task ChangePassword_Should_Lock_Account_After_Repeated_Bad_Current_Password()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("change-lock@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            await Assert.ThrowsAsync<AuthException>(() => sut.ChangePasswordAsync(
+                user.Id, "WrongCurrent!123", "BrandNew!Password9", "127.0.0.1", null, CancellationToken.None));
+        }
+
+        var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
+        persisted.FailedLoginAttempts.Should().Be(5);
+        persisted.LockedUntil.Should().NotBeNull();
+        (await db.Auditorias.CountAsync(x => x.TipoAccion == AuditActions.LoginFailed)).Should().Be(5);
+        (await db.Auditorias.AnyAsync(x => x.TipoAccion == AuditActions.AccountLocked)).Should().BeTrue();
+    }
+
+    // V-02.07: mientras la cuenta esta bloqueada no se acepta el cambio ni con la
+    // contrasena actual correcta; si no, el bloqueo seria trivial de sortear.
+    [Fact]
+    public async Task ChangePassword_Should_Reject_While_Account_Is_Locked()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("change-locked@test.local");
+        user.FailedLoginAttempts = 5;
+        user.LockedUntil = DateTime.UtcNow.AddMinutes(30);
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+
+        var ex = await Assert.ThrowsAsync<AuthException>(() => sut.ChangePasswordAsync(
+            user.Id, "Valid1234!Ab", "BrandNew!Password9", "127.0.0.1", null, CancellationToken.None));
+
+        ex.StatusCode.Should().Be(StatusCodes.Status423Locked);
+        (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).PasswordHash.Should().Be(user.PasswordHash);
+    }
+
+    // V-02.07: misma mitigacion de latencia que en LoginAsync. Sin el señuelo, la
+    // rama de cuenta bloqueada salia al instante y delataba el estado de la cuenta
+    // frente a los ~250 ms de "password actual incorrecta".
+    [Fact]
+    public async Task ChangePassword_Should_Cost_The_Same_When_The_Account_Is_Locked()
+    {
+        await using var db = BuildDbContext();
+        var locked = BuildActiveUser("change-timing-locked@test.local");
+        locked.LockedUntil = DateTime.UtcNow.AddMinutes(30);
+        var unlocked = BuildActiveUser("change-timing-open@test.local");
+        db.Usuarios.AddRange(locked, unlocked);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), new AuditService(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions());
+
+        // Calentamiento.
+        await Assert.ThrowsAsync<AuthException>(() => sut.ChangePasswordAsync(
+            unlocked.Id, "WrongCurrent!1", "BrandNew!Password9", "10.99.0.8", null, CancellationToken.None));
+
+        var badPassword = System.Diagnostics.Stopwatch.StartNew();
+        await Assert.ThrowsAsync<AuthException>(() => sut.ChangePasswordAsync(
+            unlocked.Id, "WrongCurrent!2", "BrandNew!Password9", "10.99.0.8", null, CancellationToken.None));
+        badPassword.Stop();
+
+        var lockedAccount = System.Diagnostics.Stopwatch.StartNew();
+        await Assert.ThrowsAsync<AuthException>(() => sut.ChangePasswordAsync(
+            locked.Id, "WrongCurrent!2", "BrandNew!Password9", "10.99.0.8", null, CancellationToken.None));
+        lockedAccount.Stop();
+
+        lockedAccount.ElapsedMilliseconds.Should().BeGreaterThan(
+            (long)(badPassword.ElapsedMilliseconds * 0.5),
+            "una cuenta bloqueada no debe distinguirse por latencia de una password incorrecta");
     }
 
     private static string SeedTrustedMfaDevice(AppDbContext db, Usuario usuario, DateTime expiresAtUtc)

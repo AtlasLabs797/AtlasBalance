@@ -14,6 +14,7 @@ public static class AuditActions
     public const string PasswordChanged = "PASSWORD_CHANGED";
     public const string PasswordReset = "PASSWORD_RESET";
     public const string RefreshTokenReuseDetected = "REFRESH_TOKEN_REUSE_DETECTED";
+    public const string SessionIpChanged = "SESSION_IP_CHANGED";
     public const string CreateUsuario = "CREATE_USUARIO";
     public const string UpdateUsuario = "UPDATE_USUARIO";
     public const string DeleteUsuario = "DELETE_USUARIO";
