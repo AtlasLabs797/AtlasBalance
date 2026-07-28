@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": false,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": false,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "outDir": ".test-dist",
+    "rootDir": ".",
+    "tsBuildInfoFile": ".test-dist/tsconfig.test.v2.tsbuildinfo"
+  },
+  "include": [
+    "src/utils/importacionRequest.ts",
+    "src/services/queryClient.ts",
+    "src/queries/queryKeys.ts",
+    "src/queries/invalidation.ts",
+    "tests/**/*.test.ts"
+  ]
+}

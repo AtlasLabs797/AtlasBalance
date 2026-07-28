@@ -6,6 +6,7 @@ import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PermisoUsuario, Usuario } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { clearQueryClient } from '@/services/queryClient';
 
 const api = axios.create({
   baseURL: '/api',
@@ -35,6 +36,10 @@ const clearSessionState = () => {
   usePermisosStore.getState().clear();
   useAlertasStore.getState().clear();
   usePaisScopeStore.getState().clear();
+  // TanStack Query: tras logout, restore o cambio de usuario/permisos la
+  // caché en memoria contiene datos del usuario anterior (saldos,
+  // extractos, alertas). Limpiarla aqui evita fuga entre sesiones.
+  clearQueryClient();
 };
 
 const pushErrorToast = (message: string) => {

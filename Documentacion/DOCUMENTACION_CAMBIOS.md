@@ -31,8 +31,15 @@ Regla de trabajo desde ahora:
   parametros que efectivamente varian. `normalizeQueryParams` omite
   `null`/`undefined`/`''` para no crear claves equivalentes.
 - `frontend/src/queries/invalidation.ts` (nuevo): mapa
-  `mutationInvalidation` con invalidadores por dominio, listos para
-  sustituir los `loadData()` manuales en el siguiente ciclo.
+  `mutationInvalidation` con invalidadores por dominio
+  (`importarConfirmar`, `extractoCreate/Update/Delete/Check/Flag`,
+  `cuentaCreate/Update/Delete/Notas/PlazoRenovar`,
+  `titularCreate/Update/Delete/Restaurar`, `divisa`, `tipoCambio`,
+  `formato`, `alerta`, `pais`, `conciliacion`, `revision`,
+  `usuario`, `exportacion`, `backup`, `integracionToken`).
+- `frontend/src/hooks/queries/useInvalidateAfterMutation.ts` (nuevo):
+  hook que envuelve `mutationInvalidation.*` y devuelve una funcion
+  `invalidate(kind)` para uso en las paginas de mutacion.
 - `frontend/src/hooks/queries/`: hooks de TanStack Query para los
   stores del shell (`useAlertasActivasQuery`, `useIaConfigQuery`,
   `useUpdateCheckQuery`, `useNotificacionesAdminQuery`,
@@ -46,11 +53,30 @@ Regla de trabajo desde ahora:
   pathname de notificaciones). `Sidebar.tsx` hace lo propio.
 - `App.tsx` ya no invoca `loadAlertasActivas` en bootstrap; lo cubre
   `Layout` al montar.
+- **Invalidacion cableada en mutaciones criticas** (cierra la pieza
+  pendiente de la entrada anterior):
+  - `ImportacionPage`: `validateImport` invalida catalogos;
+    `confirmImport` invalida `importarConfirmar` + `revision` +
+    `conciliacion`; `submitPlazoFijoMovimiento` invalida
+    `extractoCreate`.
+  - `CuentaDetailPage`: `submitInsertDraft` (POST /extractos)
+    invalida `extractoCreate`; `saveCell` invalida `extractoUpdate`;
+    `toggleCheck` invalida `extractoCheck`; `flagSelectedRows`
+    invalida `extractoFlag`; `confirmDeleteSelectedRows` invalida
+    `extractoDelete`; `saveGeneralNotes` invalida `cuentaNotas`.
+  - `AlertasPage`: CRUD global/cuenta/tipo + delete -> `alerta`.
+  - `RevisionPage`: `setComisionEstado` y `setSeguroEstado` ->
+    `revision`.
+  - `ConciliacionPage`: `createMovimiento`, `sugerir`,
+    `cambiarEstado` -> `conciliacion`.
 - `tsconfig.test.v2.json` (nuevo) compila `queryClient.ts`,
-  `queryKeys.ts` y los 4 tests con `paths` propio. `package.json
-  :test:unit` ejecuta los 4 tests compilados.
-- `tests/queryKeys.test.ts` (nuevo, 5 facts) y
-  `tests/queryClient.test.ts` (nuevo, 3 facts).
+  `queryKeys.ts`, `invalidation.ts` y los 5 tests con `paths` propio.
+  `package.json:test:unit` ejecuta los 5 tests compilados.
+  `--test-force-exit` evita que `node --test` quede esperando
+  handles abiertos con multiples archivos.
+- `tests/queryKeys.test.ts` (nuevo, 5 facts),
+  `tests/queryClient.test.ts` (nuevo, 3 facts) y
+  `tests/invalidation.test.ts` (nuevo, 2 facts).
 
 **Comandos ejecutados:**
 - `npm.cmd install --save --no-fund --no-audit
@@ -58,25 +84,27 @@ Regla de trabajo desde ahora:
   `npm ls @tanstack/react-query` -> `5.59.0`.
 - `npm.cmd exec tsc --noEmit` -> 0 errores.
 - `npm.cmd run lint --max-warnings 0` -> 0/0.
-- `npm.cmd run test:unit` -> 20/20 PASS.
+- `npm.cmd run test:unit` -> 22/22 PASS (3 importacionRequest + 9
+  safeRoute + 5 queryKeys + 3 queryClient + 2 invalidation).
 - `npm.cmd run build` con `VITE_BUILD_OUT_DIR` apuntando a
-  `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-tq\`:
-  0 errores, 0 warnings, build de 2.32 s. `QueryClient` referenciado
+  `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-tq2\`:
+  0 errores, 0 warnings, build de 1.81 s. `QueryClient` referenciado
   2 veces en el chunk `index` (sin nuevo split, ~57 KB).
 - `Check-VersionAlignment.ps1` -> "Alineacion de version OK: V-02.07
   (2.7.0)".
 
-**Resultado de verificacion:** 20/20 tests verdes, tsc limpio, lint
+**Resultado de verificacion:** 22/22 tests verdes, tsc limpio, lint
 limpio, build sin warnings, alineacion de version OK.
 
 **Pendientes:**
-- Conectar `mutationInvalidation.*` desde los `api.post/put/delete`
-  existentes (siguiente ciclo). Hoy las mutaciones criticas ya
-  re-consultan la cache al re-montar, pero no invalidan proactivamente
-  las claves afectadas.
 - Migrar a `useQuery` los listados grandes (Titulares, Cuentas,
   Extractos, Revision, Auditoria, Papelera, Backups, Usuarios,
   Formatos). Cada uno reduce su tormenta de re-mount al volver.
+- Cablear invalidacion en las mutaciones restantes (cuentas, titulares,
+  usuarios, configuracion, formatos, papelera, exportaciones, backups,
+  integraciones, paises, configurar sistema). Hoy cada una re-consulta
+  su cache al re-montar; el siguiente ciclo cierra la cascada
+  cruzada entre paginas abiertas en distintas pestañas.
 - Persistencia de filtros/pagina en URL en Titulares, Cuentas y
   Revision (mejora UX complementaria, no requerida por la cache).
 - `npm.cmd audit --audit-level=critical` (no se ha ejecutado en este
