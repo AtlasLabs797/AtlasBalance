@@ -1,7 +1,9 @@
 using AtlasBalance.API.Services;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AtlasBalance.API.Controllers;
 
@@ -34,6 +36,7 @@ public sealed class SistemaController : ControllerBase
     }
 
     [HttpPost("actualizar")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> Actualizar([FromBody] ActualizacionRequest? request, CancellationToken cancellationToken)
     {
         var available = await _actualizacionService.CheckVersionDisponibleAsync(cancellationToken);

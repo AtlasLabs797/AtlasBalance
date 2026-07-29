@@ -1,5 +1,58 @@
 # Documentacion tecnica
 
+## 2026-07-29 - V-02.07 - Capa de rate limiting global
+
+- **Que:** `AddRateLimiter` de ASP.NET Core 8 configurado desde
+  `AtlasBalance.API/RateLimiting/`. Antes no existia rate limiting a
+  nivel de framework: solo cuatro contadores artesanales sueltos
+  (`SmtpTestRateLimit`, `TelemetriaController`, `IntegrationAuthMiddleware`
+  y los de `AuthService`), y 140 de 153 endpoints sin ningun limite.
+- **Por que un limitador global y no atributos por endpoint:** decorar
+  153 acciones una a una produce un diff enorme y, sobre todo, deja el
+  siguiente endpoint nuevo sin cubrir en cuanto alguien se olvide del
+  atributo. El `GlobalLimiter` clasifica por ruta y verbo, asi que la
+  cobertura es por defecto y solo hay que declarar las excepciones.
+- **Como clasifica** (`RateLimitingSetup.ResolvePartition`):
+
+  | Trafico | Clave de particion | Limite por defecto |
+  |---|---|---|
+  | Fuera de `/api` y `/api/health` | — | Exento |
+  | `/api/integration/openclaw/**` | — | Exento; ya limitado por token en `IntegrationAuthMiddleware` |
+  | `/api/auth/login`, `refresh-token`, `mfa/verify`, `cambiar-password` | IP | 10/min |
+  | Resto de rutas `/api` sin sesion | IP | 60/min |
+  | GET/HEAD/OPTIONS con sesion | `userId` | 300/min |
+  | POST/PUT/PATCH/DELETE con sesion | `userId` | 60/min |
+  | Politica `atlas-expensive` (se suma a la de escritura) | `userId` | 5/min |
+
+- **Por que lo autenticado particiona por `userId` y no por IP:** la IP
+  depende de la topologia de red. Si algun dia se pone un proxy delante y
+  no se configura `ForwardedHeaders:KnownProxies`, todo el trafico caeria
+  en un unico cubo por la IP del proxy y los usuarios se denegarian entre
+  si. Con `userId` eso no puede pasar. Solo lo anonimo particiona por IP,
+  porque antes de tener sesion no hay otra cosa.
+- **Donde se configura:** seccion `AtlasBalance:RateLimiting` de
+  `appsettings.json` y de los dos `.template`, mismo patron que
+  `AtlasBalance:Caching`. `Enabled: false` es el interruptor de
+  emergencia y viene desactivado en Development, porque
+  `React.StrictMode` duplica los efectos de montaje y generaria 429
+  espureos al desarrollar.
+- **Colocacion en el pipeline:** `app.UseRateLimiter()` va despues de
+  `app.UseAuthentication()` —las politicas por usuario necesitan los
+  claims resueltos— y despues de `UseStaticFiles`, para que los estaticos
+  de la SPA no consuman presupuesto de API.
+- **Respuesta al rechazar:** 429 con header `Retry-After` en segundos y
+  cuerpo JSON generico. El rechazo se loguea con `LogScrubber.Scrub`
+  sobre metodo, ruta e IP (CWE-117, mismo patron que el fix de CodeQL
+  #16). Ese log es la via de calibracion: si aparecen rechazos de
+  usuarios reales, los limites estan cortos y se suben con ese dato
+  delante. El frontend tiene rama propia para 429 en
+  `services/api.ts` y no reintenta.
+- **Limitaciones conocidas:** los contadores viven en memoria del
+  proceso, igual que el resto de caches de la app (single-node
+  on-premise). Si el despliegue se escala a varias instancias hay que
+  mover esto a un almacen compartido, misma deuda ya registrada para
+  `IMemoryCache`.
+
 ## 2026-07-29 - V-02.07 - Cierre de los dos defectos pendientes de la auditoria de errores
 
 - **Que:** se corrigen los dos defectos que la auditoria de mensajes

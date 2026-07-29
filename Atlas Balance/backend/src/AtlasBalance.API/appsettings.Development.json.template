@@ -38,6 +38,20 @@
       "AuthCurrentTtlSeconds": 15,
       "TiposCambioTtlSeconds": 60,
       "SizeLimitEntries": 4096
+    },
+    "RateLimiting": {
+      "Enabled": false,
+      "WindowSeconds": 60,
+      "AuthPerMinutePerIp": 10,
+      "AnonymousPerMinutePerIp": 60,
+      "ReadPerMinutePerUser": 300,
+      "WritePerMinutePerUser": 60,
+      "ExpensivePerMinutePerUser": 5,
+      "LoginMaxFailedAttemptsPerAccount": 5,
+      "LoginLockMinutes": 30,
+      "LoginMaxFailuresPerIpAndEmail": 3,
+      "LoginMaxFailuresPerIp": 7,
+      "LoginFailureWindowMinutes": 15
     }
   },
   "WatchdogSettings": {

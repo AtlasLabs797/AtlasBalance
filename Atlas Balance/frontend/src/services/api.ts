@@ -115,6 +115,31 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    if (status === 429) {
+      // Rate limit: el backend manda Retry-After en segundos. No reintentamos,
+      // no hacemos logout, no redirigimos: solo avisamos.
+      const retryAfterHeader = error.response?.headers?.['retry-after'];
+      const retryAfterSeconds = retryAfterHeader != null ? parseInt(retryAfterHeader, 10) : NaN;
+
+      if (!Number.isNaN(retryAfterSeconds) && retryAfterSeconds > 0) {
+        // Con Retry-After tenemos el dato mas util (cuanto esperar), asi que
+        // preferimos nuestro mensaje con la cifra antes que el generico de
+        // extractErrorMessage (que no incluye el tiempo de espera).
+        if (retryAfterSeconds > 60) {
+          const minutos = Math.round(retryAfterSeconds / 60);
+          pushErrorToast(`Demasiadas peticiones. Espera ${minutos} minuto${minutos === 1 ? '' : 's'} y vuelve a intentarlo.`);
+        } else {
+          pushErrorToast(`Demasiadas peticiones. Espera ${retryAfterSeconds} segundos y vuelve a intentarlo.`);
+        }
+      } else {
+        // Sin Retry-After preferimos el mensaje del backend si viene en el
+        // payload; si no, uno generico sin cifra.
+        pushErrorToast(extractErrorMessage(error, 'Demasiadas peticiones. Espera un momento y vuelve a intentarlo.'));
+      }
+
+      return Promise.reject(error);
+    }
+
     if (
       !originalRequest ||
       status !== 401 ||

@@ -1,5 +1,41 @@
 # Log de errores e incidencias
 
+## 2026-07-29 - V-02.07 - `obj/` de otra cuenta bloquea el build del proyecto de tests (CERRADO con workaround)
+
+- **Contexto:** verificacion del alcance de rate limiting global. El
+  proyecto `AtlasBalance.API` compilaba con la redireccion de `obj`/`bin`
+  ya conocida, pero `AtlasBalance.API.Tests` no compilaba de ninguna
+  manera.
+- **Sintoma:** `dotnet build` y `dotnet restore` fallan con
+  `NuGet.targets(174,5): error : Access to the path
+  '...\tests\AtlasBalance.API.Tests\obj\project.assets.json' is denied.`
+- **Causa:** los directorios `obj/` de `src/AtlasBalance.API` y
+  `tests/AtlasBalance.API.Tests` los genero una ejecucion anterior bajo
+  las cuentas `TRAKERIA\CodexSandboxUsers` / `CodexSandboxOffline`. El
+  ACL de `project.assets.json` da `Modify` a esas cuentas y solo
+  `ReadAndExecute` a `BUILTIN\Usuarios`, que es donde cae el usuario
+  actual (`trakeria\usuario`). No es un lock de proceso: es un ACL
+  heredado, y por eso reintentar no arregla nada.
+- **Trampa a evitar:** redirigir `BaseIntermediateOutputPath` /
+  `BaseOutputPath` **no** sirve para el proyecto de tests. Al pasarse
+  como propiedad global de MSBuild, API y Tests escriben su
+  `project.assets.json` en la MISMA carpeta y se pisan; el resultado son
+  cientos de `CS0246`/`CS0234` falsos que parecen referencias rotas del
+  proyecto de tests y no lo son. Ese falso positivo hizo creer en un
+  primer momento que el proyecto de tests seguia roto de versiones
+  anteriores, cuando en realidad compila y pasa 446/446.
+- **Solucion:** copiar el arbol `backend/` (con `robocopy /E /XD obj bin`,
+  nunca `/MIR`) mas `Directory.Build.props` a una carpeta del scratchpad
+  con permisos de escritura, y compilar y ejecutar los tests alli. Es
+  finito, no toca el workspace y no requiere manipular ACLs.
+- **Leccion:** ante `Access denied` en `obj/`, mirar el ACL antes de
+  buscar procesos colgados. Y no usar redireccion de `obj` cuando el
+  build arrastra mas de un proyecto: el sintoma que produce (CS0246
+  masivos) apunta al sitio equivocado.
+- **Regla nueva:** para verificar `AtlasBalance.API.Tests` en este host,
+  copiar a scratchpad. La redireccion de `obj`/`bin` queda reservada para
+  builds de un unico proyecto (`AtlasBalance.API`, `AtlasBalance.Watchdog`).
+
 ## 2026-07-29 - V-02.07 - `FluentValidation` registrado sin ningun validador (CERRADO)
 
 - **Contexto:** limpieza de los dos defectos que la auditoria de

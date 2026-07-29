@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.DTOs;
@@ -47,7 +48,7 @@ public sealed class AuthController : ControllerBase
         }
         catch (AuthException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return AuthError(ex);
         }
     }
 
@@ -63,7 +64,7 @@ public sealed class AuthController : ControllerBase
         }
         catch (AuthException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return AuthError(ex);
         }
     }
 
@@ -89,7 +90,7 @@ public sealed class AuthController : ControllerBase
         }
         catch (AuthException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return AuthError(ex);
         }
     }
 
@@ -184,7 +185,7 @@ public sealed class AuthController : ControllerBase
         }
         catch (AuthException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return AuthError(ex);
         }
     }
 
@@ -215,8 +216,17 @@ public sealed class AuthController : ControllerBase
         }
         catch (AuthException ex)
         {
-            return StatusCode(ex.StatusCode, new { error = ex.Message });
+            return AuthError(ex);
         }
+    }
+
+    private IActionResult AuthError(AuthException ex)
+    {
+        if (ex.RetryAfterSeconds is > 0)
+        {
+            Response.Headers.RetryAfter = ex.RetryAfterSeconds.Value.ToString(CultureInfo.InvariantCulture);
+        }
+        return StatusCode(ex.StatusCode, new { error = ex.Message });
     }
 
     private string ReadCookie(string baseName)

@@ -2,9 +2,11 @@ using System.Security.Claims;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
+using AtlasBalance.API.RateLimiting;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -129,6 +131,7 @@ public sealed class ExportacionesController : ControllerBase
 
     [HttpPost("manual")]
     [Authorize(Roles = "ADMIN,GERENTE")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> Manual([FromBody] ExportacionManualRequest request, CancellationToken cancellationToken)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);

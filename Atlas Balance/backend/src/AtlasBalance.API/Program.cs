@@ -3,6 +3,7 @@ using AtlasBalance.API.Data;
 using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Logging;
 using AtlasBalance.API.Middleware;
+using AtlasBalance.API.RateLimiting;
 using AtlasBalance.API.Services;
 using Hangfire;
 using Hangfire.PostgreSql;
@@ -158,6 +159,7 @@ builder.Services.AddSingleton<ICacheService>(sp =>
             SizeLimit = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CachingOptions>>().Value.SizeLimitEntries
         }));
 builder.Services.AddSingleton<IDashboardCacheInvalidator, DashboardCacheInvalidator>();
+builder.Services.AddAtlasRateLimiting(builder.Configuration);
 ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("AtlasBalance");
@@ -552,6 +554,10 @@ app.UseStaticFiles(staticFileOptions);
 app.UseMiddleware<IntegrationAuthMiddleware>();
 
 app.UseAuthentication();
+// Despues de UseAuthentication a proposito: las politicas de lectura/escritura
+// particionan por userId y necesitan los claims ya resueltos. Las rutas anonimas
+// (login, telemetria) siguen pasando por aqui y particionan por IP.
+app.UseRateLimiter();
 app.UseMiddleware<UserStateMiddleware>();
 app.UseAuthorization();
 app.UseMiddleware<PrimerLoginMiddleware>();

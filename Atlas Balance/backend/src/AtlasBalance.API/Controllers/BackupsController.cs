@@ -3,10 +3,12 @@ using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Models;
+using AtlasBalance.API.RateLimiting;
 using AtlasBalance.API.Services;
 using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -137,6 +139,7 @@ public sealed class BackupsController : ControllerBase
     }
 
     [HttpPost("manual")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> BackupManual(CancellationToken cancellationToken)
     {
         if (_backgroundJobs is null)
@@ -224,6 +227,7 @@ public sealed class BackupsController : ControllerBase
     }
 
     [HttpPost("google-drive/test")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> TestGoogleDrive(CancellationToken cancellationToken)
     {
         try
@@ -239,6 +243,7 @@ public sealed class BackupsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/google-drive/retry")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> RetryGoogleDriveUpload(Guid id, CancellationToken cancellationToken)
     {
         try
@@ -254,6 +259,7 @@ public sealed class BackupsController : ControllerBase
     }
 
     [HttpGet("google-drive/files")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> ListGoogleDriveFiles(CancellationToken cancellationToken)
     {
         try
@@ -269,6 +275,7 @@ public sealed class BackupsController : ControllerBase
     }
 
     [HttpPost("google-drive/import")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> ImportGoogleDriveFile([FromBody] GoogleDriveImportRequest request, CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.FileId))
@@ -297,6 +304,7 @@ public sealed class BackupsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/restaurar")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> Restaurar(Guid id, [FromBody] RestaurarBackupRequest request, CancellationToken cancellationToken)
     {
         if (!string.Equals(request.Confirmacion, "RESTAURAR", StringComparison.OrdinalIgnoreCase))

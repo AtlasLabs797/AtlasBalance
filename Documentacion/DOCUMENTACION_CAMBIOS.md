@@ -9,6 +9,140 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-29 - V-02.07 - Rate limiting global y endurecimiento de fuerza bruta en login
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Auditoria de un checklist externo de 5 puntos sobre rate limiting y fuerza
+bruta, contrastado contra el codigo real antes de cambiar nada. Veredicto:
+
+1. Rate limit de login: ya cubierto y por encima de lo pedido (lockout de
+   cuenta 5 fallos/30 min persistido en BD, contadores en `IMemoryCache`
+   por (IP,email) y por IP, mensaje unico de error, hash senuelo BCrypt
+   para igualar timing). Solo faltaban `Retry-After` y umbrales
+   configurables, implementados ahora. Con los umbrales ya en
+   configuracion, los dos contadores de IP se endurecen a 3 por
+   (IP, email) y 7 por IP (antes 5 y 20).
+2. Rate limit en todos los endpoints: GAP REAL (140 de 153 endpoints sin
+   limite, sin `AddRateLimiter` en el proyecto). IMPLEMENTADO con un
+   limitador global.
+3. Abuso de signup/password reset: NO APLICA (no existe registro ni
+   recuperacion self-service; los crea un ADMIN).
+4. Email de aviso al bloquear cuenta: FUERA DE ALCANCE por decision
+   explicita esta sesion (el desbloqueo automatico ya existe; un token de
+   desbloqueo o la geolocalizacion por IP no encajan en un despliegue
+   on-premise sobre LAN). Queda pendiente la notificacion simple sin geo
+   ni token.
+5. Endpoints caros: mayoritariamente cubierto (`POST /api/ia/chat`,
+   `smtp/test`, alertas de saldo ya tenian limite). Faltaban 9 endpoints
+   admin, cubiertos ahora.
+
+Los limites numericos no salen del checklist: se derivaron de medir el
+trafico real del frontend (montaje mas pesado 7 peticiones, peor
+escenario login->dashboard ~10 peticiones con pico de ~8 concurrentes,
+navegacion rapida por 5 pantallas ~24-30 GET, unico polling permanente
+`GET /api/ia/config` cada 30 s). Los limites elegidos dejan mas de 3x de
+margen sobre esos picos.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.API/RateLimiting/RateLimitingOptions.cs`
+  (nuevo): seccion `AtlasBalance:RateLimiting`, mismo patron que
+  `CachingOptions`.
+- `Atlas Balance/backend/src/AtlasBalance.API/RateLimiting/RateLimitingSetup.cs`
+  (nuevo): `AddAtlasRateLimiting` con `GlobalLimiter` por ruta/verbo en
+  vez de decorar los 153 endpoints uno a uno; particiona por `userId`
+  autenticado o por IP anonimo; exime `/api/health` y
+  `/api/integration/openclaw` (ya tiene su propio limite por token);
+  politica nominal `atlas-expensive` que se suma a escritura; `OnRejected`
+  devuelve 429 con `Retry-After` y loguea con `LogScrubber.Scrub`.
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`:
+  `AddAtlasRateLimiting` junto al registro de caching;
+  `app.UseRateLimiter()` despues de `UseAuthentication()` (las politicas
+  de lectura/escritura necesitan los claims resueltos) y antes de
+  `UserStateMiddleware`.
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AuthService.cs`:
+  las 5 constantes de login pasan a `IOptions<RateLimitingOptions>`. Tres
+  conservan su valor (lockout de cuenta 5, bloqueo 30 min, ventana
+  15 min); los dos contadores de IP se endurecen a 3 (IP, email) y 7 (IP).
+  Efecto colateral consciente: con 3 por (IP, email) el 429 corta antes de
+  que el contador de BD llegue al lockout de cuenta (5), asi que el
+  bloqueo de 30 min pasa a exigir intentos desde origenes distintos.
+  `AuthException` gana `RetryAfterSeconds` opcional con constructor
+  sobrecargado.
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`:
+  nuevo `AuthError(AuthException)` que pone `Retry-After` en los 5
+  `catch (AuthException)`.
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/BackupsController.cs`,
+  `ExportacionesController.cs`, `SistemaController.cs`,
+  `TiposCambioController.cs`: `[EnableRateLimiting("atlas-expensive")]` en
+  9 acciones. Deliberadamente fuera los endpoints sondeados cada 2,5 s
+  (`backups/operations/{id}`, `backups/google-drive/link/{sessionId}`,
+  `sistema/estado`, `backups/google-drive/link/start`).
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.json`,
+  `appsettings.Development.json.template`,
+  `appsettings.Production.json.template`: seccion `RateLimiting`.
+  `Enabled: false` en Development porque `React.StrictMode` duplica los
+  efectos de montaje y generaria 429 espureos.
+- `Atlas Balance/frontend/src/services/api.ts`: rama `status === 429` en
+  el interceptor de respuesta (lee `Retry-After`, toast informativo, sin
+  reintento ni logout ni redireccion).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`:
+  43 call sites de `new AuthService(...)` con helper
+  `BuildRateLimitingOptions(Action<RateLimitingOptions>?)`. Ademas, tres
+  facts llevaban los umbrales viejos hardcodeados (4/5 y 20/19) y se
+  reescriben para derivar los conteos de la configuracion en vez de
+  cambiar unos numeros magicos por otros:
+  `Login_Should_Lock_Account_On_Fifth_Bad_Password` aparta los contadores
+  de IP (`int.MaxValue`) para poder seguir cubriendo el lockout de cuenta,
+  y los dos facts de rociado por IP compartida derivan su bucle de
+  `LoginMaxFailuresPerIp`. Ninguna asercion perdio cobertura.
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RateLimitingSetupTests.cs`
+  (nuevo, 12 facts): `GlobalLimiter` real resuelto desde `ServiceProvider`
+  en memoria con `HttpContext` sinteticos.
+- `Documentacion/Versiones/v-02.07.md`: nuevo bloque "Rate limiting
+  global y proteccion contra fuerza bruta".
+- `Documentacion/DOCUMENTACION_TECNICA.md`: seccion de la capa de rate
+  limiting.
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`: entrada del bloqueo ACL en
+  `obj/` al compilar el proyecto de tests.
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`: esta entrada.
+
+**Comandos ejecutados:**
+
+- `dotnet build AtlasBalance.API.csproj -p:UseAppHost=false` con
+  redireccion de `obj`/`bin` al scratchpad (workaround ACL) ->
+  **0 errores, 6 warnings preexistentes** (`UseXminAsConcurrencyToken`
+  x5, `PostgreSqlStorage` x1, ajenos a este alcance).
+- `dotnet build AtlasBalance.API.Tests.csproj` -> **0 errores, 6 warnings
+  preexistentes**.
+- `dotnet test AtlasBalance.API.Tests.csproj` suite completa -> **446/446
+  PASS, 0 fallos**, 1 m 18 s.
+- `dotnet test --filter
+  "FullyQualifiedName~AuthServiceTests|FullyQualifiedName~AuthControllerTests|FullyQualifiedName~RateLimitingSetupTests"`
+  -> **57/57 PASS**.
+- `npm.cmd exec tsc -- --noEmit` -> 0 errores.
+- `npm.cmd run lint -- --max-warnings 0` -> 0/0.
+
+**Resultado de verificacion:** build de API y proyecto de tests en verde,
+suite completa 446/446, subset de auth/rate limiting 57/57, frontend con
+TypeScript y lint en verde. No se ejecuto la aplicacion ni se probo el
+429 contra un servidor real; la verificacion es build + tests + lint.
+
+**Pendientes:**
+- Notificacion simple de bloqueo de cuenta (email al titular +
+  `NOTIFICACIONES_ADMIN`), sin geolocalizacion ni token de desbloqueo
+  (punto 4 del checklist externo, fuera de alcance en esta sesion).
+- Medir en produccion si los limites de lectura/escritura (300/60 por
+  minuto) dejan margen suficiente con mas de 8 usuarios concurrentes.
+- Bloqueo ACL conocido en `obj/` del proyecto de tests: redirigir
+  `BaseIntermediateOutputPath` no basta, hace falta copiar `backend/` a
+  scratchpad (detalle en `LOG_ERRORES_INCIDENCIAS.md`).
+
+---
+
 ## 2026-07-29 - V-02.07 - Auditoria de ataques de inyeccion (SQLi, XSS, CSRF, path traversal, command injection, open redirect)
 
 **Version:** V-02.07

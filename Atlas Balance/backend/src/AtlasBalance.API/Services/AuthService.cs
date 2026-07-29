@@ -9,6 +9,7 @@ using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
+using AtlasBalance.API.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Caching.Memory;
@@ -43,16 +44,11 @@ public sealed class AuthService : IAuthService
     internal const string AuthCurrentNamespace = "auth_current";
 
     private const int PasswordWorkFactor = 12;
-    private const int MaxFailedLoginAttempts = 5;
-    private const int MaxLoginFailuresPerClientAndEmail = 5;
-    private const int MaxLoginFailuresPerClient = 20;
     private const int MaxMfaFailuresPerChallenge = 5;
     private const int MaxMfaFailuresPerUser = 5;
     private const string MfaIssuer = "Atlas Balance";
     private static readonly object LoginRateLimitLock = new();
     private static readonly object MfaRateLimitLock = new();
-    private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan LoginFailureWindow = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MfaChallengeDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MfaFailureWindow = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MfaRememberDuration = TimeSpan.FromDays(SecurityConfigurationDefaults.MfaRememberDeviceDays);
@@ -77,6 +73,7 @@ public sealed class AuthService : IAuthService
     private readonly ISecretProtector _secretProtector;
     private readonly ICacheService _cacheService;
     private readonly CachingOptions _cachingOptions;
+    private readonly RateLimitingOptions _rateLimitingOptions;
 
     public AuthService(
         AppDbContext dbContext,
@@ -85,6 +82,7 @@ public sealed class AuthService : IAuthService
         ISecretProtector secretProtector,
         ICacheService cacheService,
         IOptions<CachingOptions> cachingOptions,
+        IOptions<RateLimitingOptions> rateLimitingOptions,
         IMemoryCache? cache = null)
     {
         _dbContext = dbContext;
@@ -93,6 +91,7 @@ public sealed class AuthService : IAuthService
         _cache = cache ?? FallbackMemoryCache;
         _cacheService = cacheService;
         _cachingOptions = cachingOptions.Value;
+        _rateLimitingOptions = rateLimitingOptions.Value;
         // V-02.05 (MED-1): el protector es obligatorio. Si DI no lo inyecta, el
         // constructor falla ruidosamente en lugar de degradar a PassthroughSecretProtector
         // (que almacena secretos en claro). Solo se permite explicitamente via constructor
@@ -123,6 +122,9 @@ _secretProtector = secretProtector;
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
         var now = DateTime.UtcNow;
+        // V-02.07: segundos honestos para el header Retry-After de los 429 de
+        // login: es cuando caduca el contador de fallos, no un valor arbitrario.
+        var loginRetryAfterSeconds = (int)Math.Round(_rateLimitingOptions.LoginFailureWindow.TotalSeconds);
         if (IsLoginEmailThrottled(normalizedEmail, ipAddress))
         {
             await _auditService.LogAsync(
@@ -133,7 +135,7 @@ _secretProtector = secretProtector;
                 ipAddress,
                 JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
                 cancellationToken);
-            throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+            throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
         }
 
         var usuario = await _dbContext.Usuarios
@@ -154,7 +156,7 @@ _secretProtector = secretProtector;
                     ipAddress,
                     JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
                     cancellationToken);
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
@@ -168,7 +170,7 @@ _secretProtector = secretProtector;
                 cancellationToken);
             if (throttled)
             {
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
@@ -191,7 +193,7 @@ _secretProtector = secretProtector;
                 cancellationToken);
             if (throttled)
             {
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
@@ -202,9 +204,9 @@ _secretProtector = secretProtector;
             var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
             usuario.FailedLoginAttempts += 1;
             var lockTriggered = false;
-            if (usuario.FailedLoginAttempts >= MaxFailedLoginAttempts)
+            if (usuario.FailedLoginAttempts >= _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount)
             {
-                usuario.LockedUntil = now.Add(LockDuration);
+                usuario.LockedUntil = now.Add(_rateLimitingOptions.LoginLockDuration);
                 lockTriggered = true;
             }
 
@@ -245,7 +247,7 @@ _secretProtector = secretProtector;
 
             if (throttled)
             {
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
@@ -384,8 +386,8 @@ _secretProtector = secretProtector;
             var lockTriggered = userMfaFailures >= MaxMfaFailuresPerUser;
             if (lockTriggered)
             {
-                usuario.FailedLoginAttempts = MaxFailedLoginAttempts;
-                usuario.LockedUntil = now.Add(LockDuration);
+                usuario.FailedLoginAttempts = _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount;
+                usuario.LockedUntil = now.Add(_rateLimitingOptions.LoginLockDuration);
                 await _dbContext.SaveChangesAsync(cancellationToken);
             }
 
@@ -813,10 +815,10 @@ _secretProtector = secretProtector;
         if (!BCrypt.Net.BCrypt.Verify(passwordActual, usuario.PasswordHash))
         {
             usuario.FailedLoginAttempts += 1;
-            var lockTriggered = usuario.FailedLoginAttempts >= MaxFailedLoginAttempts;
+            var lockTriggered = usuario.FailedLoginAttempts >= _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount;
             if (lockTriggered)
             {
-                usuario.LockedUntil = now.Add(LockDuration);
+                usuario.LockedUntil = now.Add(_rateLimitingOptions.LoginLockDuration);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -1191,7 +1193,7 @@ _secretProtector = secretProtector;
         lock (LoginRateLimitLock)
         {
             return _cache.TryGetValue<int>(emailKey, out var emailCount) &&
-                   emailCount >= MaxLoginFailuresPerClientAndEmail;
+                   emailCount >= _rateLimitingOptions.LoginMaxFailuresPerIpAndEmail;
         }
     }
 
@@ -1201,7 +1203,7 @@ _secretProtector = secretProtector;
         lock (LoginRateLimitLock)
         {
             return _cache.TryGetValue<int>(clientKey, out var clientCount) &&
-                   clientCount >= MaxLoginFailuresPerClient;
+                   clientCount >= _rateLimitingOptions.LoginMaxFailuresPerIp;
         }
     }
 
@@ -1213,10 +1215,10 @@ _secretProtector = secretProtector;
         {
             var emailCount = _cache.Get<int>(emailKey) + 1;
             var clientCount = _cache.Get<int>(clientKey) + 1;
-            _cache.Set(emailKey, emailCount, LoginFailureWindow);
-            _cache.Set(clientKey, clientCount, LoginFailureWindow);
-            return emailCount >= MaxLoginFailuresPerClientAndEmail ||
-                   clientCount >= MaxLoginFailuresPerClient;
+            _cache.Set(emailKey, emailCount, _rateLimitingOptions.LoginFailureWindow);
+            _cache.Set(clientKey, clientCount, _rateLimitingOptions.LoginFailureWindow);
+            return emailCount >= _rateLimitingOptions.LoginMaxFailuresPerIpAndEmail ||
+                   clientCount >= _rateLimitingOptions.LoginMaxFailuresPerIp;
         }
     }
 
@@ -1487,10 +1489,16 @@ public sealed class AuthResult
 public sealed class AuthException : Exception
 {
     public int StatusCode { get; }
+    public int? RetryAfterSeconds { get; }
 
-    public AuthException(string message, int statusCode) : base(message)
+    public AuthException(string message, int statusCode) : this(message, statusCode, null)
+    {
+    }
+
+    public AuthException(string message, int statusCode, int? retryAfterSeconds) : base(message)
     {
         StatusCode = statusCode;
+        RetryAfterSeconds = retryAfterSeconds;
     }
 }
 
