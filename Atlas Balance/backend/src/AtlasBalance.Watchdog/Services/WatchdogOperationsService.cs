@@ -839,7 +839,13 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             }
         }
 
-        return "powershell.exe";
+        // V-02.07: antes se caia a "powershell.exe" a secas, que CreateProcess resuelve
+        // buscando primero en el directorio del ejecutable. Este servicio corre con
+        // privilegios altos, asi que un binario plantado ahi se ejecutaria en su lugar.
+        // Mejor fallar con un mensaje claro que arrancar un PowerShell indeterminado.
+        throw new InvalidOperationException(
+            "No se encontro powershell.exe en System32\\WindowsPowerShell\\v1.0. " +
+            "No se resuelve por PATH por seguridad.");
     }
 
     private static string BuildOnlineUpdateHelperScript() =>

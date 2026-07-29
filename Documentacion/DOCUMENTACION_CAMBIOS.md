@@ -9,6 +9,143 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-29 - V-02.07 - Auditoria de ataques de inyeccion (SQLi, XSS, CSRF, path traversal, command injection, open redirect)
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Auditoria completa de superficie de inyeccion sobre siete ejes, ejecutada con
+seis agentes en paralelo y validada despues contra el codigo real. Resultado:
+**0 vulnerabilidades explotables por un usuario anonimo** y 3 endurecimientos
+aplicados. Detalle de lo verificado:
+
+- **SQL injection: limpio.** Cero queries por concatenacion. Todo el SQL
+  crudo del arbol de produccion son literales con parametros posicionales
+  (`pg_advisory_xact_lock({0})`) o `ExecuteSqlInterpolated`, que EF Core
+  convierte en `DbParameter` reales. Los 7 controladores con `?sortBy=`
+  (`extractos`, `titulares`, `cuentas`, `usuarios`, `exportaciones`,
+  `backups`, `formatos-importacion`) resuelven la ordenacion con un
+  `switch` de literales C# y lambda tipadas, con `default` seguro: el valor
+  del usuario nunca llega a ser un nombre de columna. Sin
+  `System.Linq.Dynamic` ni `EF.Property(x, sortBy)` en el repositorio.
+- **XSS: limpio.** Cero `innerHTML`, `dangerouslySetInnerHTML`,
+  `document.write`, `eval` o `new Function` en `frontend/src`. Los emails
+  HTML escapan todos los campos con `WebUtility.HtmlEncode`. Las
+  exportaciones XLSX (`SafeCell`) y el CSV de auditoria
+  (`EscapeSpreadsheetFormula`) ya prefijan `'` ante `=`, `+`, `-`, `@`,
+  cerrando CSV/Formula injection. El parser markdown propio de la IA
+  (`AiMessageContent.tsx`) descarta los enlaces markdown por diseno en vez
+  de sanearlos, lo que anula el vector `[texto](javascript:...)`.
+- **Open redirect: cubierto.** `frontend/src/utils/safeRoute.ts` rechaza
+  rutas absolutas, `//`, `/\`, cualquier `\` y caracteres de control, y
+  repite la comprobacion tras `decodeURIComponent`. El backend no expone
+  ningun `Redirect`/`LocalRedirect`.
+- **DOM XSS y postMessage: limpio.** Los listeners de `message` validan
+  `event.origin` y los emisores usan `window.location.origin` explicito.
+- **Parametros de URL: correctos.** IDs como `Guid`/enum con restriccion de
+  ruta `{id:guid}`; `pageSize` con `Math.Clamp` en todos los endpoints
+  paginados, luego no hay DoS por paginado.
+- **Command injection: limpio.** Los dos unicos `ProcessStartInfo` del
+  backend usan `ArgumentList` (argumentos atomicos, sin re-parsing de
+  shell) y `UseShellExecute = false`. La password de Postgres viaja por
+  `Environment["PGPASSWORD"]`, no en la linea de comandos.
+- **Sin superficie de deserializacion.** `Newtonsoft.Json` esta pineado
+  solo para forzar version no vulnerable en la dependencia transitiva de
+  Hangfire; el codigo de la app usa `System.Text.Json` y no hay
+  `JsonConvert` ni `TypeNameHandling`. Sin `XmlDocument`/`XmlReader`, luego
+  sin superficie XXE.
+
+**Tres endurecimientos aplicados:**
+
+1. **Rutas UNC rechazadas en `backup_path` / `export_path`** (impacto
+   mayor). `Path.IsPathRooted(@"\\host\share")` devuelve `true`, asi que la
+   validacion existente dejaba pasar rutas de red: un ADMIN podia apuntar
+   `backup_path` a un recurso SMB externo y sacar de la maquina el volcado
+   completo de la BD (IBANs, saldos, PII) de forma persistente y silenciosa.
+   Se anade `IsUncPath` y se exige ruta local `C:\...` en los tres puntos que
+   validan la ruta (controlador de entrada y los dos servicios que la releen
+   desde BD, por si quedara un valor UNC guardado de antes).
+2. **Verificacion de `Origin`/`Referer`** en `CsrfMiddleware`. No existia
+   ninguna. Se aplica a todo verbo mutador bajo `/api` y **sin** las
+   exclusiones de `ExcludedPaths`, de forma deliberada: asi cubre
+   `/api/auth/refresh-token`, que hasta ahora dependia unicamente de
+   `SameSite=Strict`. Se compara contra el origen de la propia peticion en
+   vez de contra una allowlist fija, porque cada instalacion on-premise
+   tiene su host; en Development se admiten ademas los origenes de Vite.
+   Si faltan las dos cabeceras se deja pasar (clientes no-navegador), ya que
+   los navegadores mandan `Origin` en todo verbo mutador y el token CSRF
+   sigue siendo obligatorio.
+3. **Fallback de PATH eliminado en el Watchdog.** `ResolvePowerShellExecutable`
+   caia a `"powershell.exe"` a secas si no lo encontraba en System32;
+   `CreateProcess` resuelve ese nombre buscando primero en el directorio del
+   ejecutable, y el Watchdog corre con privilegios altos. Ahora lanza
+   `InvalidOperationException` con mensaje explicito en vez de arrancar un
+   PowerShell indeterminado.
+
+**Estado previo del CSRF (verificado, sin cambios):** tokens exigidos en
+todo verbo no seguro bajo `/api`, comparacion en tiempo constante
+(`CryptographicOperations.FixedTimeEquals`), y las cuatro cookies con
+`SameSite=Strict` + prefijo `__Host-` en produccion. CORS solo se registra
+en Development y con origen literal.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/BackupService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ExportacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/CsrfMiddlewareTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`, `Documentacion/Versiones/v-02.07.md`,
+  `Documentacion/DOCUMENTACION_TECNICA.md`, `Documentacion/DOCUMENTACION_USUARIO.md`
+
+**Comandos ejecutados:**
+
+```
+dotnet build src\AtlasBalance.API\AtlasBalance.API.csproj -p:UseAppHost=false
+dotnet build src\AtlasBalance.Watchdog\AtlasBalance.Watchdog.csproj -p:UseAppHost=false
+dotnet build tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj -p:UseAppHost=false
+dotnet test  tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj --no-build
+```
+
+**Resultado de verificacion:**
+
+- API: 0 errores. Watchdog: 0 errores. Proyecto de tests: 0 errores.
+- Suite completa: **434 pruebas, 434 correctas, 0 con error, 0 omitidas**
+  (1 m 9 s). Incluye los tests que requieren PostgreSQL.
+- `CsrfMiddlewareTests` pasa de 8 a 15 fixtures: 7 nuevas cubren origen
+  cross-site rechazado, cross-site rechazado tambien en ruta excluida
+  (`refresh-token`), same-origin aceptado, `Referer` cross-site sin
+  `Origin`, ausencia de ambas cabeceras, y el origen de Vite aceptado solo
+  en Development.
+- Frontend sin cambios: la auditoria no encontro nada que corregir ahi.
+
+**Bloqueo operativo encontrado (seccion 8):** `dotnet build` sobre la
+solucion falla con `Access to the path '...\obj\project.assets.json' is
+denied` en todos los proyectos. No es el sandbox (falla igual sin el) ni un
+atributo de solo lectura ni un DENY de ACL: se pueden crear ficheros nuevos
+en `obj/` pero no abrir ese fichero en escritura, porque un proceso `dotnet`
+vivo desde el 2026-07-22 (la API en ejecucion) mantiene el handle. No se
+mataron procesos. La verificacion se completo copiando `backend/` al
+scratchpad excluyendo `bin`/`obj` y compilando alli. **Pendiente para el
+operador:** parar la API en ejecucion antes del proximo build in-place.
+
+**Pendientes:**
+
+- Ningun hallazgo de inyeccion queda abierto.
+- Nota de defensa en profundidad, no aplicada por ser cambio no pedido:
+  `QuotePostgresIdentifier` (`Program.cs:951`) interpola identificadores en
+  el DDL de `GRANT`/`REVOKE`. Hoy es inalcanzable desde HTTP (solo corre al
+  arrancar, con valores del connection string) y el escapado por duplicado
+  de comillas es correcto, pero conviene no reutilizar esa funcion con datos
+  de request.
+- `style-src 'unsafe-inline'` en la CSP sigue siendo necesario por los
+  estilos inline de React/Recharts. Riesgo residual bajo; quitarlo exige
+  refactor con nonce.
+
+---
+
 ## 2026-07-29 - V-02.07 - Auditoria de secretos y API keys + endurecimiento de los DTO de configuracion
 
 **Version:** V-02.07

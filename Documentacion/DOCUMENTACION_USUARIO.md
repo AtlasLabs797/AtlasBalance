@@ -592,3 +592,20 @@ No pegues valores de tokens, passwords ni connection strings reales en capturas,
 Atlas Balance usa el nuevo simbolo de marca en login, cambio obligatorio de password, menu lateral, favicon y activos de instalacion.
 
 El logo se adapta automaticamente a modo claro y oscuro. No cambia ningun flujo de uso.
+
+## Rutas de backups y exportaciones V-02.07
+
+Las carpetas de backups y de exportaciones deben estar en un disco de la propia maquina. Se escriben asi:
+
+```
+C:\atlas-balance\backups
+C:\atlas-balance\exports
+```
+
+Ya no se admiten carpetas de red del tipo `\servidor\carpeta`. Si guardas una, la aplicacion la rechaza y te avisa en pantalla.
+
+El motivo es simple: un backup contiene toda la base de datos, con numeros de cuenta, saldos y datos personales. Si esa carpeta apunta a un equipo de fuera, cada copia sale de tu red sin que nadie se entere. Obligando a que sea una carpeta local, esa fuga no puede ocurrir por un cambio de configuracion.
+
+Si necesitas que las copias acaben en un NAS o en un servidor de la oficina, monta ese recurso como una unidad de red con su letra (por ejemplo `Z:`) y usa esa letra en la ruta. Para copias fuera de la oficina, la via recomendada sigue siendo la integracion de Google Drive, que ya cifra el archivo antes de subirlo.
+
+Nada mas cambia: el resto del funcionamiento de backups y exportaciones es identico.

@@ -5182,3 +5182,71 @@ Validacion:
 - Causa tecnica: al compilar con `BaseIntermediateOutputPath` redirigido a `tools/dotnet-build/api/obj`, los restos `obj` dentro del proyecto dejaban de ser el intermediate path activo y podian entrar por globbing de items.
 - Cambio aplicado: `AtlasBalance.API.csproj` elimina `bin\**` y `obj\**` de `Compile`, `Content`, `EmbeddedResource` y `None`.
 - Verificacion: `Start-LocalDev.ps1 -TimeoutSeconds 90` compila y arranca la API; `curl.exe -i http://localhost:5000/api/importacion/lotes` devuelve `401 Unauthorized`, que es la respuesta correcta para una ruta `[Authorize]` sin cookies.
+
+## 2026-07-29 - V-02.07 - Auditoria de inyeccion: UNC en rutas de configuracion, Origin/Referer y resolucion de PowerShell
+
+**Que se modifico.** Tres endurecimientos salidos de la auditoria de
+superficie de inyeccion (SQLi, XSS, CSRF, path traversal, command injection
+y open redirect). Los otros cuatro ejes salieron limpios y no se toco nada
+en ellos; el detalle completo de lo verificado esta en
+`Versiones/v-02.07.md`.
+
+**1. Rutas UNC rechazadas en `backup_path` y `export_path`.**
+
+Por que: la validacion existente combinaba `Path.IsPathRooted(x)` con
+`LooksLikeWindowsRootedPath(x)` en un `OR`. Como
+`Path.IsPathRooted(@"\host\share")` devuelve `true` en .NET, cualquier
+ruta de red satisfacia la primera condicion y nunca se evaluaba el filtro
+estricto de `C:\`; el filtro de `..` tampoco la veia. Un ADMIN podia
+redirigir los `pg_dump` a un recurso SMB externo y sacar de la maquina el
+volcado integro de la base de datos de forma persistente.
+
+Como: se anade el helper `IsUncPath` (prefijo `\` o `//`) y se sustituye
+el `OR` por `LooksLikeWindowsRootedPath` a secas. Aplicado en los tres
+puntos que validan la ruta, no solo en el de entrada:
+`ConfiguracionController.IsSafeAbsoluteDirectory`,
+`BackupService.ResolveSafeDirectory` y
+`ExportacionService.ResolveSafeDirectory`. Los dos servicios releen el
+valor desde la tabla de configuracion, asi que revalidan por si quedara un
+UNC guardado de antes del cambio. Los mensajes de `BadRequest` pasan a
+indicar que no se admiten rutas de red.
+
+**2. Verificacion de `Origin`/`Referer` en `CsrfMiddleware`.**
+
+Por que: no existia ninguna comprobacion de estas cabeceras en el backend.
+`/api/auth/refresh-token` esta exento del token CSRF y quedaba protegido
+unicamente por `SameSite=Strict`, es decir por el comportamiento del
+navegador, sin verificacion server-side.
+
+Como: se anade al middleware ya existente en lugar de crear uno nuevo, por
+ser la misma responsabilidad y evitar otro registro en el pipeline. Se
+ejecuta antes de la validacion del token y **sin** aplicar
+`ExcludedPaths`, para cubrir precisamente las rutas exentas. El origen
+esperado se calcula como `Request.Scheme://Request.Host` en vez de leerse
+de una allowlist fija, porque cada instalacion on-premise tiene su propio
+host; en Development se aceptan ademas los origenes de Vite (5173), ya que
+ahi frontend y API son cross-origin de forma legitima. Si `Origin` falta se
+deriva el origen del `Referer`; si faltan ambas se deja pasar, porque los
+navegadores envian `Origin` en todo verbo mutador y el token CSRF sigue
+siendo obligatorio. El constructor pasa a recibir `IWebHostEnvironment`.
+
+Limitacion documentada en el propio codigo: un proxy inverso que reescriba
+el `Host` obligaria a activar `ForwardedHeaders.XForwardedHost` en
+`Program.cs`, o el middleware rechazaria todas las peticiones. Hoy no
+aplica: el despliegue es Kestrel directo.
+
+**3. `ResolvePowerShellExecutable` deja de caer al PATH.**
+
+Por que: devolvia `"powershell.exe"` sin ruta si no lo encontraba en
+System32. `CreateProcess` resuelve un nombre sin ruta buscando primero en
+el directorio del ejecutable, y el Watchdog corre como servicio con
+privilegios altos.
+
+Como: lanza `InvalidOperationException` con mensaje explicito en vez de
+devolver el nombre corto. Fallar es preferible a arrancar un PowerShell
+indeterminado con esos privilegios.
+
+**Verificacion.** API, Watchdog y tests compilan con 0 errores. Suite
+completa en verde: 434 pruebas, 434 correctas, 0 con error, 0 omitidas.
+`CsrfMiddlewareTests` pasa de 8 a 15 fixtures, con 7 nuevas para la
+verificacion de origen.
