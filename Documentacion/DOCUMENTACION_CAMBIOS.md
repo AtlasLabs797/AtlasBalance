@@ -9,6 +9,100 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-29 - V-02.07 - Auditoria de secretos y API keys + endurecimiento de los DTO de configuracion
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Auditoria completa de secretos sobre seis ejes (claves en backend y no en
+frontend, barrido de valores hardcodeados, variables de entorno, superficie
+de navegador, historial de Git, y clasificacion clave publica vs secreta).
+Resultado: **0 secretos reales expuestos y nada que rotar**. Detalle:
+
+- **Bundle de navegador limpio.** La unica variable que Vite inyecta es
+  `VITE_APP_VERSION` (numero de version, publico por diseno). `envPrefix`
+  sin alterar y un unico `define`. Sesion por cookie httpOnly + CSRF en
+  memoria; en `localStorage` solo tema, pais y email recordado.
+- **API keys de terceros bien encapsuladas.** El proyecto maneja
+  OpenRouter, OpenAI, MiniMax, ExchangeRate-API y Google Drive OAuth.
+  Todas se guardan cifradas en `CONFIGURACION` (Data Protection + HMAC),
+  se descifran solo en el backend justo antes de la llamada saliente, y
+  ninguna llamada a dominio externo sale del frontend.
+- **Historial de Git limpio.** `git log --all --full-history` sobre `.env`,
+  `appsettings.Development/Production.json` y `*.pem/key/pfx/crt/cer`: sin
+  resultados. Nunca se commiteo ninguno.
+- **Escaner propio en verde.** `Test-AtlasSecrets.ps1` (que ya corre en
+  `ci.yml` y `release.yml`): 504 archivos, 0 hallazgos.
+- **Configuracion fail-closed confirmada** en `Program.cs:96-111`
+  (`RejectUnsafeProductionSecret`): fuera de Development no arranca con
+  secretos vacios, cortos o con pinta de placeholder.
+
+Unico hallazgo accionable, de severidad baja y corregido en este bloque:
+
+- **Riesgo latente en los DTO de respuesta de configuracion.**
+  `SmtpConfigResponse.Password` y `ExchangeRateConfigResponse.ApiKey`
+  declaraban la propiedad del secreto y el controller la forzaba a
+  `string.Empty` en cada GET. No filtraba nada, pero el modo de fallo era
+  silencioso: bastaba que un refactor escribiera
+  `ApiKey = GetValue(config, "exchange_rate_api_key")` para devolver la
+  clave al navegador, y el escaner de CI no lo habria detectado porque no
+  es un literal hardcodeado.
+  Correccion: eliminadas ambas propiedades de los DTO de respuesta y sus
+  asignaciones en el controller. Ahora ese error no compila. Se adopta el
+  patron que `IaConfigResponse` ya usaba (solo flags `*_configurada`), con
+  lo que las tres secciones quedan consistentes. Los DTO de entrada
+  (`UpdateSmtpConfigRequest`, `UpdateExchangeRateConfigRequest`) no se
+  tocan: el valor sigue viajando del navegador al servidor al guardar.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ConfiguracionDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+
+**Decisiones de frontend:**
+- `exchange.api_key` y `smtp.password` son **estado de formulario**, no
+  dato del servidor. Al dejar el backend de enviarlos habia que
+  inicializarlos explicitamente a `''` en los dos puntos donde se
+  reconstruye el estado (carga inicial y merge posterior al guardado); sin
+  eso llegaban como `undefined` y React convertia el input en no
+  controlado. Es exactamente lo que la pagina ya hacia con las claves de
+  IA, asi que el patron no es nuevo.
+- No se tocan los tipos de `types/index.ts`: siguen declarando `api_key` y
+  `password` porque son campos del formulario. Separar tipo-lectura de
+  tipo-escritura en toda la pagina seria un refactor mayor y queda fuera
+  de alcance.
+
+**Comandos ejecutados y resultado de verificacion:**
+- `Test-AtlasSecrets.ps1` -> 504 archivos, 0 hallazgos, exit 0.
+- `npx tsc --noEmit` -> 0 errores.
+- `npm run lint` (`--max-warnings 0`) -> limpio, exit 0.
+- `dotnet build AtlasBalance.sln` -> **Compilacion correcta, 0 errores**.
+- `dotnet test --filter FullyQualifiedName~ConfiguracionControllerTests`
+  -> **10/10 superados**, 0 fallos.
+
+**Nota de entorno:** el build directo fallo con `Access denied` sobre
+`tests/AtlasBalance.API.Tests/obj/project.assets.json` (caso conocido de
+AGENTS.md seccion 8, con procesos `dotnet` vivos reteniendo el directorio).
+Se resolvio redirigiendo la salida intermedia con
+`-p:BaseIntermediateOutputPath=.codex-test-obj\obj\` y
+`-p:BaseOutputPath=.codex-test-obj\bin\`, ambas rutas ya gitignoradas. No
+se mato ningun proceso.
+
+**Verificado / bloqueado / pendiente:**
+- Verificado: build backend, suite de tests del controlador afectado,
+  typecheck y lint de frontend, escaner de secretos.
+- Bloqueado: sin validacion visual en navegador. Habria exigido levantar
+  backend + Postgres + Vite, que AGENTS.md seccion 8 desaconseja. El
+  cambio de UI es la inicializacion de dos campos a cadena vacia, cubierta
+  por typecheck y lint.
+- Pendiente: ninguno derivado de este bloque. Queda como mejora opcional
+  (no planificada) separar los tipos de lectura y escritura de
+  `ConfiguracionSistema` en el frontend.
+
+---
+
 ## 2026-07-29 - V-02.07 - Cierre de los dos defectos pendientes de la auditoria de errores
 
 **Version:** V-02.07

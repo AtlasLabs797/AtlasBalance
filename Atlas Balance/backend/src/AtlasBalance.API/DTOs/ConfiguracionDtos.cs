@@ -12,12 +12,15 @@ public sealed class ConfiguracionSistemaResponse
     public IaConfigResponse Ia { get; set; } = new();
 }
 
+// V-02.07: la respuesta de configuracion no declara la password SMTP. Antes
+// existia la propiedad y el controller la forzaba a string.Empty; bastaba un
+// descuido en un refactor para devolverla al navegador. Sin propiedad, ese
+// error no compila. El valor sigue viajando en UpdateSmtpConfigRequest.
 public sealed class SmtpConfigResponse
 {
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 587;
     public string User { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
     public string From { get; set; } = string.Empty;
 }
 
@@ -44,9 +47,11 @@ public sealed class DashboardConfigResponse
     public string ColorSaldo { get; set; } = "#7B7B7B";
 }
 
+// V-02.07: misma politica que SmtpConfigResponse. El frontend solo necesita
+// saber si hay clave configurada, nunca su valor. Mismo patron que
+// IaConfigResponse, que ya solo expone los flags *_configurada.
 public sealed class ExchangeRateConfigResponse
 {
-    public string ApiKey { get; set; } = string.Empty;
     public bool ApiKeyConfigurada { get; set; }
 }
 

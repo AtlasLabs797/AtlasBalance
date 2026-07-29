@@ -61,7 +61,6 @@ public sealed class ConfiguracionController : ControllerBase
                 Host = GetValue(config, "smtp_host"),
                 Port = ParseInt(GetValue(config, "smtp_port"), 587),
                 User = GetValue(config, "smtp_user"),
-                Password = string.Empty,
                 From = GetValue(config, "smtp_from")
             },
             General = new GeneralConfigResponse
@@ -81,7 +80,6 @@ public sealed class ConfiguracionController : ControllerBase
             },
             Exchange = new ExchangeRateConfigResponse
             {
-                ApiKey = string.Empty,
                 ApiKeyConfigurada = !string.IsNullOrWhiteSpace(GetValue(config, "exchange_rate_api_key"))
             },
             Dashboard = new DashboardConfigResponse

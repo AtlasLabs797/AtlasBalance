@@ -225,7 +225,15 @@ export default function ConfiguracionPage() {
           mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
           require_mfa_for_non_admin_users: cfg.data.general?.require_mfa_for_non_admin_users ?? true,
         },
-        exchange: cfg.data.exchange ?? { api_key: '', api_key_configurada: false },
+        // V-02.07: el backend ya no envia api_key ni smtp.password en el GET
+        // (los DTO de respuesta no declaran esos campos). Los inicializamos
+        // aqui a '' igual que las claves de IA, porque son estado del
+        // formulario: sin esto el input pasaria a no controlado.
+        smtp: { ...cfg.data.smtp, password: '' },
+        exchange: {
+          api_key: '',
+          api_key_configurada: cfg.data.exchange?.api_key_configurada ?? false,
+        },
         revision: cfg.data.revision ?? { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
         ia: {
           ...loadedIa,
@@ -310,7 +318,11 @@ export default function ConfiguracionPage() {
         mfa_remember_device_days: refreshed.data.general?.mfa_remember_device_days ?? config.general.mfa_remember_device_days,
         require_mfa_for_non_admin_users: refreshed.data.general?.require_mfa_for_non_admin_users ?? config.general.require_mfa_for_non_admin_users,
       },
-      exchange: refreshed.data.exchange ?? config.exchange,
+      exchange: {
+        api_key: '',
+        api_key_configurada:
+          refreshed.data.exchange?.api_key_configurada ?? config.exchange.api_key_configurada,
+      },
       ia: {
         ...(refreshed.data.ia ?? config.ia),
         provider: normalizeAiProvider(refreshed.data.ia?.provider ?? config.ia.provider),
