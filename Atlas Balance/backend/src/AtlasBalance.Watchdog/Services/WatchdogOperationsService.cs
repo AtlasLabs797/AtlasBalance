@@ -916,10 +916,20 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
-        using var handler = new HttpClientHandler
+        // V-02.07: aceptar cualquier certificado solo cuando el destino es loopback,
+        // donde no hay red que interceptar y el cert es el self-signed que genera el
+        // instalador. IsLocalHealthUrl tambien admite MachineName y MachineName.local,
+        // que SI resuelven por red: ahi un atacante en la LAN capaz de suplantar ese
+        // nombre podria presentar su propio certificado y devolver un 200 falso,
+        // haciendo que el watchdog diera por buena una actualizacion rota y se salte
+        // el rollback. Para esos hosts se exige validacion normal del certificado.
+        var healthUri = new Uri(healthUrl);
+        using var handler = new HttpClientHandler();
+        if (healthUri.IsLoopback)
         {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        };
+            handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+        }
+
         using var http = new HttpClient(handler)
         {
             Timeout = TimeSpan.FromSeconds(10)

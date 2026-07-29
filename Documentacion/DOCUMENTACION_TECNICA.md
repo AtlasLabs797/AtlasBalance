@@ -5303,3 +5303,105 @@ indeterminado con esos privilegios.
 completa en verde: 434 pruebas, 434 correctas, 0 con error, 0 omitidas.
 `CsrfMiddlewareTests` pasa de 8 a 15 fixtures, con 7 nuevas para la
 verificacion de origen.
+
+---
+
+## 2026-07-29 - V-02.07 - Transporte: HSTS explicito, CSP sin directiva obsoleta, Referrer-Policy con una sola fuente
+
+**Que se modifico.** Tres correcciones de cabeceras y una del watchdog,
+salidas de la auditoria de HTTPS/transporte/cookies. El veredicto completo
+de las 15 comprobaciones, incluida la que se rechazo, esta en
+`Versiones/v-02.07.md`.
+
+**Contexto que hay que tener antes de leer lo demas.** La redireccion
+HTTP a HTTPS de esta app no la resuelve el codigo, la resuelve la
+topologia. `Instalar-AtlasBalance.ps1:876` tiene dos modos: en modo LAN
+Kestrel escucha solo en `https://0.0.0.0:443` (no hay listener HTTP, luego
+no existe trafico en claro que redirigir) y en modo reverse proxy escucha
+solo en `http://127.0.0.1:5000` con el TLS terminado en Caddy, que ya
+redirige 80 a 443 por su cuenta. `app.UseHttpsRedirection()` funciona en el
+primer modo y es un no-op en el segundo (sin endpoint HTTPS ni
+`ASPNETCORE_HTTPS_PORT` el middleware no puede resolver el puerto y deja
+pasar la peticion tras loguear un warning). Se deja tal cual: no es
+explotable con Kestrel en loopback, y quitarlo empeoraria el modo LAN.
+
+**1. `AddHsts` explicito.**
+
+Por que: `Program.cs` llamaba `app.UseHsts()` sin configurar `AddHsts`, asi
+que la cabecera efectiva era la del framework, `max-age=2592000` (30 dias)
+y **sin** `includeSubDomains`.
+
+Como: `builder.Services.AddHsts` con `MaxAge` de 365 dias e
+`IncludeSubDomains = true`. `Preload = false` a proposito: la lista de
+preload de los navegadores exige un dominio publico registrable y es
+practicamente irreversible, y esta app se instala con hostnames de
+intranet. `ExcludedHosts` se queda con el default (`localhost`,
+`127.0.0.1`, `[::1]`) para no fijar HSTS en la propia maquina servidora.
+
+Efecto secundario que hay que gestionar en operacion: en modo LAN el
+certificado es self-signed, y con HSTS activo Chrome y Edge convierten el
+error de certificado en un fallo **no salteable** (desaparece el "continuar
+de todos modos"). Subir de 30 a 365 dias convierte un bloqueo de un mes en
+uno de un ano, y limpiarlo exige `chrome://net-internals/#hsts` en cada
+equipo. La condicion para desplegar esto es tener el `.cer` en la raiz de
+confianza de todos los clientes. Aviso relacionado:
+`scripts/install-cert-client.ps1` solo instala la CA de `mkcert` (camino de
+desarrollo); si `mkcert` no esta, imprime la ruta del `.cer` y no lo
+instala. El comando real esta en `documentacion.md:209`.
+
+**2. `block-all-mixed-content` fuera de la CSP.**
+
+Por que: la directiva quedo fuera de CSP nivel 3. Los navegadores actuales
+la ignoran y Chrome la reporta como obsoleta en consola, asi que solo
+aportaba ruido. `upgrade-insecure-requests`, que ya estaba en la misma
+cadena, cubre el caso.
+
+Como: se retira de `cspUpgrade` y se deja solo
+`upgrade-insecure-requests`.
+
+**3. Retirado el `<meta name="referrer">` de `index.html`.**
+
+Por que: el backend enviaba `Referrer-Policy: no-referrer` y el HTML
+llevaba `<meta name="referrer" content="strict-origin-when-cross-origin">`.
+Ese `<meta>` no era redundante: **ganaba**. Por spec de Referrer Policy la
+politica la fija la cabecera y el elemento `<meta>` la sobreescribe, asi
+que el documento de la SPA acababa aplicando la mas debil de las dos.
+
+Como: se borra el `<meta>`. Queda una sola fuente de verdad (la cabecera) y
+la politica efectiva pasa a `no-referrer`. Para una app on-premise sin
+enlaces salientes no se pierde funcionalidad.
+
+**4. El validador de certificado permisivo del watchdog, restringido a
+loopback.**
+
+Por que: `WatchdogOperationsService.WaitForApiHealthAsync` construia su
+`HttpClientHandler` con `DangerousAcceptAnyServerCertificateValidator` para
+el health check posterior a una actualizacion. El guardia que lo
+justificaba, `IsLocalHealthUrl`, no solo admite loopback: tambien
+`Environment.MachineName` y `MachineName.local`, que **si resuelven por
+red**. Un atacante en la LAN capaz de suplantar ese nombre podia presentar
+su propio certificado y devolver un `200 OK` falso; el watchdog daria por
+buena una actualizacion rota y se saltaria el rollback.
+
+Como: el validador permisivo solo se asigna cuando `healthUri.IsLoopback`.
+Para el resto de hosts admitidos se usa la validacion normal de
+certificados. La instalacion por defecto configura
+`https://localhost/api/health`, luego el camino normal no cambia.
+
+**5. Invariante del prefijo `__Host-` bajo test.**
+
+`BuildCookieOptions` (`AuthController.cs:300`) no asigna `Path`: se apoya en
+el default de `CookieOptions`. El navegador **rechaza** una cookie
+`__Host-` que no lleve exactamente `Path=/`, sin `Domain` y con `Secure`,
+asi que si ese default cambiara o alguien tocara esas opciones, el login
+entero se romperia en produccion de forma silenciosa y sin error en el
+servidor. `TransportSecurityTests.cs` fija el invariante ejercitando el
+`Response.Cookies.Append` real via `AuthController.RefreshToken` en entorno
+`Production` y asertando sobre el `Set-Cookie` emitido.
+
+**Verificacion.** PENDIENTE. El clasificador de seguridad del harness
+estuvo caido durante toda la sesion (`claude-opus-5 is temporarily
+unavailable`), sin acceso a shell, subagentes ni fetch web. Los cambios
+estan escritos y revisados a mano, pero sin compilar ni testear. Comandos a
+ejecutar: `dotnet build AtlasBalance.sln -p:UseAppHost=false` y
+`dotnet test --filter "FullyQualifiedName~TransportSecurityTests"`.

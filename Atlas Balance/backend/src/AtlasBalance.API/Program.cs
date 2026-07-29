@@ -160,6 +160,19 @@ builder.Services.AddSingleton<ICacheService>(sp =>
         }));
 builder.Services.AddSingleton<IDashboardCacheInvalidator, DashboardCacheInvalidator>();
 builder.Services.AddAtlasRateLimiting(builder.Configuration);
+// V-02.07: sin AddHsts, UseHsts emite max-age=2592000 (30 dias) y sin
+// includeSubDomains. Se sube a un ano e incluye subdominios.
+// preload queda fuera A PROPOSITO: la lista de preload de los navegadores
+// exige un dominio publico registrable y es practicamente irreversible; esta
+// app es on-premise y se instala con hostnames de intranet.
+// ExcludedHosts se deja con el default del framework (localhost, 127.0.0.1,
+// [::1]) para no fijar HSTS en la maquina del propio servidor.
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+    options.Preload = false;
+});
 ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("AtlasBalance");
@@ -494,9 +507,11 @@ app.Use(async (context, next) =>
             ? "'self' http://localhost:5173 https://localhost:5000 http://localhost:5000"
             : "'self'";
 
-        // V-02-05 (LOW-BE-2): upgrade-insecure-requests + block-all-mixed-content en
-        // produccion para forzar HTTPS.
-        var cspUpgrade = app.Environment.IsDevelopment() ? string.Empty : "upgrade-insecure-requests; block-all-mixed-content; ";
+        // V-02-05 (LOW-BE-2): upgrade-insecure-requests en produccion para forzar HTTPS.
+        // V-02.07: se retira block-all-mixed-content. Quedo fuera de CSP nivel 3, los
+        // navegadores actuales lo ignoran y Chrome lo reporta como directiva obsoleta
+        // en consola. upgrade-insecure-requests ya cubre el caso.
+        var cspUpgrade = app.Environment.IsDevelopment() ? string.Empty : "upgrade-insecure-requests; ";
 
         headers["Content-Security-Policy"] =
             "default-src 'self'; " +

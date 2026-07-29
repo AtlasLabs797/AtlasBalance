@@ -9,6 +9,137 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-29 - V-02.07 - Auditoria de HTTPS, cabeceras de transporte y cookies
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Checklist externo de 4 bloques (redireccion HTTPS, mixed content, cabeceras
+de seguridad, flags de cookies) contrastado contra el codigo antes de tocar
+nada. 15 comprobaciones: 11 ya cubiertas, 1 rechazada por romper una
+funcion existente, 3 gaps reales corregidos, mas 1 hallazgo propio fuera
+del checklist.
+
+Lo primero fue establecer la topologia real, porque condiciona el resto.
+`Instalar-AtlasBalance.ps1:876` tiene dos modos: LAN (Kestrel en
+`https://0.0.0.0:443` con `.pfx` self-signed, **sin listener HTTP**, luego
+no hay trafico en claro que redirigir) y reverse proxy (Kestrel en
+`http://127.0.0.1:5000` solo loopback, TLS en Caddy, que ya redirige 80 a
+443). El punto 1 del checklist queda cubierto por arquitectura, no por
+codigo.
+
+Corregido:
+
+1. **F-TLS-001 (MEDIA) HSTS con los defaults del framework.** `UseHsts()`
+   sin `AddHsts` daba `max-age=2592000` (30 dias) y sin
+   `includeSubDomains`. Ahora `AddHsts` con 365 dias +
+   `IncludeSubDomains`. `Preload = false` a proposito (la lista de preload
+   exige dominio publico registrable y es irreversible; esto es
+   on-premise).
+2. **F-TLS-002 (BAJA) directiva CSP obsoleta.** Retirado
+   `block-all-mixed-content`, fuera de CSP nivel 3 y reportado como
+   obsoleto por Chrome. `upgrade-insecure-requests` ya cubria el caso.
+3. **F-TLS-003 (BAJA) un `<meta>` degradaba el Referrer-Policy.**
+   `index.html` llevaba `<meta name="referrer"
+   content="strict-origin-when-cross-origin">` mientras el backend enviaba
+   `Referrer-Policy: no-referrer`. El `<meta>` no es redundante: **gana**
+   sobre la cabecera. Retirado; la politica efectiva pasa a ser
+   `no-referrer`.
+4. **F-TLS-005 (BAJA, hallazgo propio) el watchdog aceptaba cualquier
+   certificado en hosts de red.** `WaitForApiHealthAsync` usaba
+   `DangerousAcceptAnyServerCertificateValidator`, y su guardia
+   `IsLocalHealthUrl` admite tambien `MachineName` y `MachineName.local`,
+   que resuelven por red. Un atacante en la LAN capaz de suplantar ese
+   nombre podia devolver un `200 OK` falso y hacer que el watchdog diera
+   por buena una actualizacion rota, saltandose el rollback. El validador
+   permisivo queda restringido a `IsLoopback`.
+
+Rechazado con motivo:
+
+- **`X-Frame-Options: DENY`** (lo pedia el checklist; la app envia
+  `SAMEORIGIN`). `DENY` bloquea tambien el enmarcado del mismo origen y
+  `CuentaDetailPage.tsx:1297` enmarca `/importacion` en un `<iframe>`
+  dentro del modal de importar movimientos. Con `DENY` ese modal se queda
+  en blanco. `SAMEORIGIN` es correcto y coherente con el
+  `frame-ancestors 'self'` de la CSP.
+- **Ampliar `Permissions-Policy`.** Lo pedido (camera, microphone,
+  geolocation) ya estaba. No se puede anadir `clipboard-write=()`:
+  `TokenCreatedModal.tsx:37` usa `navigator.clipboard.writeText` para
+  copiar el token de integracion.
+
+Sin gap:
+
+- API en https: `api.ts` usa `baseURL: '/api'` relativo, hereda el
+  esquema de la pagina.
+- Mixed content: los `http://` del frontend son namespaces XML de SVG
+  (`http://www.w3.org/2000/svg`, identificadores, no descargas), proxy de
+  Vite y config de Playwright. Cero recursos externos: fuentes en
+  `/fonts`, favicon en `data:`, sin CDN.
+- WebSockets: no hay SignalR ni WebSockets. El unico `ws://` es el HMR de
+  Vite en dev.
+- Cookies: las 4 con `Secure` + `SameSite=Strict` + `IsEssential`,
+  `HttpOnly` en las 3 de sesion, ninguna con `Domain`. Ningun JWT fuera de
+  cookies `httpOnly`; en `localStorage` solo tema, pais y email recordado
+  (opt-in).
+
+Ademas se anade `TransportSecurityTests.cs`, que fija un invariante que no
+estaba cubierto: `BuildCookieOptions` no asigna `Path` y se apoya en el
+default de `CookieOptions`, pero el navegador **rechaza** una cookie
+`__Host-` que no lleve exactamente `Path=/`. Si ese default cambiara, el
+login se romperia en produccion sin error en el servidor. El test ejercita
+el `Response.Cookies.Append` real via `AuthController.RefreshToken` en
+`Production` y aserta sobre el `Set-Cookie` emitido.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Atlas Balance/frontend/index.html`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/TransportSecurityTests.cs` (nuevo)
+- `Documentacion/Versiones/v-02.07.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+
+**Comandos ejecutados:**
+
+- `dotnet build AtlasBalance.sln -p:UseAppHost=false` -> PENDIENTE
+- `dotnet test --filter "FullyQualifiedName~TransportSecurityTests"` -> PENDIENTE
+
+**Resultado de verificacion:**
+
+BLOQUEADO en esta sesion. El clasificador de seguridad del harness estuvo
+caido durante todo el bloque de trabajo (`claude-opus-5 is temporarily
+unavailable`), lo que dejo sin uso las herramientas de shell, subagentes y
+fetch web. Los cambios estan escritos y revisados a mano, pero **no
+compilados ni testeados**. Ver Pendientes.
+
+Consecuencia metodologica: la duda sobre el default de `CookieOptions.Path`
+no se pudo resolver ni por subagente ni por consulta al fuente de
+referencia de `dotnet/aspnetcore`. Se resolvio dejandola escrita como test
+ejecutable (`TransportSecurityTests`), que es mejor evidencia que
+cualquiera de las dos vias anteriores, pero sigue pendiente de ejecutar.
+
+**Pendientes:**
+
+- Ejecutar `dotnet build` + `dotnet test` de los dos comandos de arriba.
+  Ojo con el bloqueo de ACL en `obj/` ya registrado en
+  `LOG_ERRORES_INCIDENCIAS.md`: si aparece `Access to the path
+  '...project.assets.json' is denied`, aplicar el workaround de copiar
+  `backend/` sin `obj`/`bin` al scratchpad.
+- **Antes de desplegar con el HSTS nuevo:** confirmar que el `.cer` esta
+  en la raiz de confianza de todos los clientes. Con HSTS activo, Chrome y
+  Edge convierten el error de certificado en un fallo **no salteable**, y
+  pasar de 30 a 365 dias convierte un bloqueo de un mes en uno de un ano
+  (limpiarlo exige `chrome://net-internals/#hsts` por equipo). Aviso
+  relacionado: `install-cert-client.ps1` solo instala la CA de `mkcert`;
+  si `mkcert` no esta, imprime la ruta del `.cer` y no lo instala. El
+  comando real esta en `documentacion.md:209`.
+- Validar la cabecera HSTS contra un navegador real; esta sesion no lo
+  cubre.
+
+---
+
 ## 2026-07-29 - V-02.07 - Rate limiting global y endurecimiento de fuerza bruta en login
 
 **Version:** V-02.07
