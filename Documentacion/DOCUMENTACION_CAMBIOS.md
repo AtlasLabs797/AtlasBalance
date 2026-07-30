@@ -9,6 +9,125 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-30 - V-02.07 - Auditoria IDOR de toda la superficie de API
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Auditoria de Insecure Direct Object Reference sobre los 24 controllers del
+backend, no solo sobre los que ya cubria el cierre de la recomendacion
+V-01.06 (que se limito a Cuentas, Titulares y Revision). Se recorrieron
+todos los endpoints que aceptan un id de recurso, por ruta, querystring o
+body.
+
+**Resultado: no hay ningun IDOR vivo.** El patron esta aplicado de forma
+consistente: todo endpoint `{id}` carga el registro de BD y deriva de ahi
+la cuenta o el titular sobre el que evalua permiso, en vez de fiarse de un
+id del payload. Verificado uno a uno:
+
+- `ExtractosController` (10 endpoints con `{id}`, la mayor superficie
+  no-admin): todos derivan `cuenta` desde `ex.CuentaId` y pasan por
+  `GetPermission`. `Listar` interseca con `GetAllowedAccountIds`, y los
+  filtros `cuentaId`/`titularId` estrechan ese conjunto, nunca lo
+  sustituyen.
+- `ExportacionesController.Descargar` (el vector clasico): valida
+  `CanAccessCuentaAsync` sobre la cuenta de la exportacion y confina la
+  ruta del fichero bajo `export_path` (`IsAllowedExportFile`).
+- `ImportacionController`: los 4 endpoints de lote sacan `lote.CuentaId`
+  de BD antes de `EnsureCuentaPermitidaAsync`; `ListarLotes` filtra por
+  permisos a nivel de query para no-admin.
+- `AuthController.RevokeTrustedDevice`: la query es
+  `x.Id == deviceId && x.UsuarioId == userId` (`AuthService.cs:729`). No
+  se puede revocar el dispositivo MFA de otro usuario.
+- `IntegrationOpenClawController` (7 endpoints, modelo de autorizacion
+  propio por token Bearer): todos pasan por `ResolveReadScopeAsync` +
+  `GetScopedAccountsAsync`, que meten los ids pedidos como filtro DENTRO
+  de la query ya acotada al scope del token.
+  `IntegrationAuthorizationService` es deny-by-default: scope vacio
+  resuelve a `Where(_ => false)`, no a acceso global.
+- `TelemetriaController` (`[AllowAnonymous]`): sumidero de escritura, no
+  acepta ids ni devuelve datos.
+- Filtro global de soft delete sobre todas las entidades `ISoftDelete`
+  (`AppDbContext.cs:603`) como linea base.
+
+**Hallazgo real (defensa en profundidad), corregido:**
+
+`Program.cs:184` llama a `AddAuthorization()` sin `FallbackPolicy`. En ASP.NET
+Core eso significa que una accion sin atributo de autorizacion queda
+**anonima**, no denegada. Hoy no hay ninguna expuesta, pero el vector de
+IDOR que la propia regla operativa de esta version identifica
+(`v-02.07.md:544`, "controller nuevo con scope olvidado") no falla en
+ningun sitio con esta configuracion: simplemente publica el endpoint.
+
+Se anade `ControllerAuthorizationCoverageTests.cs`, un guardarrail por
+reflexion sobre el ensamblado que convierte ese olvido en fallo de build:
+
+1. `Toda_Accion_De_Controller_Debe_Declarar_Autorizacion_Explicita`:
+   recorre todas las acciones de todos los controllers y exige `[Authorize]`
+   o `[AllowAnonymous]` en la clase o en el metodo.
+2. `Todo_Controller_Debe_Declarar_Autorizacion_A_Nivel_De_Clase_O_Estar_Justificado`:
+   fija en `AuthController` la unica excepcion legitima (mezcla endpoints
+   anonimos y autenticados, declara accion por accion).
+3. `Ningun_Endpoint_Anonimo_Debe_Aceptar_Un_Id_De_Recurso_En_La_Ruta`:
+   un endpoint anonimo con `{id}` en la plantilla es IDOR directo.
+
+`IntegrationOpenClawController` queda en una allowlist explicita y
+comentada: no lleva atributo porque lo protege `IntegrationAuthMiddleware`
+por Bearer token (deny-by-default, `IntegrationAuthMiddleware.cs:115` y
+`TokenAllowsEndpoint`). Anadir otro controller a esa lista obliga a
+justificar quien lo protege.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ControllerAuthorizationCoverageTests.cs` (nuevo).
+- `Documentacion/Versiones/v-02.07.md`.
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada).
+
+**Comandos ejecutados:**
+
+```
+dotnet test AtlasBalance.API.Tests.csproj \
+  --filter "FullyQualifiedName~ControllerAuthorizationCoverageTests" \
+  -p:UseAppHost=false \
+  -p:BaseIntermediateOutputPath=".local-build/obj/" \
+  -p:BaseOutputPath=".local-build/bin/"
+```
+
+**Resultado de verificacion:**
+
+- Los 3 tests nuevos: **3/3 PASS**. En su primera ejecucion el test 1
+  fallo y detecto `IntegrationOpenClawController`; era un fallo del propio
+  test (no consultaba la allowlist), no de la aplicacion. Corregido y
+  vuelto a pasar.
+- Regresion sobre la bateria IDOR existente
+  (`ControllerAuthorizationCoverage`, `Titulares`, `Cuentas`, `Revision`,
+  `UserAccess`, `IntegrationAuthorization`, `IntegrationAuthMiddleware`,
+  `IntegrationOpenClaw`, `Extractos`, `Auth`): **86/86 PASS**.
+
+**Incidencia de entorno:** `obj/project.assets.json` del proyecto de tests
+pertenece a `TRAKERIA\CodexSandboxOffline` y el usuario actual solo tiene
+`ReadAndExecute`, asi que `dotnet test` fallaba con `Access denied`.
+Redirigir con una ruta ABSOLUTA rompe el restore del proyecto referenciado
+(ambos proyectos comparten un mismo `obj` y faltan las referencias de EF
+Core). La via que funciona es una ruta RELATIVA
+(`-p:BaseIntermediateOutputPath=".local-build/obj/"`), que MSBuild resuelve
+por proyecto y mantiene los assets separados. `.local-build/` ya esta en
+`.gitignore` y en `DefaultItemExcludes`.
+
+**Pendientes:**
+
+- Evaluar anadir `FallbackPolicy = RequireAuthenticatedUser` en
+  `AddAuthorization()`. No se aplica en esta sesion porque obliga a marcar
+  `[AllowAnonymous]` en 5 puntos (`IntegrationOpenClawController`,
+  `MapGet("/api/health")`, `MapFallback("/api/{**catchAll}")`,
+  `MapFallbackToFile("index.html")` y el dashboard de Hangfire en dev), y
+  equivocarse en `MapFallbackToFile` deja a todos los usuarios sin pagina
+  de login. Cambio de arranque con radio de impacto amplio: decision del
+  usuario, y exige verificar la app arrancada, no solo tests.
+
+---
+
 ## 2026-07-29 - V-02.07 - Auditoria de HTTPS, cabeceras de transporte y cookies
 
 **Version:** V-02.07
