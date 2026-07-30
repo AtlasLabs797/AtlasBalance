@@ -23,6 +23,7 @@ public interface IGoogleDriveBackupService
     Task<GoogleDriveLinkStatusResponse> TestConnectionAsync(CancellationToken cancellationToken);
     Task UploadBackupAsync(Backup backup, string backupPath, CancellationToken cancellationToken);
     Task UploadBackupByIdAsync(Guid backupId, CancellationToken cancellationToken);
+    Task DeleteRemoteBackupCopyAsync(BackupCloudCopy copy, CancellationToken cancellationToken);
     Task<IReadOnlyList<GoogleDriveBackupFileResponse>> ListFilesAsync(CancellationToken cancellationToken);
     Task<Backup> ImportAsync(string fileId, Guid? userId, HttpContext? httpContext, CancellationToken cancellationToken);
 }
@@ -328,6 +329,60 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         }
 
         await UploadBackupAsync(backup, backup.RutaArchivo, cancellationToken);
+    }
+
+    // V-02.07 (retencion de PII en la nube): la retencion local de BackupService
+    // borraba el fichero del disco pero nunca el objeto subido a Drive, asi que
+    // el dump completo (con toda la PII) se quedaba en la nube indefinidamente.
+    // Este metodo borra el fichero remoto por su RemoteFileId y marca la copia
+    // como retirada. Un 404 de Drive (el fichero ya no existe) se trata como
+    // exito idempotente. Cualquier otro fallo se registra en
+    // BackupCloudCopy.ErrorCode/ErrorMessage sin lanzar excepcion, para que la
+    // retencion del resto de backups no se aborte.
+    public async Task DeleteRemoteBackupCopyAsync(BackupCloudCopy copy, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(copy.RemoteFileId))
+        {
+            copy.DeletedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var connection = await LoadActiveConnectionAsync(cancellationToken);
+            var accessToken = await RefreshAccessTokenAsync(connection, cancellationToken);
+            var client = CreateGoogleApiClient(accessToken);
+            using var response = await client.DeleteAsync(
+                $"drive/v3/files/{Uri.EscapeDataString(copy.RemoteFileId)}",
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound)
+            {
+                copy.DeletedAt = DateTime.UtcNow;
+                copy.ErrorCode = null;
+                copy.ErrorMessage = null;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
+            copy.ErrorCode = $"google_drive_delete_http_{(int)response.StatusCode}";
+            copy.ErrorMessage = "No se pudo borrar la copia remota en Google Drive.";
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("no esta vinculado", StringComparison.OrdinalIgnoreCase))
+        {
+            copy.ErrorCode = "google_drive_not_linked";
+            copy.ErrorMessage = "Google Drive no esta vinculado.";
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            copy.ErrorCode = ClassifyError(ex);
+            copy.ErrorMessage = BuildSafeErrorMessage(ex);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogWarning(ex, "Fallo al borrar copia remota {CopyId} de Google Drive", copy.Id);
+        }
     }
 
     public async Task<IReadOnlyList<GoogleDriveBackupFileResponse>> ListFilesAsync(CancellationToken cancellationToken)

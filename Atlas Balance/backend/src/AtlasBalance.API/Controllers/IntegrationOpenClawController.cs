@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Middleware;
@@ -45,20 +46,21 @@ public sealed class IntegrationOpenClawController : ControllerBase
         var cuentas = await GetScopedAccountsAsync(scope, null, null, cancellationToken);
         var titulares = cuentas
             .GroupBy(x => new { x.TitularId, x.TitularNombre, x.TitularTipo })
-            .OrderBy(x => x.Key.TitularNombre)
+            // V-02.07: ordenar por el seudonimo opaco (no por el nombre real) para
+            // no filtrar el orden alfabetico que el formato opaco pretende ocultar.
+            .OrderBy(x => IntegrationPseudonyms.ForTitular(x.Key.TitularId))
             .Select(group => new
             {
                 id = group.Key.TitularId,
-                nombre = group.Key.TitularNombre,
+                nombre = IntegrationPseudonyms.ForTitular(group.Key.TitularId),
                 tipo = group.Key.TitularTipo,
                 cuentas = group
-                    .OrderBy(x => x.CuentaNombre)
+                    // V-02.07: idem, ordenar por el seudonimo de cuenta.
+                    .OrderBy(x => IntegrationPseudonyms.ForCuenta(x.CuentaId))
                     .Select(x => new
                     {
                         id = x.CuentaId,
-                        nombre = x.CuentaNombre,
-                        iban = x.Iban,
-                        numero_cuenta = x.NumeroCuenta,
+                        nombre = IntegrationPseudonyms.ForCuenta(x.CuentaId),
                         divisa = x.Divisa,
                         es_efectivo = x.EsEfectivo,
                         activa = x.Activa
@@ -155,11 +157,10 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 titular = new
                 {
                     id = cuenta.TitularId,
-                    nombre = cuenta.TitularNombre,
+                    nombre = IntegrationPseudonyms.ForTitular(cuenta.TitularId),
                     tipo = cuenta.TitularTipo
                 },
-                nombre = cuenta.CuentaNombre,
-                iban = cuenta.Iban,
+                nombre = IntegrationPseudonyms.ForCuenta(cuenta.CuentaId),
                 es_efectivo = cuenta.EsEfectivo,
                 divisa = cuenta.Divisa,
                 saldo_actual = Decimal.Round(saldoActual, 2),
@@ -296,16 +297,6 @@ public sealed class IntegrationOpenClawController : ControllerBase
             .Take(limite)
             .ToListAsync(cancellationToken);
 
-        var userIds = rows
-            .Where(x => x.UsuarioCreacionId.HasValue)
-            .Select(x => x.UsuarioCreacionId!.Value)
-            .Distinct()
-            .ToList();
-        var usersById = await _dbContext.Usuarios
-            .IgnoreQueryFilters()
-            .Where(x => userIds.Contains(x.Id))
-            .Select(x => new { x.Id, x.NombreCompleto, IsDeleted = x.DeletedAt != null })
-            .ToDictionaryAsync(x => x.Id, x => x.IsDeleted ? "usuario-eliminado" : x.NombreCompleto, cancellationToken);
         var cuentasById = cuentas.ToDictionary(x => x.CuentaId);
 
         var extractos = rows.Select(x =>
@@ -317,13 +308,13 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 cuenta = new
                 {
                     id = cuenta.CuentaId,
-                    nombre = cuenta.CuentaNombre,
+                    nombre = IntegrationPseudonyms.ForCuenta(cuenta.CuentaId),
                     divisa = cuenta.Divisa
                 },
                 titular = new
                 {
                     id = cuenta.TitularId,
-                    nombre = cuenta.TitularNombre
+                    nombre = IntegrationPseudonyms.ForTitular(cuenta.TitularId)
                 },
                 fecha = x.Fecha,
                 concepto = x.Concepto,
@@ -334,9 +325,7 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 fila_numero = x.FilaNumero,
                 @checked = x.Checked,
                 flagged = x.Flagged,
-                usuario_creacion = x.UsuarioCreacionId.HasValue && usersById.TryGetValue(x.UsuarioCreacionId.Value, out var email)
-                    ? email
-                    : null,
+                // V-02-07: se retira usuario_creacion (nombre de empleado interno); un sistema externo no lo necesita.
                 fecha_creacion = x.FechaCreacion
             };
         }).ToList();
@@ -623,9 +612,9 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 return new
                 {
                     cuenta_id = cuenta.CuentaId,
-                    cuenta_nombre = cuenta.CuentaNombre,
+                    cuenta_nombre = IntegrationPseudonyms.ForCuenta(cuenta.CuentaId),
                     titular_id = cuenta.TitularId,
-                    titular_nombre = cuenta.TitularNombre,
+                    titular_nombre = IntegrationPseudonyms.ForTitular(cuenta.TitularId),
                     divisa = cuenta.Divisa,
                     saldo_actual = Decimal.Round(saldoActual, 2),
                     saldo_minimo = alerta?.SaldoMinimo,
@@ -778,9 +767,9 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 entidad_tipo = x.EntidadTipo,
                 entidad_id = x.EntidadId,
                 cuenta_id = resolvedCuentaId,
-                cuenta_nombre = cuenta?.CuentaNombre,
+                cuenta_nombre = cuenta is null ? null : IntegrationPseudonyms.ForCuenta(cuenta.CuentaId),
                 titular_id = cuenta?.TitularId,
-                titular_nombre = cuenta?.TitularNombre,
+                titular_nombre = cuenta is null ? null : IntegrationPseudonyms.ForTitular(cuenta.TitularId),
                 celda_referencia = x.CeldaReferencia,
                 columna_nombre = x.ColumnaNombre,
                 valor_anterior = x.ValorAnterior,
@@ -812,6 +801,98 @@ public sealed class IntegrationOpenClawController : ControllerBase
             registros_por_pagina = limite,
             paginas_totales = (int)Math.Ceiling(total / (double)limite),
             auditoria = data
+        }));
+    }
+
+    // V-02.07: tope maximo de ids por lote entre titular_ids y cuenta_ids en
+    // resolver-nombres. El tope no impide una re-identificacion masiva a base
+    // de llamadas repetidas (cada una por debajo del limite), pero la hace
+    // visible en la auditoria: el registro explicito de mas abajo deja el
+    // NUMERO de ids resueltos por cada llamada, asi que un patron de muchas
+    // llamadas pequenas queda igual de rastreable que un intento de lote unico.
+    private const int MaxResolverNombresBatchSize = 200;
+
+    [HttpPost("resolver-nombres")]
+    public async Task<IActionResult> ResolverNombres(
+        [FromBody] ResolverNombresRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var (token, scope, error) = await ResolveReadScopeAsync(cancellationToken);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        var titularIds = request?.TitularIds ?? [];
+        var cuentaIds = request?.CuentaIds ?? [];
+
+        if (titularIds.Count + cuentaIds.Count > MaxResolverNombresBatchSize)
+        {
+            return IntegrationError(
+                StatusCodes.Status400BadRequest,
+                $"BAD_REQUEST: El lote no puede superar {MaxResolverNombresBatchSize} ids entre titular_ids y cuenta_ids");
+        }
+
+        var titularIdSet = titularIds.ToHashSet();
+        var cuentaIdSet = cuentaIds.ToHashSet();
+
+        // V-02.07: se reutiliza GetScopedAccountsAsync (sin filtro de titular_id ni
+        // cuenta_id), exactamente como hacen Titulares/Saldos/Alertas, para obtener
+        // el universo completo de titulares y cuentas al que este token tiene
+        // acceso de lectura. Un id pedido que no aparezca en ese universo
+        // sencillamente no sale en la respuesta: no se distingue "no existe" de
+        // "fuera de scope" para no convertir el endpoint en un oraculo de existencia.
+        var cuentasEnScope = titularIdSet.Count > 0 || cuentaIdSet.Count > 0
+            ? await GetScopedAccountsAsync(scope, null, null, cancellationToken)
+            : [];
+
+        var titularesResueltos = cuentasEnScope
+            .Where(x => titularIdSet.Contains(x.TitularId))
+            .GroupBy(x => new { x.TitularId, x.TitularNombre })
+            .Select(g => new ResolverNombresTitularItemResponse
+            {
+                Id = g.Key.TitularId,
+                Seudonimo = IntegrationPseudonyms.ForTitular(g.Key.TitularId),
+                Nombre = g.Key.TitularNombre
+            })
+            .ToList();
+
+        var cuentasResueltas = cuentasEnScope
+            .Where(x => cuentaIdSet.Contains(x.CuentaId))
+            .Select(x => new ResolverNombresCuentaItemResponse
+            {
+                Id = x.CuentaId,
+                Seudonimo = IntegrationPseudonyms.ForCuenta(x.CuentaId),
+                Nombre = x.CuentaNombre
+            })
+            .ToList();
+
+        // V-02.07: IntegrationAuthMiddleware audita automaticamente cada request de
+        // integracion (SaveIntegrationAuditAsync), pero solo serializa la query
+        // string (context.Request.Query / RedactQueryValue), nunca el body de un
+        // POST. Como aqui el body es precisamente lo sensible, se deja un registro
+        // explicito en la auditoria general con el NUMERO de ids resueltos, nunca
+        // los nombres ni los ids en si.
+        _dbContext.Auditorias.Add(new Auditoria
+        {
+            Id = Guid.NewGuid(),
+            TipoAccion = "integration_resolver_nombres",
+            EntidadTipo = "INTEGRATION_TOKEN",
+            EntidadId = token?.Id,
+            DetallesJson = JsonSerializer.Serialize(new
+            {
+                titulares_resueltos = titularesResueltos.Count,
+                cuentas_resueltas = cuentasResueltas.Count
+            }),
+            Timestamp = DateTime.UtcNow,
+            IpAddress = HttpContext.Connection.RemoteIpAddress
+        });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(IntegrationApiResponses.Success(new ResolverNombresResponse
+        {
+            Titulares = titularesResueltos,
+            Cuentas = cuentasResueltas
         }));
     }
 
@@ -848,8 +929,13 @@ public sealed class IntegrationOpenClawController : ControllerBase
             cuentasQuery = cuentasQuery.Where(x => x.Id == cuentaId.Value);
         }
 
+        // V-02.07: se ordena por Id (deterministico, traducible a SQL) en vez de
+        // por Nombre real. El orden expuesto hacia la integracion se recalcula
+        // mas abajo en base al seudonimo opaco, para no filtrar el orden
+        // alfabetico real a los endpoints (Saldos, Alertas, etc.) que consumen
+        // esta lista tal cual, sin reordenarla explicitamente.
         var cuentas = await cuentasQuery
-            .OrderBy(x => x.Nombre)
+            .OrderBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
         var titularIds = cuentas.Select(x => x.TitularId).Distinct().ToList();
@@ -867,8 +953,7 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 {
                     CuentaId = x.Id,
                     CuentaNombre = x.Nombre,
-                    Iban = x.Iban,
-                    NumeroCuenta = x.NumeroCuenta,
+                    // V-02-07: sin excepcion, es un token de integracion externo.
                     Divisa = x.Divisa,
                     EsEfectivo = x.EsEfectivo,
                     Activa = x.Activa,
@@ -877,6 +962,9 @@ public sealed class IntegrationOpenClawController : ControllerBase
                     TitularTipo = titular.Tipo.ToString()
                 };
             })
+            // V-02.07: reordenar por el seudonimo opaco de cuenta antes de devolver,
+            // ya que este es el orden final que ven varios endpoints de lectura.
+            .OrderBy(x => IntegrationPseudonyms.ForCuenta(x.CuentaId))
             .ToList();
     }
 
@@ -1192,8 +1280,8 @@ public sealed class IntegrationOpenClawController : ControllerBase
     {
         public Guid CuentaId { get; set; }
         public string CuentaNombre { get; set; } = string.Empty;
-        public string? Iban { get; set; }
-        public string? NumeroCuenta { get; set; }
+        // V-02-07: IBAN y numero de cuenta ya no se proyectan hacia la integracion
+        // externa. No se enmascaran: no salen.
         public string Divisa { get; set; } = "EUR";
         public bool EsEfectivo { get; set; }
         public bool Activa { get; set; }

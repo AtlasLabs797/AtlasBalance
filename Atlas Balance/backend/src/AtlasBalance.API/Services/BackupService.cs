@@ -172,6 +172,26 @@ public sealed class BackupService : IBackupService
                     }),
                     cancellationToken: cancellationToken);
                 backup.Notas = "Eliminado por retención automática";
+
+                // V-02.07 (retencion de PII en la nube): la copia local ya se borro
+                // arriba, pero el dump subido a Google Drive seguia vivo
+                // indefinidamente. Se borra tambien cada BackupCloudCopy remota
+                // asociada; un fallo aqui no debe impedir que la retencion local
+                // (ya aplicada en memoria) se guarde para el resto del lote.
+                var cloudCopies = await _dbContext.BackupCloudCopies
+                    .Where(c => c.BackupId == backup.Id && c.DeletedAt == null)
+                    .ToListAsync(cancellationToken);
+                foreach (var cloudCopy in cloudCopies)
+                {
+                    try
+                    {
+                        await _googleDriveBackupService.DeleteRemoteBackupCopyAsync(cloudCopy, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "No se pudo borrar la copia remota de Google Drive para backup {BackupId}", backup.Id);
+                    }
+                }
             }
             catch (Exception ex)
             {

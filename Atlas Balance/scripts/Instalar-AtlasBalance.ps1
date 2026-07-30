@@ -120,6 +120,43 @@ function Protect-SecretDirectory {
     }
 }
 
+# V-02-07: la BD, los backups locales y las exportaciones .xlsx guardan datos
+# personales sin cifrado a nivel de columna. La unica defensa frente a robo del
+# disco o de una copia del volumen es el cifrado en reposo del propio volumen.
+# Aqui NO se activa BitLocker: encenderlo es un cambio de seguridad del sistema
+# que debe decidir y ejecutar un administrador (y puede requerir TPM, reinicio y
+# custodia de la clave de recuperacion). Esto solo comprueba y avisa.
+function Test-VolumeEncryption {
+    param([string[]]$Paths)
+
+    $checked = @{}
+    foreach ($path in $Paths) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        $drive = try { (Split-Path -Qualifier $path) } catch { $null }
+        if ([string]::IsNullOrWhiteSpace($drive) -or $checked.ContainsKey($drive)) { continue }
+        $checked[$drive] = $true
+
+        $status = $null
+        try {
+            $status = Get-BitLockerVolume -MountPoint $drive -ErrorAction Stop
+        } catch {
+            Write-Warning "No se pudo comprobar el cifrado del volumen $drive ($($_.Exception.Message)). Verificalo a mano."
+            continue
+        }
+
+        if ($status.ProtectionStatus -eq 'On') {
+            Write-Host "  [OK] Volumen $drive cifrado con BitLocker." -ForegroundColor Green
+        } else {
+            Write-Warning @"
+Volumen $drive SIN cifrado en reposo (ProtectionStatus=$($status.ProtectionStatus)).
+Ahi viven datos personales: base de datos, backups locales y exportaciones.
+Sin cifrado de volumen, quien se lleve el disco o una copia del volumen los lee enteros.
+Activalo de forma consciente con: Enable-BitLocker -MountPoint $drive  (guarda la clave de recuperacion).
+"@
+        }
+    }
+}
+
 function Protect-SecretFile {
     param([string]$Path)
 
@@ -1021,6 +1058,15 @@ try {
     Write-Host "La instalacion termino, pero el health check automatico no confirmo la API: $($_.Exception.Message)" -ForegroundColor Yellow
     Write-Host "En Windows Server 2019 usa como prueba primaria: curl.exe -k -v $appUrl/api/health" -ForegroundColor Yellow
 }
+
+Write-Host ""
+Write-Host "Comprobando cifrado en reposo de los volumenes con datos personales..." -ForegroundColor Cyan
+Test-VolumeEncryption -Paths @(
+    $InstallPath,
+    (Join-Path $InstallPath "backups"),
+    (Join-Path $InstallPath "exports"),
+    $PostgresDataPath,
+    (Join-Path $env:ProgramData "AtlasBalance"))
 
 Write-Host ""
 Write-Host "Atlas Balance $AppVersion instalado." -ForegroundColor Green

@@ -137,8 +137,9 @@ public sealed class CuentasController : ControllerBase
                     TitularNombre = x.Titular.Nombre,
                     TitularTipo = x.Titular.Tipo.ToString(),
                     Nombre = x.Cuenta.Nombre,
-                    NumeroCuenta = x.Cuenta.NumeroCuenta,
-                    Iban = x.Cuenta.Iban,
+                    // V-02-07: enmascarado en listado (minimizacion de datos); el detalle (Obtener) sigue completo.
+                    NumeroCuenta = PiiMasking.MaskNumeroCuenta(x.Cuenta.NumeroCuenta),
+                    Iban = PiiMasking.MaskIban(x.Cuenta.Iban),
                     BancoNombre = x.Cuenta.BancoNombre,
                     Divisa = x.Cuenta.Divisa,
                     FormatoId = x.Cuenta.FormatoId,
@@ -292,7 +293,8 @@ public sealed class CuentasController : ControllerBase
         {
             CuentaId = cuenta.Id,
             CuentaNombre = cuenta.Nombre,
-            Iban = cuenta.Iban,
+            // V-02-07: enmascarado en resumen (respuesta agregada, no se usa para editar).
+            Iban = PiiMasking.MaskIban(cuenta.Iban),
             BancoNombre = cuenta.BancoNombre,
             Divisa = cuenta.Divisa,
             PaisId = cuenta.PaisId,

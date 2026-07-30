@@ -814,7 +814,8 @@ public sealed class ExtractosController : ControllerBase
         {
             CuentaId = cuentaId,
             CuentaNombre = cuentaNombre,
-            Iban = iban,
+            // V-02-07: enmascarado en KPI de cuenta/titular (respuesta agregada, no se usa para editar).
+            Iban = PiiMasking.MaskIban(iban),
             BancoNombre = bancoNombre,
             Divisa = divisa,
             PaisId = paisId,

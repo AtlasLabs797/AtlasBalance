@@ -1820,6 +1820,161 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().Contain("Rango maximo de contexto");
     }
 
+    [Fact]
+    public void AiPseudonymMap_Apply_Should_Replace_Longest_Name_First()
+    {
+        var map = new AiPseudonymMap(new[]
+        {
+            ("Acme Solutions SL", "TITULAR"),
+            ("Acme", "TERCERO")
+        });
+
+        var result = map.Apply("Acme Solutions SL transfirio dinero a Acme ayer.");
+
+        result.Should().Contain("[TITULAR_1] transfirio dinero a [TERCERO_1] ayer.");
+        result.Should().NotContain("Acme Solutions SL");
+        result.Should().NotContain("Acme ayer");
+    }
+
+    [Fact]
+    public void AiPseudonymMap_Apply_Should_Not_Split_Words()
+    {
+        var map = new AiPseudonymMap(new[] { ("Ana", "TITULAR") });
+
+        var result = map.Apply("Anabel pago a Ana.");
+
+        result.Should().Be("Anabel pago a [TITULAR_1].");
+    }
+
+    [Fact]
+    public void AiPseudonymMap_Apply_Should_Not_Corrupt_Placeholders_Already_Inserted()
+    {
+        // Una entidad llamada "Cuenta" colisiona con el texto del placeholder [CUENTA_1]:
+        // si la sustitucion se hace en varias pasadas, la segunda pasada reescribe dentro
+        // del placeholder ya insertado y el texto sale corrupto e irreversible.
+        var map = new AiPseudonymMap(new[]
+        {
+            ("Cuenta Corriente Principal", "CUENTA"),
+            ("Cuenta", "TERCERO")
+        });
+        var original = "Cuenta Corriente Principal pago a Cuenta.";
+
+        var applied = map.Apply(original);
+
+        applied.Should().Be("[CUENTA_1] pago a [TERCERO_1].");
+        map.Reverse(applied).Should().Be(original);
+    }
+
+    [Fact]
+    public void AiPseudonymMap_Reverse_Should_Restore_Original_Text_After_Apply()
+    {
+        var map = new AiPseudonymMap(new[]
+        {
+            ("Constructora Ejemplo SL", "TITULAR"),
+            ("Cuenta Corriente Principal", "CUENTA"),
+            ("Proveedor Ejemplo SA", "TERCERO")
+        });
+        var original = "Constructora Ejemplo SL uso Cuenta Corriente Principal para pagar a Proveedor Ejemplo SA.";
+
+        var applied = map.Apply(original);
+        var reversed = map.Reverse(applied);
+
+        applied.Should().NotContain("Constructora Ejemplo SL");
+        applied.Should().NotContain("Cuenta Corriente Principal");
+        applied.Should().NotContain("Proveedor Ejemplo SA");
+        reversed.Should().Be(original);
+    }
+
+    [Fact]
+    public async Task AskAsync_Should_Pseudonymize_Titular_Name_Before_Sending_To_Provider()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db);
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Constructora Ejemplo SL", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Constructora", Divisa = "EUR", Activa = true });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Pago a proveedor",
+            Monto = -500m,
+            Saldo = 1500m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var httpFactory = new CapturingHttpClientFactory();
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
+            new AuditService(db),
+            NullLogger<AtlasAiService>.Instance);
+
+        await sut.AskAsync(AdminScope(userId), "Resumen de gastos de Constructora Ejemplo SL este mes", "127.0.0.1", CancellationToken.None);
+
+        httpFactory.LastPayload.Should().NotContain("Constructora Ejemplo SL");
+        httpFactory.LastPayload.Should().Contain("[TITULAR_1]");
+    }
+
+    [Fact]
+    public async Task AskAsync_Should_Restore_Real_Name_From_Provider_Placeholder()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db);
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Constructora Ejemplo SL", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta Constructora", Divisa = "EUR", Activa = true });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = DateOnly.FromDateTime(DateTime.UtcNow.Date),
+            Concepto = "Pago a proveedor",
+            Monto = -500m,
+            Saldo = 1500m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var responseBody = JsonSerializer.Serialize(new
+        {
+            choices = new[]
+            {
+                new
+                {
+                    message = new
+                    {
+                        content = "[TITULAR_1] ha gastado 500,00 EUR este mes."
+                    }
+                }
+            },
+            usage = new
+            {
+                prompt_tokens = 100,
+                completion_tokens = 15
+            }
+        });
+        var httpFactory = new CapturingHttpClientFactory(responseBody: responseBody);
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
+            new AuditService(db),
+            NullLogger<AtlasAiService>.Instance);
+
+        var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos de Constructora Ejemplo SL este mes", "127.0.0.1", CancellationToken.None);
+
+        result.Respuesta.Should().Contain("Constructora Ejemplo SL");
+        result.Respuesta.Should().NotContain("[TITULAR_1]");
+    }
+
     private sealed class StaticHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();

@@ -142,6 +142,9 @@ public static class SeedData
             ["google_drive_folder_id"] = ("", "string", "Carpeta de Google Drive para backups"),
             ["backup_cloud_encryption_key"] = ("", "string", "Clave protegida de cifrado para backups en nube"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
+            // V-02.07 (retencion de PII): defaults leidos por LimpiezaExportacionesJob.
+            ["exportacion_retention_days"] = ("90", "int", "Dias de retencion de exportaciones antes de purgarse"),
+            ["importacion_contenido_retention_days"] = ("180", "int", "Dias de retencion del contenido bruto de importacion antes de vaciarse"),
             // V-02.07 (alineamiento runtime): el seed debe estar alineado con el paquete que
             // el operador esta ejecutando. Mantener una version atras provoca que el
             // default de versiones y el campo "app_version" que reportan

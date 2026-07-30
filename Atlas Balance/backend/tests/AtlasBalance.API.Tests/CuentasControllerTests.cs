@@ -95,7 +95,8 @@ public sealed class CuentasControllerTests
         var summary = ok.Value.Should().BeOfType<CuentaResumenResponse>().Subject;
         summary.CuentaId.Should().Be(cuentaId);
         summary.CuentaNombre.Should().Be("Cuenta Resumen");
-        summary.Iban.Should().Be("ES9121000418450200051332");
+        // V-02-07: el resumen enmascara el IBAN (respuesta agregada, no se usa para editar).
+        summary.Iban.Should().Be("********************1332");
         summary.BancoNombre.Should().Be("CaixaBank");
         summary.TitularId.Should().Be(titularId);
         summary.TitularNombre.Should().Be("Titular Resumen");
@@ -614,6 +615,89 @@ public sealed class CuentasControllerTests
         page.Data.Single().Nombre.Should().Be("Cuenta ES");
         page.Data.Single().PaisId.Should().Be(paisAId);
         page.Data.Single().PaisNombre.Should().Be("Espana");
+    }
+
+    [Fact]
+    public async Task Listar_Should_Return_Masked_Iban_And_NumeroCuenta()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.listar.mask@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Listar Mask",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Mask", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Mask",
+            NumeroCuenta = "1234567890",
+            Iban = "ES9121000418450200051332",
+            Divisa = "EUR",
+            Activa = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId);
+
+        var result = await controller.Listar(cancellationToken: CancellationToken.None);
+
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<CuentaListItemResponse>>().Subject;
+        var item = page.Data.Single();
+        item.Iban.Should().Be("********************1332");
+        item.NumeroCuenta.Should().Be("******7890");
+    }
+
+    [Fact]
+    public async Task Obtener_Should_Return_Full_Iban_And_NumeroCuenta_For_Edit_Form()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.detalle.mask@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Detalle Mask",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Detalle", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Detalle",
+            NumeroCuenta = "1234567890",
+            Iban = "ES9121000418450200051332",
+            Divisa = "EUR",
+            Activa = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId);
+
+        var result = await controller.Obtener(cuentaId, false, CancellationToken.None);
+
+        var item = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<CuentaListItemResponse>().Subject;
+        item.Iban.Should().Be("ES9121000418450200051332");
+        item.NumeroCuenta.Should().Be("1234567890");
     }
 
     private sealed class NoOpPlazoFijoService : IPlazoFijoService

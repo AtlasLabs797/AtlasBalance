@@ -29,9 +29,6 @@ export interface Titular {
   id: string;
   nombre: string;
   tipo: TipoTitular;
-  identificacion: string | null;
-  contacto_email: string | null;
-  contacto_telefono: string | null;
   notas: string | null;
   fecha_creacion: string;
 }

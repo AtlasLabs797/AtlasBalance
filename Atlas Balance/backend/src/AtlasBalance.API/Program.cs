@@ -109,6 +109,13 @@ if (!builder.Environment.IsDevelopment())
         builder.Configuration.GetConnectionString("DefaultConnection"),
         1);
     RejectUnsafeAllowedHosts(builder.Configuration["AllowedHosts"]);
+    // V-02-07: SslMode=Disable o Prefer contra un host remoto deja el trafico
+    // con PostgreSQL (PII financiera incluida) sin cifrar y sin nada que lo
+    // detecte. No abortamos el arranque (romperia instalaciones existentes
+    // con la BD en la misma maquina), pero avisamos claro en el log.
+    WarnIfConnectionStringSslModeUnsafe(
+        "ConnectionStrings:DefaultConnection",
+        builder.Configuration.GetConnectionString("DefaultConnection"));
 }
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -350,6 +357,7 @@ builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>()
 builder.Services.AddScoped<SyncTiposCambioJob>();
 builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
 builder.Services.AddScoped<LimpiezaAuditoriaJob>();
+builder.Services.AddScoped<LimpiezaExportacionesJob>();
 builder.Services.AddScoped<BackupWeeklyJob>();
 builder.Services.AddScoped<BackupSchedulerJob>();
 builder.Services.AddScoped<ExportMensualJob>();
@@ -401,6 +409,11 @@ using (var scope = app.Services.CreateScope())
         "limpieza-auditoria",
         job => job.ExecuteAsync(),
         "15 3 * * *");
+
+    recurringJobManager.AddOrUpdate<LimpiezaExportacionesJob>(
+        "limpieza-exportaciones",
+        job => job.ExecuteAsync(),
+        Cron.Daily());
 
     recurringJobManager.RemoveIfExists("backup-weekly");
     recurringJobManager.AddOrUpdate<BackupSchedulerJob>(
@@ -997,6 +1010,44 @@ static void RejectUnsafeAllowedHosts(string? allowedHosts)
     {
         throw new InvalidOperationException("AllowedHosts must list explicit host names outside Development.");
     }
+}
+
+static void WarnIfConnectionStringSslModeUnsafe(string key, string? connectionString)
+{
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        return;
+    }
+
+    NpgsqlConnectionStringBuilder parsed;
+    try
+    {
+        parsed = new NpgsqlConnectionStringBuilder(connectionString);
+    }
+    catch (ArgumentException)
+    {
+        // Cadena no parseable: no es este el sitio para validar su formato.
+        return;
+    }
+
+    var host = parsed.Host?.Trim();
+    var isLoopbackHost = string.IsNullOrEmpty(host) ||
+        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+        host == "127.0.0.1" ||
+        host == "::1";
+
+    if (isLoopbackHost || (parsed.SslMode != SslMode.Disable && parsed.SslMode != SslMode.Prefer))
+    {
+        return;
+    }
+
+    Log.Warning(
+        "{Key} apunta a un host remoto ({Host}) con SslMode={SslMode}: el trafico con PostgreSQL " +
+        "(incluida PII financiera) viaja sin cifrar y nada lo detecta. Usa SslMode=Require como minimo " +
+        "cuando la base de datos no corre en la misma maquina que la API.",
+        key,
+        host,
+        parsed.SslMode);
 }
 
 static void AddExternalDevelopmentSecrets(IConfigurationBuilder configuration, IWebHostEnvironment environment, string fileName)

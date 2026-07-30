@@ -303,9 +303,6 @@ export default function TitularesPage() {
       nombre: form.nombre.trim(),
       tipo: form.tipo,
       notas: form.notas.trim() || null,
-      identificacion: null,
-      contacto_email: null,
-      contacto_telefono: null,
     };
 
     try {

@@ -87,8 +87,11 @@ public class Titular : ISoftDelete
     public Guid Id { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public TipoTitular Tipo { get; set; }
+    // V-02-07: fuera de la superficie de API por minimizacion de datos. Sin uso funcional; pendiente decidir su borrado definitivo.
     public string? Identificacion { get; set; }
+    // V-02-07: fuera de la superficie de API por minimizacion de datos. Sin uso funcional; pendiente decidir su borrado definitivo.
     public string? ContactoEmail { get; set; }
+    // V-02-07: fuera de la superficie de API por minimizacion de datos. Sin uso funcional; pendiente decidir su borrado definitivo.
     public string? ContactoTelefono { get; set; }
     public string? Notas { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;

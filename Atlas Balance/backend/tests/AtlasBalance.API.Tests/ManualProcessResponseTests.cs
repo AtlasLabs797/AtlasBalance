@@ -423,6 +423,11 @@ public class ManualProcessResponseTests
             return Task.CompletedTask;
         }
 
+        public Task DeleteRemoteBackupCopyAsync(BackupCloudCopy copy, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task<IReadOnlyList<GoogleDriveBackupFileResponse>> ListFilesAsync(CancellationToken cancellationToken)
         {
             return Task.FromResult<IReadOnlyList<GoogleDriveBackupFileResponse>>(Array.Empty<GoogleDriveBackupFileResponse>());

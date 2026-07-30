@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Constants;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
@@ -334,7 +335,7 @@ public sealed class ConfiguracionController : ControllerBase
         }
         catch (Exception ex)
         {
-            var safeTargetForLog = SanitizeForLog(target);
+            var safeTargetForLog = LogScrubber.RedactPii(SanitizeForLog(target));
 
             _logger.LogError(ex, "Fallo al enviar email de prueba SMTP a {Target}", safeTargetForLog);
             return BadRequest(new { error = "No se pudo enviar el correo de prueba. Revisa la configuracion SMTP o avisa al administrador." });

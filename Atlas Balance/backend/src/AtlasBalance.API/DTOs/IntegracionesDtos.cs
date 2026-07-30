@@ -83,6 +83,34 @@ public sealed class RotarIntegrationTokenRequest
     public string? SinExpiracionTextoConfirmacion { get; set; }
 }
 
+// V-02.07: request/response del endpoint de resolucion de seudonimos bajo
+// demanda (POST api/integration/openclaw/resolver-nombres).
+public sealed class ResolverNombresRequest
+{
+    public IReadOnlyList<Guid> TitularIds { get; set; } = [];
+    public IReadOnlyList<Guid> CuentaIds { get; set; } = [];
+}
+
+public sealed class ResolverNombresTitularItemResponse
+{
+    public Guid Id { get; set; }
+    public string Seudonimo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+}
+
+public sealed class ResolverNombresCuentaItemResponse
+{
+    public Guid Id { get; set; }
+    public string Seudonimo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+}
+
+public sealed class ResolverNombresResponse
+{
+    public IReadOnlyList<ResolverNombresTitularItemResponse> Titulares { get; set; } = [];
+    public IReadOnlyList<ResolverNombresCuentaItemResponse> Cuentas { get; set; } = [];
+}
+
 public sealed class IntegrationAuditItemResponse
 {
     public Guid Id { get; set; }

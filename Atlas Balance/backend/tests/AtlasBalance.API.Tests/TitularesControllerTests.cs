@@ -186,6 +186,45 @@ public sealed class TitularesControllerTests
         page.Data.Single().Id.Should().Be(titularPermitidoId);
     }
 
+    [Fact]
+    public async Task Listar_Should_Not_Expose_Identificacion()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.titular.identificacion@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Titular Identificacion",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            // El nombre no debe contener la subcadena "dentificacion": la asercion de
+            // abajo busca esa subcadena en el JSON y el propio nombre la haria fallar.
+            Nombre = "Titular Legacy SL",
+            Tipo = TipoTitular.EMPRESA,
+            Identificacion = "12345678Z"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+
+        var result = await controller.Listar(page: 1, pageSize: 50, sortBy: "nombre", sortDir: "asc", search: null, tipoTitular: null, paisId: null, incluirEliminados: false, CancellationToken.None);
+
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<TitularListItemResponse>>().Subject;
+        var json = System.Text.Json.JsonSerializer.Serialize(page.Data.Single());
+        json.Should().NotContain("dentificacion");
+        json.Should().NotContain("12345678Z");
+    }
+
     private static TitularesController BuildController(AppDbContext db, Guid userId, RolUsuario role)
     {
         var controller = new TitularesController(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())), new AuditService(db));

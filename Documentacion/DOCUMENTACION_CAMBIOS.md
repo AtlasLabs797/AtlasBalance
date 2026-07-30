@@ -21293,3 +21293,212 @@ unitarios existentes.
 cierre #16. Test runtime de los nuevos facts (CsrfMiddleware method +
 LogScrubber + WatchdogOperationsService CapturingLogger) depende del
 gate CI.
+
+---
+
+## 2026-07-30 - V-02.07 - Auditoria de datos personales (PII) y seudonimizacion del contexto de IA
+
+**Trabajo realizado:**
+
+Auditoria completa de tratamiento de datos personales sobre backend y
+frontend (inventario de PII, puntos de recogida y exposicion,
+criptografia y gestion de claves, borrado/retencion y salida de datos a
+terceros). De los hallazgos, se implemento el de mayor riesgo: la fuga de
+nombres de titulares, cuentas y conceptos de movimiento hacia el
+proveedor de IA externo.
+
+Se anade `AiPseudonymMap`, que sustituye nombres reales por placeholders
+`[TITULAR_n]` / `[CUENTA_n]` / `[TERCERO_n]` en la pregunta y en el
+contexto antes de salir hacia el proveedor, y revierte la respuesta antes
+de mostrarla al usuario. Detalle completo y decisiones tecnicas en
+`Documentacion/Versiones/v-02.07.md`.
+
+Defecto detectado y corregido durante la validacion del cambio: la
+primera implementacion sustituia nombre a nombre en pasadas sucesivas, lo
+que corrompe los placeholders ya insertados cuando una entidad se llama
+igual que una etiqueta (una cuenta llamada "Cuenta" reescribe el interior
+de `[CUENTA_1]`, dejando el texto irreversible). Se reescribio con una
+unica pasada de regex con alternancia ordenada por longitud descendente y
+se anadio test de regresion.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AiPseudonymizer.cs`
+  (nuevo).
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`.
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`.
+- `Documentacion/Versiones/v-02.07.md`.
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`: este bloque.
+
+**Comandos ejecutados y resultado:**
+
+- `dotnet build AtlasBalance.sln -p:UseAppHost=false` -> **0 errores, 6
+  warnings preexistentes** (Npgsql `UseXminAsConcurrencyToken` x5,
+  Hangfire `PostgreSqlStorage` x1; ajenos a este cambio).
+- `dotnet test --filter "FullyQualifiedName~AtlasAiService"` -> **72/72
+  correctos**.
+- `dotnet test` (suite completa) -> **454/454 correctos, 0 omitidos**,
+  1 m 9 s. Docker disponible en este host (server 29.4.3), asi que los
+  tests de Postgres/Testcontainers y RLS se ejecutaron de verdad.
+
+Nota de entorno: el build sobre el workspace principal sigue bloqueado
+por el fallo de ACL en `obj/project.assets.json` ya catalogado en
+`LOG_ERRORES_INCIDENCIAS.md`. Se aplico el workaround documentado
+(copia del arbol `backend/` sin `obj`/`bin` a ruta con permisos y build
+alli). El workspace no se modifico salvo los ficheros de codigo listados.
+
+**Resultado de verificacion:** build OK y suite completa en verde,
+incluida la de contenedores. Verificado por tests, no por uso manual de
+la UI de IA.
+
+**Pendientes:**
+
+- Puntos 2 a 8 del plan de la auditoria de PII (ver `v-02.07.md`).
+- No se ha probado contra un proveedor de IA real: la verificacion es de
+  build y tests con handler HTTP simulado. Conviene una consulta real
+  antes de dar el cambio por cerrado en produccion.
+
+---
+
+## 2026-07-30 - V-02.07 - Cierre del plan de la auditoria de PII (puntos 2, 3, 6, 7, 8)
+
+**Trabajo realizado:**
+
+Segunda tanda de la auditoria de datos personales. Se aplican el enmascarado
+de IBAN/numero de cuenta/identificacion, la purga real de copias en Google
+Drive y de exportaciones en disco, la comprobacion de cifrado en reposo en el
+instalador, `SslMode` explicito con aviso de arranque, la redaccion de PII en
+logs, y la retirada de los campos muertos de `Titular`. Detalle completo y
+razonamiento en `Documentacion/Versiones/v-02.07.md`.
+
+El punto 4 (borrado definitivo) se descarto por decision del propietario. El
+punto 5 (RLS sobre USUARIOS) se evaluo y se descarta con argumento tecnico
+documentado: rompe la resolucion de nombres en ~8 puntos de lectura, obliga a
+una via de escape para el login que vacia la politica, y lo que protegeria ya
+esta cubierto por otras vias.
+
+**Defectos detectados y corregidos durante la validacion:**
+
+1. **Regresion de seguridad, la mas grave.** Se habia anadido un comentario
+   `//` al JSON de `appsettings.Production.json.template`. Es valido para el
+   proveedor de configuracion de .NET, pero `Actualizar-AtlasBalance.ps1:581`
+   parsea ese mismo fichero con `ConvertFrom-Json` de PowerShell 5.1, que NO
+   admite comentarios. El `try/catch` de `Get-PackagedReleasePublicKey` se
+   tragaba el error y devolvia cadena vacia, degradando la verificacion de
+   firma de releases en cada actualizacion. Reproducido y confirmado; comentario
+   retirado y parseo verificado (clave de 799 caracteres de nuevo legible).
+2. **Default roto.** El template de produccion quedaba con `Host=localhost` y
+   `SslMode=Require`, combinacion que impide arrancar contra el PostgreSQL
+   local que instala el producto (sin TLS). Alineado a `Disable`, que es lo que
+   el instalador ya hacia bien desde V-02-05.
+3. **Tres tests rojos**, los tres por defecto del test y no del codigo:
+   asercion preexistente de IBAN completo que el enmascarado invalidaba;
+   `SingleAsync` sin `IgnoreQueryFilters` sobre una fila recien soft-deleted; y
+   un fixture cuyo nombre ("Titular Con Identificacion Legacy") contenia la
+   subcadena que la propia asercion buscaba.
+4. **Bug de scope propio** en el instalador: `$backupPath` es local a
+   `Write-AppSettings` y no existe en el ambito donde lo invoque. Corregido
+   con rutas explicitas.
+
+**Archivos tocados:**
+
+- Backend: `Services/PiiMasking.cs` (nuevo), `Jobs/LimpiezaExportacionesJob.cs`
+  (nuevo), `Services/GoogleDriveBackupService.cs`,
+  `Services/HardenedGoogleDriveBackupService.cs`, `Services/BackupService.cs`,
+  `Logging/LogScrubber.cs`, `Program.cs`, `Controllers/CuentasController.cs`,
+  `Controllers/ExtractosController.cs`,
+  `Controllers/IntegrationOpenClawController.cs`,
+  `Controllers/TitularesController.cs`, `Controllers/ConfiguracionController.cs`,
+  `DTOs/TitularesDtos.cs`, `Models/Entities.cs`, `Data/SeedData.cs`,
+  `appsettings.Development.json.template`,
+  `appsettings.Production.json.template`.
+- Frontend: `pages/TitularesPage.tsx`, `types/index.ts`.
+- Scripts: `scripts/Instalar-AtlasBalance.ps1`.
+- Tests: `PiiMaskingTests.cs`, `BackupServiceTests.cs`,
+  `LimpiezaExportacionesJobTests.cs` (nuevos) y ajustes en
+  `CuentasControllerTests.cs`, `ExtractosControllerTests.cs`,
+  `IntegrationOpenClawControllerTests.cs`, `TitularesControllerTests.cs`,
+  `GoogleDriveBackupServiceTests.cs`, `ManualProcessResponseTests.cs`,
+  `Logging/LogScrubberTests.cs`.
+
+**Comandos ejecutados y resultado:**
+
+- `dotnet build AtlasBalance.sln -p:UseAppHost=false` -> **0 errores, 6
+  warnings preexistentes**.
+- `dotnet test` (suite completa) -> **481/481 correctos, 0 omitidos**, 1 m 3 s.
+  Docker disponible (server 29.4.3): los tests de Testcontainers y RLS se
+  ejecutaron realmente.
+- `npx tsc --noEmit` en frontend -> **exit 0, sin errores**.
+- Parseo del template de produccion con `ConvertFrom-Json` de PowerShell 5.1
+  -> **OK**, clave de firma legible.
+- Parseo de `Instalar-AtlasBalance.ps1` con el AST de PowerShell -> **sin
+  errores de sintaxis**.
+
+Se mantiene el workaround de build por el bloqueo de ACL en `obj/`
+(copia del arbol `backend/` sin `obj`/`bin` a ruta con permisos).
+
+**Resultado de verificacion:** build, suite completa de backend y typecheck de
+frontend en verde.
+
+**Pendientes:**
+
+- **Decision tuya:** borrar o no las columnas `identificacion`,
+  `contacto_email` y `contacto_telefono` de `TITULARES`. Hoy estan fuera de la
+  API pero siguen en la BD con los datos que hubiera.
+- El aviso de `SslMode` y la comprobacion de BitLocker del instalador no se han
+  probado en un despliegue real: la verificacion es de sintaxis y build.
+- La seudonimizacion de IA sigue sin probarse contra un proveedor real.
+- Punto 5 (RLS sobre USUARIOS) descartado con motivo; si se retoma, va como
+  trabajo propio con pruebas de login.
+
+---
+
+## 2026-07-30 - V-02.07 - Anonimizacion de IBAN y nombres hacia IA y OpenClaw
+
+**Trabajo realizado:**
+
+Se verifica que la IA ya cumplia el requisito (el IBAN no entra en el contexto
+y los nombres van seudonimizados de forma reversible desde el bloque anterior)
+y se aplica lo que faltaba en la integracion OpenClaw:
+
+- IBAN y numero de cuenta **eliminados** de toda la superficie de OpenClaw. Ya
+  no se enmascaran, directamente no se envian.
+- Nombres de titular y cuenta sustituidos por seudonimos opacos y estables
+  (`TITULAR-a3f2b901` / `CUENTA-7b10c204`) derivados del GUID de la entidad,
+  que OpenClaw ya recibe en el campo `id`.
+- Ordenaciones cambiadas para no filtrar el orden alfabetico de los nombres
+  reales tras devolver etiquetas opacas.
+- Nuevo endpoint `POST api/integration/openclaw/resolver-nombres` con scope del
+  token, tope de lote y auditoria por recuento.
+
+Razonamiento del diseno y su limitacion en
+`Documentacion/Versiones/v-02.07.md`.
+
+**Archivos tocados:**
+
+- `Services/IntegrationPseudonyms.cs` (nuevo).
+- `Controllers/IntegrationOpenClawController.cs`.
+- `DTOs/IntegracionesDtos.cs`.
+- Tests: `IntegrationPseudonymsTests.cs` (nuevo, 7 facts) y 6 facts nuevos en
+  `IntegrationOpenClawControllerTests.cs`.
+
+**Comandos ejecutados y resultado:**
+
+- `dotnet build AtlasBalance.sln -p:UseAppHost=false` -> **0 errores, 6
+  warnings preexistentes**.
+- `dotnet test` (suite completa) -> **494/494 correctos, 0 omitidos**, 1 m 8 s
+  (13 tests nuevos sobre los 481 anteriores). Docker disponible: los tests de
+  Testcontainers y RLS se ejecutaron realmente.
+
+**Resultado de verificacion:** build y suite completa en verde.
+
+**Pendientes:**
+
+- **Cambio incompatible para el consumidor**: los campos `iban` y
+  `numero_cuenta` desaparecen de las respuestas de OpenClaw, y `nombre` pasa a
+  ser un seudonimo. Hay que adaptar el lado de OpenClaw antes de desplegar.
+- **Decision de diseno en el lado de OpenClaw**: si resuelve nombres y los mete
+  en el prompt de su propio LLM, la anonimizacion se pierde ahi. Debe resolver
+  solo para mostrar a una persona.
+- Sigue sin probarse contra un proveedor de IA real ni contra un OpenClaw real:
+  la verificacion es build y tests.

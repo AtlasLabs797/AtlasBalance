@@ -197,9 +197,26 @@ public sealed class AtlasAiService : IAtlasAiService
         await EnsureRequestLimitsAsync(scope.UserId, state, now, ipAddress, cancellationToken);
 
         var context = await BuildFinancialContextAsync(scope, prompt, state.MaxContextRows, paisId, cancellationToken);
+        // V-02-07: seudonimizacion reversible antes de salir hacia el proveedor de IA
+        // externo. BuildFinancialContextAsync ya se ejecuto con el prompt real (busca en
+        // BD por terminos de la pregunta); a partir de aqui solo se envia texto seudonimizado.
+        var pseudonyms = await BuildPseudonymMapAsync(scope, paisId, cancellationToken);
+        string safePrompt;
+        string safeContext;
+        try
+        {
+            safePrompt = pseudonyms.Apply(prompt);
+            safeContext = pseudonyms.Apply(context.Texto);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // Fail-closed: sin seudonimizacion no se envia nada al proveedor.
+            await LogBlockedAsync(scope.UserId, "pseudonymization_timeout", state, ipAddress, cancellationToken);
+            throw new IaProviderException("No se pudo anonimizar el contexto financiero antes de consultar a la IA. Reintenta la consulta.");
+        }
         var systemMessage = BuildSystemMessage();
-        var userMessage = "PREGUNTA_USUARIO_NO_CONFIABLE\n" + JsonSerializer.Serialize(prompt);
-        var contextMessage = $"CONTEXTO_FINANCIERO_NO_CONFIABLE\n{context.Texto}";
+        var userMessage = "PREGUNTA_USUARIO_NO_CONFIABLE\n" + JsonSerializer.Serialize(safePrompt);
+        var contextMessage = $"CONTEXTO_FINANCIERO_NO_CONFIABLE\n{safeContext}";
         var estimatedInputTokens = EstimateTokens(systemMessage + userMessage + contextMessage);
 
         if (estimatedInputTokens > state.MaxInputTokens)
@@ -297,6 +314,10 @@ public sealed class AtlasAiService : IAtlasAiService
                 throw new IaProviderException("La IA devolvio una respuesta interna en vez de una respuesta final. Reintenta o prueba otro modelo.");
             }
 
+            // V-02-07: revertir la seudonimizacion despues del chequeo de fuga de analisis
+            // interno (que debe evaluar el texto tal como lo devolvio el proveedor).
+            visibleAnswer = pseudonyms.Reverse(visibleAnswer);
+
             var outputTokens = parsed.OutputTokens > 0 ? parsed.OutputTokens : EstimateTokens(parsed.Answer);
             var inputTokens = parsed.InputTokens > 0 ? parsed.InputTokens : estimatedInputTokens;
             var cost = EstimateCost(inputTokens, outputTokens, state);
@@ -327,6 +348,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     contexto_caracteres = context.Texto.Length,
                     tokens_entrada_estimados = inputTokens,
                     tokens_salida_estimados = outputTokens,
+                    entidades_seudonimizadas = pseudonyms.Count,
                     coste_estimado_eur = Math.Round(cost, 8),
                     coste_mes_estimado_eur = Math.Round(monthCostAfter, 8),
                     coste_mes_usuario_estimado_eur = Math.Round(userUsageAfter.CosteEstimadoEur, 8),
@@ -1011,6 +1033,40 @@ public sealed class AtlasAiService : IAtlasAiService
             FinancialRankingMetric.Income => "ingresos",
             _ => "neto"
         };
+
+    // V-02-07: construye el mapa de seudonimizacion reversible con las entidades en el
+    // scope del usuario (mismo patron de scope que BuildFinancialContextAsync) para que
+    // el prompt y el contexto enviados al proveedor de IA no lleven nombres reales.
+    private async Task<AiPseudonymMap> BuildPseudonymMapAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
+    {
+        var cuentasQuery = _userAccessService.ApplyCuentaScope(_dbContext.Cuentas.AsNoTracking(), scope).ApplyPaisScope(paisId);
+
+        var titulares = await (
+                from t in _dbContext.Titulares.AsNoTracking()
+                join c in cuentasQuery on t.Id equals c.TitularId
+                select t.Nombre)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var cuentas = await cuentasQuery
+            .Select(c => c.Nombre)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var terceros = await (
+                from d in _dbContext.ExtractosDesgloses.AsNoTracking()
+                join e in _dbContext.Extractos.AsNoTracking() on d.ExtractoId equals e.Id
+                join c in cuentasQuery on e.CuentaId equals c.Id
+                select d.TerceroNombre)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var entidades = titulares.Select(x => (Nombre: x, Tipo: "TITULAR"))
+            .Concat(cuentas.Select(x => (Nombre: x, Tipo: "CUENTA")))
+            .Concat(terceros.Select(x => (Nombre: x, Tipo: "TERCERO")));
+
+        return new AiPseudonymMap(entidades);
+    }
 
     private async Task<(string Texto, int MovimientosAnalizados)> BuildFinancialContextAsync(
         UserAccessScope scope,

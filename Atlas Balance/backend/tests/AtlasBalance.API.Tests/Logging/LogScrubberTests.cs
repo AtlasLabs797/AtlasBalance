@@ -52,4 +52,51 @@ public sealed class LogScrubberTests
         var input = "192.168.1.42 - GET /api/usuarios";
         LogScrubber.Scrub(input).Should().Be(input);
     }
+
+    [Fact]
+    public void RedactPii_Should_ReturnNull_When_Null()
+    {
+        LogScrubber.RedactPii(null).Should().BeNull();
+    }
+
+    [Fact]
+    public void RedactPii_Should_ReturnEmpty_When_Empty()
+    {
+        LogScrubber.RedactPii(string.Empty).Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public void RedactPii_Should_Mask_Simple_Email()
+    {
+        LogScrubber.RedactPii("usuario@dominio.com").Should().Be("u***@dominio.com");
+    }
+
+    [Fact]
+    public void RedactPii_Should_Mask_Email_Inside_Longer_Phrase()
+    {
+        var input = "Fallo al enviar email de prueba SMTP a usuario@dominio.com";
+        var output = LogScrubber.RedactPii(input);
+
+        output.Should().NotContain("usuario@dominio.com");
+        output.Should().Be("Fallo al enviar email de prueba SMTP a u***@dominio.com");
+    }
+
+    [Fact]
+    public void RedactPii_Should_Mask_Spanish_Iban_Without_Spaces()
+    {
+        LogScrubber.RedactPii("ES9121000418450200051332").Should().Be("ES****[IBAN redactado]");
+    }
+
+    [Fact]
+    public void RedactPii_Should_Mask_Spanish_Iban_With_Spaces()
+    {
+        LogScrubber.RedactPii("ES91 2100 0418 4502 0005 1332").Should().Be("ES****[IBAN redactado]");
+    }
+
+    [Fact]
+    public void RedactPii_Should_Keep_Text_Without_Pii_Intact()
+    {
+        var input = "192.168.1.42 - GET /api/usuarios";
+        LogScrubber.RedactPii(input).Should().Be(input);
+    }
 }
