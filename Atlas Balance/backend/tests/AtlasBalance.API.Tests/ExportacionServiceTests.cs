@@ -60,7 +60,7 @@ public class ExportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, new AuditService(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db));
 
         try
         {
@@ -117,7 +117,7 @@ public class ExportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, new AuditService(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db));
 
         var act = () => service.ExportarCuentaAsync(cuentaId, TipoProceso.MANUAL, null, CancellationToken.None);
 
@@ -158,7 +158,7 @@ public class ExportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, new AuditService(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db));
 
         try
         {
@@ -240,7 +240,7 @@ public class ExportacionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, new AuditService(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db));
 
         try
         {
@@ -306,7 +306,7 @@ public class ExportacionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, new AuditService(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db));
 
         try
         {
@@ -388,7 +388,7 @@ public class ExportacionServiceTests
 
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, new AuditService(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db));
 
         try
         {
@@ -480,7 +480,7 @@ public class ExportacionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, new AuditService(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db));
 
         try
         {

@@ -117,7 +117,7 @@ public sealed class TransportSecurityTests
             new RefreshOnlyAuthService(),
             new CsrfService(),
             new TransportTestWebHostEnvironment { EnvironmentName = environmentName },
-            new AuditService(db));
+            TestAuditService.Create(db));
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Cookie = "__Host-atlas-refresh-token=old-refresh";
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };

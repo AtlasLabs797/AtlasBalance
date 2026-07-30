@@ -28,6 +28,18 @@ public interface IEmailService
         EstadoPlazoFijo estado,
         CancellationToken cancellationToken);
     Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// V-02.07: aviso de una alerta de seguridad disparada. Formato generico a
+    /// proposito: las reglas viven en SecurityAlertService, no aqui.
+    /// </summary>
+    Task SendSecurityAlertAsync(
+        IReadOnlyList<string> recipients,
+        string regla,
+        string severidad,
+        string resumen,
+        IReadOnlyList<string> detalles,
+        CancellationToken cancellationToken);
 }
 
 public sealed class EmailService : IEmailService
@@ -146,6 +158,51 @@ public sealed class EmailService : IEmailService
         message.Body = new BodyBuilder
         {
             HtmlBody = $"<p>SMTP configurado correctamente.</p><p>Fecha UTC: {DateTime.UtcNow:O}</p>"
+        }.ToMessageBody();
+
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+    }
+
+    public async Task SendSecurityAlertAsync(
+        IReadOnlyList<string> recipients,
+        string regla,
+        string severidad,
+        string resumen,
+        IReadOnlyList<string> detalles,
+        CancellationToken cancellationToken)
+    {
+        if (recipients.Count == 0)
+        {
+            return;
+        }
+
+        var smtp = await LoadSmtpConfigAsync("smtp_host no configurado para alertas de seguridad.", cancellationToken);
+        ValidateEmailAddress(smtp.From, "smtp_from");
+
+        var message = new MimeMessage();
+        message.From.Add(MailboxAddress.Parse(smtp.From));
+        foreach (var recipient in recipients)
+        {
+            message.To.Add(MailboxAddress.Parse(recipient));
+        }
+
+        // El asunto lleva la severidad delante para que las reglas de bandeja
+        // del operador puedan filtrar sin abrir el correo.
+        message.Subject = $"[Atlas Balance] [{severidad}] Alerta de seguridad: {regla}";
+
+        var listaDetalles = detalles.Count == 0
+            ? string.Empty
+            : "<ul>" + string.Concat(detalles.Select(d => $"<li>{EscapeHtml(d)}</li>")) + "</ul>";
+
+        message.Body = new BodyBuilder
+        {
+            HtmlBody =
+                $"<h2>Alerta de seguridad</h2>" +
+                $"<p><strong>Regla:</strong> {EscapeHtml(regla)}</p>" +
+                $"<p><strong>Severidad:</strong> {EscapeHtml(severidad)}</p>" +
+                $"<p><strong>Resumen:</strong> {EscapeHtml(resumen)}</p>" +
+                listaDetalles +
+                $"<p>Detectada a las {DateTime.UtcNow:O} UTC. Revisa Auditoría en la aplicación.</p>"
         }.ToMessageBody();
 
         await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);

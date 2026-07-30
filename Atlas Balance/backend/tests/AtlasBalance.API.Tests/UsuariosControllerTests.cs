@@ -27,7 +27,7 @@ public class UsuariosControllerTests
     public async Task Crear_Should_Create_User_With_Emails_And_Permissions_And_Audit()
     {
         await using var db = BuildDbContext();
-        var audit = new AuditService(db);
+        var audit = TestAuditService.Create(db);
         var controller = new UsuariosController(db, audit);
 
         var adminId = Guid.NewGuid();
@@ -96,7 +96,7 @@ public class UsuariosControllerTests
     public async Task Crear_Should_Reject_Manager_Without_DataScope()
     {
         await using var db = BuildDbContext();
-        var controller = new UsuariosController(db, new AuditService(db));
+        var controller = new UsuariosController(db, TestAuditService.Create(db));
         controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
 
         var request = new CreateUsuarioRequest
@@ -121,7 +121,7 @@ public class UsuariosControllerTests
     public async Task Actualizar_Should_Revoke_Sessions_When_Admin_Resets_Password()
     {
         await using var db = BuildDbContext();
-        var audit = new AuditService(db);
+        var audit = TestAuditService.Create(db);
         var controller = new UsuariosController(db, audit);
         var adminId = Guid.NewGuid();
         controller.ControllerContext = BuildControllerContext(adminId);
@@ -176,7 +176,7 @@ public class UsuariosControllerTests
     public async Task GuardarPermisos_Should_Revoke_Target_User_Sessions()
     {
         await using var db = BuildDbContext();
-        var audit = new AuditService(db);
+        var audit = TestAuditService.Create(db);
         var controller = new UsuariosController(db, audit);
         controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
 
@@ -225,7 +225,7 @@ public class UsuariosControllerTests
     public async Task RevocarMfa_Should_Clear_Authenticator_And_Revoke_Target_User_Sessions()
     {
         await using var db = BuildDbContext();
-        var audit = new AuditService(db);
+        var audit = TestAuditService.Create(db);
         var controller = new UsuariosController(db, audit);
         controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
 
@@ -273,7 +273,7 @@ public class UsuariosControllerTests
     public async Task Actualizar_Should_Reject_Deactivating_Only_Active_Admin()
     {
         await using var db = BuildDbContext();
-        var controller = new UsuariosController(db, new AuditService(db));
+        var controller = new UsuariosController(db, TestAuditService.Create(db));
         controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
         var admin = CreateUser(RolUsuario.ADMIN, activo: true);
         db.Usuarios.Add(admin);
@@ -305,7 +305,7 @@ public class UsuariosControllerTests
         db.Usuarios.AddRange(actor, otherAdmin);
         await db.SaveChangesAsync();
 
-        var controller = new UsuariosController(db, new AuditService(db));
+        var controller = new UsuariosController(db, TestAuditService.Create(db));
         controller.ControllerContext = BuildControllerContext(actor.Id);
         var request = new UpdateUsuarioRequest
         {
@@ -328,7 +328,7 @@ public class UsuariosControllerTests
     public async Task Eliminar_Should_Reject_Deleting_Only_Active_Admin()
     {
         await using var db = BuildDbContext();
-        var controller = new UsuariosController(db, new AuditService(db));
+        var controller = new UsuariosController(db, TestAuditService.Create(db));
         controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
         var admin = CreateUser(RolUsuario.ADMIN, activo: true);
         db.Usuarios.Add(admin);

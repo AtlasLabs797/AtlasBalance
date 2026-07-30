@@ -56,7 +56,7 @@ public class ImportacionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var result = await service.GetContextoAsync(userId, RolUsuario.EMPLEADO.ToString(), null, CancellationToken.None);
 
@@ -83,7 +83,7 @@ public class ImportacionServiceTests
         db.Cuentas.AddRange(cuentaA, cuentaB, cuentaGeneral);
         await db.SaveChangesAsync();
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), paisAId, CancellationToken.None);
 
@@ -130,7 +130,7 @@ public class ImportacionServiceTests
             Mapeo = DefaultMapeo()
         };
         var alertas = new RecordingAlertaService();
-        var service = new ImportacionService(db, new AuditService(db), alertas);
+        var service = new ImportacionService(db, TestAuditService.Create(db), alertas);
 
         var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
@@ -158,7 +158,7 @@ public class ImportacionServiceTests
         db.Cuentas.Add(cuenta);
         await db.SaveChangesAsync();
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), null, CancellationToken.None);
 
@@ -199,7 +199,7 @@ public class ImportacionServiceTests
         db.Cuentas.Add(cuenta);
         await db.SaveChangesAsync();
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var result = await service.GetContextoAsync(Guid.NewGuid(), RolUsuario.ADMIN.ToString(), null, CancellationToken.None);
 
@@ -259,7 +259,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
@@ -305,7 +305,7 @@ public class ImportacionServiceTests
         };
 
         var alertas = new RecordingAlertaService();
-        var service = new ImportacionService(db, new AuditService(db), alertas);
+        var service = new ImportacionService(db, TestAuditService.Create(db), alertas);
 
         var act = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
@@ -333,7 +333,7 @@ public class ImportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionValidarRequest
         {
             CuentaId = cuenta.Id,
@@ -380,7 +380,7 @@ public class ImportacionServiceTests
         await db.SaveChangesAsync();
 
         var alertas = new RecordingAlertaService();
-        var service = new ImportacionService(db, new AuditService(db), alertas);
+        var service = new ImportacionService(db, TestAuditService.Create(db), alertas);
 
         var result = await service.RegistrarMovimientoPlazoFijoAsync(
             userId,
@@ -448,7 +448,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -506,7 +506,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -563,7 +563,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
         result.FilasOk.Should().Be(0);
@@ -612,7 +612,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -667,7 +667,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
         result.FilasOk.Should().Be(0);
@@ -718,7 +718,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -770,7 +770,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -845,7 +845,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var duplicateIndexAction = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), duplicateIndexRequest, CancellationToken.None);
         var duplicateExtraNameAction = () => service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), duplicateExtraNameRequest, CancellationToken.None);
@@ -895,7 +895,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
         result.FilasError.Should().Be(2);
@@ -943,7 +943,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
         result.FilasOk.Should().Be(2);
@@ -976,7 +976,7 @@ public class ImportacionServiceTests
             Mapeo = DefaultMapeo()
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
 
         result.FilasOk.Should().Be(2);
@@ -1030,7 +1030,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -1066,7 +1066,7 @@ public class ImportacionServiceTests
             Mapeo = DefaultMapeo()
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -1132,7 +1132,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var httpContext = new DefaultHttpContext();
 
         var result = await service.ConfirmarAsync(
@@ -1172,7 +1172,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionConfirmarRequest
         {
             CuentaId = cuentaId,
@@ -1205,7 +1205,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionConfirmarRequest
         {
             CuentaId = cuentaId,
@@ -1238,7 +1238,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionConfirmarRequest
         {
             CuentaId = cuentaId,
@@ -1268,7 +1268,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var firstRequest = new ImportacionConfirmarRequest
         {
             CuentaId = cuentaId,
@@ -1310,7 +1310,7 @@ public class ImportacionServiceTests
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
         var alertas = new RecordingAlertaService();
-        var service = new ImportacionService(db, new AuditService(db), alertas);
+        var service = new ImportacionService(db, TestAuditService.Create(db), alertas);
         var map = DefaultMapeo();
         map.ColumnasExtra = [new MapeoColumnaExtraRequest { Nombre = "referencia", Indice = 4 }];
         var firstRequest = new ImportacionConfirmarRequest
@@ -1344,7 +1344,7 @@ public class ImportacionServiceTests
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
         var alertas = new RecordingAlertaService();
-        var service = new ImportacionService(db, new AuditService(db), alertas);
+        var service = new ImportacionService(db, TestAuditService.Create(db), alertas);
         var request = new ImportacionConfirmarRequest
         {
             CuentaId = cuentaId,
@@ -1396,7 +1396,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -1464,7 +1464,7 @@ public class ImportacionServiceTests
             }
         };
 
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var result = await service.ConfirmarAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -1485,7 +1485,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionValidarRequest
         {
             CuentaId = cuentaId,
@@ -1505,7 +1505,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var row = "01/04/2026\tMovimiento\t1\t1";
         var request = new ImportacionValidarRequest
         {
@@ -1526,7 +1526,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionValidarRequest
         {
             CuentaId = cuentaId,
@@ -1556,7 +1556,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionConfirmarRequest
         {
             CuentaId = cuentaId,
@@ -1594,7 +1594,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionValidarRequest
         {
             CuentaId = cuentaId,
@@ -1625,7 +1625,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
         var request = new ImportacionConfirmarRequest
         {
             CuentaId = cuentaId,
@@ -1661,7 +1661,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var lote = await service.CrearLoteAsync(
             userId,
@@ -1709,7 +1709,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var lote = await service.CrearLoteAsync(
             userId,
@@ -1767,7 +1767,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var request = new ImportacionValidarRequest
         {
@@ -1815,7 +1815,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         // El lote se crea con USD pero la cuenta es EUR -> el backend
         // debe guardar divisa_mismatch=true en el resumen y exigir ack.
@@ -1863,7 +1863,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         var lote = await service.CrearLoteAsync(
             userId,
@@ -1906,7 +1906,7 @@ public class ImportacionServiceTests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedImportableCuentaAsync(db);
-        var service = new ImportacionService(db, new AuditService(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db));
 
         // Divisa esperada coincide con la cuenta -> NO debe bloquear.
         var lote = await service.CrearLoteAsync(

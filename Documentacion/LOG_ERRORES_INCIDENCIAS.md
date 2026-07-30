@@ -1,4 +1,79 @@
-# Log de errores e incidencias
+﻿# Log de errores e incidencias
+
+## 2026-07-30 - V-02.07 - `LimpiezaAuditoriaJob` llevaba desde V-02.03 borrando 0 filas y registrandolo como exito (CERRADO)
+
+- **Contexto:** al implementar el bloque de observabilidad de seguridad se
+  escribio un test de integracion contra PostgreSQL real para el nuevo mecanismo
+  append-only de `AUDITORIAS`. El primer INSERT crudo del test fallo con
+  `42501: new row violates row-level security policy`, lo que llevo a revisar
+  como estaba configurada RLS sobre esa tabla.
+- **Sintoma:** ninguno visible. El job `limpieza-auditoria` corria cada noche a
+  las 03:15 y registraba `LimpiezaAuditoriaJob elimino 0 auditorias ...` sin
+  error. La tabla `AUDITORIAS` crecia sin limite pese a tener una politica de
+  retencion de 28 dias declarada en codigo.
+- **Causa:** `20260501120000_EnableRowLevelSecurity` puso `ENABLE` y `FORCE ROW
+  LEVEL SECURITY` sobre `AUDITORIAS` y creo unicamente las politicas
+  `auditorias_select` y `auditorias_insert`. En PostgreSQL, un `DELETE` sobre una
+  tabla con RLS activo y **sin politica de DELETE** no falla: simplemente no ve
+  ninguna fila candidata y borra cero. `FORCE` hace que esto aplique tambien al
+  propietario de la tabla, asi que ni migraciones ni jobs se salvaban. El
+  `ExecuteDeleteAsync` del job devolvia 0 y el log lo daba por bueno.
+- **Por que no salto antes:** el job no comprueba que el numero de filas
+  borradas sea coherente con lo que hay por encima del corte, y "0 borradas" es
+  un resultado perfectamente normal cuando no hay nada que purgar. Sin una
+  metrica del tamano de la tabla, el sintoma era invisible.
+- **Alcance: las DOS tablas del job, no una.** El primer arreglo cubrio solo
+  `AUDITORIAS`. Al revisar despues si la causa raiz afectaba a mas sitios se vio
+  que `AUDITORIA_INTEGRACIONES` arrastra exactamente el mismo defecto desde la
+  misma migracion (`FORCE ROW LEVEL SECURITY` con politicas de SELECT e INSERT y
+  ninguna de DELETE), y la purga el mismo job. Estaba a medio arreglar.
+  Barrido completo de las 23 tablas con `FORCE ROW LEVEL SECURITY` contrastando
+  politicas declaradas contra comandos que el codigo ejecuta: el resto
+  (`MFA_TRUSTED_DEVICES`, `NOTIFICACIONES_ADMIN`, `PREFERENCIAS_USUARIO_CUENTA`,
+  `IMPORTACION_LOTES`, `IMPORTACION_LOTE_FILAS`...) tienen politicas `FOR ALL` o
+  `FOR DELETE` explicitas y estan bien. `REFRESH_TOKENS` no tiene RLS, asi que
+  `LimpiezaRefreshTokensJob` nunca estuvo afectado.
+- **Solucion aplicada** (`20260730090000_V0207AuditoriaAppendOnly` y
+  `20260730100000_V0207AuditoriaIntegracionPurga`):
+  1. Nueva politica `auditorias_delete`, que solo admite el borrado de filas de
+     mas de 90 dias y unicamente cuando la marca de sesion `atlas.audit_purge`
+     esta activa. Equivalente `auditoria_integraciones_delete` con suelo de 7
+     dias (su retencion nominal es de 28, un suelo de 90 haria la purga
+     imposible).
+  2. El job deja de hacer `ExecuteDelete` directo y llama a
+     `atlas_security.purgar_auditorias(retencion_dias)` y
+     `atlas_security.purgar_auditorias_integracion(retencion_dias)`, funciones
+     `SECURITY DEFINER` que activan la marca, borran y devuelven el numero de
+     filas. Si la retencion configurada esta por debajo del suelo de la BD, la
+     funcion lanza `23514`, el job lo registra como error y **no purga**:
+     preferimos que la tabla crezca antes que perder rastro por una
+     configuracion mal puesta.
+  3. Trigger `trg_auditorias_append_only`, que convierte en error explicito
+     cualquier UPDATE y cualquier DELETE de filas recientes de `AUDITORIAS`. El
+     objetivo es justamente que un intento de manipulacion deje de ser
+     silencioso. `AUDITORIA_INTEGRACIONES` no lo lleva: RLS ya impide el UPDATE
+     y ahi no se firma ninguna fila, asi que solo anadiria ruido.
+  4. La retencion de `AUDITORIAS` sube de 28 a 365 dias, configurable con
+     `Auditoria:RetentionDays`, con suelo de 90 impuesto por la propia base de
+     datos. `AUDITORIA_INTEGRACIONES` se queda en 28
+     (`Auditoria:IntegrationRetentionDays`).
+  5. `Program.GrantRuntimeDatabasePrivileges` revoca UPDATE/DELETE/TRUNCATE al
+     rol de runtime sobre ambas tablas, para que el fallo sea por privilegios y
+     no por filtrado silencioso.
+- **Leccion generalizable:** con `FORCE ROW LEVEL SECURITY`, cualquier comando
+  sin politica correspondiente es un no-op silencioso, no un error. Al anadir RLS
+  a una tabla hay que decidir explicitamente que pasa con **los cuatro**
+  comandos, y si alguno se quiere prohibir, prohibirlo de forma ruidosa (trigger
+  o REVOKE) en vez de dejarlo sin politica.
+- **Verificado:** `AuditoriaAppendOnlyPostgresTests` contra PostgreSQL 16 real,
+  12 tests. `Purge_Should_Delete_Old_Rows_And_Keep_Recent_Ones` e
+  `Integration_Audit_Purge_Should_Actually_Delete_Old_Rows` fallan si cualquiera
+  de las dos purgas vuelve a borrar cero.
+  `Integration_Audit_Should_Not_Be_Deletable_Outside_The_Purge` comprueba que el
+  arreglo no abre la mano: un DELETE suelto sigue sin borrar nada aunque la fila
+  sea antigua.
+
+---
 
 ## 2026-07-29 - V-02.07 - `obj/` de otra cuenta bloquea el build del proyecto de tests (CERRADO con workaround)
 
@@ -43,8 +118,8 @@
 - **Causa:** V-02.06 anadio
   `AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters()`
   en `Program.cs` para cerrar MED-23 (`DTOs sin atributos de
-  validacion`). MED-23 admitia dos vias alternativas —registrar
-  FluentValidation **o** anadir atributos— y se aplicaron ambas, pero
+  validacion`). MED-23 admitia dos vias alternativas â€”registrar
+  FluentValidation **o** anadir atributosâ€” y se aplicaron ambas, pero
   nunca se escribio ni un solo `AbstractValidator<T>`. El registro
   escaneaba el assembly y no activaba nada: la validacion real venia
   siempre de los DataAnnotations.
@@ -1008,11 +1083,11 @@
   - `WatchdogOperationsService.cs:181` (alerta #18): sustituye
     `LogScrubber.Scrub(zipVerification)` por
     `(zipVerification ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty)`
-    inline en el `LogError`. Patrón canonico que CodeQL acepta.
+    inline en el `LogError`. PatrÃ³n canonico que CodeQL acepta.
   - Defense-in-depth: mismas sustituciones inline en lineas 310
-    (`pg_restore local fallo: {Error}` — `localResult.ErrorMessage`
+    (`pg_restore local fallo: {Error}` â€” `localResult.ErrorMessage`
     viene de stderr de `pg_restore` y **si** arrastra CRLF), 901
-    (health URL rechazada), 955/959 (rollback aplicado/erróneo) y
+    (health URL rechazada), 955/959 (rollback aplicado/errÃ³neo) y
     1096 (`Error al verificar firma RSA: ` + `ex.Message`).
   - `WatchdogOperationsService.cs:5`: `using
     AtlasBalance.Watchdog.Logging;` eliminado al quedar muerto.
@@ -1537,7 +1612,7 @@
 - Incidencias de QA:
   - `tab.playwright.waitForLoadState({ state: 'networkidle' })` no esta soportado por el Browser runtime aunque la documentacion mencione `networkidle`; usar `load` + espera concreta de selector/DOM.
   - Un mock de dashboard devolvio error por variable `puntos` inexistente; se corrigio a `points` antes de validar mobile.
-- Regla: si un rediseño oculta datos que el usuario necesita, no lo llames limpio; arreglalo.
+- Regla: si un rediseÃ±o oculta datos que el usuario necesita, no lo llames limpio; arreglalo.
 
 ## 2026-06-26 - V-02-02 - Selector de columnas de extractos no guardaba sin cuenta
 
@@ -1874,7 +1949,7 @@
   - Se agrego una regresion con TLS/proxy/certificado interno ficticio.
   - Se excluyeron `.local-build`/`.codex-build` de MSBuild y Git para que intentos de test aislados no contaminen compilacion ni estado.
 - Verificacion: regresion focalizada 1/1 OK, `AtlasAiServiceTests` 62/62 OK y `git diff --check` OK con avisos CRLF esperados.
-- Regla: una app financiera no debe enseñar diagnosticos de infraestructura al usuario para "ayudar a depurar". El usuario necesita un error claro; el operador necesita categorias seguras.
+- Regla: una app financiera no debe enseÃ±ar diagnosticos de infraestructura al usuario para "ayudar a depurar". El usuario necesita un error claro; el operador necesita categorias seguras.
 
 ## 2026-05-20 - V-01.09 - Refresh tokens pre-MFA renovaban sesion sin segundo factor
 
@@ -2108,7 +2183,7 @@
 
 - Contexto: al ejecutar la suite backend sin Testcontainers, `AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context` fallo porque `RECIBOS/FACTURAS DETECTADOS` sumaba `80,00` en vez de `35,00`.
 - Causa: `ReceiptTerms` incluia `cargo`; eso capturaba `Cargo tarjeta comercio`, aunque un cargo de tarjeta no es por si solo una factura o recibo.
-- Solucion aplicada: recibos/facturas excluye tarjeta/TPV/datáfono y prestamos/leasing cuando se detecta por terminos genericos.
+- Solucion aplicada: recibos/facturas excluye tarjeta/TPV/datÃ¡fono y prestamos/leasing cuando se detecta por terminos genericos.
 - Verificacion: test focalizado OK y suite backend sin Testcontainers 242/242 OK.
 - Regla: las categorias IA tienen que ser conservadoras. Si un termino generico mete basura, el total deja de ser informacion y pasa a ser ruido con decimales.
 
@@ -2503,7 +2578,7 @@
 
 ## 2026-05-11 - V-01.06 - OpenRouter fallaba por proxy de entorno `127.0.0.1:9`
 
-- Contexto: el chat IA devolvia `Error de red al consultar OpenRouter... No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión`.
+- Contexto: el chat IA devolvia `Error de red al consultar OpenRouter... No se puede establecer una conexiÃ³n ya que el equipo de destino denegÃ³ expresamente dicha conexiÃ³n`.
 - Causa: el proceso backend habia sido arrancado desde un entorno con `HTTP_PROXY`, `HTTPS_PROXY` y `ALL_PROXY` apuntando a `http://127.0.0.1:9`. Ese proxy local no existe y rechaza la conexion. WinHTTP estaba directo, asi que la pista real era el proxy de entorno, no OpenRouter.
 - Solucion aplicada: se reinicio la API heredando la configuracion necesaria de desarrollo pero limpiando `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `GIT_HTTP_PROXY` y `GIT_HTTPS_PROXY`. La API queda en PID `40704`, escuchando en `localhost:5000`, con logs redirigidos en `C:\tmp\atlas-api-openrouter.*.log`.
 - Verificacion: `curl --noproxy "*" https://openrouter.ai/api/v1/models` fuera del sandbox responde HTTP 200; `/api/health` responde OK; `netstat` confirma `127.0.0.1:5000` escuchando en PID `40704`.
@@ -2825,7 +2900,7 @@
 
 ## 2026-05-02 - V-01.05 - Saldo total se partia con importes de un millon
 
-- Contexto: en el dashboard principal, el KPI `Saldo total` podia partir `1.000.000,00 €` en dos lineas o desbordar la tarjeta superior.
+- Contexto: en el dashboard principal, el KPI `Saldo total` podia partir `1.000.000,00 â‚¬` en dos lineas o desbordar la tarjeta superior.
 - Causa: la grilla de KPIs superiores repartia el espacio de forma demasiado igualitaria y el saldo destacado tenia una escala excesiva para importes reales de tesoreria.
 - Solucion aplicada: `dashboard-kpi-grid--overview` da mas ancho relativo al KPI principal, reduce padding de los KPIs superiores, baja la escala del importe destacado y fuerza `white-space: nowrap` en importes KPI.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK, `robocopy` OK y Playwright headless con `total_convertido=1000000` confirma `wraps=false` y `overflows=false`.
@@ -2867,7 +2942,7 @@
 
 ## 2026-05-01 - V-01.05 - KPI principal del dashboard se solapaba con saldos por divisa
 
-- Contexto: durante la verificacion visual Playwright del rediseño UI/UX, el importe de `Saldo total` en desktop se extendia por debajo de la tarjeta `Saldos por divisa`.
+- Contexto: durante la verificacion visual Playwright del rediseÃ±o UI/UX, el importe de `Saldo total` en desktop se extendia por debajo de la tarjeta `Saldos por divisa`.
 - Causa: el nuevo `dashboard-command-grid` dejaba la primera columna demasiado estrecha para un importe financiero grande renderizado con fuente mono y escala KPI.
 - Solucion aplicada: se amplia el ancho minimo de la columna KPI y se limita el tamano maximo del numero destacado en el contexto `dashboard-kpi-grid--command`.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y Playwright confirma `kpiOverlapsDivisa=false`, sin overflow horizontal en desktop/mobile.
@@ -2931,7 +3006,7 @@
 
 ## 2026-04-25 - V-01.05 - Endpoints nuevos respondian 500 ante body o listas null
 
-- Contexto: en una pasada extra de auditoria sobre los endpoints añadidos en V-01.05 (`POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento`), se detecto que ninguno comprobaba que el cuerpo deserializado no fuera null y que `SaveAlertaSaldoRequest.DestinatarioUsuarioIds` se accedia directamente con `.Count` aunque deserializar `"destinatario_usuario_ids": null` deja la propiedad en null.
+- Contexto: en una pasada extra de auditoria sobre los endpoints aÃ±adidos en V-01.05 (`POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento`), se detecto que ninguno comprobaba que el cuerpo deserializado no fuera null y que `SaveAlertaSaldoRequest.DestinatarioUsuarioIds` se accedia directamente con `.Count` aunque deserializar `"destinatario_usuario_ids": null` deja la propiedad en null.
 - Causa: los DTOs nuevos solo definian valor por defecto `= []`, pero el inicializador no se aplica cuando el JSON envia explicitamente `null`. Ningun controlador validaba previamente el cuerpo.
 - Solucion aplicada: `if (request is null) return BadRequest(new { error = "Request invalido" });` al inicio de los endpoints afectados y `request.DestinatarioUsuarioIds ?? []` antes de validar/procesar destinatarios.
 - Verificacion: `dotnet build -c Release` OK, `dotnet test --no-build` 107/107 OK, `dotnet list package --vulnerable --include-transitive` sin hallazgos, `npm audit` 0 vulnerabilidades.
@@ -2994,7 +3069,7 @@
 
 ## 2026-04-25 - V-01.05 - Reinstalacion falla por password HTTPS desalineada
 
-- Contexto: en Windows Server 2019, tras reinstalar `V-01.03`, `AtlasBalance.API` quedaba detenido y el visor de eventos mostraba `System.Security.Cryptography.CryptographicException: La contraseña de red especificada no es válida` al cargar `atlas-balance.pfx`.
+- Contexto: en Windows Server 2019, tras reinstalar `V-01.03`, `AtlasBalance.API` quedaba detenido y el visor de eventos mostraba `System.Security.Cryptography.CryptographicException: La contraseÃ±a de red especificada no es vÃ¡lida` al cargar `atlas-balance.pfx`.
 - Causa: `Instalar-AtlasBalance.ps1` reutilizaba `C:\AtlasBalance\certs\atlas-balance.pfx` si ya existia, pero generaba una password HTTPS nueva y la escribia en `appsettings.Production.json`. Eso dejaba certificado viejo con password nueva.
 - Solucion aplicada: el instalador `V-01.05` elimina `atlas-balance.pfx` y `atlas-balance.cer` existentes antes de generar el certificado nuevo, garantizando que la password configurada y el PFX coincidan.
 - Mitigacion operativa para instalaciones afectadas: detener `AtlasBalance.API`, borrar `C:\AtlasBalance\certs\atlas-balance.pfx` y `C:\AtlasBalance\certs\atlas-balance.cer`, y relanzar `scripts\Instalar-AtlasBalance.ps1` directamente desde el paquete.
@@ -3118,7 +3193,7 @@
 
 - Contexto: la auditoria con `cyber-neo` y revision manual detecto credenciales/defaults de desarrollo en configuracion versionable.
 - Causa: valores comodos para bootstrap quedaron en archivos base.
-- Solucion aplicada: `appsettings.json`, Watchdog y `docker-compose.yml` ya no incluyen secretos reales; se añadieron plantillas y `.env.example`; `SeedAdmin:Password` debe configurarse antes del primer arranque.
+- Solucion aplicada: `appsettings.json`, Watchdog y `docker-compose.yml` ya no incluyen secretos reales; se aÃ±adieron plantillas y `.env.example`; `SeedAdmin:Password` debe configurarse antes del primer arranque.
 
 ### Textos mojibake en importacion y correo SMTP
 
@@ -3196,7 +3271,7 @@
 
 ### Whitespace en release y documento de paleta
 
-- Contexto: `git diff --cached --check` detecto trailing whitespace en `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.01-win-x64/api/wwwroot/index.html` y `Documentacion/Diseno/Diseño/Palesta Y tipografia.txt`.
+- Contexto: `git diff --cached --check` detecto trailing whitespace en `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.01-win-x64/api/wwwroot/index.html` y `Documentacion/Diseno/DiseÃ±o/Palesta Y tipografia.txt`.
 - Causa probable: archivos generados o movidos con espacios finales heredados.
 - Solucion aplicada: limpieza mecanica de espacios finales en ambos archivos, re-stage y repeticion de `git diff --cached --check` sin errores.
 
@@ -3356,9 +3431,9 @@
 
 ## 2026-06-23 - V-02-02 - Build estandar bloqueada por `frontend/dist/assets`
 
-- Contexto: durante la validacion del rediseño completo, `npm.cmd run build` compilo TypeScript y transformo modulos, pero fallo en `vite:prepare-out-dir`.
+- Contexto: durante la validacion del rediseÃ±o completo, `npm.cmd run build` compilo TypeScript y transformo modulos, pero fallo en `vite:prepare-out-dir`.
 - Causa observada: `EPERM, Permission denied` al intentar vaciar `Atlas Balance/frontend/dist/assets`. Es coherente con las incidencias conocidas de carpetas `dist`/`wwwroot` bloqueadas por procesos locales o permisos de Windows.
-- Impacto: no invalida el codigo del rediseño, pero impide usar la build estandar como artefacto mientras esa carpeta este bloqueada.
+- Impacto: no invalida el codigo del rediseÃ±o, pero impide usar la build estandar como artefacto mientras esa carpeta este bloqueada.
 - Workaround aplicado: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02 --emptyOutDir` compilo correctamente.
 - Verificacion relacionada: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, `git diff --check` OK con avisos CRLF preexistentes.
 - Pendiente: liberar/regenerar `frontend/dist/assets` antes de empaquetar release o sincronizar `wwwroot`.
@@ -3674,7 +3749,7 @@
   `ComputeSha256Async(dumpPath, cancellationToken)` y el compilador devolvia
   CS0103 porque el helper no pertenecia al contexto de
   `GoogleDriveBackupService`.
-- **Causa:** el helper habia sido añadido despues de la llave `}` final de la
+- **Causa:** el helper habia sido aÃ±adido despues de la llave `}` final de la
   clase. El mismo defecto estaba en el archivo `.tmp`, por lo que copiarlo de
   nuevo habria reintroducido el fallo.
 - **Solucion:** se movio el metodo dentro de `GoogleDriveBackupService` en el

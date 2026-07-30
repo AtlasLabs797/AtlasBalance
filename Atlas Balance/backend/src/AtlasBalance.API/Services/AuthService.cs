@@ -594,6 +594,12 @@ _secretProtector = secretProtector;
             storedToken.RevocadoEn = now;
             storedToken.ReemplazadoPor = replacementHash;
 
+            // V-02.07: el id de sesion sobrevive a la rotacion. Es lo que permite
+            // que AUDITORIAS agrupe toda la actividad de una sesion de login
+            // aunque el access token se renueve cada hora. Los tokens emitidos
+            // antes de V-02.07 no lo llevan: se genera uno al rotar.
+            var sessionId = storedToken.SessionId ?? GenerateSessionId();
+
             _dbContext.RefreshTokens.Add(new RefreshToken
             {
                 Id = Guid.NewGuid(),
@@ -603,10 +609,11 @@ _secretProtector = secretProtector;
                 ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
                 CreadoEn = now,
                 MfaVerifiedAt = storedToken.MfaVerifiedAt,
-                IpAddress = ParseIpAddress(ipAddress)
+                IpAddress = ParseIpAddress(ipAddress),
+                SessionId = sessionId
             });
 
-            var accessToken = GenerateAccessToken(usuario, storedToken.MfaVerifiedAt);
+            var accessToken = GenerateAccessToken(usuario, sessionId, storedToken.MfaVerifiedAt);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             if (tx is not null)
@@ -879,7 +886,10 @@ _secretProtector = secretProtector;
             refreshToken.RevocadoEn = now;
         }
 
-        var accessToken = GenerateAccessToken(usuario, currentSessionMfaVerifiedAt);
+        // Sesion nueva: el cambio de password acaba de revocar todas las
+        // anteriores, asi que no hay id de sesion que heredar.
+        var sessionId = GenerateSessionId();
+        var accessToken = GenerateAccessToken(usuario, sessionId, currentSessionMfaVerifiedAt);
         var newRefreshToken = GenerateRefreshToken();
         _dbContext.RefreshTokens.Add(new RefreshToken
         {
@@ -890,7 +900,8 @@ _secretProtector = secretProtector;
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
             MfaVerifiedAt = currentSessionMfaVerifiedAt,
-            IpAddress = ParseIpAddress(ipAddress)
+            IpAddress = ParseIpAddress(ipAddress),
+            SessionId = sessionId
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -989,7 +1000,10 @@ _secretProtector = secretProtector;
         CancellationToken cancellationToken,
         DateTime? mfaVerifiedAt = null)
     {
-        var accessToken = GenerateAccessToken(usuario, mfaVerifiedAt);
+        // V-02.07: aqui nace la sesion (login y verificacion MFA). El id viaja al
+        // JWT como claim `sid` y se copia en cada rotacion del refresh token.
+        var sessionId = GenerateSessionId();
+        var accessToken = GenerateAccessToken(usuario, sessionId, mfaVerifiedAt);
         var refreshToken = GenerateRefreshToken();
         var now = DateTime.UtcNow;
 
@@ -1002,7 +1016,8 @@ _secretProtector = secretProtector;
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
             MfaVerifiedAt = mfaVerifiedAt,
-            IpAddress = ParseIpAddress(ipAddress)
+            IpAddress = ParseIpAddress(ipAddress),
+            SessionId = sessionId
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -1137,7 +1152,20 @@ _secretProtector = secretProtector;
             .Replace('/', '_');
     }
 
-    private string GenerateAccessToken(Usuario usuario, DateTime? mfaVerifiedAt = null)
+    /// <summary>
+    /// V-02.07: id de sesion de login. 128 bits en base64url: no es un secreto
+    /// (viaja en el JWT y se guarda en AUDITORIAS en claro), solo tiene que ser
+    /// no adivinable para que nadie pueda contaminar la auditoria de otro.
+    /// </summary>
+    private static string GenerateSessionId()
+    {
+        return Convert.ToBase64String(RandomNumberGenerator.GetBytes(16))
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+    }
+
+    private string GenerateAccessToken(Usuario usuario, string sessionId, DateTime? mfaVerifiedAt = null)
     {
         UserSessionState.EnsureSecurityStamp(usuario);
         var jwtSecret = _configuration["JwtSettings:Secret"]
@@ -1155,7 +1183,8 @@ _secretProtector = secretProtector;
             new Claim(ClaimTypes.Email, usuario.Email),
             new Claim(ClaimTypes.Name, usuario.NombreCompleto),
             new Claim(ClaimTypes.Role, usuario.Rol.ToString()),
-            new Claim(AuthClaimNames.SecurityStamp, usuario.SecurityStamp)
+            new Claim(AuthClaimNames.SecurityStamp, usuario.SecurityStamp),
+            new Claim(AuditRequestContext.SessionClaim, sessionId)
         };
 
         if (usuario.PasswordChangedAt.HasValue)

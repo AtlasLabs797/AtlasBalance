@@ -901,7 +901,8 @@
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[8.0.11, )",
           "Serilog.AspNetCore": "[8.0.3, )",
           "Serilog.Sinks.Console": "[6.0.0, )",
-          "Serilog.Sinks.File": "[6.0.0, )"
+          "Serilog.Sinks.File": "[6.0.0, )",
+          "System.Diagnostics.EventLog": "[8.0.1, )"
         }
       },
       "atlasbalance.watchdog": {

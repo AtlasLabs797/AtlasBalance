@@ -26,7 +26,7 @@ public sealed class AuthControllerTests
             new LogoutOnlyAuthService(),
             new CsrfService(),
             new TestWebHostEnvironment(),
-            new AuditService(db));
+            TestAuditService.Create(db));
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Cookie = "access_token=a; refresh_token=r; csrf_token=c; mfa_trusted=trusted";
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
@@ -53,7 +53,7 @@ public sealed class AuthControllerTests
             new LogoutOnlyAuthService(),
             new CsrfService(),
             new TestWebHostEnvironment { EnvironmentName = "Production" },
-            new AuditService(db));
+            TestAuditService.Create(db));
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Cookie =
             "__Host-atlas-access-token=a; __Host-atlas-refresh-token=r; __Host-atlas-csrf-token=c; __Host-atlas-mfa-trusted=trusted";

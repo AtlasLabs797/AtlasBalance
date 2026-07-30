@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Serilog;
+using Serilog.Filters;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -51,6 +52,18 @@ builder.Host.UseSerilog((context, config) =>
         "logs");
     var logPath = context.Configuration["Serilog:FilePath"]
         ?? Path.Combine(defaultLogDir, "atlas-balance-.log");
+
+    // V-02.07: los eventos de seguridad van ADEMAS a su propio fichero, en una
+    // carpeta aparte. Dos motivos:
+    //  1. Retencion propia y mas larga que el log de aplicacion (30 dias no
+    //     sirven para investigar un incidente que se descubre dos meses tarde).
+    //  2. La carpeta puede llevar una ACL de solo-anexar para la cuenta del
+    //     servicio, cosa que no se puede hacer con el log general porque
+    //     Serilog necesita rotar y borrar ficheros ahi.
+    // Ver SecurityEventLog: emite con la categoria AtlasBalance.Security.
+    var securityLogPath = context.Configuration["Serilog:SecurityFilePath"]
+        ?? Path.Combine(defaultLogDir, "security", "atlas-security-.log");
+
     config
         .ReadFrom.Configuration(context.Configuration)
         .Enrich.FromLogContext()
@@ -59,7 +72,16 @@ builder.Host.UseSerilog((context, config) =>
             logPath,
             rollingInterval: RollingInterval.Day,
             fileSizeLimitBytes: 50L * 1024L * 1024L,
-            retainedFileCountLimit: 30);
+            retainedFileCountLimit: 30)
+        .WriteTo.Logger(securityLogger => securityLogger
+            .Filter.ByIncludingOnly(Matching.FromSource("AtlasBalance.Security"))
+            .WriteTo.File(
+                securityLogPath,
+                rollingInterval: RollingInterval.Day,
+                fileSizeLimitBytes: 50L * 1024L * 1024L,
+                // Por encima de la retencion de AUDITORIAS (365 dias) a
+                // proposito: si alguien purga la tabla, el fichero sigue.
+                retainedFileCountLimit: 400));
 });
 
 builder.Services.AddHttpContextAccessor();
@@ -91,6 +113,11 @@ var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, builder.En
 // secreto JWT solo en Development; en Produccion exigimos clave propia para
 // que comprometer JWT no permita forjar contextos RLS.
 builder.Services.AddSingleton(new AtlasBalance.API.Data.RlsContextSecret(rlsContextSecret));
+// V-02.07: clave de firma de AUDITORIAS. Misma politica fail-closed que RLS y
+// por el mismo motivo: si se reutiliza el secreto JWT, comprometerlo permitiria
+// forjar filas de auditoria con firma valida y el rastro dejaria de valer nada.
+builder.Services.AddSingleton(new AtlasBalance.API.Services.AuditSigningKey(
+    ResolveAuditSigningKey(builder.Configuration, builder.Environment, jwtSecret)));
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "atlas-balance-api";
 var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "atlas-balance-app";
 
@@ -329,6 +356,25 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<ICsrfService, CsrfService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+// V-02.07 (observabilidad de seguridad): firma de auditoria y espejo externo.
+// Singleton: no tienen estado por peticion y el firmador solo guarda la clave.
+builder.Services.AddSingleton<IAuditSigner, AuditSigner>();
+builder.Services.AddSingleton<ISecurityEventLog, SecurityEventLog>();
+builder.Services.AddScoped<IAuditIntegrityService, AuditIntegrityService>();
+builder.Services.Configure<SecurityAlertOptions>(builder.Configuration.GetSection(SecurityAlertOptions.SectionName));
+builder.Services.AddScoped<ISecurityAlertService, SecurityAlertService>();
+builder.Services.AddScoped<IAlertDispatcher, AlertDispatcher>();
+builder.Services.AddScoped<IAppHealthService, AppHealthService>();
+// Singleton: los contadores tienen que sobrevivir a la peticion, que es el
+// sentido de medir una tasa.
+builder.Services.AddSingleton<IRequestMetrics, RequestMetrics>();
+builder.Services.AddSingleton<ISlackAlertNotifier, SlackAlertNotifier>();
+// Timeout corto: una alerta que no sale en 10s no vale la pena reintentarla en
+// caliente; ya quedo registrada en AUDITORIAS y en la notificacion in-app.
+builder.Services.AddHttpClient(SlackAlertNotifier.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddScoped<ITiposCambioService, TiposCambioService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IImportacionService, ImportacionService>();
@@ -435,9 +481,39 @@ using (var scope = app.Services.CreateScope())
         "auto-update-github-release",
         job => job.ExecuteAsync(),
         "17 * * * *");
+
+    // V-02.07: la cadencia se deriva de la ventana de las reglas para que las
+    // ventanas se encadenen sin huecos. Si el operador cambia VentanaMinutos, el
+    // cron se ajusta solo en el siguiente arranque.
+    var ventanaAlertas = Math.Clamp(
+        app.Configuration.GetValue($"{SecurityAlertOptions.SectionName}:VentanaMinutos", 5),
+        1,
+        59);
+    recurringJobManager.AddOrUpdate<SecurityAlertJob>(
+        "alertas-seguridad",
+        job => job.ExecuteAsync(),
+        $"*/{ventanaAlertas} * * * *");
+
+    // A las 4:05, despues de la purga de auditoria de las 3:15: si la purga
+    // dejara huecos indebidos, se detectan en la misma madrugada.
+    recurringJobManager.AddOrUpdate<VerificacionIntegridadAuditoriaJob>(
+        "verificacion-integridad-auditoria",
+        job => job.ExecuteAsync(),
+        "5 4 * * *");
+
+    // Cada 5 minutos, la misma ventana que compara.
+    recurringJobManager.AddOrUpdate<HealthAlertJob>(
+        "alertas-salud",
+        job => job.ExecuteAsync(),
+        "*/5 * * * *");
 }
 
 app.UseForwardedHeaders();
+
+// V-02.07: lo mas afuera posible del pipeline, para medir el tiempo real que ve
+// el cliente y para que los 500 que produce UseExceptionHandler cuenten como
+// errores en la tasa.
+app.UseMiddleware<RequestMetricsMiddleware>();
 
 app.UseExceptionHandler(errorApp =>
 {
@@ -582,6 +658,10 @@ app.UseStaticFiles(staticFileOptions);
 app.UseMiddleware<IntegrationAuthMiddleware>();
 
 app.UseAuthentication();
+// V-02.07: despues de UseAuthentication para tener context.User resuelto, y
+// envolviendo todo lo que viene despues (autorizacion, CSRF y los controladores)
+// para capturar cualquier 401/403 venga de donde venga.
+app.UseMiddleware<SecurityAuditMiddleware>();
 // Despues de UseAuthentication a proposito: las politicas de lectura/escritura
 // particionan por userId y necesitan los claims ya resueltos. Las rutas anonimas
 // (login, telemetria) siguen pasando por aqui y particionan por IP.
@@ -681,6 +761,49 @@ static string ResolveRlsContextSecret(IConfiguration configuration, IHostEnviron
         "Security:RlsContextSecret debe estar configurado fuera de Development. " +
         "Genera una clave aleatoria de al menos 32 caracteres y distinala de JwtSettings:Secret. " +
         "Si necesitas migrar una instalacion existente, Actualizar-AtlasBalance.ps1 puede generarla.");
+}
+
+// V-02.07: clave HMAC con la que se firma cada fila de AUDITORIAS. Misma
+// politica que ResolveRlsContextSecret: en Development se tolera el fallback al
+// secreto JWT para no romper `dotnet run`; fuera de Development se exige clave
+// propia de 32+ caracteres y distinta del JWT.
+//
+// Rotarla invalida la verificacion de las filas ya firmadas: /api/auditoria/
+// integridad las reportara como no verificables, no como manipuladas.
+static string ResolveAuditSigningKey(IConfiguration configuration, IHostEnvironment environment, string jwtSecret)
+{
+    var trimmed = configuration["Security:AuditSigningKey"]?.Trim();
+
+    if (!string.IsNullOrEmpty(trimmed))
+    {
+        if (environment.IsDevelopment())
+        {
+            return trimmed;
+        }
+
+        RejectUnsafeProductionSecret(
+            "Security:AuditSigningKey",
+            trimmed,
+            32);
+        if (string.Equals(trimmed, jwtSecret, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Security:AuditSigningKey debe ser distinto de JwtSettings:Secret fuera de Development. " +
+                "Si coinciden, comprometer el JWT permite forjar filas de auditoria con firma valida.");
+        }
+        return trimmed;
+    }
+
+    if (environment.IsDevelopment())
+    {
+        return jwtSecret;
+    }
+
+    throw new InvalidOperationException(
+        "Security:AuditSigningKey debe estar configurado fuera de Development. " +
+        "Genera una clave aleatoria de al menos 32 caracteres, distinta de JwtSettings:Secret y de " +
+        "Security:RlsContextSecret, y guardala fuera de la base de datos: si vive en la misma BD que " +
+        "AUDITORIAS, quien compromete la BD puede refirmar las filas que altere.");
 }
 
 static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)
@@ -978,6 +1101,20 @@ static void GrantRuntimeDatabasePrivileges(string migrationConnectionString, str
         GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA hangfire TO {{runtimeRole}};
         GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA atlas_security TO {{runtimeRole}};
         REVOKE ALL ON TABLE atlas_security.rls_context_secret FROM {{runtimeRole}};
+
+        -- V-02.07: AUDITORIAS es append-only tambien a nivel de privilegios.
+        -- El GRANT de arriba es un blanket sobre todas las tablas del esquema, y
+        -- sin este REVOKE el rol de la aplicacion podria modificar o borrar su
+        -- propio rastro. Aqui la separacion de roles si da prevencion real y no
+        -- solo deteccion: el rol de runtime no es el propietario de la tabla,
+        -- asi que no puede volver a concederse el privilegio, ni quitar el
+        -- trigger, ni alterar la tabla.
+        --
+        -- La purga por retencion sigue funcionando porque va por
+        -- atlas_security.purgar_auditorias(), que es SECURITY DEFINER y por
+        -- tanto se ejecuta con los privilegios del propietario.
+        REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "AUDITORIAS" FROM {{runtimeRole}};
+        REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "AUDITORIA_INTEGRACIONES" FROM {{runtimeRole}};
         """;
     command.ExecuteNonQuery();
 }

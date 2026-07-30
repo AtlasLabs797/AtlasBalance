@@ -1,9 +1,11 @@
 using System.Text;
+using AtlasBalance.API.Services;
 using FluentAssertions;
 using AtlasBalance.API.Controllers;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -18,6 +20,24 @@ public class AuditoriaControllerTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         return new AppDbContext(options);
+    }
+
+    // V-02.07: el controlador pasó a depender de la verificacion de firmas
+    // (para exponer firma_valida por fila) y de la de integridad.
+    private static AuditoriaController BuildController(AppDbContext db)
+    {
+        var signer = TestAuditService.Signer();
+        return new AuditoriaController(
+            db,
+            new AuditIntegrityService(db, signer),
+            TestAuditService.Create(db),
+            signer)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
     }
 
     [Fact]
@@ -74,7 +94,7 @@ public class AuditoriaControllerTests
             });
         await db.SaveChangesAsync();
 
-        var controller = new AuditoriaController(db);
+        var controller = BuildController(db);
 
         var result = await controller.Listar(
             page: 1,
@@ -119,7 +139,7 @@ public class AuditoriaControllerTests
             new Auditoria { Id = Guid.NewGuid(), TipoAccion = "extracto_celda_actualizada", EntidadTipo = "EXTRACTOS", EntidadId = extractoB.Id, Timestamp = new DateTime(2026, 5, 1, 11, 0, 0, DateTimeKind.Utc) });
         await db.SaveChangesAsync();
 
-        var controller = new AuditoriaController(db);
+        var controller = BuildController(db);
 
         var listar = await controller.Listar(paisId: paisAId, ct: CancellationToken.None);
         var filtros = await controller.GetFiltros(paisAId, CancellationToken.None);
@@ -178,7 +198,7 @@ public class AuditoriaControllerTests
 
         await db.SaveChangesAsync();
 
-        var controller = new AuditoriaController(db);
+        var controller = BuildController(db);
 
         var result = await controller.ExportarCsv(cuentaId: cuenta.Id, ct: CancellationToken.None);
 
@@ -208,7 +228,7 @@ public class AuditoriaControllerTests
         });
         await db.SaveChangesAsync();
 
-        var controller = new AuditoriaController(db);
+        var controller = BuildController(db);
 
         var result = await controller.ExportarCsv(ct: CancellationToken.None);
 

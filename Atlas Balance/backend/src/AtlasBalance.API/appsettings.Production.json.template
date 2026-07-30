@@ -17,7 +17,31 @@
   },
   "Security": {
     "RequireMfaForWebUsers": true,
-    "RlsContextSecret": "GENERAR-CLAVE-RLS-DISTINTA-DE-JWT-MINIMO-32-CARACTERES-AQUI"
+    "RlsContextSecret": "GENERAR-CLAVE-RLS-DISTINTA-DE-JWT-MINIMO-32-CARACTERES-AQUI",
+    "AuditSigningKey": "GENERAR-CLAVE-FIRMA-AUDITORIA-DISTINTA-DE-JWT-Y-RLS-MINIMO-32-CARACTERES-AQUI",
+    "MirrorToWindowsEventLog": true,
+    "Auditoria": {
+      "UmbralAccesoBulk": 100,
+      "VentanaDeduplicacionSegundos": 60
+    },
+    "Alertas": {
+      "Habilitado": true,
+      "VentanaMinutos": 5,
+      "EnfriamientoMinutos": 60,
+      "MaxLoginFallidosPorCuenta": 5,
+      "MaxCuentasPorIp": 10,
+      "MaxPeticionesSecuenciales": 300,
+      "DiasHistoricoIpConocida": 90,
+      "MaxPasswordResets": 3,
+      "MinErroresAuthParaAlertar": 20,
+      "FactorSobreLineaBase": 3.0,
+      "VentanasLineaBase": 12,
+      "DestinatariosEmail": [],
+      "SlackWebhookUrl": ""
+    }
+  },
+  "Auditoria": {
+    "RetentionDays": 365
   },
   "ForwardedHeaders": {
     "KnownProxies": [ "127.0.0.1" ],
@@ -89,7 +113,8 @@
         "Microsoft.EntityFrameworkCore": "Warning",
         "Hangfire": "Warning"
       }
-    }
+    },
+    "SecurityFilePath": "C:\\ProgramData\\AtlasBalance\\logs\\security\\atlas-security-.log"
   },
   "AllowedHosts": "CAMBIAR_HOST_PUBLICO_AQUI"
 }

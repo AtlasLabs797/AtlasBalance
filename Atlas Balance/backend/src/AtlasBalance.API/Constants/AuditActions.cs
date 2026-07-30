@@ -44,4 +44,24 @@ public static class AuditActions
     public const string UpdateIntegrationToken = "UPDATE_INTEGRATION_TOKEN";
     public const string RevokeIntegrationToken = "REVOKE_INTEGRATION_TOKEN";
     public const string DeleteIntegrationToken = "DELETE_INTEGRATION_TOKEN";
+
+    // V-02.07 (observabilidad de seguridad)
+
+    /// <summary>403: el usuario esta autenticado pero no tiene permiso sobre el recurso.</summary>
+    public const string AuthzDenied = "AUTHZ_DENIED";
+
+    /// <summary>401 sobre un endpoint protegido: token ausente, caducado o invalido.</summary>
+    public const string AuthnDenied = "AUTHN_DENIED";
+
+    /// <summary>Lectura masiva: la peticion devolvio mas filas que el umbral configurado.</summary>
+    public const string AccesoBulk = "ACCESO_BULK";
+
+    /// <summary>Se lanzo la instalacion de una actualizacion desde /api/sistema/actualizar.</summary>
+    public const string SistemaActualizacionIniciada = "SISTEMA_ACTUALIZACION_INICIADA";
+
+    /// <summary>Una regla de SecurityAlertService se disparo y se notifico.</summary>
+    public const string AlertaSeguridadDisparada = "ALERTA_SEGURIDAD_DISPARADA";
+
+    /// <summary>La verificacion de integridad de AUDITORIAS encontro firmas invalidas o huecos.</summary>
+    public const string AuditoriaIntegridadFallida = "AUDITORIA_INTEGRIDAD_FALLIDA";
 }

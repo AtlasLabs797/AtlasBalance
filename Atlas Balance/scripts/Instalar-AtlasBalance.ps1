@@ -120,6 +120,65 @@ function Protect-SecretDirectory {
     }
 }
 
+# V-02.07: carpeta del log de eventos de seguridad, con retencion propia y mas
+# larga que el log de aplicacion.
+#
+# Que consigue esta ACL y que NO consigue, sin adornos:
+#
+#   SI: quita el acceso a usuarios normales del servidor. Solo Administradores y
+#       SYSTEM pueden leer o tocar el historico de eventos de seguridad. Sin
+#       esto, el log hereda los permisos de %ProgramData%, donde BUILTIN\Usuarios
+#       tiene lectura, y cualquiera con sesion en la maquina puede leer quien
+#       entra, desde donde y a que hora.
+#
+#   NO: no protege frente a quien ejecute codigo como SYSTEM. El servicio de la
+#       API corre como LocalSystem (ver Install-OrReplaceService), asi que un RCE
+#       en la aplicacion da SYSTEM y con ello permiso para borrar este fichero,
+#       vaciar el Windows Event Log y leer el connection string. Poner aqui una
+#       ACL de solo-anexar contra SYSTEM seria teatro: SYSTEM puede reescribir su
+#       propia ACL.
+#
+# La defensa real contra ese escenario es sacar los logs de la maquina: reenvio
+# del Event Log a un colector, envio a un syslog, o el webhook de Slack para las
+# alertas. Esta documentado en DOCUMENTACION_TECNICA.md. La otra mitad del
+# problema (la tabla AUDITORIAS) si esta cubierta de verdad, porque el rol de la
+# aplicacion no es el propietario y tiene UPDATE/DELETE revocados.
+function Protect-SecurityLogDirectory {
+    param([string]$Path)
+
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+
+    & icacls.exe $Path /inheritance:r `
+        /grant:r "*S-1-5-32-544:(OI)(CI)F" `
+        "*S-1-5-18:(OI)(CI)F" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "No se pudo restringir la ACL de $Path. El log de seguridad queda legible por usuarios del servidor."
+        return
+    }
+
+    Write-Host "  Log de seguridad en $Path (solo Administradores y SYSTEM)."
+}
+
+# V-02.07: origen del Windows Event Log para el espejo de eventos de seguridad.
+# Requiere admin y por eso se hace en la instalacion, no en runtime: el servicio
+# no deberia tener privilegios para registrar origenes.
+function Register-SecurityEventLogSource {
+    param([string]$SourceName = "AtlasBalance")
+
+    try {
+        if ([System.Diagnostics.EventLog]::SourceExists($SourceName)) {
+            Write-Host "  Origen de Event Log '$SourceName' ya registrado."
+            return
+        }
+
+        New-EventLog -LogName "Application" -Source $SourceName -ErrorAction Stop
+        Write-Host "  Origen de Event Log '$SourceName' registrado en el log Application."
+    } catch {
+        # No es fatal: sin el origen, el espejo se queda solo en fichero.
+        Write-Warning "No se pudo registrar el origen de Event Log '$SourceName': $($_.Exception.Message). El espejo de eventos de seguridad quedara solo en fichero."
+    }
+}
+
 # V-02-07: la BD, los backups locales y las exportaciones .xlsx guardan datos
 # personales sin cifrado a nivel de columna. La unica defensa frente a robo del
 # disco o de una copia del volumen es el cifrado en reposo del propio volumen.
@@ -537,7 +596,8 @@ function Write-AppSettings {
         [string]$CertPassword,
         [string]$JwtSecret,
         [string]$WatchdogSecret,
-        [string]$RlsContextSecret
+        [string]$RlsContextSecret,
+        [string]$AuditSigningKey
     )
 
     $stateFile = Join-Path $InstallPath "watchdog-state.json"
@@ -546,6 +606,7 @@ function Write-AppSettings {
     $exportPath = Join-Path $InstallPath "exports"
     $apiTarget = Join-Path $InstallPath "api"
     $dataProtectionKeysPath = Join-Path $env:ProgramData "AtlasBalance\keys"
+    $securityLogPath = Join-Path $env:ProgramData "AtlasBalance\logs\security"
     # V-02-05 (CONFIG-002): anadir sslmode=require a la connection string cuando el
     # host NO es localhost. Para localhost (caso comun) el SSL es opcional.
     $sslMode = if ($DbHost -eq "localhost" -or $DbHost -eq "127.0.0.1") { "" } else { ";sslmode=require" }
@@ -596,6 +657,25 @@ function Write-AppSettings {
             # nueva; la persistencia la gestiona Actualizar-AtlasBalance.ps1
             # para instalaciones existentes.
             RlsContextSecret = $RlsContextSecret
+            # V-02.07: clave con la que se firma cada fila de AUDITORIAS. Tiene
+            # que ser distinta de JwtSettings:Secret y de RlsContextSecret: si se
+            # comparten, comprometer una permite forjar auditoria con firma
+            # valida y el rastro deja de servir como prueba.
+            AuditSigningKey = $AuditSigningKey
+            MirrorToWindowsEventLog = $true
+            Alertas = [ordered]@{
+                Habilitado = $true
+                # Vacio = se avisa a todos los usuarios con rol ADMIN activos.
+                DestinatariosEmail = @()
+                # Opt-in. Es un secreto: quien tenga la URL puede publicar en el
+                # canal. Rellenar a mano tras la instalacion si se quiere Slack.
+                SlackWebhookUrl = ""
+            }
+        }
+        Auditoria = [ordered]@{
+            # V-02.07: sube de 28 a 365 dias. El suelo real (90) lo impone el
+            # trigger append-only de la base de datos.
+            RetentionDays = 365
         }
         ForwardedHeaders = [ordered]@{
             KnownProxies = $forwardedKnownProxies
@@ -640,6 +720,9 @@ function Write-AppSettings {
                     Hangfire = "Warning"
                 }
             }
+            # V-02.07: los eventos de seguridad ademas van a su propio fichero,
+            # con retencion mas larga y ACL propia (ver Protect-SecurityLogDirectory).
+            SecurityFilePath = Join-Path $securityLogPath "atlas-security-.log"
         }
         AllowedHosts = $allowedHosts
     }
@@ -678,6 +761,8 @@ function Write-AppSettings {
     Protect-SecretFile -Path $apiSettingsPath
     Protect-SecretFile -Path $watchdogSettingsPath
     Protect-SecretDirectory -Path $dataProtectionKeysPath
+    Protect-SecurityLogDirectory -Path $securityLogPath
+    Register-SecurityEventLogSource
 }
 
 function Install-OrReplaceService {
@@ -928,6 +1013,9 @@ $jwtSecret = New-RandomSecret 64
 # genera aleatorio y se persiste en el appsettings efectivo durante la
 # generacion de configuracion mas abajo.
 $rlsContextSecret = New-RandomSecret 64
+# V-02.07: clave de firma de AUDITORIAS, independiente de JWT y de RLS por el
+# mismo motivo: comprometer una no puede permitir forjar el rastro de auditoria.
+$auditSigningKey = New-RandomSecret 64
 $watchdogSecret = New-RandomSecret 64
 $certPassword = New-RandomSecret 40
 
@@ -999,7 +1087,8 @@ Write-AppSettings `
     -CertPassword $effectiveCertPassword `
     -JwtSecret $jwtSecret `
     -WatchdogSecret $watchdogSecret `
-    -RlsContextSecret $rlsContextSecret
+    -RlsContextSecret $rlsContextSecret `
+    -AuditSigningKey $auditSigningKey
 
 $apiExe = Join-Path $apiPath "AtlasBalance.API.exe"
 $watchdogExe = Join-Path $watchdogPath "AtlasBalance.Watchdog.exe"

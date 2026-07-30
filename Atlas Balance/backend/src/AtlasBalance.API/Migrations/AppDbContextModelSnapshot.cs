@@ -124,7 +124,7 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnName("columna_nombre");
 
                     b.Property<string>("DetallesJson")
-                        .HasColumnType("jsonb")
+                        .HasColumnType("json")
                         .HasColumnName("detalles_json");
 
                     b.Property<Guid?>("EntidadId")
@@ -135,9 +135,32 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("text")
                         .HasColumnName("entidad_tipo");
 
+                    b.Property<string>("Firma")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("firma");
+
                     b.Property<IPAddress>("IpAddress")
                         .HasColumnType("inet")
                         .HasColumnName("ip_address");
+
+                    b.Property<string>("Origen")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("origen");
+
+                    b.Property<long>("Secuencia")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("secuencia");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Secuencia"));
+
+                    b.Property<string>("SessionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("session_id");
 
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp with time zone")
@@ -147,6 +170,11 @@ namespace AtlasBalance.API.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("tipo_accion");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("user_agent");
 
                     b.Property<Guid?>("UsuarioId")
                         .HasColumnType("uuid")
@@ -163,6 +191,9 @@ namespace AtlasBalance.API.Migrations
                     b.HasKey("Id")
                         .HasName("pk_auditorias");
 
+                    b.HasAlternateKey("Secuencia")
+                        .HasName("ak_auditorias_secuencia");
+
                     b.HasIndex("EntidadId")
                         .HasDatabaseName("ix_auditorias_entidad_id");
 
@@ -171,6 +202,12 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("TipoAccion")
                         .HasDatabaseName("ix_auditorias_tipo_accion");
+
+                    b.HasIndex("IpAddress", "Timestamp")
+                        .HasDatabaseName("ix_auditorias_ip_address_timestamp");
+
+                    b.HasIndex("TipoAccion", "Timestamp")
+                        .HasDatabaseName("ix_auditorias_tipo_accion_timestamp");
 
                     b.HasIndex("UsuarioId", "Timestamp")
                         .HasDatabaseName("ix_auditorias_usuario_id_timestamp");
@@ -2232,6 +2269,11 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("security_stamp");
 
+                    b.Property<string>("SessionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("session_id");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasColumnType("text")
@@ -2246,6 +2288,9 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("ExpiraEn")
                         .HasDatabaseName("ix_refresh_tokens_expira_en");
+
+                    b.HasIndex("SessionId")
+                        .HasDatabaseName("ix_refresh_tokens_session_id");
 
                     b.HasIndex("TokenHash")
                         .IsUnique()

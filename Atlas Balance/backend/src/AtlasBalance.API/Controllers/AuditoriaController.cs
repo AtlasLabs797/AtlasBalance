@@ -1,4 +1,8 @@
+using System.Globalization;
+using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Services;
@@ -19,10 +23,68 @@ public sealed class AuditoriaController : ControllerBase
     private const int MaxExportRows = 50_000;
 
     private readonly AppDbContext _db;
+    private readonly IAuditIntegrityService _integridad;
+    private readonly IAuditService _auditService;
+    private readonly IAuditSigner _auditSigner;
 
-    public AuditoriaController(AppDbContext db)
+    public AuditoriaController(
+        AppDbContext db,
+        IAuditIntegrityService integridad,
+        IAuditService auditService,
+        IAuditSigner auditSigner)
     {
         _db = db;
+        _integridad = integridad;
+        _auditService = auditService;
+        _auditSigner = auditSigner;
+    }
+
+    /// <summary>
+    /// Verifica firmas y continuidad de secuencia de AUDITORIAS.
+    ///
+    /// Sin rango cubre la tabla entera. Con rango, los huecos internos siguen
+    /// siendo senal fiable, pero no se puede concluir nada sobre los bordes: la
+    /// primera y la ultima fila del rango son puntos de corte arbitrarios, no
+    /// extremos de la secuencia global.
+    /// </summary>
+    [HttpGet("integridad")]
+    public async Task<IActionResult> Integridad(
+        [FromQuery] DateOnly? fechaDesde = null,
+        [FromQuery] DateOnly? fechaHasta = null,
+        CancellationToken ct = default)
+    {
+        var desde = fechaDesde?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var hasta = fechaHasta?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var resultado = await _integridad.VerificarAsync(desde, hasta, ct);
+
+        // La verificacion se audita siempre: es una accion de admin sobre datos
+        // sensibles. Si sale mal, con el tipo de accion que dispara alerta y
+        // espejo al Event Log.
+        await _auditService.LogAsync(
+            GetCurrentUserId(),
+            resultado.Integra ? "AUDITORIA_INTEGRIDAD_OK" : AuditActions.AuditoriaIntegridadFallida,
+            "AUDITORIAS",
+            null,
+            HttpContext,
+            JsonSerializer.Serialize(new
+            {
+                filas_examinadas = resultado.FilasExaminadas,
+                firmas_invalidas = resultado.FirmasInvalidas,
+                filas_faltantes = resultado.FilasFaltantes,
+                sin_firma = resultado.SinFirma,
+                rango_desde = resultado.RangoDesdeUtc,
+                rango_hasta = resultado.RangoHastaUtc
+            }),
+            ct);
+
+        return Ok(resultado);
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        return Guid.TryParse(raw, out var parsed) ? parsed : null;
     }
 
     [HttpGet]
@@ -49,6 +111,7 @@ public sealed class AuditoriaController : ControllerBase
             .Select(x => new RawAuditoriaRow
             {
                 Id = x.Id,
+                Secuencia = x.Secuencia,
                 Timestamp = x.Timestamp,
                 UsuarioId = x.UsuarioId,
                 TipoAccion = x.TipoAccion,
@@ -58,7 +121,12 @@ public sealed class AuditoriaController : ControllerBase
                 ColumnaNombre = x.ColumnaNombre,
                 ValorAnterior = x.ValorAnterior,
                 ValorNuevo = x.ValorNuevo,
+                IpAddressRaw = x.IpAddress,
                 IpAddress = x.IpAddress != null ? x.IpAddress.ToString() : null,
+                UserAgent = x.UserAgent,
+                SessionId = x.SessionId,
+                Origen = x.Origen,
+                Firma = x.Firma,
                 DetallesJson = x.DetallesJson
             })
             .ToListAsync(ct);
@@ -144,6 +212,7 @@ public sealed class AuditoriaController : ControllerBase
             .Select(x => new RawAuditoriaRow
             {
                 Id = x.Id,
+                Secuencia = x.Secuencia,
                 Timestamp = x.Timestamp,
                 UsuarioId = x.UsuarioId,
                 TipoAccion = x.TipoAccion,
@@ -153,7 +222,12 @@ public sealed class AuditoriaController : ControllerBase
                 ColumnaNombre = x.ColumnaNombre,
                 ValorAnterior = x.ValorAnterior,
                 ValorNuevo = x.ValorNuevo,
+                IpAddressRaw = x.IpAddress,
                 IpAddress = x.IpAddress != null ? x.IpAddress.ToString() : null,
+                UserAgent = x.UserAgent,
+                SessionId = x.SessionId,
+                Origen = x.Origen,
+                Firma = x.Firma,
                 DetallesJson = x.DetallesJson
             })
             .ToListAsync(ct);
@@ -161,10 +235,11 @@ public sealed class AuditoriaController : ControllerBase
         var rows = await MapRows(rawRows, ct);
 
         var sb = new StringBuilder();
-        sb.AppendLine("timestamp,usuario,tipo_accion,entidad_tipo,entidad_id,cuenta,titular,celda_referencia,columna_nombre,valor_anterior,valor_nuevo,ip_address");
+        sb.AppendLine("secuencia,timestamp,usuario,tipo_accion,entidad_tipo,entidad_id,cuenta,titular,celda_referencia,columna_nombre,valor_anterior,valor_nuevo,ip_address,origen,session_id,user_agent,firma_valida");
         foreach (var row in rows)
         {
             sb.AppendLine(string.Join(",",
+                Csv(row.Secuencia.ToString(CultureInfo.InvariantCulture)),
                 Csv(row.Timestamp.ToString("dd/MM/yyyy HH:mm:ss")),
                 Csv(row.UsuarioNombre),
                 Csv(row.TipoAccion),
@@ -176,7 +251,13 @@ public sealed class AuditoriaController : ControllerBase
                 Csv(row.ColumnaNombre),
                 Csv(row.ValorAnterior),
                 Csv(row.ValorNuevo),
-                Csv(row.IpAddress)));
+                Csv(row.IpAddress),
+                Csv(row.Origen),
+                Csv(row.SessionId),
+                Csv(row.UserAgent),
+                // "sin_firma" y no vacio: en un export forense hay que poder
+                // distinguir "no verificable" de "no verificado".
+                Csv(row.FirmaValida is null ? "sin_firma" : row.FirmaValida.Value ? "si" : "NO")));
         }
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
@@ -345,6 +426,7 @@ public sealed class AuditoriaController : ControllerBase
             list.Add(new AuditoriaListItemResponse
             {
                 Id = row.Id,
+                Secuencia = row.Secuencia,
                 Timestamp = row.Timestamp,
                 UsuarioId = row.UsuarioId,
                 UsuarioNombre = row.UsuarioId.HasValue && usuariosMap.TryGetValue(row.UsuarioId.Value, out var usuarioNombre)
@@ -362,6 +444,14 @@ public sealed class AuditoriaController : ControllerBase
                 ValorAnterior = row.ValorAnterior,
                 ValorNuevo = row.ValorNuevo,
                 IpAddress = row.IpAddress,
+                UserAgent = row.UserAgent,
+                SessionId = row.SessionId,
+                Origen = row.Origen,
+                // null en filas pre-V-02.07: no llevan firma, asi que no son
+                // verificables. Distinto de false, que si seria una alarma.
+                FirmaValida = string.IsNullOrEmpty(row.Firma)
+                    ? null
+                    : _auditSigner.Verificar(row.ToEntidad()),
                 DetallesJson = row.DetallesJson
             });
         }
@@ -397,6 +487,7 @@ public sealed class AuditoriaController : ControllerBase
     private sealed class RawAuditoriaRow
     {
         public Guid Id { get; set; }
+        public long Secuencia { get; set; }
         public DateTime Timestamp { get; set; }
         public Guid? UsuarioId { get; set; }
         public string TipoAccion { get; set; } = string.Empty;
@@ -406,7 +497,37 @@ public sealed class AuditoriaController : ControllerBase
         public string? ColumnaNombre { get; set; }
         public string? ValorAnterior { get; set; }
         public string? ValorNuevo { get; set; }
+        public System.Net.IPAddress? IpAddressRaw { get; set; }
         public string? IpAddress { get; set; }
+        public string? UserAgent { get; set; }
+        public string? SessionId { get; set; }
+        public string Origen { get; set; } = string.Empty;
+        public string? Firma { get; set; }
         public string? DetallesJson { get; set; }
+
+        /// <summary>
+        /// Reconstruye la entidad para poder validar la firma sin volver a la BD.
+        /// Debe incluir TODOS los campos que cubre AuditSigner.Canonicalizar.
+        /// </summary>
+        public Models.Auditoria ToEntidad() => new()
+        {
+            Id = Id,
+            Secuencia = Secuencia,
+            UsuarioId = UsuarioId,
+            TipoAccion = TipoAccion,
+            EntidadTipo = EntidadTipo,
+            EntidadId = EntidadId,
+            CeldaReferencia = CeldaReferencia,
+            ColumnaNombre = ColumnaNombre,
+            ValorAnterior = ValorAnterior,
+            ValorNuevo = ValorNuevo,
+            Timestamp = Timestamp,
+            IpAddress = IpAddressRaw,
+            UserAgent = UserAgent,
+            SessionId = SessionId,
+            Origen = Origen,
+            Firma = Firma,
+            DetallesJson = DetallesJson
+        };
     }
 }

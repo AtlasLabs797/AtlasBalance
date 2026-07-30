@@ -55,7 +55,7 @@ public sealed class BackupServiceTests
             var service = new BackupService(
                 db,
                 new ConfigurationBuilder().Build(),
-                new AuditService(db),
+                TestAuditService.Create(db),
                 new ThrowingGoogleDriveBackupService(),
                 NullLogger<BackupService>.Instance);
 

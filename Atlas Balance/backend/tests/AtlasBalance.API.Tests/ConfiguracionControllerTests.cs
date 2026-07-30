@@ -407,7 +407,7 @@ public sealed class ConfiguracionControllerTests
         var controller = new ConfiguracionController(
             db,
             new NoOpEmailService(),
-            new AuditService(db),
+            TestAuditService.Create(db),
             NullLogger<ConfiguracionController>.Instance,
             new PlainTextSecretProtector(),
             new SmtpTestRateLimit());
@@ -442,6 +442,16 @@ public sealed class ConfiguracionControllerTests
             => Task.CompletedTask;
 
         public Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        // V-02.07: canal de alertas de seguridad, no ejercitado en estas pruebas.
+        public Task SendSecurityAlertAsync(
+            IReadOnlyList<string> recipients,
+            string regla,
+            string severidad,
+            string resumen,
+            IReadOnlyList<string> detalles,
+            CancellationToken cancellationToken)
             => Task.CompletedTask;
 
         public Task SendPlazoFijoVencimientoAsync(

@@ -234,7 +234,7 @@ public sealed class FormatosImportacionControllerTests
             new Claim(ClaimTypes.Role, nameof(RolUsuario.ADMIN))
         ], "TestAuth");
 
-        return new FormatosImportacionController(db, new AuditService(db))
+        return new FormatosImportacionController(db, TestAuditService.Create(db))
         {
             ControllerContext = new ControllerContext
             {

@@ -412,7 +412,7 @@ public sealed class CuentasControllerTests
 
     private static CuentasController BuildController(AppDbContext db, Guid userId, RolUsuario role = RolUsuario.ADMIN)
     {
-        var controller = new CuentasController(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())), new AuditService(db), new NoOpPlazoFijoService());
+        var controller = new CuentasController(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())), TestAuditService.Create(db), new NoOpPlazoFijoService());
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

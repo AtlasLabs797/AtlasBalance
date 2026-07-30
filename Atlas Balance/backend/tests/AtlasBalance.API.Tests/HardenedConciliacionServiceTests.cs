@@ -52,7 +52,7 @@ public class HardenedConciliacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var audit = new AuditService(db);
+        var audit = TestAuditService.Create(db);
         var service = new HardenedConciliacionService(new ConciliacionService(db, audit), db, audit);
         await service.CrearMovimientoEsperadoAsync(
             userId,
@@ -101,7 +101,7 @@ public class HardenedConciliacionServiceTests
         db.PermisosUsuario.Add(new PermisoUsuario { Id = Guid.NewGuid(), UsuarioId = userId, CuentaId = cuenta.Id, PuedeConciliar = true });
         await db.SaveChangesAsync();
 
-        var audit = new AuditService(db);
+        var audit = TestAuditService.Create(db);
         var service = new HardenedConciliacionService(new ConciliacionService(db, audit), db, audit);
         foreach (var movimiento in new[]
         {

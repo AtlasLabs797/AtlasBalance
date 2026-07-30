@@ -660,6 +660,33 @@ function Update-ProductionConfigDefaults {
             $changed = $true
         }
     }
+    # V-02.07: misma politica para Security:AuditSigningKey, la clave con la que
+    # se firma cada fila de AUDITORIAS. Solo se genera si falta o es debil; NUNCA
+    # se rota en una actualizacion, porque rotarla invalidaria la verificacion de
+    # todas las filas ya firmadas y /api/auditoria/integridad las reportaria como
+    # no verificables. Tambien se exige distinta de JWT y de RLS: si coincidiera,
+    # comprometer cualquiera de las dos permitiria forjar auditoria.
+    $auditHasProperty = $apiConfig.Security.PSObject.Properties.Name -contains "AuditSigningKey"
+    $auditCurrent = if ($auditHasProperty) { [string]$apiConfig.Security.AuditSigningKey } else { "" }
+    $rlsEffective = [string]$apiConfig.Security.RlsContextSecret
+    $needsAuditKey = [string]::IsNullOrWhiteSpace($auditCurrent) `
+        -or $auditCurrent -eq $jwtCurrent `
+        -or $auditCurrent -eq $rlsEffective `
+        -or $auditCurrent.Length -lt 32
+    if ($needsAuditKey) {
+        $newAuditKey = New-RandomSecret 64
+        if ($auditHasProperty) {
+            $apiConfig.Security.AuditSigningKey = $newAuditKey
+        } else {
+            $apiConfig.Security | Add-Member -NotePropertyName "AuditSigningKey" -NotePropertyValue $newAuditKey -Force
+        }
+        $changed = $true
+        Write-Host "Security:AuditSigningKey generado y persistido en appsettings.Production.json (no se imprime)." -ForegroundColor Cyan
+        Write-Host "  Las filas de AUDITORIAS anteriores a esta actualizacion no llevan firma: se reportan como 'sin firma', no como manipuladas." -ForegroundColor DarkGray
+    }
+
+    $changed = (Set-JsonDefault -Object $apiConfig.Security -Name "MirrorToWindowsEventLog" -Value $true) -or $changed
+
     if (-not [string]::IsNullOrWhiteSpace($appBaseUrl)) {
         $changed = (Set-JsonDefault -Object $apiConfig.App -Name "BaseUrl" -Value $appBaseUrl) -or $changed
     }

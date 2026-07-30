@@ -171,6 +171,12 @@
           "Serilog": "4.0.0"
         }
       },
+      "System.Diagnostics.EventLog": {
+        "type": "Direct",
+        "requested": "[8.0.1, )",
+        "resolved": "8.0.1",
+        "contentHash": "n1ZP7NM2Gkn/MgD8+eOT5MulMj6wfeQMNS2Pizvq5GHCZfjlFMXV2irQlQmJhwA2VABC57M0auudO89Iu2uRLg=="
+      },
       "BouncyCastle.Cryptography": {
         "type": "Transitive",
         "resolved": "2.6.2",
@@ -803,11 +809,6 @@
           "System.Composition.Runtime": "6.0.0"
         }
       },
-      "System.Diagnostics.EventLog": {
-        "type": "Transitive",
-        "resolved": "8.0.1",
-        "contentHash": "n1ZP7NM2Gkn/MgD8+eOT5MulMj6wfeQMNS2Pizvq5GHCZfjlFMXV2irQlQmJhwA2VABC57M0auudO89Iu2uRLg=="
-      },
       "System.Formats.Asn1": {
         "type": "Transitive",
         "resolved": "8.0.1",
@@ -874,7 +875,8 @@
     },
     "net8.0/win-x64": {
       "System.Diagnostics.EventLog": {
-        "type": "Transitive",
+        "type": "Direct",
+        "requested": "[8.0.1, )",
         "resolved": "8.0.1",
         "contentHash": "n1ZP7NM2Gkn/MgD8+eOT5MulMj6wfeQMNS2Pizvq5GHCZfjlFMXV2irQlQmJhwA2VABC57M0auudO89Iu2uRLg=="
       },

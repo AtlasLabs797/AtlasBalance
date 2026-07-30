@@ -609,3 +609,69 @@ El motivo es simple: un backup contiene toda la base de datos, con numeros de cu
 Si necesitas que las copias acaben en un NAS o en un servidor de la oficina, monta ese recurso como una unidad de red con su letra (por ejemplo `Z:`) y usa esa letra en la ruta. Para copias fuera de la oficina, la via recomendada sigue siendo la integracion de Google Drive, que ya cifra el archivo antes de subirlo.
 
 Nada mas cambia: el resto del funcionamiento de backups y exportaciones es identico.
+
+## Avisos de seguridad y estado del sistema V-02.07
+
+Solo para administradores.
+
+### Avisos automaticos de seguridad
+
+Atlas Balance vigila la actividad y avisa cuando detecta algo raro. Los avisos
+llegan por tres vias a la vez:
+
+- La campana de notificaciones de la barra superior.
+- Un correo, si el servidor de correo esta configurado. Por defecto va a todos
+  los administradores activos.
+- Slack, si el tecnico lo ha configurado (no viene activado).
+
+Los seis avisos que existen:
+
+| Aviso | Que significa |
+|-------|---------------|
+| Muchos fallos de acceso a una cuenta | Alguien esta probando contrasenas contra una cuenta concreta. |
+| Una direccion tocando muchas cuentas | Un mismo equipo esta probando el acceso a muchas cuentas de golpe. |
+| Descarga masiva de datos | Alguien ha pedido muchisimos registros de una vez, o esta haciendo cientos de consultas seguidas. |
+| Acceso desde un sitio nuevo | Un usuario ha entrado desde un equipo o red que nunca habia usado. Puede ser normal (teletrabajo, portatil nuevo) o no. |
+| Cambios de contrasena repetidos | Se ha cambiado la contrasena de la misma cuenta varias veces en pocos minutos. |
+| Muchos accesos denegados | Se estan rechazando muchas peticiones, muy por encima de lo habitual. |
+
+**Que hacer cuando llega un aviso.** Casi todos tienen explicacion inocente: un
+companero que ha olvidado la contrasena, alguien trabajando desde casa, una
+exportacion grande. Lo importante es confirmarlo con la persona implicada. Si
+nadie reconoce la actividad, cambia la contrasena de esa cuenta y avisa al
+tecnico.
+
+Un mismo aviso no se repite durante una hora, para que un incidente largo no
+llene el buzon de correos identicos.
+
+### Que se guarda de cada accion
+
+La pantalla de Auditoria registra, para cada accion sobre datos sensibles:
+
+- Quien la hizo y cuando.
+- Que cambio exactamente (valor anterior y valor nuevo).
+- Desde que direccion de red y con que navegador.
+- Un identificador de sesion, que permite seguir todo lo que hizo una persona
+  desde que entro hasta que salio.
+- Si la accion entro por la aplicacion web o directamente por la API de
+  integracion.
+
+**Este registro no se puede modificar ni borrar**, ni siquiera desde la propia
+aplicacion. Cada linea va firmada, asi que si alguien intentara alterarla desde
+la base de datos, el sistema lo detecta. Hay una comprobacion automatica cada
+madrugada que avisa si encuentra algo.
+
+Se conserva **un ano** (antes eran 28 dias). Las lineas anteriores a esta version
+no llevan firma: aparecen como "sin firma", que no es un problema, solo significa
+que se crearon antes de que existiera el mecanismo.
+
+### Estado del sistema
+
+El tecnico dispone de una comprobacion de estado que verifica de verdad que la
+base de datos responde, que queda espacio en disco y que la aplicacion no va
+lenta. Si algo esta mal, llega un aviso por los mismos canales que los de
+seguridad.
+
+Si el disco baja del 15% libre aparece un aviso, y por debajo del 5% se considera
+critico: a partir de ahi los backups y los informes pueden empezar a fallar.
+

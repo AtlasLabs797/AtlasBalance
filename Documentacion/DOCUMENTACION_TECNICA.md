@@ -5405,3 +5405,347 @@ unavailable`), sin acceso a shell, subagentes ni fetch web. Los cambios
 estan escritos y revisados a mano, pero sin compilar ni testear. Comandos a
 ejecutar: `dotnet build AtlasBalance.sln -p:UseAppHost=false` y
 `dotnet test --filter "FullyQualifiedName~TransportSecurityTests"`.
+
+---
+
+## V-02.07 - Logging, monitorizacion y trazas de auditoria
+
+Bloque de observabilidad de seguridad. Punto de partida honesto: la mitad de lo
+que se pedia ya existia (auditoria automatica de 28 entidades con valores
+antes/despues, eventos de login, Serilog con niveles y rotacion, redaccion de
+PII en logs). Lo que faltaba eran los agujeros que se listan abajo.
+
+### 1. Auditoria: contexto completo, firmada y append-only de verdad
+
+**Campos nuevos en `AUDITORIAS`** (migracion
+`20260730090000_V0207AuditoriaAppendOnly`):
+
+| Columna | Para que |
+|---------|----------|
+| `secuencia` | `bigint` identity de Postgres. Un hueco = filas borradas. |
+| `firma` | HMAC-SHA256 del contenido de la fila. Detecta alteracion e insercion. |
+| `user_agent` | Ya llegaba al login y se tiraba. Ahora se guarda (256 chars). |
+| `session_id` | Id de sesion de login, estable entre rotaciones del access token. |
+| `origen` | UI / API / JOB / SISTEMA / DESCONOCIDO. |
+
+`detalles_json` pasa de `jsonb` a `json`. **No es cosmetico:** `jsonb` normaliza
+el texto (reordena claves, quita espacios), asi que la cadena releida no
+coincidiria con la firmada y toda la auditoria se reportaria como manipulada.
+Nada en el codigo usa operadores `jsonb` sobre esa columna.
+
+**Id de sesion.** Se genera en el login (`AuthService.GenerateSessionId`, 128
+bits base64url), se guarda en `REFRESH_TOKENS.session_id` y se **copia en cada
+rotacion**, asi que identifica la sesion completa y no un access token de una
+hora. Viaja al JWT como claim `sid` y de ahi a cada fila de auditoria.
+
+**Firma (`Services/AuditSigner.cs`).** HMAC-SHA256 con
+`Security:AuditSigningKey`, obligatoria y distinta de `JwtSettings:Secret` y de
+`Security:RlsContextSecret` fuera de Development (si se comparten, comprometer
+una permite forjar auditoria con firma valida). Serializacion canonica con
+**prefijo de longitud por campo**: sin el, ("ab","c") y ("a","bc") darian el
+mismo payload y se podria mover contenido entre campos sin invalidar la firma.
+
+Dos detalles que costarian caros si se olvidan, y por eso tienen test propio:
+
+- El timestamp se trunca a **microsegundos** antes de firmar y de guardar.
+  Postgres `timestamptz` guarda microsegundos y `DateTime` tiene 100 ns; sin
+  truncar, la firma calculada antes del INSERT no valida al releer la fila.
+- La IP se normaliza (IPv4 mapeada en IPv6 hacia IPv4), porque `inet` puede
+  devolverla en cualquiera de las dos formas.
+
+La firma **no cubre `secuencia`** a proposito: Postgres la asigna durante el
+INSERT y firmarla exigiria un UPDATE posterior, que el propio mecanismo
+append-only bloquea. El borrado lo detecta la continuidad de la secuencia.
+
+**Append-only.** Aqui hay que corregir el diagnostico inicial: `AUDITORIAS` ya
+era de facto append-only desde `20260501120000_EnableRowLevelSecurity`, que le
+puso `FORCE ROW LEVEL SECURITY` con politicas de SELECT e INSERT y ninguna de
+UPDATE ni DELETE. El problema es que lo hacia **en silencio** (ver el bug del
+job de retencion en `LOG_ERRORES_INCIDENCIAS.md`). Ahora hay cuatro capas:
+
+1. **Privilegios.** `Program.GrantRuntimeDatabasePrivileges` hace
+   `REVOKE UPDATE, DELETE, TRUNCATE ON "AUDITORIAS"` al rol de runtime. Como
+   `atlas_balance_app` **no es el propietario** (lo es `atlas_balance_owner`, que
+   solo se usa para migraciones), no puede reconcederselo, ni quitar el trigger,
+   ni alterar la tabla. Falla con error de privilegios, no en silencio.
+2. **Trigger `trg_auditorias_append_only`.** Bloquea todo UPDATE y el DELETE de
+   filas de menos de 90 dias, incluso por la via sancionada. El suelo esta en el
+   trigger y no solo en la funcion de purga, para que falsificar la marca de
+   purga no sirva de nada.
+3. **Purga.** Politica `auditorias_delete` mas
+   `atlas_security.purgar_auditorias()` (`SECURITY DEFINER`, `search_path` fijo,
+   suelo de 90 dias validado dentro, `REVOKE ALL ... FROM PUBLIC`). Unica via de
+   borrado.
+4. **Deteccion.** Firma, secuencia y espejo externo, para lo que la prevencion no
+   alcance.
+
+**Donde NO alcanza, sin adornos:** quien tenga las credenciales de
+`atlas_balance_owner` o superusuario de PostgreSQL puede hacer lo que quiera.
+Contra eso solo queda la capa 4. Igual que un RCE que consiga SYSTEM en el
+servidor: el servicio corre como LocalSystem, asi que puede borrar el fichero de
+log de seguridad y vaciar el Windows Event Log. **La unica defensa real contra
+ese escenario es sacar los logs de la maquina** (ver seccion 5).
+
+**Verificacion.** `GET /api/auditoria/integridad` (ADMIN) y el job diario
+`verificacion-integridad-auditoria` (04:05, despues de la purga de las 03:15).
+Recorre por lotes, valida firmas y busca huecos de secuencia. Las filas
+anteriores a V-02.07 se cuentan como *sin firma*, no como invalidas: contarlas
+como manipuladas dispararia una alarma falsa en cada instalacion que se
+actualice y el operador aprenderia a ignorarla.
+
+> Rotar `Security:AuditSigningKey` invalida la verificacion de todo lo ya
+> firmado. No es manipulacion, pero se ve igual. `Actualizar-AtlasBalance.ps1`
+> **nunca** la rota: solo la genera si falta o es debil.
+
+**Retencion: 28 a 365 dias** (`Auditoria:RetentionDays`). 28 dias era incoherente
+con lo que esta tabla es en tesoreria multi-banco: el rastro de quien movio
+dinero o cambio permisos tiene que sobrevivir a un cierre trimestral y a una
+investigacion que empieza semanas despues. El suelo real (90 dias) lo impone la
+base de datos, no la configuracion.
+
+`AUDITORIA_INTEGRACIONES` se queda en 28 dias
+(`Auditoria:IntegrationRetentionDays`, suelo de 7 en la BD): es un log de
+peticiones HTTP, de volumen alto y valor forense bajo. Recibe el mismo
+tratamiento de purga (politica `auditoria_integraciones_delete` mas
+`atlas_security.purgar_auditorias_integracion()`, migracion
+`20260730100000_V0207AuditoriaIntegracionPurga`) porque arrastraba **el mismo
+bug de purga silenciosa**. No lleva trigger append-only: RLS ya impide el UPDATE
+y ahi no se firma ninguna fila, asi que solo anadiria ruido.
+
+> Barrido completo hecho al cerrar el bug: de las 23 tablas con `FORCE ROW LEVEL
+> SECURITY`, solo estas dos tenian el defecto. El resto declara politicas
+> `FOR ALL` o politicas explicitas de UPDATE/DELETE. `REFRESH_TOKENS` no tiene
+> RLS, luego `LimpiezaRefreshTokensJob` nunca estuvo afectado.
+
+Si la retencion configurada baja del suelo de la BD, la funcion lanza `23514`, el
+job lo registra como error y **no purga nada**: preferimos que la tabla crezca
+antes que perder rastro por una configuracion mal puesta.
+
+### 2. Fallos de autorizacion, acceso masivo y acciones admin
+
+`Middleware/SecurityAuditMiddleware.cs`. Antes habia ~40 `Forbid()` repartidos
+por los controladores y **ninguno dejaba rastro**: un usuario legitimo probando
+ids de cuentas ajenas era invisible.
+
+Se resuelve en middleware y no tocando los 40 sitios a proposito: cubre tambien
+los 403 del propio pipeline de autorizacion (roles, policies) y los de
+`CsrfMiddleware`, y los que anadan futuros endpoints sin que nadie se acuerde.
+
+- `AUTHZ_DENIED` (403) y `AUTHN_DENIED` (401). Los 401 de `/api/auth/login`,
+  `/api/auth/refresh-token`, `/api/auth/logout`, `/api/telemetria` y
+  `/api/health` se excluyen: son funcionamiento normal y el login ya audita sus
+  propios fallos con mas contexto.
+- `ACCESO_BULK` cuando `pageSize` supera `Security:Auditoria:UmbralAccesoBulk`
+  (100). **Limitacion consciente:** son filas *solicitadas*, no devueltas; contar
+  el cuerpo exigiria bufferizar cada respuesta. Como senal de intencion vale,
+  porque los endpoints paginados topan `pageSize` y pedir 5000 es deliberado.
+- **Deduplicacion** por (accion, usuario, IP, ruta) durante 60 s. Sin ella, un
+  bucle del frontend o un escaneo convierten `AUDITORIAS` en el vector de
+  denegacion de servicio en vez de la defensa. La clave incluye la ruta, asi que
+  un barrido sobre recursos distintos sigue generando una fila por recurso.
+- Auditar nunca puede romper la respuesta: va en `try/catch` con log de error.
+
+`POST /api/sistema/actualizar` (sustituye los binarios en produccion, la accion
+de admin con mas alcance de la app) pasa a auditarse como
+`SISTEMA_ACTUALIZACION_INICIADA`, aceptada o rechazada.
+
+### 3. Alertas de seguridad
+
+`Services/SecurityAlertService.cs`, job `alertas-seguridad` con la misma cadencia
+que la ventana (5 min por defecto), para que las ventanas se encadenen sin
+huecos. Todas las reglas trabajan sobre una unica foto de la ventana: con 4-8
+usuarios son decenas de filas y evita seis consultas con agrupaciones.
+
+| Regla | Dispara cuando |
+|-------|----------------|
+| `LOGIN_FALLIDOS_POR_CUENTA` | mas de 5 fallos sobre una cuenta en la ventana |
+| `IP_MULTIPLES_CUENTAS` | Una IP toca mas de 10 cuentas distintas |
+| `ACCESO_MASIVO` | Eventos `ACCESO_BULK`, o mas de 300 acciones de una sesion |
+| `IP_NUEVA_PARA_USUARIO` | Login desde una IP nunca usada por ese usuario |
+| `PASSWORD_RESETS_REPETIDOS` | mas de 3 cambios/reinicios sobre una cuenta |
+| `ERRORES_AUTH_SOBRE_LINEA_BASE` | 401/403 por encima de x3 la media de las 12 ventanas previas |
+
+Tres decisiones que conviene entender:
+
+- **"Pais nuevo" se sustituye por "IP nueva".** El requisito original pedia
+  detectar login desde un pais distinto. Aqui no hay GeoIP: la app es
+  on-premise, en LAN y sin salida garantizada a internet, asi que una base de
+  geolocalizacion seria una dependencia externa imposible de mantener
+  actualizada. La IP captura la misma senal en este despliegue. El primer login
+  de un usuario nunca alerta (sin historico no hay nada que comparar).
+- **Las reglas de barrido cuentan tambien el email probado**, no solo
+  `usuario_id`. Un credential stuffing no llega a autenticarse nunca, asi que
+  contar solo usuarios identificados lo dejaria invisible.
+- **La regla 6 tiene suelo absoluto** (`MinErroresAuthParaAlertar`, 20) ademas
+  del factor sobre la linea base. Sin el, una media historica de 0 convierte dos
+  errores en una alerta y el operador aprende a ignorarlas.
+
+**Enfriamiento de 60 min por (regla, sujeto).** Un ataque sostenido dispara la
+misma regla en cada pasada; sin esto serian correos cada 5 minutos durante horas.
+El estado de deduplicacion se consulta en `AUDITORIAS`, no en una cache en
+memoria, para que sobreviva a un reinicio del servicio justo cuando empieza un
+incidente.
+
+**Entrega** (`Services/AlertDispatcher.cs`, compartido con las alertas de salud).
+Orden deliberado:
+
+1. Fila en `AUDITORIAS` (`ALERTA_SEGURIDAD_DISPARADA`). Va primero porque es a la
+   vez el registro y el estado de deduplicacion de la siguiente pasada.
+2. `NOTIFICACIONES_ADMIN` tipo `SEGURIDAD` (campana del TopBar).
+3. Email (`Security:Alertas:DestinatariosEmail`; vacio = todos los ADMIN activos).
+4. Slack (`Security:Alertas:SlackWebhookUrl`, opt-in).
+
+Si 3 y 4 fallan, la alerta ya esta registrada y visible en la app: no se pierde.
+
+**Slack.** Solo se acepta `https://hooks.slack.com`; cualquier otra URL desactiva
+el canal con un error en el log (sin volcar la URL, que lleva el token). Timeout
+de 10 s. La URL es un secreto: va en `appsettings.Production.json`, nunca en la
+BD ni en la documentacion.
+
+### 4. Salud y metricas
+
+`/api/health` devolvia `{status:"healthy"}` constante: respondia OK con la base
+de datos caida y el disco lleno, que es **peor que no tener health check** porque
+da falsa garantia al watchdog. Se mantiene como sonda de vida (el proceso
+responde) y la comprobacion real vive en:
+
+- `GET /api/sistema/salud` (ADMIN): base de datos (`SELECT 1` con timeout de 5 s,
+  no `CanConnect`, que tiene exito contra una BD en recuperacion), espacio en
+  disco del volumen de logs/backups (aviso por debajo del 15%, no sano por debajo
+  del 5%) y limites del pool. Devuelve **503** si no esta sano, para que un
+  monitor externo lo detecte por codigo de estado.
+- `GET /api/sistema/metricas` (ADMIN): peticiones, 4xx, 5xx, p50/p95/max de
+  latencia en ventanas de 5 y 60 minutos, mas la ventana anterior para comparar.
+
+`Services/RequestMetrics.cs` mantiene los contadores **en memoria** (cubos de un
+minuto, 2 h de historico) y la latencia en un **histograma de cubos fijos**:
+memoria acotada pase lo que pase con el trafico. Los percentiles salen
+interpolados y son aproximados **por arriba**, que es el error seguro para una
+alerta. Se pierden al reiniciar, y es aceptable: lo que hay que conservar ya esta
+en `AUDITORIAS` y en los logs.
+
+`HealthAlertJob` (cada 5 min) avisa de: 5xx por encima del 5% con al menos 20
+peticiones, p95 x3 sobre la ventana anterior (con suelo de 250 ms), y cualquier
+comprobacion de salud en rojo. Usa el mismo despachador que las alertas de
+seguridad.
+
+### 5. Espejo fuera de la base de datos
+
+`Logging/SecurityEventLog.cs`. Existe porque la firma detecta alteracion y la
+secuencia detecta huecos, pero **borrar la cola de la tabla no deja hueco**.
+
+- Fichero propio (Serilog, categoria `AtlasBalance.Security`,
+  `Serilog:SecurityFilePath`), con retencion de 400 dias, por encima de los 365
+  de `AUDITORIAS` a proposito.
+- Windows Event Log (`Security:MirrorToWindowsEventLog`). El instalador registra
+  el origen `AtlasBalance`; si no esta, se avisa una vez y se sigue solo con
+  fichero.
+
+Solo se espejan eventos de seguridad, no la auditoria automatica de entidades:
+son miles de filas al dia y saturarian el Event Log sin aportar deteccion.
+
+**Limite real, ya dicho arriba:** el servicio corre como LocalSystem, asi que un
+RCE puede borrar el fichero y vaciar el Event Log. Una ACL de solo-anexar contra
+SYSTEM seria teatro, porque SYSTEM puede reescribir su propia ACL. Lo que si hace
+el instalador es quitar el acceso a usuarios normales del servidor (sin eso, el
+log hereda los permisos de `%ProgramData%`, donde `BUILTIN\Usuarios` tiene
+lectura, y cualquiera con sesion en la maquina puede leer quien entra y desde
+donde).
+
+**Para cerrar ese hueco de verdad hay que sacar los logs de la maquina.** Opciones
+que encajan con este despliegue, ordenadas por esfuerzo:
+
+1. **Reenvio de eventos de Windows (WEF)**, incluido en Windows Server, sin coste
+   ni dependencias. Se configura un colector en otra maquina y el servidor
+   reenvia el log `Application` filtrado por el origen `AtlasBalance`. Es la
+   opcion nativa y la mas facil de justificar en una auditoria.
+2. **Copia del fichero de seguridad a un recurso de red** con permiso de solo
+   escritura para la cuenta del servidor, mediante tarea programada.
+3. **Slack** ya saca las alertas de la maquina en tiempo real, aunque no el log
+   completo.
+
+### 6. Revision de fugas en logs
+
+Cuarto punto del encargo, con resultado: **limpio**. Grep de todos los
+`Log*(...)` con `password|token|secret|apikey|cookie|hash|credential|bearer`: 4
+coincidencias, todas falsos positivos (cuentan filas o registran fallos de HMAC
+sin volcar el valor). No hay logging de cuerpos de peticion completos.
+`LogScrubber` sigue cubriendo anti-inyeccion de logs y redaccion de email/IBAN, y
+se aplica tambien al User-Agent del espejo de seguridad. Los logs viven en
+`%ProgramData%\AtlasBalance\logs`, fuera del arbol estatico, luego no son
+accesibles por HTTP.
+
+### Configuracion nueva
+
+```jsonc
+"Security": {
+  "AuditSigningKey": "...",           // obligatoria fuera de Development
+  "MirrorToWindowsEventLog": true,
+  "Auditoria": { "UmbralAccesoBulk": 100, "VentanaDeduplicacionSegundos": 60 },
+  "Alertas": {
+    "Habilitado": true, "VentanaMinutos": 5, "EnfriamientoMinutos": 60,
+    "MaxLoginFallidosPorCuenta": 5, "MaxCuentasPorIp": 10,
+    "MaxPeticionesSecuenciales": 300, "DiasHistoricoIpConocida": 90,
+    "MaxPasswordResets": 3, "MinErroresAuthParaAlertar": 20,
+    "FactorSobreLineaBase": 3.0, "VentanasLineaBase": 12,
+    "DestinatariosEmail": [], "SlackWebhookUrl": ""
+  }
+},
+"Auditoria": { "RetentionDays": 365 },
+"Serilog": { "SecurityFilePath": "C:\\ProgramData\\AtlasBalance\\logs\\security\\atlas-security-.log" }
+```
+
+Los umbrales estan calibrados para este despliegue (LAN, 4-8 usuarios). Con
+cientos de usuarios habria que subirlos o el ruido enterraria las senales.
+
+### Jobs nuevos
+
+| Job | Cadencia |
+|-----|----------|
+| `alertas-seguridad` | cada `VentanaMinutos` (5 por defecto) |
+| `alertas-salud` | cada 5 min |
+| `verificacion-integridad-auditoria` | 04:05 diario |
+
+### Como configurar las notificaciones
+
+**Email.** Reutiliza el SMTP que la app ya tiene configurado en
+Configuracion > Sistema (`smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`,
+`smtp_from`). Si no hay SMTP, las alertas siguen quedando en la auditoria y en la
+campana de notificaciones. Para dirigir los avisos a un buzon concreto en vez de
+a todos los administradores, rellena
+`Security:Alertas:DestinatariosEmail` en `appsettings.Production.json`:
+
+```jsonc
+"DestinatariosEmail": [ "seguridad@empresa.com", "it@empresa.com" ]
+```
+
+**Slack.** En `api.slack.com/apps` se crea una app para el workspace, se activa
+*Incoming Webhooks*, se anade un webhook al canal deseado y se pega la URL en
+`Security:Alertas:SlackWebhookUrl`. Reiniciar el servicio. La URL es un secreto:
+`appsettings.Production.json` ya esta protegido por ACL (solo Administradores y
+SYSTEM), no la copies a ningun documento ni a la base de datos.
+
+### Herramientas de monitorizacion recomendadas para este despliegue
+
+Windows Server on-premise, LAN, sin garantia de salida a internet. Eso descarta
+casi todo el SaaS habitual (Datadog, New Relic, Sentry cloud) y hace que la
+respuesta razonable sea gratuita y local:
+
+| Necesidad | Herramienta | Coste | Por que esta |
+|-----------|-------------|-------|--------------|
+| Uptime y pagina de estado | **Uptime Kuma** (Docker) | Gratis | Sondea `/api/sistema/salud`, entiende el 503, y trae pagina de estado y avisos a Slack/email/Telegram sin configurar nada mas. Ya hay Docker en el entorno de desarrollo. |
+| Metricas y graficas | **Prometheus + Grafana** | Gratis | Solo si se quiere historico largo. Requiere exponer las metricas en formato Prometheus, que hoy no se hace: `/api/sistema/metricas` devuelve JSON. Es trabajo adicional, no algo que ya funcione. |
+| Logs centralizados | **Reenvio de eventos de Windows (WEF)** | Incluido | Nativo, sin dependencias, y es lo que saca los eventos de seguridad de la maquina comprometible. Primera opcion. |
+| Logs con busqueda | **Grafana Loki** | Gratis | Si el volumen crece y hace falta buscar. Mas pesado de operar que WEF. |
+| Errores de aplicacion | **Sentry self-hosted** | Gratis | Solo si se quiere agrupacion de excepciones con stack trace. Para 4-8 usuarios, el log de Serilog mas las alertas de tasa de error suelen bastar. |
+
+Recomendacion concreta si hay que elegir una sola cosa: **Uptime Kuma apuntando a
+`/api/sistema/salud`**, mas el reenvio de eventos de Windows. Cubre uptime,
+pagina de estado, notificaciones y la copia de los logs fuera de la maquina, sin
+coste y sin dependencias de internet.
+
+Nota sobre la pagina de estado: no se ha construido una dentro de la aplicacion a
+proposito. Una pagina de estado servida por el propio servicio que se cae no
+informa de nada cuando mas falta hace; tiene que vivir fuera, y eso es
+exactamente lo que hace Uptime Kuma.
+

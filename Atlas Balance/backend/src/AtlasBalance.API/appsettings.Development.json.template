@@ -17,7 +17,12 @@
   },
   "Security": {
     "RequireMfaForWebUsers": true,
-    "RlsContextSecret": "<clave-rls-local-distinta-de-jwt-minimo-32-caracteres>"
+    "RlsContextSecret": "<clave-rls-local-distinta-de-jwt-minimo-32-caracteres>",
+    "AuditSigningKey": "<clave-firma-auditoria-local-distinta-de-jwt-y-rls>",
+    "MirrorToWindowsEventLog": false,
+    "Alertas": {
+      "Habilitado": false
+    }
   },
   "ForwardedHeaders": {
     "KnownProxies": [],

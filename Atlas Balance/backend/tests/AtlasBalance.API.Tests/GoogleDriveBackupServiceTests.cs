@@ -173,7 +173,7 @@ public sealed class GoogleDriveBackupServiceTests
             new MemoryCache(new MemoryCacheOptions()),
             new PlainTextSecretProtector(),
             new NotSupportedBackupEncryptionService(),
-            new AuditService(db),
+            TestAuditService.Create(db),
             NullLogger<GoogleDriveBackupService>.Instance);
     }
 

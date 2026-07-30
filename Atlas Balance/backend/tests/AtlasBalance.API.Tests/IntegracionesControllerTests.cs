@@ -33,7 +33,7 @@ public sealed class IntegracionesControllerTests
     {
         var controller = new IntegracionesController(
             dbContext,
-            new AuditService(dbContext),
+            TestAuditService.Create(dbContext),
             new IntegrationTokenService(
                 dbContext,
                 new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance),
