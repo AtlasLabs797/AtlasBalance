@@ -269,6 +269,55 @@ public class ImportacionServiceTests
         result.Filas.Should().OnlyContain(row => row.Datos.ContainsKey("extra:referencia"));
     }
 
+    /// <summary>
+    /// V-02.07: ParseDate daba por buena cualquier fecha que consiguiera parsear.
+    /// El fallback de serial de Excel hacia `double.TryParse` sobre CUALQUIER
+    /// numero suelto, asi que un "45" en la columna de fecha se convertia en
+    /// 1900-02-14 y entraba en EXTRACTOS sin avisar. El fallback se conserva
+    /// -hay extractos reales pegados desde hoja de calculo, y el test de formatos
+    /// de arriba fija el serial 46025 -> 2026- pero ahora con cota de anio.
+    /// </summary>
+    [Fact]
+    public async Task ValidarAsync_Should_Reject_Dates_Outside_SaneYearRange()
+    {
+        await using var db = BuildDbContext();
+
+        var userId = Guid.NewGuid();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Import", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Import", Divisa = "EUR", Activa = true };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            CuentaId = cuenta.Id,
+            TitularId = titular.Id,
+            PuedeImportar = true
+        });
+        await db.SaveChangesAsync();
+
+        var request = new ImportacionValidarRequest
+        {
+            CuentaId = cuenta.Id,
+            RawData = string.Join('\n', [
+                "45\tSerial absurdo\t10\t100",          // -> 1900-02-14
+                "01/01/0202\tAnio con errata\t10\t110",
+                "01/04/2026\tFila buena\t10\t120"
+            ]),
+            Separador = "tab",
+            Mapeo = new MapeoColumnasRequest { Fecha = 0, Concepto = 1, Monto = 2, Saldo = 3 }
+        };
+
+        var service = new ImportacionService(db, TestAuditService.Create(db));
+
+        var result = await service.ValidarAsync(userId, RolUsuario.EMPLEADO.ToString(), request, CancellationToken.None);
+
+        result.FilasOk.Should().Be(1);
+        result.FilasError.Should().Be(2);
+    }
+
     [Fact]
     public async Task ValidarAsync_Should_Reject_Overlarge_Cell()
     {

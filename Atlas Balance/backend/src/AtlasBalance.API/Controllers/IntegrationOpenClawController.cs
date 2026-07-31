@@ -13,6 +13,16 @@ namespace AtlasBalance.API.Controllers;
 [Route("api/integration/openclaw")]
 public sealed class IntegrationOpenClawController : ControllerBase
 {
+    /// <summary>
+    /// Tope de <c>pagina</c>. V-02.07: solo habia <c>Math.Max(1, pagina)</c>, sin
+    /// limite por arriba. Como la aritmetica de C# no va en modo checked,
+    /// <c>pagina=int.MaxValue</c> hacia que <c>(pagina - 1) * limite</c> desbordara
+    /// a negativo y Postgres rechazara el OFFSET: un 500 con una sola peticion.
+    /// Con 100.000 paginas de 1.000 filas el offset maximo es 99.999.000, lejos
+    /// del limite de int y muy por encima de cualquier paginado real.
+    /// </summary>
+    private const int MaxPagina = 100_000;
+
     private readonly AppDbContext _dbContext;
     private readonly IIntegrationAuthorizationService _integrationAuthorizationService;
     private readonly ITiposCambioService _tiposCambioService;
@@ -245,7 +255,7 @@ public sealed class IntegrationOpenClawController : ControllerBase
         }
 
         limite = Math.Clamp(limite, 1, 1000);
-        pagina = Math.Max(1, pagina);
+        pagina = Math.Clamp(pagina, 1, MaxPagina);
 
         var cuentas = await GetScopedAccountsAsync(scope, titularId, cuentaId, cancellationToken);
         if (titularId.HasValue && cuentas.Count == 0)
@@ -678,7 +688,7 @@ public sealed class IntegrationOpenClawController : ControllerBase
 
         var normalizedTipoAccion = (tipoAccion ?? "all").Trim();
         limite = Math.Clamp(limite, 1, 1000);
-        pagina = Math.Max(1, pagina);
+        pagina = Math.Clamp(pagina, 1, MaxPagina);
 
         var (_, scope, error) = await ResolveReadScopeAsync(cancellationToken);
         if (error is not null)

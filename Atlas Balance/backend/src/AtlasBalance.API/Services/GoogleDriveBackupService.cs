@@ -815,12 +815,29 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         }
 
         var trimmed = rawPath.Trim();
+
+        // V-02.07: este era el cuarto lector de `backup_path` y se quedo sin el
+        // rechazo de rutas UNC que si tienen ConfiguracionController, BackupService
+        // y ExportacionService. Path.IsPathRooted(@"\\servidor\recurso") devuelve
+        // true en Windows, asi que una UNC pasaba y las copias descargadas de Drive
+        // acababan en un recurso SMB remoto.
+        if (IsUncPath(trimmed))
+        {
+            throw new InvalidOperationException("La ruta local de backups no puede ser una ruta de red (UNC).");
+        }
+
         if (!Path.IsPathRooted(trimmed) && !LooksLikeWindowsRootedPath(trimmed))
         {
             throw new InvalidOperationException("La ruta local de backups debe ser absoluta.");
         }
 
         return Path.GetFullPath(trimmed);
+    }
+
+    private static bool IsUncPath(string value)
+    {
+        return value.StartsWith(@"\\", StringComparison.Ordinal) ||
+               value.StartsWith("//", StringComparison.Ordinal);
     }
 
     private static bool LooksLikeWindowsRootedPath(string value) =>

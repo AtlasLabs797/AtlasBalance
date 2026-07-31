@@ -88,6 +88,62 @@ public class ExportacionServiceTests
         }
     }
 
+    /// <summary>
+    /// V-02.07: guardarrail contra la deriva que provoco el hallazgo de esta
+    /// version. La regla "nada de rutas de red" esta implementada por separado en
+    /// ConfiguracionController, BackupService, ExportacionService y
+    /// GoogleDriveBackupService, y este ultimo se quedo sin ella durante un
+    /// tiempo porque nadie lo sincronizo con los otros tres.
+    ///
+    /// El riesgo es que Path.IsPathRooted(@"\\host\recurso") devuelve true en
+    /// Windows: sin el chequeo explicito, una UNC se cuela como "ruta absoluta
+    /// valida" y el volcado entero sale de la red hacia un recurso SMB.
+    ///
+    /// Se probo unificar las cuatro copias en un helper comun y se descarto: las
+    /// cuatro politicas difieren de verdad (mensajes, try/catch alrededor de
+    /// Path.GetFullPath, una recomprobacion posterior a canonicalizar y un
+    /// criterio de raiz mas laxo), asi que el helper necesitaba cinco flags
+    /// booleanos y quedaba menos legible que la duplicacion. Lo que evita la
+    /// recaida no es el refactor: es este test.
+    /// </summary>
+    [Theory]
+    [InlineData(@"\\servidor\backups")]
+    [InlineData("//servidor/backups")]
+    public async Task ExportarCuentaAsync_Should_Reject_Unc_Export_Path(string uncPath)
+    {
+        await using var db = BuildDbContext();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "export_path",
+            Valor = uncPath,
+            Tipo = "string",
+            Descripcion = "Ruta de red insegura"
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular QA",
+            Tipo = TipoTitular.EMPRESA
+        });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta QA",
+            Divisa = "EUR",
+            Activa = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = new ExportacionService(db, TestAuditService.Create(db));
+
+        var act = () => service.ExportarCuentaAsync(cuentaId, TipoProceso.MANUAL, null, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
     [Fact]
     public async Task ExportarCuentaAsync_Should_Reject_Relative_Export_Path()
     {

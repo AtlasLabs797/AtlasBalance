@@ -1,5 +1,38 @@
 ﻿# Log de errores e incidencias
 
+## 2026-07-31 - V-02.07 - `[Range]` con limites decimales revienta la validacion en un servidor es-ES (CERRADO)
+
+- **Contexto:** detectado al anadir rangos a `Monto`/`Saldo` de extractos
+  dentro de la auditoria de validacion de entrada. El defecto ya estaba vivo
+  en `ImportacionPlazoFijoMovimientoRequest.Monto`, introducido en la propia
+  V-02.07 junto con el resto de anotaciones de `ImportacionDtos.cs`.
+- **Causa:** `RangeAttribute(Type, string, string)` convierte sus limites con
+  `TypeDescriptor.GetConverter(...).ConvertFromString(...)`, que usa
+  `CultureInfo.CurrentCulture`. El proyecto no fija `InvariantGlobalization`
+  ni cultura por defecto en ningun sitio, asi que hereda la del sistema:
+  `es-ES`, separador decimal coma. `DecimalConverter` no acepta `"0.0001"`
+  bajo esa cultura y lanza `FormatException` desde
+  `RangeAttribute.SetupConversion()`, que sale como `ArgumentException` sin
+  capturar durante la validacion del modelo. **El endpoint contesta 500 en
+  cada peticion, no un rango mal calculado.**
+- **Matiz que despisto al diagnosticar:** una comprobacion rapida con
+  `decimal.Parse("0.0001", NumberStyles.Float | AllowThousands, es-ES)`
+  devuelve `1`, lo que sugiere un minimo silenciosamente mal puesto. Es una
+  pista falsa: `DecimalConverter` no usa `AllowThousands`, asi que el
+  comportamiento real es la excepcion, no el parseo torcido. Conviene
+  reproducirlo con el converter y no con `decimal.Parse`.
+- **Solucion:** `ParseLimitsInInvariantCulture = true` en todos los `[Range]`
+  con limites en cadena (`ImportacionDtos.cs` y los nuevos de
+  `ExtractosDtos.cs`). La propiedad existe desde .NET 8.
+- **Verificacion:** `DtoValidationTests.ImportacionPlazoFijo_Should_Accept_SubUnitAmounts_UnderSpanishCulture`
+  fija `CultureInfo.CurrentCulture` a `es-ES` a proposito, de modo que el test
+  falla en cualquier maquina si alguien quita el flag. Se comprobo revirtiendo
+  el fix: 2 tests en rojo sin el, 601/601 en verde con el.
+- **Regla para lo que venga:** cualquier `[Range]` nuevo con limites decimales
+  en cadena lleva `ParseLimitsInInvariantCulture = true`. La alternativa
+  (fijar cultura invariante en todo el proceso) no se toca aqui porque
+  afectaria al formateo de importes y fechas de toda la app.
+
 ## 2026-07-30 - V-02.07 - `LimpiezaAuditoriaJob` llevaba desde V-02.03 borrando 0 filas y registrandolo como exito (CERRADO)
 
 - **Contexto:** al implementar el bloque de observabilidad de seguridad se

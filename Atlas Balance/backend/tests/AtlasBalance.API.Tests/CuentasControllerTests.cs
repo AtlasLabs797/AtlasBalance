@@ -482,6 +482,93 @@ public sealed class CuentasControllerTests
         plazo.Estado.Should().Be(EstadoPlazoFijo.ACTIVO);
     }
 
+    // V-02.07: el IBAN solo pasaba por Trim(), asi que un numero con una errata se
+    // guardaba tal cual. Se valida unicamente en cuentas NORMAL, que son las
+    // unicas donde el campo llega a persistirse.
+    private static async Task<(AppDbContext Db, CuentasController Controller, Guid TitularId)> BuildCuentaFixtureAsync(string emailSufijo)
+    {
+        var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = $"admin.{emailSufijo}@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Iban",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = $"Titular {emailSufijo}", Tipo = TipoTitular.EMPRESA });
+        db.DivisasActivas.Add(new DivisaActiva { Codigo = "EUR", Activa = true, EsBase = true });
+        await db.SaveChangesAsync();
+
+        return (db, BuildController(db, userId), titularId);
+    }
+
+    [Fact]
+    public async Task Crear_Should_Reject_Iban_With_Bad_CheckDigits()
+    {
+        var (db, controller, titularId) = await BuildCuentaFixtureAsync("iban-malo");
+        await using var _ = db;
+
+        var result = await controller.Crear(new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Cuenta con errata",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.NORMAL,
+            Iban = "ES9921000418450200051332"
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Cuentas.AnyAsync(c => c.Nombre == "Cuenta con errata")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Crear_Should_Accept_Valid_Iban_And_Persist_It_Verbatim()
+    {
+        var (db, controller, titularId) = await BuildCuentaFixtureAsync("iban-bueno");
+        await using var _ = db;
+
+        var result = await controller.Crear(new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Cuenta valida",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.NORMAL,
+            Iban = "ES91 2100 0418 4502 0005 1332"
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+
+        var cuenta = await db.Cuentas.SingleAsync(c => c.Nombre == "Cuenta valida");
+        // Se valida normalizado pero se persiste lo que escribio el usuario: el
+        // formato con espacios es el que se ensena en los extractos del banco.
+        cuenta.Iban.Should().Be("ES91 2100 0418 4502 0005 1332");
+    }
+
+    [Fact]
+    public async Task Crear_Should_Ignore_Invalid_Iban_For_NonNormal_Accounts()
+    {
+        var (db, controller, titularId) = await BuildCuentaFixtureAsync("iban-efectivo");
+        await using var _ = db;
+
+        var result = await controller.Crear(new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Caja sin iban",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.EFECTIVO,
+            Iban = "ES00"
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+        (await db.Cuentas.SingleAsync(c => c.Nombre == "Caja sin iban")).Iban.Should().BeNull();
+    }
+
     [Fact]
     public async Task Crear_Should_Keep_Formato_For_Efectivo()
     {

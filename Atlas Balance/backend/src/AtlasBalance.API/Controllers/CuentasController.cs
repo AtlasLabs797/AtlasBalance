@@ -4,6 +4,7 @@ using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
+using AtlasBalance.API.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -656,6 +657,14 @@ public sealed class CuentasController : ControllerBase
             {
                 return CuentaValidationResult.Fail("La divisa de la cuenta debe coincidir con la del formato de importacion", tipoCuenta);
             }
+        }
+
+        // V-02.07: el IBAN solo se valida (y se guarda) en cuentas NORMAL. En
+        // efectivo y plazo fijo el campo se descarta mas abajo, asi que validarlo
+        // aqui rechazaria peticiones cuyo IBAN nunca llega a persistirse.
+        if (tipoCuenta == TipoCuenta.NORMAL && !IbanValidator.TryValidate(request.Iban, out var ibanError))
+        {
+            return CuentaValidationResult.Fail(ibanError, tipoCuenta);
         }
 
         if (tipoCuenta == TipoCuenta.PLAZO_FIJO)

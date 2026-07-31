@@ -119,8 +119,15 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
         Upsert(rows, "backup_auto_day_of_month", normalized.DayOfMonth.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(rows, "backup_auto_interval_hours", normalized.IntervalHours.ToString(CultureInfo.InvariantCulture), userId, now);
         Upsert(rows, "backup_destination", destination, userId, now);
-        Upsert(rows, "google_drive_oauth_client_id", request.GoogleDriveClientId.Trim(), userId, now);
-        Upsert(rows, "google_drive_folder_id", request.GoogleDriveFolderId.Trim(), userId, now);
+        // V-02.07: estos dos eran los unicos `.Trim()` del fichero sin guarda de
+        // null (compara con la linea de `requestedDestination`). El tipo dice
+        // `string` no anulable, pero System.Text.Json no respeta esa anotacion en
+        // .NET 8: un `"google_drive_client_id": null` explicito en el JSON pisaba
+        // el `= string.Empty` del DTO y el Trim() reventaba con un 500 opaco.
+        // Se deja vacio en vez de exigir [Required] porque no configurar Drive es
+        // un caso valido.
+        Upsert(rows, "google_drive_oauth_client_id", (request.GoogleDriveClientId ?? string.Empty).Trim(), userId, now);
+        Upsert(rows, "google_drive_folder_id", (request.GoogleDriveFolderId ?? string.Empty).Trim(), userId, now);
 
         if (!string.IsNullOrWhiteSpace(request.GoogleDriveClientSecret))
         {

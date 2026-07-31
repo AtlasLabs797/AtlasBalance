@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AtlasBalance.API.DTOs;
 
 public sealed class IntegrationPermissionItemResponse
@@ -37,27 +39,37 @@ public sealed class IntegrationTokenDetailResponse
 
 public sealed class CreateIntegrationTokenRequest
 {
+    [Required]
+    [MaxLength(200)]
     public string Nombre { get; set; } = string.Empty;
+    [MaxLength(1000)]
     public string? Descripcion { get; set; }
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
     public string? SinExpiracionTextoConfirmacion { get; set; }
+    [MaxLength(50)]
     public IReadOnlyList<string> Scopes { get; set; } = [];
+    [MaxLength(500)]
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
 
 public sealed class SaveIntegrationTokenRequest
 {
+    [Required]
+    [MaxLength(200)]
     public string Nombre { get; set; } = string.Empty;
+    [MaxLength(1000)]
     public string? Descripcion { get; set; }
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
     public string? SinExpiracionTextoConfirmacion { get; set; }
+    [MaxLength(50)]
     public IReadOnlyList<string> Scopes { get; set; } = [];
+    [MaxLength(500)]
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
 

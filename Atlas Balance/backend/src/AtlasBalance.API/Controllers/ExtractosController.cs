@@ -6,6 +6,7 @@ using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
+using AtlasBalance.API.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -51,6 +52,11 @@ public sealed class ExtractosController : ControllerBase
         if (!actor.IsAdmin)
         {
             incluirEliminados = false;
+        }
+
+        if (!DateRangeValidator.TryValidate(fechaDesde, fechaHasta, out var rangoError))
+        {
+            return BadRequest(new { error = rangoError });
         }
 
         page = Math.Max(1, page);

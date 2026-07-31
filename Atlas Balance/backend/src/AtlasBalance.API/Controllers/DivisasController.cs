@@ -111,5 +111,12 @@ public sealed class ActualizarDivisaRequest
 
 public sealed class EstablecerDivisaPorDefectoRequest
 {
+    // V-02.07: sin [Required] este campo en blanco no daba error: TiposCambioService
+    // .Normalize convierte vacio o null en "EUR", asi que un POST con el codigo
+    // vacio establecia el euro como divisa base sin que nadie lo hubiera pedido.
+    // Para el endpoint que cambia la divisa base de toda la aplicacion, ese
+    // silencio es lo peor que podia hacer.
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string Codigo { get; set; } = string.Empty;
 }

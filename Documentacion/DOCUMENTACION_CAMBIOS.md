@@ -9,6 +9,388 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-31 - V-02.07 - Fase 3c: fechas, pendientes menores y cierre del refactor de rutas
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Cierre de todo lo que quedaba abierto de la auditoria de validacion.
+
+**1. Fechas (el hueco de fondo del punto 4 del encargo).**
+
+- `desde <= hasta` no se comprobaba en ningun sitio salvo en los dos endpoints de
+  OpenClaw. En los tres de auditoria y en el listado de extractos las fechas iban
+  directas a la query, asi que un rango al reves devolvia **cero filas con un
+  200**, indistinguible de "no hay datos". En auditoria eso puede llevar a dar
+  por bueno que no existe rastro de algo cuando lo que esta mal es el filtro.
+  Nuevo `Validation/DateRangeValidator.cs`, usado en los cuatro sitios.
+- `ImportacionService.ParseDate` daba por buena cualquier fecha que consiguiera
+  parsear. El fallback de serial de Excel hacia `double.TryParse` sobre
+  **cualquier** numero suelto, asi que un "45" en la columna de fecha se convertia
+  en 1900-02-14 y entraba en EXTRACTOS sin un solo aviso. **El fallback se
+  conserva**: hay extractos reales pegados desde hoja de calculo y un test que lo
+  fija con el serial 46025 -> 2026. Lo que se anade es la cota de anio
+  (1990-2100), que es lo que faltaba. Con ella 46025 sigue pasando y 45 cae.
+
+**2. Pendientes menores.**
+
+`SaldoMinimo` con techo, `TipoTitular` con `[EnumDataType]`, longitud en las URLs
+y rutas de `UpdateGeneralConfigRequest`, `AppUpdateAutoHourUtc` acotado a 0-23, y
+`EstablecerDivisaPorDefectoRequest.Codigo` con `[Required]`. Este ultimo era el
+peor del grupo: en blanco, `TiposCambioService.Normalize` lo convertia en "EUR",
+asi que un POST con el codigo vacio establecia el euro como divisa base de toda
+la aplicacion sin que nadie lo hubiera pedido.
+
+**No se toco `ResolverNombresRequest` a proposito.** El controller ya lo capa a
+200 ids combinados y responde con el formato `BAD_REQUEST: ...` del contrato de
+error de OpenClaw. Una anotacion se adelantaria con el mensaje generico de
+ModelState y **romperia el contrato de la integracion externa**. La comprobacion
+que ya hay es mejor que la que anadiria una anotacion.
+
+**3. El refactor de `IsUncPath`: intentado, descartado y sustituido por un test.**
+
+Se extrajo un `Validation/PathPolicy.cs` comun y se reescribieron los cuatro
+lectores de `backup_path` contra el, con la condicion de no cambiar
+comportamiento. El resultado demostro que **las cuatro copias no eran
+duplicados**: para preservar la semantica el helper acabo con **cinco parametros
+booleanos** (32 combinaciones, 4 usadas) y un valor de enum cuya unica razon de
+existir era conservar una tilde que difiere entre dos mensajes de
+`BackupService`. Cada llamador seguia necesitando su propio `switch` para
+recuperar sus textos. Mas dificil de leer que la duplicacion que venia a
+resolver, que es justo lo que prohibe la seccion 2.2 de AGENTS.md. **Revertido.**
+
+Las diferencias reales entre las cuatro: mensajes distintos, `try/catch`
+alrededor de `Path.GetFullPath` en tres y no en la cuarta, recomprobacion de raiz
+tras canonicalizar solo en dos, criterio de raiz mas laxo en
+`GoogleDriveBackupService`, y `ConfiguracionController` devolviendo `bool` en vez
+de lanzar.
+
+Lo que si cierra el riesgo es `UncPathRejectionTests`: comprueba el rechazo de
+UNC en sus dos formas (`\\` y `//`) en los **cuatro** puntos, mas una
+contraprueba de que una ruta local normal sigue pasando en los cuatro (sin ella,
+el test tambien pasaria si alguien rompiera la validacion entera y empezara a
+rechazarlo todo). Un refactor no habria impedido que alguien olvide *llamar* a la
+validacion, que es exactamente lo que paso; este test si.
+
+**Archivos tocados:**
+
+- `Validation/DateRangeValidator.cs` (nuevo)
+- `Services/ImportacionService.cs`, `Services/GoogleDriveBackupService.cs`
+- `Controllers/AuditoriaController.cs`, `Controllers/ExtractosController.cs`,
+  `Controllers/DivisasController.cs`
+- `DTOs/ConfiguracionDtos.cs`, `DTOs/AlertasDtos.cs`
+- Tests: `DateRangeValidatorTests.cs` (nuevo), `UncPathRejectionTests.cs` (nuevo),
+  `DtoValidationTests.cs`, `ImportacionServiceTests.cs`,
+  `ExportacionServiceTests.cs`
+
+**Resultado de verificacion:**
+
+- **634/634 tests** (601 sin Docker + 33 con Testcontainers). Sin regresiones.
+- Los dos guardarrailes nuevos se verificaron **quitando a proposito lo que
+  protegen**: sin el chequeo de UNC en `GoogleDriveBackupService` caen 2 tests;
+  con el, verde. Mismo metodo que con el bug de cultura de la Fase 3a. Un test
+  que pasa en ambos casos no prueba nada.
+- Sin validacion visual: bloque solo de backend.
+
+**Pendientes:**
+
+- Sigue sin comprobarse contra datos reales de produccion si alguna fila
+  historica supera los topes nuevos de texto libre. Es lo unico que no se puede
+  verificar desde el repositorio.
+
+---
+
+## 2026-07-31 - V-02.07 - Fase 3b: validacion declarativa en el resto de los DTO
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Continuacion de la Fase 3a. Se cubren los 21 ficheros de DTO que no tenian
+ninguna anotacion. El reparto fue de cuatro subagentes sobre grupos de ficheros
+disjuntos, con **la tabla de limites decidida antes de delegar**: si cada agente
+elige sus propios numeros, el resultado es inconsistente. Los limites salen de
+las convenciones que ya existian en el esquema (Divisa 8, Concepto 512,
+Referencia 128, Observacion 1000, Pais.Nombre 128) en vez de inventarse.
+
+**Criterio de los limites.** La mayoria de estas columnas son `text` sin tope en
+Postgres, asi que cualquier limite nuevo es un limite de aplicacion que antes no
+existia. Se han puesto holgados a proposito: lo que se esta cerrando es la
+entrada *sin cota*, no la entrada un poco larga. Un tope agresivo sobre una
+columna `text` rechazaria filas historicas legitimas al editarlas.
+
+**Aplicado:**
+
+- Longitud en todo el texto libre: `Nombre`, `Notas`, `BancoNombre`,
+  `NumeroCuenta`, nombres y descripciones de token de integracion, colores de
+  dashboard, campos SMTP.
+- Formato y longitud de email (`[EmailAddress]` + `[MaxLength(254)]`) en login,
+  alta y edicion de usuario y alta de email secundario. **No existia validacion
+  de formato de email en ningun punto del backend.**
+- Tope de las colecciones que no lo tenian: `Emails` (20), `Permisos` (500),
+  `ColumnasVisibles`/`ColumnasEditables` (200), `ColumnasExtra` (100),
+  `FilasAImportar` (200000), `DestinatarioUsuarioIds` (100), `Scopes` (50),
+  lineas de desglose (500).
+- `[EnumDataType]` en `RolUsuario`, `TipoCuenta` y `TipoTitular`.
+  `JsonStringEnumConverter` rechaza cadenas desconocidas pero no valida enteros,
+  asi que `"rol": 99` llegaba al controller y moria en Npgsql como 500. Los tres
+  son enums nativos de Postgres, de modo que nunca hubo corrupcion de datos: solo
+  el codigo de error equivocado.
+- Tasa de cambio manual: se rechaza fuera de `[MinRateValue, MaxRateValue]` al
+  escribir. Antes solo se miraba `tasa <= 0` y el techo real se aplicaba mucho
+  despues, al construir el grafo de conversion, asi que una tasa absurda se
+  guardaba "con exito" y luego quedaba excluida en silencio de las conversiones.
+- Tipos de cambio: `origen` y `destino` se contrastan ahora contra
+  `DivisasActivas`. Antes se podia crear un par contra un codigo inventado y la
+  fila quedaba huerfana, sin uso y sin pantalla donde borrarla.
+- `MovimientoEsperadoCrearRequest.Origen` (columna a 32) y
+  `ImportacionLoteCrearRequest.Separador` (sus dos clases hermanas ya lo capaban
+  a 8 y esta se habia quedado sin el): dos huecos que no estaban en la tabla y
+  que localizo el subagente del grupo de importacion.
+
+**Correcciones sobre el trabajo de los subagentes:**
+
+- **Regex de color hex retirado.** Un agente lo anadio a los tres campos de color
+  del dashboard. El input del frontend es texto libre, no un `type="color"`, y el
+  PUT de configuracion es un unico payload con todas las secciones: un solo color
+  heredado tipo `red` o un hex de 8 digitos habria bloqueado **el guardado entero
+  de la configuracion**, no solo ese campo. Queda solo la longitud, que era el
+  riesgo real; el valor se pinta en un `style={{ backgroundColor }}` de React,
+  que no ejecuta nada.
+- **Comentario incorrecto en `AuthDtos`.** Afirmaba que
+  `SecurityPolicy.TryValidatePassword` corre en el flujo de login. No es cierto:
+  en login la clave solo se compara contra el hash bcrypt; esa politica solo
+  aplica al crear o cambiar contrasena. Reescrito.
+- **Anotacion inerte retirada en `RevisionQueryRequest`.** El agente la marco el
+  mismo: `RevisionController` construye ese DTO a mano desde parametros de query
+  sueltos, asi que el ModelState nunca lo evalua. Una anotacion que aparenta
+  validar sin ejecutarse confunde mas de lo que ayuda, y el campo ya esta acotado
+  de verdad por `NormalizeEstadoFilter`, que es un switch con lista blanca.
+
+**Decisiones que conviene conocer:**
+
+- Los `[Required]` que se han anadido se adelantan a los `BadRequest` que ya
+  hacian algunos controllers, que tenian mensajes mas concretos ("Nombre
+  obligatorio."). No rompe el contrato: el proyecto ya tiene un
+  `InvalidModelStateResponseFactory` propio (`Program.cs:317`) que devuelve
+  `{ error: ... }`, la misma forma que usan los controllers, con un texto
+  generico. Es una decision de diseno ya tomada en esta version. El efecto es que
+  para esos campos el usuario vera el mensaje generico en vez del especifico.
+- Los tests instancian los controllers directamente, asi que no pasan por
+  ModelState: los `BadRequest` especificos de los controllers siguen siendo
+  alcanzables y probados desde los tests.
+- `[EmailAddress]` es laxo por diseno: exige una arroba unica que no este en los
+  extremos y poco mas, asi que acepta espacios y dominios sin punto. Se deja asi;
+  un regex propio rechaza direcciones raras pero validas y la garantia real seria
+  verificar por envio. Documentado con un test que fija ese limite
+  (`EmailAddress_Attribute_Is_Permissive_ByDesign`).
+
+**Archivos tocados:**
+
+DTOs: `AuthDtos`, `UsuariosDtos`, `CuentasDtos`, `TitularesDtos`, `PaisesDtos`,
+`IntegracionesDtos`, `AlertasDtos`, `ConfiguracionDtos`, `ImportacionDtos`,
+`ConciliacionDtos`, `RevisionDtos`, `FormatosImportacionDtos`, `ExtractosDtos`.
+Servicios: `TiposCambioService`. Tests: `DtoValidationTests`.
+
+**Comandos ejecutados:**
+
+```bash
+dotnet test AtlasBalance.API.Tests.csproj -p:UseAppHost=false \
+  -p:BaseIntermediateOutputPath=.local-build/obj/ -p:BaseOutputPath=.local-build/bin/
+```
+
+**Resultado de verificacion:**
+
+- **614/614 tests** (581 sin Docker + 33 con Testcontainers). Sin regresiones.
+- Un test propio fallo y estaba mal el test, no el codigo: daba por hecho que
+  `[EmailAddress]` rechaza espacios y no lo hace. Corregido el test y anadido
+  otro que documenta esa permisividad en vez de taparla.
+- Sin validacion visual: bloque solo de backend.
+
+**Pendientes:**
+
+- `EstablecerDivisaPorDefectoRequest.Codigo` sigue sin comprobacion de presencia:
+  en blanco cae a "EUR" en silencio via `Normalize`, y eso puede cambiar la
+  divisa base sin querer.
+- `UpdateGeneralConfigRequest`: `AppBaseUrl`, `AppUpdateCheckUrl`, `BackupPath` y
+  `ExportPath` sin tope de longitud (el controller ya valida su contenido).
+  `UpdateExchangeRateConfigRequest.ApiKey` igual.
+- `SaveAlertaSaldoRequest.SaldoMinimo` sin cota superior (el controller solo
+  rechaza negativos).
+- `ResolverNombresRequest.TitularIds`/`CuentaIds` en la superficie OpenClaw: el
+  controller ya aplica un tope combinado de 200, pero no esta declarado en el DTO.
+- Unificar las cuatro copias de `IsUncPath` (`REGISTRO_BUGS.md`).
+- Sigue sin comprobarse contra datos reales de produccion si alguna fila
+  historica supera los topes nuevos de texto libre.
+
+---
+
+## 2026-07-31 - V-02.07 - Auditoria de validacion de entrada + Fase 3a de correcciones
+
+**Version:** V-02.07
+
+**Trabajo realizado:**
+
+Auditoria de la validacion de entrada sobre los 126 endpoints del backend y
+sobre los 87 puntos de entrada del frontend, repartida en seis subagentes por
+grupos de controllers. Todo hallazgo serio se reverifico a mano antes de
+darlo por bueno: **cuatro de los seis hallazgos principales que reportaron los
+subagentes eran incorrectos o estaban sobredimensionados** y se descartaron
+(ver "Hallazgos descartados").
+
+**Estado de partida.** 21 de los 22 ficheros de DTO no tenian ninguna
+anotacion de validacion. `ImportacionDtos.cs` era el unico con anotaciones
+(12) y sirvio de patron. Los 24 controllers llevan `[ApiController]`, asi que
+el pipeline de ModelState estaba montado y funcionando: simplemente no tenia
+nada que comprobar.
+
+**Areas que ya estaban bien y no se han tocado:** SQL injection (7 sitios de
+SQL crudo, todos parametrizados; `sortBy`/`sortDir` resuelven por `switch` de
+C# con fallback, que es una allowlist en tiempo de compilacion), `pageSize`
+(capado en todos los endpoints paginados, en controller o en servicio), XSS
+(cero sinks), command injection (`ArgumentList` en los dos sitios), formulas
+CSV (`SafeCell` ya neutraliza `= + - @`) y rate limiting (ya construido en
+esta misma version). No hay superficie de subida de ficheros: no existe
+ningun `IFormFile` en el backend y la importacion se hace pegando CSV en un
+textarea, ya capado a 5 MB por DTO y 10 MB por `MaxRequestBodySize`.
+
+**Correcciones aplicadas (Fase 3a, las criticas):**
+
+1. **IBAN sin validar.** Solo pasaba por `Trim()`: sin formato, sin longitud y
+   sin digito de control. En una app de tesoreria un IBAN con una errata se
+   guardaba en silencio. Nuevo `Validation/IbanValidator.cs` (ISO 13616 +
+   modulo 97 del ISO 7064), enganchado en `ValidateCuentaRequestAsync`. Se
+   valida **solo en cuentas NORMAL**, que son las unicas donde el campo llega
+   a persistirse; en efectivo y plazo fijo se sigue descartando, que es lo que
+   ya esperaba el test `Crear_Should_Keep_Formato_For_Efectivo`.
+2. **Bug de cultura en `[Range]` (preexistente, en produccion).**
+   `RangeAttribute` parsea sus limites con la cultura del proceso salvo que se
+   le diga lo contrario. El servidor corre en `es-ES`, donde el separador
+   decimal es la coma, asi que `DecimalConverter` no traga `"0.0001"` y lanza
+   `FormatException` desde `SetupConversion()`. No es que el rango quedara
+   mal: **la validacion revienta y el endpoint contesta 500 en cada
+   peticion**. Afectaba a `ImportacionPlazoFijoMovimientoRequest.Monto`, que
+   ya venia de V-02.07. Corregido con `ParseLimitsInInvariantCulture = true`
+   ahi y en todos los `[Range]` nuevos.
+3. **`Monto`/`Saldo` sin rango** en alta y edicion manual de extractos. El
+   unico tope era la precision `(18,4)` de la columna, que no da un 400 sino
+   una `DbUpdateException` convertida en 500. Rango simetrico (el egreso es
+   negativo) de 10 digitos enteros, mas topes de longitud en `Concepto` (512)
+   y `Comentarios` (1000), que hasta ahora eran columnas `text` sin limite.
+4. **UNC sin bloquear en el cuarto lector de `backup_path`.** La auditoria de
+   inyeccion previa dio por aplicado el rechazo de rutas UNC "en los tres
+   puntos que validan la ruta", pero `GoogleDriveBackupService` tiene su
+   propia copia de la logica (`ResolveSafeDirectory`) y se quedo fuera.
+   `Path.IsPathRooted(@"\\servidor\recurso")` devuelve `true` en Windows, asi
+   que una UNC pasaba y las copias descargadas de Drive acababan en un
+   recurso SMB remoto. La causa raiz es que `IsUncPath` esta copiado en tres
+   clases; el refactor queda anotado en `REGISTRO_BUGS.md`, no se hace aqui.
+5. **NRE con `null` explicito en la config de Drive.** El DTO declara `string`
+   no anulable, pero System.Text.Json no respeta esa anotacion en .NET 8: un
+   `"google_drive_client_id": null` pisaba el `= string.Empty` y el `.Trim()`
+   reventaba en un 500 opaco. Se arregla con la misma guarda que ya usaba el
+   propio fichero dos lineas mas arriba. **No se pone `[Required]` a
+   proposito**: dejar Drive sin configurar es un caso valido y `[Required]`
+   rechaza tambien la cadena vacia.
+6. **`pagina` sin tope en OpenClaw.** Solo habia `Math.Max(1, pagina)`. Como
+   la aritmetica de C# no va en modo checked, `pagina=int.MaxValue` hacia que
+   `(pagina - 1) * limite` desbordara a negativo y Postgres rechazara el
+   OFFSET: un 500 con una sola peticion desde fuera. Capado a 100.000.
+
+**Hallazgos descartados (reportados por subagentes, verificados como falsos):**
+
+- *"`rol: 99` se persiste y corrompe el rol"*: no. `RolUsuario` esta mapeado
+  como enum nativo de Postgres (`HasPostgresEnum`), asi que Npgsql falla al
+  escribir. Es un 500 en vez de un 400, no corrupcion.
+- *"Comparacion de token de integracion no constant-time"*: no explotable. Se
+  compara el SHA-256, no el secreto; invertir un prefijo de hash exigiria
+  romper la resistencia a preimagen. El "sin cota de longitud antes de
+  hashear" tampoco aplica: el token viaja en cabecera y Kestrel ya la limita.
+- *"Campos de color reflejados sin escapar"*: no es XSS. El frontend los
+  consume como `style={{ backgroundColor }}`, React sanea eso y el CSS no
+  ejecuta JS. Es integridad de datos, cosmetico.
+- *"Host SMTP = SSRF"*: sobredimensionado. Configurar el servidor de correo es
+  la funcion del endpoint y es admin-only. Le falta validacion de formato, si;
+  ataque, no.
+- *"Las rutas de backup estan bien validadas"*: falso, y es el unico caso en
+  que un subagente dio por limpio algo que no lo estaba. Lo cazo el cruce con
+  el agente de inyeccion (punto 4 de arriba).
+
+**Cobertura de `Jobs/`:** ningun subagente la tenia en su alcance. Revisada a
+mano a raiz del warning EF1002 de `LimpiezaAuditoriaJob.cs:98`: el `{funcion}`
+interpolado solo recibe dos literales del propio codigo y el valor si va como
+`NpgsqlParameter`. No es inyectable; el warning es un falso positivo.
+
+**Decision de verificacion.** Los tests existentes instancian los controllers
+directamente contra InMemory, asi que el pipeline de MVC no llega a correr y
+`[ApiController]` nunca mira el ModelState: **ninguna anotacion se estaba
+ejercitando, incluidas las 12 que ya existian en `ImportacionDtos.cs`**. Se
+anade `DtoValidationTests.cs`, que corre `Validator.TryValidateObject`
+directamente. Es test unitario puro, sin Docker ni servidor, en linea con
+`RateLimitingSetupTests`.
+
+**Archivos tocados:**
+
+- `backend/src/AtlasBalance.API/Validation/IbanValidator.cs` (nuevo)
+- `backend/src/AtlasBalance.API/Controllers/CuentasController.cs`
+- `backend/src/AtlasBalance.API/Controllers/IntegrationOpenClawController.cs`
+- `backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `backend/src/AtlasBalance.API/DTOs/ImportacionDtos.cs`
+- `backend/src/AtlasBalance.API/Data/SeedData.cs`
+- `backend/src/AtlasBalance.API/Services/BackupConfigurationService.cs`
+- `backend/src/AtlasBalance.API/Services/GoogleDriveBackupService.cs`
+- `backend/tests/AtlasBalance.API.Tests/IbanValidatorTests.cs` (nuevo)
+- `backend/tests/AtlasBalance.API.Tests/DtoValidationTests.cs` (nuevo)
+- `backend/tests/AtlasBalance.API.Tests/CuentasControllerTests.cs`
+
+Nota sobre `SeedData.cs`: el IBAN de la cuenta demo llevaba los digitos de
+control `00`, imposibles en un IBAN real, asi que la validacion nueva la
+dejaba sin poder editarse. Se cambia a `ES55 ...`, que es el control correcto
+para ese BBAN y mantiene el aspecto de dato de demo.
+
+**Comandos ejecutados:**
+
+```bash
+# El build por defecto falla con "Access to the path obj/project.assets.json
+# is denied" (seccion 8 del AGENTS). Se redirige la salida:
+dotnet build AtlasBalance.API.csproj -p:UseAppHost=false \
+  -p:BaseIntermediateOutputPath=.local-build/obj/ -p:BaseOutputPath=.local-build/bin/
+
+dotnet test AtlasBalance.API.Tests.csproj -p:UseAppHost=false \
+  -p:BaseIntermediateOutputPath=.local-build/obj/ -p:BaseOutputPath=.local-build/bin/
+```
+
+**Resultado de verificacion:**
+
+- Build: correcto, 0 errores. Los 7 warnings son preexistentes (CS0618 de
+  Hangfire/Npgsql y el EF1002 ya analizado).
+- Suite sin Docker: **568/568**.
+- Suite con Testcontainers (Docker disponible, `29.4.3`): **33/33**.
+- **Total: 601 tests, 0 fallos.** Sin regresiones.
+- El test de regresion del bug de cultura se comprobo revirtiendo el fix a
+  proposito: falla sin `ParseLimitsInInvariantCulture` y pasa con el. Un test
+  que pasa en ambos casos no vale de nada.
+- No hay validacion visual: este bloque es solo backend.
+
+**Pendientes:**
+
+- Fase 3b (acordada con el usuario, no empezada): resto de los 21 ficheros de
+  DTO. Colecciones sin tope (`Emails`, `Permisos`, `ColumnasExtra`,
+  `FilasAImportar`, `DestinatarioUsuarioIds`), texto libre sin longitud
+  (`Notas`, `BancoNombre`, nombres de token de integracion), divisas sin
+  contrastar contra el catalogo en 2 de 3 sitios y tasa FX sin techo al
+  escribir.
+- Sin formato de email en ningun sitio del backend, tampoco en login.
+- `Enum.IsDefined` en los enums que hoy dan 500 en vez de 400.
+- Unificar las cuatro copias de `IsUncPath` (`REGISTRO_BUGS.md`).
+- Los topes nuevos de `Concepto` (512) y `Comentarios` (1000) son limites de
+  aplicacion nuevos sobre columnas que eran `text` sin limite. Si hubiera
+  filas historicas mas largas, editarlas devolveria 400. No se ha comprobado
+  contra datos reales de produccion.
+
+---
+
 ## 2026-07-30 - V-02.07 - Auditoria IDOR de toda la superficie de API
 
 **Version:** V-02.07

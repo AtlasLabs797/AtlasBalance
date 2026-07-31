@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -18,8 +19,18 @@ public sealed class FormatoImportacionResponse
 
 public sealed class SaveFormatoImportacionRequest
 {
+    // V-02.07: sin [Required] a proposito, a diferencia de lo que pedia la tabla
+    // de limites. FormatosImportacionController.ResolveFormatoNombre ignora Nombre
+    // en la practica siempre que BancoNombre (que si es obligatorio, comprobado a
+    // mano mas abajo en el controller) venga informado: usa BancoNombre.Trim() y
+    // solo cae a Nombre si BancoNombre esta vacio. Exigir Nombre aqui rechazaria
+    // peticiones validas que ya funcionan hoy sin mandarlo. MaxLength(200) si se
+    // mantiene porque es inofensivo (el valor se ignora o se recorta igual).
+    [MaxLength(200)]
     public string Nombre { get; set; } = string.Empty;
+    [MaxLength(200)]
     public string? BancoNombre { get; set; }
+    [MaxLength(8)]
     public string? Divisa { get; set; }
     public JsonElement MapeoJson { get; set; }
     public bool Activo { get; set; } = true;

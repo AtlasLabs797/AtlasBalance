@@ -34,6 +34,10 @@ public sealed class ImportacionService : IImportacionService
     private const int MaxExtraColumnNameLength = 80;
     private const int MaxImportedCellLength = 4096;
 
+    // Cotas de cordura para las fechas importadas. Ver AcceptIfWithinRange.
+    private const int MinImportYear = 1990;
+    private const int MaxImportYear = 2100;
+
     private static readonly string[] DateFormats =
     [
         "dd/MM/yyyy",
@@ -2012,26 +2016,32 @@ public sealed class ImportacionService : IImportacionService
 
         if (DateOnly.TryParseExact(normalized, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
         {
-            return true;
+            return AcceptIfWithinRange(date, out error);
         }
 
         if (DateOnly.TryParse(normalized, CultureInfo.GetCultureInfo("es-ES"), DateTimeStyles.None, out date))
         {
-            return true;
+            return AcceptIfWithinRange(date, out error);
         }
 
         if (DateOnly.TryParse(normalized, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
         {
-            return true;
+            return AcceptIfWithinRange(date, out error);
         }
 
+        // Serial de fecha de Excel. Se conserva porque los extractos pegados desde
+        // una hoja de calculo traen la columna asi de verdad (hay test que lo fija
+        // con 46025 -> 2026). El problema no era el fallback sino que no tenia
+        // cota: `double.TryParse` acepta CUALQUIER numero suelto, asi que un "45"
+        // en la columna de fecha se convertia en 1900-02-14 y entraba en la tabla
+        // sin un solo aviso. La cota de anio lo corta.
         if (double.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var serial))
         {
             try
             {
                 var dateTime = DateTime.FromOADate(serial);
                 date = DateOnly.FromDateTime(dateTime);
-                return true;
+                return AcceptIfWithinRange(date, out error);
             }
             catch
             {
@@ -2041,6 +2051,27 @@ public sealed class ImportacionService : IImportacionService
 
         error = "Fecha inválida";
         return false;
+    }
+
+    /// <summary>
+    /// V-02.07: antes ParseDate daba por buena cualquier fecha que consiguiera
+    /// parsear. Una errata al teclear el anio ("01/01/0202") o un numero suelto
+    /// interpretado como serial de Excel metian fechas absurdas en EXTRACTOS sin
+    /// avisar, y en una tabla de tesoreria eso descuadra saldos y periodos.
+    ///
+    /// El rango es deliberadamente amplio: no es una regla de negocio, es un
+    /// filtro de disparates. Un extracto bancario real no cae fuera de el.
+    /// </summary>
+    private static bool AcceptIfWithinRange(DateOnly value, out string? error)
+    {
+        if (value.Year < MinImportYear || value.Year > MaxImportYear)
+        {
+            error = $"Fecha fuera de rango ({MinImportYear}-{MaxImportYear})";
+            return false;
+        }
+
+        error = null;
+        return true;
     }
 
     private static bool TryParseDecimalSmart(string? raw, out decimal value)

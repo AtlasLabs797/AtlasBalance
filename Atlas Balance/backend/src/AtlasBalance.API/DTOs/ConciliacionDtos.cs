@@ -1,13 +1,30 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AtlasBalance.API.DTOs;
 
 public sealed class MovimientoEsperadoCrearRequest
 {
     public Guid CuentaId { get; set; }
     public DateOnly FechaEsperada { get; set; }
+    // V-02.07: el limite espeja el rango de CreateExtractoRequest.Monto en
+    // ImportacionDtos/ExtractosDtos. ParseLimitsInInvariantCulture es obligatorio:
+    // el servidor corre en es-ES (coma decimal) y sin el, RangeAttribute revienta
+    // con FormatException al parsear los limites y el endpoint responde 500.
+    [Range(typeof(decimal), "-9999999999.9999", "9999999999.9999", ParseLimitsInInvariantCulture = true)]
     public decimal Monto { get; set; }
+    // V-02.07: ConciliacionService asigna Divisa/Referencia/Concepto directo desde
+    // el request (con Trim, sin truncar) a MovimientoEsperado, que en AppDbContext
+    // tiene HasMaxLength(8/128/512). Sin estos limites, un valor mas largo revienta
+    // SaveChangesAsync con un 500 en vez de un 400.
+    [MaxLength(8)]
     public string? Divisa { get; set; }
+    [MaxLength(128)]
     public string? Referencia { get; set; }
+    [MaxLength(512)]
     public string? Concepto { get; set; }
+    // Mismo caso que los tres de arriba: ConciliacionService lo asigna directo y
+    // la columna es HasMaxLength(32).IsRequired().
+    [MaxLength(32)]
     public string Origen { get; set; } = "manual";
 }
 
@@ -35,6 +52,9 @@ public sealed class ConciliacionSugerirRequest
 
 public sealed class ConciliacionCambiarEstadoRequest
 {
+    // V-02.07: espeja Conciliacion.Observacion, HasMaxLength(1000) en AppDbContext.
+    // ConciliacionService lo asigna directo (solo Trim, sin truncar) a la entidad.
+    [MaxLength(1000)]
     public string? Observacion { get; set; }
 }
 

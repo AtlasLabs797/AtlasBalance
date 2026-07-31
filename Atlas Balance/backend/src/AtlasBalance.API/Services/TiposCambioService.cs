@@ -197,12 +197,41 @@ public sealed class TiposCambioService : ITiposCambioService
             throw new InvalidOperationException("La tasa debe ser mayor que cero.");
         }
 
+        // V-02.07: antes solo se comprobaba `tasa <= 0`. El techo real
+        // (MaxRateValue) se aplicaba mucho despues, al construir el grafo de
+        // conversion, asi que una tasa absurda se guardaba "con exito" y luego
+        // quedaba excluida en silencio de las conversiones: el usuario veia la
+        // tasa en la tabla pero las cifras no la usaban. Mejor rechazarla aqui.
+        if (tasa < MinRateValue || tasa > MaxRateValue)
+        {
+            throw new InvalidOperationException(
+                $"La tasa debe estar entre {MinRateValue} y {MaxRateValue}.");
+        }
+
         var origen = Normalize(divisaOrigen);
         var destino = Normalize(divisaDestino);
 
         if (origen == destino)
         {
             throw new InvalidOperationException("La divisa origen y destino no pueden ser iguales.");
+        }
+
+        // V-02.07: ninguna de las dos divisas se contrastaba con el catalogo, asi
+        // que se podia crear un par contra un codigo inventado. La fila quedaba
+        // huerfana: no la usa ninguna conversion y no hay pantalla donde borrarla.
+        var codigosValidos = await _dbContext.DivisasActivas
+            .Where(d => d.Activa && (d.Codigo == origen || d.Codigo == destino))
+            .Select(d => d.Codigo)
+            .ToListAsync(cancellationToken);
+
+        if (!codigosValidos.Contains(origen))
+        {
+            throw new InvalidOperationException($"La divisa origen '{origen}' no existe o no esta activa.");
+        }
+
+        if (!codigosValidos.Contains(destino))
+        {
+            throw new InvalidOperationException($"La divisa destino '{destino}' no existe o no esta activa.");
         }
 
         var now = DateTime.UtcNow;

@@ -2,6 +2,43 @@
 
 ## Abiertos
 
+### 2026-07-31 - V-02.07 - Cerrado (no se unifica, se cubre con test) - `IsUncPath` duplicado en cuatro clases
+
+- **Contexto:** al validar la ruta de `backup_path` hay cuatro lectores
+  distintos y cada uno lleva su propia copia de la logica de validacion:
+  `ConfiguracionController.cs:625`, `BackupService.cs:516`,
+  `ExportacionService.cs:347` y `GoogleDriveBackupService.ResolveSafeDirectory`.
+  Cuando en V-02.07 se anadio el rechazo de rutas UNC, se aplico solo a los
+  tres primeros. El cuarto se quedo sin el y permitia que las copias
+  descargadas de Drive acabaran en un recurso SMB remoto.
+- **Estado:** el agujero concreto esta **cerrado** (se anadio `IsUncPath` a
+  `GoogleDriveBackupService` el 2026-07-31). Lo que queda abierto es la causa
+  raiz: mientras la funcion siga copiada cuatro veces, el proximo cambio en la
+  politica de rutas se volvera a olvidar de alguna.
+- **Resolucion (2026-07-31): se intento la unificacion y se descarto.** Se
+  extrajo un `Validation/PathPolicy.cs` comun y se reescribieron los cuatro
+  lectores contra el. El resultado dejo claro que **las cuatro copias no eran
+  duplicados**: para no cambiar comportamiento, el helper acabo necesitando
+  cinco parametros booleanos (32 combinaciones posibles, 4 usadas) mas un valor
+  de enum dedicado exclusivamente a preservar una tilde que difiere entre dos
+  mensajes de `BackupService`. Cada llamador seguia necesitando ademas su propio
+  `switch` para recuperar sus textos. Mas dificil de leer que la duplicacion que
+  venia a resolver, o sea justo lo que prohibe AGENTS.md seccion 2.2. Revertido.
+- **Diferencias reales entre las cuatro** (por eso no se unifican): mensajes
+  distintos, `try/catch` alrededor de `Path.GetFullPath` en tres de ellas y no en
+  la cuarta, una recomprobacion de raiz posterior a canonicalizar solo en dos, y
+  un criterio de raiz mas laxo en `GoogleDriveBackupService`
+  (`Path.IsPathRooted` O `LooksLikeWindowsRootedPath`, no solo la segunda).
+  `ConfiguracionController` ademas devuelve `bool` en vez de lanzar.
+- **Lo que si cierra el riesgo:** `UncPathRejectionTests`, que comprueba el
+  rechazo de UNC (en las dos formas, `\\` y `//`) en los **cuatro** puntos, mas
+  una contraprueba de que una ruta local normal sigue pasando en los cuatro. Se
+  verifico que el test falla de verdad quitando el chequeo a proposito. Un
+  refactor no habria impedido que alguien olvide *llamar* a la validacion; este
+  test si.
+- **Detalle completo:** `Documentacion/DOCUMENTACION_CAMBIOS.md`
+  (entrada del 2026-07-31).
+
 ### 2026-07-24 - V-02.07 - Cerrado - CodeQL #18 cs/log-forging en WatchdogOperationsService:181
 
 - **Contexto:** CodeQL re-scan posterior al merge de V-02.06 reabre la

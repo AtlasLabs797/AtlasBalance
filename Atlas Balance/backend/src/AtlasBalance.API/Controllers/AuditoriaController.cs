@@ -6,6 +6,7 @@ using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Services;
+using AtlasBalance.API.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +54,11 @@ public sealed class AuditoriaController : ControllerBase
         [FromQuery] DateOnly? fechaHasta = null,
         CancellationToken ct = default)
     {
+        if (!DateRangeValidator.TryValidate(fechaDesde, fechaHasta, out var rangoError))
+        {
+            return BadRequest(new { error = rangoError });
+        }
+
         var desde = fechaDesde?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var hasta = fechaHasta?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
@@ -99,6 +105,11 @@ public sealed class AuditoriaController : ControllerBase
         [FromQuery] DateOnly? fechaHasta = null,
         CancellationToken ct = default)
     {
+        if (!DateRangeValidator.TryValidate(fechaDesde, fechaHasta, out var rangoError))
+        {
+            return BadRequest(new { error = rangoError });
+        }
+
         var query = BuildFilteredAuditoriaQuery(usuarioId, cuentaId, paisId, tipoAccion, fechaDesde, fechaHasta);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
@@ -197,6 +208,11 @@ public sealed class AuditoriaController : ControllerBase
         [FromQuery] DateOnly? fechaHasta = null,
         CancellationToken ct = default)
     {
+        if (!DateRangeValidator.TryValidate(fechaDesde, fechaHasta, out var rangoError))
+        {
+            return BadRequest(new { error = rangoError });
+        }
+
         var query = BuildFilteredAuditoriaQuery(usuarioId, cuentaId, paisId, tipoAccion, fechaDesde, fechaHasta);
         var totalMatching = await query.CountAsync(ct);
         if (totalMatching > MaxExportRows)

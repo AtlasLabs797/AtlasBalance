@@ -418,7 +418,11 @@ public static class SeedData
                 PaisId = espanaId,
                 Nombre = "Demo Sabadell Operativa EUR",
                 NumeroCuenta = "DEMO-ES-001",
-                Iban = "ES00 0000 0000 0000 0000 0001",
+                // V-02.07: los digitos de control eran 00 (imposibles en un IBAN
+                // real) y la validacion nueva de IbanValidator rechazaba la cuenta
+                // demo en cuanto alguien la editaba. 55 es el control correcto
+                // para este BBAN, asi que sigue pareciendo de demo y ya valida.
+                Iban = "ES55 0000 0000 0000 0000 0001",
                 BancoNombre = "Sabadell",
                 Divisa = "EUR",
                 FormatoId = sabadellFormatId,
