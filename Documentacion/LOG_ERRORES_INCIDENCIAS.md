@@ -1,5 +1,83 @@
 ﻿# Log de errores e incidencias
 
+## 2026-07-31 - V-02.07 - `LimpiezaExportacionesJob` no podia purgar: su propia policy RLS rechazaba el borrado logico (CERRADO)
+
+- **Contexto:** auditoria de RLS de V-02.07. El hallazgo no salio de un
+  fallo reportado sino de leer la migracion
+  `20260724090000_FixExportacionesWriteRlsDeletedAtCheck`, que se habia
+  escrito precisamente para arreglar otra asimetria de `deleted_at`.
+- **Sintoma esperado en produccion:** `LimpiezaExportacionesJob` aborta en
+  cada ejecucion con `new row violates row-level security policy for table
+  "EXPORTACIONES"`. La purga por retencion de ficheros de exportacion con
+  PII no se completa nunca.
+- **Causa:** esa migracion dejo el `WITH CHECK` de `exportaciones_write`
+  como `deleted_at IS NULL AND can_export_cuenta_by_id(cuenta_id)`, sin
+  replicar la salida `is_admin_or_system()` que el `USING` si tiene. En un
+  `UPDATE` el `WITH CHECK` evalua la fila NUEVA: el job marca
+  `deleted_at = now()`, la fila nueva ya no cumple `deleted_at IS NULL` y
+  Postgres la rechaza. Que el job corra en contexto `system` no ayudaba,
+  porque esa rama no existia en el `WITH CHECK`.
+- **Por que no lo cazo la suite:** `LimpiezaExportacionesJobTests.cs:186`
+  usa `UseInMemoryDatabase`. El proveedor in-memory no evalua RLS, asi que
+  el test pasa en verde mientras produccion falla. El patron afecta a todos
+  los tests de jobs.
+- **Solucion:** migracion `20260731090000_FixExportacionesPurgaRlsWithCheck`
+  devuelve la simetria (`WITH CHECK` = `USING`). Para un usuario normal no
+  cambia nada: sigue exigiendo `deleted_at IS NULL` y permiso de
+  exportacion, y no existe endpoint de borrado de exportaciones (el unico
+  camino de soft-delete es el job). Regresion cubierta en
+  `RowLevelSecurityTests`, que ahora ejecuta el borrado logico en contexto
+  `system` contra Postgres real y exige mas de 0 filas afectadas.
+- **Leccion:** `deleted_at IS NULL` va en `USING`, nunca en `WITH CHECK`.
+  En `USING` filtra las filas candidatas; en `WITH CHECK` prohibe el propio
+  borrado logico. `CONCILIACIONES` y `MOVIMIENTOS_ESPERADOS` ya lo hacian
+  bien en `20260720090000`; `EXPORTACIONES` se desvio del patron.
+
+## 2026-07-31 - V-02.07 - RLS sin backstop de soft-delete en las tres tablas hijas de EXTRACTOS (CERRADO)
+
+- **Contexto:** misma auditoria de RLS. Ampliado respecto al hallazgo
+  inicial, que solo señalaba las policies de escritura.
+- **Causa:** las policies de `EXTRACTOS_COLUMNAS_EXTRA` (2026-05-01) y
+  `REVISION_EXTRACTO_ESTADOS` (2026-06-01) se escribieron ANTES de que
+  `20260710092000_AddSoftDeleteToImportacionFilaColumnaExtraRevision`
+  anadiera la columna `deleted_at` a esas tablas. Nunca se actualizaron,
+  asi que ni el `SELECT` ni la escritura filtraban filas borradas.
+  `EXTRACTOS_DESGLOSES` si filtraba en el `SELECT`, pero no al escribir.
+  El unico filtro efectivo era el query filter global de EF Core: cualquier
+  consulta con `IgnoreQueryFilters`, o un `UPDATE` por id, alcanzaba filas
+  ya borradas.
+- **Solucion:** migracion
+  `20260731091000_HardenSoftDeleteBackstopHijosExtracto` anade
+  `deleted_at IS NULL` al `USING` de las tres tablas (y al `SELECT` de las
+  dos que no lo tenian), replicando lo que `20260716120000` hizo con
+  `IMPORTACION_LOTE_FILAS`. El `WITH CHECK` se deja intacto por la leccion
+  de la entrada anterior.
+- **Leccion:** anadir `deleted_at` a una tabla con RLS obliga a revisar sus
+  policies en la misma migracion. La columna y la policy no se sincronizan
+  solas.
+
+## 2026-07-31 - V-02.07 - `ImportacionLoteId` aceptaba un lote de otra cuenta (CERRADO)
+
+- **Contexto:** auditoria de autorizacion por endpoint de V-02.07.
+- **Causa:** `ImportacionService.ConfirmarCoreAsync` validaba
+  `request.CuentaId` con `EnsureCuentaPermitidaAsync` pero escribia
+  `request.LoteId` directamente en `Extracto.ImportacionLoteId` sin
+  comprobar que ese lote perteneciera a la cuenta. Ademas
+  `RevertirLoteAsync` borraba filtrando solo por `ImportacionLoteId`, sin
+  `CuentaId`, asi que la reversion legitima de un lote arrastraba de rebote
+  las filas etiquetadas desde otra cuenta.
+- **Alcance real:** no es fuga de lectura. Para un usuario normal RLS ya
+  frenaba el borrado cruzado (el `USING` de `extractos_write` excluye las
+  cuentas sin permiso de escritura); para un admin no, y en todo caso el
+  rastro de importacion quedaba sucio. Requiere conocer un GUID ajeno.
+- **Solucion:** `EnsureLotePerteneceACuentaAsync` valida la pertenencia
+  antes de importar (403 si no cuadra) y el filtro de `RevertirLoteAsync`
+  incluye `CuentaId` para acotar el radio de las filas mal etiquetadas de
+  antes del fix.
+- **Leccion:** el id primario de un request no es el unico que hay que
+  validar. Todo identificador secundario que venga del cliente y se
+  persista necesita su propia comprobacion de pertenencia.
+
 ## 2026-07-31 - V-02.07 - `[Range]` con limites decimales revienta la validacion en un servidor es-ES (CERRADO)
 
 - **Contexto:** detectado al anadir rangos a `Monto`/`Saldo` de extractos

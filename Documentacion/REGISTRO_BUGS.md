@@ -2,6 +2,116 @@
 
 ## Abiertos
 
+### 2026-07-31 - V-02.07 - Abierto - `PERMISOS_USUARIO` expone toda la matriz de permisos durante el flujo de auth
+
+- **Contexto:** auditoria de RLS de V-02.07. Hermano del hallazgo de
+  `MFA_TRUSTED_DEVICES`, que si se cerro en
+  `20260731092000_AcotarAuthFlowMfaTrustedDevices`.
+- **Descripcion:** la policy `permisos_usuario_select`
+  (`20260609120000_AddCountryAuthorizationScopes.cs:395`) tiene una rama
+  `atlas_security.is_auth_flow()` sin filtro por usuario. Durante cualquier
+  request NO autenticado bajo `/api/auth/*`, un `SELECT` sobre
+  `PERMISOS_USUARIO` devolveria la matriz completa de permisos de todos los
+  usuarios.
+- **Explotabilidad hoy: ninguna conocida.** El unico consumidor en modo
+  auth es `AuthService.BuildAuthResultAsync` (`AuthService.cs:938`), que
+  filtra por `UsuarioId` en C#. El problema es que RLS no aporta backstop:
+  un endpoint nuevo bajo `/api/auth`, o un refactor que pierda ese `Where`,
+  quedaria expuesto sin que nada falle.
+- **Por que sigue abierto:** no se puede acotar por `usuario_id` porque en
+  modo auth el contexto RLS todavia no publica `atlas.user_id` (el usuario
+  no esta autenticado a nivel HTTP cuando corre esa consulta). El arreglo
+  real es publicar el id del usuario ya resuelto por credenciales en el
+  contexto firmado (`RlsDbCommandInterceptor.BuildContext`) y acotar la
+  rama con el. Eso toca el canal de confianza que alimenta a RLS y no debe
+  entrar sin poder ejecutar la suite completa de auth antes y despues.
+- **Riesgo de no hacerlo:** bajo mientras el filtro en C# siga ahi.
+
+### 2026-07-31 - V-02.07 - Abierto - `RlsDbCommandInterceptor` falla abierto en dos puntos
+
+- **Descripcion:** dos comportamientos que estan del lado inseguro:
+  1. `RlsDbCommandInterceptor.cs:159-163`: si `HttpContext` es `null`, el
+     contexto que se publica es `System()`, es decir `is_admin=true,
+     is_system=true` y bypass total de RLS. Es deliberado para los jobs de
+     Hangfire, pero convierte "ausencia de contexto" en "privilegio
+     maximo": cualquier codigo que pierda el `HttpContext` (un `Task.Run`
+     dentro de un request, un `IHostedService` nuevo) hereda bypass sin
+     decision explicita.
+  2. `RlsDbCommandInterceptor.cs:88-91`: si `ShouldSkip` es cierto, la
+     query original se ejecuta igual sin publicar contexto. Como
+     `set_config` se fija con ambito de sesion (`false`, linea 228) sobre
+     un pool compartido, esa query correria con el contexto residual de la
+     peticion anterior que uso esa conexion fisica.
+- **Explotabilidad hoy: ninguna encontrada.** El interceptor se dispara en
+  todos los `DbCommand` de EF Core, incluidos los `ExecuteSqlRaw`, y no hay
+  SQL crudo que lo esquive. Hangfire si comparte pool con EF Core
+  (`Program.cs:298`, mismo `DefaultConnection`) y sus consultas no pasan por
+  el interceptor, pero ninguna tabla del esquema `hangfire` tiene RLS.
+- **Arreglo propuesto:** que los jobs declaren el contexto `system` de
+  forma expresa (un scope explicito) y que el fallback por defecto deniegue
+  en vez de conceder; y que `ShouldSkip` lance en vez de dejar pasar la
+  query. Ambos son refactors que tocan los ~10 jobs y el arranque, y
+  necesitan la suite verde antes y despues.
+
+### 2026-07-31 - V-02.07 - Abierto - Cuatro tablas con ambito de cuenta o usuario siguen sin RLS
+
+- **Descripcion:** de las 35 tablas del modelo, 23 tienen `ENABLE` +
+  `FORCE ROW LEVEL SECURITY`. De las 12 restantes, la mayoria son catalogos
+  globales admin-only donde RLS no aporta (`CONFIGURACION`,
+  `DIVISAS_ACTIVAS`, `TIPOS_CAMBIO`, `FORMATOS_IMPORTACION`), pero cuatro si
+  tienen columna de ambito y hoy dependen solo de la capa de aplicacion:
+  - `ALERTAS_SALDO` (`CuentaId`) — la mas clara: esta en el modelo
+    cuenta/titular como el resto de tablas financieras.
+  - `ALERTA_DESTINATARIOS` (`UsuarioId`).
+  - `IA_USO_USUARIOS` (`UsuarioId`).
+  - `BACKUP_OPERATIONS` (`UsuarioId`, admin-only).
+- **Riesgo:** sin RLS, cualquier fallo de autorizacion en el controlador
+  correspondiente no tiene red debajo. La auditoria de endpoints no
+  encontro ningun fallo actual en esos controladores.
+- **Discutibles aparte:** `USUARIOS`, `USUARIO_EMAILS`, `REFRESH_TOKENS` e
+  `INTEGRATION_TOKENS` no tienen ambito de cuenta pero si contienen hashes
+  y tokens; hoy los protege solo el gate de rol.
+
+### 2026-07-31 - V-02.07 - Abierto - Los tests de jobs usan `UseInMemoryDatabase` y no evaluan RLS
+
+- **Descripcion:** `LimpiezaExportacionesJobTests.cs:186` (y el resto de
+  tests de jobs) construyen el `AppDbContext` sobre el proveedor in-memory,
+  que no evalua policies. Por eso el bug de purga de `EXPORTACIONES`
+  cerrado hoy pasaba en verde en CI mientras habria fallado en produccion.
+- **Mitigacion aplicada:** se anadio la asercion de borrado logico en
+  contexto `system` a `RowLevelSecurityTests`, que si corre contra Postgres
+  real. Cubre `EXPORTACIONES`, no el patron general.
+- **Arreglo propuesto:** que todo job que escriba sobre una tabla con RLS
+  tenga al menos un test en la coleccion `postgres`. Pendiente decidir si
+  se migran los tests existentes o solo se exige para los nuevos.
+
+### 2026-07-31 - V-02.07 - Cerrado (decision de producto: se mantiene) - `comentarios` sale sin anonimizar hacia OpenClaw
+
+- **Descripcion:** `IntegrationOpenClawController.cs:331` devuelve el campo
+  `comentarios` de cada fila de extracto en el formato `full`, que es el
+  que se sirve por defecto cuando el cliente no manda `format`. Son
+  anotaciones internas de texto libre que escribe el personal, y pueden
+  contener nombres de empleados o notas sobre el cliente. El formato
+  `simple` no lo incluye, pero es opt-in.
+- **Por que no se ha tocado:** exponerlo fue una decision deliberada de
+  producto, registrada en `DOCUMENTACION_CAMBIOS.md` ("API OpenClaw incluye
+  `comentarios` en la respuesta de extractos"). Quitarlo rompe el contrato
+  de la integracion, asi que no es un fix unilateral.
+- **Tension:** V-02.07 retiro `usuario_creacion` de esa misma respuesta por
+  ser dato interno (linea 338 del propio controlador lo documenta) y
+  seudonimizo IBAN y nombres. `comentarios` se quedo fuera de ese barrido
+  siendo el campo con mas potencial de PII libre.
+- **Decision tomada (2026-07-31):** se mantiene tal cual. OpenClaw se
+  considera un consumidor de confianza y el campo se expuso de forma
+  deliberada, asi que sacarlo romperia el contrato sin ganancia real de
+  seguridad. Queda documentado como dato que cruza la frontera de la
+  empresa, no como descuido: hay comentario en el propio
+  `IntegrationOpenClawController.cs` junto al campo, para que cualquiera
+  que lea esa proyeccion sepa que la exposicion es consciente.
+- **Condicion de reapertura:** si OpenClaw deja de ser un consumidor de
+  confianza, o si se abre la integracion a un tercero, este es el primer
+  campo que hay que retirar del formato `full`.
+
 ### 2026-07-31 - V-02.07 - Cerrado (no se unifica, se cubre con test) - `IsUncPath` duplicado en cuatro clases
 
 - **Contexto:** al validar la ruta de `backup_path` hay cuatro lectores

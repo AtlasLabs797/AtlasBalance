@@ -328,6 +328,15 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 },
                 fecha = x.Fecha,
                 concepto = x.Concepto,
+                // V-02.07: `comentarios` es texto libre interno y puede contener
+                // nombres de empleados o notas sobre el cliente, asi que sale de
+                // la empresa sin seudonimizar (no es seudonimizable: es prosa).
+                // La auditoria de RLS del 2026-07-31 lo levanto como candidato a
+                // retirarse junto con `usuario_creacion`; se decide mantenerlo
+                // porque OpenClaw es un consumidor de confianza y el campo se
+                // expuso de forma deliberada. Queda documentado como dato que
+                // cruza la frontera, no como descuido. Si algun dia OpenClaw deja
+                // de ser de confianza, este es el primer campo a quitar.
                 comentarios = x.Comentarios,
                 monto = Decimal.Round(x.Monto, 2),
                 tipo_movimiento = ResolveMovementType(x.Monto),

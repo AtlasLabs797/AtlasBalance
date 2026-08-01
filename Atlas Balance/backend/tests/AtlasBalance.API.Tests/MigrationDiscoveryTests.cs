@@ -31,7 +31,11 @@ public sealed class MigrationDiscoveryTests
             "20260720090000_AlignConciliacionEstadosAndSnapshot",
             "20260720120000_RedactHistoricalConfigurationAudits",
             "20260720130000_AddBackupOperations",
-            "20260720140000_AddImportacionIdempotency"
+            "20260720140000_AddImportacionIdempotency",
+            // V-02.07: correcciones de policies RLS de esta version.
+            "20260731090000_FixExportacionesPurgaRlsWithCheck",
+            "20260731091000_HardenSoftDeleteBackstopHijosExtracto",
+            "20260731092000_AcotarAuthFlowMfaTrustedDevices"
         ]);
     }
 }

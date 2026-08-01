@@ -527,6 +527,15 @@ public sealed class RowLevelSecurityTests
         await SetRlsContextAsync(connection, "system", null, null, isAdmin: true, isSystem: true, "system");
         await InsertExportacionAsync(connection, cuentaPermitidaId);
 
+        // V-02.07: LimpiezaExportacionesJob purga por retencion marcando
+        // deleted_at en contexto system. 20260724090000 dejo el WITH CHECK de
+        // exportaciones_write sin la salida is_admin_or_system() que si tiene el
+        // USING, asi que ese UPDATE moria con "new row violates row-level
+        // security policy" y la purga de ficheros con PII no corria.
+        // 20260731090000 lo corrige. Este assert cubre el hueco: los tests del
+        // job usan UseInMemoryDatabase, que no evalua RLS y da verde igual.
+        (await SoftDeleteExportacionesAsync(connection)).Should().BeGreaterThan(0);
+
         await SetRlsContextAsync(connection, "integration", null, integrationTokenId, isAdmin: false, isSystem: false, "integration");
         (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(1);
         (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(1);
@@ -769,6 +778,17 @@ public sealed class RowLevelSecurityTests
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.AddWithValue("cuenta_id", cuentaId);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<int> SoftDeleteExportacionesAsync(NpgsqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE "EXPORTACIONES"
+            SET deleted_at = now()
+            WHERE deleted_at IS NULL
+            """;
+        return await command.ExecuteNonQueryAsync();
     }
 
     private static string QuoteIdentifier(string value) =>

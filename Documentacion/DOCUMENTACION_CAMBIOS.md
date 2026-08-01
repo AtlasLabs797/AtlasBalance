@@ -9,6 +9,103 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-07-31 - V-02.07 - Auditoria de Row Level Security y de alcance de datos por usuario
+
+**Origen:** peticion de revisar dos cosas: (1) activar RLS en todas las
+tablas con politicas de "cada usuario solo lee y escribe sus propias filas"
+y (2) comprobar que quien mira los datos solo ve lo permitido.
+
+**Conclusion sobre el punto 1: no aplica tal cual.** Es consejo de estilo
+Supabase y choca con dos hechos de este proyecto. Primero, los datos no
+pertenecen a usuarios sino a titulares y cuentas: el acceso lo concede
+`PERMISOS_USUARIO` (con `titular_id`/`cuenta_id` a NULL como permiso
+global), mas scopes por pais y 3 roles. Aplicar "solo tus filas"
+literalmente romperia la aplicacion. Segundo, RLS ya estaba implementado
+desde V-01.05, con contexto de sesion firmado por HMAC y verificado dentro
+de Postgres. El punto 2 si aplicaba entero y es donde salieron los
+hallazgos.
+
+**Metodo:** cuatro auditorias paralelas (cobertura tabla por tabla, logica
+de policies, seguridad del canal que alimenta el contexto RLS, y
+autorizacion endpoint por endpoint), con revalidacion manual de cada
+hallazgo sobre el codigo antes de darlo por bueno. Dos informes traian
+errores de hecho que se corrigieron: uno listaba `PERMISOS_USUARIO`,
+`MFA_TRUSTED_DEVICES`, `PAISES` e `INTEGRATION_PERMISSIONS` como sin RLS
+(si la tienen), y otro daba por posible un borrado cruzado de extractos que
+RLS ya frena para usuarios no admin.
+
+**Estado verificado de RLS (sin hallazgos):**
+- 23 de 35 tablas con `ENABLE` + `FORCE ROW LEVEL SECURITY`, emparejados
+  sin huecos. `FORCE` es lo que impide que el owner ignore las policies.
+- Roles Postgres correctos: owner y runtime separados, ambos
+  `NOSUPERUSER NOBYPASSRLS`, y el rol de la app no es owner de las tablas.
+- Fail-closed real: sin firma valida, `atlas_security.context_is_valid()`
+  es falso y en cascada todo lo demas. Cero filas, no fuga.
+- `is_admin` no es falsificable: sale de `IsInRole` y `UserStateMiddleware`
+  reconstruye el principal contra la BD en cada request.
+- Auditoria append-only tambien a nivel de privilegio (`Program.cs:1116`).
+- Ningun SQL crudo esquiva el interceptor.
+- Autorizacion por endpoint: los 23 controllers comprueban permiso sobre el
+  recurso concreto. No aparecio ningun IDOR clasico.
+
+**Cambios implementados:**
+- `20260731090000_FixExportacionesPurgaRlsWithCheck`: devuelve la salida
+  `is_admin_or_system()` al `WITH CHECK` de `exportaciones_write`. Sin ella
+  `LimpiezaExportacionesJob` no podia marcar `deleted_at` y la purga por
+  retencion de ficheros con PII fallaba en cada ejecucion.
+- `20260731091000_HardenSoftDeleteBackstopHijosExtracto`: anade
+  `deleted_at IS NULL` al `USING` de `EXTRACTOS_COLUMNAS_EXTRA`,
+  `REVISION_EXTRACTO_ESTADOS` y `EXTRACTOS_DESGLOSES` (y al `SELECT` de las
+  dos primeras). Sus policies eran anteriores a la columna `deleted_at`.
+- `20260731092000_AcotarAuthFlowMfaTrustedDevices`: parte la policy
+  `FOR ALL` en SELECT/INSERT/UPDATE/DELETE y deja el `DELETE` solo para
+  admin/system. La rama `is_auth_flow()` daba escritura y borrado sobre
+  todas las filas de la tabla que protege el segundo factor.
+- `ImportacionService.EnsureLotePerteneceACuentaAsync`: valida que
+  `request.LoteId` sea de la cuenta autorizada antes de escribirlo en
+  `Extracto.ImportacionLoteId`. `RevertirLoteAsync` filtra ademas por
+  `CuentaId`.
+- `RowLevelSecurityTests`: asercion nueva de borrado logico de
+  `EXPORTACIONES` en contexto `system`, que es la regresion que cubre el
+  primer fix.
+- `MigrationDiscoveryTests`: las tres migraciones nuevas entran en la lista
+  de descubrimiento.
+
+**Archivos tocados:**
+- `backend/src/AtlasBalance.API/Migrations/20260731090000_FixExportacionesPurgaRlsWithCheck.cs` (nuevo)
+- `backend/src/AtlasBalance.API/Migrations/20260731091000_HardenSoftDeleteBackstopHijosExtracto.cs` (nuevo)
+- `backend/src/AtlasBalance.API/Migrations/20260731092000_AcotarAuthFlowMfaTrustedDevices.cs` (nuevo)
+- `backend/src/AtlasBalance.API/Services/ImportacionService.cs`
+- `backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+- `backend/tests/AtlasBalance.API.Tests/MigrationDiscoveryTests.cs`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`, `Documentacion/REGISTRO_BUGS.md`,
+  `Documentacion/Versiones/v-02.07.md`
+
+**Comandos ejecutados y resultado de verificacion:**
+- `dotnet build src/AtlasBalance.API/AtlasBalance.API.csproj` con
+  redireccion de `obj`/`bin` a scratchpad -> **0 errores**, 7 advertencias
+  preexistentes.
+- Copia del arbol `backend/` a scratchpad con `robocopy /E /XD obj bin`
+  (workaround ya documentado el 2026-07-29 para el ACL de `obj/`) y
+  `dotnet test --filter "RowLevelSecurityTests|MigrationDiscovery|Importacion|Rls"`
+  -> **81/81 correctas**.
+- `dotnet test --filter RowLevelSecurityTests` aislado -> el test de
+  integracion con Testcontainers contra Postgres 16 real **pasa en 8 s**
+  con las tres migraciones aplicadas.
+- Contraprueba: revertida la policy al estado defectuoso solo en la copia
+  de scratchpad para confirmar que el test nuevo falla sin el fix (ver
+  resultado en la entrada del log de errores).
+
+**Pendientes:** todos registrados en `REGISTRO_BUGS.md` con su motivo:
+rama `is_auth_flow()` de `PERMISOS_USUARIO` sin acotar (requiere publicar
+el user id en el contexto firmado), los dos puntos fail-open del
+interceptor, las cuatro tablas con ambito que siguen sin RLS y el patron de
+tests de jobs sobre `UseInMemoryDatabase`. Sobre `comentarios` hacia
+OpenClaw hay decision tomada (se mantiene, documentado en el controlador y
+en `REGISTRO_BUGS.md`), asi que no queda pendiente.
+
+---
+
 ## 2026-07-31 - V-02.07 - Fase 3c: fechas, pendientes menores y cierre del refactor de rutas
 
 **Version:** V-02.07

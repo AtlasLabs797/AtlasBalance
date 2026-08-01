@@ -650,9 +650,14 @@ public sealed class ImportacionService : IImportacionService
         // V-02-05 (MED-15): ExecuteUpdate en lugar de cargar 50k entidades a memoria
         // solo para marcarlas. Un UPDATE con WHERE filtro, sin materializacion.
         int updateCount;
+        // V-02.07: el filtro lleva tambien CuentaId. Filtrar solo por
+        // ImportacionLoteId permitia que una fila etiquetada con este lote desde
+        // otra cuenta se borrase de rebote al revertir. EnsureLotePerteneceACuentaAsync
+        // corta el origen del problema; esto acota el radio por si quedan filas
+        // mal etiquetadas de antes del fix.
         var extractosARevertir = _dbContext.Extractos
             .IgnoreQueryFilters()
-            .Where(x => x.ImportacionLoteId == lote.Id && x.DeletedAt == null);
+            .Where(x => x.ImportacionLoteId == lote.Id && x.CuentaId == cuenta.Id && x.DeletedAt == null);
         if (_dbContext.Database.IsRelational())
         {
             updateCount = await extractosARevertir.ExecuteUpdateAsync(
@@ -710,6 +715,7 @@ public sealed class ImportacionService : IImportacionService
         IReadOnlyList<FilaValidacionResponse>? persistedValidationRows)
     {
         var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        await EnsureLotePerteneceACuentaAsync(request.LoteId, cuenta.Id, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var separator = persistedValidationRows is null
@@ -1094,6 +1100,31 @@ public sealed class ImportacionService : IImportacionService
         }
 
         return cuenta;
+    }
+
+    // V-02.07: request.LoteId llegaba del cliente y se escribia tal cual en
+    // Extracto.ImportacionLoteId sin comprobar que el lote fuera de la cuenta
+    // autorizada. Un id de lote de otra cuenta etiquetaba el extracto con un
+    // lote ajeno, y RevertirLoteAsync borra por ImportacionLoteId: la reversion
+    // legitima de ese lote arrastraba tambien las filas etiquetadas de rebote.
+    // RLS frena el borrado cruzado para un usuario normal (el USING de
+    // extractos_write excluye las cuentas sin permiso de escritura), pero no
+    // para un admin, y en cualquier caso el rastro de importacion queda sucio.
+    private async Task EnsureLotePerteneceACuentaAsync(Guid? loteId, Guid cuentaId, CancellationToken cancellationToken)
+    {
+        if (loteId is null)
+        {
+            return;
+        }
+
+        var perteneceALaCuenta = await _dbContext.ImportacionLotes
+            .AsNoTracking()
+            .AnyAsync(l => l.Id == loteId.Value && l.CuentaId == cuentaId, cancellationToken);
+
+        if (!perteneceALaCuenta)
+        {
+            throw new ImportacionException("El lote no pertenece a la cuenta indicada", StatusCodes.Status403Forbidden);
+        }
     }
 
     private static bool GrantsImportacionPermission(PermisoUsuario permiso, ImportacionPermissionMode permissionMode)
