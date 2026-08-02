@@ -2,6 +2,98 @@
 
 ## Abiertos
 
+### 2026-08-02 - V-02.07 - Abierto - `AddAuthorization()` sin `FallbackPolicy`: una accion sin atributo queda publica
+
+- **Contexto:** auditoria de permisos endpoint por endpoint del 2026-08-02.
+  Ya estaba identificado como pendiente en el bloque "Auditoria IDOR de toda
+  la superficie de API" de `v-02.07.md`; se confirma y se registra aqui.
+- **Descripcion:** `Program.cs:184` llama a `AddAuthorization()` sin
+  `FallbackPolicy`. En ASP.NET Core eso significa que una accion sin
+  atributo de autorizacion queda ANONIMA, no denegada.
+- **Explotabilidad hoy: ninguna.** Las ~150 acciones auditadas declaran
+  todas su atributo, y `ControllerAuthorizationCoverageTests` lo exige en
+  build. El riesgo es futuro: un controller nuevo al que se le olvide el
+  atributo se publica en silencio.
+- **Por que sigue abierto:** el arreglo obliga a marcar `[AllowAnonymous]`
+  en 5 puntos (`IntegrationOpenClawController`, `MapGet("/api/health")`,
+  `MapFallback("/api/{**catchAll}")`, `MapFallbackToFile("index.html")` y
+  el dashboard de Hangfire en dev). Equivocarse en `MapFallbackToFile` deja
+  a TODOS los usuarios sin pagina de login, asi que exige verificar la app
+  arrancada y no solo tests. No se hizo en esta sesion por eso.
+
+### 2026-08-02 - V-02.07 - Abierto - Tres puntos ciegos en el guardarrail de autorizacion
+
+- **Contexto:** misma auditoria. El guardarrail
+  (`ControllerAuthorizationCoverageTests.cs`) es correcto en lo que cubre,
+  pero tiene tres huecos de alcance.
+- **Descripcion:**
+  1. Solo escanea `typeof(AuthController).Assembly`, asi que **no cubre
+     `AtlasBalance.Watchdog`**. `WatchdogController` no lleva atributo de
+     autorizacion y sus endpoints son restaurar backup y actualizar la app,
+     la superficie de mayor impacto del sistema.
+  2. `Ningun_Endpoint_Anonimo_Debe_Aceptar_Un_Id_De_Recurso_En_La_Ruta` solo
+     mira la plantilla del `HttpMethodAttribute` del metodo; ignora el
+     `[Route]` de clase. Un controller anonimo con `[Route("api/x/{id}")]`
+     y una accion sin plantilla propia se le escapa.
+  3. `GetActionMethods` usa `BindingFlags.DeclaredOnly`: una accion heredada
+     de un controller base no se inspecciona.
+- **Explotabilidad hoy: ninguna.** El Watchdog si esta protegido en runtime
+  (`ListenLocalhost(5001)` + `X-Watchdog-Secret` con comparacion en tiempo
+  constante, `Watchdog/Program.cs:45-62`), y no existe hoy ningun controller
+  anonimo con `[Route]` de clase con id ni ningun controller base con
+  acciones. Es cobertura que falta, no un agujero abierto.
+- **Por que sigue abierto:** no se selecciono para esta sesion.
+
+### 2026-08-02 - V-02.07 - Abierto - Scope `vencimientos` huerfano, concedido por defecto a todo token
+
+- **Contexto:** misma auditoria, hallado junto al bug de `resolver-nombres`.
+- **Descripcion:** `vencimientos` esta en `DefaultOpenClawScopes`
+  (`IntegracionesController.cs:27`), asi que todo token creado sin scopes
+  explicitos lo recibe. Ningun endpoint de `IntegrationOpenClawController`
+  resuelve a ese scope: no existe ruta cuyo primer segmento sea
+  `vencimientos`.
+- **Impacto: ninguno de seguridad.** Un scope que no abre ninguna puerta no
+  concede nada. Es ruido en la UI y en la auditoria de tokens: sugiere una
+  capacidad que no existe.
+- **Nota:** el nuevo `IntegrationOpenClawScopeCoverageTests` comprueba la
+  direccion endpoint -> scope (que ningun endpoint quede inalcanzable), no
+  la inversa (que ningun scope quede sin endpoint), justamente porque un
+  scope de mas es inocuo y uno de menos rompe un endpoint. Si se decide
+  limpiar, cuidado con los tokens ya emitidos que lo llevan serializado.
+
+### 2026-08-02 - V-02.07 - Abierto - `ExtractosController` reimplementa la logica de scope en vez de usar `IUserAccessService`
+
+- **Contexto:** misma auditoria.
+- **Descripcion:** `ExtractosController` es el unico de los controllers con
+  datos de usuario que no inyecta `IUserAccessService`; tiene su propia
+  copia (`GetAllowedAccountIds`, `CanView`, `CanViewTitular`,
+  `QueryVisibleAccounts`, `GetPermission`, lineas 1009-1197).
+- **Divergencia hoy: ninguna.** Se comparo predicado a predicado:
+  `ExtractosController.cs:1021-1026` es identico a
+  `UserAccessService.cs:200-206`, y `QueryVisibleAccounts:1196` es
+  semanticamente identico a `ApplyActiveTitularCuentaScope:367-369`
+  (ambos exigen cuenta no borrada y titular no borrado).
+- **Por que se registra igual:** son dos fuentes de verdad para la regla de
+  permisos de la mayor superficie no-admin de la app. El dia que cambie una
+  regla en `UserAccessService`, nada obliga a actualizar la copia, y el
+  fallo seria silencioso. Es deuda, no bug.
+
+### 2026-08-02 - V-02.07 - Abierto - `ExportacionesController.Descargar` distingue 404 de 403
+
+- **Contexto:** misma auditoria. Severidad muy baja, se registra por
+  completitud.
+- **Descripcion:** `GET /api/exportaciones/{id}/descargar` devuelve 404 si
+  el id no existe y 403 si existe pero pertenece a una cuenta fuera del
+  scope (`ExportacionesController.cs:179-188`). Un autenticado puede
+  distinguir "no existe" de "existe y no es mia", confirmando la existencia
+  de exportaciones ajenas.
+- **Impacto:** fuga de metadatos de existencia, no de contenido. El fichero
+  no se sirve en ningun caso: el confinamiento de ruta
+  (`IsAllowedExportFile:221-248`) y la comprobacion en disco van despues del
+  `Forbid`. Ademas los ids son `Guid`, asi que no se pueden enumerar.
+- **Por que sigue abierto:** unificar a 404 es trivial pero cambia el
+  contrato de la API; no se toco sin pedirlo.
+
 ### 2026-07-31 - V-02.07 - Abierto - `PERMISOS_USUARIO` expone toda la matriz de permisos durante el flujo de auth
 
 - **Contexto:** auditoria de RLS de V-02.07. Hermano del hallazgo de

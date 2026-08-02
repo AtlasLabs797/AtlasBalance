@@ -1,5 +1,50 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-02 - V-02.07 - `POST /api/integration/openclaw/resolver-nombres` era inalcanzable: 403 permanente (CERRADO)
+
+- **Contexto:** auditoria de permisos endpoint por endpoint de V-02.07
+  (los 24 controllers de la API mas el Watchdog). El hallazgo no salio de
+  un fallo reportado sino de cruzar dos listas que nadie ataba entre si.
+- **Sintoma:** cualquier llamada a `POST /api/integration/openclaw/resolver-nombres`
+  con un token valido responde `403 FORBIDDEN`, sin importar los scopes ni
+  los permisos de datos concedidos.
+- **Causa:** `IntegrationAuthMiddleware.TokenAllowsEndpoint` es
+  deny-by-default y exige que el token lleve el scope que
+  `ResolveEndpointScope` deriva del primer segmento de la ruta, o sea
+  `resolver-nombres`. Pero ese valor no estaba en `DefaultOpenClawScopes`
+  (`IntegracionesController.cs`), que era la unica lista de scopes validos:
+  `FindUnknownScope` lo rechazaba con 400 y `NormalizeEndpointScopes` lo
+  filtraba en silencio. Ningun token creado o rotado por la API de
+  administracion podia recibirlo, asi que el endpoint quedaba muerto salvo
+  editando la fila a mano en BD.
+- **Por que no lo cazo la suite:** no habia ningun test que relacionara las
+  rutas del controller con la lista de scopes concedibles. Son dos listas
+  mantenidas a mano en archivos distintos. El fallo es silencioso por
+  naturaleza: la ruta existe, el controller esta escrito y probado, y el
+  unico sintoma es un 403 que se confunde con "no le he dado permisos".
+  `v-02.07.md` incluso lo documentaba como auditado y operativo.
+- **Solucion:** separar los dos papeles que cumplia `DefaultOpenClawScopes`.
+  Se anade `KnownOpenClawScopes` (universo de scopes VALIDOS, que es contra
+  lo que validan ahora `FindUnknownScope` y `NormalizeEndpointScopes`) y
+  `DefaultOpenClawScopes` se queda solo como los scopes concedidos cuando
+  el caller OMITE el campo. `resolver-nombres` entra en el primero pero
+  **no** en el segundo: deshace la pseudonimizacion de nombres
+  (re-identificacion), asi que se concede solo si el admin lo marca a
+  proposito. Meterlo en los defaults habria dado capacidad de
+  re-identificar a todo token creado sin scopes explicitos, que es una
+  regresion de privacidad peor que el bug que arregla.
+- **Regresion:** `IntegrationOpenClawScopeCoverageTests.cs` (nuevo, 3 facts)
+  ata las dos listas: recorre por reflexion las rutas de
+  `IntegrationOpenClawController`, replica el `ResolveEndpointScope` del
+  middleware y exige que cada scope resultante exista en
+  `KnownOpenClawScopes`. Verificado que falla sin el arreglo (senala
+  `ResolverNombres -> 'resolver-nombres'`) y pasa con el.
+- **Leccion:** cuando una constante cumple dos papeles a la vez (validar y
+  conceder por defecto), ampliarla para arreglar el primero regala permisos
+  por el segundo. Separar antes de anadir. Y toda lista de permisos que se
+  mantiene a mano en dos archivos necesita un test que los ate: aqui el
+  fallo no era ruidoso, era un endpoint invisible.
+
 ## 2026-07-31 - V-02.07 - `LimpiezaExportacionesJob` no podia purgar: su propia policy RLS rechazaba el borrado logico (CERRADO)
 
 - **Contexto:** auditoria de RLS de V-02.07. El hallazgo no salio de un

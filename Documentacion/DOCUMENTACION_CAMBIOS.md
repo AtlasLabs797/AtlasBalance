@@ -9,6 +9,88 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-02 - V-02.07 - Auditoria de permisos endpoint por endpoint (authn, authz, IDOR, tipos de id)
+
+**Origen:** peticion de revisar cinco puntos y comprobar cuales aplican:
+(1) authn/authz endpoint por endpoint, (2) verificacion de propiedad en
+ver/editar/borrar, (3) check de rol admin en backend, (4) rutas con `{id}`
+mas un helper reutilizable de autorizacion, y (5) migrar ids enteros
+secuenciales a UUID.
+
+**Metodo:** cinco auditorias en paralelo repartiendo los 24 controllers de
+la API mas un inventario mecanico de tipos de id, con revalidacion manual
+de todo hallazgo con peso antes de darlo por bueno. La auditoria IDOR
+previa de esta misma version se trato como no fiable a proposito y los
+resultados se re-derivaron leyendo codigo. Hizo falta: ese documento daba
+por operativo un endpoint que llevaba muerto desde que se escribio.
+
+**Que aplicaba y que no:**
+
+- Puntos 1, 2, 3 y 4: **ya implementados**, sin huecos explotables. El
+  patron es consistente en toda la superficie: todo endpoint `{id}` carga
+  el registro de BD y deriva de ahi la cuenta/titular sobre la que evalua
+  permiso. El rol admin ni siquiera se lee del JWT: `UserStateMiddleware`
+  relee el usuario de BD en cada request, antes de `UseAuthorization`.
+- Punto 4, sub-peticion de "crear un helper reutilizable": **no se hizo**.
+  Ya existe (`IUserAccessService`). Crear otro duplicaria la fuente de
+  verdad de los permisos, que es justo lo que el punto queria evitar.
+- Punto 5: **no aplica**. Las 35 entidades usan PK `Guid`. El unico entero
+  secuencial del sistema es `Auditoria.Secuencia`, y existe PARA la
+  seguridad: es la cadena append-only y los huecos son la senal de
+  manipulacion. Convertirla a UUID romperia el control.
+
+**Hallazgo corregido:** `POST /api/integration/openclaw/resolver-nombres`
+estaba muerto, 403 permanente. `DefaultOpenClawScopes` cumplia dos papeles
+(validar scopes y concederlos por omision) y ese scope no estaba en la
+lista, asi que ningun token podia recibirlo. Se separo en
+`KnownOpenClawScopes` (validos) y `DefaultOpenClawScopes` (por omision),
+con `resolver-nombres` solo en el primero: es el endpoint de
+re-identificacion de nombres, asi que meterlo en los defaults habria dado
+capacidad de deshacer la pseudonimizacion a todo token creado sin scopes
+explicitos. El frontend replicaba la lista hardcodeada y premarcaba todas
+las casillas, asi que se separo igual. Detalle en
+`LOG_ERRORES_INCIDENCIAS.md`.
+
+**Archivos tocados:**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/IntegracionesController.cs`
+- `Atlas Balance/frontend/src/components/integraciones/CreateTokenModal.tsx`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/IntegrationOpenClawScopeCoverageTests.cs` (nuevo)
+- `Documentacion/Versiones/v-02.07.md`, `LOG_ERRORES_INCIDENCIAS.md`,
+  `REGISTRO_BUGS.md`, este archivo.
+
+**Comandos ejecutados:**
+```
+dotnet build AtlasBalance.API.Tests.csproj -p:BaseIntermediateOutputPath=".local-build/obj/" -p:BaseOutputPath=".local-build/bin/" -p:UseAppHost=false
+dotnet test AtlasBalance.API.Tests.csproj --filter "FullyQualifiedName~IntegrationOpenClawScopeCoverage|...|FullyQualifiedName~UserAccessService"
+npm run lint
+npm run test:unit
+npx tsc --noEmit
+```
+
+**Verificacion:**
+- Build: 0 errores (1 warning preexistente ajeno al cambio).
+- Backend: **53/53 PASS**.
+- Guardarrail validado en negativo: sin el arreglo falla y senala
+  `ResolverNombres -> 'resolver-nombres'`. Restaurado despues.
+- Frontend: lint limpio con `--max-warnings 0`, **22/22 PASS**,
+  `tsc --noEmit` exit 0.
+- **No ejecutado:** la app no se levanto. Sin validacion visual ni contra
+  OpenClaw real.
+
+**Nota de entorno:** el build fallaba con `MSB3021 Access denied` sobre
+`bin\Debug\net8.0` y `apphost.exe`. Resuelto con el remedio de `AGENTS.md`
+§8 (`BaseOutputPath` + `BaseIntermediateOutputPath` relativos y
+`UseAppHost=false`), sin matar procesos.
+
+**Pendientes:** cinco hallazgos no corregidos quedan en `REGISTRO_BUGS.md`
+con su motivo (`FallbackPolicy`, los tres puntos ciegos del guardarrail de
+autorizacion incluido que no cubre el Watchdog, el scope huerfano
+`vencimientos`, la duplicacion de scope en `ExtractosController` y la
+distincion 404/403 al descargar exportaciones). Queda tambien verificar
+`resolver-nombres` contra la app arrancada.
+
+---
+
 ## 2026-07-31 - V-02.07 - Auditoria de Row Level Security y de alcance de datos por usuario
 
 **Origen:** peticion de revisar dos cosas: (1) activar RLS en todas las
