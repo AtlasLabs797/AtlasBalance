@@ -10,7 +10,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { TooltipProps } from 'recharts';
+// recharts 3: los tooltips custom se tipan con TooltipContentProps.
+// TooltipProps ya no expone payload/label, que se leen del contexto.
+import type { TooltipContentProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import type { DashboardChartColors, DashboardPuntoEvolucion } from '@/types';
 import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
@@ -85,7 +87,11 @@ export function EvolucionChart({
                 <stop offset="100%" stopColor={chartColors.saldo} stopOpacity={0.04} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+            {/* yAxisId explicito: este chart tiene dos ejes Y con dominios
+                distintos (saldo y movement). recharts 2 alineaba la rejilla
+                al primero declarado; v3 exige decirlo para que sea
+                determinista. Se fija a "saldo" para conservar el aspecto. */}
+            <CartesianGrid stroke="var(--chart-grid)" vertical={false} yAxisId="saldo" />
             <XAxis
               dataKey="fecha"
               tickFormatter={tickFormatter}
@@ -117,7 +123,10 @@ export function EvolucionChart({
               tickMargin={EVOLUTION_AXIS_TICK_MARGIN}
               tick={EVOLUTION_AXIS_TICK_STYLE}
             />
-            <Tooltip content={<DashboardTooltip divisa={divisa} />} cursor={{ stroke: 'var(--chart-grid)' }} />
+            <Tooltip
+            content={(props) => <DashboardTooltip {...props} divisa={divisa} />}
+            cursor={{ stroke: 'var(--chart-grid)' }}
+          />
             <Area
               yAxisId="saldo"
               type="monotone"
@@ -192,7 +201,10 @@ export function EvolucionChart({
             tickMargin={EVOLUTION_AXIS_TICK_MARGIN}
             tick={EVOLUTION_AXIS_TICK_STYLE}
           />
-          <Tooltip content={<DashboardTooltip divisa={divisa} />} cursor={{ stroke: 'var(--chart-grid)' }} />
+          <Tooltip
+            content={(props) => <DashboardTooltip {...props} divisa={divisa} />}
+            cursor={{ stroke: 'var(--chart-grid)' }}
+          />
           <Line
             type="monotone"
             name="Ingresos"
@@ -362,7 +374,7 @@ function getAxisCharWidth(char: string): number {
   return 6.8;
 }
 
-function DashboardTooltip({ active, payload, label, divisa }: TooltipProps<ValueType, NameType> & { divisa: string }) {
+function DashboardTooltip({ active, payload, label, divisa }: TooltipContentProps<ValueType, NameType> & { divisa: string }) {
   if (!active || !payload?.length) {
     return null;
   }

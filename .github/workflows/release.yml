@@ -57,6 +57,7 @@ jobs:
           dotnet restore "./Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" --locked-mode -r win-x64
           dotnet restore "./Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj" --locked-mode -r win-x64
           dotnet restore "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --locked-mode
+          dotnet restore "./Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj" --locked-mode
 
       - name: Pull PostgreSQL test image
         run: docker pull postgres:16-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
@@ -70,7 +71,8 @@ jobs:
           $projects = @(
             "./Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj",
             "./Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj",
-            "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj"
+            "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj",
+            "./Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj"
           )
           $output = foreach ($project in $projects) {
             dotnet list $project package --vulnerable --include-transitive
@@ -92,14 +94,37 @@ jobs:
 
       - name: Audit npm vulnerabilities
         working-directory: "Atlas Balance/frontend"
-        # V-02.07 (2026-07-24): react-router-dom migrado a 7.18.1. Esto cierra
-        # los 2 CVEs pendientes de V-02.06 (open-redirect via backslash +
-        # inyeccion de constructor SSR). Los advisories HIGH que quedan
-        # (GHSA-qwww-vcr4-c8h2: RSC Mode CSRF bypass) afectan solo al modo
-        # Framework/Data de React Router; Atlas Balance es una SPA pura con
-        # BrowserRouter/Routes (modo Declarativo) servida como estaticos por
-        # Kestrel, sin SSR ni RSC. Ver REGISTRO_BUGS.md y v-02.07.md.
-        run: npm audit --audit-level=critical
+        shell: pwsh
+        # V-02.07 (2026-08-03): antes era `npm audit --audit-level=critical`,
+        # bajado para poder convivir con el advisory de React Router. El precio
+        # era que cualquier HIGH nuevo pasaba en silencio. Ahora el gate falla
+        # ante cualquier advisory high/critical que no este en $allowed.
+        #
+        # $allowed esta VACIO a proposito: la migracion a React 19.2.8 +
+        # react-router 8.3.0 cerro GHSA-qwww-vcr4-c8h2, que era la unica
+        # excepcion. No anadir entradas sin justificar por que el advisory no
+        # aplica a esta app, y con fecha de revision.
+        run: |
+          $allowed = @()
+          $report = npm audit --json | ConvertFrom-Json
+          $blocking = @()
+          foreach ($entry in $report.vulnerabilities.PSObject.Properties) {
+            foreach ($via in $entry.Value.via) {
+              if ($via -isnot [string] -and $via.severity -in @('high', 'critical')) {
+                $id = ($via.url -split '/')[-1]
+                if ($id -notin $allowed) {
+                  $blocking += "$($entry.Name): $id ($($via.severity)) - $($via.title)"
+                }
+              }
+            }
+          }
+          if ($blocking.Count -gt 0) {
+            $blocking | Sort-Object -Unique | ForEach-Object { Write-Host $_ }
+            Write-Host 'npm audit: advisories high/critical no documentados.'
+            exit 1
+          }
+          Write-Host 'npm audit OK: sin advisories high/critical fuera de la lista de excepciones.'
+          exit 0
 
       - name: Lint frontend
         working-directory: "Atlas Balance/frontend"

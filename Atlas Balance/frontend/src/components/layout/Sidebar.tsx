@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink } from 'react-router';
 import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
 import { useNotificacionesAdminQuery } from '@/hooks/queries/useNotificacionesAdminQuery';

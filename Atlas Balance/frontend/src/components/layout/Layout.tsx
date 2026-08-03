@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router';
 import { SessionTimeoutWarning } from '@/components/auth/SessionTimeoutWarning';
 import { ToastViewport } from '@/components/common/ToastViewport';
 import { AlertBanner } from '@/components/layout/AlertBanner';

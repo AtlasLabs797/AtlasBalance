@@ -176,7 +176,7 @@ export default defineConfig({
           if (
             id.includes('node_modules/react/') ||
             id.includes('node_modules/react-dom/') ||
-            id.includes('node_modules/react-router-dom/') ||
+            // react-router 8 unifica el paquete: react-router-dom ya no existe.
             id.includes('node_modules/react-router/')
           ) return 'vendor';
         },

@@ -98,11 +98,12 @@ Aplicacion web on-premise para gestion de tesoreria multi-banco, multi-titular, 
 
 **Stack:**
 - Backend: ASP.NET Core 8 (C#) -> Windows Service, HTTPS (Kestrel)
-- Frontend: React 18 + TypeScript + Vite 8 -> servido como estaticos por el backend
+- Frontend: React 19 + TypeScript + Vite 8 -> servido como estaticos por el backend
 - BD: PostgreSQL 16+ (Docker en desarrollo, local en produccion)
 - ORM: Entity Framework Core 8 + Npgsql
-- State: Zustand 4
-- Charts: Recharts 2
+- Router: react-router 8 (el paquete `react-router-dom` desaparece en v8)
+- State: Zustand 5
+- Charts: Recharts 3
 - Tabla: @tanstack/react-virtual (virtualizacion 50k+ filas)
 - Jobs: Hangfire (PostgreSQL storage)
 - Email: MailKit

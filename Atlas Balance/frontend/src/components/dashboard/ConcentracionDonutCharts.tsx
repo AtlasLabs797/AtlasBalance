@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
-import type { TooltipProps } from 'recharts';
+// recharts 3: los tooltips custom se tipan con TooltipContentProps.
+// TooltipProps ya no expone payload/label, que se leen del contexto.
+import type { TooltipContentProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import type { DashboardConcentracionBanco, DashboardSaldoTitular } from '@/types';
 import { formatCompactCurrency, formatCurrency } from '@/utils/formatters';
@@ -144,7 +146,10 @@ function DonutPanel({ title, data, total, divisa, ariaLabel }: DonutPanelProps) 
                 <Cell key={entry.name} fill={sliceColor(entry, index)} />
               ))}
             </Pie>
-            <Tooltip content={<DonutTooltip divisa={divisa} />} wrapperStyle={{ zIndex: 100 }} />
+            <Tooltip
+              content={(props) => <DonutTooltip {...props} divisa={divisa} />}
+              wrapperStyle={{ zIndex: 100 }}
+            />
           </PieChart>
         </ResponsiveContainer>
         <div className="concentracion-donut-center" aria-hidden="true">
@@ -185,7 +190,7 @@ function DonutTooltip({
   active,
   payload,
   divisa,
-}: TooltipProps<ValueType, NameType> & { divisa: string }) {
+}: TooltipContentProps<ValueType, NameType> & { divisa: string }) {
   if (!active || !payload?.length) return null;
   const item = payload[0];
   const entry = item.payload as DonutEntry;

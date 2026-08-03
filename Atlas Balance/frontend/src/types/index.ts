@@ -681,7 +681,7 @@ export interface CreateIntegrationTokenRequest {
   }>;
 }
 
-export interface SaveIntegrationTokenRequest extends CreateIntegrationTokenRequest {}
+export type SaveIntegrationTokenRequest = CreateIntegrationTokenRequest;
 
 export interface CreateIntegrationTokenResponse {
   token: IntegrationTokenDetail;

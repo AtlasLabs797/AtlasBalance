@@ -4,7 +4,7 @@ Atlas Balance es una plataforma privada de tesorería para controlar en un solo 
 
 2. Versión técnica
 
-Atlas Balance es una aplicación web on-premise pensada para funcionar dentro de la red local de la empresa, con backend en ASP.NET Core 8, frontend en React 18 + TypeScript y base de datos PostgreSQL. Está orientada a la gestión de tesorería multi-banco, multi-titular y multi-divisa, con importación flexible de extractos, tabla tipo Excel para consulta y edición de movimientos, dashboards financieros, auditoría detallada, permisos granulares y automatizaciones como backups, exportaciones y actualización del sistema. También integra OpenClaw mediante token seguro para consultas financieras controladas.
+Atlas Balance es una aplicación web on-premise pensada para funcionar dentro de la red local de la empresa, con backend en ASP.NET Core 8, frontend en React 19 + TypeScript y base de datos PostgreSQL. Está orientada a la gestión de tesorería multi-banco, multi-titular y multi-divisa, con importación flexible de extractos, tabla tipo Excel para consulta y edición de movimientos, dashboards financieros, auditoría detallada, permisos granulares y automatizaciones como backups, exportaciones y actualización del sistema. También integra OpenClaw mediante token seguro para consultas financieras controladas.
 
 3. Versión por módulos
 

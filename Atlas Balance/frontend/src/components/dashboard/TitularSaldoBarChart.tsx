@@ -48,7 +48,7 @@ export default function TitularSaldoBarChart({ rows, divisa }: TitularSaldoBarCh
               tickFormatter={(value) => formatCompactCurrency(Number(value), divisa)}
             />
             <Tooltip
-              formatter={(value: number) => formatCurrency(value, divisa)}
+              formatter={(value) => formatCurrency(Number(value ?? 0), divisa)}
               labelFormatter={(value) => `Titular: ${value}`}
             />
             <Bar dataKey="total_convertido" name={`Saldo total (${divisa})`}>

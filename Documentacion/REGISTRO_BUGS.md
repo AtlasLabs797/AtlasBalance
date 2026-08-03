@@ -359,6 +359,13 @@
   requiere React 19.2.7+ (React Router v8 elimino `react-router-dom`
   y lo fusiono en `react-router`). Migracion a React 19 queda fuera
   del alcance de V-02.07.
+- **CERRADO el 2026-08-03.** Se hizo la migracion completa del stack:
+  React 18.3.1 -> 19.2.8, `react-router-dom@7.18.2` -> `react-router@8.3.0`
+  (cambio de paquete en 22 ficheros, porque v8 elimina `react-router-dom`),
+  recharts 2.15.4 -> 3.10.1 y zustand 4.5.7 -> 5.0.14. `npm audit` pasa de
+  2 HIGH a **0 vulnerabilidades**. El gate de CI ya no lleva lista de
+  excepciones: `$allowed` esta vacio. Detalle completo en
+  `DOCUMENTACION_CAMBIOS.md`, entrada del 2026-08-03.
 - **Gate actualizado:** `--audit-level=high` (V-02.06) ->
   `--audit-level=critical` en `release.yml` y `ci.yml`, con
   comentario inline que apunta a esta entrada y a `v-02.07.md`. Es

@@ -6,17 +6,28 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- xunit v3: los proyectos de test son ejecutables autonomos y corren sobre
+         Microsoft Testing Platform, no sobre VSTest. Por eso desaparecen
+         Microsoft.NET.Test.Sdk y xunit.runner.visualstudio. La propiedad
+         TestingPlatformDotnetTestSupport es la que mantiene `dotnet test`
+         funcionando igual que antes, asi que el CI no cambia. -->
+    <OutputType>Exe</OutputType>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentAssertions" Version="6.12.1" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.11" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    <!-- FluentAssertions se queda en la linea 6.x a proposito: 7.x y 8.x
+         cambiaron a licencia comercial de Xceed. 6.x sigue siendo Apache-2.0. -->
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.29" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <!-- La cadena de Microsoft Testing Platform que arrastra xunit v3 trae
+         shims de la era .NET 5 marcados en desuso (via ApplicationInsights y
+         Win32.Registry). Se fijan a la version moderna, que ademas ya no
+         depende de Microsoft.NETCore.Platforms. Mismo patron que el pin de
+         Newtonsoft.Json en la API. -->
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
+    <PackageReference Include="System.Security.AccessControl" Version="6.0.1" />
   </ItemGroup>
 
   <ItemGroup>

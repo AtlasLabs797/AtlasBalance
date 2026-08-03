@@ -1,9 +1,10 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import type { ReactElement } from 'react';
+import { Navigate, useLocation } from 'react-router';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useAuthStore } from '@/stores/authStore';
 
 interface ProtectedRouteProps {
-  children: JSX.Element;
+  children: ReactElement;
   allowPrimerLogin?: boolean;
 }
 

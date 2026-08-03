@@ -9,6 +9,623 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-04 - V-02.07 - Tooling de desarrollo: ESLint 10 + flat config
+
+**Origen:** ultimo punto pendiente del inventario de dependencias. Tambien
+se desbloquearon los dos impedimentos de entorno que arrastraba la sesion
+anterior.
+
+### Bloqueos de entorno resueltos
+
+- **ACL de `obj/`**: borrados con permisos elevados. Verificado:
+  `dotnet restore AtlasBalance.sln --locked-mode` ya funciona **in-place**
+  sobre los 4 proyectos, sin redirigir `BaseIntermediateOutputPath`.
+- **SDK .NET 10**: instalado `10.0.302` junto al `8.0.421`. No altera nada
+  todavia porque `global.json` sigue fijando la banda 8.0 con
+  `rollForward: latestFeature`. La migracion a net10.0 queda desbloqueada.
+
+### Correccion a la entrada anterior
+
+Se dijo que la migracion a net10.0 exigiria instalar el runtime de .NET 10
+en el servidor on-premise. **Es falso.** `Build-Release.ps1` publica con
+`--self-contained true` (lineas 164 y 199), asi que el paquete lleva su
+propio runtime y el servidor no necesita instalar nada. Solo la maquina de
+build necesita el SDK.
+
+### Subidas aplicadas
+
+| Paquete | De | A |
+|---|---|---|
+| eslint | 8.57.1 | 10.8.0 |
+| @typescript-eslint/{parser,eslint-plugin} | 7.18.0 | `typescript-eslint` 8.66.0 (metapaquete) |
+| eslint-plugin-react-hooks | 4.6.2 | 7.1.1 |
+| eslint-plugin-react-refresh | 0.4.26 | 0.5.3 |
+| @types/node | 20.19.43 | 24.13.3 |
+
+Nuevos por requisito de flat config: `@eslint/js` 10.0.1 y `globals` 17.9.0.
+
+`.eslintrc.cjs` eliminado y sustituido por `eslint.config.js`. El script de
+npm pasa de `eslint . --ext ts,tsx --report-unused-disable-directives
+--max-warnings 0` a `eslint . --max-warnings 0`: `--ext` no existe en flat
+config y la directiva se declara ahora en `linterOptions`.
+
+### Dos decisiones que NO son las obvias
+
+**1. `@types/node` va a 24, no a 26 (el "latest").** Los majors de
+`@types/node` siguen a los de Node. `.node-version` fija Node 24.14.1, asi
+que tipar contra 26 dejaria compilar codigo que usa APIs inexistentes en el
+runtime real. 24.13.3 es lo correcto, aunque `npm outdated` lo siga
+marcando como desactualizado. Es intencionado.
+
+**2. TypeScript se queda en 5.9.3. No se sube a 7.** `typescript-eslint`
+8.66.0, que es la ultima estable, declara el peer
+`typescript: ">=4.8.4 <6.1.0"`. TypeScript 7.0.2 queda fuera de rango y no
+existe ninguna version estable de typescript-eslint que lo soporte
+(comprobados `dist-tags`: latest 8.66.0, y las unicas superiores son alphas).
+Subir TS a 7 romperia el linter a cambio de nada. Revisar cuando
+typescript-eslint publique soporte.
+
+### Reglas nuevas: 105 hallazgos que NO se han "arreglado"
+
+Con el conjunto `recommended-latest` de react-hooks 7, el lint saca 108
+errores. **Ninguno es una regresion**: 105 vienen de reglas de React
+Compiler que no existian en la version 4.
+
+```
+62  react-hooks/set-state-in-effect
+34  react-hooks/refs
+ 4  react-hooks/purity
+ 2  react-hooks/immutability
+ 2  react-hooks/preserve-manual-memoization
+ 1  react-hooks/incompatible-library
+```
+
+Activarlas y "arreglarlas" seria refactorizar 96 puntos de codigo de la app,
+con riesgo real, disfrazado de subida de tooling. Se ha mantenido el mismo
+conjunto de reglas que se exigia antes (`rules-of-hooks` error,
+`exhaustive-deps` warn), y el fichero de config documenta la lista completa
+con sus conteos y como activarla, para que sea una decision consciente.
+
+### Los 3 hallazgos que si se arreglaron
+
+Estos venian de reglas nuevas pero eran baratos y correctos:
+
+- `types/index.ts:684`: `interface SaveIntegrationTokenRequest extends
+  CreateIntegrationTokenRequest {}` -> alias de tipo
+  (`@typescript-eslint/no-empty-object-type`).
+- `vite-env.d.ts`: `interface ImportMetaEnv {}` estaba vacia. Ahora declara
+  `VITE_APP_VERSION`, que es la que inyecta `vite.config.ts` por `define`.
+- `ExtractosPage.tsx:403`: `throw new Error(message)` dentro de un `catch`
+  perdia el error original. Ahora `new Error(message, { cause: err })`
+  (`preserve-caught-error`, nueva en ESLint 10).
+
+Ese ultimo obligo a subir `lib` de `ES2020` a `ES2022` en `tsconfig.json`,
+porque el segundo argumento de `Error` no esta tipado en ES2020. Es un
+cambio aditivo, `target` sigue en ES2020, y quien transpila es Vite/esbuild,
+que ya emite a un target mas moderno.
+
+### Verificacion
+
+- `npm run lint`: 0 errores, 0 warnings.
+- **Prueba negativa del linter**: 108 ficheros analizados (no esta ignorando
+  el proyecto en silencio) y, metiendo a proposito un fichero con `any` y una
+  variable sin usar, los detecta los dos. Con `--max-warnings 0` eso tumba el
+  build, que es lo que se busca.
+- `npx tsc --noEmit`: 0 errores. `tsc -p tsconfig.test.v2.json`: 0 errores.
+- `npm run test:unit`: 22/22 PASS.
+- `npm run build`: OK, chunking sin cambios.
+- `npm audit`: 0 vulnerabilidades.
+- `npm outdated`: solo `typescript` y `@types/node`, ambos por decision
+  explicita documentada arriba.
+- `dotnet restore AtlasBalance.sln --locked-mode`: OK in-place, 4 proyectos.
+
+### Preparacion de la publicacion
+
+Se replico el pipeline de CI en local, paso por paso, y se probo la parte
+del release que no estaba demostrada.
+
+- `npm ci` (lo que usa el CI, no `npm install`): OK, 258 paquetes,
+  **0 vulnerabilidades**. Confirma que `package.json` y `package-lock.json`
+  quedaron sincronizados tras todas las instalaciones.
+- `Test-AtlasSecrets.ps1`: 554 archivos analizados, **sin hallazgos**.
+- `Test-AtlasSecrets.Tests.ps1`: fixtures del propio scanner OK.
+- `Check-VersionAlignment.ps1`: **V-02.07 (2.7.0)** alineado en las 3 fuentes.
+- `dotnet restore --locked-mode -r win-x64` en los 4 proyectos: OK, y ya
+  **in-place**, sin redirigir `BaseIntermediateOutputPath`.
+- **`dotnet publish --self-contained true -r win-x64`** de API y Watchdog,
+  igual que hace `Build-Release.ps1`: OK los dos. Verificado sobre el
+  resultado que el paquete es realmente autonomo (322 DLLs de framework,
+  `hostpolicy.dll` y apphost presentes; 129 MB la API, 100 MB el Watchdog) y
+  que lleva dentro las versiones nuevas: `Microsoft.IdentityModel.Tokens`
+  **7.7.3** (no la 7.1.2 en desuso), EF Core 8.0.29, Serilog.Sinks.Console
+  6.1.1, MailKit 4.17.0, ClosedXML 0.105.1.
+
+Esto confirma ademas que **el servidor on-premise no necesita instalar
+ningun runtime** para esta release.
+
+### Riesgo visual de Recharts 3: resuelto por analisis, no pendiente
+
+De los dos puntos que la entrada anterior dejaba para revisar a ojo:
+
+1. **Reordenado alfabetico de ejes Y: NO aplica.** Los dos `YAxis` de
+   `EvolucionChart` llevan lado fijado explicitamente (`saldo` a la
+   izquierda por defecto, `movement` con `orientation="right"`), asi que el
+   cambio de criterio de v3 no puede intercambiarlos.
+2. **`CartesianGrid` sin `yAxisId`: si era real y se ha corregido.** Ese
+   chart tiene dos ejes Y con dominios distintos (`saldoDomain` y
+   `movementDomain`) y la rejilla no declaraba a cual alinearse. Recharts 2
+   usaba el primero declarado; v3 cambia el criterio. Se ha fijado
+   `yAxisId="saldo"` para conservar el aspecto anterior.
+
+Queda solo una comprobacion cosmetica (tooltips de las 3 graficas y QR de
+TOTP en el login), sin riesgo estructural conocido.
+
+### Documentacion de stack corregida
+
+`AGENTS.md` y `README.md` seguian declarando React 18, Zustand 4 y Recharts
+2 como stack **actual**. Actualizados a React 19, Zustand 5, Recharts 3 y
+anadido react-router 8 con la nota de que `react-router-dom` desaparece en
+v8. Las mismas cadenas en `DOCUMENTACION_TECNICA.md` se dejan intactas: son
+entradas historicas de trabajo pasado, no declaraciones de estado actual.
+
+### Bloqueo abierto para cerrar la publicacion
+
+`Build-Release.ps1` **no se ha podido ejecutar entero**. Los directorios
+`bin/` del backend siguen perteneciendo a `TRAKERIA\CodexSandboxOffline` y
+el build falla con `MSB3021: Access to the path ... is denied` al copiar
+dependencias. La limpieza previa solo cubrio `obj/`. Hace falta, en consola
+elevada:
+
+```powershell
+Get-ChildItem "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend" -Recurse -Directory -Include bin,obj,.local-build,.codex-test-obj -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+Comprobado antes de proponerlo: los cuatro directorios estan en `.gitignore`
+y `git ls-files` no devuelve nada trackeado dentro, asi que borrarlos no
+pierde nada versionado.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/eslint.config.js` (nuevo)
+- `Atlas Balance/frontend/.eslintrc.cjs` (eliminado)
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `AGENTS.md`, `README.md`, `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Atlas Balance/frontend/package.json` y `package-lock.json`
+- `Atlas Balance/frontend/tsconfig.json`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/vite-env.d.ts`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+---
+
+## 2026-08-03 - V-02.07 - Migraciones mayores: xunit v3 y stack React 19
+
+**Origen:** peticion expresa de acometer las migraciones de version mayor
+que quedaron listadas como pendientes en las dos entradas siguientes. Se
+pidieron las tres; dos se han hecho, la tercera esta bloqueada por entorno.
+
+### 1. xunit 2 -> xunit v3 (HECHO)
+
+Los 2 proyectos de test pasan de `xunit` 2.9.3 a `xunit.v3` 3.2.2.
+
+Lo que no era obvio y costo un intento fallido: **toda la linea 3.2.x de
+xunit v3 corre sobre Microsoft Testing Platform, no sobre VSTest**. Tanto
+`xunit.v3` como `xunit.v3.core` son shims sobre `xunit.v3.core.mtp-v1`.
+Mantener `Microsoft.NET.Test.Sdk` + `xunit.runner.visualstudio` junto a
+xunit.v3 compila mal: el primer intento fallo con `CS0246: Fact no
+encontrado` en todos los ficheros de test. La configuracion correcta es
+quitar los dos paquetes de VSTest y declarar
+`TestingPlatformDotnetTestSupport`, que mantiene `dotnet test` funcionando
+igual. **El CI no necesita ningun cambio.**
+
+Cambios:
+- Ambos csproj: `xunit` 2.9.3 -> `xunit.v3` 3.2.2; fuera
+  `Microsoft.NET.Test.Sdk` y `xunit.runner.visualstudio`; dentro
+  `<OutputType>Exe</OutputType>` y
+  `<TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>`.
+- `PostgresFixture.cs`: `IAsyncLifetime` en v3 hereda de `IAsyncDisposable`
+  y sus dos metodos devuelven `ValueTask`, no `Task`. Unico fichero de
+  codigo que hubo que tocar de los 75.
+
+**Regresion detectada y corregida:** al quitar `Microsoft.NET.Test.Sdk`
+aparecieron 3 paquetes en desuso NUEVOS (`Microsoft.NETCore.Platforms`,
+`System.Diagnostics.DiagnosticSource`, `System.Security.AccessControl`, los
+tres en 5.0.0). Test.Sdk los venia tapando al ganar el conflicto de version;
+sin el, afloran los que trae la cadena MTP via `ApplicationInsights` y
+`Win32.Registry`. Corregido fijando `System.Diagnostics.DiagnosticSource`
+8.0.1 y `System.Security.AccessControl` 6.0.1 en ambos proyectos de test:
+las versiones modernas ya no dependen de `Microsoft.NETCore.Platforms`, asi
+que caen los tres de golpe. Mismo patron que el pin de `Newtonsoft.Json`.
+
+Resultado: **los 4 proyectos del backend quedan a 0 vulnerables y 0 en
+desuso.** Antes de esto habia 5 en desuso en cada proyecto de test.
+
+### 2. React 18 -> 19 + react-router 8 + recharts 3 + zustand 5 (HECHO)
+
+Cierra `GHSA-qwww-vcr4-c8h2`. **`npm audit` pasa de 2 HIGH a 0.**
+
+Se hizo por fases, con `tsc --noEmit` despues de cada una para aislar que
+rompia cada salto:
+
+| Fase | Version | Roturas reales |
+|---|---|---|
+| React | 18.3.1 -> 19.2.8 | 3 errores: `JSX.Element` global desaparece en `@types/react` 19 |
+| zustand | 4.5.7 -> 5.0.14 | **ninguna** |
+| recharts | 2.15.4 -> 3.10.1 | 6 errores en los 3 componentes de grafica |
+| react-router | 7.18.2 -> 8.3.0 | cambio de paquete en 22 ficheros |
+
+Detalle de los cambios de codigo:
+
+- `App.tsx` (x2) y `ProtectedRoute.tsx`: `JSX.Element` -> `ReactElement`
+  importado de `react`. Se eligio `ReactElement` en vez de
+  `React.JSX.Element` porque ninguno de los dos ficheros importa `React` por
+  defecto y `ReactElement` es el tipo idiomatico.
+- **zustand no necesito ni una linea.** Los 8 stores usan `create<T>(...)`
+  sin currificar, que sigue siendo valido en v5 mientras no haya middleware,
+  y no hay ni un solo selector que construya objeto o array nuevo, que es lo
+  que rompe de verdad en v5 al quitarse el `equalityFn` por defecto.
+- recharts: los tooltips custom se tipan ahora con `TooltipContentProps`, no
+  con `TooltipProps` (que ya no expone `payload`/`label`, leidos del
+  contexto). Ademas la prop `content` deja de aceptar un elemento con props
+  parciales: hay que pasar funcion,
+  `content={(props) => <DashboardTooltip {...props} divisa={divisa} />}`.
+  Y el `formatter` de `Tooltip` recibe `ValueType | undefined`, no `number`.
+  Tocados `EvolucionChart.tsx`, `ConcentracionDonutCharts.tsx` y
+  `TitularSaldoBarChart.tsx`.
+- react-router: **v8 elimina el paquete `react-router-dom`** y lo fusiona en
+  `react-router`; `react-router-dom` se queda congelado en 7.18.2. Cambio de
+  import en 22 ficheros. Los 11 simbolos que usa la app (`BrowserRouter`,
+  `Routes`, `Route`, `Link`, `NavLink`, `Navigate`, `Outlet`, `useLocation`,
+  `useNavigate`, `useParams`, `useSearchParams`) existen en v8 con la misma
+  firma: **cero cambios de logica**.
+- `vite.config.ts`: `manualChunks` referenciaba `node_modules/react-router-dom/`
+  para el chunk `vendor`. Actualizado.
+
+### 3. Gate de CI: excepcion eliminada
+
+`$allowed` pasa de `@('GHSA-qwww-vcr4-c8h2')` a `@()` en `ci.yml` y
+`release.yml`. Ya no hay ningun advisory tolerado. Probado con la lista
+vacia contra el arbol real: pasa.
+
+### 4. net8.0 -> net10.0: BLOQUEADO
+
+**No se ha hecho y no se ha simulado.** `dotnet --list-sdks` devuelve
+unicamente `8.0.421`, y `--list-runtimes` solo `Microsoft.NETCore.App 8.0.27`
+y `Microsoft.AspNetCore.App 8.0.27`. Sin SDK de .NET 10 no se puede
+restaurar, compilar ni testear net10.0, y firmar una migracion de plataforma
+sin ejecutarla no vale nada.
+
+Requisitos previos, que son decision de infraestructura:
+1. Instalar el SDK de .NET 10 en la maquina de build.
+2. Instalar el runtime de .NET 10 en el servidor on-premise de produccion,
+   porque la app corre como Windows Service.
+3. Subir `global.json` de `8.0.419` a la banda 10.x.
+
+Recordatorio de calendario: .NET 8 pierde soporte el **2026-11-10**.
+
+### Verificacion
+
+- `npx tsc --noEmit`: 0 errores.
+- `npm run lint`: 0 errores, 0 warnings.
+- `npm run test:unit`: 22/22 PASS.
+- `npm run build` (Vite 8, con `VITE_BUILD_OUT_DIR` dentro del workspace):
+  OK, chunking correcto (`vendor` 215 kB con react+router, `charts` 414 kB).
+  Directorio temporal limpiado.
+- **`npm audit`: `found 0 vulnerabilities`** (antes: 2 HIGH).
+- `npm outdated`: solo quedan mayores de tooling de desarrollo (eslint 8->10,
+  typescript 5->7, @types/node, @typescript-eslint 7->8, los dos plugins de
+  eslint). **Ninguna dependencia de runtime desactualizada.**
+- `dotnet test AtlasBalance.API.Tests -c Release`: **637/637 PASS** bajo xunit v3.
+- `dotnet test AtlasBalance.Caching.Tests -c Release`: **15/15 PASS** bajo xunit v3.
+- `dotnet list package --vulnerable/--deprecated --include-transitive`:
+  **0 y 0** en los 4 proyectos.
+- YAML de ambos workflows validado con js-yaml.
+
+### Pendiente de verificacion manual
+
+**No ha habido validacion visual.** Las graficas viven detras de login y
+requieren backend + PostgreSQL + sesion, que no se ha levantado en esta
+sesion. recharts 3 cambia dos cosas observables que conviene mirar a ojo en
+el dashboard antes de publicar:
+
+1. Con varios ejes Y, v3 los renderiza en orden alfabetico por `yAxisId` en
+   vez de por orden de declaracion. `EvolucionChart.tsx` declara `saldo`
+   antes que `movement`, y alfabeticamente `movement` va primero: los ejes
+   pueden salir intercambiados.
+2. `CartesianGrid` en v3 quiere `xAxisId`/`yAxisId` explicitos para
+   renderizar de forma determinista; en `EvolucionChart.tsx` no los lleva.
+
+Ademas conviene comprobar a ojo el tooltip de las 3 graficas y el QR de
+TOTP en el login, por el cambio de React.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PostgresFixture.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj`
+- Los 2 `packages.lock.json` de test
+- `Atlas Balance/frontend/package.json` y `package-lock.json`
+- `Atlas Balance/frontend/vite.config.ts`
+- `Atlas Balance/frontend/src/App.tsx`
+- `Atlas Balance/frontend/src/components/auth/ProtectedRoute.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/ConcentracionDonutCharts.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/TitularSaldoBarChart.tsx`
+- 22 ficheros de `src/` con el import de react-router (solo la linea del import)
+- `.github/workflows/ci.yml` y `release.yml`
+- `Documentacion/REGISTRO_BUGS.md` y `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+---
+
+## 2026-08-03 - V-02.07 - Cierre de los hallazgos de la auditoria de dependencias
+
+**Origen:** peticion de resolver todo lo detectado en la auditoria de la
+entrada siguiente. Segunda tanda, sobre lo que ahi quedo como plan.
+
+### Actualizaciones aplicadas (ninguna de version mayor)
+
+Backend, `AtlasBalance.API`:
+
+| Paquete | De | A |
+|---|---|---|
+| BCrypt.Net-Next | 4.0.3 | 4.2.0 |
+| Microsoft.EntityFrameworkCore | 8.0.11 | 8.0.29 |
+| Microsoft.EntityFrameworkCore.Design | 8.0.11 | 8.0.29 |
+| Hangfire.AspNetCore | 1.8.23 | 1.8.24 |
+| MailKit | 4.16.0 | 4.17.0 |
+| MimeKit | 4.16.0 | 4.17.0 |
+| ClosedXML | 0.105.0 | 0.105.1 |
+| Serilog.Sinks.Console | 6.0.0 | 6.1.1 |
+| System.Diagnostics.EventLog | 8.0.1 | 8.0.2 |
+
+`AtlasBalance.Watchdog`: Serilog.Sinks.Console 6.0.0 -> 6.1.1.
+
+Proyectos de test (los dos): FluentAssertions 6.12.1 -> 6.12.2,
+Microsoft.EntityFrameworkCore.InMemory 8.0.11 -> 8.0.29,
+Microsoft.NET.Test.Sdk 17.11.1 -> 17.14.1, xunit 2.9.2 -> 2.9.3, y
+Testcontainers.PostgreSql 4.0.0 -> 4.13.0 en `AtlasBalance.API.Tests`.
+
+FluentAssertions se queda deliberadamente en la linea 6.x: 7.x y 8.x pasaron
+a licencia comercial de Xceed. Verificado que 6.12.2 sigue siendo Apache-2.0
+leyendo su nuspec en nuget.org. Anotado en ambos csproj.
+
+Frontend: `npm update` dentro de los rangos ya declarados. Sube
+@tanstack/react-query, @tanstack/react-virtual, @playwright/test,
+@vitejs/plugin-react, axios, lucide-react, react-hook-form y vite.
+`package.json` sin tocar; solo cambia el lock.
+
+### Rotura encontrada y arreglada durante el proceso
+
+Al subir EF Core a 8.0.29, `AtlasBalance.API.Tests` dejo de compilar con
+**CS1705**. Causa: `Microsoft.EntityFrameworkCore.Relational` subia a 8.0.29
+en la API a traves de `EntityFrameworkCore.Design`, pero Design es
+`PrivateAssets=all` y no fluye a los consumidores, asi que los proyectos de
+test se quedaban con el 8.0.11 que arrastra Npgsql. Resuelto declarando
+`Microsoft.EntityFrameworkCore.Relational` 8.0.29 explicito en la API, mismo
+patron que ya se usaba para `Newtonsoft.Json` y `System.Diagnostics.EventLog`.
+Verificado que los tres proyectos resuelven ahora la misma version.
+
+### Gate de auditoria npm endurecido
+
+`npm audit --audit-level=critical` en `ci.yml` y `release.yml` dejaba pasar
+en silencio cualquier HIGH nuevo. Era el precio de convivir con el advisory
+de React Router. Sustituido por un paso `pwsh` que parsea `npm audit --json`
+y falla ante cualquier advisory high/critical cuyo GHSA no este en una lista
+de excepciones explicita, hoy solo `GHSA-qwww-vcr4-c8h2`. El comentario del
+paso recuerda quitar la excepcion al migrar a React 19.
+
+Probado en las dos direcciones antes de commitear: con la lista actual pasa
+(exit 0); vaciando la lista, detecta el advisory de react-router y falla
+(exit 1). YAML de ambos workflows validado con js-yaml.
+
+### packageSourceMapping
+
+Anadido `nuget.config` en la raiz con `<clear />`, nuget.org como unico
+origen y `packageSourceMapping` con patron `*`. Cierra el hueco de defensa
+en profundidad contra dependency confusion que quedaba abierto. Verificado
+que `dotnet nuget list source` deja un unico origen y que los 4 proyectos
+siguen restaurando en modo bloqueado.
+
+Nota: el fichero se creo primero con `--locked-mode` dentro de un comentario
+XML, lo que lo invalidaba (un comentario XML no puede contener `--`).
+Corregido.
+
+### Lo que NO se ha tocado, y por que
+
+- **xunit 2.9.3 sigue marcado en desuso** (`Legacy`, alternativa `xunit.v3`)
+  en los dos proyectos de test, 5 paquetes. Migrar a xunit v3 es salto de
+  mayor y reescribe la infraestructura de tests. Solo afecta a test, no
+  entra en el paquete publicado, y no es `CriticalBugs`.
+- **Migracion a React 19 + react-router 8 + recharts 3 + zustand 5** y
+  **migracion a net10.0**: son las dos unicas cosas que quedan del inventario
+  y ambas son cambios de plataforma, no actualizaciones de dependencia. Se
+  dejan a decision expresa. La segunda tiene fecha: .NET 8 pierde soporte el
+  2026-11-10.
+- El warning **EF1002** de `LimpiezaAuditoriaJob.cs:98` (`SqlQueryRaw` con
+  interpolacion) es preexistente y ajeno a esta tanda. Ya estaba analizado en
+  `v-02.07.md`.
+
+### Verificacion
+
+- `dotnet list package --vulnerable --include-transitive`: **0** en los 4.
+- `dotnet list package --deprecated --include-transitive`: **0** en API y
+  Watchdog; 5 en cada proyecto de test, todos xunit 2.x (ver arriba).
+- `dotnet restore --locked-mode` en los 4, ya con `nuget.config`: OK.
+- `dotnet build -c Release`: API 0 errores / 7 warnings preexistentes,
+  Watchdog 0 errores / **0 warnings**.
+- `dotnet test AtlasBalance.API.Tests -c Release`: **637/637 PASS**.
+- `dotnet test AtlasBalance.Caching.Tests -c Release`: **15/15 PASS**.
+- `npm run lint`: 0 errores, 0 warnings. `npx tsc --noEmit`: 0 errores.
+- `npm run test:unit`: 22/22 PASS.
+- `npm audit`: 2 HIGH, ambos el advisory de react-router ya documentado.
+- `npm outdated`: lo unico pendiente son saltos de mayor.
+
+### Bloqueo pendiente: ACL de los directorios obj/
+
+**No se ha podido arreglar desde esta sesion.** Los `obj/` del backend
+pertenecen a `TRAKERIA\CodexSandboxOffline` y el usuario `usuario` solo tiene
+lectura sobre sus ficheros, asi que `dotnet restore` in-place falla con
+`Access to the path '...project.assets.json' is denied`. Tampoco se pueden
+borrar: falta el permiso de borrado en el directorio padre. El token de la
+sesion tiene `BUILTIN\Administradores` como grupo de **solo denegacion**
+(comprobado con `whoami /groups`), asi que no hay elevacion disponible ni
+sirve `takeown`/`icacls`.
+
+Workaround usado durante todo este trabajo: redirigir
+`BaseIntermediateOutputPath` al scratchpad y ejecutar la suite de tests sobre
+una copia limpia del arbol `backend/` fuera del repo.
+
+Arreglo real, en una consola **como administrador**:
+
+```powershell
+Get-ChildItem "C:\Proyectos\Atlas Balance Dev\Atlas Balance\backend" -Recurse -Directory -Filter obj |
+  Remove-Item -Recurse -Force
+```
+
+### Archivos tocados
+
+- `nuget.config` (nuevo)
+- `Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj`
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj`
+- Los 4 `packages.lock.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+---
+
+## 2026-08-03 - V-02.07 - Auditoria de dependencias: vulnerabilidades, mantenimiento y cadena de suministro
+
+**Origen:** peticion de auditar dependencias en cinco frentes: (1) audit de
+vulnerabilidades y aplicacion de fixes seguros, (2) paquetes sin mantener o
+con repo archivado, (3) plan de actualizacion paso a paso, (4) pinning /
+lock files / fuentes no-registry, y (5) transitivas y su arbol.
+
+**Metodo:** cuatro auditorias en paralelo (mantenimiento npm, mantenimiento
+NuGet, higiene de suministro, arbol de transitivas) sobre una base de datos
+propia obtenida antes de repartir: `npm audit` del frontend y
+`dotnet list package --vulnerable/--deprecated/--outdated` de los 4
+proyectos. Todo hallazgo con peso se revalido a mano antes de darlo por
+bueno; dos afirmaciones de subagente se corrigieron por contradecir la
+evidencia directa.
+
+### Vulnerabilidades encontradas
+
+- Backend, los 4 proyectos: **0 paquetes vulnerables**.
+- Frontend: **3 HIGH, 0 critical**.
+  - `brace-expansion` (GHSA-mh99-v99m-4gvg, DoS/OOM). 5 nodos, todos bajo
+    `devDependencies` (cuelgan de `eslint` y `@typescript-eslint/parser`).
+    No entra al bundle: ausente en `npm ls --omit=dev` y en `dist/*.js`.
+    **CERRADO** con `npm audit fix` (1.1.16 -> 1.1.18, 2.1.2 -> 2.1.4).
+  - `react-router` / `react-router-dom` (GHSA-qwww-vcr4-c8h2, RSC CSRF
+    bypass). **No aplica** y ya estaba documentado en `v-02.07.md`: la app
+    es SPA declarativa (`BrowserRouter` en `main.tsx:40`), sin
+    `createBrowserRouter`, sin RSC ni SSR. Re-verificado por grep en esta
+    sesion. El advisory cierra en `react-router@8.3.0`, que exige React
+    19.2.7+. Sin fix sin migracion mayor; se mantiene la decision previa.
+
+### Paquetes en desuso (hallazgo nuevo)
+
+`Microsoft.AspNetCore.Authentication.JwtBearer` 8.0.11 declara
+`Microsoft.IdentityModel.Protocols.OpenIdConnect` con rango `[7.1.2, )` y
+NuGet resolvia al minimo, 7.1.2, marcada **Legacy + CriticalBugs**. Con
+ella caian 7 paquetes en desuso. El bump de parche a **8.0.29** sube el
+minimo a 7.7.3, que no esta deprecada. Verificado antes de aplicarlo con
+un proyecto sonda aislado, y despues sobre el proyecto real.
+
+### Cambios aplicados
+
+1. `backend/src/AtlasBalance.API/AtlasBalance.API.csproj`: JwtBearer
+   8.0.11 -> 8.0.29 (parche, misma linea 8.0.x) + comentario del motivo.
+2. `frontend/package-lock.json`: `npm audit fix`. Sube las 5 copias de
+   `brace-expansion` y, de paso, `react-router`/`react-router-dom`
+   7.18.1 -> 7.18.2 (parche). `package.json` sin tocar.
+3. `backend/tests/AtlasBalance.Caching.Tests/packages.lock.json`: estaba
+   **desincronizado**. Le faltaba `System.Diagnostics.EventLog`, anadido
+   antes en esta version, y rompia `dotnet restore --locked-mode` de la
+   solucion entera con NU1004. Regenerado.
+4. `backend/src/AtlasBalance.API/packages.lock.json` y los locks de los dos
+   proyectos de test: regenerados para reflejar el nuevo rango de JwtBearer.
+5. `.github/workflows/ci.yml` y `release.yml`: `AtlasBalance.Caching.Tests`
+   era el unico de los 4 proyectos con lock commiteado que no entraba ni en
+   el `restore --locked-mode` ni en el audit de vulnerabilidades. Esa es la
+   causa de que su lock derivase sin que nadie se enterase. Anadido a ambos
+   pasos en los dos workflows.
+
+**No se aplico** ninguna subida menor ni mayor. Ninguna corrige una
+vulnerabilidad y la peticion pedia explicitamente plan paso a paso en vez
+de actualizarlo todo de golpe.
+
+### Higiene de la cadena de suministro
+
+Sin hallazgos malos. Las 296 entradas `resolved` del `package-lock.json`
+apuntan a `registry.npmjs.org`; cero git URLs, tarballs, `file:` o `link:`.
+Sin `nuget.config` ni `.npmrc` en el repo. Sin `HintPath` ni DLLs sueltas.
+Los 5 lock files estan commiteados y ningun `.gitignore` los excluiria. CI
+usa `npm ci` y `dotnet restore --locked-mode`. Unica recomendacion abierta:
+no hay `packageSourceMapping` en NuGet (defensa en profundidad contra
+dependency confusion), hoy mitigado por lock + locked-mode.
+
+### Pendientes registrados (no ejecutados)
+
+- **.NET 8 termina soporte el 2026-11-10** (LTS, hoy en fase de
+  mantenimiento). Quedan ~3 meses. Es el riesgo mayor del inventario y
+  arrastra ASP.NET Core 8 y EF Core 8, que comparten ciclo de vida.
+  Verificado en la politica oficial de soporte de Microsoft.
+- `qrcode@1.5.4`: ultima publicacion 2024-08-05, sin commits desde
+  entonces. Un unico call site (`LoginPage.tsx`, QR de TOTP), sin
+  advisories. Vigilar, no migrar por ahora.
+- `Serilog.Sinks.File`: sin release desde 2025-04-28 (~15 meses), repo no
+  archivado y sin CVE. Vigilar.
+- Subidas menores disponibles sin contenido de seguridad: BCrypt.Net-Next
+  4.0.3 -> 4.2.0 (changelog sin cambios funcionales), MailKit/MimeKit
+  4.16.0 -> 4.17.0, Serilog.Sinks.Console 6.0.0 -> 6.1.1.
+
+### Verificacion
+
+- `npm audit`: 3 HIGH -> 2 HIGH (solo queda el de react-router, no aplicable).
+- `npm run lint`: 0 errores, 0 warnings.
+- `npx tsc --noEmit`: 0 errores.
+- `npm run test:unit`: 22/22 PASS.
+- `dotnet list package --vulnerable --include-transitive`: 0 en los 4 proyectos.
+- `dotnet list package --deprecated --include-transitive` sobre la API:
+  de 7 paquetes en desuso a **0**.
+- `dotnet build AtlasBalance.API -c Release`: 0 errores, 7 warnings
+  preexistentes y ajenos al cambio.
+- `dotnet restore --locked-mode` en los 4 proyectos: OK (antes fallaba
+  Caching.Tests con NU1004).
+- `dotnet test AtlasBalance.API.Tests -c Release`: **637/637 PASS**.
+- `dotnet test AtlasBalance.Caching.Tests -c Release`: **15/15 PASS**.
+
+### Bloqueo de entorno (no causado por este cambio)
+
+Los directorios `obj/` del backend pertenecen a la identidad
+`TRAKERIA\CodexSandboxOffline` y el usuario `usuario` solo tiene lectura
+sobre sus ficheros, asi que `dotnet restore` in-place falla con
+`Access to the path '...project.assets.json' is denied`. No se puede
+arreglar borrando: falta el permiso de borrado en el directorio padre. Se
+esquivo redirigiendo `BaseIntermediateOutputPath` al scratchpad, y la suite
+de tests se ejecuto sobre una copia limpia del arbol `backend/` fuera del
+repo. Conviene arreglar los ACL o borrar los `obj/` con permisos elevados
+antes del proximo build local.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.API/packages.lock.json`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/packages.lock.json`
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/packages.lock.json`
+- `Atlas Balance/frontend/package-lock.json`
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+---
+
 ## 2026-08-02 - V-02.07 - Auditoria de permisos endpoint por endpoint (authn, authz, IDOR, tipos de id)
 
 **Origen:** peticion de revisar cinco puntos y comprobar cuales aplican:

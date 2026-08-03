@@ -27,12 +27,14 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public string ConnectionString => _container.GetConnectionString();
 
-    public async Task InitializeAsync()
+    // xunit v3: IAsyncLifetime hereda de IAsyncDisposable y ambos metodos
+    // devuelven ValueTask, no Task.
+    public async ValueTask InitializeAsync()
     {
         await _container.StartAsync();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await _container.DisposeAsync();
     }

@@ -1,5 +1,49 @@
 # Documentacion tecnica
 
+## 2026-08-04 - V-02.07 - Actualizacion del stack: React 19, xunit v3, ESLint 10
+
+- **Que:** cierre completo de la deuda de dependencias. Frontend a React
+  19.2.8, `react-router` 8.3.0, Recharts 3.10.1, Zustand 5.0.14 y ESLint
+  10.8.0 con flat config. Backend: JwtBearer y EF Core a 8.0.29, el resto de
+  paquetes al ultimo parche o menor de su linea, y los dos proyectos de test
+  a `xunit.v3` 3.2.2. Anadido `nuget.config` con `packageSourceMapping`.
+- **Por que:** `npm audit` daba 3 HIGH y el backend arrastraba 7 paquetes
+  marcados en desuso, uno de ellos con `CriticalBugs`. El resultado es
+  **0 vulnerabilidades en npm y 0 vulnerables / 0 en desuso en los 4
+  proyectos NuGet**.
+- **Como, y lo que no era evidente:**
+  - `Microsoft.IdentityModel.*` 7.1.2 (Legacy + CriticalBugs) entraba porque
+    JwtBearer 8.0.11 lo declara con rango abierto `[7.1.2, )` y NuGet
+    resuelve al minimo. El parche a 8.0.29 sube el minimo a 7.7.3, que no
+    esta deprecada. **No hizo falta ningun salto de mayor.**
+  - Al subir EF Core, `Relational` quedaba en dos versiones distintas:
+    8.0.29 en la API (via `EntityFrameworkCore.Design`) y 8.0.11 en los
+    tests, porque `Design` es `PrivateAssets=all` y no fluye a los
+    consumidores. Rompia con CS1705. Resuelto declarando `Relational`
+    explicito en la API.
+  - xunit v3 3.2.x corre sobre Microsoft Testing Platform, no sobre VSTest.
+    Hay que retirar `Microsoft.NET.Test.Sdk` y `xunit.runner.visualstudio` y
+    declarar `TestingPlatformDotnetTestSupport`; `dotnet test` sigue igual y
+    el CI no cambia.
+  - `react-router` 8 elimina el paquete `react-router-dom`. Son 22 ficheros
+    con el import cambiado y **cero cambios de logica**: los 11 simbolos que
+    usa la app conservan la firma en modo Declarativo.
+  - Recharts 3: los tooltips custom se tipan con `TooltipContentProps` y la
+    prop `content` exige funcion en vez de elemento. Ademas, en el chart de
+    dos ejes Y el `CartesianGrid` necesita `yAxisId` explicito para alinear
+    la rejilla de forma determinista.
+- **Lo que se dejo fuera a proposito:**
+  - **TypeScript sigue en 5.9.3.** `typescript-eslint` 8.66.0 declara el peer
+    `typescript >=4.8.4 <6.1.0` y no hay version estable que soporte TS 7.
+  - **`@types/node` va a 24, no al 26 que marca latest**, porque sus majors
+    siguen a los de Node y `.node-version` fija Node 24.
+  - **Las 105 reglas de React Compiler** que trae react-hooks 7 no se
+    activaron: son 96 puntos de refactor de la app, no un ajuste de
+    configuracion. Documentadas con sus conteos en `eslint.config.js`.
+  - **net10.0**: el SDK 10.0.302 ya esta instalado, pero la migracion no
+    entra en esta publicacion. Es un cambio de plataforma y no se mete en
+    una release ya validada.
+
 ## 2026-07-29 - V-02.07 - Capa de rate limiting global
 
 - **Que:** `AddRateLimiter` de ASP.NET Core 8 configurado desde
