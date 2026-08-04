@@ -1,5 +1,12 @@
 # Documentacion tecnica
 
+## Vigencia documental: V-02.08
+
+La version activa de la aplicacion es `V-02.08` (runtime `2.8.0`). Este
+documento conserva debajo el historial tecnico de V-02.07 y versiones
+anteriores; esos rotulos no deben sustituirse porque identifican el origen de
+cada cambio.
+
 ## 2026-08-04 - V-02.07 - Higiene del paquete de release
 
 `Build-Release.ps1` limpia ahora, despues de publicar API y Watchdog y antes de

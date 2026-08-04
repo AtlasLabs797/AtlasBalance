@@ -86,7 +86,7 @@ Para el backend, usa las plantillas `appsettings.*.json.template` y configura lo
 
 ## Estado del proyecto
 
-La línea de trabajo actual es **V-02.07**. El repositorio contiene el producto y su documentación de operación; una release publicable requiere además completar las comprobaciones de infraestructura indicadas en la documentación de versión.
+La línea de trabajo actual es **V-02.08**. El repositorio contiene el producto y su documentación de operación; una release publicable requiere además completar las comprobaciones de infraestructura indicadas en la documentación de versión.
 
 ## Licencia
 

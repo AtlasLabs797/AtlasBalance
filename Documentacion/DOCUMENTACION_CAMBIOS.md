@@ -9,6 +9,36 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-04 - V-02.08 - Apertura de version y sincronizacion documental
+
+**Trabajo realizado:** se abrio V-02.08 desde V-02.07 y se alinearon los
+metadatos visibles de backend, frontend, paquete, instalador y release. Se creo
+`Documentacion/Versiones/v-02.08.md` y se actualizaron las superficies vivas de
+README, instalacion, documentacion tecnica, documentacion de usuario,
+`version_actual.md`, `SeedData.cs` y workflow de release. Las entradas
+historicas mantienen su version de origen.
+
+**Archivos tocados:** `Atlas Balance/VERSION`,
+`Atlas Balance/Directory.Build.props`, `Atlas Balance/frontend/package.json`,
+`Atlas Balance/frontend/package-lock.json`, scripts de release/instalacion,
+`.github/workflows/release.yml`, `SeedData.cs`, README y documentacion de
+`V-02.08`.
+
+**Comandos ejecutados:** inspeccion de instrucciones y version vigente;
+`git status --short --branch`; busquedas de referencias de version;
+`Check-VersionAlignment.ps1 -ExpectedVersion V-02.08`; parsers PowerShell;
+`git diff --check`; `npm.cmd exec tsc --noEmit`; `npm.cmd run lint`;
+`npm.cmd run test:unit`; `npm.cmd run build`; `Test-AtlasSecrets.Tests.ps1`;
+`gh --version` y `gh auth status`.
+
+**Resultado de verificacion:** alineacion OK (`V-02.08` / `2.8.0`), parsers OK,
+`git diff --check` OK, TypeScript/lint/build OK y tests frontend 22/22 PASS. El
+test de fixtures del scanner pasa; el scanner general se detiene en el fixture
+positivo intencionado `scripts/.scanner-fixtures/positive.txt`. La publicacion
+de la rama queda pendiente de la validacion remota de GitHub.
+
+---
+
 ## 2026-08-04 - V-02.07 - Construccion y auditoria del ZIP firmado
 
 **Trabajo realizado:** se ejecuto `Build-Release.ps1` para V-02.07 y se

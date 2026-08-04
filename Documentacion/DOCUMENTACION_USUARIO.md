@@ -1,5 +1,9 @@
 # Documentacion de usuario
 
+Documento vigente para `V-02.08`. Las menciones `Desde V-02.07` conservan la
+version en la que se introdujo cada comportamiento; no son una referencia a una
+version anterior instalada.
+
 ## Ubicacion principal
 
 La aplicacion esta en la carpeta `Atlas Balance`.
@@ -202,28 +206,28 @@ Los paquetes de release estan en:
 Atlas Balance/Atlas Balance Release
 ```
 
-Ultimo paquete publicado documentado antes de `V-02-03`:
+Ultimo paquete publicado documentado antes de `V-02.08`:
 
 ```text
-AtlasBalance-V-01.09-win-x64.zip
-AtlasBalance-V-01.09-win-x64.zip.sig
+AtlasBalance-V-02.07-win-x64.zip
+AtlasBalance-V-02.07-win-x64.zip.sig
 ```
 
-SHA256 del ZIP firmado de `V-01.09`:
+SHA256 del ZIP firmado de `V-02.07`:
 
 ```text
-4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128
+B2EEE529B4B3A16C05E077162E6D6510945485B98E4944FC6A3305840A5E5101
 ```
 
-No reutilices hashes ni paquetes de `V-01.09` para publicar `V-02-03`. Cuando se genere `V-02-03`, debe tener ZIP y `.sig` propios.
+No reutilices hashes ni paquetes de `V-02.07` para publicar `V-02.08`. Cuando se genere `V-02.08`, debe tener ZIP y `.sig` propios.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
-No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-02-03-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
+No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-02.08-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
 
-Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02-03-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
+Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02.08-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
-Nota dura de `V-01.09`: el codigo ya prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este cambio puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
+Nota vigente de `V-02.08`: el codigo prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este flujo puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
 
 ## Limpieza antes de publicar
 
@@ -610,7 +614,7 @@ Atlas Balance usa el nuevo simbolo de marca en login, cambio obligatorio de pass
 
 El logo se adapta automaticamente a modo claro y oscuro. No cambia ningun flujo de uso.
 
-## Rutas de backups y exportaciones V-02.07
+## Rutas de backups y exportaciones (vigente en V-02.08; introducido en V-02.07)
 
 Las carpetas de backups y de exportaciones deben estar en un disco de la propia maquina. Se escriben asi:
 
@@ -627,7 +631,7 @@ Si necesitas que las copias acaben en un NAS o en un servidor de la oficina, mon
 
 Nada mas cambia: el resto del funcionamiento de backups y exportaciones es identico.
 
-## Avisos de seguridad y estado del sistema V-02.07
+## Avisos de seguridad y estado del sistema (vigente en V-02.08; introducido en V-02.07)
 
 Solo para administradores.
 
