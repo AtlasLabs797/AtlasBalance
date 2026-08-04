@@ -9,6 +9,15 @@ runner. No se publican rutas, mensajes, parametros ni valores de asercion. El
 wrapper Bash conserva y devuelve exactamente el exit code original, por lo que
 no suaviza el gate.
 
+El runner Ubuntu revelo ademas una incompatibilidad en la validacion de
+`backup_path` y `export_path`: se exigia siempre el patron `C:\\...` antes de
+llamar a `Path.GetFullPath`, aunque los tests multiplataforma crean directorios
+temporales `/tmp/...`. `BackupService` y `ExportacionService` conservan en
+Windows la exigencia de unidad local y, fuera de Windows, aceptan
+`Path.IsPathRooted`; el rechazo previo de traversal y UNC se mantiene en ambos
+casos. No se amplia la superficie de rutas admitidas por la aplicacion de
+produccion Windows.
+
 ---
 
 ## 2026-08-04 - V-02.07 - Cierre tecnico de seguridad pre-launch

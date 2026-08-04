@@ -313,7 +313,8 @@ public sealed class ExportacionService : IExportacionService
             throw new InvalidOperationException($"Configuracion '{configKey}' no admite rutas de red (UNC).");
         }
 
-        if (!LooksLikeWindowsRootedPath(trimmed))
+        var isNativeAbsolutePath = !OperatingSystem.IsWindows() && Path.IsPathRooted(trimmed);
+        if (!LooksLikeWindowsRootedPath(trimmed) && !isNativeAbsolutePath)
         {
             throw new InvalidOperationException($"Configuracion '{configKey}' debe ser una ruta absoluta.");
         }

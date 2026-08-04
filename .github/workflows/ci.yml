@@ -72,7 +72,7 @@ jobs:
             while IFS= read -r test_log; do
               found_log=1
               read_test_log "$test_log" \
-                | grep -Ei '(failed|failure|error|con errores).*AtlasBalance\.API\.Tests\.|AtlasBalance\.API\.Tests\..*(failed|failure|error|con errores)' \
+                | grep -Ei '^[[:space:]]*(failed|failure|error|con errores)[[:space:]]+AtlasBalance\.API\.Tests\.' \
                 | grep -Eo 'AtlasBalance\.API\.Tests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+' \
                 | sort -u
             done < <(find "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/bin" -type f -name 'AtlasBalance.API.Tests_*.log' -print)

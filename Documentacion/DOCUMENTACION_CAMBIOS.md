@@ -38,7 +38,23 @@ contra el log local conocido de 17 fallos Docker.
 fallos pero ningun identificador. La causa es que el runner Linux escribe UTF-8,
 mientras el log local Windows lleva BOM UTF-16LE. El script detecta ahora `FF FE`
 antes de aplicar `iconv`; en otro caso lee UTF-8 directamente. El marcador de
-fallo acepta estado antes o despues del identificador.
+fallo queda anclado al inicio de la linea para no confundir un metodo cuyo nombre
+contenga `Failures` con un test fallido.
+
+**Correccion de los seis fallos identificados por `30922390384`:** cinco tests de
+`ExportacionService` y uno de `BackupService` usan el directorio temporal nativo
+del runner (`/tmp/...`). El endurecimiento de rutas aceptaba solo sintaxis
+Windows antes de canonicalizar, aunque CI ejecuta tambien sobre Ubuntu. Ambos
+servicios aceptan ahora una ruta nativa absoluta solo cuando el proceso no corre
+en Windows; traversal y UNC siguen rechazados y la politica de produccion Windows
+no cambia.
+
+**Verificacion local:** suite completa 639 correctas; los 17 fallos restantes son
+exclusivamente pruebas PostgreSQL/Testcontainers porque Docker local no esta
+disponible. Ningun fallo restante pertenece a `BackupServiceTests` ni
+`ExportacionServiceTests`. El extractor anclado devuelve exactamente esos 17
+identificadores contra el log local y ya no incluye el test MFA cuyo nombre acaba
+en `Failures`. Pendiente: confirmacion del run GitHub Actions posterior al push.
 
 ---
 

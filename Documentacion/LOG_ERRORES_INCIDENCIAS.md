@@ -1,6 +1,6 @@
 ﻿# Log de errores e incidencias
 
-## 2026-08-04 - V-02.07 - CI ocultaba las trazas de seis tests backend fallidos (EN DIAGNOSTICO)
+## 2026-08-04 - V-02.07 - CI ocultaba seis fallos causados por rutas Windows en Ubuntu (CORREGIDO, PENDIENTE CI)
 
 - **Run:** `30880106452`, job `Build, test, and audit`, paso `Test backend`.
 - **Sintoma:** xUnit v3 informo `Failed: 6, Passed: 650`, pero escribio las
@@ -9,15 +9,27 @@
 - **Correccion de observabilidad:** si `dotnet test` devuelve error, CI extrae
   solo los identificadores `namespace.clase.metodo` y conserva el exit code.
   No publica rutas, mensajes, parametros ni valores de asercion.
-- **Pendiente:** publicar el cambio, leer el nuevo run y cerrar aqui la causa y
-  solucion de los seis tests. No se atribuye causa sin esa evidencia.
 - **Primer run diagnostico:** `30921246599` repitio 6 fallos/650 correctos, pero
   no encontro identificadores: el log es UTF-16LE (`FF FE`) y `grep` ve bytes
   NUL entre caracteres. Ajustado a la ruta `bin` efectiva y conversion
   `iconv` a UTF-8, manteniendo salida exclusiva de identificadores.
 - **Segundo run diagnostico:** `30921865207` confirmo que el log Linux no usa la
   misma codificacion que Windows. Se anadio deteccion de BOM: UTF-16LE solo con
-  `FF FE`, UTF-8 en el resto, y estado de fallo antes o despues del identificador.
+  `FF FE` y UTF-8 en el resto.
+- **Diagnostico definitivo:** `30922390384` expuso cinco tests de
+  `ExportacionService` y uno de `BackupService`. Todos configuraban
+  `Path.GetTempPath()` (`/tmp/...` en Ubuntu), pero `ResolveSafeDirectory`
+  exigia siempre sintaxis de unidad Windows. El septimo nombre mostrado, un test
+  MFA terminado en `Failures`, era un falso positivo del grep y pasa localmente.
+- **Solucion:** permitir `Path.IsPathRooted` solo en sistemas no Windows; en
+  Windows se mantiene la comprobacion `C:\\...`. El rechazo de traversal y UNC
+  se ejecuta antes y no cambia. El extractor queda anclado al estado al inicio de
+  linea para no interpretar palabras del identificador como resultado.
+- **Verificacion:** suite local 639/656 correcta; los 17 fallos son unicamente
+  PostgreSQL/Testcontainers por Docker no disponible. Los seis tests de este
+  incidente ya no aparecen entre los fallidos. El extractor devuelve los 17
+  fallos reales del log local sin el falso positivo MFA. Pendiente: run CI tras
+  publicar el parche.
 
 ---
 
