@@ -1,5 +1,16 @@
 # Documentacion tecnica
 
+## 2026-08-04 - V-02.07 - Diagnostico durable de tests backend en CI
+
+El workflow de CI extrae ahora de `TestResults/*.log` solo los identificadores
+`namespace.clase.metodo` cuando `dotnet test` falla. Antes solo quedaba visible
+el contador global y el archivo con las trazas se perdia al destruirse el
+runner. No se publican rutas, mensajes, parametros ni valores de asercion. El
+wrapper Bash conserva y devuelve exactamente el exit code original, por lo que
+no suaviza el gate.
+
+---
+
 ## 2026-08-04 - V-02.07 - Cierre tecnico de seguridad pre-launch
 
 - **Entrada y consumo de recursos:** la importacion desde Google Drive valida

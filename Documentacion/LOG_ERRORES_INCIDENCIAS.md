@@ -1,5 +1,19 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-04 - V-02.07 - CI ocultaba las trazas de seis tests backend fallidos (EN DIAGNOSTICO)
+
+- **Run:** `30880106452`, job `Build, test, and audit`, paso `Test backend`.
+- **Sintoma:** xUnit v3 informo `Failed: 6, Passed: 650`, pero escribio las
+  trazas en `TestResults/AtlasBalance.API.Tests_net8.0_x64.log`; el workflow no
+  las imprimia ni subia y el runner efimero las elimino al terminar.
+- **Correccion de observabilidad:** si `dotnet test` devuelve error, CI extrae
+  solo los identificadores `namespace.clase.metodo` y conserva el exit code.
+  No publica rutas, mensajes, parametros ni valores de asercion.
+- **Pendiente:** publicar el cambio, leer el nuevo run y cerrar aqui la causa y
+  solucion de los seis tests. No se atribuye causa sin esa evidencia.
+
+---
+
 ## 2026-08-04 - V-02.07 - Huecos de seguridad pre-launch en Drive, Watchdog y ACL locales (CERRADO)
 
 - **Contexto:** revision integral de secretos, input, SQL, auth/authz, errores,

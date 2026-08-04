@@ -55,7 +55,18 @@ jobs:
         run: docker pull postgres:16-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
 
       - name: Test backend
-        run: dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore
+        shell: bash
+        run: |
+          set +e
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore
+          test_exit=$?
+          if (( test_exit != 0 )); then
+            while IFS= read -r test_log; do
+              grep -Eo 'AtlasBalance\.API\.Tests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+' "$test_log"
+            done < <(find "./Atlas Balance/backend/tests/AtlasBalance.API.Tests" -path '*/TestResults/*.log' -type f -print)
+            echo "Solo se muestran identificadores de test; detalles y parametros permanecen fuera del log publico."
+          fi
+          exit "$test_exit"
 
       - name: Audit NuGet vulnerabilities
         shell: pwsh

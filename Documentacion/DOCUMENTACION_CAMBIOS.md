@@ -9,6 +9,26 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-04 - V-02.07 - CI muestra el detalle de tests backend fallidos
+
+**Trabajo realizado:** el paso `Test backend` conserva el exit code de
+`dotnet test` y, si falla, extrae de `TestResults/*.log` exclusivamente los
+identificadores `namespace.clase.metodo` antes de devolver el mismo error.
+
+**Motivo:** el run GitHub Actions `30880106452` reporto 6 tests fallidos, pero
+el runner solo mostro el resumen `Failed: 6, Passed: 650`; las trazas quedaron
+en el filesystem efimero del runner y no se podian diagnosticar despues.
+
+**Archivos tocados:** `.github/workflows/ci.yml`, documentacion tecnica, log de
+incidencias, version V-02.07 y esta bitacora.
+
+**Verificacion:** YAML revisado; el script Bash preserva el codigo de salida,
+solo recorre logs bajo el proyecto de tests y no publica rutas, mensajes,
+parametros ni valores de asercion. Pendiente: publicar y usar el nuevo run para
+identificar y corregir los seis fallos reales.
+
+---
+
 ## 2026-08-04 - V-02.07 - Auditoria y correccion de seguridad pre-launch
 
 **Trabajo realizado:** auditoria orquestada y validada de los 13 controles
