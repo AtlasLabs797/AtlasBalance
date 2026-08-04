@@ -1,5 +1,28 @@
 # Documentacion tecnica
 
+## 2026-08-04 - V-02.07 - Higiene del paquete de release
+
+`Build-Release.ps1` limpia ahora, despues de publicar API y Watchdog y antes de
+comprimir, todos los `*.pdb` y `packages.lock.json` bajo el directorio exacto
+del paquete. La limpieza usa `-ErrorAction Stop` y una segunda enumeracion que
+aborta la release si queda algun artefacto. Los `.deps.json` y
+`.runtimeconfig.json` se conservan porque son metadatos runtime.
+
+El firmador RSA efimero se genera dentro de `Atlas Balance Release` y se borra
+en `finally`; ya no se compila ni ejecuta desde `%TEMP%`. La clave privada se
+sigue leyendo solo desde `ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM` y no se
+escribe en archivos.
+
+El ZIP firmado definitivo quedo limpio tras la correccion: 814 entradas,
+102.458.212 bytes y SHA-256
+`B2EEE529B4B3A16C05E077162E6D6510945485B98E4944FC6A3305840A5E5101`.
+La firma detached mide 512 bytes y su SHA-256 es
+`43C49540EBC183B8A45D199C96EBFE2678C0CA35A9F85AEB82737F095F6A6ED5`.
+Verificacion .NET 8: clave RSA-4096, privada alineada con la publica de la
+plantilla, plantilla alineada con el instalador y firma RSA/SHA-256 valida.
+
+---
+
 ## 2026-08-04 - V-02.07 - Diagnostico durable de tests backend en CI
 
 El workflow de CI extrae ahora de `TestResults/*.log` solo los identificadores

@@ -1,5 +1,28 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-04 - V-02.07 - El ZIP incluia simbolos y lockfiles de build (CERRADO)
+
+- **Sintoma:** el primer preflight generado por `Build-Release.ps1` contenia
+  `api\AtlasBalance.API.pdb`, `watchdog\AtlasBalance.Watchdog.pdb` y un
+  `packages.lock.json` por proyecto.
+- **Riesgo:** el paquete incumplia el requisito de no distribuir archivos de
+  desarrollo y exponia simbolos que facilitan el analisis interno del binario.
+- **Causa:** `dotnet publish` copia esos ficheros y el script solo eliminaba
+  sourcemaps del frontend.
+- **Solucion:** eliminar PDB y lockfiles de NuGet bajo `$packageRoot` despues
+  de ambos publishes, y abortar si la comprobacion posterior encuentra restos.
+  El firmador temporal se movio ademas desde `%TEMP%` al directorio de release
+  dentro del workspace para cumplir la higiene EDR del proyecto.
+- **Verificacion:** build firmado correcto; excluyo 48 sourcemaps y cuatro
+  artefactos de build. ZIP con 814/814 entradas legibles y cero PDB, lockfiles,
+  fuentes, secretos o artefactos prohibidos. SHA-256:
+  `B2EEE529B4B3A16C05E077162E6D6510945485B98E4944FC6A3305840A5E5101`.
+  Firma RSA-4096/SHA-256 valida contra la publica configurada; `.sig` de 512
+  bytes con SHA-256
+  `43C49540EBC183B8A45D199C96EBFE2678C0CA35A9F85AEB82737F095F6A6ED5`.
+
+---
+
 ## 2026-08-04 - V-02.07 - CI ocultaba seis fallos causados por rutas Windows en Ubuntu (CERRADO)
 
 - **Run:** `30880106452`, job `Build, test, and audit`, paso `Test backend`.

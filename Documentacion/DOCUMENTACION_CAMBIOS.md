@@ -9,6 +9,44 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-04 - V-02.07 - Construccion y auditoria del ZIP firmado
+
+**Trabajo realizado:** se ejecuto `Build-Release.ps1` para V-02.07 y se
+audito el ZIP entrada por entrada. El primer paquete se rechazo porque incluia
+dos PDB y dos `packages.lock.json`. El script elimina ahora esos artefactos de
+depuracion/build, falla si queda alguno y crea el firmador efimero dentro de
+`Atlas Balance Release` en vez de ejecutarlo desde `%TEMP%`.
+
+**Archivos tocados:** `Atlas Balance/scripts/Build-Release.ps1`, documentacion
+tecnica, version V-02.07, log de incidencias y esta bitacora.
+
+**Comandos ejecutados:** parser PowerShell; `git diff --check`;
+`Build-Release.ps1 -Version V-02.07 -Runtime win-x64 -Configuration Release`
+(build final firmado, tras dos preflights unsigned); `Check-VersionAlignment.ps1`;
+`Test-AtlasSecrets.ps1`; apertura y lectura completa del ZIP con
+`System.IO.Compression`; busquedas por nombre y contenido; `Get-FileHash
+-Algorithm SHA256`; verificacion RSA/SHA-256 con .NET 8 contra la clave publica
+de la plantilla y del instalador.
+
+**Resultado de verificacion:** build firmado correcto en 152,4 s; 48 `.map` y
+4 artefactos de depuracion/build excluidos. ZIP definitivo de 102.458.212
+bytes, 814 entradas, todas legibles. SHA-256 del ZIP:
+`B2EEE529B4B3A16C05E077162E6D6510945485B98E4944FC6A3305840A5E5101`.
+Firma detached de 512 bytes; SHA-256:
+`43C49540EBC183B8A45D199C96EBFE2678C0CA35A9F85AEB82737F095F6A6ED5`.
+Contiene API, Watchdog, scripts, `VERSION` y `version.json` alineados a
+V-02.07. No contiene secretos, `.env`, credenciales iniciales, logs, dumps,
+sourcemaps, certificados privados, `node_modules`, `bin/obj`, PDB, lockfiles
+de build, fuentes ni arboles de desarrollo. Las conexiones/passwords de los
+`appsettings.json` publicados estan vacias. La privada RSA-4096 coincide con
+la publica configurada, la plantilla coincide con el instalador y la firma
+valida el ZIP (`SIGNATURE_VALID=True`).
+
+**Pendiente:** publicar ZIP y `.sig` en GitHub Release. La autenticacion local
+de `gh` sigue caducada y requiere reautenticacion del operador.
+
+---
+
 ## 2026-08-04 - V-02.07 - CI muestra el detalle de tests backend fallidos
 
 **Trabajo realizado:** el paso `Test backend` conserva el exit code de

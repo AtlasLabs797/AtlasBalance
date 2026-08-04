@@ -59,7 +59,7 @@ function Resolve-DotnetPath {
 function Invoke-ReleaseSigner {
     param([string]$ZipPath, [string]$SignaturePath)
 
-    $signerRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("atlas-release-signer-" + [guid]::NewGuid().ToString("N"))
+    $signerRoot = Join-Path $releaseRoot ("release-signer-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $signerRoot -Force | Out-Null
     try {
         $signerProject = Join-Path $signerRoot "AtlasReleaseSigner.csproj"
@@ -201,6 +201,26 @@ Remove-Item -LiteralPath $frontendBuildDist -Recurse -Force -ErrorAction Silentl
     -p:InformationalVersion=$Version `
     -o (Join-Path $packageRoot "watchdog")
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish Watchdog fallo." }
+
+# Los PDB y los lockfiles de NuGet son artefactos de depuracion/build y no
+# forman parte del paquete de produccion. Se eliminan despues de publicar ambos
+# proyectos y se comprueba que no quede ninguno antes de comprimir el release.
+$developmentArtifacts = @(
+    Get-ChildItem -Path $packageRoot -Filter "*.pdb" -Recurse -File -ErrorAction Stop
+    Get-ChildItem -Path $packageRoot -Filter "packages.lock.json" -Recurse -File -ErrorAction Stop
+)
+if ($developmentArtifacts.Count -gt 0) {
+    $developmentArtifacts | Remove-Item -Force -ErrorAction Stop
+    Write-Host "Se excluyeron $($developmentArtifacts.Count) artefactos de depuracion/build del paquete publicado." -ForegroundColor Yellow
+}
+
+$developmentLeftovers = @(
+    Get-ChildItem -Path $packageRoot -Filter "*.pdb" -Recurse -File -ErrorAction Stop
+    Get-ChildItem -Path $packageRoot -Filter "packages.lock.json" -Recurse -File -ErrorAction Stop
+)
+if ($developmentLeftovers.Count -gt 0) {
+    throw "Quedan $($developmentLeftovers.Count) artefactos de depuracion/build en $packageRoot tras la limpieza."
+}
 
 New-Item -ItemType Directory -Path (Join-Path $packageRoot "scripts") -Force | Out-Null
 foreach ($script in @(
