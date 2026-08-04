@@ -193,12 +193,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       // onload for src scripts to preserve ordering (React before ReactDOM
       // before Babel before text/babel).
       var template = pages[entryId];
-      const doc = new DOMParser().parseFromString(template, 'text/html');
       // codeql[js/xss-through-dom] false positive: `template` se construye desde un payload
       // JSON literal declarado en este mismo fichero (<script type="__bundler/template">),
       // no acepta input externo. El mockup no se sirve en runtime (verificado: Build-Release
       // excluye Documentacion/Diseno/mockups/; wwwroot/ no se genera). Patron de bundler
       // self-contained del mockup de referencia canonico del diseno V-02-02.
+      const doc = new DOMParser().parseFromString(template, 'text/html');
       document.documentElement.replaceWith(doc.documentElement);
       const dead = Array.from(document.scripts);
       for (const old of dead) {

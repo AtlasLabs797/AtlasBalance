@@ -10,6 +10,16 @@ param(
     [string]$DbName = "atlas_balance",
     [string]$DrillDbName = "atlas_restore_drill",
     [string]$DbUser = "postgres",
+    # V-02.07 (BACKUP-RLS): el pg_dump del drill debe correr con el rol OWNER,
+    # no con el superusuario, para ejercitar exactamente el mismo camino que
+    # BackupService.cs en produccion. Las tablas de negocio llevan FORCE ROW
+    # LEVEL SECURITY y un superusuario siempre la bypassea, asi que un dump
+    # como "postgres" nunca habria detectado que el owner necesitaba
+    # BYPASSRLS. $DbUser sigue usandose para los pasos administrativos
+    # (DROP/CREATE DATABASE), porque el owner es NOCREATEDB y no puede
+    # hacerlos.
+    [string]$DumpUser = "atlas_owner",
+    [string]$DumpUserPassword = "",
     [string]$LocalPgBinPath = "C:\Proyectos\Atlas Balance Dev\tools\pgsql\bin",
     [string]$LocalDbHost = "127.0.0.1",
     [int]$LocalDbPort = 5433
@@ -97,6 +107,11 @@ try {
         $env:PGPASSWORD = $pgPassword
     }
 
+    # Password del rol OWNER para el pg_dump (ver comentario en el parametro
+    # $DumpUser). Por defecto es la misma que ya leimos arriba
+    # (ATLAS_BALANCE_POSTGRES_OWNER_PASSWORD), salvo que se pase explicita.
+    $dumpPassword = if (-not [string]::IsNullOrWhiteSpace($DumpUserPassword)) { $DumpUserPassword } else { $pgPassword }
+
     # Helper que ejecuta psql segun el modo
     function Invoke-Psql {
         param([string]$Database, [string]$Sql, [switch]$AllowNonFatal)
@@ -110,14 +125,23 @@ try {
         }
     }
 
-    Write-Section "3. pg_dump de '$DbName' (formato custom)"
-    if ($mode -eq "docker") {
-        Invoke-Checked -Exe "docker" -Arguments @("exec", "-e", "PGPASSWORD=$($env:PGPASSWORD)", $ContainerName, "pg_dump", "-U", $DbUser, "-d", $DbName, "-F", "c", "-f", $dumpFileContainer) -FailMessage "pg_dump fallo" | Out-Null
-    } else {
-        $dumpFileLocal = Join-Path $env:TEMP "atlas-restore-drill-$(Get-Date -Format 'yyyyMMddHHmmss').dump"
-        $pgDumpExe = Join-Path $LocalPgBinPath "pg_dump.exe"
-        Invoke-Checked -Exe $pgDumpExe -Arguments @("-h", $LocalDbHost, "-p", $LocalDbPort, "-U", $DbUser, "-d", $DbName, "-F", "c", "-f", $dumpFileLocal) -FailMessage "pg_dump fallo" | Out-Null
-        Write-Host "Dump generado en: $dumpFileLocal" -ForegroundColor Green
+    Write-Section "3. pg_dump de '$DbName' (formato custom, rol owner '$DumpUser')"
+    # V-02.07 (BACKUP-RLS): PGPASSWORD se cambia solo para esta llamada (el
+    # owner puede tener password distinta del superusuario) y se restaura
+    # justo despues, porque el resto del script (pg_restore, DROP/CREATE
+    # DATABASE) sigue conectando como $DbUser.
+    $env:PGPASSWORD = $dumpPassword
+    try {
+        if ($mode -eq "docker") {
+            Invoke-Checked -Exe "docker" -Arguments @("exec", "-e", "PGPASSWORD=$dumpPassword", $ContainerName, "pg_dump", "-U", $DumpUser, "-d", $DbName, "-F", "c", "-f", $dumpFileContainer) -FailMessage "pg_dump fallo" | Out-Null
+        } else {
+            $dumpFileLocal = Join-Path $env:TEMP "atlas-restore-drill-$(Get-Date -Format 'yyyyMMddHHmmss').dump"
+            $pgDumpExe = Join-Path $LocalPgBinPath "pg_dump.exe"
+            Invoke-Checked -Exe $pgDumpExe -Arguments @("-h", $LocalDbHost, "-p", $LocalDbPort, "-U", $DumpUser, "-d", $DbName, "-F", "c", "-f", $dumpFileLocal) -FailMessage "pg_dump fallo" | Out-Null
+            Write-Host "Dump generado en: $dumpFileLocal" -ForegroundColor Green
+        }
+    } finally {
+        $env:PGPASSWORD = $pgPassword
     }
 
     Write-Section "4. Recuentos ORIGEN ('$DbName')"

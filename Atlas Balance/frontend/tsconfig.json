@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    // ES2022 (no ES2020) para tipar `new Error(msg, { cause })`, que exige la
+    // regla preserve-caught-error de ESLint 10. Solo anade definiciones de
+    // tipos; el `target` sigue en ES2020 y quien transpila es Vite/esbuild,
+    // que ya emite a un target mas moderno que esto.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",

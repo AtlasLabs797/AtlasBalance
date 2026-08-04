@@ -182,7 +182,8 @@ public sealed class ExtractosControllerTests
 
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
         var summary = ok.Value.Should().BeOfType<CuentaResumenKpiResponse>().Subject;
-        summary.Iban.Should().Be("ES9121000418450200051332");
+        // V-02-07: el KPI de cuenta devuelve el IBAN enmascarado (minimizacion de datos).
+        summary.Iban.Should().Be("********************1332");
         summary.BancoNombre.Should().Be("CaixaBank");
         summary.SaldoActual.Should().Be(1069m);
         summary.IngresosMes.Should().Be(100m);

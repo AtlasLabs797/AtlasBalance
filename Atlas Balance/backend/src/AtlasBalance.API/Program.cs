@@ -1,9 +1,10 @@
-﻿using AtlasBalance.API.Data;
+﻿using AtlasBalance.API.Caching;
+using AtlasBalance.API.Data;
 using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Logging;
 using AtlasBalance.API.Middleware;
+using AtlasBalance.API.RateLimiting;
 using AtlasBalance.API.Services;
-using FluentValidation.AspNetCore;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -14,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Serilog;
+using Serilog.Filters;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -25,6 +27,14 @@ builder.WebHost.ConfigureKestrel(options =>
 {
     // V-02-05 (LOW-BE-1): no enviar el header "Server: Kestrel" en respuestas.
     options.AddServerHeader = false;
+    // V-02-07: el default de Kestrel (30 MB) queda muy por encima de lo que la
+    // API realmente necesita. El unico payload grande es la importacion, que
+    // limita RawData a 5 MB (ver ImportacionService.MaxRawDataLength), pero el
+    // JSON completo (RawData escapado como string + resto de campos) puede
+    // crecer bastante sobre esos 5 MB crudos si el contenido tiene comillas,
+    // barras invertidas o saltos de linea. 10 MB da el doble de holgura sobre
+    // el limite real sin dejar los 30 MB por defecto abiertos.
+    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024;
 });
 AddExternalDevelopmentSecrets(builder.Configuration, builder.Environment, "AtlasBalance.API.Development.json");
 
@@ -42,6 +52,18 @@ builder.Host.UseSerilog((context, config) =>
         "logs");
     var logPath = context.Configuration["Serilog:FilePath"]
         ?? Path.Combine(defaultLogDir, "atlas-balance-.log");
+
+    // V-02.07: los eventos de seguridad van ADEMAS a su propio fichero, en una
+    // carpeta aparte. Dos motivos:
+    //  1. Retencion propia y mas larga que el log de aplicacion (30 dias no
+    //     sirven para investigar un incidente que se descubre dos meses tarde).
+    //  2. La carpeta puede llevar una ACL de solo-anexar para la cuenta del
+    //     servicio, cosa que no se puede hacer con el log general porque
+    //     Serilog necesita rotar y borrar ficheros ahi.
+    // Ver SecurityEventLog: emite con la categoria AtlasBalance.Security.
+    var securityLogPath = context.Configuration["Serilog:SecurityFilePath"]
+        ?? Path.Combine(defaultLogDir, "security", "atlas-security-.log");
+
     config
         .ReadFrom.Configuration(context.Configuration)
         .Enrich.FromLogContext()
@@ -50,7 +72,16 @@ builder.Host.UseSerilog((context, config) =>
             logPath,
             rollingInterval: RollingInterval.Day,
             fileSizeLimitBytes: 50L * 1024L * 1024L,
-            retainedFileCountLimit: 30);
+            retainedFileCountLimit: 30)
+        .WriteTo.Logger(securityLogger => securityLogger
+            .Filter.ByIncludingOnly(Matching.FromSource("AtlasBalance.Security"))
+            .WriteTo.File(
+                securityLogPath,
+                rollingInterval: RollingInterval.Day,
+                fileSizeLimitBytes: 50L * 1024L * 1024L,
+                // Por encima de la retencion de AUDITORIAS (365 dias) a
+                // proposito: si alguien purga la tabla, el fichero sigue.
+                retainedFileCountLimit: 400));
 });
 
 builder.Services.AddHttpContextAccessor();
@@ -63,13 +94,15 @@ builder.Services.AddScoped<RlsDbCommandInterceptor>(serviceProvider =>
         serviceProvider.GetRequiredService<IHttpContextAccessor>(),
         serviceProvider.GetRequiredService<RlsContextSecret>()));
 builder.Services.AddScoped<AuditSaveChangesInterceptor>();
+builder.Services.AddScoped<DashboardCacheInvalidationInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options
         .UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
         .UseSnakeCaseNamingConvention()
         .AddInterceptors(
             serviceProvider.GetRequiredService<RlsDbCommandInterceptor>(),
-            serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+            serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>(),
+            serviceProvider.GetRequiredService<DashboardCacheInvalidationInterceptor>()));
 
 var jwtSecret = ResolveJwtSecret(builder.Configuration, builder.Environment);
 var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, builder.Environment, jwtSecret);
@@ -80,6 +113,11 @@ var rlsContextSecret = ResolveRlsContextSecret(builder.Configuration, builder.En
 // secreto JWT solo en Development; en Produccion exigimos clave propia para
 // que comprometer JWT no permita forjar contextos RLS.
 builder.Services.AddSingleton(new AtlasBalance.API.Data.RlsContextSecret(rlsContextSecret));
+// V-02.07: clave de firma de AUDITORIAS. Misma politica fail-closed que RLS y
+// por el mismo motivo: si se reutiliza el secreto JWT, comprometerlo permitiria
+// forjar filas de auditoria con firma valida y el rastro dejaria de valer nada.
+builder.Services.AddSingleton(new AtlasBalance.API.Services.AuditSigningKey(
+    ResolveAuditSigningKey(builder.Configuration, builder.Environment, jwtSecret)));
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "atlas-balance-api";
 var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "atlas-balance-app";
 
@@ -98,11 +136,22 @@ if (!builder.Environment.IsDevelopment())
         builder.Configuration.GetConnectionString("DefaultConnection"),
         1);
     RejectUnsafeAllowedHosts(builder.Configuration["AllowedHosts"]);
+    // V-02-07: SslMode=Disable o Prefer contra un host remoto deja el trafico
+    // con PostgreSQL (PII financiera incluida) sin cifrar y sin nada que lo
+    // detecte. No abortamos el arranque (romperia instalaciones existentes
+    // con la BD en la misma maquina), pero avisamos claro en el log.
+    WarnIfConnectionStringSslModeUnsafe(
+        "ConnectionStrings:DefaultConnection",
+        builder.Configuration.GetConnectionString("DefaultConnection"));
 }
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // V-02-07: el default del framework es true y filtra en el header
+        // WWW-Authenticate el motivo exacto del fallo (firma invalida, timestamp
+        // de expiracion, etc). Solo lo dejamos activo en Development.
+        options.IncludeErrorDetails = builder.Environment.IsDevelopment();
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
@@ -134,6 +183,30 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddMemoryCache();
+builder.Services.Configure<CachingOptions>(builder.Configuration.GetSection(CachingOptions.SectionName));
+builder.Services.AddSingleton<ICacheService>(sp =>
+    new CacheService(
+        sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<CacheService>(),
+        new CacheServiceOptions
+        {
+            SizeLimit = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CachingOptions>>().Value.SizeLimitEntries
+        }));
+builder.Services.AddSingleton<IDashboardCacheInvalidator, DashboardCacheInvalidator>();
+builder.Services.AddAtlasRateLimiting(builder.Configuration);
+// V-02.07: sin AddHsts, UseHsts emite max-age=2592000 (30 dias) y sin
+// includeSubDomains. Se sube a un ano e incluye subdominios.
+// preload queda fuera A PROPOSITO: la lista de preload de los navegadores
+// exige un dominio publico registrable y es practicamente irreversible; esta
+// app es on-premise y se instala con hostnames de intranet.
+// ExcludedHosts se deja con el default del framework (localhost, 127.0.0.1,
+// [::1]) para no fijar HSTS en la maquina del propio servidor.
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+    options.Preload = false;
+});
 ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("AtlasBalance");
@@ -224,22 +297,46 @@ builder.Services.AddHangfire(config => config
     .UsePostgreSqlStorage(options =>
         options.UseNpgsqlConnection(builder.Configuration.GetConnectionString("DefaultConnection")),
         CreateHangfireStorageOptions()));
-builder.Services.AddHangfireServer();
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = builder.Configuration.GetValue("Database:HangfireWorkerCount", 2);
+});
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    })
+    // V-02-07: el default de [ApiController] devuelve ValidationProblemDetails,
+    // que filtra traceId, la url type de rfc7231, tipos .NET y nombres de
+    // propiedad C# en PascalCase. Sustituimos por un cuerpo generico y
+    // logueamos el detalle real del ModelState en el servidor.
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("AtlasBalance.API.ModelValidation");
+            var invalidFields = string.Join(", ", context.ModelState
+                .Where(entry => entry.Value?.Errors.Count > 0)
+                .Select(entry => LogScrubber.Scrub(entry.Key)));
+            logger.LogWarning("ModelState invalido en {PathSafe} para los campos: {InvalidFields}",
+                LogScrubber.Scrub(context.HttpContext.Request.Path.Value),
+                invalidFields);
+
+            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new { error = "Los datos enviados no son validos. Revisa el formulario e intentalo de nuevo." });
+        };
     });
 
-// V-02.06 (MED-23): wirear FluentValidation como proveedor de
-// ModelState. La referencia a FluentValidation.AspNetCore 11.3.0
-// estaba en el csproj pero nunca se registro el contenedor, asi que
-// las reglas CustomValidator no se aplicaban. Es idempotente si no
-// hay IValidator<,> registrados: escanea el assembly de la API y
-// solo activa los que encuentre.
-builder.Services.AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters();
+// V-02.07: se retira el wiring de FluentValidation que V-02.06 anadio por
+// MED-23. Nunca llego a existir ni un solo AbstractValidator<T> en el backend,
+// asi que registraba un escaneo de assembly que no activaba nada. MED-23 sigue
+// cerrado: la validacion real de los DTOs son los DataAnnotations
+// ([Required], [MaxLength], [Range]), que es la otra via que el propio hallazgo
+// daba por valida. Si algun dia hace falta FluentValidation, se vuelve a anadir
+// junto con los validadores, no antes.
 
 if (builder.Environment.IsDevelopment())
 {
@@ -259,6 +356,25 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<ICsrfService, CsrfService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+// V-02.07 (observabilidad de seguridad): firma de auditoria y espejo externo.
+// Singleton: no tienen estado por peticion y el firmador solo guarda la clave.
+builder.Services.AddSingleton<IAuditSigner, AuditSigner>();
+builder.Services.AddSingleton<ISecurityEventLog, SecurityEventLog>();
+builder.Services.AddScoped<IAuditIntegrityService, AuditIntegrityService>();
+builder.Services.Configure<SecurityAlertOptions>(builder.Configuration.GetSection(SecurityAlertOptions.SectionName));
+builder.Services.AddScoped<ISecurityAlertService, SecurityAlertService>();
+builder.Services.AddScoped<IAlertDispatcher, AlertDispatcher>();
+builder.Services.AddScoped<IAppHealthService, AppHealthService>();
+// Singleton: los contadores tienen que sobrevivir a la peticion, que es el
+// sentido de medir una tasa.
+builder.Services.AddSingleton<IRequestMetrics, RequestMetrics>();
+builder.Services.AddSingleton<ISlackAlertNotifier, SlackAlertNotifier>();
+// Timeout corto: una alerta que no sale en 10s no vale la pena reintentarla en
+// caliente; ya quedo registrada en AUDITORIAS y en la notificacion in-app.
+builder.Services.AddHttpClient(SlackAlertNotifier.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddScoped<ITiposCambioService, TiposCambioService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IImportacionService, ImportacionService>();
@@ -287,6 +403,7 @@ builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>()
 builder.Services.AddScoped<SyncTiposCambioJob>();
 builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
 builder.Services.AddScoped<LimpiezaAuditoriaJob>();
+builder.Services.AddScoped<LimpiezaExportacionesJob>();
 builder.Services.AddScoped<BackupWeeklyJob>();
 builder.Services.AddScoped<BackupSchedulerJob>();
 builder.Services.AddScoped<ExportMensualJob>();
@@ -339,6 +456,11 @@ using (var scope = app.Services.CreateScope())
         job => job.ExecuteAsync(),
         "15 3 * * *");
 
+    recurringJobManager.AddOrUpdate<LimpiezaExportacionesJob>(
+        "limpieza-exportaciones",
+        job => job.ExecuteAsync(),
+        Cron.Daily());
+
     recurringJobManager.RemoveIfExists("backup-weekly");
     recurringJobManager.AddOrUpdate<BackupSchedulerJob>(
         "backup-scheduler",
@@ -359,9 +481,39 @@ using (var scope = app.Services.CreateScope())
         "auto-update-github-release",
         job => job.ExecuteAsync(),
         "17 * * * *");
+
+    // V-02.07: la cadencia se deriva de la ventana de las reglas para que las
+    // ventanas se encadenen sin huecos. Si el operador cambia VentanaMinutos, el
+    // cron se ajusta solo en el siguiente arranque.
+    var ventanaAlertas = Math.Clamp(
+        app.Configuration.GetValue($"{SecurityAlertOptions.SectionName}:VentanaMinutos", 5),
+        1,
+        59);
+    recurringJobManager.AddOrUpdate<SecurityAlertJob>(
+        "alertas-seguridad",
+        job => job.ExecuteAsync(),
+        $"*/{ventanaAlertas} * * * *");
+
+    // A las 4:05, despues de la purga de auditoria de las 3:15: si la purga
+    // dejara huecos indebidos, se detectan en la misma madrugada.
+    recurringJobManager.AddOrUpdate<VerificacionIntegridadAuditoriaJob>(
+        "verificacion-integridad-auditoria",
+        job => job.ExecuteAsync(),
+        "5 4 * * *");
+
+    // Cada 5 minutos, la misma ventana que compara.
+    recurringJobManager.AddOrUpdate<HealthAlertJob>(
+        "alertas-salud",
+        job => job.ExecuteAsync(),
+        "*/5 * * * *");
 }
 
 app.UseForwardedHeaders();
+
+// V-02.07: lo mas afuera posible del pipeline, para medir el tiempo real que ve
+// el cliente y para que los 500 que produce UseExceptionHandler cuenten como
+// errores en la tasa.
+app.UseMiddleware<RequestMetricsMiddleware>();
 
 app.UseExceptionHandler(errorApp =>
 {
@@ -399,6 +551,18 @@ app.UseExceptionHandler(errorApp =>
             return;
         }
 
+        // V-02-07: BadHttpRequestException (p.ej. body demasiado grande) traia su
+        // propio StatusCode y caia en el 500 generico de abajo, lo que es
+        // enganoso. Message no se expone porque puede llevar detalle tecnico
+        // del limite y del parseo.
+        if (feature?.Error is Microsoft.AspNetCore.Http.BadHttpRequestException badRequest)
+        {
+            context.Response.StatusCode = badRequest.StatusCode;
+            context.Response.ContentType = "application/json; charset=utf-8";
+            await context.Response.WriteAsJsonAsync(new { error = "La solicitud no pudo ser procesada." });
+            return;
+        }
+
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         context.Response.ContentType = "application/json; charset=utf-8";
         await context.Response.WriteAsJsonAsync(new { error = "Error interno del servidor." });
@@ -432,9 +596,11 @@ app.Use(async (context, next) =>
             ? "'self' http://localhost:5173 https://localhost:5000 http://localhost:5000"
             : "'self'";
 
-        // V-02-05 (LOW-BE-2): upgrade-insecure-requests + block-all-mixed-content en
-        // produccion para forzar HTTPS.
-        var cspUpgrade = app.Environment.IsDevelopment() ? string.Empty : "upgrade-insecure-requests; block-all-mixed-content; ";
+        // V-02-05 (LOW-BE-2): upgrade-insecure-requests en produccion para forzar HTTPS.
+        // V-02.07: se retira block-all-mixed-content. Quedo fuera de CSP nivel 3, los
+        // navegadores actuales lo ignoran y Chrome lo reporta como directiva obsoleta
+        // en consola. upgrade-insecure-requests ya cubre el caso.
+        var cspUpgrade = app.Environment.IsDevelopment() ? string.Empty : "upgrade-insecure-requests; ";
 
         headers["Content-Security-Policy"] =
             "default-src 'self'; " +
@@ -492,6 +658,14 @@ app.UseStaticFiles(staticFileOptions);
 app.UseMiddleware<IntegrationAuthMiddleware>();
 
 app.UseAuthentication();
+// V-02.07: despues de UseAuthentication para tener context.User resuelto, y
+// envolviendo todo lo que viene despues (autorizacion, CSRF y los controladores)
+// para capturar cualquier 401/403 venga de donde venga.
+app.UseMiddleware<SecurityAuditMiddleware>();
+// Despues de UseAuthentication a proposito: las politicas de lectura/escritura
+// particionan por userId y necesitan los claims ya resueltos. Las rutas anonimas
+// (login, telemetria) siguen pasando por aqui y particionan por IP.
+app.UseRateLimiter();
 app.UseMiddleware<UserStateMiddleware>();
 app.UseAuthorization();
 app.UseMiddleware<PrimerLoginMiddleware>();
@@ -587,6 +761,49 @@ static string ResolveRlsContextSecret(IConfiguration configuration, IHostEnviron
         "Security:RlsContextSecret debe estar configurado fuera de Development. " +
         "Genera una clave aleatoria de al menos 32 caracteres y distinala de JwtSettings:Secret. " +
         "Si necesitas migrar una instalacion existente, Actualizar-AtlasBalance.ps1 puede generarla.");
+}
+
+// V-02.07: clave HMAC con la que se firma cada fila de AUDITORIAS. Misma
+// politica que ResolveRlsContextSecret: en Development se tolera el fallback al
+// secreto JWT para no romper `dotnet run`; fuera de Development se exige clave
+// propia de 32+ caracteres y distinta del JWT.
+//
+// Rotarla invalida la verificacion de las filas ya firmadas: /api/auditoria/
+// integridad las reportara como no verificables, no como manipuladas.
+static string ResolveAuditSigningKey(IConfiguration configuration, IHostEnvironment environment, string jwtSecret)
+{
+    var trimmed = configuration["Security:AuditSigningKey"]?.Trim();
+
+    if (!string.IsNullOrEmpty(trimmed))
+    {
+        if (environment.IsDevelopment())
+        {
+            return trimmed;
+        }
+
+        RejectUnsafeProductionSecret(
+            "Security:AuditSigningKey",
+            trimmed,
+            32);
+        if (string.Equals(trimmed, jwtSecret, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Security:AuditSigningKey debe ser distinto de JwtSettings:Secret fuera de Development. " +
+                "Si coinciden, comprometer el JWT permite forjar filas de auditoria con firma valida.");
+        }
+        return trimmed;
+    }
+
+    if (environment.IsDevelopment())
+    {
+        return jwtSecret;
+    }
+
+    throw new InvalidOperationException(
+        "Security:AuditSigningKey debe estar configurado fuera de Development. " +
+        "Genera una clave aleatoria de al menos 32 caracteres, distinta de JwtSettings:Secret y de " +
+        "Security:RlsContextSecret, y guardala fuera de la base de datos: si vive en la misma BD que " +
+        "AUDITORIAS, quien compromete la BD puede refirmar las filas que altere.");
 }
 
 static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)
@@ -884,6 +1101,20 @@ static void GrantRuntimeDatabasePrivileges(string migrationConnectionString, str
         GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA hangfire TO {{runtimeRole}};
         GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA atlas_security TO {{runtimeRole}};
         REVOKE ALL ON TABLE atlas_security.rls_context_secret FROM {{runtimeRole}};
+
+        -- V-02.07: AUDITORIAS es append-only tambien a nivel de privilegios.
+        -- El GRANT de arriba es un blanket sobre todas las tablas del esquema, y
+        -- sin este REVOKE el rol de la aplicacion podria modificar o borrar su
+        -- propio rastro. Aqui la separacion de roles si da prevencion real y no
+        -- solo deteccion: el rol de runtime no es el propietario de la tabla,
+        -- asi que no puede volver a concederse el privilegio, ni quitar el
+        -- trigger, ni alterar la tabla.
+        --
+        -- La purga por retencion sigue funcionando porque va por
+        -- atlas_security.purgar_auditorias(), que es SECURITY DEFINER y por
+        -- tanto se ejecuta con los privilegios del propietario.
+        REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "AUDITORIAS" FROM {{runtimeRole}};
+        REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "AUDITORIA_INTEGRACIONES" FROM {{runtimeRole}};
         """;
     command.ExecuteNonQuery();
 }
@@ -916,6 +1147,44 @@ static void RejectUnsafeAllowedHosts(string? allowedHosts)
     {
         throw new InvalidOperationException("AllowedHosts must list explicit host names outside Development.");
     }
+}
+
+static void WarnIfConnectionStringSslModeUnsafe(string key, string? connectionString)
+{
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        return;
+    }
+
+    NpgsqlConnectionStringBuilder parsed;
+    try
+    {
+        parsed = new NpgsqlConnectionStringBuilder(connectionString);
+    }
+    catch (ArgumentException)
+    {
+        // Cadena no parseable: no es este el sitio para validar su formato.
+        return;
+    }
+
+    var host = parsed.Host?.Trim();
+    var isLoopbackHost = string.IsNullOrEmpty(host) ||
+        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+        host == "127.0.0.1" ||
+        host == "::1";
+
+    if (isLoopbackHost || (parsed.SslMode != SslMode.Disable && parsed.SslMode != SslMode.Prefer))
+    {
+        return;
+    }
+
+    Log.Warning(
+        "{Key} apunta a un host remoto ({Host}) con SslMode={SslMode}: el trafico con PostgreSQL " +
+        "(incluida PII financiera) viaja sin cifrar y nada lo detecta. Usa SslMode=Require como minimo " +
+        "cuando la base de datos no corre en la misma maquina que la API.",
+        key,
+        host,
+        parsed.SslMode);
 }
 
 static void AddExternalDevelopmentSecrets(IConfigurationBuilder configuration, IWebHostEnvironment environment, string fileName)

@@ -1,7 +1,10 @@
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
@@ -23,7 +26,8 @@ public interface ITiposCambioService
 
 public sealed class TiposCambioService : ITiposCambioService
 {
-    private const string CacheKey = "tipos_cambio_rates";
+    internal const string Namespace = "tipos_cambio_rates";
+    private const string CacheKey = "catalog";
     private const string ExchangeRateClient = "exchange-rate-api";
     private const string ExchangeRateApiKeyConfig = "exchange_rate_api_key";
     // V-02-05 (MED-10/11): acotar tasas razonables. EUR/USD tipico 0.5-2.0, criptomonedas
@@ -34,23 +38,32 @@ public sealed class TiposCambioService : ITiposCambioService
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
     private readonly AppDbContext _dbContext;
-    private readonly IMemoryCache _cache;
+    private readonly ICacheService _cacheService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<TiposCambioService> _logger;
     private readonly ISecretProtector _secretProtector;
+    private readonly CachingOptions _cachingOptions;
 
     public TiposCambioService(
         AppDbContext dbContext,
-        IMemoryCache cache,
+        ICacheService cacheService,
         IHttpClientFactory httpClientFactory,
         ILogger<TiposCambioService> logger,
-        ISecretProtector secretProtector)
+        ISecretProtector secretProtector,
+        IOptions<CachingOptions> cachingOptions)
     {
         _dbContext = dbContext;
-        _cache = cache;
+        _cacheService = cacheService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _secretProtector = secretProtector;
+        _cachingOptions = cachingOptions.Value;
+    }
+
+    private void InvalidateCache()
+    {
+        _cacheService.Invalidate(new CacheNamespace(Namespace));
+        _cacheService.Invalidate(new CacheNamespace(DashboardService.MetricsNamespace));
     }
 
     public async Task<decimal> ConvertAsync(decimal amount, string divisaOrigen, string divisaDestino, CancellationToken cancellationToken)
@@ -184,12 +197,41 @@ public sealed class TiposCambioService : ITiposCambioService
             throw new InvalidOperationException("La tasa debe ser mayor que cero.");
         }
 
+        // V-02.07: antes solo se comprobaba `tasa <= 0`. El techo real
+        // (MaxRateValue) se aplicaba mucho despues, al construir el grafo de
+        // conversion, asi que una tasa absurda se guardaba "con exito" y luego
+        // quedaba excluida en silencio de las conversiones: el usuario veia la
+        // tasa en la tabla pero las cifras no la usaban. Mejor rechazarla aqui.
+        if (tasa < MinRateValue || tasa > MaxRateValue)
+        {
+            throw new InvalidOperationException(
+                $"La tasa debe estar entre {MinRateValue} y {MaxRateValue}.");
+        }
+
         var origen = Normalize(divisaOrigen);
         var destino = Normalize(divisaDestino);
 
         if (origen == destino)
         {
             throw new InvalidOperationException("La divisa origen y destino no pueden ser iguales.");
+        }
+
+        // V-02.07: ninguna de las dos divisas se contrastaba con el catalogo, asi
+        // que se podia crear un par contra un codigo inventado. La fila quedaba
+        // huerfana: no la usa ninguna conversion y no hay pantalla donde borrarla.
+        var codigosValidos = await _dbContext.DivisasActivas
+            .Where(d => d.Activa && (d.Codigo == origen || d.Codigo == destino))
+            .Select(d => d.Codigo)
+            .ToListAsync(cancellationToken);
+
+        if (!codigosValidos.Contains(origen))
+        {
+            throw new InvalidOperationException($"La divisa origen '{origen}' no existe o no esta activa.");
+        }
+
+        if (!codigosValidos.Contains(destino))
+        {
+            throw new InvalidOperationException($"La divisa destino '{destino}' no existe o no esta activa.");
         }
 
         var now = DateTime.UtcNow;
@@ -375,9 +417,9 @@ public sealed class TiposCambioService : ITiposCambioService
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogWarning(
-                    "ExchangeRate API devolvió {StatusCode}. Body: {Body}",
+                    "ExchangeRate API devolvió {StatusCode}. Body: {BodySafe}",
                     (int)response.StatusCode,
-                    errorBody);
+                    LogScrubber.Scrub(errorBody));
                 return new SyncTiposCambioResult(false, 0, "No se pudo sincronizar con la API de tipos de cambio.");
             }
 
@@ -446,11 +488,16 @@ public sealed class TiposCambioService : ITiposCambioService
 
     private async Task<RateCatalog> GetRateCatalogAsync(CancellationToken cancellationToken)
     {
-        if (_cache.TryGetValue<RateCatalog>(CacheKey, out var cached) && cached is not null)
-        {
-            return cached;
-        }
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(Namespace),
+            CacheKey,
+            BuildRateCatalogAsync,
+            _cachingOptions.TiposCambioTtl,
+            cancellationToken);
+    }
 
+    private async Task<RateCatalog> BuildRateCatalogAsync(CancellationToken cancellationToken)
+    {
         var rawRates = await _dbContext.TiposCambio
             .AsNoTracking()
             .Select(x => new { x.DivisaOrigen, x.DivisaDestino, x.Tasa })
@@ -485,13 +532,8 @@ public sealed class TiposCambioService : ITiposCambioService
             AddGraphEdge(graph, to, from, inverseRate);
         }
 
-        var catalog = new RateCatalog(rates, graph);
-
-        _cache.Set(CacheKey, catalog, CacheDuration);
-        return catalog;
+        return new RateCatalog(rates, graph);
     }
-
-    private void InvalidateCache() => _cache.Remove(CacheKey);
 
     private async Task SyncDefaultDashboardCurrencyAsync(CancellationToken cancellationToken)
     {

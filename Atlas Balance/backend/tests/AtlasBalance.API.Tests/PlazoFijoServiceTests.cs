@@ -54,7 +54,7 @@ public sealed class PlazoFijoServiceTests
         var sut = new PlazoFijoService(
             db,
             new RecordingEmailService(),
-            new AuditService(db),
+            TestAuditService.Create(db),
             NullLogger<PlazoFijoService>.Instance);
 
         var changes = await sut.ProcesarVencimientosAsync(hoy, CancellationToken.None);
@@ -90,7 +90,7 @@ public sealed class PlazoFijoServiceTests
         var sut = new PlazoFijoService(
             db,
             new RecordingEmailService(),
-            new AuditService(db),
+            TestAuditService.Create(db),
             NullLogger<PlazoFijoService>.Instance);
 
         await sut.ProcesarVencimientosAsync(hoy, CancellationToken.None);
@@ -132,7 +132,7 @@ public sealed class PlazoFijoServiceTests
         await db.SaveChangesAsync();
 
         var emailService = new RecordingEmailService { FailPlazo = true };
-        var sut = new PlazoFijoService(db, emailService, new AuditService(db), NullLogger<PlazoFijoService>.Instance);
+        var sut = new PlazoFijoService(db, emailService, TestAuditService.Create(db), NullLogger<PlazoFijoService>.Instance);
 
         await sut.ProcesarVencimientosAsync(hoy, CancellationToken.None);
 
@@ -172,7 +172,7 @@ public sealed class PlazoFijoServiceTests
         await db.SaveChangesAsync();
 
         var emailService = new RecordingEmailService();
-        var sut = new PlazoFijoService(db, emailService, new AuditService(db), NullLogger<PlazoFijoService>.Instance);
+        var sut = new PlazoFijoService(db, emailService, TestAuditService.Create(db), NullLogger<PlazoFijoService>.Instance);
 
         await sut.ProcesarVencimientosAsync(hoy, CancellationToken.None);
 
@@ -219,6 +219,17 @@ public sealed class PlazoFijoServiceTests
         }
 
         public Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        // V-02.07: canal de alertas de seguridad. Estos tests son de plazos
+        // fijos y no lo ejercitan.
+        public Task SendSecurityAlertAsync(
+            IReadOnlyList<string> recipients,
+            string regla,
+            string severidad,
+            string resumen,
+            IReadOnlyList<string> detalles,
+            CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 

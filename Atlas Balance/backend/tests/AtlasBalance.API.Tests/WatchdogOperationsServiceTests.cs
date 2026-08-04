@@ -2,6 +2,7 @@
 using AtlasBalance.Watchdog.Models;
 using AtlasBalance.Watchdog.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Cryptography;
 using Xunit;
@@ -204,7 +205,8 @@ public sealed class WatchdogOperationsServiceTests
         FakeWatchdogStateStore stateStore,
         string? updateSourceRoot,
         string? updateTargetPath,
-        string publicKeyPem)
+        string publicKeyPem,
+        ILogger<WatchdogOperationsService>? logger = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -220,7 +222,7 @@ public sealed class WatchdogOperationsServiceTests
         return new WatchdogOperationsService(
             configuration,
             stateStore,
-            NullLogger<WatchdogOperationsService>.Instance);
+            logger ?? NullLogger<WatchdogOperationsService>.Instance);
     }
 
     private static byte[] BuildMinimalZip()
@@ -376,6 +378,82 @@ public sealed class WatchdogOperationsServiceTests
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // V-02.07 (CodeQL #18): el helper LogScrubber.Scrub no es un sanitizer
+    // reconocido por CodeQL cs/log-forging. La regla acepta unicamente
+    // cadenas Replace("\r", "").Replace("\n", "") aplicadas inline en el
+    // sink. Esta regresion fija que el mensaje de rechazo de ZIP que llega
+    // al logger no contiene CR ni LF, incluso si la razon de error trae
+    // saltos de linea (los mensajes codificados son estaticos, pero el
+    // escenario fsico mas realista es un ex.Message de pg_restore).
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task StartUpdateAsync_Should_Log_Rejection_Without_CrLf()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var updateRoot = Path.Combine(root, "updates");
+            var installPath = Path.Combine(root, "install");
+            var packageRoot = Path.Combine(updateRoot, "V-99.00-win-x64");
+            var zipPath = Path.Combine(updateRoot, "V-99.00-win-x64.zip");
+            CreateReleasePackage(packageRoot, "V-99.00");
+            Directory.CreateDirectory(installPath);
+            File.WriteAllBytes(zipPath, BuildMinimalZip());
+
+            var capturingLogger = new CapturingLogger<WatchdogOperationsService>();
+            var service = CreateServiceWithKey(
+                new FakeWatchdogStateStore(),
+                updateRoot,
+                installPath,
+                publicKeyPem: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARlNmK7MXkYqVXhPiCm5l+9HbSxo=\n-----END PUBLIC KEY-----",
+                logger: capturingLogger);
+
+            var accepted = await service.StartUpdateAsync(packageRoot, installPath, zipPath, CancellationToken.None);
+
+            accepted.Should().BeFalse();
+            capturingLogger.Records.Should().NotBeEmpty();
+            capturingLogger.Records.Should().Contain(r =>
+                r.Level == LogLevel.Error &&
+                r.FormattedMessage.Contains("Update rechazado por verificacion de integridad del ZIP"));
+            foreach (var record in capturingLogger.Records)
+            {
+                record.FormattedMessage.Should().NotContain("\r");
+                record.FormattedMessage.Should().NotContain("\n");
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<LogRecord> _records = new();
+
+        public IReadOnlyList<LogRecord> Records => _records;
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var formatted = formatter(state, exception);
+            _records.Add(new LogRecord(logLevel, eventId, formatted, exception));
+        }
+
+        public sealed record LogRecord(LogLevel Level, EventId EventId, string FormattedMessage, Exception? Exception);
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
         }
     }
 }

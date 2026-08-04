@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using AtlasBalance.API.Models;
 
@@ -6,10 +7,18 @@ namespace AtlasBalance.API.DTOs;
 public sealed class SaveAlertaSaldoRequest
 {
     public Guid? CuentaId { get; set; }
+    // V-02.07: el enum es nativo de Postgres; un entero fuera de rango pasaba el
+    // converter y moria en Npgsql como 500. Ver UsuariosDtos.
+    [EnumDataType(typeof(TipoTitular))]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TipoTitular? TipoTitular { get; set; }
+    // V-02.07: el controller solo rechazaba negativos, sin techo. La columna es
+    // HasPrecision(18,4), asi que un valor enorme reventaba en SaveChangesAsync
+    // como 500 en vez de dar un 400.
+    [Range(typeof(decimal), "0", "9999999999.9999", ParseLimitsInInvariantCulture = true)]
     public decimal SaldoMinimo { get; set; }
     public bool Activa { get; set; } = true;
+    [MaxLength(100)]
     public IReadOnlyList<Guid> DestinatarioUsuarioIds { get; set; } = [];
 }
 

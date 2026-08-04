@@ -73,7 +73,7 @@ public sealed class BackupService : IBackupService
                 backup.Estado = EstadoProceso.FAILED;
                 backup.Notas = "La herramienta de copia fallo. Revisa el diagnostico protegido del servidor.";
                 await _dbContext.SaveChangesAsync(cancellationToken);
-                _logger.LogWarning("pg_dump fallo al crear backup {BackupId}: {Error}", backup.Id, result.ErrorMessage);
+                _logger.LogWarning("pg_dump fallo al crear backup {BackupId}: {ErrorSafe}", backup.Id, LogScrubber.Scrub(result.ErrorMessage));
                 throw new InvalidOperationException("No se pudo crear la copia de seguridad. Revisa la configuracion del servidor o avisa al administrador.");
             }
 
@@ -172,6 +172,26 @@ public sealed class BackupService : IBackupService
                     }),
                     cancellationToken: cancellationToken);
                 backup.Notas = "Eliminado por retención automática";
+
+                // V-02.07 (retencion de PII en la nube): la copia local ya se borro
+                // arriba, pero el dump subido a Google Drive seguia vivo
+                // indefinidamente. Se borra tambien cada BackupCloudCopy remota
+                // asociada; un fallo aqui no debe impedir que la retencion local
+                // (ya aplicada en memoria) se guarde para el resto del lote.
+                var cloudCopies = await _dbContext.BackupCloudCopies
+                    .Where(c => c.BackupId == backup.Id && c.DeletedAt == null)
+                    .ToListAsync(cancellationToken);
+                foreach (var cloudCopy in cloudCopies)
+                {
+                    try
+                    {
+                        await _googleDriveBackupService.DeleteRemoteBackupCopyAsync(cloudCopy, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "No se pudo borrar la copia remota de Google Drive para backup {BackupId}", backup.Id);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -454,7 +474,16 @@ public sealed class BackupService : IBackupService
             throw new InvalidOperationException($"Configuración '{configKey}' contiene segmentos de traversal.");
         }
 
-        if (!Path.IsPathRooted(trimmed) && !LooksLikeWindowsRootedPath(trimmed))
+        // V-02.07: rechazar rutas de red (UNC). Path.IsPathRooted("\\\\host\\share") devuelve
+        // true, asi que sin este filtro un valor UNC ya guardado en BD sacaria el volcado
+        // completo fuera de la maquina. Se revalida aqui aunque el controlador ya filtre.
+        if (IsUncPath(trimmed))
+        {
+            throw new InvalidOperationException($"Configuracion '{configKey}' no admite rutas de red (UNC).");
+        }
+
+        var isNativeAbsolutePath = !OperatingSystem.IsWindows() && Path.IsPathRooted(trimmed);
+        if (!LooksLikeWindowsRootedPath(trimmed) && !isNativeAbsolutePath)
         {
             throw new InvalidOperationException($"Configuracion '{configKey}' debe ser una ruta absoluta.");
         }
@@ -483,6 +512,12 @@ public sealed class BackupService : IBackupService
                char.IsLetter(value[0]) &&
                value[1] == ':' &&
                (value[2] == '\\' || value[2] == '/');
+    }
+
+    private static bool IsUncPath(string value)
+    {
+        return value.StartsWith(@"\\", StringComparison.Ordinal) ||
+               value.StartsWith("//", StringComparison.Ordinal);
     }
 
     private static bool IsAllowedBackupFile(string filePath, string backupDirectory)

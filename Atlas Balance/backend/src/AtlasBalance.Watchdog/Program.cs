@@ -1,6 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.RateLimiting;
+using AtlasBalance.Watchdog.RateLimiting;
 using AtlasBalance.Watchdog.Services;
+using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +13,7 @@ builder.Host.UseWindowsService();
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.ListenLocalhost(5001);
+    options.Limits.MaxRequestBodySize = WatchdogRateLimiting.MaxRequestBodySize;
 });
 builder.Host.UseSerilog((context, config) => config
     .ReadFrom.Configuration(context.Configuration)
@@ -18,6 +22,25 @@ builder.Host.UseSerilog((context, config) => config
     .WriteTo.File("logs/watchdog-.log", rollingInterval: RollingInterval.Day));
 
 builder.Services.AddControllers();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(WatchdogRateLimiting.CreateGlobalPartition);
+    options.AddPolicy(WatchdogRateLimiting.SensitiveOperationsPolicy, WatchdogRateLimiting.CreateSensitivePartition);
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        var retryAfterSeconds = 60;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+        }
+
+        context.HttpContext.Response.Headers["Retry-After"] = retryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { error = "Demasiadas solicitudes. Intentalo de nuevo mas tarde." },
+            cancellationToken);
+    };
+});
 builder.Services.AddSingleton<IWatchdogStateStore, WatchdogStateStore>();
 builder.Services.AddSingleton<IWatchdogOperationsService, WatchdogOperationsService>();
 
@@ -41,6 +64,11 @@ if (!builder.Environment.IsDevelopment())
 }
 
 const string healthPath = "/watchdog/health";
+
+app.UseRouting();
+// Debe ejecutarse antes de validar X-Watchdog-Secret: asi los intentos con
+// secreto invalido tambien consumen cuota y no permiten fuerza bruta gratis.
+app.UseRateLimiter();
 
 app.Use(async (context, next) =>
 {

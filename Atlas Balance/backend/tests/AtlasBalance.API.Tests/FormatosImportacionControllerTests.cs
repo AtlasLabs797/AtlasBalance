@@ -87,6 +87,68 @@ public sealed class FormatosImportacionControllerTests
     }
 
     [Fact]
+    public async Task Crear_Should_Reject_More_Than_64_Extra_Columns()
+    {
+        await using var db = BuildDbContext();
+        var controller = await BuildControllerAsync(db);
+        var extras = Enumerable.Range(0, 65)
+            .Select(i => new { nombre = $"extra_{i}", indice = i + 4 })
+            .ToArray();
+
+        var result = await controller.Crear(ValidRequestWithExtras(extras), CancellationToken.None);
+
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value.Should().BeEquivalentTo(new
+        {
+            error = "El mapeo no puede incluir mas de 64 columnas extra"
+        });
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Crear_Should_Reject_Overlong_Extra_Column_Text(bool overlongName)
+    {
+        await using var db = BuildDbContext();
+        var controller = await BuildControllerAsync(db);
+        var extra = new
+        {
+            nombre = overlongName ? new string('n', 81) : "referencia",
+            indice = 4,
+            etiqueta = overlongName ? "Referencia" : new string('e', 81)
+        };
+
+        var result = await controller.Crear(ValidRequestWithExtras(new[] { extra }), CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Crear_Should_Reject_Mapeo_Json_Over_64_Kib()
+    {
+        await using var db = BuildDbContext();
+        var controller = await BuildControllerAsync(db);
+        var request = ValidRequestWithExtras(Array.Empty<object>());
+        request.MapeoJson = JsonElementFrom(new
+        {
+            tipo_monto = "una_columna",
+            fecha = 0,
+            concepto = 1,
+            monto = 2,
+            saldo = 3,
+            relleno = new string('x', 64 * 1024)
+        });
+
+        var result = await controller.Crear(request, CancellationToken.None);
+
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value.Should().BeEquivalentTo(new
+        {
+            error = "Mapeo JSON no puede superar 65536 caracteres"
+        });
+    }
+
+    [Fact]
     public async Task ListarColumnasExtraSugeridas_Should_Return_Distinct_Ordered_Names()
     {
         await using var db = BuildDbContext();
@@ -234,7 +296,7 @@ public sealed class FormatosImportacionControllerTests
             new Claim(ClaimTypes.Role, nameof(RolUsuario.ADMIN))
         ], "TestAuth");
 
-        return new FormatosImportacionController(db, new AuditService(db))
+        return new FormatosImportacionController(db, TestAuditService.Create(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -243,6 +305,26 @@ public sealed class FormatosImportacionControllerTests
                     User = new ClaimsPrincipal(identity)
                 }
             }
+        };
+    }
+
+    private static SaveFormatoImportacionRequest ValidRequestWithExtras<T>(IReadOnlyList<T> extras)
+    {
+        return new SaveFormatoImportacionRequest
+        {
+            Nombre = "Banco Seguro",
+            BancoNombre = "Banco Seguro",
+            Divisa = "EUR",
+            Activo = true,
+            MapeoJson = JsonElementFrom(new
+            {
+                tipo_monto = "una_columna",
+                fecha = 0,
+                concepto = 1,
+                monto = 2,
+                saldo = 3,
+                columnas_extra = extras
+            })
         };
     }
 

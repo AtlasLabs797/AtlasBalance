@@ -40,6 +40,9 @@ public sealed class HardenedGoogleDriveBackupService : IGoogleDriveBackupService
     public Task UploadBackupByIdAsync(Guid backupId, CancellationToken cancellationToken) =>
         _inner.UploadBackupByIdAsync(backupId, cancellationToken);
 
+    public Task DeleteRemoteBackupCopyAsync(BackupCloudCopy copy, CancellationToken cancellationToken) =>
+        _inner.DeleteRemoteBackupCopyAsync(copy, cancellationToken);
+
     public Task<IReadOnlyList<GoogleDriveBackupFileResponse>> ListFilesAsync(CancellationToken cancellationToken) =>
         _inner.ListFilesAsync(cancellationToken);
 

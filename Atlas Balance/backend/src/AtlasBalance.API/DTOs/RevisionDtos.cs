@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AtlasBalance.API.DTOs;
 
 public sealed class RevisionSettingsResponse
@@ -5,6 +7,13 @@ public sealed class RevisionSettingsResponse
     public decimal ComisionesImporteMinimo { get; set; } = 1m;
 }
 
+// V-02.07 (nota): esta clase NO se enlaza desde [FromBody] ni [FromQuery];
+// RevisionController la construye a mano a partir de parametros de query
+// sueltos, asi que el ModelState de [ApiController] nunca la evalua. Por eso no
+// lleva anotaciones: puestas aqui no se ejecutarian, y una anotacion que aparenta
+// validar sin hacerlo confunde mas de lo que ayuda. `Estado` ya esta acotado de
+// verdad por RevisionService.NormalizeEstadoFilter, que es un switch con lista
+// blanca y devuelve null ante cualquier valor desconocido.
 public sealed class RevisionQueryRequest
 {
     public string? Estado { get; set; }
@@ -45,5 +54,12 @@ public sealed class RevisionSeguroItemResponse
 
 public sealed class UpdateRevisionEstadoRequest
 {
+    // V-02.07: sin [Required] a proposito. RevisionService.NormalizeEstado trata un
+    // Estado vacio/omitido como "pendiente" (comportamiento valido, no un error), asi
+    // que exigirlo romperia peticiones legitimas que resetean a pendiente sin enviar
+    // el campo. MaxLength(24) espeja el HasMaxLength(24) de las columnas Estado en
+    // AppDbContext y es inofensivo: cualquier valor mas largo ya lo rechaza
+    // NormalizeEstado con su propio 400.
+    [MaxLength(24)]
     public string Estado { get; set; } = string.Empty;
 }

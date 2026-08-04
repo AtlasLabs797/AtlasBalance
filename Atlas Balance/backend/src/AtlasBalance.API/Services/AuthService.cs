@@ -4,13 +4,16 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
+using AtlasBalance.API.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace AtlasBalance.API.Services;
@@ -30,39 +33,66 @@ public interface IAuthService
 
 public sealed class AuthService : IAuthService
 {
-    private const int MaxFailedLoginAttempts = 5;
-    private const int MaxLoginFailuresPerClientAndEmail = 5;
-    private const int MaxLoginFailuresPerClient = 20;
+    /// <summary>
+    /// Namespace de cache para el payload de <c>GET /api/auth/me</c>. El TTL
+    /// se compone con <c>securityStamp</c> para que un cambio de contrasena
+    /// o de permisos del usuario invalide la entrada sin necesidad de bump.
+    /// Adicionalmente, el <c>DashboardCacheInvalidationInterceptor</c>
+    /// invalida este namespace tras cambios en <c>USUARIOS</c>,
+    /// <c>PERMISOS_USUARIO</c> o <c>PREFERENCIAS_USUARIO_CUENTA</c>.
+    /// </summary>
+    internal const string AuthCurrentNamespace = "auth_current";
+
+    private const int PasswordWorkFactor = 12;
     private const int MaxMfaFailuresPerChallenge = 5;
     private const int MaxMfaFailuresPerUser = 5;
     private const string MfaIssuer = "Atlas Balance";
     private static readonly object LoginRateLimitLock = new();
     private static readonly object MfaRateLimitLock = new();
-    private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan LoginFailureWindow = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MfaChallengeDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MfaFailureWindow = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MfaRememberDuration = TimeSpan.FromDays(SecurityConfigurationDefaults.MfaRememberDeviceDays);
     private static readonly IMemoryCache FallbackMemoryCache = new MemoryCache(new MemoryCacheOptions());
+
+    /// <summary>
+    /// V-02.07: hash señuelo para igualar el coste del login cuando el email no
+    /// existe o la cuenta esta bloqueada. Sin el, esas dos ramas respondian sin
+    /// ejecutar BCrypt (~250 ms menos que "password incorrecta") y la latencia
+    /// permitia enumerar cuentas pese a que el mensaje de error ya era identico.
+    /// Se deriva de bytes aleatorios en el arranque: no es un secreto ni debe
+    /// coincidir con ninguna contrasena real.
+    /// </summary>
+    private static readonly string DummyPasswordHash = BCrypt.Net.BCrypt.HashPassword(
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+        workFactor: PasswordWorkFactor);
 
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly IAuditService _auditService;
     private readonly IMemoryCache _cache;
     private readonly ISecretProtector _secretProtector;
+    private readonly ICacheService _cacheService;
+    private readonly CachingOptions _cachingOptions;
+    private readonly RateLimitingOptions _rateLimitingOptions;
 
     public AuthService(
         AppDbContext dbContext,
         IConfiguration configuration,
         IAuditService auditService,
         ISecretProtector secretProtector,
+        ICacheService cacheService,
+        IOptions<CachingOptions> cachingOptions,
+        IOptions<RateLimitingOptions> rateLimitingOptions,
         IMemoryCache? cache = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _auditService = auditService;
         _cache = cache ?? FallbackMemoryCache;
-        // V-02-05 (MED-1): el protector es obligatorio. Si DI no lo inyecta, el
+        _cacheService = cacheService;
+        _cachingOptions = cachingOptions.Value;
+        _rateLimitingOptions = rateLimitingOptions.Value;
+        // V-02.05 (MED-1): el protector es obligatorio. Si DI no lo inyecta, el
         // constructor falla ruidosamente en lugar de degradar a PassthroughSecretProtector
         // (que almacena secretos en claro). Solo se permite explicitamente via constructor
         // con un protector de testing (en cuyo caso el caller debe responsabilizarse).
@@ -74,11 +104,11 @@ public sealed class AuthService : IAuthService
         {
             throw new InvalidOperationException("PassthroughSecretProtector detectado. Esto almacenaria secretos en claro. Use DataProtectionSecretProtector.");
         }
-        _secretProtector = secretProtector;
+_secretProtector = secretProtector;
     }
 
     /// <summary>
-    /// V-02-05 (MED-1): los tests unitarios pueden necesitar el passthrough. Lo activan
+    /// V-02.05 (MED-1): los tests unitarios pueden necesitar el passthrough. Lo activan
     /// explicitamente. En produccion esto queda siempre en false.
     /// </summary>
     public static bool AllowPassthroughSecretProtector { get; set; }
@@ -92,6 +122,9 @@ public sealed class AuthService : IAuthService
 
         var normalizedEmail = email.Trim().ToLowerInvariant();
         var now = DateTime.UtcNow;
+        // V-02.07: segundos honestos para el header Retry-After de los 429 de
+        // login: es cuando caduca el contador de fallos, no un valor arbitrario.
+        var loginRetryAfterSeconds = (int)Math.Round(_rateLimitingOptions.LoginFailureWindow.TotalSeconds);
         if (IsLoginEmailThrottled(normalizedEmail, ipAddress))
         {
             await _auditService.LogAsync(
@@ -102,7 +135,7 @@ public sealed class AuthService : IAuthService
                 ipAddress,
                 JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
                 cancellationToken);
-            throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+            throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
         }
 
         var usuario = await _dbContext.Usuarios
@@ -110,6 +143,9 @@ public sealed class AuthService : IAuthService
 
         if (usuario is null)
         {
+            // Igualamos el coste con la rama de password incorrecta (ver DummyPasswordHash).
+            BCrypt.Net.BCrypt.Verify(password, DummyPasswordHash);
+
             if (IsLoginClientThrottled(ipAddress))
             {
                 await _auditService.LogAsync(
@@ -120,7 +156,7 @@ public sealed class AuthService : IAuthService
                     ipAddress,
                     JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
                     cancellationToken);
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
@@ -134,7 +170,7 @@ public sealed class AuthService : IAuthService
                 cancellationToken);
             if (throttled)
             {
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
@@ -142,6 +178,10 @@ public sealed class AuthService : IAuthService
 
         if (usuario.LockedUntil.HasValue && usuario.LockedUntil.Value > now)
         {
+            // Mismo motivo que en la rama de usuario inexistente: sin esto, una
+            // cuenta bloqueada respondia mas rapido y se distinguia por latencia.
+            BCrypt.Net.BCrypt.Verify(password, DummyPasswordHash);
+
             var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
             await _auditService.LogAsync(
                 usuario.Id,
@@ -153,7 +193,7 @@ public sealed class AuthService : IAuthService
                 cancellationToken);
             if (throttled)
             {
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
@@ -164,9 +204,9 @@ public sealed class AuthService : IAuthService
             var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
             usuario.FailedLoginAttempts += 1;
             var lockTriggered = false;
-            if (usuario.FailedLoginAttempts >= MaxFailedLoginAttempts)
+            if (usuario.FailedLoginAttempts >= _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount)
             {
-                usuario.LockedUntil = now.Add(LockDuration);
+                usuario.LockedUntil = now.Add(_rateLimitingOptions.LoginLockDuration);
                 lockTriggered = true;
             }
 
@@ -207,7 +247,7 @@ public sealed class AuthService : IAuthService
 
             if (throttled)
             {
-                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests);
+                throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
             }
 
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
@@ -215,6 +255,16 @@ public sealed class AuthService : IAuthService
 
         usuario.FailedLoginAttempts = 0;
         usuario.LockedUntil = null;
+
+        // V-02.07: rehash oportunista. Es el unico momento en que tenemos la
+        // contrasena en claro y ya validada, asi que si algun dia sube
+        // PasswordWorkFactor las cuentas existentes migran solas en su siguiente
+        // login en vez de quedarse con el coste antiguo para siempre.
+        if (BCrypt.Net.BCrypt.PasswordNeedsRehash(usuario.PasswordHash, PasswordWorkFactor))
+        {
+            usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: PasswordWorkFactor);
+        }
+
         UserSessionState.EnsureSecurityStamp(usuario);
         ClearLoginFailures(normalizedEmail, ipAddress);
 
@@ -336,8 +386,8 @@ public sealed class AuthService : IAuthService
             var lockTriggered = userMfaFailures >= MaxMfaFailuresPerUser;
             if (lockTriggered)
             {
-                usuario.FailedLoginAttempts = MaxFailedLoginAttempts;
-                usuario.LockedUntil = now.Add(LockDuration);
+                usuario.FailedLoginAttempts = _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount;
+                usuario.LockedUntil = now.Add(_rateLimitingOptions.LoginLockDuration);
                 await _dbContext.SaveChangesAsync(cancellationToken);
             }
 
@@ -517,11 +567,38 @@ public sealed class AuthService : IAuthService
                 throw new AuthException("Se requiere MFA para renovar la sesión", StatusCodes.Status401Unauthorized);
             }
 
+            // V-02.07: la sesion no se ata a la IP a proposito. Invalidar por
+            // cambio de IP expulsaria a usuarios legitimos con VPN, DHCP o salto
+            // de red, asi que solo dejamos rastro para poder investigarlo despues.
+            var currentIp = ParseIpAddress(ipAddress);
+            if (storedToken.IpAddress is not null && currentIp is not null &&
+                !NormalizeIpForComparison(storedToken.IpAddress).Equals(NormalizeIpForComparison(currentIp)))
+            {
+                await _auditService.LogAsync(
+                    usuario.Id,
+                    AuditActions.SessionIpChanged,
+                    "USUARIOS",
+                    usuario.Id,
+                    ipAddress,
+                    JsonSerializer.Serialize(new
+                    {
+                        ip_anterior = storedToken.IpAddress.ToString(),
+                        refresh_token_id = storedToken.Id
+                    }),
+                    cancellationToken);
+            }
+
             var replacement = GenerateRefreshToken();
             var replacementHash = ComputeSha256(replacement);
 
             storedToken.RevocadoEn = now;
             storedToken.ReemplazadoPor = replacementHash;
+
+            // V-02.07: el id de sesion sobrevive a la rotacion. Es lo que permite
+            // que AUDITORIAS agrupe toda la actividad de una sesion de login
+            // aunque el access token se renueve cada hora. Los tokens emitidos
+            // antes de V-02.07 no lo llevan: se genera uno al rotar.
+            var sessionId = storedToken.SessionId ?? GenerateSessionId();
 
             _dbContext.RefreshTokens.Add(new RefreshToken
             {
@@ -532,10 +609,11 @@ public sealed class AuthService : IAuthService
                 ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
                 CreadoEn = now,
                 MfaVerifiedAt = storedToken.MfaVerifiedAt,
-                IpAddress = ParseIpAddress(ipAddress)
+                IpAddress = ParseIpAddress(ipAddress),
+                SessionId = sessionId
             });
 
-            var accessToken = GenerateAccessToken(usuario, storedToken.MfaVerifiedAt);
+            var accessToken = GenerateAccessToken(usuario, sessionId, storedToken.MfaVerifiedAt);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             if (tx is not null)
@@ -561,16 +639,62 @@ public sealed class AuthService : IAuthService
             return null;
         }
 
+        var now = DateTime.UtcNow;
         var refreshHash = ComputeSha256(refreshToken);
         var storedToken = await _dbContext.RefreshTokens
+            .Include(rt => rt.Usuario)
             .FirstOrDefaultAsync(rt => rt.TokenHash == refreshHash, cancellationToken);
 
-        if (storedToken is null || storedToken.RevocadoEn.HasValue)
+        // Solo un refresh token vivo autoriza la rotacion del stamp. Si aceptaramos
+        // uno ya revocado o caducado, cualquiera con una copia antigua podria forzar
+        // el cierre de sesion del usuario legitimo de forma repetida.
+        if (storedToken is null || storedToken.RevocadoEn.HasValue || storedToken.ExpiraEn <= now)
         {
             return null;
         }
 
-        storedToken.RevocadoEn = DateTime.UtcNow;
+        // V-02.07: rotar el security stamp invalida tambien el access token JWT en
+        // curso. UserStateMiddleware compara el stamp contra BD en cada request, asi
+        // que sin esta rotacion el logout solo borraba cookies del navegador y el JWT
+        // seguia siendo aceptado por la API hasta 1h. Como efecto buscado, el logout
+        // cierra todas las sesiones del usuario ("cerrar sesion en todas partes").
+        var usuario = storedToken.Usuario;
+        if (usuario is not null)
+        {
+            var previousStamp = usuario.SecurityStamp;
+            UserSessionState.RotateSecurityStamp(usuario);
+
+            // El recuerdo MFA por dispositivo esta anclado al stamp (ver
+            // TryUseTrustedMfaDeviceAsync). Logout cierra la sesion, no la confianza
+            // del navegador: re-anclamos al stamp nuevo para no regresionar "logout
+            // conserva la cookie mfa_trusted" (V-01.09).
+            //
+            // Solo se re-anclan los dispositivos que calzaban con el stamp anterior.
+            // Un cambio de contrasena, un reset por admin o una deteccion de reuso
+            // rotan el stamp SIN tocar esta tabla: los dispositivos que quedaron
+            // huerfanos asi deben seguir exigiendo MFA. Re-anclarlos aqui resucitaria
+            // el dispositivo de un atacante justo despues de que la victima cambio
+            // la contrasena para expulsarlo.
+            var trustedDevices = await _dbContext.MfaTrustedDevices
+                .Where(x => x.UsuarioId == usuario.Id &&
+                            x.RevokedAt == null &&
+                            x.ExpiresAt > now &&
+                            x.SecurityStamp == previousStamp)
+                .ToListAsync(cancellationToken);
+            foreach (var device in trustedDevices)
+            {
+                device.SecurityStamp = usuario.SecurityStamp;
+            }
+        }
+
+        var activeRefreshTokens = await _dbContext.RefreshTokens
+            .Where(rt => rt.UsuarioId == storedToken.UsuarioId && rt.RevocadoEn == null && rt.ExpiraEn > now)
+            .ToListAsync(cancellationToken);
+        foreach (var activeRefreshToken in activeRefreshTokens)
+        {
+            activeRefreshToken.RevocadoEn = now;
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
         return storedToken.UsuarioId;
     }
@@ -649,7 +773,18 @@ public sealed class AuthService : IAuthService
             throw new AuthException("Usuario no encontrado", StatusCodes.Status404NotFound);
         }
 
-        return await BuildAuthResultAsync(usuario, accessToken: null, refreshToken: null, cancellationToken);
+        // Clave compuesta con securityStamp: un cambio de contrasena o
+        // rotacion del stamp invalida la entrada cacheada sin pasar por el
+        // interceptor. El interceptor anade una capa defensiva por si la
+        // rotacion del stamp no ocurre (p.ej. solo cambian permisos).
+        var cacheKey = $"{userId:N}|{usuario.SecurityStamp}";
+
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(AuthCurrentNamespace),
+            cacheKey,
+            ct => BuildAuthResultAsync(usuario, accessToken: null, refreshToken: null, ct),
+            _cachingOptions.AuthCurrentTtl,
+            cancellationToken);
     }
 
     public async Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken)
@@ -670,12 +805,65 @@ public sealed class AuthService : IAuthService
             throw new AuthException("Usuario no encontrado", StatusCodes.Status404NotFound);
         }
 
+        var now = DateTime.UtcNow;
+
+        // V-02.07: la verificacion de passwordActual comparte el lockout del login.
+        // Antes no contaba intentos ni auditaba el fallo, asi que una sesion robada
+        // permitia fuerza bruta ilimitada y silenciosa sobre la contrasena actual.
+        if (usuario.LockedUntil.HasValue && usuario.LockedUntil.Value > now)
+        {
+            // Mismo señuelo que en LoginAsync: sin el, "cuenta bloqueada" respondia
+            // al instante y "password actual incorrecta" tras ~250 ms de BCrypt, asi
+            // que la latencia delataba el estado de la cuenta.
+            BCrypt.Net.BCrypt.Verify(passwordActual, DummyPasswordHash);
+            throw new AuthException("Usuario bloqueado temporalmente por intentos fallidos", StatusCodes.Status423Locked);
+        }
+
         if (!BCrypt.Net.BCrypt.Verify(passwordActual, usuario.PasswordHash))
         {
+            usuario.FailedLoginAttempts += 1;
+            var lockTriggered = usuario.FailedLoginAttempts >= _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount;
+            if (lockTriggered)
+            {
+                usuario.LockedUntil = now.Add(_rateLimitingOptions.LoginLockDuration);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(
+                userId,
+                AuditActions.LoginFailed,
+                "USUARIOS",
+                userId,
+                ipAddress,
+                JsonSerializer.Serialize(new
+                {
+                    motivo = "password_actual_incorrecta",
+                    failed_login_attempts = usuario.FailedLoginAttempts
+                }),
+                cancellationToken);
+
+            if (lockTriggered)
+            {
+                await _auditService.LogAsync(
+                    userId,
+                    AuditActions.AccountLocked,
+                    "USUARIOS",
+                    userId,
+                    ipAddress,
+                    JsonSerializer.Serialize(new
+                    {
+                        motivo = "password_actual_incorrecta",
+                        locked_until = usuario.LockedUntil
+                    }),
+                    cancellationToken);
+            }
+
             throw new AuthException("Contraseña actual incorrecta", StatusCodes.Status400BadRequest);
         }
 
-        var now = DateTime.UtcNow;
+        usuario.FailedLoginAttempts = 0;
+        usuario.LockedUntil = null;
+
         DateTime? currentSessionMfaVerifiedAt = null;
         if (await RequiresMfaAsync(usuario, cancellationToken))
         {
@@ -686,7 +874,7 @@ public sealed class AuthService : IAuthService
             }
         }
 
-        usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(passwordNueva, workFactor: 12);
+        usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(passwordNueva, workFactor: PasswordWorkFactor);
         usuario.PrimerLogin = false;
         UserSessionState.RotateAfterPasswordChange(usuario, now);
 
@@ -698,7 +886,10 @@ public sealed class AuthService : IAuthService
             refreshToken.RevocadoEn = now;
         }
 
-        var accessToken = GenerateAccessToken(usuario, currentSessionMfaVerifiedAt);
+        // Sesion nueva: el cambio de password acaba de revocar todas las
+        // anteriores, asi que no hay id de sesion que heredar.
+        var sessionId = GenerateSessionId();
+        var accessToken = GenerateAccessToken(usuario, sessionId, currentSessionMfaVerifiedAt);
         var newRefreshToken = GenerateRefreshToken();
         _dbContext.RefreshTokens.Add(new RefreshToken
         {
@@ -709,7 +900,8 @@ public sealed class AuthService : IAuthService
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
             MfaVerifiedAt = currentSessionMfaVerifiedAt,
-            IpAddress = ParseIpAddress(ipAddress)
+            IpAddress = ParseIpAddress(ipAddress),
+            SessionId = sessionId
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -808,7 +1000,10 @@ public sealed class AuthService : IAuthService
         CancellationToken cancellationToken,
         DateTime? mfaVerifiedAt = null)
     {
-        var accessToken = GenerateAccessToken(usuario, mfaVerifiedAt);
+        // V-02.07: aqui nace la sesion (login y verificacion MFA). El id viaja al
+        // JWT como claim `sid` y se copia en cada rotacion del refresh token.
+        var sessionId = GenerateSessionId();
+        var accessToken = GenerateAccessToken(usuario, sessionId, mfaVerifiedAt);
         var refreshToken = GenerateRefreshToken();
         var now = DateTime.UtcNow;
 
@@ -821,7 +1016,8 @@ public sealed class AuthService : IAuthService
             ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
             CreadoEn = now,
             MfaVerifiedAt = mfaVerifiedAt,
-            IpAddress = ParseIpAddress(ipAddress)
+            IpAddress = ParseIpAddress(ipAddress),
+            SessionId = sessionId
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -956,7 +1152,20 @@ public sealed class AuthService : IAuthService
             .Replace('/', '_');
     }
 
-    private string GenerateAccessToken(Usuario usuario, DateTime? mfaVerifiedAt = null)
+    /// <summary>
+    /// V-02.07: id de sesion de login. 128 bits en base64url: no es un secreto
+    /// (viaja en el JWT y se guarda en AUDITORIAS en claro), solo tiene que ser
+    /// no adivinable para que nadie pueda contaminar la auditoria de otro.
+    /// </summary>
+    private static string GenerateSessionId()
+    {
+        return Convert.ToBase64String(RandomNumberGenerator.GetBytes(16))
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+    }
+
+    private string GenerateAccessToken(Usuario usuario, string sessionId, DateTime? mfaVerifiedAt = null)
     {
         UserSessionState.EnsureSecurityStamp(usuario);
         var jwtSecret = _configuration["JwtSettings:Secret"]
@@ -974,7 +1183,8 @@ public sealed class AuthService : IAuthService
             new Claim(ClaimTypes.Email, usuario.Email),
             new Claim(ClaimTypes.Name, usuario.NombreCompleto),
             new Claim(ClaimTypes.Role, usuario.Rol.ToString()),
-            new Claim(AuthClaimNames.SecurityStamp, usuario.SecurityStamp)
+            new Claim(AuthClaimNames.SecurityStamp, usuario.SecurityStamp),
+            new Claim(AuditRequestContext.SessionClaim, sessionId)
         };
 
         if (usuario.PasswordChangedAt.HasValue)
@@ -1012,7 +1222,7 @@ public sealed class AuthService : IAuthService
         lock (LoginRateLimitLock)
         {
             return _cache.TryGetValue<int>(emailKey, out var emailCount) &&
-                   emailCount >= MaxLoginFailuresPerClientAndEmail;
+                   emailCount >= _rateLimitingOptions.LoginMaxFailuresPerIpAndEmail;
         }
     }
 
@@ -1022,7 +1232,7 @@ public sealed class AuthService : IAuthService
         lock (LoginRateLimitLock)
         {
             return _cache.TryGetValue<int>(clientKey, out var clientCount) &&
-                   clientCount >= MaxLoginFailuresPerClient;
+                   clientCount >= _rateLimitingOptions.LoginMaxFailuresPerIp;
         }
     }
 
@@ -1034,10 +1244,10 @@ public sealed class AuthService : IAuthService
         {
             var emailCount = _cache.Get<int>(emailKey) + 1;
             var clientCount = _cache.Get<int>(clientKey) + 1;
-            _cache.Set(emailKey, emailCount, LoginFailureWindow);
-            _cache.Set(clientKey, clientCount, LoginFailureWindow);
-            return emailCount >= MaxLoginFailuresPerClientAndEmail ||
-                   clientCount >= MaxLoginFailuresPerClient;
+            _cache.Set(emailKey, emailCount, _rateLimitingOptions.LoginFailureWindow);
+            _cache.Set(clientKey, clientCount, _rateLimitingOptions.LoginFailureWindow);
+            return emailCount >= _rateLimitingOptions.LoginMaxFailuresPerIpAndEmail ||
+                   clientCount >= _rateLimitingOptions.LoginMaxFailuresPerIp;
         }
     }
 
@@ -1265,6 +1475,17 @@ public sealed class AuthService : IAuthService
         }
     }
 
+    /// <summary>
+    /// V-02.07: la misma maquina puede llegar como <c>10.0.0.1</c> (via
+    /// X-Forwarded-For, que esta habilitado) o como <c>::ffff:10.0.0.1</c> (socket
+    /// dual-mode directo). <see cref="System.Net.IPAddress.Equals"/> los considera
+    /// distintos porque cambia la familia de direcciones, asi que sin normalizar
+    /// generariamos alertas de cambio de IP falsas. Una auditoria con ruido no
+    /// sirve para investigar nada.
+    /// </summary>
+    private static System.Net.IPAddress NormalizeIpForComparison(System.Net.IPAddress address) =>
+        address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
+
     private static System.Net.IPAddress? ParseIpAddress(string? ipAddress)
     {
         if (string.IsNullOrWhiteSpace(ipAddress))
@@ -1297,10 +1518,16 @@ public sealed class AuthResult
 public sealed class AuthException : Exception
 {
     public int StatusCode { get; }
+    public int? RetryAfterSeconds { get; }
 
-    public AuthException(string message, int statusCode) : base(message)
+    public AuthException(string message, int statusCode) : this(message, statusCode, null)
+    {
+    }
+
+    public AuthException(string message, int statusCode, int? retryAfterSeconds) : base(message)
     {
         StatusCode = statusCode;
+        RetryAfterSeconds = retryAfterSeconds;
     }
 }
 

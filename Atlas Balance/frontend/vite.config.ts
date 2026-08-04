@@ -162,6 +162,11 @@ export default defineConfig({
     reportCompressedSize: false,
     rollupOptions: {
       output: {
+        // V-02-07: defensa en profundidad para que ningun console.* ni
+        // debugger sobreviva al bundle de produccion. build.rollupOptions
+        // solo se usa al construir el bundle (vite build), nunca en el
+        // servidor de desarrollo, asi que no afecta al modo dev.
+        minify: { compress: { dropConsole: true, dropDebugger: true } },
         manualChunks(id) {
           if (id.includes('node_modules/recharts')) return 'charts';
           if (id.includes('node_modules/zustand')) return 'state';
@@ -171,7 +176,8 @@ export default defineConfig({
           if (
             id.includes('node_modules/react/') ||
             id.includes('node_modules/react-dom/') ||
-            id.includes('node_modules/react-router-dom/')
+            // react-router 8 unifica el paquete: react-router-dom ya no existe.
+            id.includes('node_modules/react-router/')
           ) return 'vendor';
         },
       },

@@ -43,7 +43,7 @@ public sealed class PaisesControllerTests
 
     private static PaisesController BuildController(AppDbContext db, RolUsuario role)
     {
-        var controller = new PaisesController(db, new AuditService(db));
+        var controller = new PaisesController(db, TestAuditService.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),

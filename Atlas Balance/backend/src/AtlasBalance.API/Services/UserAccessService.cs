@@ -1,8 +1,10 @@
 using System.Linq.Expressions;
 using System.Security.Claims;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AtlasBalance.API.Services;
 
@@ -34,11 +36,20 @@ public sealed class UserAccessScope
 
 public sealed class UserAccessService : IUserAccessService
 {
-    private readonly AppDbContext _dbContext;
+    internal const string Namespace = "user_access_scope";
 
-    public UserAccessService(AppDbContext dbContext)
+    private readonly AppDbContext _dbContext;
+    private readonly ICacheService _cacheService;
+    private readonly CachingOptions _cachingOptions;
+
+    public UserAccessService(
+        AppDbContext dbContext,
+        ICacheService cacheService,
+        IOptions<CachingOptions> cachingOptions)
     {
         _dbContext = dbContext;
+        _cacheService = cacheService;
+        _cachingOptions = cachingOptions.Value;
     }
 
     public async Task<UserAccessScope> GetScopeAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
@@ -55,6 +66,10 @@ public sealed class UserAccessService : IUserAccessService
 
         if (user.IsInRole(nameof(RolUsuario.ADMIN)))
         {
+            // Admin bypass: no tocamos el cache porque el resultado es trivial
+            // (no requiere queries) y no queremos que el TTL oculte cambios de
+            // rol puntuales (un admin degradado a gerente). La rotacion de
+            // SecurityStamp ya invalida el JWT en el middleware.
             return new UserAccessScope
             {
                 UserId = userId,
@@ -64,6 +79,16 @@ public sealed class UserAccessService : IUserAccessService
             };
         }
 
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(Namespace),
+            userId.ToString("N"),
+            ct => LoadScopeFromDatabaseAsync(userId, ct),
+            _cachingOptions.UserScopeTtl,
+            cancellationToken);
+    }
+
+    private async Task<UserAccessScope> LoadScopeFromDatabaseAsync(Guid userId, CancellationToken cancellationToken)
+    {
         var permisos = await _dbContext.PermisosUsuario
             .Where(p => p.UsuarioId == userId)
             .Select(p => new

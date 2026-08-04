@@ -17,6 +17,7 @@ namespace AtlasBalance.API.Controllers;
 [Route("api/integraciones/tokens")]
 public sealed class IntegracionesController : ControllerBase
 {
+    // Scopes concedidos cuando el caller OMITE el campo `scopes` (null).
     private static readonly string[] DefaultOpenClawScopes =
     [
         "titulares",
@@ -26,6 +27,24 @@ public sealed class IntegracionesController : ControllerBase
         "alertas",
         "vencimientos",
         "auditoria"
+    ];
+
+    // V-02.07: universo de scopes VALIDOS, que no es lo mismo que los concedidos
+    // por defecto. Antes solo existia `DefaultOpenClawScopes` cumpliendo los dos
+    // papeles, y eso dejaba `POST /api/integration/openclaw/resolver-nombres`
+    // inalcanzable: el middleware exige el scope `resolver-nombres`
+    // (IntegrationAuthMiddleware.TokenAllowsEndpoint, deny-by-default) pero
+    // `FindUnknownScope` lo rechazaba con 400 y `NormalizeEndpointScopes` lo
+    // filtraba, asi que ningun token podia recibirlo y el endpoint respondia
+    // siempre 403.
+    //
+    // `resolver-nombres` queda deliberadamente FUERA de los defaults: deshace la
+    // pseudonimizacion de nombres (re-identificacion), asi que se concede solo
+    // marcandolo de forma explicita, nunca por omision del campo.
+    private static readonly string[] KnownOpenClawScopes =
+    [
+        .. DefaultOpenClawScopes,
+        "resolver-nombres"
     ];
 
     private readonly AppDbContext _dbContext;
@@ -636,7 +655,7 @@ public sealed class IntegracionesController : ControllerBase
         // - `null`        -> omitido por el caller -> defaults (compatibilidad).
         // - `[]`          -> lista vacia intencional -> se respeta como vacia.
         // - valores invalidos -> se filtran; si TODOS se filtran -> vacio (no defaults).
-        var allowed = DefaultOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allowed = KnownOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         if (scopes is null)
         {
@@ -652,7 +671,7 @@ public sealed class IntegracionesController : ControllerBase
     }
 
     /// <summary>
-    /// V-02.06 (PR F1): rechaza scopes que no estan en <see cref="DefaultOpenClawScopes"/>.
+    /// V-02.06 (PR F1): rechaza scopes que no estan en <see cref="KnownOpenClawScopes"/>.
     /// Antes se descartaban silenciosamente y (peor) caian a defaults si todos
     /// los scopes del caller eran invalidos. Devuelve el primer scope no
     /// reconocido; el controller lo convierte en 400.
@@ -663,7 +682,7 @@ public sealed class IntegracionesController : ControllerBase
         {
             return null;
         }
-        var allowed = DefaultOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allowed = KnownOpenClawScopes.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in scopes)
         {
             if (string.IsNullOrWhiteSpace(raw))

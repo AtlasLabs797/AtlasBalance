@@ -29,9 +29,6 @@ export interface Titular {
   id: string;
   nombre: string;
   tipo: TipoTitular;
-  identificacion: string | null;
-  contacto_email: string | null;
-  contacto_telefono: string | null;
   notas: string | null;
   fecha_creacion: string;
 }
@@ -684,7 +681,7 @@ export interface CreateIntegrationTokenRequest {
   }>;
 }
 
-export interface SaveIntegrationTokenRequest extends CreateIntegrationTokenRequest {}
+export type SaveIntegrationTokenRequest = CreateIntegrationTokenRequest;
 
 export interface CreateIntegrationTokenResponse {
   token: IntegrationTokenDetail;

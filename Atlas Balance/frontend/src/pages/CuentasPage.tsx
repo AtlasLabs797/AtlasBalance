@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -15,6 +16,8 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
+import { QUERY_STALE_TIMES } from '@/services/queryClient';
+import { queryKeys } from '@/queries/queryKeys';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
@@ -172,12 +175,78 @@ export default function CuentasPage() {
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>('1m');
   const [divisaPrincipal, setDivisaPrincipal] = useState('EUR');
-  const [principal, setPrincipal] = useState<DashboardPrincipal | null>(null);
-  const [evolucion, setEvolucion] = useState<DashboardEvolucion | null>(null);
-  const [saldosDivisa, setSaldosDivisa] = useState<DashboardSaldosDivisa | null>(null);
   const [saldosCuentaRows, setSaldosCuentaRows] = useState<DashboardCuentaRow[]>([]);
-  const [dashboardLoading, setDashboardLoading] = useState(false);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  const principalQuery = useQuery({
+    queryKey: queryKeys.dashboard.principal({ usuarioId: usuario?.id ?? '', paisId: selectedPaisId || null, divisaPrincipal }),
+    queryFn: ({ signal }) =>
+      api.get<DashboardPrincipal>('/dashboard/principal', {
+        params: { divisaPrincipal, paisId: selectedPaisId || undefined },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(canSeeDashboard && usuario?.id),
+    staleTime: QUERY_STALE_TIMES.DASHBOARD_MS,
+  });
+
+  const evolucionQuery = useQuery({
+    queryKey: queryKeys.dashboard.evolucion({ usuarioId: usuario?.id ?? '', paisId: selectedPaisId || null, divisaPrincipal, periodo }),
+    queryFn: ({ signal }) =>
+      api.get<DashboardEvolucion>('/dashboard/evolucion', {
+        params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(canSeeDashboard && usuario?.id),
+    staleTime: QUERY_STALE_TIMES.DASHBOARD_MS,
+  });
+
+  const saldosDivisaQuery = useQuery({
+    queryKey: queryKeys.dashboard.saldosDivisa({ usuarioId: usuario?.id ?? '', paisId: selectedPaisId || null, divisaPrincipal }),
+    queryFn: ({ signal }) =>
+      api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', {
+        params: { divisaPrincipal, paisId: selectedPaisId || undefined },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(canSeeDashboard && usuario?.id),
+    staleTime: QUERY_STALE_TIMES.DASHBOARD_MS,
+  });
+
+  const principal = principalQuery.data ?? null;
+  const evolucion = evolucionQuery.data ?? null;
+  const saldosDivisa = saldosDivisaQuery.data ?? null;
+  const dashboardLoading = principalQuery.isLoading || evolucionQuery.isLoading || saldosDivisaQuery.isLoading;
+  const dashboardError =
+    principalQuery.error ? extractErrorMessage(principalQuery.error, 'No se pudo cargar el dashboard de cuentas.') :
+    evolucionQuery.error ? extractErrorMessage(evolucionQuery.error, 'No se pudo cargar el dashboard de cuentas.') :
+    saldosDivisaQuery.error ? extractErrorMessage(saldosDivisaQuery.error, 'No se pudo cargar el dashboard de cuentas.') :
+    null;
+
+  useEffect(() => {
+    if (principal?.divisa_principal && principal.divisa_principal !== divisaPrincipal) {
+      setDivisaPrincipal(principal.divisa_principal);
+    }
+  }, [principal, divisaPrincipal]);
+
+  useEffect(() => {
+    if (!principal) {
+      setSaldosCuentaRows([]);
+      return;
+    }
+    const cuentaRows = (principal.saldos_por_cuenta ?? [])
+      .map((cuenta) => ({
+        cuenta_id: cuenta.cuenta_id,
+        cuenta_nombre: cuenta.cuenta_nombre,
+        titular_id: cuenta.titular_id,
+        titular_nombre: cuenta.titular_nombre,
+        banco_nombre: cuenta.banco_nombre ?? null,
+        pais_id: cuenta.pais_id ?? null,
+        pais_nombre: cuenta.pais_nombre ?? null,
+        divisa: cuenta.divisa,
+        saldo_actual: cuenta.saldo_actual,
+        saldo_convertido: cuenta.saldo_convertido,
+      }))
+      .sort((a, b) => b.saldo_convertido - a.saldo_convertido);
+    setSaldosCuentaRows(cuentaRows);
+  }, [principal]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [renewingId, setRenewingId] = useState<string | null>(null);
@@ -296,69 +365,6 @@ export default function CuentasPage() {
   useEffect(() => {
     setPage(1);
   }, [selectedPaisId]);
-
-  useEffect(() => {
-    if (!canSeeDashboard) {
-      setDashboardError(null);
-      return;
-    }
-
-    let mounted = true;
-
-    const loadDashboard = async () => {
-      setDashboardLoading(true);
-      setDashboardError(null);
-      try {
-        const [principalRes, evolucionRes, saldosDivisaRes] = await Promise.all([
-          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
-          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined } }),
-          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
-        ]);
-        const cuentaRows = (principalRes.data.saldos_por_cuenta ?? [])
-          .map((cuenta) => ({
-            cuenta_id: cuenta.cuenta_id,
-            cuenta_nombre: cuenta.cuenta_nombre,
-            titular_id: cuenta.titular_id,
-            titular_nombre: cuenta.titular_nombre,
-            banco_nombre: cuenta.banco_nombre ?? null,
-            pais_id: cuenta.pais_id ?? null,
-            pais_nombre: cuenta.pais_nombre ?? null,
-            divisa: cuenta.divisa,
-            saldo_actual: cuenta.saldo_actual,
-            saldo_convertido: cuenta.saldo_convertido,
-          }))
-          .sort((a, b) => b.saldo_convertido - a.saldo_convertido);
-
-        if (!mounted) {
-          return;
-        }
-
-        setPrincipal(principalRes.data);
-        setEvolucion(evolucionRes.data);
-        setSaldosDivisa(saldosDivisaRes.data);
-        setSaldosCuentaRows(cuentaRows);
-        if (principalRes.data.divisa_principal && principalRes.data.divisa_principal !== divisaPrincipal) {
-          setDivisaPrincipal(principalRes.data.divisa_principal);
-        }
-      } catch (err) {
-        if (!mounted) {
-          return;
-        }
-
-        setDashboardError(extractErrorMessage(err, 'No se pudo cargar el dashboard de cuentas.'));
-      } finally {
-        if (mounted) {
-          setDashboardLoading(false);
-        }
-      }
-    };
-
-    void loadDashboard();
-
-    return () => {
-      mounted = false;
-    };
-  }, [canSeeDashboard, divisaPrincipal, periodo, selectedPaisId]);
 
   const buildFormDefaults = (): CuentaFormState => ({
     ...emptyForm,

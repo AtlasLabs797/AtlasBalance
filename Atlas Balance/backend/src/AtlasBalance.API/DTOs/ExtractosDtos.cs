@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace AtlasBalance.API.DTOs;
@@ -38,21 +39,63 @@ public sealed class CreateExtractoRequest
     public Guid CuentaId { get; set; }
     public int? InsertBeforeFilaNumero { get; set; }
     public DateOnly Fecha { get; set; }
+    [MaxLength(ExtractoLimits.ConceptoMaxLength)]
     public string? Concepto { get; set; }
+    [MaxLength(ExtractoLimits.ComentariosMaxLength)]
     public string? Comentarios { get; set; }
+    [Range(typeof(decimal), ExtractoLimits.ImporteMin, ExtractoLimits.ImporteMax, ParseLimitsInInvariantCulture = true)]
     public decimal Monto { get; set; }
+    [Range(typeof(decimal), ExtractoLimits.ImporteMin, ExtractoLimits.ImporteMax, ParseLimitsInInvariantCulture = true)]
     public decimal Saldo { get; set; }
+    [MaxLength(ExtractoLimits.ColumnasExtraMaxEntries)]
     public Dictionary<string, string?>? ColumnasExtra { get; set; }
 }
 
 public sealed class UpdateExtractoRequest
 {
     public DateOnly? Fecha { get; set; }
+    [MaxLength(ExtractoLimits.ConceptoMaxLength)]
     public string? Concepto { get; set; }
+    [MaxLength(ExtractoLimits.ComentariosMaxLength)]
     public string? Comentarios { get; set; }
+    [Range(typeof(decimal), ExtractoLimits.ImporteMin, ExtractoLimits.ImporteMax, ParseLimitsInInvariantCulture = true)]
     public decimal? Monto { get; set; }
+    [Range(typeof(decimal), ExtractoLimits.ImporteMin, ExtractoLimits.ImporteMax, ParseLimitsInInvariantCulture = true)]
     public decimal? Saldo { get; set; }
+    [MaxLength(ExtractoLimits.ColumnasExtraMaxEntries)]
     public Dictionary<string, string?>? ColumnasExtra { get; set; }
+}
+
+/// <summary>
+/// Limites de los campos de extracto. Viven en constantes porque el mismo rango
+/// se repite en create y update y <c>[Range]</c> exige literales constantes.
+///
+/// V-02.07: <c>Monto</c> y <c>Saldo</c> aceptaban cualquier decimal y el unico
+/// tope era la precision (18,4) de la columna, que no da un 400 sino una
+/// <c>DbUpdateException</c> convertida en 500. El rango es simetrico porque un
+/// egreso es negativo, y se queda en 10 digitos enteros -igual que el
+/// <c>[Range]</c> que ya usaba ImportacionDtos- para no acercarse al limite de
+/// la columna.
+///
+/// Los <c>[Range]</c> llevan <c>ParseLimitsInInvariantCulture = true</c> a
+/// proposito: sin eso los limites se parsean con la cultura del proceso y en
+/// es-ES (la del servidor) el separador decimal es la coma, asi que
+/// DecimalConverter lanza FormatException y la peticion acaba en 500 en vez de
+/// validarse. Ver DtoValidationTests.
+/// </summary>
+internal static class ExtractoLimits
+{
+    public const string ImporteMin = "-9999999999.9999";
+    public const string ImporteMax = "9999999999.9999";
+    public const int ConceptoMaxLength = 512;
+    public const int ComentariosMaxLength = 1000;
+
+    // Topes de coleccion. No son reglas de negocio: solo cierran la via de
+    // reservar memoria sin limite desde una peticion. Van holgados a proposito
+    // para no chocar nunca con un uso real.
+    public const int ColumnasExtraMaxEntries = 100;
+    public const int DesgloseMaxLineas = 500;
+    public const int ColumnasVisiblesMaxEntries = 200;
 }
 
 public sealed class ExtractoDesgloseResponse
@@ -81,15 +124,26 @@ public sealed class ExtractoDesgloseResumenResponse
 
 public sealed class ExtractoDesgloseUpsertRequest
 {
+    [MaxLength(64)]
     public string? Version { get; set; }
+    [MaxLength(ExtractoLimits.DesgloseMaxLineas)]
     public IReadOnlyList<ExtractoDesgloseLineaRequest>? Lineas { get; set; }
 }
 
 public sealed class ExtractoDesgloseLineaRequest
 {
     public Guid? Id { get; set; }
+    // Sin [Required] a proposito: ExtractosController ya rechaza la linea sin
+    // tercero con un mensaje que dice cual falla ("La linea 3 necesita nombre de
+    // persona o tercero"). Una anotacion aqui se adelantaria con un error
+    // generico y peor. El 256 si falta: es el tope de la columna y hoy lo unico
+    // que lo aplica es la BD, con un 500.
+    [MaxLength(256)]
     public string? TerceroNombre { get; set; }
+    // El controller ya rechaza el importe cero; esto acota la magnitud.
+    [Range(typeof(decimal), ExtractoLimits.ImporteMin, ExtractoLimits.ImporteMax, ParseLimitsInInvariantCulture = true)]
     public decimal Importe { get; set; }
+    [MaxLength(ExtractoLimits.ComentariosMaxLength)]
     public string? Notas { get; set; }
 }
 
@@ -101,6 +155,7 @@ public sealed class ToggleCheckedRequest
 public sealed class ToggleFlagRequest
 {
     public bool Flagged { get; set; }
+    [MaxLength(ExtractoLimits.ComentariosMaxLength)]
     public string? Nota { get; set; }
 }
 
@@ -164,6 +219,7 @@ public sealed class SaveColumnasVisiblesRequest
     public Guid? PaisId { get; set; }
 
     [JsonPropertyName("columnas_visibles")]
+    [MaxLength(ExtractoLimits.ColumnasVisiblesMaxEntries)]
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
 }
 

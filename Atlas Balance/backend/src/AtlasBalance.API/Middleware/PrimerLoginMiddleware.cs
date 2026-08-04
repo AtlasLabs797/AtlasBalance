@@ -13,7 +13,10 @@ public sealed class PrimerLoginMiddleware
         "/api/auth/logout",
         "/api/auth/me",
         "/api/auth/cambiar-password",
-        "/api/health"
+        "/api/health",
+        // V-02.07: el reporte de errores de UI debe funcionar en cualquier estado de
+        // sesion, tambien con el cambio de password pendiente. Solo escribe un log.
+        "/api/telemetria/errores"
     };
 
     public PrimerLoginMiddleware(RequestDelegate next)

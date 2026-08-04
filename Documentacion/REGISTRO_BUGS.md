@@ -1,6 +1,263 @@
-# Registro de bugs
+﻿# Registro de bugs
 
 ## Abiertos
+
+### 2026-08-02 - V-02.07 - Abierto - `AddAuthorization()` sin `FallbackPolicy`: una accion sin atributo queda publica
+
+- **Contexto:** auditoria de permisos endpoint por endpoint del 2026-08-02.
+  Ya estaba identificado como pendiente en el bloque "Auditoria IDOR de toda
+  la superficie de API" de `v-02.07.md`; se confirma y se registra aqui.
+- **Descripcion:** `Program.cs:184` llama a `AddAuthorization()` sin
+  `FallbackPolicy`. En ASP.NET Core eso significa que una accion sin
+  atributo de autorizacion queda ANONIMA, no denegada.
+- **Explotabilidad hoy: ninguna.** Las ~150 acciones auditadas declaran
+  todas su atributo, y `ControllerAuthorizationCoverageTests` lo exige en
+  build. El riesgo es futuro: un controller nuevo al que se le olvide el
+  atributo se publica en silencio.
+- **Por que sigue abierto:** el arreglo obliga a marcar `[AllowAnonymous]`
+  en 5 puntos (`IntegrationOpenClawController`, `MapGet("/api/health")`,
+  `MapFallback("/api/{**catchAll}")`, `MapFallbackToFile("index.html")` y
+  el dashboard de Hangfire en dev). Equivocarse en `MapFallbackToFile` deja
+  a TODOS los usuarios sin pagina de login, asi que exige verificar la app
+  arrancada y no solo tests. No se hizo en esta sesion por eso.
+
+### 2026-08-02 - V-02.07 - Abierto - Tres puntos ciegos en el guardarrail de autorizacion
+
+- **Contexto:** misma auditoria. El guardarrail
+  (`ControllerAuthorizationCoverageTests.cs`) es correcto en lo que cubre,
+  pero tiene tres huecos de alcance.
+- **Descripcion:**
+  1. Solo escanea `typeof(AuthController).Assembly`, asi que **no cubre
+     `AtlasBalance.Watchdog`**. `WatchdogController` no lleva atributo de
+     autorizacion y sus endpoints son restaurar backup y actualizar la app,
+     la superficie de mayor impacto del sistema.
+  2. `Ningun_Endpoint_Anonimo_Debe_Aceptar_Un_Id_De_Recurso_En_La_Ruta` solo
+     mira la plantilla del `HttpMethodAttribute` del metodo; ignora el
+     `[Route]` de clase. Un controller anonimo con `[Route("api/x/{id}")]`
+     y una accion sin plantilla propia se le escapa.
+  3. `GetActionMethods` usa `BindingFlags.DeclaredOnly`: una accion heredada
+     de un controller base no se inspecciona.
+- **Explotabilidad hoy: ninguna.** El Watchdog si esta protegido en runtime
+  (`ListenLocalhost(5001)` + `X-Watchdog-Secret` con comparacion en tiempo
+  constante, `Watchdog/Program.cs:45-62`), y no existe hoy ningun controller
+  anonimo con `[Route]` de clase con id ni ningun controller base con
+  acciones. Es cobertura que falta, no un agujero abierto.
+- **Por que sigue abierto:** no se selecciono para esta sesion.
+
+### 2026-08-02 - V-02.07 - Abierto - Scope `vencimientos` huerfano, concedido por defecto a todo token
+
+- **Contexto:** misma auditoria, hallado junto al bug de `resolver-nombres`.
+- **Descripcion:** `vencimientos` esta en `DefaultOpenClawScopes`
+  (`IntegracionesController.cs:27`), asi que todo token creado sin scopes
+  explicitos lo recibe. Ningun endpoint de `IntegrationOpenClawController`
+  resuelve a ese scope: no existe ruta cuyo primer segmento sea
+  `vencimientos`.
+- **Impacto: ninguno de seguridad.** Un scope que no abre ninguna puerta no
+  concede nada. Es ruido en la UI y en la auditoria de tokens: sugiere una
+  capacidad que no existe.
+- **Nota:** el nuevo `IntegrationOpenClawScopeCoverageTests` comprueba la
+  direccion endpoint -> scope (que ningun endpoint quede inalcanzable), no
+  la inversa (que ningun scope quede sin endpoint), justamente porque un
+  scope de mas es inocuo y uno de menos rompe un endpoint. Si se decide
+  limpiar, cuidado con los tokens ya emitidos que lo llevan serializado.
+
+### 2026-08-02 - V-02.07 - Abierto - `ExtractosController` reimplementa la logica de scope en vez de usar `IUserAccessService`
+
+- **Contexto:** misma auditoria.
+- **Descripcion:** `ExtractosController` es el unico de los controllers con
+  datos de usuario que no inyecta `IUserAccessService`; tiene su propia
+  copia (`GetAllowedAccountIds`, `CanView`, `CanViewTitular`,
+  `QueryVisibleAccounts`, `GetPermission`, lineas 1009-1197).
+- **Divergencia hoy: ninguna.** Se comparo predicado a predicado:
+  `ExtractosController.cs:1021-1026` es identico a
+  `UserAccessService.cs:200-206`, y `QueryVisibleAccounts:1196` es
+  semanticamente identico a `ApplyActiveTitularCuentaScope:367-369`
+  (ambos exigen cuenta no borrada y titular no borrado).
+- **Por que se registra igual:** son dos fuentes de verdad para la regla de
+  permisos de la mayor superficie no-admin de la app. El dia que cambie una
+  regla en `UserAccessService`, nada obliga a actualizar la copia, y el
+  fallo seria silencioso. Es deuda, no bug.
+
+### 2026-08-02 - V-02.07 - Abierto - `ExportacionesController.Descargar` distingue 404 de 403
+
+- **Contexto:** misma auditoria. Severidad muy baja, se registra por
+  completitud.
+- **Descripcion:** `GET /api/exportaciones/{id}/descargar` devuelve 404 si
+  el id no existe y 403 si existe pero pertenece a una cuenta fuera del
+  scope (`ExportacionesController.cs:179-188`). Un autenticado puede
+  distinguir "no existe" de "existe y no es mia", confirmando la existencia
+  de exportaciones ajenas.
+- **Impacto:** fuga de metadatos de existencia, no de contenido. El fichero
+  no se sirve en ningun caso: el confinamiento de ruta
+  (`IsAllowedExportFile:221-248`) y la comprobacion en disco van despues del
+  `Forbid`. Ademas los ids son `Guid`, asi que no se pueden enumerar.
+- **Por que sigue abierto:** unificar a 404 es trivial pero cambia el
+  contrato de la API; no se toco sin pedirlo.
+
+### 2026-07-31 - V-02.07 - Abierto - `PERMISOS_USUARIO` expone toda la matriz de permisos durante el flujo de auth
+
+- **Contexto:** auditoria de RLS de V-02.07. Hermano del hallazgo de
+  `MFA_TRUSTED_DEVICES`, que si se cerro en
+  `20260731092000_AcotarAuthFlowMfaTrustedDevices`.
+- **Descripcion:** la policy `permisos_usuario_select`
+  (`20260609120000_AddCountryAuthorizationScopes.cs:395`) tiene una rama
+  `atlas_security.is_auth_flow()` sin filtro por usuario. Durante cualquier
+  request NO autenticado bajo `/api/auth/*`, un `SELECT` sobre
+  `PERMISOS_USUARIO` devolveria la matriz completa de permisos de todos los
+  usuarios.
+- **Explotabilidad hoy: ninguna conocida.** El unico consumidor en modo
+  auth es `AuthService.BuildAuthResultAsync` (`AuthService.cs:938`), que
+  filtra por `UsuarioId` en C#. El problema es que RLS no aporta backstop:
+  un endpoint nuevo bajo `/api/auth`, o un refactor que pierda ese `Where`,
+  quedaria expuesto sin que nada falle.
+- **Por que sigue abierto:** no se puede acotar por `usuario_id` porque en
+  modo auth el contexto RLS todavia no publica `atlas.user_id` (el usuario
+  no esta autenticado a nivel HTTP cuando corre esa consulta). El arreglo
+  real es publicar el id del usuario ya resuelto por credenciales en el
+  contexto firmado (`RlsDbCommandInterceptor.BuildContext`) y acotar la
+  rama con el. Eso toca el canal de confianza que alimenta a RLS y no debe
+  entrar sin poder ejecutar la suite completa de auth antes y despues.
+- **Riesgo de no hacerlo:** bajo mientras el filtro en C# siga ahi.
+
+### 2026-07-31 - V-02.07 - Abierto - `RlsDbCommandInterceptor` falla abierto en dos puntos
+
+- **Descripcion:** dos comportamientos que estan del lado inseguro:
+  1. `RlsDbCommandInterceptor.cs:159-163`: si `HttpContext` es `null`, el
+     contexto que se publica es `System()`, es decir `is_admin=true,
+     is_system=true` y bypass total de RLS. Es deliberado para los jobs de
+     Hangfire, pero convierte "ausencia de contexto" en "privilegio
+     maximo": cualquier codigo que pierda el `HttpContext` (un `Task.Run`
+     dentro de un request, un `IHostedService` nuevo) hereda bypass sin
+     decision explicita.
+  2. `RlsDbCommandInterceptor.cs:88-91`: si `ShouldSkip` es cierto, la
+     query original se ejecuta igual sin publicar contexto. Como
+     `set_config` se fija con ambito de sesion (`false`, linea 228) sobre
+     un pool compartido, esa query correria con el contexto residual de la
+     peticion anterior que uso esa conexion fisica.
+- **Explotabilidad hoy: ninguna encontrada.** El interceptor se dispara en
+  todos los `DbCommand` de EF Core, incluidos los `ExecuteSqlRaw`, y no hay
+  SQL crudo que lo esquive. Hangfire si comparte pool con EF Core
+  (`Program.cs:298`, mismo `DefaultConnection`) y sus consultas no pasan por
+  el interceptor, pero ninguna tabla del esquema `hangfire` tiene RLS.
+- **Arreglo propuesto:** que los jobs declaren el contexto `system` de
+  forma expresa (un scope explicito) y que el fallback por defecto deniegue
+  en vez de conceder; y que `ShouldSkip` lance en vez de dejar pasar la
+  query. Ambos son refactors que tocan los ~10 jobs y el arranque, y
+  necesitan la suite verde antes y despues.
+
+### 2026-07-31 - V-02.07 - Abierto - Cuatro tablas con ambito de cuenta o usuario siguen sin RLS
+
+- **Descripcion:** de las 35 tablas del modelo, 23 tienen `ENABLE` +
+  `FORCE ROW LEVEL SECURITY`. De las 12 restantes, la mayoria son catalogos
+  globales admin-only donde RLS no aporta (`CONFIGURACION`,
+  `DIVISAS_ACTIVAS`, `TIPOS_CAMBIO`, `FORMATOS_IMPORTACION`), pero cuatro si
+  tienen columna de ambito y hoy dependen solo de la capa de aplicacion:
+  - `ALERTAS_SALDO` (`CuentaId`) — la mas clara: esta en el modelo
+    cuenta/titular como el resto de tablas financieras.
+  - `ALERTA_DESTINATARIOS` (`UsuarioId`).
+  - `IA_USO_USUARIOS` (`UsuarioId`).
+  - `BACKUP_OPERATIONS` (`UsuarioId`, admin-only).
+- **Riesgo:** sin RLS, cualquier fallo de autorizacion en el controlador
+  correspondiente no tiene red debajo. La auditoria de endpoints no
+  encontro ningun fallo actual en esos controladores.
+- **Discutibles aparte:** `USUARIOS`, `USUARIO_EMAILS`, `REFRESH_TOKENS` e
+  `INTEGRATION_TOKENS` no tienen ambito de cuenta pero si contienen hashes
+  y tokens; hoy los protege solo el gate de rol.
+
+### 2026-07-31 - V-02.07 - Abierto - Los tests de jobs usan `UseInMemoryDatabase` y no evaluan RLS
+
+- **Descripcion:** `LimpiezaExportacionesJobTests.cs:186` (y el resto de
+  tests de jobs) construyen el `AppDbContext` sobre el proveedor in-memory,
+  que no evalua policies. Por eso el bug de purga de `EXPORTACIONES`
+  cerrado hoy pasaba en verde en CI mientras habria fallado en produccion.
+- **Mitigacion aplicada:** se anadio la asercion de borrado logico en
+  contexto `system` a `RowLevelSecurityTests`, que si corre contra Postgres
+  real. Cubre `EXPORTACIONES`, no el patron general.
+- **Arreglo propuesto:** que todo job que escriba sobre una tabla con RLS
+  tenga al menos un test en la coleccion `postgres`. Pendiente decidir si
+  se migran los tests existentes o solo se exige para los nuevos.
+
+### 2026-07-31 - V-02.07 - Cerrado (decision de producto: se mantiene) - `comentarios` sale sin anonimizar hacia OpenClaw
+
+- **Descripcion:** `IntegrationOpenClawController.cs:331` devuelve el campo
+  `comentarios` de cada fila de extracto en el formato `full`, que es el
+  que se sirve por defecto cuando el cliente no manda `format`. Son
+  anotaciones internas de texto libre que escribe el personal, y pueden
+  contener nombres de empleados o notas sobre el cliente. El formato
+  `simple` no lo incluye, pero es opt-in.
+- **Por que no se ha tocado:** exponerlo fue una decision deliberada de
+  producto, registrada en `DOCUMENTACION_CAMBIOS.md` ("API OpenClaw incluye
+  `comentarios` en la respuesta de extractos"). Quitarlo rompe el contrato
+  de la integracion, asi que no es un fix unilateral.
+- **Tension:** V-02.07 retiro `usuario_creacion` de esa misma respuesta por
+  ser dato interno (linea 338 del propio controlador lo documenta) y
+  seudonimizo IBAN y nombres. `comentarios` se quedo fuera de ese barrido
+  siendo el campo con mas potencial de PII libre.
+- **Decision tomada (2026-07-31):** se mantiene tal cual. OpenClaw se
+  considera un consumidor de confianza y el campo se expuso de forma
+  deliberada, asi que sacarlo romperia el contrato sin ganancia real de
+  seguridad. Queda documentado como dato que cruza la frontera de la
+  empresa, no como descuido: hay comentario en el propio
+  `IntegrationOpenClawController.cs` junto al campo, para que cualquiera
+  que lea esa proyeccion sepa que la exposicion es consciente.
+- **Condicion de reapertura:** si OpenClaw deja de ser un consumidor de
+  confianza, o si se abre la integracion a un tercero, este es el primer
+  campo que hay que retirar del formato `full`.
+
+### 2026-07-31 - V-02.07 - Cerrado (no se unifica, se cubre con test) - `IsUncPath` duplicado en cuatro clases
+
+- **Contexto:** al validar la ruta de `backup_path` hay cuatro lectores
+  distintos y cada uno lleva su propia copia de la logica de validacion:
+  `ConfiguracionController.cs:625`, `BackupService.cs:516`,
+  `ExportacionService.cs:347` y `GoogleDriveBackupService.ResolveSafeDirectory`.
+  Cuando en V-02.07 se anadio el rechazo de rutas UNC, se aplico solo a los
+  tres primeros. El cuarto se quedo sin el y permitia que las copias
+  descargadas de Drive acabaran en un recurso SMB remoto.
+- **Estado:** el agujero concreto esta **cerrado** (se anadio `IsUncPath` a
+  `GoogleDriveBackupService` el 2026-07-31). Lo que queda abierto es la causa
+  raiz: mientras la funcion siga copiada cuatro veces, el proximo cambio en la
+  politica de rutas se volvera a olvidar de alguna.
+- **Resolucion (2026-07-31): se intento la unificacion y se descarto.** Se
+  extrajo un `Validation/PathPolicy.cs` comun y se reescribieron los cuatro
+  lectores contra el. El resultado dejo claro que **las cuatro copias no eran
+  duplicados**: para no cambiar comportamiento, el helper acabo necesitando
+  cinco parametros booleanos (32 combinaciones posibles, 4 usadas) mas un valor
+  de enum dedicado exclusivamente a preservar una tilde que difiere entre dos
+  mensajes de `BackupService`. Cada llamador seguia necesitando ademas su propio
+  `switch` para recuperar sus textos. Mas dificil de leer que la duplicacion que
+  venia a resolver, o sea justo lo que prohibe AGENTS.md seccion 2.2. Revertido.
+- **Diferencias reales entre las cuatro** (por eso no se unifican): mensajes
+  distintos, `try/catch` alrededor de `Path.GetFullPath` en tres de ellas y no en
+  la cuarta, una recomprobacion de raiz posterior a canonicalizar solo en dos, y
+  un criterio de raiz mas laxo en `GoogleDriveBackupService`
+  (`Path.IsPathRooted` O `LooksLikeWindowsRootedPath`, no solo la segunda).
+  `ConfiguracionController` ademas devuelve `bool` en vez de lanzar.
+- **Lo que si cierra el riesgo:** `UncPathRejectionTests`, que comprueba el
+  rechazo de UNC (en las dos formas, `\\` y `//`) en los **cuatro** puntos, mas
+  una contraprueba de que una ruta local normal sigue pasando en los cuatro. Se
+  verifico que el test falla de verdad quitando el chequeo a proposito. Un
+  refactor no habria impedido que alguien olvide *llamar* a la validacion; este
+  test si.
+- **Detalle completo:** `Documentacion/DOCUMENTACION_CAMBIOS.md`
+  (entrada del 2026-07-31).
+
+### 2026-07-24 - V-02.07 - Cerrado - CodeQL #18 cs/log-forging en WatchdogOperationsService:181
+
+- **Contexto:** CodeQL re-scan posterior al merge de V-02.06 reabre la
+  alerta #18 `cs/log-forging` (CWE-117, severity medium) en
+  `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:181`,
+  ignorando el `LogScrubber.Scrub` introducido en V-02.06.
+- **Estado:** cerrado en codigo en `V-02.07` (commit pendiente). La
+  alerta en GitHub pasa a `state=fixed` en el siguiente re-scan
+  automatico tras el push a `main`.
+- **Solucion:** sustitucion del helper externo por el patron inline
+  `Replace("\r", "").Replace("\n", "")` que la regla cs/log-forging de
+  CodeQL acepta como sanitizer. Defense-in-depth: mismo patron en
+  `WatchdogOperationsService.cs:310, 901, 955, 959, 1096`. Regresion
+  `StartUpdateAsync_Should_Log_Rejection_Without_CrLf` cubre el
+  refactor involuntario.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada `LB-CODEQL-018`) y `Documentacion/Versiones/v-02.07.md`.
 
 ### 2026-07-24 - V-02.06 - Cerrado - Secreto ATLAS_RELEASE_SIGNING_PRIVATE_KEY_PEM ausente en GitHub, release bloqueada en el job de firma
 
@@ -52,7 +309,7 @@
   clave nueva.
 - **Estado:** cerrado. Release V-02.06-win-x64 publicado.
 
-### 2026-07-24 - V-02.06 - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7 pospuesta a V-02.07
+### 2026-07-24 - V-02.06 - Cerrado - react-router-dom 6.30.4 con 2 CVEs moderados, migracion a v7.x completada en V-02.07
 
 - **Contexto:** el tercer `workflow_dispatch` de `release.yml` (run
   `30115851973`) paso el job de tests (397/397) pero fallo en
@@ -67,30 +324,70 @@
     `deserializeErrors()` en hidratacion SSR de React Router.
 - **Causa raiz:** no existe fix en la serie 6.x (ultima version
   `6.30.4`); el unico paquete que resuelve ambos CVEs es
-  `react-router-dom@7.18.1`, un salto de version mayor (v6 -> v7) con
-  cambios de API de rutas que tocarian todas las paginas de la app.
-- **Analisis de explotabilidad (decision con el operador,
-  2026-07-24):**
-  - `GHSA-337j-9hxr-rhxg` no aplica: Atlas Balance es una SPA pura
-    (Vite build servido como estaticos por Kestrel), sin SSR de React
-    Router en ningun punto.
-  - `GHSA-wrjc-x8rr-h8h6` ya esta mitigado en el codigo propio antes de
-    llegar a `navigate()`: `normalizeReturnTo` en
-    `frontend/src/pages/LoginPage.tsx:31-38` y
-    `frontend/src/pages/ImportacionPage.tsx:72-79` rechaza cualquier
-    `returnTo` que no empiece por `/`, que empiece por `//`, o que
-    contenga `\`, antes de pasarlo a `navigate()`.
-- **Decision:** no migrar a v7 en mitad del repaso final de V-02.06
-  (regresion de alto riesgo en el routing de toda la app, sin tiempo de
-  regresion completa). Se documenta el CVE como mitigado en la practica
-  y se baja el gate de CI de `--audit-level=moderate` a
-  `--audit-level=high` en `release.yml` y `ci.yml`, con comentario
-  inline explicando el motivo y apuntando a esta entrada.
-- **Pendiente para V-02.07:** evaluar la migracion completa a
-  `react-router-dom@7.x` con tiempo para revisar breaking changes de
-  rutas/loaders y testear navegacion end-to-end antes de subir de
-  nuevo el gate a `moderate`.
-- **Estado:** abierto, con mitigacion documentada y gate ajustado.
+  `react-router-dom@7.18.1`, un salto de version mayor (v6 -> v7).
+- **Solucion (V-02.07, 2026-07-24):** migracion minima a
+  `react-router-dom@7.18.1` (que arrastra `react-router@7.18.1`).
+  - API declarativa 100% compatible con nuestro uso:
+    `BrowserRouter`, `Routes`, `Route`, `Link`, `NavLink`, `Navigate`,
+    `useLocation`, `useNavigate`, `useParams`, `useSearchParams`,
+    `Outlet` siguen existiendo con la misma firma desde
+    `react-router-dom`. No hubo que tocar `App.tsx`, las paginas,
+    los guards ni los hooks.
+  - Cierra `GHSA-wrjc-x8rr-h8h6` (open redirect) y
+    `GHSA-337j-9hxr-rhxg` (SSR constructor injection) sin necesidad
+    de reescribir rutas al data router.
+  - La mitigacion de open redirect en `LoginPage.tsx:31-38` y
+    `ImportacionPage.tsx:72-79` (`normalizeReturnTo` inline) introducida
+    en V-02.06 se conserva como segunda capa: aunque `react-router-dom`
+    ya parchea el vector upstream, el filtro local impide que un
+    eventual regression futuro exponga el salto de host via
+    `returnTo`.
+  - `package-lock.json` regenerado tras apartar `node_modules` al
+    scratchpad (`C:\Users\usuario\AppData\Local\Temp\2\opencode\
+    node-modules-blocked-2026-07-24-v0207`) para esquivar el `EPERM`
+    conocido al hacer `npm install` sobre el `node_modules` existente.
+- **Nuevo advisory HIGH no aplicable (V-02.07):**
+  `react-router-dom@7.18.1` arrastra `react-router@7.18.1`, que entra
+  en el rango `>=7.12.0 <8.3.0` del advisory `GHSA-qwww-vcr4-c8h2`
+  ("RSC Mode CSRF Bypass Allows Action Execution Before 400 Response",
+  HIGH). **No aplica a Atlas Balance**: la app usa el router
+  Declarativo (`<BrowserRouter>` + `<Routes>` + `<Route>`) servido
+  como estaticos por Kestrel, sin RSC, sin Framework Mode ni Data
+  Mode. El vector solo existe en apps queusen `createBrowserRouter`
+  + actions + RSC, que no es nuestro caso. La unica forma de cerrar
+  tambien este advisory seria subir a `react-router@8.3.0`, que
+  requiere React 19.2.7+ (React Router v8 elimino `react-router-dom`
+  y lo fusiono en `react-router`). Migracion a React 19 queda fuera
+  del alcance de V-02.07.
+- **CERRADO el 2026-08-03.** Se hizo la migracion completa del stack:
+  React 18.3.1 -> 19.2.8, `react-router-dom@7.18.2` -> `react-router@8.3.0`
+  (cambio de paquete en 22 ficheros, porque v8 elimina `react-router-dom`),
+  recharts 2.15.4 -> 3.10.1 y zustand 4.5.7 -> 5.0.14. `npm audit` pasa de
+  2 HIGH a **0 vulnerabilidades**. El gate de CI ya no lleva lista de
+  excepciones: `$allowed` esta vacio. Detalle completo en
+  `DOCUMENTACION_CAMBIOS.md`, entrada del 2026-08-03.
+- **Gate actualizado:** `--audit-level=high` (V-02.06) ->
+  `--audit-level=critical` en `release.yml` y `ci.yml`, con
+  comentario inline que apunta a esta entrada y a `v-02.07.md`. Es
+  el nivel maximo posible manteniendo `react-router-dom@7.18.1`
+  sobre React 18.
+- **Verificacion local:**
+  - `npm audit --audit-level=critical` -> 0 hallazgos aplicables.
+  - `npm run lint` -> 0 errores, 0 warnings.
+  - `tsc --noEmit` -> 0 errores.
+  - `npm run build` -> OK (build Vite 8 con `VITE_BUILD_OUT_DIR`
+    apuntando a `.test-dist-build-v0207` dentro del workspace para
+    esquivar el `EPERM` de `C:\tmp` documentado en
+    `LOG_ERRORES_INCIDENCIAS.md`; limpio tras validar).
+  - `npm run test:unit` -> 3/3 PASS (`importacionRequest.test.js`).
+  - `npm run test:e2e` -> requiere `E2E_ADMIN_PASSWORD`; no se
+    ejecuta en local sin credenciales reales, igual que en
+    `LOG_ERRORES_INCIDENCIAS.md` para cualquier sesion que no tenga
+    backend con admin valido.
+- **Estado:** cerrado. Los 2 CVEs moderados que motivaron el
+  aplazamiento en V-02.06 ya no aparecen en `npm audit` para nuestro
+  codigo, y el unico HIGH que queda (RSC CSRF) no es explotable en
+  esta arquitectura.
 
 ### 2026-07-16 - V-02.06 - RLS en identidad/configuracion pospuesto a V-02.07
 
@@ -138,7 +435,420 @@
   aplicacion completa desde una base vacia sigue dentro del gate externo
   PostgreSQL/Testcontainers de V-02.06.
 
+## Cerrados en V-02.07
+
+### 2026-07-27 - V-02.07 - Cerrado - CONC-027 cache de tipos de cambio con race benigno
+
+- **Contexto:** la auditoria de concurrencia 2026-07-10
+  (`AUDITORIA_CONCURRENCIA_2026-07-10.md:302`) documentaba que
+  `TiposCambioService.GetRateCatalogAsync` podia repoblar la cache con
+  datos viejos cuando `InvalidateCache` se ejecutaba entre la query y
+  el `_cache.Set` del hilo lector.
+- **Causa raiz:** patron check-then-act sobre `IMemoryCache` sin lock.
+- **Solucion aplicada:** `TiposCambioService` migra a la nueva capa
+  `ICacheService.GetOrLoadAsync` con single-flight (lock por
+  namespace+key) y generaciones (invalidation O(1) sin enumerar
+  entries). El escenario de regresion queda cubierto por
+  `CacheServiceTests.Concurrent_Invalidate_During_Load_Should_Not_Repopulate_Stale_Data`
+  y `CacheIntegrationTests.TiposCambio_Invalidate_Should_Refresh_After_Manual_Write`
+  en el proyecto nuevo `tests/AtlasBalance.Caching.Tests/` (9/9 PASS).
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada CONC-027) y `Documentacion/Versiones/v-02.07.md`.
+
+### 2026-07-29 - V-02.07 - Cerrado - Fragmento de clave API del proveedor de IA filtrado al cliente (severidad ALTA)
+
+- **Contexto:** auditoria de mensajes de error sensibles y fugas de
+  datos, sobre `Services/AtlasAiService.cs` y
+  `Controllers/IaController.cs`.
+- **Hallazgo:** un 401 real del proveedor
+  (`{"error":{"message":"Incorrect API key provided:
+  sk-proj-abc123XYZ"}}`, placeholder) atravesaba
+  `ExtractProviderErrorSummary` y `ShortProviderPayload` sin ser
+  redactado, porque el regex de redaccion esperaba la credencial
+  pegada a la palabra clave. El fragmento llegaba al usuario final vía
+  `IaController` ([Authorize] generico, no solo ADMIN) en un 502.
+- **Solucion aplicada:** eliminado el sufijo `{detail}` de los
+  mensajes de error del proveedor; `ShortProviderPayload` redacta ahora
+  tambien por forma de credencial (`sk-proj-`, `sk-or-v1-`, `sk-`,
+  `hf_`, `gsk_`, `xai-`, `AIza`); `ILogger<AtlasAiService>` inyectado
+  para que el detalle quede en Serilog ademas de en auditoria.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. Riesgo residual aceptado y documentado para
+  prefijos de credencial fuera de la lista cubierta.
+
+### 2026-07-29 - V-02.07 - Cerrado - Sourcemaps publicados en produccion (severidad MEDIA)
+
+- **Contexto:** auditoria de mensajes de error sensibles y fugas de
+  datos, sobre `frontend/vite.config.ts` y
+  `Atlas Balance/scripts/Build-Release.ps1`.
+- **Hallazgo:** `sourcemap: 'hidden'` no impide servir `.map`, y
+  `Build-Release.ps1` copiaba `dist` completo a `wwwroot` sin filtrar,
+  exponiendo `/assets/<chunk>.js.map` con el TypeScript original.
+- **Solucion aplicada:** borrado explicito de los `.map` del
+  `wwwroot` publicado tras la copia, con verificacion posterior que
+  lanza excepcion si queda alguno.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado en codigo. Pendiente: `Build-Release.ps1` no se
+  ha ejecutado contra una release real; solo se valido su sintaxis.
+
+### 2026-07-29 - V-02.07 - Cerrado - Error boundary volcaba el stack al navegador y reportaba a endpoint inexistente (severidad MEDIA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/src/components/common/AppErrorBoundary.tsx`.
+- **Hallazgo:** `console.error` activo en produccion mas
+  `sendBeacon` apuntando a `/api/telemetria/errores`, ruta que no
+  existia en el backend. El detalle acababa en la consola del cliente
+  sin dejar registro en servidor.
+- **Solucion aplicada:** eliminado el `console.error`. Endpoint nuevo
+  `POST /api/telemetria/errores` (`Controllers/TelemetriaController.cs`
+  + `DTOs/TelemetriaDtos.cs`), `[AllowAnonymous]`, 20 reportes/IP/min,
+  recorte de longitud, saneado CR/LF, siempre 204. Excluido de
+  `CsrfMiddleware` y `PrimerLoginMiddleware`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado en codigo. Pendiente: no se probo el endpoint en
+  runtime contra un backend levantado.
+
+### 2026-07-29 - V-02.07 - Cerrado - Sin error boundary raiz ni handlers globales (severidad MEDIA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/src/App.tsx` y `frontend/src/main.tsx`.
+- **Hallazgo:** el boundary solo envolvia el contenido de cada ruta;
+  un fallo en layout/providers/`App` dejaba pantalla en blanco sin
+  captura ni reporte. No habia `unhandledrejection` ni `window.onerror`.
+- **Solucion aplicada:** `AppErrorBoundary` envuelve ahora todo el
+  arbol en `main.tsx` (por fuera de `QueryClientProvider` y
+  `BrowserRouter`); listeners de `unhandledrejection` y `error`
+  anadidos. Logica de envio centralizada en
+  `src/utils/reportClientError.ts` (nuevo), tope de 10 reportes por
+  carga de pagina.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `npm run lint` 0/0, `npm run test:unit` 22/22,
+  `npm run build` OK. Sin prueba manual de un crash real en navegador.
+
+### 2026-07-29 - V-02.07 - Cerrado - `ValidationProblemDetails` por defecto exponia detalles internos (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Program.cs`.
+- **Hallazgo:** sin `InvalidModelStateResponseFactory`,
+  `[ApiController]` devolvia `traceId`, URL `type` de rfc7231, tipos
+  .NET (`System.Guid`) y PascalCase (`RawData`) en vez del contrato
+  snake_case.
+- **Solucion aplicada:** `InvalidModelStateResponseFactory` devuelve
+  400 con mensaje generico; detalle real del ModelState va al log
+  saneado por `LogScrubber.Scrub`. Verificado que `errorMessage.ts` no
+  dependia del formato anterior.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `dotnet build`: 0 errores.
+
+### 2026-07-29 - V-02.07 - Cerrado - `JwtBearer.IncludeErrorDetails` en `WWW-Authenticate` (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre la
+  configuracion de JwtBearer en `Program.cs`.
+- **Hallazgo:** `IncludeErrorDetails` en su default `true` filtraba el
+  motivo exacto del rechazo del token y el timestamp exacto de
+  expiracion en el header `WWW-Authenticate`.
+- **Solucion aplicada:** `options.IncludeErrorDetails =
+  builder.Environment.IsDevelopment();`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `dotnet build`: 0 errores.
+
+### 2026-07-29 - V-02.07 - Cerrado - `UserStateMiddleware` distinguia el motivo del rechazo de sesion (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Middleware/UserStateMiddleware.cs`.
+- **Hallazgo:** cuatro mensajes distintos segun la causa (token
+  invalido, sesion invalida, cuenta bloqueada, MFA pendiente),
+  filtrando a quien posee un token robado por que dejo de funcionar.
+- **Solucion aplicada:** mensaje unico "La sesion ya no es valida.
+  Vuelve a iniciar sesion." para las cuatro ramas; motivo real al log
+  via `ILogger<UserStateMiddleware>` inyectado, saneado por
+  `LogScrubber.Scrub`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. `UserStateMiddlewareTests.cs` (5 sitios
+  actualizados), `dotnet test tests/AtlasBalance.API.Tests`: 427/427
+  PASS.
+
+### 2026-07-29 - V-02.07 - Cerrado - Rate limit de integracion revelaba la cifra exacta (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`.
+- **Hallazgo:** mensaje "RATE_LIMITED: Mas de 100 requests por minuto
+  para este token" revelaba el limite exacto configurado.
+- **Solucion aplicada:** mensaje reescrito sin la cifra exacta.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-29 - V-02.07 - Cerrado - El build de produccion no eliminaba `console.*` (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/vite.config.ts`.
+- **Hallazgo:** sin `esbuild.drop`, terser ni `minify`, el bundle de
+  produccion conservaba `console.error`/`console.log`/`debugger`. Un
+  primer intento con `esbuild: { drop: [...] }` no funciono: Vite 8
+  usa oxc por defecto y descarta esas opciones en silencio (aviso
+  "Both esbuild and oxc options were set").
+- **Solucion aplicada:** `build.rollupOptions.output.minify = {
+  compress: { dropConsole: true, dropDebugger: true } }` (mecanismo
+  nativo de oxc, solo bajo `build.*`, no afecta a dev).
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado. Bundle verificado: 0 `console.error`, 0
+  `console.log`, 0 `debugger`.
+
+### 2026-07-29 - V-02.07 - Cerrado - Sin limite explicito de tamano de request (severidad BAJA)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Program.cs`.
+- **Hallazgo:** sin `MaxRequestBodySize`, Kestrel aplicaba su default
+  de 30.000.000 bytes, y un cuerpo excesivo caia en el 500 generico
+  del handler global en vez de un 413.
+- **Solucion aplicada:** `MaxRequestBodySize` a 10 MiB, mas rama nueva
+  en el handler global que devuelve el `StatusCode` real de
+  `BadHttpRequestException` sin `ex.Message`.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada del 2026-07-29) y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado en codigo. Pendiente: no probado en runtime
+  contra un payload real de importacion grande.
+
+### 2026-07-29 - V-02.07 - Cerrado - `FluentValidation.AspNetCore` registrado sin ningun `AbstractValidator<T>` (severidad BAJA)
+
+- **Contexto:** detectado durante la auditoria de mensajes de error
+  sensibles, al revisar `Program.cs`.
+- **Hallazgo:** `AddFluentValidationAutoValidation()` estaba
+  registrado en `Program.cs`, pero no existia ningun
+  `AbstractValidator<T>` en todo el backend. Configuracion muerta: el
+  registro escaneaba el assembly y no activaba nada.
+- **Causa raiz:** V-02.06 lo cableo para cerrar el hallazgo MED-23
+  (`DTOs sin atributos de validacion`), cuyo enunciado admitia dos
+  vias alternativas: registrar FluentValidation **o** anadir
+  atributos. Se hicieron las dos, pero solo la segunda llego a
+  producir validacion real; el wiring quedo como andamiaje vacio.
+- **Riesgo:** ninguno de seguridad. Deuda de codigo y una dependencia
+  NuGet sin uso (superficie de suministro innecesaria).
+- **Solucion aplicada:** eliminado el `using FluentValidation.AspNetCore`
+  y la llamada
+  `AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters()`
+  de `Program.cs`, y retirada la `PackageReference` de
+  `AtlasBalance.API.csproj`. Regenerados con `--force-evaluate` los
+  cuatro `packages.lock.json` afectados (API y los dos proyectos de
+  test, que arrastraban FluentValidation de forma transitiva; el
+  Watchdog no estaba afectado). Se dejo un comentario en `Program.cs`
+  explicando que MED-23 sigue cerrado por la via de los
+  DataAnnotations, para que nadie lo reanada creyendo que se reabre.
+- **Verificacion:** `dotnet restore --locked-mode -r win-x64` (la ruta
+  exacta que usa `Build-Release.ps1`) sigue en verde; 427/427 tests de
+  API y 15/15 de caching. Comprobado por grep que nadie inyecta
+  `IValidator` en `src/` ni en `tests/`.
+
+### 2026-07-29 - V-02.07 - Cerrado - `[Required]` sobre `Guid` no-nullable en `ImportacionDtos.cs` nunca falla (severidad BAJA)
+
+- **Contexto:** detectado durante la auditoria de mensajes de error
+  sensibles, al revisar `DTOs/ImportacionDtos.cs`.
+- **Hallazgo:** `[Required]` aplicado sobre un `Guid` no-nullable. Un
+  `Guid` (`struct`) nunca es `null`: un `cuenta_id` ausente se
+  deserializa a `Guid.Empty`, asi que el atributo no podia fallar
+  nunca. Validacion inefectiva que daba falsa sensacion de cobertura.
+  Afectaba a tres DTOs, no a uno: `ImportacionValidarRequest`,
+  `ImportacionConfirmarRequest` e
+  `ImportacionPlazoFijoMovimientoRequest`.
+- **Riesgo:** bajo. No habia agujero de seguridad: `Guid.Empty` no
+  casa con ninguna cuenta y `EnsureCuentaPermitidaAsync` lanzaba
+  `ImportacionException("Cuenta no encontrada o inactiva", 404)`. El
+  defecto real era semantico: un campo obligatorio ausente devolvia
+  404 en vez de 400.
+- **Solucion aplicada:** las tres propiedades pasan a `Guid?`
+  manteniendo `[Required]`, con lo que la validacion de ModelState si
+  dispara y devuelve el 400 generico. En los tres puntos de lectura de
+  `ImportacionService` se usa `request.CuentaId ?? Guid.Empty` en vez
+  de `.Value`: si algun camino interno se saltara la validacion de
+  modelo, cae en el 404 limpio que ya existia en lugar de reventar con
+  un `InvalidOperationException` y un 500.
+- **Fuera de alcance deliberado:** `ImportacionLoteCrearRequest.CuentaId`
+  sigue siendo `Guid` sin `[Required]`. No tenia el defecto (no
+  prometia una validacion inexistente), asi que no se toco.
+- **Verificacion:** 427/427 tests de API. Los tests construyen estos
+  requests con inicializadores de objeto y `Guid` convierte
+  implicitamente a `Guid?`, por lo que ninguno necesito cambios.
+  Comprobado ademas que el frontend nunca envia estas peticiones sin
+  cuenta: `ImportacionPage.tsx` condiciona `canValidate` y
+  `canSubmitPlazoFijo` a que `cuentaId` tenga valor.
+
 ## Abiertos
+
+### 2026-07-28 - V-02.07 - Cerrado - Lista de contrasenas comunes 93% inefectiva (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre
+  `Constants/SecurityPolicy.cs`.
+- **Hallazgo:** la lista de contrasenas comunes tiene 105 entradas,
+  pero el chequeo de longitud minima (12 caracteres) se ejecuta antes
+  y rechaza las cortas, asi que solo 7 entradas son alcanzables:
+  `administrator`, `micontrasena`, `atlasbalance`,
+  `atlasbalance2024`, `atlasbalance2025`, `atlasbalance2026`,
+  `tesoreria123`.
+- **Riesgo:** no es una vulnerabilidad porque la longitud minima ya
+  bloquea a las demas, pero la lista da una falsa sensacion de
+  cobertura frente a las 98 entradas restantes que nunca se llegan a
+  evaluar.
+- **Opciones:** rellenarla con entradas de 12+ caracteres reales,
+  integrar HIBP k-anonymity, o recortarla a las 7 entradas utiles.
+- **Solucion aplicada (2026-07-28, segunda tanda):** lista reescrita
+  con 154 entradas, todas de 12+ caracteres, sin duplicados. Vista
+  `internal static IReadOnlySet<string> CommonPasswordsView` para
+  tests, `HashSet` sigue `private`. Test
+  `CommonPasswords_AllEntries_MeetMinimumLength` recorre la lista
+  entera contra el gate de longitud para que no vuelva a degradarse
+  en silencio.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Blocklist de contrasenas comunes 93% inefectiva") y
+  `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-28 - V-02.07 - Cerrado - Enumeracion de usuarios por latencia en login (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre el flujo de
+  login.
+- **Hallazgo:** si el email no existe o la cuenta esta bloqueada,
+  `BCrypt.Verify` no llega a ejecutarse (~250 ms de diferencia
+  medible). Los mensajes de error si son identicos.
+- **Riesgo:** un atacante puede diferenciar "usuario no existe /
+  bloqueado" de "password incorrecta" midiendo latencia, aunque el
+  mensaje de error no cambie.
+- **Opciones:** anadir un hash dummy (`BCrypt.Verify` contra un hash
+  fijo) en la rama de usuario inexistente para igualar el tiempo de
+  respuesta.
+- **Solucion aplicada (2026-07-28, segunda tanda):** `DummyPasswordHash`
+  (hash BCrypt sobre bytes aleatorios, generado una vez al arrancar)
+  se verifica en la rama de email inexistente y en la de cuenta
+  bloqueada de `LoginAsync`. Revision adversarial encontro la misma
+  falta en la rama de cuenta bloqueada de `ChangePasswordAsync`;
+  tambien corregida.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Enumeracion de usuarios por latencia en login y en
+  cambiar-password") y `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-28 - V-02.07 - Cerrado - Sin rehash automatico de BCrypt (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre el
+  almacenamiento de contrasenas.
+- **Hallazgo:** no existe `PasswordNeedsRehash`, asi que subir el
+  `workFactor` de BCrypt en el futuro no migraria los hashes
+  existentes; se quedarian en el factor con el que se crearon.
+- **Riesgo:** bajo hoy (no hay plan de subir el work factor), pero es
+  deuda que hay que resolver antes de cualquier cambio de politica de
+  hashing.
+- **Solucion aplicada (2026-07-28, segunda tanda):** rehash oportunista
+  tras login correcto con `BCrypt.PasswordNeedsRehash`. Constante
+  `PasswordWorkFactor = 12` en `AuthService`, reusada tambien en
+  `ChangePasswordAsync` (antes tenia el 12 como literal suelto).
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Sin rehash automatico de BCrypt") y
+  `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado.
+
+### 2026-07-28 - V-02.07 - Rate limiting de login/MFA en `IMemoryCache` de proceso (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo:** el rate limiting de login y MFA vive en `IMemoryCache`
+  de proceso: si algun dia se escala a varias instancias, los
+  contadores no se comparten entre ellas.
+- **Riesgo:** irrelevante hoy (instancia unica on-premise). Pasaria a
+  ser explotable (bypass de rate limit repartiendo requests entre
+  instancias) si se escala horizontalmente.
+- **Estado:** abierto, severidad BAJA. Revisado en la segunda tanda
+  (2026-07-28) y dejado abierto por decision deliberada: instancia
+  unica on-premise, anadir estado distribuido seria complejidad
+  especulativa sin caso de uso actual. Misma familia de deuda que la
+  migracion a Redis/`IDistributedCache` ya documentada para la capa de
+  cache (`SEGURIDAD_AUDITORIA_V-01.03.md:85`).
+
+### 2026-07-28 - V-02.07 - Cerrado con matiz - Sesiones no ancladas a IP ni User-Agent (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo:** solo el challenge MFA compara IP/UA, y unicamente
+  durante los 5 minutos que dura ese challenge. `IpAddress` y
+  `UserAgentSummary` se guardan en el refresh token pero nunca se
+  comparan en el resto del ciclo de vida de la sesion.
+- **Riesgo:** un access/refresh token robado sigue siendo valido
+  desde cualquier IP o dispositivo hasta que expire o se cierre
+  sesion.
+- **Solucion aplicada (2026-07-28, segunda tanda), con matiz:**
+  `RefreshTokenAsync` audita el evento `SESSION_IP_CHANGED` cuando la
+  IP del refresh token difiere de la actual (normalizando IPv4
+  mapeada a IPv6 antes de comparar). Decision explicita: **no se
+  invalida la sesion ni se ancla al User-Agent.** Anclar por IP
+  expulsaria a usuarios legitimos con VPN/DHCP/salto de red; anclar
+  por User-Agent romperia con cada auto-actualizacion del navegador.
+  El rastro de auditoria es lo que aporta valor de investigacion sin
+  romper el uso legitimo. Anclar tambien el User-Agent exigiria una
+  columna nueva en `REFRESH_TOKENS` y su migracion; queda fuera de
+  este alcance.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "Sesiones sin rastro de cambio de IP") y
+  `Documentacion/Versiones/v-02.07.md`.
+- **Estado:** cerrado con el matiz de que la sesion sigue sin
+  invalidarse por cambio de IP/UA; es la mitigacion decidida, no una
+  correccion pendiente.
+
+### 2026-07-28 - V-02.07 - No es bug (diagnostico erroneo) - `MaxAge` de la cookie `csrf_token` inconsistente con el access token (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo original:** la cookie `csrf_token` tiene `MaxAge` de 7
+  dias mientras el access token dura 1h.
+- **Riesgo original estimado:** inconsistencia cosmetica, no
+  explotable con `SameSite=Strict`.
+- **Revision 2026-07-28 (segunda tanda):** el fallo de CSRF devuelve
+  **403**, y el interceptor de `frontend/src/services/api.ts` solo
+  auto-recupera en 401, 419 y 440. Si se acortara la cookie CSRF a 1h
+  para igualarla al access token, un usuario inactivo mas de 1h con
+  el refresh token todavia vivo fallaria con 403 sin recuperacion
+  automatica en su siguiente operacion. Los 7 dias actuales coinciden
+  con la vida del refresh token, que es la vida real de la sesion:
+  el comportamiento actual es correcto por diseno, no una
+  inconsistencia.
+- **Estado:** cerrado como diagnostico erroneo. No se cambia nada en
+  el codigo.
+
+### 2026-07-28 - V-02.07 - Sin tests de frontend para auth (severidad BAJA)
+
+- **Contexto:** auditoria de autenticacion y sesion.
+- **Hallazgo:** no existe ningun `*.test.tsx` ni `*.spec.tsx` en
+  `Atlas Balance/frontend/src`. El flujo de login/MFA/cambio de
+  password del frontend no tiene cobertura automatizada propia.
+- **Riesgo:** regresiones de UI/UX en el flujo de auth solo se
+  detectan por QA manual.
+- **Estado:** abierto, severidad BAJA. Revisado en la segunda tanda
+  (2026-07-28) y dejado abierto por decision deliberada: el runner
+  actual es `tsc + node --test`, sin jsdom ni testing-library; cubrir
+  componentes React exige infraestructura de testing nueva, que es
+  trabajo aparte de esta auditoria.
+
+### 2026-07-28 - V-02.07 - Asimetria residual de escrituras a BD en el login (severidad BAJA)
+
+- **Contexto:** revision adversarial durante la segunda tanda de la
+  auditoria de autenticacion, tras cerrar la enumeracion de usuarios
+  por latencia (ver arriba).
+- **Hallazgo:** en `LoginAsync`, la rama de password incorrecta hace
+  un `SaveChangesAsync` extra para persistir `FailedLoginAttempts`,
+  mas su registro de auditoria; las ramas de email inexistente y
+  cuenta bloqueada no tocan la BD (no hay contador que actualizar).
+  Tras igualar el coste de BCrypt entre las tres ramas, queda esta
+  diferencia de round-trips a BD, del orden de milisegundos o menos.
+- **Riesgo:** teorico. La senal es mucho mas pequena que la de
+  latencia de BCrypt (~250 ms) que ya se corrigio, y queda sepultada
+  bajo el jitter de red normal de cualquier despliegue real.
+- **Decision:** no se persigue. Igualarla exigiria anadir escrituras
+  ficticias a BD en las ramas que no las necesitan, complejidad que no
+  se justifica frente a una senal indetectable en la practica.
+- **Estado:** abierto, severidad BAJA.
 
 ### 2026-07-16 - V-02.06 - IMPORTACION_LOTES sin soft-delete
 
@@ -1855,3 +2565,53 @@ MEDIUM/LOW pendientes para Fase 2 (documentados en v-02-05.md):
   **CERRADO en V-02-05.** Las tres migraciones manuscritas ya declaran
   `[DbContext]` y `[Migration]`; `MigrationDiscoveryTests` impide la regresion.
   El fallo se hizo visible en el run `29365305520` (3/331 pruebas PostgreSQL).
+
+### 2026-07-24 - V-02.07 - Cerrado - CodeQL #16 cs/log-forging en CsrfMiddleware:46 (Method tainted)
+
+- **Contexto:** Code Scanning #16 (CWE-117, severity medium) marca
+  Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs:46
+  porque context.Request.Method fluye desde HttpRequest hasta
+  _logger.LogWarning sin sanear.
+- **Estado:** cerrado en codigo en V-02.07 (este commit). La alerta
+  en GitHub pasa a state=fixed en el siguiente re-scan automatico
+  tras el push a main.
+- **Solucion:** LogScrubber.Scrub(context.Request.Method) y
+  placeholder renombrado a {MethodSafe}. Patron identico al que V-02.06
+  aplico a Request.Path, RemoteIpAddress y UserAgent en el mismo
+  archivo (CodeQL #10/#11). El comentario que justificaba el "Method es
+  enum y nunca tainted" se sustituye por uno que documenta que
+  HttpRequest.Method es string y CodeQL lo considera tainted aunque
+  Kestrel normalice verbos validos a nivel de protocolo. Test nuevo en
+  CsrfMiddlewareTests.cs:
+  InvokeAsync_Should_NotThrow_When_Method_Contains_CrLf envia
+  "POST\r\n2026-01-01 FAKE LOG ENTRY\r\n" como verbo y asserta 403
+  sin excepcion.
+- **Barrido defensivo (mismo patron, sinks no CodeQL):** cinco sitios
+  adicionales endurecidos con LogScrubber.Scrub para mantener la regla
+  "valor tainted -> Scrub" del proyecto:
+  - AtlasBalance.API/Services/BackupService.cs:76 (stderr pg_dump).
+  - AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:310
+    (stderr pg_restore).
+  - AtlasBalance.API/Services/TiposCambioService.cs:377 (body
+    ExchangeRate API).
+  - AtlasBalance.API/Services/WatchdogClientService.cs:94 (body
+    Watchdog HTTP interno).
+  - AtlasBalance.API/Services/AtlasAiService.cs (3 callsites de
+    BuildProviderHttpErrorMessage + 1 callsite interno de
+    BuildProviderResponseErrorMessage para providerError de APIs
+    externas).
+- **Por que LogScrubber.Scrub aqui y .Replace inline en
+  WatchdogOperationsService.cs (LB-CODEQL-018):** el codigo API de
+  V-02.06 (CsrfMiddleware, GoogleDriveBackupService) uso
+  LogScrubber.Scrub y CodeQL cerro las alertas como ixed tras el
+  push. El codigo Watchdog reabria porque la regla CodeQL del runner
+  re-escan no reconocia ese helper externo en ese momento. Mantenemos
+  el doble patron: API con LogScrubber.Scrub (probado en CI desde
+  V-02.06) y Watchdog con .Replace inline (probado desde #18). Esto
+  no contradice la regla "valor tainted -> Scrub": cuando se introduce
+  un nuevo sink en Watchdog, se prefiere inline .Replace si el valor
+  proviene de fuentes CodeQL; en cualquier otro caso
+  LogScrubber.Scrub vale como defensa en profundidad.
+- **Detalle completo:** Documentacion/Versiones/v-02.07.md (alcance
+  CodeQL #16) y Documentacion/LOG_ERRORES_INCIDENCIAS.md (entradas
+  LB-CODEQL-016 y LB-CODEQL-016b/c/d/e).

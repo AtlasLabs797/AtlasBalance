@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
@@ -21,6 +22,8 @@ import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { queryKeys } from '@/queries/queryKeys';
+import { QUERY_STALE_TIMES } from '@/services/queryClient';
 
 const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '9m', '12m', '18m', '24m'];
 const TIPO_TITULAR_LABELS = {
@@ -43,13 +46,52 @@ export default function DashboardPage() {
 
   const [periodo, setPeriodo] = useState<PeriodoDashboard>(() => parsePeriodo(searchParams.get('periodo')));
   const [divisaPrincipal, setDivisaPrincipal] = useState(() => searchParams.get('divisa') ?? 'EUR');
-  const [principal, setPrincipal] = useState<DashboardPrincipal | null>(null);
-  const [evolucion, setEvolucion] = useState<DashboardEvolucion | null>(null);
-  const [saldosDivisa, setSaldosDivisa] = useState<DashboardSaldosDivisa | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const allowed = usuario?.rol === 'ADMIN' || canViewDashboard();
+  const usuarioId = usuario?.id ?? '';
+
+  const principalQuery = useQuery({
+    queryKey: queryKeys.dashboard.principal({ usuarioId, paisId: selectedPaisId || null, divisaPrincipal }),
+    queryFn: ({ signal }) =>
+      api.get<DashboardPrincipal>('/dashboard/principal', {
+        params: { divisaPrincipal, paisId: selectedPaisId || undefined },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(allowed && usuarioId),
+    staleTime: QUERY_STALE_TIMES.DASHBOARD_MS,
+  });
+
+  const evolucionQuery = useQuery({
+    queryKey: queryKeys.dashboard.evolucion({ usuarioId, paisId: selectedPaisId || null, divisaPrincipal, periodo }),
+    queryFn: ({ signal }) =>
+      api.get<DashboardEvolucion>('/dashboard/evolucion', {
+        params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(allowed && usuarioId),
+    staleTime: QUERY_STALE_TIMES.DASHBOARD_MS,
+  });
+
+  const saldosDivisaQuery = useQuery({
+    queryKey: queryKeys.dashboard.saldosDivisa({ usuarioId, paisId: selectedPaisId || null, divisaPrincipal }),
+    queryFn: ({ signal }) =>
+      api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', {
+        params: { divisaPrincipal, paisId: selectedPaisId || undefined },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(allowed && usuarioId),
+    staleTime: QUERY_STALE_TIMES.DASHBOARD_MS,
+  });
+
+  const principal = principalQuery.data ?? null;
+  const evolucion = evolucionQuery.data ?? null;
+  const saldosDivisa = saldosDivisaQuery.data ?? null;
+  const loading = principalQuery.isLoading || evolucionQuery.isLoading || saldosDivisaQuery.isLoading;
+  const error =
+    principalQuery.error ? extractErrorMessage(principalQuery.error, 'No se pudo cargar el dashboard.') :
+    evolucionQuery.error ? extractErrorMessage(evolucionQuery.error, 'No se pudo cargar el dashboard.') :
+    saldosDivisaQuery.error ? extractErrorMessage(saldosDivisaQuery.error, 'No se pudo cargar el dashboard.') :
+    null;
   const divisaOptions = useMemo(() => {
     const options = new Set<string>();
     Object.keys(principal?.saldos_por_divisa ?? {}).forEach((item) => options.add(item));
@@ -148,51 +190,10 @@ export default function DashboardPage() {
   }, [divisaPrincipal, periodo, setSearchParams]);
 
   useEffect(() => {
-    if (!allowed) {
-      return;
+    if (principal?.divisa_principal && principal.divisa_principal !== divisaPrincipal) {
+      setDivisaPrincipal(principal.divisa_principal);
     }
-
-    let mounted = true;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [principalRes, evolucionRes, divisaRes] = await Promise.all([
-          api.get<DashboardPrincipal>('/dashboard/principal', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
-          api.get<DashboardEvolucion>('/dashboard/evolucion', { params: { periodo, divisaPrincipal, paisId: selectedPaisId || undefined } }),
-          api.get<DashboardSaldosDivisa>('/dashboard/saldos-divisa', { params: { divisaPrincipal, paisId: selectedPaisId || undefined } }),
-        ]);
-
-        if (!mounted) {
-          return;
-        }
-
-        setPrincipal(principalRes.data);
-        setEvolucion(evolucionRes.data);
-        setSaldosDivisa(divisaRes.data);
-        if (principalRes.data.divisa_principal && principalRes.data.divisa_principal !== divisaPrincipal) {
-          setDivisaPrincipal(principalRes.data.divisa_principal);
-        }
-      } catch (err: unknown) {
-        if (!mounted) {
-          return;
-        }
-
-        setError(extractErrorMessage(err, 'No se pudo cargar el dashboard.'));
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    load();
-
-    return () => {
-      mounted = false;
-    };
-  }, [allowed, periodo, divisaPrincipal, selectedPaisId]);
+  }, [principal, divisaPrincipal]);
 
   if (!allowed) {
     return <Navigate to="/extractos" replace />;

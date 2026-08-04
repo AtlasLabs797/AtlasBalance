@@ -10,6 +10,9 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public sealed class IntegrationAuthMiddlewareTests
@@ -28,7 +31,7 @@ public sealed class IntegrationAuthMiddlewareTests
         await using var db = BuildDbContext();
         var clock = new FakeClock(new DateTime(2026, 4, 18, 10, 58, 0, DateTimeKind.Utc));
         var cache = new MemoryCache(new MemoryCacheOptions());
-        var tokenService = new IntegrationTokenService(db);
+        var tokenService = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var plainToken = "sk_test_rate_limit";
 
         db.IntegrationTokens.Add(new IntegrationToken
@@ -69,7 +72,7 @@ public sealed class IntegrationAuthMiddlewareTests
         await using var db = BuildDbContext();
         var clock = new FakeClock(new DateTime(2026, 4, 18, 12, 0, 0, DateTimeKind.Utc));
         var cache = new MemoryCache(new MemoryCacheOptions());
-        var tokenService = new IntegrationTokenService(db);
+        var tokenService = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var plainToken = "sk_test_cancel";
 
         var token = new IntegrationToken
@@ -114,7 +117,7 @@ public sealed class IntegrationAuthMiddlewareTests
         await using var db = BuildDbContext();
         var clock = new FakeClock(new DateTime(2026, 4, 18, 12, 15, 0, DateTimeKind.Utc));
         var cache = new MemoryCache(new MemoryCacheOptions());
-        var tokenService = new IntegrationTokenService(db);
+        var tokenService = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var plainToken = "sk_test_redaction";
 
         var token = new IntegrationToken
@@ -192,7 +195,7 @@ public sealed class IntegrationAuthMiddlewareTests
         await using var db = BuildDbContext();
         var cache = new MemoryCache(new MemoryCacheOptions());
         var clock = new FakeClock(DateTime.UtcNow);
-        var tokenService = new IntegrationTokenService(db);
+        var tokenService = new IntegrationTokenService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         const string plainToken = "sk_test_without_endpoint_scope";
 
         db.IntegrationTokens.Add(new IntegrationToken

@@ -16,6 +16,8 @@ namespace AtlasBalance.API.Controllers;
 [Route("api/formatos-importacion")]
 public sealed class FormatosImportacionController : ControllerBase
 {
+    private const int MaxMapeoJsonLength = 64 * 1024;
+
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
 
@@ -283,6 +285,11 @@ public sealed class FormatosImportacionController : ControllerBase
             return "Mapeo JSON es obligatorio";
         }
 
+        if (request.MapeoJson.GetRawText().Length > MaxMapeoJsonLength)
+        {
+            return $"Mapeo JSON no puede superar {MaxMapeoJsonLength} caracteres";
+        }
+
         var mapeo = DeserializeMapeo(request.MapeoJson);
         if (mapeo is null)
         {
@@ -347,6 +354,11 @@ public sealed class FormatosImportacionController : ControllerBase
             return null;
         }
 
+        if (mapeo.ColumnasExtra.Count > ImportacionService.MaxExtraColumns)
+        {
+            return $"El mapeo no puede incluir mas de {ImportacionService.MaxExtraColumns} columnas extra";
+        }
+
         var extraNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var usedIndices = new HashSet<int>(baseIndices);
         foreach (var columna in mapeo.ColumnasExtra)
@@ -354,6 +366,16 @@ public sealed class FormatosImportacionController : ControllerBase
             if (string.IsNullOrWhiteSpace(columna.Nombre))
             {
                 return "Las columnas extra deben tener nombre";
+            }
+
+            if (columna.Nombre.Trim().Length > ImportacionService.MaxExtraColumnNameLength)
+            {
+                return $"El nombre de columna extra no puede superar {ImportacionService.MaxExtraColumnNameLength} caracteres";
+            }
+
+            if (!string.IsNullOrWhiteSpace(columna.Etiqueta) && columna.Etiqueta.Trim().Length > ImportacionService.MaxExtraColumnNameLength)
+            {
+                return $"La etiqueta de columna extra no puede superar {ImportacionService.MaxExtraColumnNameLength} caracteres";
             }
 
             if (columna.Indice < 0)

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import type { ReactElement } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { RoleGuard } from '@/components/auth/RoleGuard';
 import AppErrorBoundary from '@/components/common/AppErrorBoundary';
@@ -9,7 +10,6 @@ import LoginPage from '@/pages/LoginPage';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
-import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 
 const AlertasPage            = lazy(() => import('@/pages/AlertasPage'));
@@ -34,7 +34,7 @@ const TitularDetailPage      = lazy(() => import('@/pages/TitularDetailPage'));
 const TitularesPage          = lazy(() => import('@/pages/TitularesPage'));
 const UsuariosPage           = lazy(() => import('@/pages/UsuariosPage'));
 
-function DashboardRoute({ children }: { children: JSX.Element }) {
+function DashboardRoute({ children }: { children: ReactElement }) {
   const usuario = useAuthStore((state) => state.usuario);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard);
   usePermisosStore((state) => state.permisos);
@@ -89,8 +89,6 @@ export default function App() {
   const setLoading = useAuthStore((state) => state.setLoading);
   const setPermisos = usePermisosStore((state) => state.setPermisos);
   const clearAlertas = useAlertasStore((state) => state.clear);
-  const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
-  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
 
   useEffect(() => {
     if (location.pathname === '/login' || isAuthenticated) {
@@ -108,7 +106,7 @@ export default function App() {
 
         setUsuario(data.usuario, getCsrfTokenFromCookie());
         setPermisos(data.permisos ?? []);
-        await loadAlertasActivas(selectedPaisId || undefined);
+        // Las alertas se cargan al montar <Layout /> via useAlertasActivasQuery.
       } catch {
         if (!mounted) return;
 
@@ -127,9 +125,9 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated, location.pathname, clearAlertas, loadAlertasActivas, logout, selectedPaisId, setLoading, setPermisos, setUsuario]);
+  }, [isAuthenticated, location.pathname, clearAlertas, logout, setLoading, setPermisos, setUsuario]);
 
-  const section = (element: JSX.Element) => (
+  const section = (element: ReactElement) => (
     <AppErrorBoundary resetKey={location.key}>
       <Suspense fallback={<PageSkeleton />}>
         {element}

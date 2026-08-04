@@ -1,6 +1,8 @@
+using AtlasBalance.API.RateLimiting;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AtlasBalance.API.Controllers;
 
@@ -42,6 +44,7 @@ public sealed class TiposCambioController : ControllerBase
     }
 
     [HttpPost("sincronizar")]
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> Sincronizar(CancellationToken cancellationToken)
     {
         var result = await _tiposCambioService.SincronizarTiposCambioAsync(cancellationToken);

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router';
 import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
+import { useNotificacionesAdminQuery } from '@/hooks/queries/useNotificacionesAdminQuery';
+import { useUpdateCheckQuery } from '@/hooks/queries/useUpdateCheckQuery';
 import { useAlertCount } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
@@ -28,34 +30,21 @@ function formatSidebarClock(value: Date) {
 }
 
 export function Sidebar() {
-  const location = useLocation();
   const usuario = useAuthStore((state) => state.usuario);
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const alertCount = useAlertCount();
   const exportacionesPendientes = useNotificacionesAdminStore((state) => state.exportacionesPendientes);
-  const loadResumen = useNotificacionesAdminStore((state) => state.loadResumen);
-  const clearNotificaciones = useNotificacionesAdminStore((state) => state.clear);
   const updateAvailable = useUpdateStore((state) => state.available);
-  const checkUpdate = useUpdateStore((state) => state.check);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard());
   const [now, setNow] = useState(() => new Date());
 
-  // Check for updates once per session when the user role is known, not on every navigation.
-  useEffect(() => {
-    if (usuario?.rol === 'ADMIN') {
-      void checkUpdate();
-    }
-  }, [checkUpdate, usuario?.rol]);
-
-  // Refresh notification counts on every navigation (lightweight).
-  useEffect(() => {
-    if (usuario?.rol === 'ADMIN') {
-      void loadResumen();
-      return;
-    }
-    clearNotificaciones();
-  }, [clearNotificaciones, loadResumen, location.pathname, usuario?.rol]);
+  // Suscripcion a caches de TanStack Query (notificaciones, version).
+  // El refetchOnMount:'always' del hook de update garantiza la primera
+  // comprobacion tras login; el de notificaciones se gestiona por
+  // staleTime + refetchOnWindowFocus.
+  useNotificacionesAdminQuery();
+  useUpdateCheckQuery(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);

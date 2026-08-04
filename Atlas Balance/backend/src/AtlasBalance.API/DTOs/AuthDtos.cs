@@ -1,20 +1,34 @@
-﻿namespace AtlasBalance.API.DTOs;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace AtlasBalance.API.DTOs;
 
 public sealed class LoginRequest
 {
+    [Required, EmailAddress, MaxLength(254)]
     public string Email { get; set; } = string.Empty;
+    // V-02.07: solo tope maximo, para acotar el payload. Aqui NO se valida la
+    // politica de contrasena: en login la clave se compara contra el hash bcrypt
+    // y punto. SecurityPolicy.TryValidatePassword solo corre al crear o cambiar
+    // contrasena (UsuariosController y AuthService.CambiarPasswordAsync). Meter
+    // aqui la politica rechazaria con un 400 a un usuario cuya clave sea
+    // anterior a la politica actual, en vez de dejarle entrar y pedirle cambio.
+    [MaxLength(256)]
     public string Password { get; set; } = string.Empty;
 }
 
 public sealed class ChangePasswordRequest
 {
+    [MaxLength(256)]
     public string PasswordActual { get; set; } = string.Empty;
+    [MaxLength(256)]
     public string PasswordNueva { get; set; } = string.Empty;
 }
 
 public sealed class VerifyMfaRequest
 {
+    [Required, MaxLength(128)]
     public string ChallengeId { get; set; } = string.Empty;
+    [Required, MaxLength(16)]
     public string Code { get; set; } = string.Empty;
     public bool RememberDevice { get; set; }
 }

@@ -157,6 +157,10 @@ public sealed class RlsDbCommandInterceptorContextTests
             new RlsDbCommandInterceptor(
                 serviceProvider.GetRequiredService<IHttpContextAccessor>(),
                 serviceProvider.GetRequiredService<RlsContextSecret>()));
+        // V-02.07: el interceptor firma cada fila de auditoria, asi que el
+        // contenedor tiene que poder resolver IAuditSigner igual que en Program.cs.
+        services.AddSingleton(new AtlasBalance.API.Services.AuditSigningKey(TestAuditService.SigningKey));
+        services.AddSingleton<AtlasBalance.API.Services.IAuditSigner, AtlasBalance.API.Services.AuditSigner>();
         services.AddScoped<AuditSaveChangesInterceptor>();
         services.AddDbContext<AppDbContext>((serviceProvider, options) =>
             options

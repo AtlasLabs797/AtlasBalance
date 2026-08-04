@@ -1,12 +1,13 @@
 ﻿import { AxiosError } from 'axios';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -17,6 +18,7 @@ import {
   buildConfirmImportacionLoteRequest,
   buildCreateImportacionLoteRequest,
 } from '@/utils/importacionRequest';
+import { sanitizeInternalPath } from '@/utils/safeRoute';
 import type {
   ImportConfirmResult,
   ImportContextoResponse,
@@ -67,15 +69,6 @@ function getValidationStatusLabel(row: ImportValidationRow): string {
   }
 
   return 'Valida';
-}
-
-function normalizeReturnTo(value: string | null): string {
-  const candidate = value?.trim();
-  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\')) {
-    return DEFAULT_RETURN_TO;
-  }
-
-  return candidate;
 }
 
 function detectSeparator(lines: string[]): 'tab' | 'comma' | 'semicolon' {
@@ -160,9 +153,12 @@ export default function ImportacionPage() {
   const preselectedCuentaId = searchParams.get('cuentaId');
   const autoCloseOnSuccess = searchParams.get('autoClose') === '1';
   const isEmbedded = searchParams.get('embedded') === '1';
-  const returnTo = normalizeReturnTo(searchParams.get('returnTo'));
+  // V-02.07 (#17): sanitizeInternalPath cierra el open redirect del CVE
+  // GHSA-wrjc-x8rr-h8h6 aunque react-router-dom volviese a fallar.
+  const returnTo = sanitizeInternalPath(searchParams.get('returnTo'), DEFAULT_RETURN_TO);
   const usuario = useAuthStore((state) => state.usuario);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const invalidate = useInvalidateAfterMutation();
   const rawDataId = useId();
   const [step, setStep] = useState<ImportStep>(1);
   const [activeTab, setActiveTab] = useState<ImportTab>('nueva');
@@ -502,6 +498,10 @@ export default function ImportacionPage() {
       setActiveTab('lote');
       setStep(2);
       await loadLotes(cuentaId);
+      // Crear lote solo escribe en IMPORTACION_LOTES (no en EXTRACTOS); los
+      // catalogos y el historial cambian, los agregados no. Invalidamos el
+      // catalogo para que la cuenta aparezca ya en el selector.
+      await invalidate('catalogo' as never);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'No se pudo validar la importación'));
     } finally {
@@ -556,6 +556,16 @@ export default function ImportacionPage() {
       setConfirmResult(data);
       setSuccess(`Importación completada: ${data.filas_importadas} filas importadas.`);
       await loadLotes(cuentaId);
+      // Confirmar un lote inserta EXTRACTOS y dispara EvaluateSaldoPostAsync.
+      // Invalida las familias afectadas para que Dashboard, CuentaDetail,
+      // Alertas, Revision y Conciliacion re-consulten en cualquier tab
+      // abierta. El listener postMessage sigue cubriendo CuentaDetailPage
+      // cuando la importacion se hace desde el modal embebido.
+      await Promise.all([
+        invalidate('importarConfirmar'),
+        invalidate('revision'),
+        invalidate('conciliacion'),
+      ]);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'No se pudo confirmar la importación'));
     } finally {
@@ -625,6 +635,11 @@ export default function ImportacionPage() {
       } else if (window.opener && !window.opener.closed) {
         window.opener.postMessage(payload, window.location.origin);
       }
+      // El movimiento de plazo fijo inserta un extracto y recalcula el
+      // saldo: invalida extractos, dashboard, alertas, revision y
+      // conciliacion. Asi cualquier tab abierta ve los datos nuevos
+      // en lugar del cache stale.
+      await invalidate('extractoCreate');
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'No se pudo registrar el movimiento del plazo fijo'));
     } finally {

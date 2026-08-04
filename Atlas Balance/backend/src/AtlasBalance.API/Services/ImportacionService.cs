@@ -30,9 +30,13 @@ public sealed class ImportacionService : IImportacionService
 {
     private const int MaxRawDataLength = 5 * 1024 * 1024;
     private const int MaxRows = 50_000;
-    private const int MaxExtraColumns = 64;
-    private const int MaxExtraColumnNameLength = 80;
+    internal const int MaxExtraColumns = 64;
+    internal const int MaxExtraColumnNameLength = 80;
     private const int MaxImportedCellLength = 4096;
+
+    // Cotas de cordura para las fechas importadas. Ver AcceptIfWithinRange.
+    private const int MinImportYear = 1990;
+    private const int MaxImportYear = 2100;
 
     private static readonly string[] DateFormats =
     [
@@ -151,7 +155,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var normalizedMap = NormalizeMap(request.Mapeo);
@@ -646,9 +650,14 @@ public sealed class ImportacionService : IImportacionService
         // V-02-05 (MED-15): ExecuteUpdate en lugar de cargar 50k entidades a memoria
         // solo para marcarlas. Un UPDATE con WHERE filtro, sin materializacion.
         int updateCount;
+        // V-02.07: el filtro lleva tambien CuentaId. Filtrar solo por
+        // ImportacionLoteId permitia que una fila etiquetada con este lote desde
+        // otra cuenta se borrase de rebote al revertir. EnsureLotePerteneceACuentaAsync
+        // corta el origen del problema; esto acota el radio por si quedan filas
+        // mal etiquetadas de antes del fix.
         var extractosARevertir = _dbContext.Extractos
             .IgnoreQueryFilters()
-            .Where(x => x.ImportacionLoteId == lote.Id && x.DeletedAt == null);
+            .Where(x => x.ImportacionLoteId == lote.Id && x.CuentaId == cuenta.Id && x.DeletedAt == null);
         if (_dbContext.Database.IsRelational())
         {
             updateCount = await extractosARevertir.ExecuteUpdateAsync(
@@ -705,7 +714,8 @@ public sealed class ImportacionService : IImportacionService
         CancellationToken cancellationToken,
         IReadOnlyList<FilaValidacionResponse>? persistedValidationRows)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        await EnsureLotePerteneceACuentaAsync(request.LoteId, cuenta.Id, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
         var separator = persistedValidationRows is null
@@ -943,7 +953,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
         if (ResolveTipoCuenta(cuenta) != TipoCuenta.PLAZO_FIJO)
         {
             throw new ImportacionException("Esta operacion solo aplica a cuentas de plazo fijo", StatusCodes.Status400BadRequest);
@@ -1090,6 +1100,31 @@ public sealed class ImportacionService : IImportacionService
         }
 
         return cuenta;
+    }
+
+    // V-02.07: request.LoteId llegaba del cliente y se escribia tal cual en
+    // Extracto.ImportacionLoteId sin comprobar que el lote fuera de la cuenta
+    // autorizada. Un id de lote de otra cuenta etiquetaba el extracto con un
+    // lote ajeno, y RevertirLoteAsync borra por ImportacionLoteId: la reversion
+    // legitima de ese lote arrastraba tambien las filas etiquetadas de rebote.
+    // RLS frena el borrado cruzado para un usuario normal (el USING de
+    // extractos_write excluye las cuentas sin permiso de escritura), pero no
+    // para un admin, y en cualquier caso el rastro de importacion queda sucio.
+    private async Task EnsureLotePerteneceACuentaAsync(Guid? loteId, Guid cuentaId, CancellationToken cancellationToken)
+    {
+        if (loteId is null)
+        {
+            return;
+        }
+
+        var perteneceALaCuenta = await _dbContext.ImportacionLotes
+            .AsNoTracking()
+            .AnyAsync(l => l.Id == loteId.Value && l.CuentaId == cuentaId, cancellationToken);
+
+        if (!perteneceALaCuenta)
+        {
+            throw new ImportacionException("El lote no pertenece a la cuenta indicada", StatusCodes.Status403Forbidden);
+        }
     }
 
     private static bool GrantsImportacionPermission(PermisoUsuario permiso, ImportacionPermissionMode permissionMode)
@@ -2012,26 +2047,32 @@ public sealed class ImportacionService : IImportacionService
 
         if (DateOnly.TryParseExact(normalized, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
         {
-            return true;
+            return AcceptIfWithinRange(date, out error);
         }
 
         if (DateOnly.TryParse(normalized, CultureInfo.GetCultureInfo("es-ES"), DateTimeStyles.None, out date))
         {
-            return true;
+            return AcceptIfWithinRange(date, out error);
         }
 
         if (DateOnly.TryParse(normalized, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
         {
-            return true;
+            return AcceptIfWithinRange(date, out error);
         }
 
+        // Serial de fecha de Excel. Se conserva porque los extractos pegados desde
+        // una hoja de calculo traen la columna asi de verdad (hay test que lo fija
+        // con 46025 -> 2026). El problema no era el fallback sino que no tenia
+        // cota: `double.TryParse` acepta CUALQUIER numero suelto, asi que un "45"
+        // en la columna de fecha se convertia en 1900-02-14 y entraba en la tabla
+        // sin un solo aviso. La cota de anio lo corta.
         if (double.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var serial))
         {
             try
             {
                 var dateTime = DateTime.FromOADate(serial);
                 date = DateOnly.FromDateTime(dateTime);
-                return true;
+                return AcceptIfWithinRange(date, out error);
             }
             catch
             {
@@ -2041,6 +2082,27 @@ public sealed class ImportacionService : IImportacionService
 
         error = "Fecha inválida";
         return false;
+    }
+
+    /// <summary>
+    /// V-02.07: antes ParseDate daba por buena cualquier fecha que consiguiera
+    /// parsear. Una errata al teclear el anio ("01/01/0202") o un numero suelto
+    /// interpretado como serial de Excel metian fechas absurdas en EXTRACTOS sin
+    /// avisar, y en una tabla de tesoreria eso descuadra saldos y periodos.
+    ///
+    /// El rango es deliberadamente amplio: no es una regla de negocio, es un
+    /// filtro de disparates. Un extracto bancario real no cae fuera de el.
+    /// </summary>
+    private static bool AcceptIfWithinRange(DateOnly value, out string? error)
+    {
+        if (value.Year < MinImportYear || value.Year > MaxImportYear)
+        {
+            error = $"Fecha fuera de rango ({MinImportYear}-{MaxImportYear})";
+            return false;
+        }
+
+        error = null;
+        return true;
     }
 
     private static bool TryParseDecimalSmart(string? raw, out decimal value)

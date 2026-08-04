@@ -1,7 +1,7 @@
 ﻿{
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=app_user;Password=<password-local-postgres-app>",
-    "MigrationConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=atlas_owner;Password=<password-local-postgres-owner>"
+    "DefaultConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=app_user;Password=<password-local-postgres-app>;Application Name=AtlasBalance.API;Maximum Pool Size=20;Minimum Pool Size=0;SslMode=Disable",
+    "MigrationConnection": "Host=localhost;Port=5433;Database=atlas_balance;Username=atlas_owner;Password=<password-local-postgres-owner>;Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum Pool Size=0;SslMode=Disable"
   },
   "JwtSettings": {
     "Secret": "<clave-local-minimo-32-caracteres>",
@@ -17,7 +17,12 @@
   },
   "Security": {
     "RequireMfaForWebUsers": true,
-    "RlsContextSecret": "<clave-rls-local-distinta-de-jwt-minimo-32-caracteres>"
+    "RlsContextSecret": "<clave-rls-local-distinta-de-jwt-minimo-32-caracteres>",
+    "AuditSigningKey": "<clave-firma-auditoria-local-distinta-de-jwt-y-rls>",
+    "MirrorToWindowsEventLog": false,
+    "Alertas": {
+      "Habilitado": false
+    }
   },
   "ForwardedHeaders": {
     "KnownProxies": [],
@@ -26,6 +31,33 @@
   "Ia": {
     "UseSystemProxy": false,
     "ProxyUrl": ""
+  },
+  "AtlasBalance": {
+    "Caching": {
+      "ConfigurationTtlSeconds": 30,
+      "UserScopeTtlSeconds": 15,
+      "IntegrationTokenTtlSeconds": 5,
+      "DashboardScopeTtlSeconds": 10,
+      "DashboardReferenceTtlSeconds": 60,
+      "DashboardMetricsTtlSeconds": 5,
+      "AuthCurrentTtlSeconds": 15,
+      "TiposCambioTtlSeconds": 60,
+      "SizeLimitEntries": 4096
+    },
+    "RateLimiting": {
+      "Enabled": false,
+      "WindowSeconds": 60,
+      "AuthPerMinutePerIp": 10,
+      "AnonymousPerMinutePerIp": 60,
+      "ReadPerMinutePerUser": 300,
+      "WritePerMinutePerUser": 60,
+      "ExpensivePerMinutePerUser": 5,
+      "LoginMaxFailedAttemptsPerAccount": 5,
+      "LoginLockMinutes": 30,
+      "LoginMaxFailuresPerIpAndEmail": 3,
+      "LoginMaxFailuresPerIp": 7,
+      "LoginFailureWindowMinutes": 15
+    }
   },
   "WatchdogSettings": {
     "BaseUrl": "http://localhost:5001",
@@ -56,7 +88,8 @@
       "Override": {
         "Microsoft": "Information",
         "Microsoft.EntityFrameworkCore": "Warning",
-        "Hangfire": "Information"
+        "Hangfire": "Information",
+        "System.Net.Http.HttpClient": "Warning"
       }
     }
   }

@@ -70,9 +70,7 @@ public sealed class TitularesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLowerInvariant();
-            query = query.Where(t =>
-                t.Nombre.ToLower().Contains(term) ||
-                (t.Identificacion != null && t.Identificacion.ToLower().Contains(term)));
+            query = query.Where(t => t.Nombre.ToLower().Contains(term));
         }
 
         query = ApplySorting(query, sortBy, desc);
@@ -86,9 +84,6 @@ public sealed class TitularesController : ControllerBase
                 t.Id,
                 t.Nombre,
                 t.Tipo,
-                t.Identificacion,
-                t.ContactoEmail,
-                t.ContactoTelefono,
                 t.Notas,
                 t.FechaCreacion,
                 t.DeletedAt
@@ -107,9 +102,6 @@ public sealed class TitularesController : ControllerBase
             Id = t.Id,
             Nombre = t.Nombre,
             Tipo = t.Tipo.ToString(),
-            Identificacion = t.Identificacion,
-            ContactoEmail = t.ContactoEmail,
-            ContactoTelefono = t.ContactoTelefono,
             Notas = t.Notas,
             FechaCreacion = t.FechaCreacion,
             CuentasCount = cuentasCountByTitular.GetValueOrDefault(t.Id, 0),
@@ -169,9 +161,6 @@ public sealed class TitularesController : ControllerBase
             Id = titular.Id,
             Nombre = titular.Nombre,
             Tipo = titular.Tipo.ToString(),
-            Identificacion = titular.Identificacion,
-            ContactoEmail = titular.ContactoEmail,
-            ContactoTelefono = titular.ContactoTelefono,
             Notas = titular.Notas,
             FechaCreacion = titular.FechaCreacion,
             CuentasCount = cuentasCount,
@@ -193,9 +182,6 @@ public sealed class TitularesController : ControllerBase
             Id = Guid.NewGuid(),
             Nombre = request.Nombre.Trim(),
             Tipo = request.Tipo,
-            Identificacion = request.Identificacion?.Trim(),
-            ContactoEmail = request.ContactoEmail?.Trim(),
-            ContactoTelefono = request.ContactoTelefono?.Trim(),
             Notas = request.Notas?.Trim(),
             FechaCreacion = DateTime.UtcNow
         };
@@ -226,9 +212,6 @@ public sealed class TitularesController : ControllerBase
 
         titular.Nombre = request.Nombre.Trim();
         titular.Tipo = request.Tipo;
-        titular.Identificacion = request.Identificacion?.Trim();
-        titular.ContactoEmail = request.ContactoEmail?.Trim();
-        titular.ContactoTelefono = request.ContactoTelefono?.Trim();
         titular.Notas = request.Notas?.Trim();
 
         await _dbContext.SaveChangesAsync(cancellationToken);

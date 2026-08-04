@@ -8,6 +8,10 @@ using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public class RevisionServiceTests
@@ -81,7 +85,7 @@ public class RevisionServiceTests
         await db.SaveChangesAsync();
 
         var scope = AdminScope();
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
 
         var result = await sut.GetComisionesAsync(scope, new RevisionQueryRequest(), CancellationToken.None);
 
@@ -151,7 +155,7 @@ public class RevisionServiceTests
         await db.SaveChangesAsync();
 
         var scope = AdminScope();
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
 
         var pendientes = await sut.GetSegurosAsync(
             scope,
@@ -228,7 +232,7 @@ public class RevisionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
         var result = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
 
         RevisionService.IsCommissionConcept("Transferencia SEPA alquiler").Should().BeFalse();
@@ -277,7 +281,7 @@ public class RevisionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
         var result = await sut.GetSegurosAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
 
         RevisionService.IsInsuranceConcept("Seguro Social autonomos").Should().BeFalse();
@@ -346,7 +350,7 @@ public class RevisionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
         var result = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
 
         falsePositiveConcepts.Should().OnlyContain(concept => !RevisionService.IsCommissionConcept(concept));
@@ -398,7 +402,7 @@ public class RevisionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
         var result = await sut.GetSegurosAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
 
         falsePositiveRows.Select(row => row.Concepto).Should().OnlyContain(concept => !RevisionService.IsInsuranceConcept(concept));
@@ -435,7 +439,7 @@ public class RevisionServiceTests
 
         await db.SaveChangesAsync();
 
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
 
         var result = await sut.GetComisionesAsync(
             AdminScope(),
@@ -485,7 +489,7 @@ public class RevisionServiceTests
             new Extracto { Id = seguroBId, CuentaId = cuentaBId, Fecha = new DateOnly(2026, 5, 2), Concepto = "Seguro MAPFRE MX", Monto = -200m, Saldo = -120m, FilaNumero = 2 });
         await db.SaveChangesAsync();
 
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
 
         var comisiones = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest { PaisId = paisAId }, CancellationToken.None);
         var seguros = await sut.GetSegurosAsync(AdminScope(), new RevisionQueryRequest { PaisId = paisAId }, CancellationToken.None);
@@ -505,7 +509,7 @@ public class RevisionServiceTests
             .Options;
 
         using var db = new AppDbContext(options);
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
         var query = InvokeRevisionBaseQuery(sut, RevisionService.TipoComision, GetSearchTerms("ComisionSearchTerms"));
         var filtered = ApplyDecimalThreshold(query, nameof(RevisionRawRowShape.Monto), 1m);
 
@@ -557,7 +561,7 @@ public class RevisionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new RevisionService(db, new UserAccessService(db));
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
         var scope = new UserAccessScope
         {
             UserId = userId,

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Constants;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
@@ -61,7 +62,6 @@ public sealed class ConfiguracionController : ControllerBase
                 Host = GetValue(config, "smtp_host"),
                 Port = ParseInt(GetValue(config, "smtp_port"), 587),
                 User = GetValue(config, "smtp_user"),
-                Password = string.Empty,
                 From = GetValue(config, "smtp_from")
             },
             General = new GeneralConfigResponse
@@ -81,7 +81,6 @@ public sealed class ConfiguracionController : ControllerBase
             },
             Exchange = new ExchangeRateConfigResponse
             {
-                ApiKey = string.Empty,
                 ApiKeyConfigurada = !string.IsNullOrWhiteSpace(GetValue(config, "exchange_rate_api_key"))
             },
             Dashboard = new DashboardConfigResponse
@@ -139,12 +138,12 @@ public sealed class ConfiguracionController : ControllerBase
 
         if (!IsSafeAbsoluteDirectory(request.General.BackupPath))
         {
-            return BadRequest(new { error = "La ruta de backups debe ser absoluta y no contener traversal." });
+            return BadRequest(new { error = "La ruta de backups debe ser local y absoluta (por ejemplo C:\\atlas-balance\\backups). No se admiten rutas de red ni traversal." });
         }
 
         if (!IsSafeAbsoluteDirectory(request.General.ExportPath))
         {
-            return BadRequest(new { error = "La ruta de exportaciones debe ser absoluta y no contener traversal." });
+            return BadRequest(new { error = "La ruta de exportaciones debe ser local y absoluta (por ejemplo C:\\atlas-balance\\exports). No se admiten rutas de red ni traversal." });
         }
 
         if (request.Revision is not null && request.Revision.ComisionesImporteMinimo < 0)
@@ -336,7 +335,7 @@ public sealed class ConfiguracionController : ControllerBase
         }
         catch (Exception ex)
         {
-            var safeTargetForLog = SanitizeForLog(target);
+            var safeTargetForLog = LogScrubber.RedactPii(SanitizeForLog(target));
 
             _logger.LogError(ex, "Fallo al enviar email de prueba SMTP a {Target}", safeTargetForLog);
             return BadRequest(new { error = "No se pudo enviar el correo de prueba. Revisa la configuracion SMTP o avisa al administrador." });
@@ -591,7 +590,15 @@ public sealed class ConfiguracionController : ControllerBase
             return false;
         }
 
-        if (!Path.IsPathRooted(trimmed) && !LooksLikeWindowsRootedPath(trimmed))
+        // V-02.07: rechazar rutas de red (UNC). Path.IsPathRooted("\\\\host\\share")
+        // devuelve true, asi que sin este filtro un ADMIN podia apuntar backup_path a
+        // un recurso SMB externo y sacar de la red el volcado completo de la BD.
+        if (IsUncPath(trimmed))
+        {
+            return false;
+        }
+
+        if (!LooksLikeWindowsRootedPath(trimmed))
         {
             return false;
         }
@@ -613,6 +620,12 @@ public sealed class ConfiguracionController : ControllerBase
                char.IsLetter(value[0]) &&
                value[1] == ':' &&
                (value[2] == '\\' || value[2] == '/');
+    }
+
+    private static bool IsUncPath(string value)
+    {
+        return value.StartsWith(@"\\", StringComparison.Ordinal) ||
+               value.StartsWith("//", StringComparison.Ordinal);
     }
 
     private static bool HasNullTextFields(UpdateConfiguracionRequest request)

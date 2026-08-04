@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { SignedAmount } from '@/components/common/SignedAmount';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -85,6 +86,7 @@ export default function AlertasPage() {
   const [editingCuentaAlertId, setEditingCuentaAlertId] = useState<string | null>(null);
   const [editingTipoAlertId, setEditingTipoAlertId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AlertaItem | null>(null);
+  const invalidate = useInvalidateAfterMutation();
 
   const cuentaAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id !== null), [alertas]);
   const tipoAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id === null && item.tipo_titular !== null), [alertas]);
@@ -178,6 +180,7 @@ export default function AlertasPage() {
 
       setFeedback('Alerta global guardada.');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
+      await invalidate('alerta');
     } catch (saveError: unknown) {
       setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta global.'));
     } finally {
@@ -208,6 +211,7 @@ export default function AlertasPage() {
       setEditingCuentaAlertId(null);
       setCuentaForm(EMPTY_FORM);
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
+      await invalidate('alerta');
     } catch (saveError: unknown) {
       setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta.'));
     } finally {
@@ -238,6 +242,7 @@ export default function AlertasPage() {
       setEditingTipoAlertId(null);
       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
+      await invalidate('alerta');
     } catch (saveError: unknown) {
       setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta por tipo.'));
     } finally {
@@ -289,6 +294,7 @@ export default function AlertasPage() {
 
       setFeedback('Alerta eliminada.');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
+      await invalidate('alerta');
     } catch (deleteError: unknown) {
       setError(extractErrorMessage(deleteError, 'No se pudo eliminar la alerta.'));
     } finally {

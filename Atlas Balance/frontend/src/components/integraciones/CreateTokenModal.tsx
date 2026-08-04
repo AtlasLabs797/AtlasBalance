@@ -5,7 +5,14 @@ import { TokenPermissionsEditor, type TokenPermisoDraft } from '@/components/int
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
-const OPENCLAW_SCOPES = ['titulares', 'saldos', 'extractos', 'evolucion', 'alertas', 'auditoria'] as const;
+// Scopes marcados por defecto al abrir el modal.
+const OPENCLAW_SCOPES_POR_DEFECTO = ['titulares', 'saldos', 'extractos', 'evolucion', 'alertas', 'auditoria'] as const;
+
+// V-02.07: `resolver-nombres` se ofrece pero NO viene marcado. Deshace la
+// pseudonimizacion de nombres (re-identificacion), asi que se concede solo si el
+// admin lo marca a proposito. Mismo criterio que `KnownOpenClawScopes` vs
+// `DefaultOpenClawScopes` en IntegracionesController.
+const OPENCLAW_SCOPES = [...OPENCLAW_SCOPES_POR_DEFECTO, 'resolver-nombres'] as const;
 
 interface CatalogoPermisos {
   paises: Array<{ id: string; nombre: string }>;
@@ -30,7 +37,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   const [tokenEscritura, setTokenEscritura] = useState(false);
   const [tokenExpiracion, setTokenExpiracion] = useState('');
   const [sinExpiracion, setSinExpiracion] = useState(false);
-  const [tokenScopes, setTokenScopes] = useState<string[]>([...OPENCLAW_SCOPES]);
+  const [tokenScopes, setTokenScopes] = useState<string[]>([...OPENCLAW_SCOPES_POR_DEFECTO]);
   const [tokenPermisos, setTokenPermisos] = useState<TokenPermisoDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const formErrorId = useId();
@@ -111,7 +118,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
       setTokenEscritura(false);
       setTokenExpiracion('');
       setSinExpiracion(false);
-      setTokenScopes([...OPENCLAW_SCOPES]);
+      setTokenScopes([...OPENCLAW_SCOPES_POR_DEFECTO]);
       setTokenPermisos([]);
       closeModal();
       onCreated(data.token_plano);

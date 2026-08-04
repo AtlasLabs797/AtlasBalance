@@ -15,6 +15,23 @@ function Test-IsAdmin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Protect-RestrictedDirectory {
+    param([string]$Path)
+
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($sid in @("S-1-5-32-544", "S-1-5-18")) {
+        $identity = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", $inheritance, $propagation, "Allow")
+        $acl.AddAccessRule($rule)
+    }
+
+    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+}
+
 function Convert-SecureStringToPlain {
     param([Security.SecureString]$Value)
 
@@ -117,6 +134,9 @@ function Parse-ConnectionString {
         Database = if ($map.ContainsKey("database")) { $map["database"] } else { "atlas_balance" }
         Username = if ($map.ContainsKey("username")) { $map["username"] } elseif ($map.ContainsKey("user id")) { $map["user id"] } else { "atlas_balance_app" }
         Password = if ($map.ContainsKey("password")) { $map["password"] } else { "" }
+        ApplicationName = if ($map.ContainsKey("application name")) { $map["application name"] } else { "" }
+        MaximumPoolSize = if ($map.ContainsKey("maximum pool size")) { $map["maximum pool size"] } else { "" }
+        MinimumPoolSize = if ($map.ContainsKey("minimum pool size")) { $map["minimum pool size"] } else { "" }
     }
 }
 
@@ -377,7 +397,10 @@ function Resolve-MigrationConnectionForConfig {
     # instalador. Mantener consistencia para que la API y el actualizador
     # usen el mismo modo SSL.
     $sslMode = if ($host -eq "localhost" -or $host -eq "127.0.0.1") { "" } else { ";sslmode=require" }
-    return "Host=$host;Port=$port;Database=$database;Username=$user;Password=$password$sslMode"
+    $applicationName = if ([string]::IsNullOrWhiteSpace($ownerConn.ApplicationName)) { "AtlasBalance.Migrate" } else { $ownerConn.ApplicationName }
+    $maximumPoolSize = if ([string]::IsNullOrWhiteSpace($ownerConn.MaximumPoolSize)) { "4" } else { $ownerConn.MaximumPoolSize }
+    $minimumPoolSize = if ([string]::IsNullOrWhiteSpace($ownerConn.MinimumPoolSize)) { "0" } else { $ownerConn.MinimumPoolSize }
+    return "Host=$host;Port=$port;Database=$database;Username=$user;Password=$password$sslMode;Application Name=$applicationName;Maximum Pool Size=$maximumPoolSize;Minimum Pool Size=$minimumPoolSize"
 }
 
 function Find-PostgresDump {
@@ -654,6 +677,33 @@ function Update-ProductionConfigDefaults {
             $changed = $true
         }
     }
+    # V-02.07: misma politica para Security:AuditSigningKey, la clave con la que
+    # se firma cada fila de AUDITORIAS. Solo se genera si falta o es debil; NUNCA
+    # se rota en una actualizacion, porque rotarla invalidaria la verificacion de
+    # todas las filas ya firmadas y /api/auditoria/integridad las reportaria como
+    # no verificables. Tambien se exige distinta de JWT y de RLS: si coincidiera,
+    # comprometer cualquiera de las dos permitiria forjar auditoria.
+    $auditHasProperty = $apiConfig.Security.PSObject.Properties.Name -contains "AuditSigningKey"
+    $auditCurrent = if ($auditHasProperty) { [string]$apiConfig.Security.AuditSigningKey } else { "" }
+    $rlsEffective = [string]$apiConfig.Security.RlsContextSecret
+    $needsAuditKey = [string]::IsNullOrWhiteSpace($auditCurrent) `
+        -or $auditCurrent -eq $jwtCurrent `
+        -or $auditCurrent -eq $rlsEffective `
+        -or $auditCurrent.Length -lt 32
+    if ($needsAuditKey) {
+        $newAuditKey = New-RandomSecret 64
+        if ($auditHasProperty) {
+            $apiConfig.Security.AuditSigningKey = $newAuditKey
+        } else {
+            $apiConfig.Security | Add-Member -NotePropertyName "AuditSigningKey" -NotePropertyValue $newAuditKey -Force
+        }
+        $changed = $true
+        Write-Host "Security:AuditSigningKey generado y persistido en appsettings.Production.json (no se imprime)." -ForegroundColor Cyan
+        Write-Host "  Las filas de AUDITORIAS anteriores a esta actualizacion no llevan firma: se reportan como 'sin firma', no como manipuladas." -ForegroundColor DarkGray
+    }
+
+    $changed = (Set-JsonDefault -Object $apiConfig.Security -Name "MirrorToWindowsEventLog" -Value $true) -or $changed
+
     if (-not [string]::IsNullOrWhiteSpace($appBaseUrl)) {
         $changed = (Set-JsonDefault -Object $apiConfig.App -Name "BaseUrl" -Value $appBaseUrl) -or $changed
     }
@@ -760,6 +810,11 @@ if (-not (Test-Path (Join-Path $apiTarget "appsettings.Production.json"))) {
 if (-not (Test-IsAdmin)) {
     throw "Ejecuta este actualizador como Administrador."
 }
+
+# Repara tambien instalaciones anteriores: backups y exportaciones contienen
+# datos financieros y PII, y no deben heredar lectura para usuarios locales.
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "backups")
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "exports")
 
 $newVersion = Read-PackageVersion -PackageRoot $packageRoot
 $runtime = Read-RuntimeConfig -BasePath $InstallPath

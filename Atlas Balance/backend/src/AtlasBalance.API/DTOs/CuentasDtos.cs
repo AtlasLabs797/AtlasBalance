@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using AtlasBalance.API.Models;
 
@@ -66,17 +67,28 @@ public sealed class CuentaResumenResponse
 public sealed class SaveCuentaRequest
 {
     public Guid TitularId { get; set; }
+    [Required]
+    [MaxLength(200)]
     public string Nombre { get; set; } = string.Empty;
+    [MaxLength(64)]
     public string? NumeroCuenta { get; set; }
+    [MaxLength(34)]
     public string? Iban { get; set; }
+    [MaxLength(200)]
     public string? BancoNombre { get; set; }
+    [Required]
+    [MaxLength(8)]
     public string Divisa { get; set; } = "EUR";
     public Guid? FormatoId { get; set; }
     public Guid? PaisId { get; set; }
+    // V-02.07: ver el comentario de RolUsuario en UsuariosDtos. Un entero fuera
+    // de rango pasa el converter y muere en Npgsql como 500; esto lo baja a 400.
+    [EnumDataType(typeof(TipoCuenta))]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TipoCuenta? TipoCuenta { get; set; }
     public bool EsEfectivo { get; set; }
     public bool Activa { get; set; } = true;
+    [MaxLength(4000)]
     public string? Notas { get; set; }
     public SavePlazoFijoRequest? PlazoFijo { get; set; }
     public DateOnly? FechaInicio { get; set; }
@@ -84,11 +96,13 @@ public sealed class SaveCuentaRequest
     public decimal? InteresPrevisto { get; set; }
     public bool? Renovable { get; set; }
     public Guid? CuentaReferenciaId { get; set; }
+    [MaxLength(4000)]
     public string? PlazoFijoNotas { get; set; }
 }
 
 public sealed class UpdateCuentaNotasRequest
 {
+    [MaxLength(4000)]
     public string? Notas { get; set; }
 }
 
@@ -99,6 +113,7 @@ public sealed class SavePlazoFijoRequest
     public decimal? InteresPrevisto { get; set; }
     public bool Renovable { get; set; }
     public Guid? CuentaReferenciaId { get; set; }
+    [MaxLength(4000)]
     public string? Notas { get; set; }
 }
 
@@ -108,5 +123,6 @@ public sealed class RenovarPlazoFijoRequest
     public DateOnly NuevaFechaVencimiento { get; set; }
     public decimal? InteresPrevisto { get; set; }
     public bool Renovable { get; set; }
+    [MaxLength(4000)]
     public string? Notas { get; set; }
 }

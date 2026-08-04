@@ -172,7 +172,7 @@ Arquitectura abierta: el admin puede añadir nuevas divisas desde la UI sin modi
 
 │  │  Puerto 5432 (solo localhost)     │   │
 
-│  │  Pool 20 conexiones (Npgsql)      │   │
+│  │  Pool Npgsql: 20 (API) / 4 migr. │   │
 
 │  └──────────────────────────────────┘   │
 
@@ -196,7 +196,7 @@ Arquitectura abierta: el admin puede añadir nuevas divisas desde la UI sin modi
 
 - El Watchdog escucha en `localhost:5001` — nunca expuesto a la red
 
-- Connection pool de Npgsql: 20 conexiones (suficiente para 8 usuarios)
+- Connection pool Npgsql: `DefaultConnection` con `Maximum Pool Size=20` y `Minimum Pool Size=0` (suficiente para 8 usuarios); `MigrationConnection` con `Maximum Pool Size=4` (uso solo en arranque). Cada cadena lleva `Application Name=AtlasBalance.API` / `AtlasBalance.Migrate` para observabilidad en `pg_stat_activity`. Hangfire `WorkerCount=2` (configurable vía `Database:HangfireWorkerCount`).
 
 - OpenClaw usa un token de integración independiente de la autenticación de usuarios
 
@@ -4250,7 +4250,7 @@ No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mism
 
 | 15 | **CONFIGURACION** tabla nueva | Centraliza toda la configuración del sistema accesible desde UI. Evita acceso al servidor para cambiar SMTP, URL, etc. |
 
-| 16 | **Conexiones PostgreSQL** sin límite artificial | El límite de "4 conexiones" del doc original era un error conceptual. Npgsql gestiona pool de 20 internamente |
+| 16 | **Conexiones PostgreSQL** con pool explícito | El límite de "4 conexiones" del doc original era un error conceptual. Npgsql gestiona pool por defecto (100); en V-02.07 se fija `Maximum Pool Size=20` runtime / `4` migraciones para alinear doc, runtime y protegerse de tormentas de conexión |
 
 | 17 | **Token de integración hasheado** (SHA-256) | El token real nunca se almacena. Solo el hash. El token se muestra una única vez al admin |
 

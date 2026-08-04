@@ -1,6 +1,7 @@
 using FluentAssertions;
 using AtlasBalance.API.Controllers;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
@@ -301,6 +302,386 @@ public sealed class IntegrationOpenClawControllerTests
         payload.Should().Contain("VisibleNuevo");
         payload.Should().NotContain("DeletedNuevo");
         payload.Should().NotContain("DeletedAnterior");
+    }
+
+    [Fact]
+    public async Task Saldos_Should_Not_Expose_Full_Iban()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Empresa", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta
+        {
+            Id = Guid.NewGuid(),
+            TitularId = titular.Id,
+            Nombre = "Cuenta",
+            Iban = "ES9121000418450200051332",
+            Divisa = "EUR"
+        };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.Saldos("full", null, null, CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = JsonSerializer.Serialize(okResult.Value);
+        // V-02-07: el IBAN no se enmascara para la integracion externa, no se envia.
+        payload.Should().NotContain("ES9121000418450200051332");
+        payload.Should().NotContain("1332");
+        payload.Should().NotContain("iban");
+    }
+
+    [Fact]
+    public async Task Extractos_Should_Not_Expose_Usuario_Creacion()
+    {
+        await using var db = BuildDbContext();
+        var creador = new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "empleado.interno@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Empleado Interno Nombre Completo",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        };
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Empresa", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = creador.Id
+        };
+
+        db.Usuarios.Add(creador);
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuenta.Id,
+            Fecha = new DateOnly(2026, 4, 10),
+            Concepto = "Ingreso",
+            Monto = 50m,
+            Saldo = 50m,
+            FilaNumero = 1,
+            UsuarioCreacionId = creador.Id,
+            FechaCreacion = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.Extractos("full", cuenta.Id, null, null, null, 100, 1, "fecha", "asc", CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = JsonSerializer.Serialize(okResult.Value);
+        payload.Should().NotContain("usuario_creacion");
+        payload.Should().NotContain("Empleado Interno Nombre Completo");
+    }
+
+    [Fact]
+    public async Task Titulares_Should_Return_Pseudonym_Not_Real_Names()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Nombre Real Titular", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Nombre Real Cuenta", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.Titulares("full", CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = JsonSerializer.Serialize(okResult.Value);
+
+        payload.Should().Contain(IntegrationPseudonyms.ForTitular(titular.Id));
+        payload.Should().Contain(IntegrationPseudonyms.ForCuenta(cuenta.Id));
+        payload.Should().NotContain("Nombre Real Titular");
+        payload.Should().NotContain("Nombre Real Cuenta");
+    }
+
+    [Fact]
+    public async Task Saldos_Should_Return_Pseudonym_Not_Real_Names()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Nombre Real Titular Saldos", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Nombre Real Cuenta Saldos", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.Saldos("full", null, null, CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var payload = JsonSerializer.Serialize(okResult.Value);
+
+        payload.Should().Contain(IntegrationPseudonyms.ForTitular(titular.Id));
+        payload.Should().Contain(IntegrationPseudonyms.ForCuenta(cuenta.Id));
+        payload.Should().NotContain("Nombre Real Titular Saldos");
+        payload.Should().NotContain("Nombre Real Cuenta Saldos");
+    }
+
+    [Fact]
+    public async Task Pseudonym_Should_Be_Stable_Across_Consecutive_Calls()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Empresa Estable", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta Estable", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var firstCall = await controller.Titulares("full", CancellationToken.None);
+        var secondCall = await controller.Titulares("full", CancellationToken.None);
+
+        var firstPayload = JsonSerializer.Serialize(firstCall.Should().BeOfType<OkObjectResult>().Subject.Value);
+        var secondPayload = JsonSerializer.Serialize(secondCall.Should().BeOfType<OkObjectResult>().Subject.Value);
+
+        using var firstDoc = JsonDocument.Parse(firstPayload);
+        using var secondDoc = JsonDocument.Parse(secondPayload);
+
+        var firstNombre = firstDoc.RootElement.GetProperty("Datos").GetProperty("titulares")[0].GetProperty("nombre").GetString();
+        var secondNombre = secondDoc.RootElement.GetProperty("Datos").GetProperty("titulares")[0].GetProperty("nombre").GetString();
+
+        firstNombre.Should().NotBeNullOrEmpty();
+        firstNombre.Should().Be(secondNombre);
+        firstNombre.Should().Be(IntegrationPseudonyms.ForTitular(titular.Id));
+    }
+
+    [Fact]
+    public async Task ResolverNombres_Should_Return_RealName_For_Entity_In_Scope()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular En Scope", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta En Scope", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.ResolverNombres(
+            new ResolverNombresRequest
+            {
+                TitularIds = [titular.Id],
+                CuentaIds = [cuenta.Id]
+            },
+            CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<IntegrationApiResponse<ResolverNombresResponse>>().Subject;
+
+        response.Datos.Should().NotBeNull();
+        response.Datos!.Titulares.Should().ContainSingle(x => x.Id == titular.Id && x.Nombre == "Titular En Scope");
+        response.Datos!.Cuentas.Should().ContainSingle(x => x.Id == cuenta.Id && x.Nombre == "Cuenta En Scope");
+    }
+
+    [Fact]
+    public async Task ResolverNombres_Should_Not_Return_Entity_Out_Of_Scope_And_Should_Return_200()
+    {
+        await using var db = BuildDbContext();
+        var titularEnScope = new Titular { Id = Guid.NewGuid(), Nombre = "Titular En Scope", Tipo = TipoTitular.EMPRESA };
+        var cuentaEnScope = new Cuenta { Id = Guid.NewGuid(), TitularId = titularEnScope.Id, Nombre = "Cuenta En Scope", Divisa = "EUR" };
+        var titularFueraDeScope = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Fuera De Scope", Tipo = TipoTitular.EMPRESA };
+        var cuentaFueraDeScope = new Cuenta { Id = Guid.NewGuid(), TitularId = titularFueraDeScope.Id, Nombre = "Cuenta Fuera De Scope", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.AddRange(titularEnScope, titularFueraDeScope);
+        db.Cuentas.AddRange(cuentaEnScope, cuentaFueraDeScope);
+        db.IntegrationTokens.Add(token);
+        // El token solo tiene permiso de lectura sobre cuentaEnScope/titularEnScope.
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuentaEnScope.Id,
+            AccesoTipo = "lectura"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var result = await controller.ResolverNombres(
+            new ResolverNombresRequest
+            {
+                TitularIds = [titularEnScope.Id, titularFueraDeScope.Id],
+                CuentaIds = [cuentaEnScope.Id, cuentaFueraDeScope.Id]
+            },
+            CancellationToken.None);
+
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.StatusCode.Should().Be(StatusCodes.Status200OK); // no distincion de "no existe" vs "no autorizado": 200 siempre.
+        var response = okResult.Value.Should().BeOfType<IntegrationApiResponse<ResolverNombresResponse>>().Subject;
+
+        response.Datos!.Titulares.Should().ContainSingle(x => x.Id == titularEnScope.Id);
+        response.Datos!.Titulares.Should().NotContain(x => x.Id == titularFueraDeScope.Id);
+        response.Datos!.Cuentas.Should().ContainSingle(x => x.Id == cuentaEnScope.Id);
+        response.Datos!.Cuentas.Should().NotContain(x => x.Id == cuentaFueraDeScope.Id);
+    }
+
+    [Fact]
+    public async Task ResolverNombres_Should_Reject_Batch_Over_200_Ids()
+    {
+        await using var db = BuildDbContext();
+        var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Empresa", Tipo = TipoTitular.EMPRESA };
+        var cuenta = new Cuenta { Id = Guid.NewGuid(), TitularId = titular.Id, Nombre = "Cuenta", Divisa = "EUR" };
+        var token = new IntegrationToken
+        {
+            Id = Guid.NewGuid(),
+            Nombre = "token",
+            TokenHash = "hash",
+            PermisoLectura = true,
+            Estado = EstadoTokenIntegracion.Activo,
+            UsuarioCreadorId = Guid.NewGuid()
+        };
+
+        db.Titulares.Add(titular);
+        db.Cuentas.Add(cuenta);
+        db.IntegrationTokens.Add(token);
+        db.IntegrationPermissions.Add(new IntegrationPermission
+        {
+            Id = Guid.NewGuid(),
+            TokenId = token.Id,
+            CuentaId = cuenta.Id,
+            AccesoTipo = "lectura"
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, token);
+
+        var muchosTitularIds = Enumerable.Range(0, 150).Select(_ => Guid.NewGuid()).ToList();
+        var muchosCuentaIds = Enumerable.Range(0, 51).Select(_ => Guid.NewGuid()).ToList();
+
+        var result = await controller.ResolverNombres(
+            new ResolverNombresRequest
+            {
+                TitularIds = muchosTitularIds,
+                CuentaIds = muchosCuentaIds
+            },
+            CancellationToken.None);
+
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        JsonSerializer.Serialize(objectResult.Value).Should().Contain("BAD_REQUEST");
     }
 
     private sealed class TiposCambioServiceStub : ITiposCambioService

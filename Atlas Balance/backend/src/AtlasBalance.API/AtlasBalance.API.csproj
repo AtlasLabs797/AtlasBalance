@@ -20,38 +20,49 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
 
     <!-- Authentication -->
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
-    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <!-- V-02.07: 8.0.11 arrastraba Microsoft.IdentityModel.* 7.1.2, en desuso
+         (Legacy + CriticalBugs). 8.0.29 sube el minimo transitivo a 7.7.3,
+         que no esta deprecada. Salto de parche dentro de la linea 8.0.x. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.29" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
 
     <!-- Entity Framework Core + PostgreSQL -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.11" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.29" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.29">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
+    <!-- V-02.07: Relational llegaba transitivamente en dos versiones distintas.
+         En la API subia a 8.0.29 via EntityFrameworkCore.Design, pero Design es
+         PrivateAssets=all y no fluye a los proyectos de test, que se quedaban en
+         el 8.0.11 de Npgsql y rompian la compilacion con CS1705. Se declara
+         explicito para que toda la solucion resuelva la misma version. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.29" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
     <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
 
-    <!-- Validation -->
-    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
-
     <!-- Background Jobs -->
-    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.23" />
+    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.24" />
     <PackageReference Include="Hangfire.PostgreSql" Version="1.21.1" />
     <!-- Hangfire depends on Newtonsoft.Json; pin a non-vulnerable transitive version. App code still uses System.Text.Json. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 
     <!-- Email -->
-    <PackageReference Include="MailKit" Version="4.16.0" />
-    <PackageReference Include="MimeKit" Version="4.16.0" />
+    <PackageReference Include="MailKit" Version="4.17.0" />
+    <PackageReference Include="MimeKit" Version="4.17.0" />
 
     <!-- Excel Export -->
-    <PackageReference Include="ClosedXML" Version="0.105.0" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
 
     <!-- Logging -->
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <!-- V-02.07: espejo de eventos de seguridad al Windows Event Log
+         (SecurityEventLog). Llegaba de forma transitiva por
+         Microsoft.Extensions.Hosting.WindowsServices; se declara explicito
+         porque el codigo depende de el directamente. -->
+    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.2" />
   </ItemGroup>
 
   <ItemGroup>

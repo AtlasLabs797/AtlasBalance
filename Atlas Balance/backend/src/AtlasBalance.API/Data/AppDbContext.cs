@@ -1,5 +1,6 @@
 ﻿using System.Linq.Expressions;
 using AtlasBalance.API.Models;
+using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Data;
@@ -89,6 +90,9 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.ExpiraEn);
             entity.Property(e => e.SecurityStamp).HasMaxLength(128);
             entity.Property(e => e.IpAddress).HasColumnType("inet");
+            // V-02.07: id de sesion de login, estable entre rotaciones del token.
+            entity.Property(e => e.SessionId).HasMaxLength(AuditRequestContext.MaxSessionIdLength);
+            entity.HasIndex(e => e.SessionId);
             entity.HasQueryFilter(e => e.Usuario != null && e.Usuario.DeletedAt == null);
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
@@ -375,11 +379,28 @@ public class AppDbContext : DbContext
             entity.ToTable("AUDITORIAS");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.IpAddress).HasColumnType("inet");
-            entity.Property(e => e.DetallesJson).HasColumnType("jsonb");
+            // V-02.07: json y NO jsonb. jsonb normaliza el texto (reordena
+            // claves, quita espacios), asi que la cadena releida no coincidiria
+            // con la que se firmo y toda la auditoria pareceria manipulada. json
+            // conserva el texto tal cual y sigue validando que sea JSON valido.
+            // Nada consulta AUDITORIAS.detalles_json con operadores jsonb.
+            entity.Property(e => e.DetallesJson).HasColumnType("json");
+            // Secuencia monotonica generada por Postgres: los huecos delatan
+            // borrados en una tabla que ya es append-only por trigger.
+            entity.Property(e => e.Secuencia).ValueGeneratedOnAdd();
+            entity.HasAlternateKey(e => e.Secuencia);
+            entity.Property(e => e.UserAgent).HasMaxLength(AuditRequestContext.MaxUserAgentLength);
+            entity.Property(e => e.SessionId).HasMaxLength(AuditRequestContext.MaxSessionIdLength);
+            entity.Property(e => e.Origen).HasMaxLength(16).IsRequired();
+            // Base64 de un HMAC-SHA256: 44 caracteres exactos.
+            entity.Property(e => e.Firma).HasMaxLength(64);
             entity.HasIndex(e => new { e.UsuarioId, e.Timestamp });
             entity.HasIndex(e => e.TipoAccion);
             entity.HasIndex(e => e.EntidadId);
             entity.HasIndex(e => e.Timestamp);
+            // Las alertas de seguridad agrupan por IP y ventana temporal.
+            entity.HasIndex(e => new { e.IpAddress, e.Timestamp });
+            entity.HasIndex(e => new { e.TipoAccion, e.Timestamp });
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 

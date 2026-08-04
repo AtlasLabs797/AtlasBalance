@@ -88,6 +88,27 @@ public class ManualProcessResponseTests
     }
 
     [Fact]
+    public async Task DriveImport_Should_Reject_Invalid_FileId_Before_Creating_Operation()
+    {
+        await using var db = BuildDbContext();
+        var controller = new BackupsController(
+            db,
+            new FakeBackupService(),
+            new FakeWatchdogClientService(),
+            new FakeBackupConfigurationService(),
+            new FakeGoogleDriveBackupService(),
+            backgroundJobs: new RecordingBackgroundJobClient());
+        controller.ControllerContext = BuildControllerContext();
+
+        var result = await controller.ImportGoogleDriveFile(
+            new GoogleDriveImportRequest { FileId = "invalid/slash" },
+            CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.BackupOperations.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Restore_Should_Persist_Operation_Before_Watchdog_And_Only_Accept_Matching_State()
     {
         var root = Path.Combine(Path.GetTempPath(), $"atlas-backup-operation-{Guid.NewGuid():N}");
@@ -419,6 +440,11 @@ public class ManualProcessResponseTests
         }
 
         public Task UploadBackupByIdAsync(Guid backupId, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteRemoteBackupCopyAsync(BackupCloudCopy copy, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
         }

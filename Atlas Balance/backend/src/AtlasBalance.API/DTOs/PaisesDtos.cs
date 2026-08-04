@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AtlasBalance.API.DTOs;
 
 public sealed class PaisResponse
@@ -13,7 +15,10 @@ public sealed class PaisResponse
 
 public sealed class SavePaisRequest
 {
+    [Required]
+    [MaxLength(128)]
     public string Nombre { get; set; } = string.Empty;
+    [MaxLength(2)]
     public string? CodigoIso2 { get; set; }
     public bool Activo { get; set; } = true;
 }

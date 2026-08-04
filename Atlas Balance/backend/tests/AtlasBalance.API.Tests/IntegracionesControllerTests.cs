@@ -13,6 +13,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public sealed class IntegracionesControllerTests
@@ -30,8 +33,11 @@ public sealed class IntegracionesControllerTests
     {
         var controller = new IntegracionesController(
             dbContext,
-            new AuditService(dbContext),
-            new IntegrationTokenService(dbContext),
+            TestAuditService.Create(dbContext),
+            new IntegrationTokenService(
+                dbContext,
+                new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance),
+                Options.Create(new CachingOptions())),
             // V-02.06 (MED-29): el cleaner vive en memoria cache, pero en
             // tests InMemory la limpieza es un no-op. Pasamos una
             // instancia real (usa MemoryCache internamente).

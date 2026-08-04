@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AtlasBalance.API.DTOs;
 
 public sealed class IntegrationPermissionItemResponse
@@ -37,27 +39,37 @@ public sealed class IntegrationTokenDetailResponse
 
 public sealed class CreateIntegrationTokenRequest
 {
+    [Required]
+    [MaxLength(200)]
     public string Nombre { get; set; } = string.Empty;
+    [MaxLength(1000)]
     public string? Descripcion { get; set; }
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
     public string? SinExpiracionTextoConfirmacion { get; set; }
+    [MaxLength(50)]
     public IReadOnlyList<string> Scopes { get; set; } = [];
+    [MaxLength(500)]
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
 
 public sealed class SaveIntegrationTokenRequest
 {
+    [Required]
+    [MaxLength(200)]
     public string Nombre { get; set; } = string.Empty;
+    [MaxLength(1000)]
     public string? Descripcion { get; set; }
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
     public string? SinExpiracionTextoConfirmacion { get; set; }
+    [MaxLength(50)]
     public IReadOnlyList<string> Scopes { get; set; } = [];
+    [MaxLength(500)]
     public IReadOnlyList<SaveIntegrationPermissionRequest> Permisos { get; set; } = [];
 }
 
@@ -81,6 +93,34 @@ public sealed class RotarIntegrationTokenRequest
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
     public string? SinExpiracionTextoConfirmacion { get; set; }
+}
+
+// V-02.07: request/response del endpoint de resolucion de seudonimos bajo
+// demanda (POST api/integration/openclaw/resolver-nombres).
+public sealed class ResolverNombresRequest
+{
+    public IReadOnlyList<Guid> TitularIds { get; set; } = [];
+    public IReadOnlyList<Guid> CuentaIds { get; set; } = [];
+}
+
+public sealed class ResolverNombresTitularItemResponse
+{
+    public Guid Id { get; set; }
+    public string Seudonimo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+}
+
+public sealed class ResolverNombresCuentaItemResponse
+{
+    public Guid Id { get; set; }
+    public string Seudonimo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+}
+
+public sealed class ResolverNombresResponse
+{
+    public IReadOnlyList<ResolverNombresTitularItemResponse> Titulares { get; set; } = [];
+    public IReadOnlyList<ResolverNombresCuentaItemResponse> Cuentas { get; set; } = [];
 }
 
 public sealed class IntegrationAuditItemResponse

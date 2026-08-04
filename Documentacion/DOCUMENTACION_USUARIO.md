@@ -4,6 +4,23 @@
 
 La aplicacion esta en la carpeta `Atlas Balance`.
 
+## Seguridad antes de ponerla en produccion
+
+La aplicacion no debe publicarse solo porque compile. Antes del primer uso real,
+el tecnico debe comprobar en el servidor:
+
+- entorno `Production`, HTTPS con certificado confiable y redireccion desde HTTP;
+- BitLocker activo y permisos de `config`, `backups` y `exports` limitados a
+  Administradores y SYSTEM;
+- una copia y restauracion completas con la base real;
+- que el ZIP instalado no contiene `.env`, logs, dumps, sourcemaps, certificados
+  privados ni credenciales de instalacion.
+
+Las importaciones desde Google Drive admiten como maximo 10 GiB por defecto. El
+limite puede cambiarse por configuracion, pero subirlo sin calcular primero el
+espacio para el fichero cifrado, el dump descifrado y la restauracion es una mala
+idea. Los ficheros parciales se eliminan si se supera el limite.
+
 ## Datos demo en desarrollo
 
 En entorno `Development`, Atlas Balance puede cargar datos demo sinteticos para revisar la interfaz con contenido: paises, titulares, cuentas, extractos, alertas y plazo fijo.
@@ -118,6 +135,8 @@ La primera vez que entras, despues de email y contrasena, aparece un QR. Escanea
 Despues de verificarlo, la casilla `Recordar este dispositivo durante 90 dias` aparece si el recuerdo de dispositivo esta habilitado en `Configuracion > General y SMTP > Autenticacion`. Si no marcas esa casilla, el codigo MFA se pedira en el siguiente login.
 
 Cerrar sesion ya no borra el dispositivo recordado. Se volvera a pedir MFA cuando pasen esos 90 dias, borres cookies, cambies de navegador/equipo, un administrador revoque el Authenticator, cambie la contrasena o rote la seguridad del usuario. Si necesitas cortar todos los dispositivos recordados de un usuario, un administrador puede revocar el Authenticator desde `Usuarios`.
+
+Desde V-02.07, al cerrar sesion se cierran TODAS las sesiones abiertas de ese usuario en todos los dispositivos, no solo la actual. El dispositivo recordado para el codigo de Authenticator se conserva igualmente: cerrar sesion no te va a volver a pedir el QR ni la clave manual en el siguiente acceso desde ese mismo dispositivo.
 
 ## Paises en cuentas
 
@@ -485,6 +504,9 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 - Al iniciar sesion, Atlas Balance puede pedir un codigo MFA de 6 digitos.
 - En el primer acceso con MFA, la pantalla muestra una clave para guardarla en una app de autenticacion. Despues hay que escribir el codigo generado para terminar el login.
 - Si se cambian permisos, email o datos de un usuario, sus sesiones abiertas se cierran y tendra que entrar de nuevo.
+- Desde V-02.07, cerrar sesion cierra todas las sesiones abiertas del usuario en todos los dispositivos, no solo la sesion actual. El dispositivo recordado para el codigo de Authenticator no se pierde al cerrar sesion.
+- Desde V-02.07, si al cambiar la contrasena escribes 5 veces mal la contrasena actual, la cuenta se bloquea 30 minutos, igual que en el login.
+- Desde V-02.07, las contrasenas nuevas se comparan contra una lista mas amplia de contrasenas filtradas comunes. Alguna contrasena que antes se aceptaba puede rechazarse ahora por "demasiado comun"; en ese caso, elige otra que no sea una variante obvia de una palabra o frase habitual.
 - No guardes contrasenas en documentos.
 - No pegues tokens ni credenciales en tickets, logs o notas.
 - Las credenciales iniciales de instalacion deben tratarse como temporales y cambiarse en el primer acceso.
@@ -587,3 +609,86 @@ No pegues valores de tokens, passwords ni connection strings reales en capturas,
 Atlas Balance usa el nuevo simbolo de marca en login, cambio obligatorio de password, menu lateral, favicon y activos de instalacion.
 
 El logo se adapta automaticamente a modo claro y oscuro. No cambia ningun flujo de uso.
+
+## Rutas de backups y exportaciones V-02.07
+
+Las carpetas de backups y de exportaciones deben estar en un disco de la propia maquina. Se escriben asi:
+
+```
+C:\atlas-balance\backups
+C:\atlas-balance\exports
+```
+
+Ya no se admiten carpetas de red del tipo `\servidor\carpeta`. Si guardas una, la aplicacion la rechaza y te avisa en pantalla.
+
+El motivo es simple: un backup contiene toda la base de datos, con numeros de cuenta, saldos y datos personales. Si esa carpeta apunta a un equipo de fuera, cada copia sale de tu red sin que nadie se entere. Obligando a que sea una carpeta local, esa fuga no puede ocurrir por un cambio de configuracion.
+
+Si necesitas que las copias acaben en un NAS o en un servidor de la oficina, monta ese recurso como una unidad de red con su letra (por ejemplo `Z:`) y usa esa letra en la ruta. Para copias fuera de la oficina, la via recomendada sigue siendo la integracion de Google Drive, que ya cifra el archivo antes de subirlo.
+
+Nada mas cambia: el resto del funcionamiento de backups y exportaciones es identico.
+
+## Avisos de seguridad y estado del sistema V-02.07
+
+Solo para administradores.
+
+### Avisos automaticos de seguridad
+
+Atlas Balance vigila la actividad y avisa cuando detecta algo raro. Los avisos
+llegan por tres vias a la vez:
+
+- La campana de notificaciones de la barra superior.
+- Un correo, si el servidor de correo esta configurado. Por defecto va a todos
+  los administradores activos.
+- Slack, si el tecnico lo ha configurado (no viene activado).
+
+Los seis avisos que existen:
+
+| Aviso | Que significa |
+|-------|---------------|
+| Muchos fallos de acceso a una cuenta | Alguien esta probando contrasenas contra una cuenta concreta. |
+| Una direccion tocando muchas cuentas | Un mismo equipo esta probando el acceso a muchas cuentas de golpe. |
+| Descarga masiva de datos | Alguien ha pedido muchisimos registros de una vez, o esta haciendo cientos de consultas seguidas. |
+| Acceso desde un sitio nuevo | Un usuario ha entrado desde un equipo o red que nunca habia usado. Puede ser normal (teletrabajo, portatil nuevo) o no. |
+| Cambios de contrasena repetidos | Se ha cambiado la contrasena de la misma cuenta varias veces en pocos minutos. |
+| Muchos accesos denegados | Se estan rechazando muchas peticiones, muy por encima de lo habitual. |
+
+**Que hacer cuando llega un aviso.** Casi todos tienen explicacion inocente: un
+companero que ha olvidado la contrasena, alguien trabajando desde casa, una
+exportacion grande. Lo importante es confirmarlo con la persona implicada. Si
+nadie reconoce la actividad, cambia la contrasena de esa cuenta y avisa al
+tecnico.
+
+Un mismo aviso no se repite durante una hora, para que un incidente largo no
+llene el buzon de correos identicos.
+
+### Que se guarda de cada accion
+
+La pantalla de Auditoria registra, para cada accion sobre datos sensibles:
+
+- Quien la hizo y cuando.
+- Que cambio exactamente (valor anterior y valor nuevo).
+- Desde que direccion de red y con que navegador.
+- Un identificador de sesion, que permite seguir todo lo que hizo una persona
+  desde que entro hasta que salio.
+- Si la accion entro por la aplicacion web o directamente por la API de
+  integracion.
+
+**Este registro no se puede modificar ni borrar**, ni siquiera desde la propia
+aplicacion. Cada linea va firmada, asi que si alguien intentara alterarla desde
+la base de datos, el sistema lo detecta. Hay una comprobacion automatica cada
+madrugada que avisa si encuentra algo.
+
+Se conserva **un ano** (antes eran 28 dias). Las lineas anteriores a esta version
+no llevan firma: aparecen como "sin firma", que no es un problema, solo significa
+que se crearon antes de que existiera el mecanismo.
+
+### Estado del sistema
+
+El tecnico dispone de una comprobacion de estado que verifica de verdad que la
+base de datos responde, que queda espacio en disco y que la aplicacion no va
+lenta. Si algo esta mal, llega un aviso por los mismos canales que los de
+seguridad.
+
+Si el disco baja del 15% libre aparece un aviso, y por debajo del 5% se considera
+critico: a partir de ahi los backups y los informes pueden empezar a fallar.
+

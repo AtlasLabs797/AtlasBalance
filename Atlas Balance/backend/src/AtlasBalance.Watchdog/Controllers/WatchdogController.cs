@@ -18,6 +18,7 @@ public sealed class WatchdogController : ControllerBase
     }
 
     [HttpPost("restaurar-backup")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(AtlasBalance.Watchdog.RateLimiting.WatchdogRateLimiting.SensitiveOperationsPolicy)]
     public async Task<IActionResult> RestaurarBackup([FromBody] RestaurarBackupRequest? request, CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.BackupPath) || request.OperationId is null || request.OperationId == Guid.Empty)
@@ -35,6 +36,7 @@ public sealed class WatchdogController : ControllerBase
     }
 
     [HttpPost("actualizar-app")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(AtlasBalance.Watchdog.RateLimiting.WatchdogRateLimiting.SensitiveOperationsPolicy)]
     public async Task<IActionResult> ActualizarApp([FromBody] ActualizarAppRequest? request, CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.SourcePath) || string.IsNullOrWhiteSpace(request.TargetPath))
@@ -48,14 +50,14 @@ public sealed class WatchdogController : ControllerBase
         // es exactamente el camino que puede instalar un ZIP manipulado.
         if (string.IsNullOrWhiteSpace(request.PackageZipPath))
         {
-            return BadRequest(new { error = "package_zip_path es obligatorio. La actualizacion debe llegar firmada y su hash verificado contra BackupCloudCopy o el release de GitHub." });
+            return BadRequest(new { error = "Solicitud de actualizacion invalida." });
         }
 
         if (!TryGetFullPath(request.SourcePath, out var sourcePath) ||
             !TryGetFullPath(request.TargetPath, out var targetPath) ||
             !TryGetFullPath(request.PackageZipPath, out var packageZipPath))
         {
-            return BadRequest(new { error = "source_path, target_path o package_zip_path no son validos" });
+            return BadRequest(new { error = "Solicitud de actualizacion invalida." });
         }
 
         if (!Directory.Exists(sourcePath))
@@ -70,7 +72,7 @@ public sealed class WatchdogController : ControllerBase
 
         if (!System.IO.File.Exists(packageZipPath))
         {
-            return BadRequest(new { error = $"package_zip_path no existe: '{packageZipPath}'" });
+            return BadRequest(new { error = "El paquete de actualizacion no esta disponible." });
         }
 
         var accepted = await _operationsService.StartUpdateAsync(sourcePath, targetPath, packageZipPath, cancellationToken);

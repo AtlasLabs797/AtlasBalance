@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using AtlasBalance.API;
 using AtlasBalance.API.Controllers;
@@ -26,15 +27,21 @@ public sealed class ConfiguracionControllerTests
     }
 
     [Fact]
-    public async Task Get_Should_Not_Return_SmtpPassword()
+    public async Task Get_Should_Not_Return_Secret_Values()
     {
+        // V-02.07: antes se comprobaba solo que Smtp.Password llegara vacio.
+        // Ahora los DTO de respuesta ni siquiera declaran los campos de
+        // secreto, asi que verificamos el JSON realmente serializado: cubre
+        // password SMTP y clave de ExchangeRate, y detecta cualquier campo
+        // nuevo que reintroduzca un valor sensible en la respuesta.
         await using var db = BuildDbContext();
         db.Configuraciones.AddRange(
             new Configuracion { Clave = "smtp_host", Valor = "smtp.local" },
             new Configuracion { Clave = "smtp_port", Valor = "587" },
             new Configuracion { Clave = "smtp_user", Valor = "mailer" },
             new Configuracion { Clave = "smtp_password", Valor = "super-secret" },
-            new Configuracion { Clave = "smtp_from", Valor = "noreply@test.local" });
+            new Configuracion { Clave = "smtp_from", Valor = "noreply@test.local" },
+            new Configuracion { Clave = "exchange_rate_api_key", Valor = "exchange-super-secret" });
         await db.SaveChangesAsync();
 
         var controller = BuildController(db);
@@ -43,7 +50,12 @@ public sealed class ConfiguracionControllerTests
 
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
         var payload = ok.Value.Should().BeOfType<ConfiguracionSistemaResponse>().Subject;
-        payload.Smtp.Password.Should().BeEmpty();
+
+        var json = JsonSerializer.Serialize(payload);
+        json.Should().NotContain("super-secret");
+        json.Should().NotContain("exchange-super-secret");
+
+        payload.Exchange.ApiKeyConfigurada.Should().BeTrue();
         payload.General.AppUpdateCheckUrl.Should().Be(ConfigurationDefaults.UpdateCheckUrl);
         payload.General.MfaRememberDeviceEnabled.Should().BeFalse();
         payload.General.MfaRememberDeviceDays.Should().Be(SecurityConfigurationDefaults.MfaRememberDeviceDays);
@@ -395,7 +407,7 @@ public sealed class ConfiguracionControllerTests
         var controller = new ConfiguracionController(
             db,
             new NoOpEmailService(),
-            new AuditService(db),
+            TestAuditService.Create(db),
             NullLogger<ConfiguracionController>.Instance,
             new PlainTextSecretProtector(),
             new SmtpTestRateLimit());
@@ -430,6 +442,16 @@ public sealed class ConfiguracionControllerTests
             => Task.CompletedTask;
 
         public Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        // V-02.07: canal de alertas de seguridad, no ejercitado en estas pruebas.
+        public Task SendSecurityAlertAsync(
+            IReadOnlyList<string> recipients,
+            string regla,
+            string severidad,
+            string resumen,
+            IReadOnlyList<string> detalles,
+            CancellationToken cancellationToken)
             => Task.CompletedTask;
 
         public Task SendPlazoFijoVencimientoAsync(

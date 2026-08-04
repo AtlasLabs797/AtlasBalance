@@ -1,7 +1,9 @@
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AtlasBalance.API.Services;
 
@@ -9,19 +11,31 @@ public interface IDashboardService
 {
     Task<DashboardPrincipalResponse> GetPrincipalAsync(Guid userId, string? divisaPrincipal, Guid? paisId, CancellationToken cancellationToken);
     Task<DashboardTitularResponse> GetTitularAsync(Guid userId, Guid titularId, string? divisaPrincipal, Guid? paisId, CancellationToken cancellationToken);
-    Task<DashboardSaldosDivisaResponse> GetSaldosDivisaAsync(Guid userId, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellationToken);
-    Task<DashboardEvolucionResponse> GetEvolucionAsync(Guid userId, string periodo, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellationToken);
+    Task<DashboardSaldosDivisaResponse> GetSaldosDivisaAsync(Guid userId, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellation);
+    Task<DashboardEvolucionResponse> GetEvolucionAsync(Guid userId, string periodo, string? divisaPrincipal, Guid? titularId, Guid? paisId, CancellationToken cancellation);
 }
 
 public sealed class DashboardService : IDashboardService
 {
-    private readonly AppDbContext _dbContext;
-    private readonly ITiposCambioService _tiposCambioService;
+    internal const string ScopeNamespace = "dashboard_scope";
+    internal const string ReferenceNamespace = "dashboard_reference";
+    internal const string MetricsNamespace = "dashboard_metrics";
 
-    public DashboardService(AppDbContext dbContext, ITiposCambioService tiposCambioService)
+    private readonly AppDbContext _dbContext;
+    private readonly ICacheService _cacheService;
+    private readonly ITiposCambioService _tiposCambioService;
+    private readonly CachingOptions _cachingOptions;
+
+    public DashboardService(
+        AppDbContext dbContext,
+        ICacheService cacheService,
+        ITiposCambioService tiposCambioService,
+        IOptions<CachingOptions> cachingOptions)
     {
         _dbContext = dbContext;
+        _cacheService = cacheService;
         _tiposCambioService = tiposCambioService;
+        _cachingOptions = cachingOptions.Value;
     }
 
     public async Task<DashboardPrincipalResponse> GetPrincipalAsync(Guid userId, string? divisaPrincipal, Guid? paisId, CancellationToken cancellationToken)
@@ -30,7 +44,7 @@ public sealed class DashboardService : IDashboardService
         var targetCurrency = await ResolveDivisaPrincipalAsync(divisaPrincipal, cancellationToken);
         var chartColors = await ResolveChartColorsAsync(cancellationToken);
         var cuentas = await GetScopedCuentasAsync(scope, null, paisId, cancellationToken);
-        var metrics = await BuildMetricsAsync(cuentas, targetCurrency, cancellationToken);
+        var metrics = await GetOrBuildMetricsAsync(userId, cuentas, paisId, targetCurrency, cancellationToken);
         var plazosFijos = await BuildPlazosFijosResumenAsync(cuentas, metrics, targetCurrency, cancellationToken);
 
         var titulares = cuentas
@@ -109,7 +123,7 @@ public sealed class DashboardService : IDashboardService
                 .FirstOrDefaultAsync(cancellationToken)
             ?? "Titular";
 
-        var metrics = await BuildMetricsAsync(cuentas, targetCurrency, cancellationToken);
+        var metrics = await GetOrBuildMetricsAsync(userId, cuentas, paisId, targetCurrency, cancellationToken);
 
         var saldosPorCuenta = BuildSaldosPorCuenta(cuentas, metrics);
         var saldosPorPais = BuildSaldosPorPais(cuentas, metrics);
@@ -170,7 +184,7 @@ public sealed class DashboardService : IDashboardService
 
         var targetCurrency = await ResolveDivisaPrincipalAsync(divisaPrincipal, cancellationToken);
         var cuentas = await GetScopedCuentasAsync(scope, titularId, paisId, cancellationToken);
-        var metrics = await BuildMetricsAsync(cuentas, targetCurrency, cancellationToken);
+        var metrics = await GetOrBuildMetricsAsync(userId, cuentas, paisId, targetCurrency, cancellationToken);
 
         var items = new List<DashboardSaldoDivisaResponse>();
 
@@ -457,6 +471,30 @@ public sealed class DashboardService : IDashboardService
             .ToList();
     }
 
+    private async Task<DashboardMetrics> GetOrBuildMetricsAsync(
+        Guid userId,
+        IReadOnlyList<CuentaScopeItem> cuentas,
+        Guid? paisId,
+        string targetCurrency,
+        CancellationToken cancellationToken)
+    {
+        if (cuentas.Count == 0)
+        {
+            return new DashboardMetrics();
+        }
+
+        var cuentaIds = string.Join(",", cuentas.Select(c => c.CuentaId.ToString("N").OrderBy(ch => ch).Aggregate("", (a, ch) => a + ch)));
+        var paisKey = paisId?.ToString("N") ?? "all";
+        var key = $"{userId:N}|{paisKey}|{targetCurrency}|{cuentaIds.GetHashCode():x}";
+
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(MetricsNamespace),
+            key,
+            ct => BuildMetricsAsync(cuentas, targetCurrency, ct),
+            _cachingOptions.DashboardMetricsTtl,
+            cancellationToken);
+    }
+
     private async Task<DashboardMetrics> BuildMetricsAsync(IReadOnlyList<CuentaScopeItem> cuentas, string targetCurrency, CancellationToken cancellationToken)
     {
         if (cuentas.Count == 0)
@@ -732,61 +770,88 @@ public sealed class DashboardService : IDashboardService
         var requested = NormalizeDivisa(requestedDivisa);
         if (!string.IsNullOrWhiteSpace(requested))
         {
-            var exists = await _dbContext.DivisasActivas
+            var requestedExists = await _dbContext.DivisasActivas
                 .AsNoTracking()
                 .AnyAsync(x => x.Codigo == requested && x.Activa, cancellationToken);
 
-            if (exists)
+            if (requestedExists)
             {
                 return requested;
             }
         }
 
-        var activeBase = await _dbContext.DivisasActivas
-            .AsNoTracking()
-            .Where(x => x.Activa && x.EsBase)
-            .OrderBy(x => x.Codigo)
-            .Select(x => x.Codigo)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (!string.IsNullOrWhiteSpace(activeBase))
-        {
-            return activeBase;
-        }
-
-        var configValue = await _dbContext.Configuraciones
-            .AsNoTracking()
-            .Where(x => x.Clave == "divisa_principal_default")
-            .Select(x => x.Valor)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var fallback = NormalizeDivisa(configValue) ?? "EUR";
-        var fallbackExists = await _dbContext.DivisasActivas
-            .AsNoTracking()
-            .AnyAsync(x => x.Codigo == fallback && x.Activa, cancellationToken);
-
-        return fallbackExists ? fallback : "EUR";
+        var reference = await LoadReferenceAsync(cancellationToken);
+        return reference.BaseDivisa;
     }
 
     private async Task<DashboardChartColorsResponse> ResolveChartColorsAsync(CancellationToken cancellationToken)
     {
-        var values = await _dbContext.Configuraciones
-            .AsNoTracking()
-            .Where(x =>
-                x.Clave == "dashboard_color_ingresos" ||
-                x.Clave == "dashboard_color_egresos" ||
-                x.Clave == "dashboard_color_saldo")
-            .ToDictionaryAsync(x => x.Clave, x => x.Valor, cancellationToken);
+        var reference = await LoadReferenceAsync(cancellationToken);
+        return reference.ChartColors;
+    }
 
-        return new DashboardChartColorsResponse
-        {
-            Ingresos = values.GetValueOrDefault("dashboard_color_ingresos", "#43B430"),
-            Egresos = values.GetValueOrDefault("dashboard_color_egresos", "#FF4757"),
-            Saldo = values.GetValueOrDefault("dashboard_color_saldo", "#7B7B7B")
-        };
+    private async Task<DashboardReference> LoadReferenceAsync(CancellationToken cancellationToken)
+    {
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(ReferenceNamespace),
+            "default",
+            async ct =>
+            {
+                var activeBase = await _dbContext.DivisasActivas
+                    .AsNoTracking()
+                    .Where(x => x.Activa && x.EsBase)
+                    .OrderBy(x => x.Codigo)
+                    .Select(x => x.Codigo)
+                    .FirstOrDefaultAsync(ct);
+
+                if (string.IsNullOrWhiteSpace(activeBase))
+                {
+                    var configValue = await _dbContext.Configuraciones
+                        .AsNoTracking()
+                        .Where(x => x.Clave == "divisa_principal_default")
+                        .Select(x => x.Valor)
+                        .FirstOrDefaultAsync(ct);
+
+                    var fallback = NormalizeDivisa(configValue) ?? "EUR";
+                    var fallbackExists = await _dbContext.DivisasActivas
+                        .AsNoTracking()
+                        .AnyAsync(x => x.Codigo == fallback && x.Activa, ct);
+
+                    activeBase = fallbackExists ? fallback : "EUR";
+                }
+
+                var colors = await _dbContext.Configuraciones
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.Clave == "dashboard_color_ingresos" ||
+                        x.Clave == "dashboard_color_egresos" ||
+                        x.Clave == "dashboard_color_saldo")
+                    .ToDictionaryAsync(x => x.Clave, x => x.Valor, ct);
+
+                return new DashboardReference(
+                    activeBase ?? "EUR",
+                    new DashboardChartColorsResponse
+                    {
+                        Ingresos = colors.GetValueOrDefault("dashboard_color_ingresos", "#43B430"),
+                        Egresos = colors.GetValueOrDefault("dashboard_color_egresos", "#FF4757"),
+                        Saldo = colors.GetValueOrDefault("dashboard_color_saldo", "#7B7B7B")
+                    });
+            },
+            _cachingOptions.DashboardReferenceTtl,
+            cancellationToken);
     }
 
     private async Task<DashboardScope> GetAuthorizedScopeAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        return await _cacheService.GetOrLoadAsync(
+            new CacheNamespace(ScopeNamespace),
+            userId.ToString("N"),
+            ct => LoadAuthorizedScopeAsync(userId, ct),
+            _cachingOptions.DashboardScopeTtl,
+            cancellationToken);
+    }
+
+    private async Task<DashboardScope> LoadAuthorizedScopeAsync(Guid userId, CancellationToken cancellationToken)
     {
         var usuario = await _dbContext.Usuarios
             .AsNoTracking()
@@ -1005,6 +1070,8 @@ public sealed class DashboardService : IDashboardService
         public static DashboardScope GlobalForAdmin() => new(true, []);
         public static DashboardScope GlobalForManager() => new(true, []);
     }
+
+    private sealed record DashboardReference(string BaseDivisa, DashboardChartColorsResponse ChartColors);
 
     private sealed class CuentaScopeItem
     {

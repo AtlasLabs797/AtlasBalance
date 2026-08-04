@@ -50,6 +50,13 @@ public class RefreshToken
     public DateTime? RevocadoEn { get; set; }
     public string? ReemplazadoPor { get; set; }
     public System.Net.IPAddress? IpAddress { get; set; }
+
+    // V-02.07: identificador de la sesion de login. Se genera en el login y se
+    // COPIA en cada rotacion del refresh token, asi que sigue siendo el mismo
+    // durante toda la sesion aunque el access token caduque cada hora. Viaja al
+    // JWT como claim `sid` y de ahi a AUDITORIAS.session_id.
+    public string? SessionId { get; set; }
+
     public Usuario? Usuario { get; set; }
 }
 
@@ -87,8 +94,11 @@ public class Titular : ISoftDelete
     public Guid Id { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public TipoTitular Tipo { get; set; }
+    // V-02-07: fuera de la superficie de API por minimizacion de datos. Sin uso funcional; pendiente decidir su borrado definitivo.
     public string? Identificacion { get; set; }
+    // V-02-07: fuera de la superficie de API por minimizacion de datos. Sin uso funcional; pendiente decidir su borrado definitivo.
     public string? ContactoEmail { get; set; }
+    // V-02-07: fuera de la superficie de API por minimizacion de datos. Sin uso funcional; pendiente decidir su borrado definitivo.
     public string? ContactoTelefono { get; set; }
     public string? Notas { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
@@ -321,6 +331,13 @@ public class AlertaDestinatario
 public class Auditoria
 {
     public Guid Id { get; set; }
+
+    // V-02.07: bigserial generado por Postgres. Es lo que permite detectar
+    // borrados en una tabla append-only: un hueco en la secuencia significa
+    // que alguien elimino filas. No se usa como PK para no romper las FKs ni
+    // el resto del codigo que ya indexa por Id.
+    public long Secuencia { get; set; }
+
     public Guid? UsuarioId { get; set; }
     public string TipoAccion { get; set; } = string.Empty;
     public string? EntidadTipo { get; set; }
@@ -331,6 +348,27 @@ public class Auditoria
     public string? ValorNuevo { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public System.Net.IPAddress? IpAddress { get; set; }
+
+    // V-02.07: el User-Agent ya llegaba a AuthService en el login y se
+    // descartaba. Se resume (ver AuditRequestContext) para no guardar la
+    // cadena entera, que es larga y no aporta nada de valor forense extra.
+    public string? UserAgent { get; set; }
+
+    // V-02.07: identificador de sesion de login, estable entre rotaciones del
+    // access token (ver RefreshToken.SessionId). Permite agrupar toda la
+    // actividad de una sesion sin exponer ningun token.
+    public string? SessionId { get; set; }
+
+    // V-02.07: UI | API | JOB | SISTEMA (ver AuditOrigenes). Distingue si la
+    // accion entro por el navegador (JWT en cookie + CSRF) o directamente por
+    // la API de integracion (bearer token).
+    public string Origen { get; set; } = AtlasBalance.API.Constants.AuditOrigenes.Desconocido;
+
+    // V-02.07: HMAC-SHA256 del contenido de la fila (ver AuditSigner). Detecta
+    // modificacion o insercion de filas por quien tenga acceso a la BD pero no
+    // a la clave de firma.
+    public string? Firma { get; set; }
+
     public string? DetallesJson { get; set; }
 }
 

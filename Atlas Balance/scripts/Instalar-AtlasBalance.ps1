@@ -25,11 +25,12 @@ param(
     [string]$AdminEmail = "admin@atlasbalance.local",
     [string]$AdminPassword = "",
     [switch]$SkipDatabaseSetup,
-    [switch]$InstallDependencies
+    [switch]$InstallDependencies,
+    [switch]$AllowInternet
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-02.06"
+$AppVersion = "V-02.07"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
@@ -110,13 +111,116 @@ function Test-IpValue {
     return [Net.IPAddress]::TryParse($Value, [ref]$address)
 }
 
-function Protect-SecretDirectory {
+function Protect-RestrictedDirectory {
     param([string]$Path)
 
     New-Item -ItemType Directory -Path $Path -Force | Out-Null
-    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" | Out-Null
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($sid in @("S-1-5-32-544", "S-1-5-18")) {
+        $identity = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", $inheritance, $propagation, "Allow")
+        $acl.AddAccessRule($rule)
+    }
+
+    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+}
+
+# V-02.07: carpeta del log de eventos de seguridad, con retencion propia y mas
+# larga que el log de aplicacion.
+#
+# Que consigue esta ACL y que NO consigue, sin adornos:
+#
+#   SI: quita el acceso a usuarios normales del servidor. Solo Administradores y
+#       SYSTEM pueden leer o tocar el historico de eventos de seguridad. Sin
+#       esto, el log hereda los permisos de %ProgramData%, donde BUILTIN\Usuarios
+#       tiene lectura, y cualquiera con sesion en la maquina puede leer quien
+#       entra, desde donde y a que hora.
+#
+#   NO: no protege frente a quien ejecute codigo como SYSTEM. El servicio de la
+#       API corre como LocalSystem (ver Install-OrReplaceService), asi que un RCE
+#       en la aplicacion da SYSTEM y con ello permiso para borrar este fichero,
+#       vaciar el Windows Event Log y leer el connection string. Poner aqui una
+#       ACL de solo-anexar contra SYSTEM seria teatro: SYSTEM puede reescribir su
+#       propia ACL.
+#
+# La defensa real contra ese escenario es sacar los logs de la maquina: reenvio
+# del Event Log a un colector, envio a un syslog, o el webhook de Slack para las
+# alertas. Esta documentado en DOCUMENTACION_TECNICA.md. La otra mitad del
+# problema (la tabla AUDITORIAS) si esta cubierta de verdad, porque el rol de la
+# aplicacion no es el propietario y tiene UPDATE/DELETE revocados.
+function Protect-SecurityLogDirectory {
+    param([string]$Path)
+
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+
+    & icacls.exe $Path /inheritance:r `
+        /grant:r "*S-1-5-32-544:(OI)(CI)F" `
+        "*S-1-5-18:(OI)(CI)F" | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "No se pudo restringir ACL en $Path. No se escribiran credenciales en claro."
+        Write-Warning "No se pudo restringir la ACL de $Path. El log de seguridad queda legible por usuarios del servidor."
+        return
+    }
+
+    Write-Host "  Log de seguridad en $Path (solo Administradores y SYSTEM)."
+}
+
+# V-02.07: origen del Windows Event Log para el espejo de eventos de seguridad.
+# Requiere admin y por eso se hace en la instalacion, no en runtime: el servicio
+# no deberia tener privilegios para registrar origenes.
+function Register-SecurityEventLogSource {
+    param([string]$SourceName = "AtlasBalance")
+
+    try {
+        if ([System.Diagnostics.EventLog]::SourceExists($SourceName)) {
+            Write-Host "  Origen de Event Log '$SourceName' ya registrado."
+            return
+        }
+
+        New-EventLog -LogName "Application" -Source $SourceName -ErrorAction Stop
+        Write-Host "  Origen de Event Log '$SourceName' registrado en el log Application."
+    } catch {
+        # No es fatal: sin el origen, el espejo se queda solo en fichero.
+        Write-Warning "No se pudo registrar el origen de Event Log '$SourceName': $($_.Exception.Message). El espejo de eventos de seguridad quedara solo en fichero."
+    }
+}
+
+# V-02-07: la BD, los backups locales y las exportaciones .xlsx guardan datos
+# personales sin cifrado a nivel de columna. La unica defensa frente a robo del
+# disco o de una copia del volumen es el cifrado en reposo del propio volumen.
+# Aqui NO se activa BitLocker: encenderlo es un cambio de seguridad del sistema
+# que debe decidir y ejecutar un administrador (y puede requerir TPM, reinicio y
+# custodia de la clave de recuperacion). Esto solo comprueba y avisa.
+function Test-VolumeEncryption {
+    param([string[]]$Paths)
+
+    $checked = @{}
+    foreach ($path in $Paths) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        $drive = try { (Split-Path -Qualifier $path) } catch { $null }
+        if ([string]::IsNullOrWhiteSpace($drive) -or $checked.ContainsKey($drive)) { continue }
+        $checked[$drive] = $true
+
+        $status = $null
+        try {
+            $status = Get-BitLockerVolume -MountPoint $drive -ErrorAction Stop
+        } catch {
+            Write-Warning "No se pudo comprobar el cifrado del volumen $drive ($($_.Exception.Message)). Verificalo a mano."
+            continue
+        }
+
+        if ($status.ProtectionStatus -eq 'On') {
+            Write-Host "  [OK] Volumen $drive cifrado con BitLocker." -ForegroundColor Green
+        } else {
+            Write-Warning @"
+Volumen $drive SIN cifrado en reposo (ProtectionStatus=$($status.ProtectionStatus)).
+Ahi viven datos personales: base de datos, backups locales y exportaciones.
+Sin cifrado de volumen, quien se lleve el disco o una copia del volumen los lee enteros.
+Activalo de forma consciente con: Enable-BitLocker -MountPoint $drive  (guarda la clave de recuperacion).
+"@
+        }
     }
 }
 
@@ -140,7 +244,7 @@ function Write-SecretFile {
     )
 
     $directory = Split-Path -Parent $Path
-    Protect-SecretDirectory -Path $directory
+    Protect-RestrictedDirectory -Path $directory
     Set-Content -LiteralPath $Path -Value $Lines -Encoding UTF8
     & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
     if ($LASTEXITCODE -ne 0) {
@@ -295,6 +399,68 @@ function Try-InstallPostgres {
     return $false
 }
 
+# V-02.07 (DB-EXPOSURE): el instalador EDB de winget no fija listen_addresses y
+# suele dejarlo en '*' (todas las interfaces), asi que el puerto de PostgreSQL
+# queda accesible desde la LAN sin regla de firewall que lo cubra. Como esta
+# instancia es local y la gestiona este instalador, la restringimos a
+# localhost. Idempotente: si ya esta en 'localhost' no reescribe ni reinicia.
+function Set-PostgresListenLocalhost {
+    param(
+        [string]$DataPath,
+        [string]$ServiceName
+    )
+
+    $confPath = Join-Path $DataPath "postgresql.conf"
+    if (-not (Test-Path -LiteralPath $confPath -PathType Leaf)) {
+        Write-Warning "No se encontro postgresql.conf en '$confPath'; no se pudo restringir listen_addresses a localhost. Revisalo a mano."
+        return
+    }
+
+    # Solo cuentan las lineas ACTIVAS. postgresql.conf se distribuye con
+    # "#listen_addresses = 'localhost'" comentado, y el instalador EDB anade
+    # aparte su propia linea activa. Si mirasemos tambien las comentadas,
+    # dariamos por bueno un fichero que en realidad esta escuchando en '*'.
+    $activePattern = "^\s*listen_addresses\s*="
+    $lines = @(Get-Content -LiteralPath $confPath)
+    $activeLines = @($lines | Where-Object { $_ -match $activePattern })
+    if ($activeLines.Count -gt 0 -and
+        -not ($activeLines | Where-Object { $_ -notmatch "listen_addresses\s*=\s*'localhost'" })) {
+        return
+    }
+
+    $newLine = "listen_addresses = 'localhost'"
+    $replaced = $false
+    $newLines = foreach ($line in $lines) {
+        if ($line -match $activePattern) {
+            # Solo se conserva la primera: si quedasen varias activas, la
+            # ultima ganaria y dejaria en vigor el valor que veniamos a quitar.
+            if (-not $replaced) {
+                $replaced = $true
+                $newLine
+            }
+        } else {
+            $line
+        }
+    }
+    if (-not $replaced) {
+        $newLines += $newLine
+    }
+    # UTF8 sin BOM a proposito: Set-Content -Encoding UTF8 en Windows
+    # PowerShell 5.1 escribe BOM, y un BOM al inicio de postgresql.conf rompe
+    # el parser de PostgreSQL y deja el servicio sin arrancar tras el reinicio.
+    [System.IO.File]::WriteAllLines($confPath, [string[]]$newLines, (New-Object System.Text.UTF8Encoding($false)))
+
+    Write-Host "PostgreSQL local: listen_addresses fijado a 'localhost' en $confPath." -ForegroundColor Green
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($service) {
+        Restart-Service -Name $ServiceName
+        $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(60))
+        Write-Host "Servicio $ServiceName reiniciado para aplicar listen_addresses." -ForegroundColor Green
+    } else {
+        Write-Warning "No se encontro el servicio '$ServiceName' para reiniciarlo; el cambio de listen_addresses no tomara efecto hasta el proximo reinicio de PostgreSQL."
+    }
+}
+
 function Invoke-Psql {
     param(
         [string]$PsqlExe,
@@ -358,11 +524,14 @@ function Ensure-Database {
     $roleIdentifier = Quote-PgIdentifier $DbUser
     $dbIdentifier = Quote-PgIdentifier $DbName
 
+    # V-02.07 (BACKUP-RLS): el owner necesita BYPASSRLS. Las tablas de negocio
+    # llevan FORCE ROW LEVEL SECURITY, y pg_dump exige que el rol que lo ejecuta
+    # pueda saltarse RLS o el backup falla con error (no sale vacio en silencio).
     $ownerRoleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$ownerRoleName';"
     if ($ownerRoleExists -eq "1") {
-        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;" | Out-Null
     } else {
-        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;" | Out-Null
     }
 
     $roleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$roleName';"
@@ -500,7 +669,8 @@ function Write-AppSettings {
         [string]$CertPassword,
         [string]$JwtSecret,
         [string]$WatchdogSecret,
-        [string]$RlsContextSecret
+        [string]$RlsContextSecret,
+        [string]$AuditSigningKey
     )
 
     $stateFile = Join-Path $InstallPath "watchdog-state.json"
@@ -509,11 +679,12 @@ function Write-AppSettings {
     $exportPath = Join-Path $InstallPath "exports"
     $apiTarget = Join-Path $InstallPath "api"
     $dataProtectionKeysPath = Join-Path $env:ProgramData "AtlasBalance\keys"
+    $securityLogPath = Join-Path $env:ProgramData "AtlasBalance\logs\security"
     # V-02-05 (CONFIG-002): anadir sslmode=require a la connection string cuando el
     # host NO es localhost. Para localhost (caso comun) el SSL es opcional.
     $sslMode = if ($DbHost -eq "localhost" -or $DbHost -eq "127.0.0.1") { "" } else { ";sslmode=require" }
-    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword$sslMode"
-    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword$sslMode"
+    $connection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword$sslMode;Application Name=AtlasBalance.API;Maximum Pool Size=20;Minimum Pool Size=0"
+    $migrationConnection = "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbOwnerUser;Password=$DbOwnerPassword$sslMode;Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum Pool Size=0"
     $forwardedKnownProxies = if ($UseReverseProxy) { @($ReverseProxyIp) } else { @() }
     $allowedHosts = if ($UseReverseProxy) {
         "$effectivePublicHost;$ServerName;localhost"
@@ -559,6 +730,25 @@ function Write-AppSettings {
             # nueva; la persistencia la gestiona Actualizar-AtlasBalance.ps1
             # para instalaciones existentes.
             RlsContextSecret = $RlsContextSecret
+            # V-02.07: clave con la que se firma cada fila de AUDITORIAS. Tiene
+            # que ser distinta de JwtSettings:Secret y de RlsContextSecret: si se
+            # comparten, comprometer una permite forjar auditoria con firma
+            # valida y el rastro deja de servir como prueba.
+            AuditSigningKey = $AuditSigningKey
+            MirrorToWindowsEventLog = $true
+            Alertas = [ordered]@{
+                Habilitado = $true
+                # Vacio = se avisa a todos los usuarios con rol ADMIN activos.
+                DestinatariosEmail = @()
+                # Opt-in. Es un secreto: quien tenga la URL puede publicar en el
+                # canal. Rellenar a mano tras la instalacion si se quiere Slack.
+                SlackWebhookUrl = ""
+            }
+        }
+        Auditoria = [ordered]@{
+            # V-02.07: sube de 28 a 365 dias. El suelo real (90) lo impone el
+            # trigger append-only de la base de datos.
+            RetentionDays = 365
         }
         ForwardedHeaders = [ordered]@{
             KnownProxies = $forwardedKnownProxies
@@ -603,6 +793,9 @@ function Write-AppSettings {
                     Hangfire = "Warning"
                 }
             }
+            # V-02.07: los eventos de seguridad ademas van a su propio fichero,
+            # con retencion mas larga y ACL propia (ver Protect-SecurityLogDirectory).
+            SecurityFilePath = Join-Path $securityLogPath "atlas-security-.log"
         }
         AllowedHosts = $allowedHosts
     }
@@ -640,7 +833,9 @@ function Write-AppSettings {
     Write-JsonFile -Value $watchdogConfig -Path $watchdogSettingsPath
     Protect-SecretFile -Path $apiSettingsPath
     Protect-SecretFile -Path $watchdogSettingsPath
-    Protect-SecretDirectory -Path $dataProtectionKeysPath
+    Protect-RestrictedDirectory -Path $dataProtectionKeysPath
+    Protect-SecurityLogDirectory -Path $securityLogPath
+    Register-SecurityEventLogSource
 }
 
 function Install-OrReplaceService {
@@ -891,6 +1086,9 @@ $jwtSecret = New-RandomSecret 64
 # genera aleatorio y se persiste en el appsettings efectivo durante la
 # generacion de configuracion mas abajo.
 $rlsContextSecret = New-RandomSecret 64
+# V-02.07: clave de firma de AUDITORIAS, independiente de JWT y de RLS por el
+# mismo motivo: comprometer una no puede permitir forjar el rastro de auditoria.
+$auditSigningKey = New-RandomSecret 64
 $watchdogSecret = New-RandomSecret 64
 $certPassword = New-RandomSecret 40
 
@@ -898,6 +1096,12 @@ New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
 foreach ($dir in @("api", "watchdog", "scripts", "backups", "exports", "logs", "certs", "updates", "config")) {
     New-Item -ItemType Directory -Path (Join-Path $InstallPath $dir) -Force | Out-Null
 }
+
+# Backups y exportaciones contienen datos financieros y PII en claro. No deben
+# heredar lectura para usuarios locales del servidor: la API corre como SYSTEM
+# y la operacion la realizan Administradores.
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "backups")
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "exports")
 
 if (-not $SkipDatabaseSetup) {
     if ($InstallDependencies -and [string]::IsNullOrWhiteSpace($PostgresAdminPassword)) {
@@ -937,6 +1141,20 @@ if (-not $SkipDatabaseSetup) {
     }
 }
 
+# V-02.07 (DB-EXPOSURE): solo tocamos la configuracion de PostgreSQL cuando la
+# instancia es local Y la gestiona este instalador (via winget). Si el
+# operador apunta a un Postgres externo/preexistente, o si SkipDatabaseSetup
+# esta activo, no tocamos nada ajeno: solo avisamos por consola.
+if ($SkipDatabaseSetup) {
+    Write-Host "SkipDatabaseSetup activo: no se modifica la configuracion de PostgreSQL de este equipo (listen_addresses)." -ForegroundColor Yellow
+} elseif ($DbHost -notin @("localhost", "127.0.0.1", "::1")) {
+    Write-Host "DbHost ('$DbHost') no es local: no se modifica la configuracion de PostgreSQL de este equipo." -ForegroundColor Yellow
+} elseif ($ManagedPostgres) {
+    Set-PostgresListenLocalhost -DataPath $PostgresDataPath -ServiceName $PostgresServiceName
+} else {
+    Write-Host "PostgreSQL local no gestionado por este instalador: no se modifica su postgresql.conf. Verifica listen_addresses manualmente." -ForegroundColor Yellow
+}
+
 $apiPath = Join-Path $InstallPath "api"
 $watchdogPath = Join-Path $InstallPath "watchdog"
 Sync-DirectoryPreserveConfig -Source $apiSource -Target $apiPath
@@ -949,7 +1167,7 @@ $certPath = ""
 $effectiveCertPassword = ""
 if (-not $UseReverseProxy) {
     $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
-    Protect-SecretDirectory -Path (Join-Path $InstallPath "certs")
+    Protect-RestrictedDirectory -Path (Join-Path $InstallPath "certs")
     Protect-SecretFile -Path $cert.Path
     $certPath = $cert.Path
     $effectiveCertPassword = $cert.Password
@@ -962,7 +1180,8 @@ Write-AppSettings `
     -CertPassword $effectiveCertPassword `
     -JwtSecret $jwtSecret `
     -WatchdogSecret $watchdogSecret `
-    -RlsContextSecret $rlsContextSecret
+    -RlsContextSecret $rlsContextSecret `
+    -AuditSigningKey $auditSigningKey
 
 $apiExe = Join-Path $apiPath "AtlasBalance.API.exe"
 $watchdogExe = Join-Path $watchdogPath "AtlasBalance.Watchdog.exe"
@@ -1021,6 +1240,15 @@ try {
     Write-Host "La instalacion termino, pero el health check automatico no confirmo la API: $($_.Exception.Message)" -ForegroundColor Yellow
     Write-Host "En Windows Server 2019 usa como prueba primaria: curl.exe -k -v $appUrl/api/health" -ForegroundColor Yellow
 }
+
+Write-Host ""
+Write-Host "Comprobando cifrado en reposo de los volumenes con datos personales..." -ForegroundColor Cyan
+Test-VolumeEncryption -Paths @(
+    $InstallPath,
+    (Join-Path $InstallPath "backups"),
+    (Join-Path $InstallPath "exports"),
+    $PostgresDataPath,
+    (Join-Path $env:ProgramData "AtlasBalance"))
 
 Write-Host ""
 Write-Host "Atlas Balance $AppVersion instalado." -ForegroundColor Green

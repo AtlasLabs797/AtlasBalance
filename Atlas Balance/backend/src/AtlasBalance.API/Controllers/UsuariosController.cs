@@ -16,6 +16,8 @@ namespace AtlasBalance.API.Controllers;
 [Route("api/usuarios")]
 public sealed class UsuariosController : ControllerBase
 {
+    private const int MaxPermisosPorUsuario = 500;
+
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
 
@@ -207,6 +209,11 @@ public sealed class UsuariosController : ControllerBase
     [HttpPut("{id:guid}/permisos")]
     public async Task<IActionResult> GuardarPermisos(Guid id, [FromBody] IReadOnlyList<SavePermisoUsuarioRequest> permisos, CancellationToken cancellationToken)
     {
+        if (permisos is null || permisos.Count > MaxPermisosPorUsuario)
+        {
+            return BadRequest(new { error = $"No se pueden guardar mas de {MaxPermisosPorUsuario} permisos por usuario" });
+        }
+
         var usuario = await _dbContext.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
         if (usuario is null)
         {

@@ -1,7 +1,8 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Fragment } from 'react';
-import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { AxiosError } from 'axios';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flag, Plus, Trash2 } from 'lucide-react';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -14,7 +15,10 @@ import { KpiCard } from '@/components/dashboard/KpiCard';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import EditableCell from '@/components/extractos/EditableCell';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
+import { QUERY_STALE_TIMES, QUERY_GC_TIMES } from '@/services/queryClient';
+import { queryKeys } from '@/queries/queryKeys';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
@@ -121,6 +125,7 @@ export default function CuentaDetailPage() {
   const getColumnasEditables = usePermisosStore((state) => state.getColumnasEditables);
   usePermisosStore((state) => state.permisos);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const invalidate = useInvalidateAfterMutation();
 
   const [summary, setSummary] = useState<CuentaResumenKpi | null>(null);
   const [rows, setRows] = useState<Extracto[]>([]);
@@ -177,62 +182,125 @@ export default function CuentaDetailPage() {
   const canSelectRows = canDeleteRows || canFlagRows;
 
   const loadCuentaDataRequestIdRef = useRef(0);
+  const queryClient = useQueryClient();
+  const usuarioId = usuario?.id ?? '';
+
+  const summaryQuery = useQuery({
+    queryKey: queryKeys.extractos.cuentaResumen({ usuarioId, cuentaId, periodo, paisId: selectedPaisId || null }),
+    queryFn: ({ signal }) =>
+      api.get<CuentaResumenKpi>(`/extractos/cuentas/${id}/resumen`, {
+        params: { periodo, paisId: selectedPaisId || undefined },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(allowedDashboard && id && usuarioId),
+    staleTime: QUERY_STALE_TIMES.CUENTA_RESUMEN_MS,
+  });
+
+  const rowsQuery = useQuery({
+    queryKey: queryKeys.extractos.list({
+      usuarioId,
+      cuentaId,
+      paisId: selectedPaisId || null,
+      page: rowsPage,
+      pageSize: rowsPageSize,
+      sortBy: 'fila_numero',
+      sortDir: 'desc',
+    }),
+    queryFn: ({ signal }) =>
+      api.get<PaginatedResponse<Extracto>>('/extractos', {
+        params: {
+          cuentaId: id,
+          paisId: selectedPaisId || undefined,
+          page: rowsPage,
+          pageSize: rowsPageSize,
+          sortBy: 'fila_numero',
+          sortDir: 'desc',
+        },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(allowedDashboard && id && usuarioId),
+    staleTime: QUERY_STALE_TIMES.EXTRACTOS_MS,
+    gcTime: QUERY_GC_TIMES.EXTRACTOS_MS,
+  });
+
+  useEffect(() => {
+    if (summaryQuery.error) {
+      if (summaryQuery.error instanceof AxiosError && summaryQuery.error.response?.status === 403) {
+        setForbidden(true);
+        setSummary(null);
+        setRows([]);
+        setRowsTotal(0);
+        setRowsTotalPages(1);
+      } else {
+        setError(extractErrorMessage(summaryQuery.error, 'No se pudo cargar la cuenta'));
+      }
+    } else {
+      setForbidden(false);
+    }
+  }, [summaryQuery.error]);
+
+  useEffect(() => {
+    if (rowsQuery.error) {
+      setError(extractErrorMessage(rowsQuery.error, 'No se pudo cargar la cuenta'));
+    }
+  }, [rowsQuery.error]);
+
+  useEffect(() => {
+    const summary = summaryQuery.data;
+    if (summary) {
+      setSummary(summary);
+    } else if (!summaryQuery.isLoading && !summaryQuery.error) {
+      setSummary(null);
+    }
+  }, [summaryQuery.data, summaryQuery.isLoading, summaryQuery.error]);
+
+  useEffect(() => {
+    const data = rowsQuery.data;
+    if (data) {
+      setRows(data.data ?? []);
+      setRowsTotal(data.total ?? data.data?.length ?? 0);
+      setRowsTotalPages(Math.max(1, data.total_pages ?? 1));
+    } else if (!rowsQuery.isLoading && !rowsQuery.error) {
+      setRows([]);
+      setRowsTotal(0);
+      setRowsTotalPages(1);
+    }
+  }, [rowsQuery.data, rowsQuery.isLoading, rowsQuery.error]);
+
+  useEffect(() => {
+    const loadingNow = summaryQuery.isLoading || rowsQuery.isLoading;
+    if (!loadingNow && !summaryQuery.isFetching && !rowsQuery.isFetching) {
+      setLoading(false);
+    } else if (loadingNow) {
+      setLoading(true);
+    }
+  }, [summaryQuery.isLoading, rowsQuery.isLoading, summaryQuery.isFetching, rowsQuery.isFetching]);
 
   const loadCuentaData = useCallback(async () => {
     if (!id || !allowedDashboard) {
       return;
     }
 
-    // Guarda anti-carrera: si el usuario cambia de pagina rapido, una respuesta
-    // que tarda mas puede llegar despues de una peticion posterior y pisar datos
-    // mas nuevos. Solo la peticion mas reciente puede aplicar su resultado.
-    const requestId = ++loadCuentaDataRequestIdRef.current;
-
-    setLoading(true);
+    loadCuentaDataRequestIdRef.current += 1;
     setError(null);
     setForbidden(false);
 
     try {
-      const [summaryRes, rowsRes] = await Promise.all([
-        api.get<CuentaResumenKpi>(`/extractos/cuentas/${id}/resumen`, { params: { periodo, paisId: selectedPaisId || undefined } }),
-        api.get<PaginatedResponse<Extracto>>('/extractos', {
-          params: { cuentaId: id, paisId: selectedPaisId || undefined, page: rowsPage, pageSize: rowsPageSize, sortBy: 'fila_numero', sortDir: 'desc' },
-        }),
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.extractos.cuentaResumen({ usuarioId, cuentaId, periodo, paisId: selectedPaisId || null }) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.extractos.list({ usuarioId, cuentaId, paisId: selectedPaisId || null, page: rowsPage, pageSize: rowsPageSize, sortBy: 'fila_numero', sortDir: 'desc' }) }),
       ]);
-
-      if (loadCuentaDataRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setSummary(summaryRes.data);
-      setRows(rowsRes.data.data ?? []);
-      setRowsTotal(rowsRes.data.total ?? rowsRes.data.data?.length ?? 0);
-      setRowsTotalPages(Math.max(1, rowsRes.data.total_pages ?? 1));
     } catch (err) {
-      if (loadCuentaDataRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (err instanceof AxiosError && err.response?.status === 403) {
-        setForbidden(true);
-        setSummary(null);
-        setRows([]);
-        setRowsTotal(0);
-        setRowsTotalPages(1);
-        return;
-      }
-
       setError(extractErrorMessage(err, 'No se pudo cargar la cuenta'));
-    } finally {
-      if (loadCuentaDataRequestIdRef.current === requestId) {
-        setLoading(false);
-      }
     }
-  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId]);
+  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId, queryClient, usuarioId, cuentaId]);
 
   useEffect(() => {
+    if (!allowedDashboard || !id) {
+      return;
+    }
     void loadCuentaData();
-  }, [loadCuentaData]);
+  }, [loadCuentaData, allowedDashboard, id]);
 
   useEffect(() => {
     setRowsPage(1);
@@ -400,6 +468,11 @@ export default function CuentaDetailPage() {
           return next;
         });
         setBulkDeleteOpen(false);
+        // El borrado soft toca el saldo derivado (no recalcula), pero
+        // cambia la lista y debe liberar el cache para que Dashboard,
+        // Alertas y Revision que estuvieran abiertas re-consulten al
+        // recuperar el foco.
+        await invalidate('extractoDelete');
       }
     } finally {
       setActionLoading(false);
@@ -494,6 +567,9 @@ export default function CuentaDetailPage() {
       setRowsTotal((current) => current + 1);
       setRowsTotalPages((current) => Math.max(current, Math.ceil((rowsTotal + 1) / rowsPageSize)));
       setInsertDraft(null);
+      // POST /extractos llama a EvaluateSaldoPostAsync: invalida
+      // extractos, dashboard, alertas, revision y conciliacion.
+      await invalidate('extractoCreate');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo insertar el movimiento.'));
     } finally {
@@ -525,6 +601,10 @@ export default function CuentaDetailPage() {
     try {
       await api.put(`/extractos/${row.id}`, payload);
       await loadCuentaData();
+      // PUT /extractos puede cambiar monto/saldo, lo que recalcula el
+      // dashboard y dispara EvaluateSaldoPostAsync. Invalida todas las
+      // familias afectadas.
+      await invalidate('extractoUpdate');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo modificar el movimiento.'));
       throw err;
@@ -559,6 +639,10 @@ export default function CuentaDetailPage() {
 
     try {
       await api.patch(`/extractos/${row.id}/check`, { checked });
+      // PATCH /check no cambia saldo, pero el campo `checked` se proyecta
+      // en /extractos; invalida para que otras vistas que filtren por
+      // ese campo re-consulten al recuperar foco.
+      await invalidate('extractoCheck');
     } catch (err) {
       setRows(previousRows);
       setError(extractErrorMessage(err, 'No se pudo marcar el movimiento como revisado.'));
@@ -611,6 +695,7 @@ export default function CuentaDetailPage() {
       setBulkActionStatus(
         `${flaggedIds.size} ${flaggedIds.size === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
       );
+      await invalidate('extractoFlag');
     } catch (err) {
       setError(
         extractErrorMessage(
@@ -639,6 +724,9 @@ export default function CuentaDetailPage() {
       });
       setSummary((current) => (current ? { ...current, notas: data.notas ?? null } : current));
       setNotesStatus('Notas guardadas');
+      // PATCH /cuentas/:id/notas actualiza `Cuenta.Notas` (entrada
+      // de DashboardCacheInvalidationInterceptor). Invalida cuentas.
+      await invalidate('cuentaNotas');
     } catch (err) {
       setNotesStatus(extractErrorMessage(err, 'No se pudieron guardar las notas'));
     } finally {

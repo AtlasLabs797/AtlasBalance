@@ -10,6 +10,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public sealed class CuentasControllerTests
@@ -91,7 +95,8 @@ public sealed class CuentasControllerTests
         var summary = ok.Value.Should().BeOfType<CuentaResumenResponse>().Subject;
         summary.CuentaId.Should().Be(cuentaId);
         summary.CuentaNombre.Should().Be("Cuenta Resumen");
-        summary.Iban.Should().Be("ES9121000418450200051332");
+        // V-02-07: el resumen enmascara el IBAN (respuesta agregada, no se usa para editar).
+        summary.Iban.Should().Be("********************1332");
         summary.BancoNombre.Should().Be("CaixaBank");
         summary.TitularId.Should().Be(titularId);
         summary.TitularNombre.Should().Be("Titular Resumen");
@@ -266,9 +271,148 @@ public sealed class CuentasControllerTests
         summary.PlazoFijo.CuentaReferenciaNombre.Should().BeNull();
     }
 
+    [Fact]
+    public async Task Obtener_Should_Return_Forbid_When_Cuenta_Is_Outside_User_Scope()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularPermitidoId = Guid.NewGuid();
+        var titularBloqueadoId = Guid.NewGuid();
+        var cuentaPermitidaId = Guid.NewGuid();
+        var cuentaBloqueadaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.idor.cuentas@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente IDOR Cuentas",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.AddRange(
+            new Titular { Id = titularPermitidoId, Nombre = "Titular Permitido", Tipo = TipoTitular.EMPRESA },
+            new Titular { Id = titularBloqueadoId, Nombre = "Titular Bloqueado", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.AddRange(
+            new Cuenta { Id = cuentaPermitidaId, TitularId = titularPermitidoId, Nombre = "Cuenta Permitida", Divisa = "EUR", Activa = true },
+            new Cuenta { Id = cuentaBloqueadaId, TitularId = titularBloqueadoId, Nombre = "Cuenta Bloqueada", Divisa = "EUR", Activa = true });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            TitularId = titularPermitidoId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var permitida = await controller.Obtener(cuentaPermitidaId, false, CancellationToken.None);
+        var bloqueada = await controller.Obtener(cuentaBloqueadaId, false, CancellationToken.None);
+
+        permitida.Should().BeOfType<OkObjectResult>();
+        bloqueada.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task Resumen_Should_Return_Forbid_When_Cuenta_Is_Outside_User_Scope()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularPermitidoId = Guid.NewGuid();
+        var titularBloqueadoId = Guid.NewGuid();
+        var cuentaBloqueadaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.idor.resumen@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente IDOR Resumen",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.AddRange(
+            new Titular { Id = titularPermitidoId, Nombre = "Titular Permitido", Tipo = TipoTitular.EMPRESA },
+            new Titular { Id = titularBloqueadoId, Nombre = "Titular Bloqueado", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaBloqueadaId,
+            TitularId = titularBloqueadoId,
+            Nombre = "Cuenta Bloqueada",
+            Divisa = "EUR",
+            Activa = true
+        });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            TitularId = titularPermitidoId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Resumen(cuentaBloqueadaId, "1m", CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task Obtener_Should_Return_Forbid_When_Titular_Is_SoftDeleted_For_NonAdmin()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "gerente.idor.softdeleted@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Gerente IDOR SoftDeleted",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular Eliminado",
+            Tipo = TipoTitular.EMPRESA,
+            DeletedAt = DateTime.UtcNow
+        });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Huérfana",
+            Divisa = "EUR",
+            Activa = true
+        });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            TitularId = titularId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var result = await controller.Obtener(cuentaId, false, CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
     private static CuentasController BuildController(AppDbContext db, Guid userId, RolUsuario role = RolUsuario.ADMIN)
     {
-        var controller = new CuentasController(db, new UserAccessService(db), new AuditService(db), new NoOpPlazoFijoService());
+        var controller = new CuentasController(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())), TestAuditService.Create(db), new NoOpPlazoFijoService());
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
@@ -336,6 +480,93 @@ public sealed class CuentasControllerTests
         var plazo = await db.PlazosFijos.SingleAsync(p => p.CuentaId == cuenta.Id);
         plazo.FechaVencimiento.Should().Be(new DateOnly(2026, 10, 25));
         plazo.Estado.Should().Be(EstadoPlazoFijo.ACTIVO);
+    }
+
+    // V-02.07: el IBAN solo pasaba por Trim(), asi que un numero con una errata se
+    // guardaba tal cual. Se valida unicamente en cuentas NORMAL, que son las
+    // unicas donde el campo llega a persistirse.
+    private static async Task<(AppDbContext Db, CuentasController Controller, Guid TitularId)> BuildCuentaFixtureAsync(string emailSufijo)
+    {
+        var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = $"admin.{emailSufijo}@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Iban",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = $"Titular {emailSufijo}", Tipo = TipoTitular.EMPRESA });
+        db.DivisasActivas.Add(new DivisaActiva { Codigo = "EUR", Activa = true, EsBase = true });
+        await db.SaveChangesAsync();
+
+        return (db, BuildController(db, userId), titularId);
+    }
+
+    [Fact]
+    public async Task Crear_Should_Reject_Iban_With_Bad_CheckDigits()
+    {
+        var (db, controller, titularId) = await BuildCuentaFixtureAsync("iban-malo");
+        await using var _ = db;
+
+        var result = await controller.Crear(new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Cuenta con errata",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.NORMAL,
+            Iban = "ES9921000418450200051332"
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        (await db.Cuentas.AnyAsync(c => c.Nombre == "Cuenta con errata")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Crear_Should_Accept_Valid_Iban_And_Persist_It_Verbatim()
+    {
+        var (db, controller, titularId) = await BuildCuentaFixtureAsync("iban-bueno");
+        await using var _ = db;
+
+        var result = await controller.Crear(new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Cuenta valida",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.NORMAL,
+            Iban = "ES91 2100 0418 4502 0005 1332"
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+
+        var cuenta = await db.Cuentas.SingleAsync(c => c.Nombre == "Cuenta valida");
+        // Se valida normalizado pero se persiste lo que escribio el usuario: el
+        // formato con espacios es el que se ensena en los extractos del banco.
+        cuenta.Iban.Should().Be("ES91 2100 0418 4502 0005 1332");
+    }
+
+    [Fact]
+    public async Task Crear_Should_Ignore_Invalid_Iban_For_NonNormal_Accounts()
+    {
+        var (db, controller, titularId) = await BuildCuentaFixtureAsync("iban-efectivo");
+        await using var _ = db;
+
+        var result = await controller.Crear(new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Caja sin iban",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.EFECTIVO,
+            Iban = "ES00"
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<CreatedAtActionResult>();
+        (await db.Cuentas.SingleAsync(c => c.Nombre == "Caja sin iban")).Iban.Should().BeNull();
     }
 
     [Fact]
@@ -471,6 +702,89 @@ public sealed class CuentasControllerTests
         page.Data.Single().Nombre.Should().Be("Cuenta ES");
         page.Data.Single().PaisId.Should().Be(paisAId);
         page.Data.Single().PaisNombre.Should().Be("Espana");
+    }
+
+    [Fact]
+    public async Task Listar_Should_Return_Masked_Iban_And_NumeroCuenta()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.listar.mask@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Listar Mask",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Mask", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Mask",
+            NumeroCuenta = "1234567890",
+            Iban = "ES9121000418450200051332",
+            Divisa = "EUR",
+            Activa = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId);
+
+        var result = await controller.Listar(cancellationToken: CancellationToken.None);
+
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<CuentaListItemResponse>>().Subject;
+        var item = page.Data.Single();
+        item.Iban.Should().Be("********************1332");
+        item.NumeroCuenta.Should().Be("******7890");
+    }
+
+    [Fact]
+    public async Task Obtener_Should_Return_Full_Iban_And_NumeroCuenta_For_Edit_Form()
+    {
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "admin.detalle.mask@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Admin Detalle Mask",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Detalle", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Detalle",
+            NumeroCuenta = "1234567890",
+            Iban = "ES9121000418450200051332",
+            Divisa = "EUR",
+            Activa = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId);
+
+        var result = await controller.Obtener(cuentaId, false, CancellationToken.None);
+
+        var item = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<CuentaListItemResponse>().Subject;
+        item.Iban.Should().Be("ES9121000418450200051332");
+        item.NumeroCuenta.Should().Be("1234567890");
     }
 
     private sealed class NoOpPlazoFijoService : IPlazoFijoService

@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router';
 import { SessionTimeoutWarning } from '@/components/auth/SessionTimeoutWarning';
 import { ToastViewport } from '@/components/common/ToastViewport';
 import { AlertBanner } from '@/components/layout/AlertBanner';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
+import { useAlertasActivasQuery } from '@/hooks/queries/useAlertasActivasQuery';
+import { useIaConfigQuery } from '@/hooks/queries/useIaConfigQuery';
+import { usePaisesQuery } from '@/hooks/queries/usePaisesQuery';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
-import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
-import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { useUiStore } from '@/stores/uiStore';
 
 export function Layout() {
@@ -21,16 +21,16 @@ export function Layout() {
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const addToast = useUiStore((state) => state.addToast);
   const usuarioId = useAuthStore((state) => state.usuario?.id ?? null);
-  const loadIaAvailability = useIaAvailabilityStore((state) => state.load);
-  const clearIaAvailability = useIaAvailabilityStore((state) => state.clear);
-  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
-  const loadPaises = usePaisScopeStore((state) => state.loadPaises);
-  const loadAlertasActivas = useAlertasStore((state) => state.loadAlertasActivas);
 
   const { isToastVisible, isWarningVisible, remainingSeconds, resetTimeout, performLogout } =
     useSessionTimeout();
   const toastShownRef = useRef(false);
   const hasBlockingOverlay = blockingOverlayCount > 0;
+
+  // Hidratar caches de shell con TanStack Query (alertas, IA, paises).
+  useAlertasActivasQuery();
+  useIaConfigQuery();
+  usePaisesQuery();
 
   useEffect(() => {
     if (!hasBlockingOverlay) {
@@ -76,30 +76,10 @@ export function Layout() {
 
   useEffect(() => {
     if (!usuarioId) {
-      clearIaAvailability();
       return undefined;
     }
-
-    void loadIaAvailability(true);
-    const timer = window.setInterval(() => void loadIaAvailability(true), 60000);
-    return () => window.clearInterval(timer);
-  }, [clearIaAvailability, loadIaAvailability, usuarioId]);
-
-  useEffect(() => {
-    if (!usuarioId) {
-      return;
-    }
-
-    void loadPaises();
-  }, [loadPaises, usuarioId]);
-
-  useEffect(() => {
-    if (!usuarioId) {
-      return;
-    }
-
-    void loadAlertasActivas(selectedPaisId || undefined);
-  }, [loadAlertasActivas, selectedPaisId, usuarioId]);
+    return undefined;
+  }, [usuarioId]);
 
   if (isEmbedded) {
     return (

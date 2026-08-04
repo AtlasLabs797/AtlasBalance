@@ -4,6 +4,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
@@ -30,6 +31,7 @@ export default function RevisionPage() {
   const [totalPages, setTotalPages] = useState(0);
   const canEditCuenta = usePermisosStore((state) => state.canEditCuenta);
   usePermisosStore((state) => state.permisos);
+  const invalidate = useInvalidateAfterMutation();
 
   const load = async () => {
     setLoading(true);
@@ -93,6 +95,7 @@ export default function RevisionPage() {
       if (estado !== 'TODAS' && estado !== next) {
         setComisiones((current) => current.filter((row) => row.extracto_id !== item.extracto_id));
       }
+      await invalidate('revision');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo guardar el estado de devolucion.'));
     } finally {
@@ -110,6 +113,7 @@ export default function RevisionPage() {
       if (estado !== 'TODAS' && estado !== next) {
         setSeguros((current) => current.filter((row) => row.extracto_id !== item.extracto_id));
       }
+      await invalidate('revision');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo guardar el estado del seguro.'));
     } finally {

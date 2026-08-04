@@ -13,6 +13,7 @@ public interface IBackupEncryptionService
 {
     Task<EncryptedBackupFile> EncryptAsync(string sourcePath, CancellationToken cancellationToken);
     Task DecryptAsync(string encryptedPath, string destinationPath, CancellationToken cancellationToken);
+    Task DecryptAsync(string encryptedPath, string destinationPath, long maxPlaintextBytes, CancellationToken cancellationToken);
 }
 
 public sealed record EncryptedBackupFile(string Path, long SizeBytes, string Sha256Hex);
@@ -28,6 +29,7 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
     private const int ChunkSize = 1024 * 1024;
     private const int TagSize = 16;
     private const int NonceSize = 12;
+    internal const long DefaultMaxPlaintextBytes = 10L * 1024 * 1024 * 1024;
 
     private readonly AppDbContext _dbContext;
     private readonly ISecretProtector _secretProtector;
@@ -89,60 +91,90 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
 
     public async Task DecryptAsync(string encryptedPath, string destinationPath, CancellationToken cancellationToken)
     {
+        await DecryptAsync(encryptedPath, destinationPath, DefaultMaxPlaintextBytes, cancellationToken);
+    }
+
+    public async Task DecryptAsync(string encryptedPath, string destinationPath, long maxPlaintextBytes, CancellationToken cancellationToken)
+    {
         if (!File.Exists(encryptedPath))
         {
             throw new FileNotFoundException("No existe el archivo cifrado de backup.", encryptedPath);
         }
 
+        if (maxPlaintextBytes < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxPlaintextBytes), "El limite de descifrado debe ser positivo.");
+        }
+
         var key = await ResolveKeyAsync(cancellationToken);
-        await using var source = new FileStream(encryptedPath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true);
-        await using var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize, useAsync: true);
-
-        var header = new byte[MagicV2.Length];
-        await ReadExactAsync(source, header, cancellationToken);
-
-        byte[] aad;
-        Func<byte[], ulong, byte[]> buildNonce;
-        if (header.AsSpan().SequenceEqual(MagicV2))
+        var completed = false;
+        try
         {
-            aad = MagicV2;
-            buildNonce = BuildChunkNonceV2;
-        }
-        else if (header.AsSpan().SequenceEqual(MagicV1))
-        {
-            aad = MagicV1;
-            buildNonce = BuildChunkNonceLegacyV1;
-        }
-        else
-        {
-            throw new InvalidOperationException("El backup cifrado no tiene un formato reconocido.");
-        }
+            await using var source = new FileStream(encryptedPath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true);
+            await using var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize, useAsync: true);
 
-        var baseNonce = new byte[NonceSize];
-        await ReadExactAsync(source, baseNonce, cancellationToken);
+            var header = new byte[MagicV2.Length];
+            await ReadExactAsync(source, header, cancellationToken);
 
-        var lengthBytes = new byte[4];
-        var tag = new byte[TagSize];
-        var plain = new byte[ChunkSize];
-        var cipher = new byte[ChunkSize];
-        ulong counter = 0;
-
-        while (source.Position < source.Length)
-        {
-            await ReadExactAsync(source, lengthBytes, cancellationToken);
-            var length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
-            if (length <= 0 || length > ChunkSize)
+            byte[] aad;
+            Func<byte[], ulong, byte[]> buildNonce;
+            if (header.AsSpan().SequenceEqual(MagicV2))
             {
-                throw new InvalidOperationException("El backup cifrado contiene un bloque invalido.");
+                aad = MagicV2;
+                buildNonce = BuildChunkNonceV2;
+            }
+            else if (header.AsSpan().SequenceEqual(MagicV1))
+            {
+                aad = MagicV1;
+                buildNonce = BuildChunkNonceLegacyV1;
+            }
+            else
+            {
+                throw new InvalidOperationException("El backup cifrado no tiene un formato reconocido.");
             }
 
-            await ReadExactAsync(source, tag, cancellationToken);
-            await ReadExactAsync(source, cipher.AsMemory(0, length), cancellationToken);
+            var baseNonce = new byte[NonceSize];
+            await ReadExactAsync(source, baseNonce, cancellationToken);
 
-            var nonce = buildNonce(baseNonce, counter++);
-            using var aes = new AesGcm(key, TagSize);
-            aes.Decrypt(nonce, cipher.AsSpan(0, length), tag, plain.AsSpan(0, length), aad);
-            await destination.WriteAsync(plain.AsMemory(0, length), cancellationToken);
+            var lengthBytes = new byte[4];
+            var tag = new byte[TagSize];
+            var plain = new byte[ChunkSize];
+            var cipher = new byte[ChunkSize];
+            ulong counter = 0;
+            long totalPlaintextBytes = 0;
+
+            while (source.Position < source.Length)
+            {
+                await ReadExactAsync(source, lengthBytes, cancellationToken);
+                var length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
+                if (length <= 0 || length > ChunkSize)
+                {
+                    throw new InvalidOperationException("El backup cifrado contiene un bloque invalido.");
+                }
+
+                if (length > maxPlaintextBytes - totalPlaintextBytes)
+                {
+                    throw new InvalidOperationException("El backup cifrado supera el limite de tamano permitido.");
+                }
+
+                await ReadExactAsync(source, tag, cancellationToken);
+                await ReadExactAsync(source, cipher.AsMemory(0, length), cancellationToken);
+
+                var nonce = buildNonce(baseNonce, counter++);
+                using var aes = new AesGcm(key, TagSize);
+                aes.Decrypt(nonce, cipher.AsSpan(0, length), tag, plain.AsSpan(0, length), aad);
+                await destination.WriteAsync(plain.AsMemory(0, length), cancellationToken);
+                totalPlaintextBytes += length;
+            }
+
+            completed = true;
+        }
+        finally
+        {
+            if (!completed && File.Exists(destinationPath))
+            {
+                File.Delete(destinationPath);
+            }
         }
     }
 

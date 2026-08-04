@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using AtlasBalance.API.Models;
+using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -78,13 +79,18 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<AuditSaveChangesInterceptor> _logger;
+    private readonly IAuditSigner _auditSigner;
     private readonly AsyncLocal<Guid?> _usuarioIdOverride;
     private readonly AsyncLocal<string?> _ipOverride;
 
-    public AuditSaveChangesInterceptor(IHttpContextAccessor httpContextAccessor, ILogger<AuditSaveChangesInterceptor> logger)
+    public AuditSaveChangesInterceptor(
+        IHttpContextAccessor httpContextAccessor,
+        ILogger<AuditSaveChangesInterceptor> logger,
+        IAuditSigner auditSigner)
     {
         _httpContextAccessor = httpContextAccessor;
         _logger = logger;
+        _auditSigner = auditSigner;
         _usuarioIdOverride = new AsyncLocal<Guid?>();
         _ipOverride = new AsyncLocal<string?>();
     }
@@ -149,7 +155,12 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         }
 
         string? ip = _ipOverride.Value ?? httpContext?.Connection.RemoteIpAddress?.ToString();
-        var timestamp = DateTime.UtcNow;
+        // V-02.07: mismo truncado a microsegundos que AuditService. Postgres
+        // guarda timestamptz con esa resolucion y la firma HMAC cubre el campo,
+        // asi que firmar los 100 ns de DateTime.UtcNow invalidaria la firma en
+        // cuanto la fila se releyese.
+        var timestamp = AuditSigner.TruncarAMicrosegundos(DateTime.UtcNow);
+        var contexto = AuditRequestContext.Resolver(httpContext);
 
         var entries = dbContext.ChangeTracker.Entries()
             .Where(e => EntidadesAuditables.Contains(e.Entity.GetType()))
@@ -165,7 +176,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         {
             try
             {
-                var auditoria = ConstruirAuditoria(entry, usuarioId, ip, timestamp);
+                var auditoria = ConstruirAuditoria(entry, usuarioId, ip, timestamp, contexto);
                 if (auditoria is null)
                 {
                     continue;
@@ -181,7 +192,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         }
     }
 
-    private Auditoria? ConstruirAuditoria(EntityEntry entry, Guid? usuarioId, string? ip, DateTime timestamp)
+    private Auditoria? ConstruirAuditoria(EntityEntry entry, Guid? usuarioId, string? ip, DateTime timestamp, AuditRequestInfo contexto)
     {
         var tipoAccion = entry.State switch
         {
@@ -214,7 +225,7 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
         var detallesJson = Truncar(JsonSerializer.Serialize(detalles));
 
-        return new Auditoria
+        var auditoria = new Auditoria
         {
             Id = Guid.NewGuid(),
             UsuarioId = usuarioId,
@@ -223,8 +234,14 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
             EntidadId = entidadId,
             Timestamp = timestamp,
             IpAddress = ParseIp(ip),
+            UserAgent = contexto.UserAgent,
+            SessionId = contexto.SessionId,
+            Origen = contexto.Origen,
             DetallesJson = detallesJson
         };
+
+        auditoria.Firma = _auditSigner.Firmar(auditoria);
+        return auditoria;
     }
 
     private static Guid? TryGetId(EntityEntry entry)

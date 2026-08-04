@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace AtlasBalance.API.DTOs;
@@ -39,14 +40,19 @@ public sealed class IaConfigResponse
 
 public sealed class UpdateIaConfigRequest
 {
+    [MaxLength(32)]
     public string Provider { get; set; } = "OPENROUTER";
+    [MaxLength(256)]
     public string Model { get; set; } = string.Empty;
     public bool Habilitada { get; set; }
     [JsonPropertyName("openrouter_api_key")]
+    [MaxLength(1024)]
     public string OpenRouterApiKey { get; set; } = string.Empty;
     [JsonPropertyName("openai_api_key")]
+    [MaxLength(1024)]
     public string OpenAiApiKey { get; set; } = string.Empty;
     [JsonPropertyName("minimax_api_key")]
+    [MaxLength(1024)]
     public string MiniMaxApiKey { get; set; } = string.Empty;
     public int RequestsPorMinuto { get; set; } = AiConfigurationDefaults.RequestsPerMinute;
     public int RequestsPorHora { get; set; } = AiConfigurationDefaults.RequestsPerHour;

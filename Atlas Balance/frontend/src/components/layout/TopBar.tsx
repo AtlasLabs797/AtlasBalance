@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Bot } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import { IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
 import { navigationItems } from '@/utils/navigation';
 import api from '@/services/api';

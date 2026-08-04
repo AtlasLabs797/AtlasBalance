@@ -1,5 +1,628 @@
 # Documentacion tecnica
 
+## 2026-08-04 - V-02.07 - Diagnostico durable de tests backend en CI
+
+El workflow de CI extrae ahora de `TestResults/*.log` solo los identificadores
+`namespace.clase.metodo` cuando `dotnet test` falla. Antes solo quedaba visible
+el contador global y el archivo con las trazas se perdia al destruirse el
+runner. No se publican rutas, mensajes, parametros ni valores de asercion. El
+wrapper Bash conserva y devuelve exactamente el exit code original, por lo que
+no suaviza el gate.
+
+El runner Ubuntu revelo ademas una incompatibilidad en la validacion de
+`backup_path` y `export_path`: se exigia siempre el patron `C:\\...` antes de
+llamar a `Path.GetFullPath`, aunque los tests multiplataforma crean directorios
+temporales `/tmp/...`. `BackupService` y `ExportacionService` conservan en
+Windows la exigencia de unidad local y, fuera de Windows, aceptan
+`Path.IsPathRooted`; el rechazo previo de traversal y UNC se mantiene en ambos
+casos. No se amplia la superficie de rutas admitidas por la aplicacion de
+produccion Windows.
+
+---
+
+## 2026-08-04 - V-02.07 - Cierre tecnico de seguridad pre-launch
+
+- **Entrada y consumo de recursos:** la importacion desde Google Drive valida
+  el identificador antes de crear el job y limita descarga y descifrado a
+  `AtlasBalance:Backup:MaxCloudImportBytes` (10 GiB por defecto). Se contrasta
+  metadata, `Content-Length` y bytes realmente copiados; cualquier fallo borra
+  el parcial. Los DTOs administrativos de IA/Drive, permisos y formatos de
+  importacion tienen ahora cotas explicitas.
+- **Watchdog:** limite global de 120 solicitudes/minuto por IP y 5/minuto para
+  restauracion/actualizacion, cuerpo maximo de 16 KiB y `429` con
+  `Retry-After`. El middleware corre antes del secreto compartido para que los
+  intentos invalidos consuman cuota. `/watchdog/health` usa una particion
+  independiente; compartirla con la IP global desactivaria accidentalmente el
+  limitador para esa IP. Los errores ya no devuelven rutas absolutas.
+- **Datos locales:** instalador y actualizador sustituyen la DACL de `backups`
+  y `exports` por una allowlist exacta de Administradores y SYSTEM, sin
+  conservar ACL heredadas o explicitas antiguas. Los dumps locales no se
+  cifran; BitLocker sigue siendo obligatorio para proteger el volumen en
+  reposo.
+- **Informe completo:** `AUDITORIA_SEGURIDAD_PRE_LAUNCH_2026-08-04.md` contiene
+  el pass/fail de los 13 controles, evidencia, correcciones y gates de salida.
+
+---
+
+## 2026-08-04 - V-02.07 - Auditoria de configuracion insegura: roles de BD, exposicion de PostgreSQL y secretos en logs
+
+- **Que:** auditoria de los defaults de produccion (modo debug, CORS,
+  exposicion de la BD, credenciales por defecto, verbosidad de errores,
+  artefactos de desarrollo y servicios de terceros) y las cuatro
+  correcciones que salieron de ella.
+- **Por que:** el checklist generico de "configuracion insegura" aplicado a
+  una app on-premise en LAN. La mayor parte ya estaba resuelta de ciclos
+  anteriores; lo que quedaba eran cuatro huecos concretos.
+- **Como:**
+  1. **Modelo de roles de BD (el cambio con impacto real).** El rol owner
+     pasa de `NOBYPASSRLS` a `BYPASSRLS`. Con `FORCE ROW LEVEL SECURITY`
+     activo en 23 tablas, el owner deja de estar exento y `pg_dump` aborta
+     con error, asi que los backups no podian funcionar. `app_user`
+     (runtime) sigue `NOBYPASSRLS` y su aislamiento por RLS no cambia. La
+     separacion queda: **owner = migraciones y dump, exento de RLS;
+     app_user = runtime, sujeto a RLS**. Detalle y descartes en
+     `LOG_ERRORES_INCIDENCIAS.md` (entrada del 2026-08-04).
+  2. **Exposicion de PostgreSQL.** El instalador fija ahora
+     `listen_addresses = 'localhost'` en el `postgresql.conf` de la
+     instancia que el mismo gestiona via winget, y reinicia el servicio solo
+     si hubo cambio. No toca la configuracion de un PostgreSQL externo o
+     preexistente: en ese caso solo avisa. Antes no se fijaba nada y el
+     instalador EDB suele dejarlo en `'*'`, sin regla de firewall que
+     cubriera el puerto de la BD (la unica regla existente es para el puerto
+     de la API, restringida a `LocalSubnet`).
+  3. **Secretos en logs.** Override de Serilog para
+     `System.Net.Http.HttpClient` a `Warning`. Los handlers de logging de
+     `IHttpClientFactory` registraban la URI completa a nivel `Information`,
+     y dos secretos viajan dentro de la URL (clave de ExchangeRate-API y
+     webhook de Slack).
+  4. **`-AllowInternet`.** Estaba usado en el bloque de firewall pero nunca
+     declarado en `param(...)`, asi que pasarlo hacia fallar la llamada.
+     Declarado como `[switch]`. El comportamiento por defecto
+     (`LocalSubnet`) no cambia.
+- **Sin cambios:** CORS (no existe en produccion; el frontend lo sirve el
+  mismo backend, mismo origen), verbosidad de errores (respuesta generica
+  siempre, incluso en Development), credenciales por defecto (falla cerrado
+  en `SeedData.cs`), datos demo (imposibles fuera de Development) y el
+  inventario de terceros, que salio limpio.
+- **Riesgo aceptado y documentado:** los `.dump` locales siguen sin cifrar;
+  solo se cifra la copia que sube a Google Drive. La defensa es la ACL del
+  directorio mas BitLocker, que el instalador comprueba y avisa pero no
+  fuerza.
+
+## 2026-08-04 - V-02.07 - Actualizacion del stack: React 19, xunit v3, ESLint 10
+
+- **Que:** cierre completo de la deuda de dependencias. Frontend a React
+  19.2.8, `react-router` 8.3.0, Recharts 3.10.1, Zustand 5.0.14 y ESLint
+  10.8.0 con flat config. Backend: JwtBearer y EF Core a 8.0.29, el resto de
+  paquetes al ultimo parche o menor de su linea, y los dos proyectos de test
+  a `xunit.v3` 3.2.2. Anadido `nuget.config` con `packageSourceMapping`.
+- **Por que:** `npm audit` daba 3 HIGH y el backend arrastraba 7 paquetes
+  marcados en desuso, uno de ellos con `CriticalBugs`. El resultado es
+  **0 vulnerabilidades en npm y 0 vulnerables / 0 en desuso en los 4
+  proyectos NuGet**.
+- **Como, y lo que no era evidente:**
+  - `Microsoft.IdentityModel.*` 7.1.2 (Legacy + CriticalBugs) entraba porque
+    JwtBearer 8.0.11 lo declara con rango abierto `[7.1.2, )` y NuGet
+    resuelve al minimo. El parche a 8.0.29 sube el minimo a 7.7.3, que no
+    esta deprecada. **No hizo falta ningun salto de mayor.**
+  - Al subir EF Core, `Relational` quedaba en dos versiones distintas:
+    8.0.29 en la API (via `EntityFrameworkCore.Design`) y 8.0.11 en los
+    tests, porque `Design` es `PrivateAssets=all` y no fluye a los
+    consumidores. Rompia con CS1705. Resuelto declarando `Relational`
+    explicito en la API.
+  - xunit v3 3.2.x corre sobre Microsoft Testing Platform, no sobre VSTest.
+    Hay que retirar `Microsoft.NET.Test.Sdk` y `xunit.runner.visualstudio` y
+    declarar `TestingPlatformDotnetTestSupport`; `dotnet test` sigue igual y
+    el CI no cambia.
+  - `react-router` 8 elimina el paquete `react-router-dom`. Son 22 ficheros
+    con el import cambiado y **cero cambios de logica**: los 11 simbolos que
+    usa la app conservan la firma en modo Declarativo.
+  - Recharts 3: los tooltips custom se tipan con `TooltipContentProps` y la
+    prop `content` exige funcion en vez de elemento. Ademas, en el chart de
+    dos ejes Y el `CartesianGrid` necesita `yAxisId` explicito para alinear
+    la rejilla de forma determinista.
+- **Lo que se dejo fuera a proposito:**
+  - **TypeScript sigue en 5.9.3.** `typescript-eslint` 8.66.0 declara el peer
+    `typescript >=4.8.4 <6.1.0` y no hay version estable que soporte TS 7.
+  - **`@types/node` va a 24, no al 26 que marca latest**, porque sus majors
+    siguen a los de Node y `.node-version` fija Node 24.
+  - **Las 105 reglas de React Compiler** que trae react-hooks 7 no se
+    activaron: son 96 puntos de refactor de la app, no un ajuste de
+    configuracion. Documentadas con sus conteos en `eslint.config.js`.
+  - **net10.0**: el SDK 10.0.302 ya esta instalado, pero la migracion no
+    entra en esta publicacion. Es un cambio de plataforma y no se mete en
+    una release ya validada.
+
+## 2026-07-29 - V-02.07 - Capa de rate limiting global
+
+- **Que:** `AddRateLimiter` de ASP.NET Core 8 configurado desde
+  `AtlasBalance.API/RateLimiting/`. Antes no existia rate limiting a
+  nivel de framework: solo cuatro contadores artesanales sueltos
+  (`SmtpTestRateLimit`, `TelemetriaController`, `IntegrationAuthMiddleware`
+  y los de `AuthService`), y 140 de 153 endpoints sin ningun limite.
+- **Por que un limitador global y no atributos por endpoint:** decorar
+  153 acciones una a una produce un diff enorme y, sobre todo, deja el
+  siguiente endpoint nuevo sin cubrir en cuanto alguien se olvide del
+  atributo. El `GlobalLimiter` clasifica por ruta y verbo, asi que la
+  cobertura es por defecto y solo hay que declarar las excepciones.
+- **Como clasifica** (`RateLimitingSetup.ResolvePartition`):
+
+  | Trafico | Clave de particion | Limite por defecto |
+  |---|---|---|
+  | Fuera de `/api` y `/api/health` | — | Exento |
+  | `/api/integration/openclaw/**` | — | Exento; ya limitado por token en `IntegrationAuthMiddleware` |
+  | `/api/auth/login`, `refresh-token`, `mfa/verify`, `cambiar-password` | IP | 10/min |
+  | Resto de rutas `/api` sin sesion | IP | 60/min |
+  | GET/HEAD/OPTIONS con sesion | `userId` | 300/min |
+  | POST/PUT/PATCH/DELETE con sesion | `userId` | 60/min |
+  | Politica `atlas-expensive` (se suma a la de escritura) | `userId` | 5/min |
+
+- **Por que lo autenticado particiona por `userId` y no por IP:** la IP
+  depende de la topologia de red. Si algun dia se pone un proxy delante y
+  no se configura `ForwardedHeaders:KnownProxies`, todo el trafico caeria
+  en un unico cubo por la IP del proxy y los usuarios se denegarian entre
+  si. Con `userId` eso no puede pasar. Solo lo anonimo particiona por IP,
+  porque antes de tener sesion no hay otra cosa.
+- **Donde se configura:** seccion `AtlasBalance:RateLimiting` de
+  `appsettings.json` y de los dos `.template`, mismo patron que
+  `AtlasBalance:Caching`. `Enabled: false` es el interruptor de
+  emergencia y viene desactivado en Development, porque
+  `React.StrictMode` duplica los efectos de montaje y generaria 429
+  espureos al desarrollar.
+- **Colocacion en el pipeline:** `app.UseRateLimiter()` va despues de
+  `app.UseAuthentication()` —las politicas por usuario necesitan los
+  claims resueltos— y despues de `UseStaticFiles`, para que los estaticos
+  de la SPA no consuman presupuesto de API.
+- **Respuesta al rechazar:** 429 con header `Retry-After` en segundos y
+  cuerpo JSON generico. El rechazo se loguea con `LogScrubber.Scrub`
+  sobre metodo, ruta e IP (CWE-117, mismo patron que el fix de CodeQL
+  #16). Ese log es la via de calibracion: si aparecen rechazos de
+  usuarios reales, los limites estan cortos y se suben con ese dato
+  delante. El frontend tiene rama propia para 429 en
+  `services/api.ts` y no reintenta.
+- **Limitaciones conocidas:** los contadores viven en memoria del
+  proceso, igual que el resto de caches de la app (single-node
+  on-premise). Si el despliegue se escala a varias instancias hay que
+  mover esto a un almacen compartido, misma deuda ya registrada para
+  `IMemoryCache`.
+
+## 2026-07-29 - V-02.07 - Cierre de los dos defectos pendientes de la auditoria de errores
+
+- **Que:** se corrigen los dos defectos que la auditoria de mensajes
+  de error dejo abiertos. Ninguno era fuga de datos; los dos eran
+  validacion que aparentaba existir y no existia.
+- **Por que:** ambos daban falsa sensacion de cobertura. Un lector del
+  codigo veia `AddFluentValidationAutoValidation()` y `[Required]` y
+  asumia validacion activa donde no habia ninguna.
+- **Como (FluentValidation):** retirados el `using`, la llamada de
+  registro en `Program.cs` y la `PackageReference` del `.csproj`.
+  Como `Directory.Build.props` fija
+  `RestorePackagesWithLockFile=true` y `Build-Release.ps1` restaura en
+  `--locked-mode`, quitar el paquete obliga a regenerar los
+  `packages.lock.json`: se hizo con `dotnet restore --force-evaluate`
+  en API, `AtlasBalance.API.Tests` y `AtlasBalance.Caching.Tests` (los
+  dos ultimos arrastraban FluentValidation transitivamente via
+  `ProjectReference`). El Watchdog no estaba afectado. Sin ese paso, la
+  release habria fallado en el primer `restore`.
+- **Como (`[Required]` sobre `Guid`):** las tres propiedades
+  `CuentaId` de `ImportacionValidarRequest`,
+  `ImportacionConfirmarRequest` e
+  `ImportacionPlazoFijoMovimientoRequest` pasan a `Guid?` conservando
+  `[Required]`. En `ImportacionService` las lecturas usan
+  `request.CuentaId ?? Guid.Empty` en lugar de `.Value`, para que un
+  camino interno que no pase por validacion de modelo degrade al 404
+  ya existente en vez de producir un 500.
+- **Efecto observable:** una peticion de importacion sin `cuenta_id`
+  pasa de devolver 404 "Cuenta no encontrada o inactiva" a devolver el
+  400 generico de datos invalidos, que es lo correcto. El frontend no
+  se ve afectado: nunca envia estas peticiones sin cuenta.
+- **Deuda relacionada no tocada:** `ImportacionLoteCrearRequest.CuentaId`
+  sigue siendo `Guid` sin `[Required]`. No prometia validacion, asi que
+  no entraba en el alcance de estos dos defectos.
+
+## 2026-07-29 - V-02.07 - Auditoria de mensajes de error sensibles y fugas de datos, con correcciones
+
+- Auditoria de mensajes de error y fugas de datos hacia el cliente:
+  respuestas HTTP de error, `console.*` del navegador, bundle de
+  produccion (sourcemaps y JS minificado) y el comportamiento por
+  defecto de ASP.NET Core (`ValidationProblemDetails`,
+  `WWW-Authenticate`). 10 hallazgos corregidos (1 ALTA, 3 MEDIA, 6
+  BAJA), 2 defectos preexistentes dejados como pendientes (no son
+  fugas de datos), y una decision de producto documentada sin cambio
+  de codigo.
+- **Fragmento de clave API filtrado al cliente
+  (`Services/AtlasAiService.cs`, severidad ALTA).** Un 401 real del
+  proveedor de IA (formato `{"error":{"message":"Incorrect API key
+  provided: sk-proj-abc123XYZ"}}`, placeholder inventado) atravesaba
+  `ExtractProviderErrorSummary` y `ShortProviderPayload` sin
+  redactarse: el regex de redaccion esperaba la credencial pegada a la
+  palabra clave, y con el texto real de OpenAI redactaba "provided:"
+  dejando la clave intacta. El fragmento llegaba al usuario final via
+  `IaController` (`[Authorize]` generico, no solo ADMIN) en el campo
+  `error` de un 502. Correccion: (a) eliminado el sufijo `{detail}` de
+  `BuildProviderHttpErrorMessage` y `BuildProviderResponseErrorMessage`
+  (el parametro `providerError` se conserva para
+  `IsOpenRouterDataPolicyError`/`IsOpenRouterModelRestrictionError`,
+  que lo siguen usando para clasificar); (b) `ShortProviderPayload`
+  redacta ahora tambien por forma de credencial (`sk-proj-`,
+  `sk-or-v1-`, `sk-`, `hf_`, `gsk_`, `xai-`, `AIza`); (c) se inyecto
+  `ILogger<AtlasAiService>` (no existia) para que el detalle quede en
+  Serilog ademas de en la auditoria de BD, que era el unico rastro
+  tras quitar el detalle del cliente. Riesgo residual aceptado: un
+  prefijo fuera de esa lista seguiria llegando a log/auditoria, ambos
+  de acceso exclusivo de administrador on-premise.
+- **Sourcemaps publicados en produccion (`vite.config.ts`,
+  `scripts/Build-Release.ps1`, severidad MEDIA).** `sourcemap:
+  'hidden'` solo omite el comentario `sourceMappingURL`, no impide
+  servir el `.map`; `Build-Release.ps1` copiaba `dist` completo a
+  `wwwroot` sin filtrar. Correccion: borrado explicito de `.map` del
+  `wwwroot` publicado tras la copia (no `Copy-Item -Exclude`, no
+  filtra de forma fiable en copias recursivas), con
+  `-ErrorAction Stop` y verificacion posterior que rompe la release si
+  queda alguno.
+- **Error boundary con `console.error` en produccion y `sendBeacon` a
+  ruta inexistente (`AppErrorBoundary.tsx`, severidad MEDIA).** El
+  detalle completo del error acababa en la consola del cliente y no
+  quedaba registro en servidor porque `/api/telemetria/errores` no
+  existia (verificado por grep en `backend/src`). Correccion:
+  eliminado el `console.error`; endpoint nuevo
+  `Controllers/TelemetriaController.cs` + `DTOs/TelemetriaDtos.cs`
+  (`POST /api/telemetria/errores`, `[AllowAnonymous]`, 20
+  reportes/IP/min via `IMemoryCache`, recorte de longitud, saneado
+  CR/LF, siempre 204). El DTO fija nombres con `[JsonPropertyName]`
+  porque el frontend envia camelCase y la politica global es
+  SnakeCaseLower; el payload viaja en `Blob` `application/json` porque
+  `sendBeacon` con string suelto manda `text/plain` y no bindea. Ruta
+  excluida de `CsrfMiddleware` (`sendBeacon` no puede mandar
+  `X-CSRF-Token`) y de `PrimerLoginMiddleware` (debe funcionar con
+  cambio de password pendiente).
+- **Sin error boundary raiz ni handlers globales (`main.tsx`,
+  `App.tsx`, severidad MEDIA).** El boundary solo envolvia cada ruta;
+  un fallo en layout/providers/`App` dejaba pantalla en blanco sin
+  captura. Correccion: `AppErrorBoundary` envuelve ahora todo el arbol
+  en `main.tsx` (fuera de `QueryClientProvider` y `BrowserRouter`);
+  listeners de `unhandledrejection` y `error` anadidos. Logica de
+  envio centralizada en el modulo nuevo `src/utils/reportClientError.ts`,
+  con tope de 10 reportes por carga de pagina, sin escribir nunca en
+  consola.
+- **`ValidationProblemDetails` por defecto (`Program.cs`, severidad
+  BAJA).** Sin `InvalidModelStateResponseFactory`, `[ApiController]`
+  devolvia `traceId`, URL `type` rfc7231, tipos .NET (`System.Guid`) y
+  PascalCase (`RawData`) en vez del contrato snake_case. Correccion:
+  `InvalidModelStateResponseFactory` devuelve 400 con mensaje generico
+  y loguea el ModelState real saneado por `LogScrubber.Scrub`.
+  Verificado antes de aplicarlo que `errorMessage.ts` no dependia del
+  formato anterior (lee `payload.errors` con degradacion limpia, no
+  usa `traceId`).
+- **`JwtBearer.IncludeErrorDetails` (`Program.cs`, severidad BAJA).**
+  El default `true` del framework exponia en `WWW-Authenticate` el
+  motivo exacto del rechazo y el timestamp exacto de expiracion.
+  Correccion: `options.IncludeErrorDetails =
+  builder.Environment.IsDevelopment();`.
+- **`UserStateMiddleware` distinguia el motivo del rechazo
+  (severidad BAJA).** Cuatro mensajes distintos ("Token de usuario
+  invalido", "La sesion ya no es valida", "Usuario bloqueado
+  temporalmente por intentos fallidos", "Se requiere MFA para
+  continuar") revelaban a quien posee un token robado por que dejo de
+  funcionar. Correccion: mensaje unico "La sesion ya no es valida.
+  Vuelve a iniciar sesion." y motivo real al log via
+  `ILogger<UserStateMiddleware>` inyectado (no existia), con path e IP
+  saneados por `LogScrubber.Scrub`. Verificado que el frontend no
+  ramifica por ninguno de los cuatro mensajes anteriores.
+- **Rate limit de integracion con cifra exacta
+  (`IntegrationAuthMiddleware`, severidad BAJA).** El mensaje
+  "RATE_LIMITED: Mas de 100 requests por minuto para este token"
+  revelaba el limite configurado. Correccion: mensaje sin cifra.
+- **Build de produccion sin eliminar `console.*` (`vite.config.ts`,
+  severidad BAJA).** Sin `esbuild.drop`/terser/`minify`. Un primer
+  intento con `esbuild: { drop: [...] }` no funciono: Vite 8 usa
+  rolldown/oxc por defecto y descarta esas opciones en silencio con el
+  aviso "Both esbuild and oxc options were set" (verificado
+  empiricamente: seguian 9 `console.error` en el bundle). Correccion:
+  `build.rollupOptions.output.minify = { compress: { dropConsole:
+  true, dropDebugger: true } }`, mecanismo nativo de oxc, solo bajo
+  `build.*` (no afecta a dev). Verificado en el bundle: 0
+  `console.error`, 0 `console.log`, 0 `debugger`.
+- **Sin limite explicito de tamano de request (`Program.cs`, severidad
+  BAJA).** Sin `MaxRequestBodySize`, Kestrel usaba su default de
+  30.000.000 bytes, y un cuerpo excesivo caia en el 500 generico del
+  handler global. Correccion: `MaxRequestBodySize` a 10 MiB (el unico
+  endpoint de payload grande es importacion, limitado a 5 MiB de
+  `RawData`) mas rama nueva en el handler global que devuelve el
+  `StatusCode` real de `BadHttpRequestException` sin `ex.Message`.
+- **Cambios en tests.** Los constructores de `AtlasAiService` y
+  `UserStateMiddleware` ganaron un parametro `ILogger`: 50 sitios
+  actualizados en `AtlasAiServiceTests.cs` y 5 en
+  `UserStateMiddlewareTests.cs` con `NullLogger<T>.Instance`. 4 tests
+  de `AtlasAiServiceTests.cs` que asertaban que el detalle del
+  proveedor SI aparecia en el mensaje (codificaban la fuga como
+  comportamiento esperado) se reescribieron para verificar la
+  propiedad correcta: mensaje al usuario sin texto del proveedor,
+  entrada de auditoria con el texto conservado.
+- **Auditado y correcto, sin cambios.** Los 23 controllers usan DTOs
+  con allowlist explicita (0 `return Ok(entidad)`); ningun hash de
+  password, token, secreto MFA, CSRF ni refresh token OAuth llega al
+  cliente. `ConfiguracionController` y `GoogleDriveBackupService` ya
+  redactaban secretos. Login con anti-enumeracion robusta (hash
+  senuelo). Kestrel con `AddServerHeader = false`. Los 4 middleware
+  devolvian literales fijos. Mensajes de Postgres nunca propagados. El
+  Watchdog usa 13 literales fijos y seguros. El `console.error` de
+  `api.ts` esta dentro de `import.meta.env.DEV`, saneado, y desaparece
+  por dead-code elimination.
+- **Decision de producto, no se toca.** `ExportacionesController`
+  resuelve el nombre completo de quien genero una exportacion, y
+  `ExtractosDtos` expone GUIDs de usuario en
+  `CheckedById`/`FlaggedById`/`UsuarioId` a usuarios no-admin dentro de
+  su propio scope. Se dejan como estan: 4-8 usuarios de la misma
+  empresa que ya comparten acceso a esas cuentas, funcionalidad
+  deseada.
+- **Defectos detectados y no corregidos (van a `REGISTRO_BUGS.md` como
+  pendientes).** `FluentValidation.AspNetCore` registrado con
+  `AddFluentValidationAutoValidation()` en `Program.cs` sin que exista
+  ningun `AbstractValidator<T>` en todo el backend (configuracion
+  muerta). `[Required]` sobre un `Guid` no-nullable en
+  `DTOs/ImportacionDtos.cs` que nunca falla porque el valor jamas es
+  null (validacion inefectiva).
+- **Verificacion:** build de `AtlasBalance.API` (0 errores, 6 warnings
+  preexistentes), `AtlasBalance.API.Tests` 427/427,
+  `AtlasBalance.Caching.Tests` 15/15, `npm run lint` limpio (0
+  warnings), `npm run test:unit` 22/22, `npm run build` compila con
+  bundle verificado sin `console.*` ni `debugger`. Pendiente sin
+  verificar: endpoints en caliente (sin backend/Postgres levantados),
+  ejecucion real de `Build-Release.ps1`, y el limite de 10 MiB de
+  `MaxRequestBodySize` contra un payload real.
+
+## 2026-07-28 - V-02.07 - Segunda tanda de la auditoria de autenticacion: blocklist, latencia, rehash BCrypt e IP de sesion
+
+- Segunda tanda sobre los 7 hallazgos BAJOS que quedo abiertos tras la
+  auditoria de autenticacion anterior (misma sesion). Cierra 4, cierra
+  1 mas como diagnostico erroneo, deja 2 abiertos por decision
+  deliberada y anade 1 hallazgo BAJO nuevo.
+- **Blocklist de contrasenas comunes
+  (`Constants/SecurityPolicy.cs`).** `TryValidatePassword` rechaza por
+  longitud minima (12 caracteres) antes de comparar contra
+  `CommonPasswords`, asi que de las 105 entradas originales solo 7
+  tenian 12+ caracteres y eran alcanzables; las otras 98 eran codigo
+  muerto. Se reescribio la lista con 154 entradas, todas de 12+
+  caracteres, sin duplicados (verificado programaticamente). El
+  `HashSet` sigue `private`; se anadio `internal static
+  IReadOnlySet<string> CommonPasswordsView` solo para tests, en vez de
+  hacer el `HashSet` `internal`, porque un campo mutable visible a
+  todo el ensamblado permitiria a codigo futuro vaciarlo con
+  `Clear()` y desactivar la blocklist en silencio. HIBP sigue sin
+  integrarse (anotado en el codigo como la solucion real de
+  produccion).
+- **Enumeracion de usuarios por latencia
+  (`Services/AuthService.cs`).** Si el email no existia o la cuenta
+  estaba bloqueada, `LoginAsync` no llegaba a ejecutar `BCrypt.Verify`
+  (~250 ms de diferencia medible respecto a "password incorrecta"),
+  aunque el mensaje de error fuera identico. Se anadio
+  `DummyPasswordHash` (hash BCrypt sobre bytes aleatorios generados al
+  arrancar, no es un secreto ni corresponde a ninguna contrasena
+  real) y se verifica contra el en las ramas de email inexistente y
+  cuenta bloqueada de `LoginAsync`. La misma omision existia en la
+  rama de cuenta bloqueada de `ChangePasswordAsync` (encontrada por
+  revision adversarial); tambien corregida.
+- **Rehash oportunista de BCrypt.** Tras un login correcto, si
+  `BCrypt.PasswordNeedsRehash(hash, PasswordWorkFactor)` es true, la
+  contrasena en claro ya validada se rehashea con el work factor
+  vigente (unico momento en que el servicio dispone de ella). Se
+  introdujo la constante `PasswordWorkFactor = 12` dentro de
+  `AuthService`, reusada tambien en `ChangePasswordAsync` (que antes
+  tenia el 12 como literal suelto), para que ambos valores no puedan
+  divergir.
+- **Cambio de IP en la sesion (`RefreshTokenAsync`).** Compara la IP
+  guardada en el refresh token con la IP actual y, si difieren,
+  audita el evento nuevo `SESSION_IP_CHANGED`
+  (`Constants/AuditActions.cs`). Decision explicita: **no se invalida
+  la sesion.** Anclar por IP expulsaria a usuarios legitimos con
+  VPN/DHCP/salto de red; anclar por User-Agent romperia con cada
+  auto-actualizacion del navegador. El rastro de auditoria es lo que
+  aporta valor sin romper el uso legitimo. Se anadio
+  `NormalizeIpForComparison` porque una misma maquina puede llegar
+  como `10.0.0.1` (X-Forwarded-For) o `::ffff:10.0.0.1` (socket
+  dual-mode), y `IPAddress.Equals` los trata como distintos; sin
+  normalizar se generarian alertas falsas y una auditoria con ruido no
+  sirve para investigar. Solo se compara IP: anclar tambien
+  User-Agent exigiria columna nueva en `REFRESH_TOKENS` y su
+  migracion, fuera de este alcance.
+- **Cookie `csrf_token` con `MaxAge` de 7 dias: cerrado como
+  diagnostico erroneo, no como bug.** El fallo de CSRF devuelve 403,
+  y el interceptor de `frontend/src/services/api.ts` solo
+  auto-recupera en 401, 419 y 440. Acortar la cookie CSRF a 1h
+  rompería con 403 sin recuperacion automatica a cualquier usuario
+  inactivo mas de 1h con el refresh token todavia vivo. Los 7 dias
+  actuales coinciden con la vida del refresh token, que es la vida
+  real de la sesion; el comportamiento actual es correcto.
+- **Hallazgo nuevo (BAJO) - asimetria de escrituras a BD en el
+  login.** Encontrado por revision adversarial: tras igualar el coste
+  de BCrypt, la rama de password incorrecta sigue haciendo un
+  `SaveChangesAsync` extra (contador de intentos) que las ramas de
+  email inexistente y cuenta bloqueada no hacen. Diferencia del orden
+  de milisegundos o menos, sepultada por el jitter de red normal; no
+  se persigue.
+- Quedan abiertos por decision deliberada (no deuda olvidada): rate
+  limiting en `IMemoryCache` de proceso, no distribuido (instancia
+  unica on-premise) y ausencia de tests de auth en frontend (el
+  runner actual `tsc + node --test` no tiene jsdom/testing-library).
+- Tests nuevos: 6 en `AuthServiceTests.cs`
+  (`Login_Should_Cost_The_Same_Whether_Or_Not_The_Email_Exists`,
+  `Login_Should_Rehash_A_Password_Stored_With_An_Older_Work_Factor`,
+  `RefreshToken_Should_Audit_An_Ip_Change_Without_Closing_The_Session`,
+  `RefreshToken_Should_Not_Audit_When_Only_The_Ipv4_Mapping_Differs`,
+  `RefreshToken_Should_Not_Audit_When_The_Ip_Is_Unchanged`,
+  `ChangePassword_Should_Cost_The_Same_When_The_Account_Is_Locked`) y
+  6 en `SecurityPolicyTests.cs` (archivo nuevo). Los tests de latencia
+  comparan una rama contra la otra (margen del 50%) en vez de un
+  umbral absoluto, con calentamiento previo; ejecutados 3 veces
+  seguidas sin fallos.
+- Verificacion: `AtlasBalance.API.Tests` 427/427 PASS,
+  `AtlasBalance.Caching.Tests` 15/15 PASS. Total 442/442.
+
+## 2026-07-28 - V-02.07 - Auditoria de autenticacion y sesion: logout invalida el access token, cambiar-password con limite de intentos
+
+- Auditoria de `AtlasBalance.API/Services/AuthService.cs` centrada en
+  logout y cambio de password. Dos correcciones de severidad MEDIA.
+- **`LogoutAsync`.** Antes solo marcaba `RevocadoEn` en el refresh
+  token presentado; el `SecurityStamp` del usuario no cambiaba, y
+  como `UserStateMiddleware` valida el claim `security_stamp` del JWT
+  contra BD en cada request, un access token capturado antes del
+  logout seguia siendo aceptado hasta 60 minutos (el borrado de
+  cookies solo pasaba en el navegador). Ahora `LogoutAsync`:
+  1. exige que el refresh token presentado este vivo (no revocado, no
+     caducado) antes de actuar;
+  2. captura el `SecurityStamp` vigente como `previousStamp` y rota
+     el `SecurityStamp` via `UserSessionState.RotateSecurityStamp`;
+  3. revoca todos los refresh tokens activos del usuario;
+  4. re-ancla al stamp nuevo solo los `MfaTrustedDevices` que cumplen
+     las cuatro condiciones: `RevokedAt == null`, no caducados, del
+     mismo usuario y `SecurityStamp == previousStamp`.
+
+  El punto 4 es necesario porque los dispositivos MFA recordados
+  estan anclados al `SecurityStamp`; sin re-anclarlos, rotar el stamp
+  en cada logout habria regresionado el comportamiento fijado en
+  V-01.09 ("logout conserva la cookie `mfa_trusted`"). El filtro por
+  `previousStamp` es el que evita que ese mismo re-anclaje deshaga
+  otras invalidaciones: un cambio de contrasena, un reset por admin,
+  una revocacion administrativa o una deteccion de reuso de refresh
+  token rotan el `SecurityStamp` sin tocar `MFA_TRUSTED_DEVICES`,
+  dejando esos dispositivos invalidados de forma implicita
+  (`RevokedAt == null` pero con el stamp viejo). Sin el filtro, un
+  logout rutinario posterior los readoptaria como confiables otra
+  vez, anulando esa invalidacion. Efecto funcional: cerrar sesion
+  cierra ahora TODAS las sesiones del usuario en todos los
+  dispositivos.
+- **`ChangePasswordAsync`.** La verificacion de `passwordActual` con
+  BCrypt no pasaba por el circuito de `FailedLoginAttempts`/
+  `LockedUntil`/auditoria que ya tenia el login, permitiendo fuerza
+  bruta sobre la contrasena actual con una sesion robada. Ahora
+  reutiliza `MaxFailedLoginAttempts` (5) y `LockDuration` (30 min):
+  comprueba `LockedUntil` antes de verificar (423 Locked si ya esta
+  bloqueada), incrementa el contador al fallar, bloquea al quinto
+  fallo, audita `LOGIN_FAILED` (motivo `password_actual_incorrecta`)
+  y `ACCOUNT_LOCKED`, y resetea contador/bloqueo al acertar.
+- Tests nuevos en `AuthServiceTests.cs`:
+  `Logout_Should_Rotate_Security_Stamp_And_Revoke_Every_Active_Session`,
+  `Logout_Should_Keep_Trusted_Mfa_Devices_Anchored_To_The_New_Stamp`,
+  `Logout_Should_Ignore_An_Already_Revoked_Refresh_Token`,
+  `ChangePassword_Should_Lock_Account_After_Repeated_Bad_Current_Password`,
+  `ChangePassword_Should_Reject_While_Account_Is_Locked`.
+- De paso se repararon dos bloqueos incidentales que impedian
+  verificar por tests (ninguno relacionado con la auditoria en si):
+  el constructor de `IntegrationTokenService` en
+  `IntegracionesControllerTests.cs` no se habia actualizado tras el
+  commit `f05b0dd` (le anadio `ICacheService` +
+  `IOptions<CachingOptions>`), y dos literales esperados en
+  `AuthServiceTests.cs` (lineas 94 y 126) tenian el caracter de
+  reemplazo U+FFFD en vez de la tilde de "invalidas", corrupcion
+  preexistente confirmada con `git show HEAD`.
+- Verificacion: `AtlasBalance.API.Tests` 415/415 PASS,
+  `AtlasBalance.Caching.Tests` 15/15 PASS. Total 430/430.
+- Hallazgos NO corregidos en este alcance (documentados en
+  `REGISTRO_BUGS.md` como pendientes abiertos, severidad BAJA): lista
+  de contrasenas comunes 93% inefectiva por el gate de longitud
+  minima, enumeracion de usuarios por latencia en login (falta hash
+  dummy), sin `PasswordNeedsRehash` para BCrypt, rate limiting en
+  `IMemoryCache` de proceso (no compartido si se escala), sesiones
+  sin anclaje a IP/User-Agent, `MaxAge` de `csrf_token` inconsistente
+  con el access token, sin tests de frontend para auth.
+
+## 2026-07-27 - V-02.07 - Capa de cache para lecturas repetidas
+
+- La API corre en una sola instancia Windows on-premise y solo tiene
+  `IMemoryCache` (registrado en `Program.cs:136`). Esto encaja con la
+  arquitectura single-node documentada en `SPEC.md` y la auditoria
+  pre-internet (`SEGURIDAD_AUDITORIA_V-01.03.md:85` ya preveia que,
+  si algun dia se escala, esta capa habra que moverla a Redis).
+- `AtlasBalance.API/Caching/CacheService.cs` envuelve `IMemoryCache`
+  con `GetOrLoadAsync<T>(namespace, key, loader, ttl, ct)`. Aplica
+  single-flight con un `SemaphoreSlim` por `namespace+key` (asi N
+  peticiones concurrentes con cache miss hacen UNA sola consulta) y
+  mantiene una generacion por namespace (cada escritura bumpea el
+  contador y todas las claves cacheadas quedan invalidadas sin
+  enumerar `IMemoryCache`).
+- `AtlasBalance.API/Caching/DashboardCacheInvalidator.cs` expone la
+  fachada de invalidacion: `InvalidateDashboardScope`,
+  `InvalidateDashboardReference`, `InvalidateDashboardMetrics`.
+- `AtlasBalance.API/Data/DashboardCacheInvalidationInterceptor.cs` es
+  un `SaveChangesInterceptor` registrado tras
+  `AuditSaveChangesInterceptor` que invalida los caches del dashboard
+  tras un `SaveChanges` exitoso si las entidades tocadas pertenecen
+  a los grupos configurados (extractos, cuentas, plazos fijos,
+  permisos, usuarios, configuracion relevante). Asi cualquier ruta
+  (controllers, jobs Hangfire, seeds) queda cubierta sin acoplar la
+  fachada en cada consumer.
+- Consumidores actuales:
+  - `TiposCambioService` usa `ICacheService` para el catalogo de
+    tasas (TTL 5 min). Cierra la race benigna CONC-027 que
+    documentaba `AUDITORIA_CONCURRENCIA_2026-07-10.md:302`.
+  - `DashboardService` cachea el `Scope` por `userId` (TTL 30 s), la
+    referencia `divisa_base + colores` (TTL 5 min) y las `Metrics`
+    (TTL 15 s, clave `userId|paisId|divisa|hashCuentas`). Esto
+    reduce las tres llamadas paralelas del frontend en
+    `DashboardPage.tsx:161` (y equivalentes en `CuentasPage.tsx:313`
+    y `TitularesPage.tsx:195`) a una sola familia de lecturas por
+    TTL.
+  - `ConfiguracionRepository` cachea el mapa completo de
+    `CONFIGURACIONES` (TTL 120 s). Cierra MED-18: los 6+ round-trips
+    por escritura de extracto (`AlertaService.cs:344-365`) y los
+    servicios que releen SMTP/IA/backup pasan a 1 consulta por TTL.
+    La fila cruda entra al cache; `_secretProtector.UnprotectFromStorage`
+    se aplica bajo demanda en el caller (nunca se cachea plaintext).
+  - `UserAccessService.GetScopeAsync` cachea el `UserAccessScope`
+    por `userId` (TTL 45 s) con bypass explicito para admin. Cierra
+    CONC-028: la query `Cuentas.Any(... PermisosUsuario.Any(...))`
+    ya no corre en cada request autenticado.
+  - `IntegrationTokenService.ValidateActiveTokenAsync` cachea el
+    token activo por `TokenHash` (TTL 20 s). OpenClaw llega a
+    100 req/min del mismo token sin golpear BD. `RevokeAsync`
+    invalida el namespace completo tras `SaveChanges` (ventana
+    maxima 20 s).
+  - `AuthService.GetCurrentAsync` cachea el `AuthResult` de
+    `GET /api/auth/me` con TTL 60 s y clave compuesta
+    `(userId:N)|{securityStamp}`. La rotacion de stamp invalida la
+    entrada por la propia clave; el interceptor anade una capa
+    defensiva ante cambios en `USUARIOS`/`PERMISOS_USUARIO`/
+    `PREFERENCIAS_USUARIO_CUENTA`.
+- `IMemoryCache` queda por proceso. El helper expone
+  `GetMetricsSnapshot(string)` con hits, misses, loads, single-flight
+  waits, invalidations y load failures agregados por namespace, sin
+  contener claves ni IDs (cero leakage a logs).
+- Tests: `tests/AtlasBalance.Caching.Tests/` (15/15 PASS). Cubre
+  single-flight concurrente, generacion por namespace, aislamiento
+  entre namespaces, race invalidar durante carga, propagacion de
+  cancelacion, invalidacion del catalogo de tasas tras escritura
+  manual, bump de generaciones al invalidar, consistencia del cache
+  de scope tras cambio conceptual de permisos, hit/miss + invalidacion
+  de `ConfiguracionRepository` y `IntegrationTokenService`, bypass
+  admin sin tocar cache en `UserAccessService`.
+- TTLs: configurables via `appsettings.json` ->
+  `AtlasBalance:Caching` (ver `CachingOptions.cs`). En Development
+  se usan valores bajos (5-30 s) para iterar rapido; en Production
+  los valores por defecto se mantienen (15-300 s segun volatilidad).
+
+## 2026-07-27 - V-02.07 - Fuente unica del logo SVG
+
+- El SVG del logo de Atlas Balance vive en
+  `Documentacion/Diseno/brand/atlas-balance-logo.svg` como fuente unica
+  de verdad. Antes vivia en
+  `Atlas Balance/frontend/public/logos/Atlas Balance.svg`, donde se
+  servia como peticion HTTP separada por el favicon y la mascara CSS
+  del sidebar / login.
+- Desde V-02.07 el SVG va inlineado:
+  - Favicon en `frontend/index.html` (data URL, conserva la media
+    query de tema oscuro).
+  - Mascara CSS en `frontend/src/styles/variables.css` (variable
+    `--logo-mask` que consume `.app-brand-logo` y `.auth-logo-image`).
+- `Atlas Balance/frontend/public/logos/` queda solo con PNGs
+  (`Atlas Balance.png` para `apple-touch-icon`, `Atlas Labs.png` para
+  el footer del login). El SVG ya no se sirve como asset en runtime.
+- Si cambia el logo: editar la fuente en
+  `Documentacion/Diseno/brand/atlas-balance-logo.svg`, regenerar el
+  PNG en `frontend/public/logos/Atlas Balance.png` si hace falta, y
+  actualizar las dos copias inlineadas (`<link rel="icon">` en
+  `index.html` y `--logo-mask` en `variables.css`).
+
 ## 2026-07-20 - V-02.06 - Operaciones largas, idempotencia y RLS
 
 - `BACKUP_OPERATIONS` persiste manual/Drive/restore con soft-delete, FK,
@@ -4745,3 +5368,516 @@ Validacion:
 - Causa tecnica: al compilar con `BaseIntermediateOutputPath` redirigido a `tools/dotnet-build/api/obj`, los restos `obj` dentro del proyecto dejaban de ser el intermediate path activo y podian entrar por globbing de items.
 - Cambio aplicado: `AtlasBalance.API.csproj` elimina `bin\**` y `obj\**` de `Compile`, `Content`, `EmbeddedResource` y `None`.
 - Verificacion: `Start-LocalDev.ps1 -TimeoutSeconds 90` compila y arranca la API; `curl.exe -i http://localhost:5000/api/importacion/lotes` devuelve `401 Unauthorized`, que es la respuesta correcta para una ruta `[Authorize]` sin cookies.
+
+## 2026-07-29 - V-02.07 - Auditoria de inyeccion: UNC en rutas de configuracion, Origin/Referer y resolucion de PowerShell
+
+**Que se modifico.** Tres endurecimientos salidos de la auditoria de
+superficie de inyeccion (SQLi, XSS, CSRF, path traversal, command injection
+y open redirect). Los otros cuatro ejes salieron limpios y no se toco nada
+en ellos; el detalle completo de lo verificado esta en
+`Versiones/v-02.07.md`.
+
+**1. Rutas UNC rechazadas en `backup_path` y `export_path`.**
+
+Por que: la validacion existente combinaba `Path.IsPathRooted(x)` con
+`LooksLikeWindowsRootedPath(x)` en un `OR`. Como
+`Path.IsPathRooted(@"\host\share")` devuelve `true` en .NET, cualquier
+ruta de red satisfacia la primera condicion y nunca se evaluaba el filtro
+estricto de `C:\`; el filtro de `..` tampoco la veia. Un ADMIN podia
+redirigir los `pg_dump` a un recurso SMB externo y sacar de la maquina el
+volcado integro de la base de datos de forma persistente.
+
+Como: se anade el helper `IsUncPath` (prefijo `\` o `//`) y se sustituye
+el `OR` por `LooksLikeWindowsRootedPath` a secas. Aplicado en los tres
+puntos que validan la ruta, no solo en el de entrada:
+`ConfiguracionController.IsSafeAbsoluteDirectory`,
+`BackupService.ResolveSafeDirectory` y
+`ExportacionService.ResolveSafeDirectory`. Los dos servicios releen el
+valor desde la tabla de configuracion, asi que revalidan por si quedara un
+UNC guardado de antes del cambio. Los mensajes de `BadRequest` pasan a
+indicar que no se admiten rutas de red.
+
+**2. Verificacion de `Origin`/`Referer` en `CsrfMiddleware`.**
+
+Por que: no existia ninguna comprobacion de estas cabeceras en el backend.
+`/api/auth/refresh-token` esta exento del token CSRF y quedaba protegido
+unicamente por `SameSite=Strict`, es decir por el comportamiento del
+navegador, sin verificacion server-side.
+
+Como: se anade al middleware ya existente en lugar de crear uno nuevo, por
+ser la misma responsabilidad y evitar otro registro en el pipeline. Se
+ejecuta antes de la validacion del token y **sin** aplicar
+`ExcludedPaths`, para cubrir precisamente las rutas exentas. El origen
+esperado se calcula como `Request.Scheme://Request.Host` en vez de leerse
+de una allowlist fija, porque cada instalacion on-premise tiene su propio
+host; en Development se aceptan ademas los origenes de Vite (5173), ya que
+ahi frontend y API son cross-origin de forma legitima. Si `Origin` falta se
+deriva el origen del `Referer`; si faltan ambas se deja pasar, porque los
+navegadores envian `Origin` en todo verbo mutador y el token CSRF sigue
+siendo obligatorio. El constructor pasa a recibir `IWebHostEnvironment`.
+
+Limitacion documentada en el propio codigo: un proxy inverso que reescriba
+el `Host` obligaria a activar `ForwardedHeaders.XForwardedHost` en
+`Program.cs`, o el middleware rechazaria todas las peticiones. Hoy no
+aplica: el despliegue es Kestrel directo.
+
+**3. `ResolvePowerShellExecutable` deja de caer al PATH.**
+
+Por que: devolvia `"powershell.exe"` sin ruta si no lo encontraba en
+System32. `CreateProcess` resuelve un nombre sin ruta buscando primero en
+el directorio del ejecutable, y el Watchdog corre como servicio con
+privilegios altos.
+
+Como: lanza `InvalidOperationException` con mensaje explicito en vez de
+devolver el nombre corto. Fallar es preferible a arrancar un PowerShell
+indeterminado con esos privilegios.
+
+**Verificacion.** API, Watchdog y tests compilan con 0 errores. Suite
+completa en verde: 434 pruebas, 434 correctas, 0 con error, 0 omitidas.
+`CsrfMiddlewareTests` pasa de 8 a 15 fixtures, con 7 nuevas para la
+verificacion de origen.
+
+---
+
+## 2026-07-29 - V-02.07 - Transporte: HSTS explicito, CSP sin directiva obsoleta, Referrer-Policy con una sola fuente
+
+**Que se modifico.** Tres correcciones de cabeceras y una del watchdog,
+salidas de la auditoria de HTTPS/transporte/cookies. El veredicto completo
+de las 15 comprobaciones, incluida la que se rechazo, esta en
+`Versiones/v-02.07.md`.
+
+**Contexto que hay que tener antes de leer lo demas.** La redireccion
+HTTP a HTTPS de esta app no la resuelve el codigo, la resuelve la
+topologia. `Instalar-AtlasBalance.ps1:876` tiene dos modos: en modo LAN
+Kestrel escucha solo en `https://0.0.0.0:443` (no hay listener HTTP, luego
+no existe trafico en claro que redirigir) y en modo reverse proxy escucha
+solo en `http://127.0.0.1:5000` con el TLS terminado en Caddy, que ya
+redirige 80 a 443 por su cuenta. `app.UseHttpsRedirection()` funciona en el
+primer modo y es un no-op en el segundo (sin endpoint HTTPS ni
+`ASPNETCORE_HTTPS_PORT` el middleware no puede resolver el puerto y deja
+pasar la peticion tras loguear un warning). Se deja tal cual: no es
+explotable con Kestrel en loopback, y quitarlo empeoraria el modo LAN.
+
+**1. `AddHsts` explicito.**
+
+Por que: `Program.cs` llamaba `app.UseHsts()` sin configurar `AddHsts`, asi
+que la cabecera efectiva era la del framework, `max-age=2592000` (30 dias)
+y **sin** `includeSubDomains`.
+
+Como: `builder.Services.AddHsts` con `MaxAge` de 365 dias e
+`IncludeSubDomains = true`. `Preload = false` a proposito: la lista de
+preload de los navegadores exige un dominio publico registrable y es
+practicamente irreversible, y esta app se instala con hostnames de
+intranet. `ExcludedHosts` se queda con el default (`localhost`,
+`127.0.0.1`, `[::1]`) para no fijar HSTS en la propia maquina servidora.
+
+Efecto secundario que hay que gestionar en operacion: en modo LAN el
+certificado es self-signed, y con HSTS activo Chrome y Edge convierten el
+error de certificado en un fallo **no salteable** (desaparece el "continuar
+de todos modos"). Subir de 30 a 365 dias convierte un bloqueo de un mes en
+uno de un ano, y limpiarlo exige `chrome://net-internals/#hsts` en cada
+equipo. La condicion para desplegar esto es tener el `.cer` en la raiz de
+confianza de todos los clientes. Aviso relacionado:
+`scripts/install-cert-client.ps1` solo instala la CA de `mkcert` (camino de
+desarrollo); si `mkcert` no esta, imprime la ruta del `.cer` y no lo
+instala. El comando real esta en `documentacion.md:209`.
+
+**2. `block-all-mixed-content` fuera de la CSP.**
+
+Por que: la directiva quedo fuera de CSP nivel 3. Los navegadores actuales
+la ignoran y Chrome la reporta como obsoleta en consola, asi que solo
+aportaba ruido. `upgrade-insecure-requests`, que ya estaba en la misma
+cadena, cubre el caso.
+
+Como: se retira de `cspUpgrade` y se deja solo
+`upgrade-insecure-requests`.
+
+**3. Retirado el `<meta name="referrer">` de `index.html`.**
+
+Por que: el backend enviaba `Referrer-Policy: no-referrer` y el HTML
+llevaba `<meta name="referrer" content="strict-origin-when-cross-origin">`.
+Ese `<meta>` no era redundante: **ganaba**. Por spec de Referrer Policy la
+politica la fija la cabecera y el elemento `<meta>` la sobreescribe, asi
+que el documento de la SPA acababa aplicando la mas debil de las dos.
+
+Como: se borra el `<meta>`. Queda una sola fuente de verdad (la cabecera) y
+la politica efectiva pasa a `no-referrer`. Para una app on-premise sin
+enlaces salientes no se pierde funcionalidad.
+
+**4. El validador de certificado permisivo del watchdog, restringido a
+loopback.**
+
+Por que: `WatchdogOperationsService.WaitForApiHealthAsync` construia su
+`HttpClientHandler` con `DangerousAcceptAnyServerCertificateValidator` para
+el health check posterior a una actualizacion. El guardia que lo
+justificaba, `IsLocalHealthUrl`, no solo admite loopback: tambien
+`Environment.MachineName` y `MachineName.local`, que **si resuelven por
+red**. Un atacante en la LAN capaz de suplantar ese nombre podia presentar
+su propio certificado y devolver un `200 OK` falso; el watchdog daria por
+buena una actualizacion rota y se saltaria el rollback.
+
+Como: el validador permisivo solo se asigna cuando `healthUri.IsLoopback`.
+Para el resto de hosts admitidos se usa la validacion normal de
+certificados. La instalacion por defecto configura
+`https://localhost/api/health`, luego el camino normal no cambia.
+
+**5. Invariante del prefijo `__Host-` bajo test.**
+
+`BuildCookieOptions` (`AuthController.cs:300`) no asigna `Path`: se apoya en
+el default de `CookieOptions`. El navegador **rechaza** una cookie
+`__Host-` que no lleve exactamente `Path=/`, sin `Domain` y con `Secure`,
+asi que si ese default cambiara o alguien tocara esas opciones, el login
+entero se romperia en produccion de forma silenciosa y sin error en el
+servidor. `TransportSecurityTests.cs` fija el invariante ejercitando el
+`Response.Cookies.Append` real via `AuthController.RefreshToken` en entorno
+`Production` y asertando sobre el `Set-Cookie` emitido.
+
+**Verificacion.** PENDIENTE. El clasificador de seguridad del harness
+estuvo caido durante toda la sesion (`claude-opus-5 is temporarily
+unavailable`), sin acceso a shell, subagentes ni fetch web. Los cambios
+estan escritos y revisados a mano, pero sin compilar ni testear. Comandos a
+ejecutar: `dotnet build AtlasBalance.sln -p:UseAppHost=false` y
+`dotnet test --filter "FullyQualifiedName~TransportSecurityTests"`.
+
+---
+
+## V-02.07 - Logging, monitorizacion y trazas de auditoria
+
+Bloque de observabilidad de seguridad. Punto de partida honesto: la mitad de lo
+que se pedia ya existia (auditoria automatica de 28 entidades con valores
+antes/despues, eventos de login, Serilog con niveles y rotacion, redaccion de
+PII en logs). Lo que faltaba eran los agujeros que se listan abajo.
+
+### 1. Auditoria: contexto completo, firmada y append-only de verdad
+
+**Campos nuevos en `AUDITORIAS`** (migracion
+`20260730090000_V0207AuditoriaAppendOnly`):
+
+| Columna | Para que |
+|---------|----------|
+| `secuencia` | `bigint` identity de Postgres. Un hueco = filas borradas. |
+| `firma` | HMAC-SHA256 del contenido de la fila. Detecta alteracion e insercion. |
+| `user_agent` | Ya llegaba al login y se tiraba. Ahora se guarda (256 chars). |
+| `session_id` | Id de sesion de login, estable entre rotaciones del access token. |
+| `origen` | UI / API / JOB / SISTEMA / DESCONOCIDO. |
+
+`detalles_json` pasa de `jsonb` a `json`. **No es cosmetico:** `jsonb` normaliza
+el texto (reordena claves, quita espacios), asi que la cadena releida no
+coincidiria con la firmada y toda la auditoria se reportaria como manipulada.
+Nada en el codigo usa operadores `jsonb` sobre esa columna.
+
+**Id de sesion.** Se genera en el login (`AuthService.GenerateSessionId`, 128
+bits base64url), se guarda en `REFRESH_TOKENS.session_id` y se **copia en cada
+rotacion**, asi que identifica la sesion completa y no un access token de una
+hora. Viaja al JWT como claim `sid` y de ahi a cada fila de auditoria.
+
+**Firma (`Services/AuditSigner.cs`).** HMAC-SHA256 con
+`Security:AuditSigningKey`, obligatoria y distinta de `JwtSettings:Secret` y de
+`Security:RlsContextSecret` fuera de Development (si se comparten, comprometer
+una permite forjar auditoria con firma valida). Serializacion canonica con
+**prefijo de longitud por campo**: sin el, ("ab","c") y ("a","bc") darian el
+mismo payload y se podria mover contenido entre campos sin invalidar la firma.
+
+Dos detalles que costarian caros si se olvidan, y por eso tienen test propio:
+
+- El timestamp se trunca a **microsegundos** antes de firmar y de guardar.
+  Postgres `timestamptz` guarda microsegundos y `DateTime` tiene 100 ns; sin
+  truncar, la firma calculada antes del INSERT no valida al releer la fila.
+- La IP se normaliza (IPv4 mapeada en IPv6 hacia IPv4), porque `inet` puede
+  devolverla en cualquiera de las dos formas.
+
+La firma **no cubre `secuencia`** a proposito: Postgres la asigna durante el
+INSERT y firmarla exigiria un UPDATE posterior, que el propio mecanismo
+append-only bloquea. El borrado lo detecta la continuidad de la secuencia.
+
+**Append-only.** Aqui hay que corregir el diagnostico inicial: `AUDITORIAS` ya
+era de facto append-only desde `20260501120000_EnableRowLevelSecurity`, que le
+puso `FORCE ROW LEVEL SECURITY` con politicas de SELECT e INSERT y ninguna de
+UPDATE ni DELETE. El problema es que lo hacia **en silencio** (ver el bug del
+job de retencion en `LOG_ERRORES_INCIDENCIAS.md`). Ahora hay cuatro capas:
+
+1. **Privilegios.** `Program.GrantRuntimeDatabasePrivileges` hace
+   `REVOKE UPDATE, DELETE, TRUNCATE ON "AUDITORIAS"` al rol de runtime. Como
+   `atlas_balance_app` **no es el propietario** (lo es `atlas_balance_owner`, que
+   solo se usa para migraciones), no puede reconcederselo, ni quitar el trigger,
+   ni alterar la tabla. Falla con error de privilegios, no en silencio.
+2. **Trigger `trg_auditorias_append_only`.** Bloquea todo UPDATE y el DELETE de
+   filas de menos de 90 dias, incluso por la via sancionada. El suelo esta en el
+   trigger y no solo en la funcion de purga, para que falsificar la marca de
+   purga no sirva de nada.
+3. **Purga.** Politica `auditorias_delete` mas
+   `atlas_security.purgar_auditorias()` (`SECURITY DEFINER`, `search_path` fijo,
+   suelo de 90 dias validado dentro, `REVOKE ALL ... FROM PUBLIC`). Unica via de
+   borrado.
+4. **Deteccion.** Firma, secuencia y espejo externo, para lo que la prevencion no
+   alcance.
+
+**Donde NO alcanza, sin adornos:** quien tenga las credenciales de
+`atlas_balance_owner` o superusuario de PostgreSQL puede hacer lo que quiera.
+Contra eso solo queda la capa 4. Igual que un RCE que consiga SYSTEM en el
+servidor: el servicio corre como LocalSystem, asi que puede borrar el fichero de
+log de seguridad y vaciar el Windows Event Log. **La unica defensa real contra
+ese escenario es sacar los logs de la maquina** (ver seccion 5).
+
+**Verificacion.** `GET /api/auditoria/integridad` (ADMIN) y el job diario
+`verificacion-integridad-auditoria` (04:05, despues de la purga de las 03:15).
+Recorre por lotes, valida firmas y busca huecos de secuencia. Las filas
+anteriores a V-02.07 se cuentan como *sin firma*, no como invalidas: contarlas
+como manipuladas dispararia una alarma falsa en cada instalacion que se
+actualice y el operador aprenderia a ignorarla.
+
+> Rotar `Security:AuditSigningKey` invalida la verificacion de todo lo ya
+> firmado. No es manipulacion, pero se ve igual. `Actualizar-AtlasBalance.ps1`
+> **nunca** la rota: solo la genera si falta o es debil.
+
+**Retencion: 28 a 365 dias** (`Auditoria:RetentionDays`). 28 dias era incoherente
+con lo que esta tabla es en tesoreria multi-banco: el rastro de quien movio
+dinero o cambio permisos tiene que sobrevivir a un cierre trimestral y a una
+investigacion que empieza semanas despues. El suelo real (90 dias) lo impone la
+base de datos, no la configuracion.
+
+`AUDITORIA_INTEGRACIONES` se queda en 28 dias
+(`Auditoria:IntegrationRetentionDays`, suelo de 7 en la BD): es un log de
+peticiones HTTP, de volumen alto y valor forense bajo. Recibe el mismo
+tratamiento de purga (politica `auditoria_integraciones_delete` mas
+`atlas_security.purgar_auditorias_integracion()`, migracion
+`20260730100000_V0207AuditoriaIntegracionPurga`) porque arrastraba **el mismo
+bug de purga silenciosa**. No lleva trigger append-only: RLS ya impide el UPDATE
+y ahi no se firma ninguna fila, asi que solo anadiria ruido.
+
+> Barrido completo hecho al cerrar el bug: de las 23 tablas con `FORCE ROW LEVEL
+> SECURITY`, solo estas dos tenian el defecto. El resto declara politicas
+> `FOR ALL` o politicas explicitas de UPDATE/DELETE. `REFRESH_TOKENS` no tiene
+> RLS, luego `LimpiezaRefreshTokensJob` nunca estuvo afectado.
+
+Si la retencion configurada baja del suelo de la BD, la funcion lanza `23514`, el
+job lo registra como error y **no purga nada**: preferimos que la tabla crezca
+antes que perder rastro por una configuracion mal puesta.
+
+### 2. Fallos de autorizacion, acceso masivo y acciones admin
+
+`Middleware/SecurityAuditMiddleware.cs`. Antes habia ~40 `Forbid()` repartidos
+por los controladores y **ninguno dejaba rastro**: un usuario legitimo probando
+ids de cuentas ajenas era invisible.
+
+Se resuelve en middleware y no tocando los 40 sitios a proposito: cubre tambien
+los 403 del propio pipeline de autorizacion (roles, policies) y los de
+`CsrfMiddleware`, y los que anadan futuros endpoints sin que nadie se acuerde.
+
+- `AUTHZ_DENIED` (403) y `AUTHN_DENIED` (401). Los 401 de `/api/auth/login`,
+  `/api/auth/refresh-token`, `/api/auth/logout`, `/api/telemetria` y
+  `/api/health` se excluyen: son funcionamiento normal y el login ya audita sus
+  propios fallos con mas contexto.
+- `ACCESO_BULK` cuando `pageSize` supera `Security:Auditoria:UmbralAccesoBulk`
+  (100). **Limitacion consciente:** son filas *solicitadas*, no devueltas; contar
+  el cuerpo exigiria bufferizar cada respuesta. Como senal de intencion vale,
+  porque los endpoints paginados topan `pageSize` y pedir 5000 es deliberado.
+- **Deduplicacion** por (accion, usuario, IP, ruta) durante 60 s. Sin ella, un
+  bucle del frontend o un escaneo convierten `AUDITORIAS` en el vector de
+  denegacion de servicio en vez de la defensa. La clave incluye la ruta, asi que
+  un barrido sobre recursos distintos sigue generando una fila por recurso.
+- Auditar nunca puede romper la respuesta: va en `try/catch` con log de error.
+
+`POST /api/sistema/actualizar` (sustituye los binarios en produccion, la accion
+de admin con mas alcance de la app) pasa a auditarse como
+`SISTEMA_ACTUALIZACION_INICIADA`, aceptada o rechazada.
+
+### 3. Alertas de seguridad
+
+`Services/SecurityAlertService.cs`, job `alertas-seguridad` con la misma cadencia
+que la ventana (5 min por defecto), para que las ventanas se encadenen sin
+huecos. Todas las reglas trabajan sobre una unica foto de la ventana: con 4-8
+usuarios son decenas de filas y evita seis consultas con agrupaciones.
+
+| Regla | Dispara cuando |
+|-------|----------------|
+| `LOGIN_FALLIDOS_POR_CUENTA` | mas de 5 fallos sobre una cuenta en la ventana |
+| `IP_MULTIPLES_CUENTAS` | Una IP toca mas de 10 cuentas distintas |
+| `ACCESO_MASIVO` | Eventos `ACCESO_BULK`, o mas de 300 acciones de una sesion |
+| `IP_NUEVA_PARA_USUARIO` | Login desde una IP nunca usada por ese usuario |
+| `PASSWORD_RESETS_REPETIDOS` | mas de 3 cambios/reinicios sobre una cuenta |
+| `ERRORES_AUTH_SOBRE_LINEA_BASE` | 401/403 por encima de x3 la media de las 12 ventanas previas |
+
+Tres decisiones que conviene entender:
+
+- **"Pais nuevo" se sustituye por "IP nueva".** El requisito original pedia
+  detectar login desde un pais distinto. Aqui no hay GeoIP: la app es
+  on-premise, en LAN y sin salida garantizada a internet, asi que una base de
+  geolocalizacion seria una dependencia externa imposible de mantener
+  actualizada. La IP captura la misma senal en este despliegue. El primer login
+  de un usuario nunca alerta (sin historico no hay nada que comparar).
+- **Las reglas de barrido cuentan tambien el email probado**, no solo
+  `usuario_id`. Un credential stuffing no llega a autenticarse nunca, asi que
+  contar solo usuarios identificados lo dejaria invisible.
+- **La regla 6 tiene suelo absoluto** (`MinErroresAuthParaAlertar`, 20) ademas
+  del factor sobre la linea base. Sin el, una media historica de 0 convierte dos
+  errores en una alerta y el operador aprende a ignorarlas.
+
+**Enfriamiento de 60 min por (regla, sujeto).** Un ataque sostenido dispara la
+misma regla en cada pasada; sin esto serian correos cada 5 minutos durante horas.
+El estado de deduplicacion se consulta en `AUDITORIAS`, no en una cache en
+memoria, para que sobreviva a un reinicio del servicio justo cuando empieza un
+incidente.
+
+**Entrega** (`Services/AlertDispatcher.cs`, compartido con las alertas de salud).
+Orden deliberado:
+
+1. Fila en `AUDITORIAS` (`ALERTA_SEGURIDAD_DISPARADA`). Va primero porque es a la
+   vez el registro y el estado de deduplicacion de la siguiente pasada.
+2. `NOTIFICACIONES_ADMIN` tipo `SEGURIDAD` (campana del TopBar).
+3. Email (`Security:Alertas:DestinatariosEmail`; vacio = todos los ADMIN activos).
+4. Slack (`Security:Alertas:SlackWebhookUrl`, opt-in).
+
+Si 3 y 4 fallan, la alerta ya esta registrada y visible en la app: no se pierde.
+
+**Slack.** Solo se acepta `https://hooks.slack.com`; cualquier otra URL desactiva
+el canal con un error en el log (sin volcar la URL, que lleva el token). Timeout
+de 10 s. La URL es un secreto: va en `appsettings.Production.json`, nunca en la
+BD ni en la documentacion.
+
+### 4. Salud y metricas
+
+`/api/health` devolvia `{status:"healthy"}` constante: respondia OK con la base
+de datos caida y el disco lleno, que es **peor que no tener health check** porque
+da falsa garantia al watchdog. Se mantiene como sonda de vida (el proceso
+responde) y la comprobacion real vive en:
+
+- `GET /api/sistema/salud` (ADMIN): base de datos (`SELECT 1` con timeout de 5 s,
+  no `CanConnect`, que tiene exito contra una BD en recuperacion), espacio en
+  disco del volumen de logs/backups (aviso por debajo del 15%, no sano por debajo
+  del 5%) y limites del pool. Devuelve **503** si no esta sano, para que un
+  monitor externo lo detecte por codigo de estado.
+- `GET /api/sistema/metricas` (ADMIN): peticiones, 4xx, 5xx, p50/p95/max de
+  latencia en ventanas de 5 y 60 minutos, mas la ventana anterior para comparar.
+
+`Services/RequestMetrics.cs` mantiene los contadores **en memoria** (cubos de un
+minuto, 2 h de historico) y la latencia en un **histograma de cubos fijos**:
+memoria acotada pase lo que pase con el trafico. Los percentiles salen
+interpolados y son aproximados **por arriba**, que es el error seguro para una
+alerta. Se pierden al reiniciar, y es aceptable: lo que hay que conservar ya esta
+en `AUDITORIAS` y en los logs.
+
+`HealthAlertJob` (cada 5 min) avisa de: 5xx por encima del 5% con al menos 20
+peticiones, p95 x3 sobre la ventana anterior (con suelo de 250 ms), y cualquier
+comprobacion de salud en rojo. Usa el mismo despachador que las alertas de
+seguridad.
+
+### 5. Espejo fuera de la base de datos
+
+`Logging/SecurityEventLog.cs`. Existe porque la firma detecta alteracion y la
+secuencia detecta huecos, pero **borrar la cola de la tabla no deja hueco**.
+
+- Fichero propio (Serilog, categoria `AtlasBalance.Security`,
+  `Serilog:SecurityFilePath`), con retencion de 400 dias, por encima de los 365
+  de `AUDITORIAS` a proposito.
+- Windows Event Log (`Security:MirrorToWindowsEventLog`). El instalador registra
+  el origen `AtlasBalance`; si no esta, se avisa una vez y se sigue solo con
+  fichero.
+
+Solo se espejan eventos de seguridad, no la auditoria automatica de entidades:
+son miles de filas al dia y saturarian el Event Log sin aportar deteccion.
+
+**Limite real, ya dicho arriba:** el servicio corre como LocalSystem, asi que un
+RCE puede borrar el fichero y vaciar el Event Log. Una ACL de solo-anexar contra
+SYSTEM seria teatro, porque SYSTEM puede reescribir su propia ACL. Lo que si hace
+el instalador es quitar el acceso a usuarios normales del servidor (sin eso, el
+log hereda los permisos de `%ProgramData%`, donde `BUILTIN\Usuarios` tiene
+lectura, y cualquiera con sesion en la maquina puede leer quien entra y desde
+donde).
+
+**Para cerrar ese hueco de verdad hay que sacar los logs de la maquina.** Opciones
+que encajan con este despliegue, ordenadas por esfuerzo:
+
+1. **Reenvio de eventos de Windows (WEF)**, incluido en Windows Server, sin coste
+   ni dependencias. Se configura un colector en otra maquina y el servidor
+   reenvia el log `Application` filtrado por el origen `AtlasBalance`. Es la
+   opcion nativa y la mas facil de justificar en una auditoria.
+2. **Copia del fichero de seguridad a un recurso de red** con permiso de solo
+   escritura para la cuenta del servidor, mediante tarea programada.
+3. **Slack** ya saca las alertas de la maquina en tiempo real, aunque no el log
+   completo.
+
+### 6. Revision de fugas en logs
+
+Cuarto punto del encargo, con resultado: **limpio**. Grep de todos los
+`Log*(...)` con `password|token|secret|apikey|cookie|hash|credential|bearer`: 4
+coincidencias, todas falsos positivos (cuentan filas o registran fallos de HMAC
+sin volcar el valor). No hay logging de cuerpos de peticion completos.
+`LogScrubber` sigue cubriendo anti-inyeccion de logs y redaccion de email/IBAN, y
+se aplica tambien al User-Agent del espejo de seguridad. Los logs viven en
+`%ProgramData%\AtlasBalance\logs`, fuera del arbol estatico, luego no son
+accesibles por HTTP.
+
+### Configuracion nueva
+
+```jsonc
+"Security": {
+  "AuditSigningKey": "...",           // obligatoria fuera de Development
+  "MirrorToWindowsEventLog": true,
+  "Auditoria": { "UmbralAccesoBulk": 100, "VentanaDeduplicacionSegundos": 60 },
+  "Alertas": {
+    "Habilitado": true, "VentanaMinutos": 5, "EnfriamientoMinutos": 60,
+    "MaxLoginFallidosPorCuenta": 5, "MaxCuentasPorIp": 10,
+    "MaxPeticionesSecuenciales": 300, "DiasHistoricoIpConocida": 90,
+    "MaxPasswordResets": 3, "MinErroresAuthParaAlertar": 20,
+    "FactorSobreLineaBase": 3.0, "VentanasLineaBase": 12,
+    "DestinatariosEmail": [], "SlackWebhookUrl": ""
+  }
+},
+"Auditoria": { "RetentionDays": 365 },
+"Serilog": { "SecurityFilePath": "C:\\ProgramData\\AtlasBalance\\logs\\security\\atlas-security-.log" }
+```
+
+Los umbrales estan calibrados para este despliegue (LAN, 4-8 usuarios). Con
+cientos de usuarios habria que subirlos o el ruido enterraria las senales.
+
+### Jobs nuevos
+
+| Job | Cadencia |
+|-----|----------|
+| `alertas-seguridad` | cada `VentanaMinutos` (5 por defecto) |
+| `alertas-salud` | cada 5 min |
+| `verificacion-integridad-auditoria` | 04:05 diario |
+
+### Como configurar las notificaciones
+
+**Email.** Reutiliza el SMTP que la app ya tiene configurado en
+Configuracion > Sistema (`smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`,
+`smtp_from`). Si no hay SMTP, las alertas siguen quedando en la auditoria y en la
+campana de notificaciones. Para dirigir los avisos a un buzon concreto en vez de
+a todos los administradores, rellena
+`Security:Alertas:DestinatariosEmail` en `appsettings.Production.json`:
+
+```jsonc
+"DestinatariosEmail": [ "seguridad@empresa.com", "it@empresa.com" ]
+```
+
+**Slack.** En `api.slack.com/apps` se crea una app para el workspace, se activa
+*Incoming Webhooks*, se anade un webhook al canal deseado y se pega la URL en
+`Security:Alertas:SlackWebhookUrl`. Reiniciar el servicio. La URL es un secreto:
+`appsettings.Production.json` ya esta protegido por ACL (solo Administradores y
+SYSTEM), no la copies a ningun documento ni a la base de datos.
+
+### Herramientas de monitorizacion recomendadas para este despliegue
+
+Windows Server on-premise, LAN, sin garantia de salida a internet. Eso descarta
+casi todo el SaaS habitual (Datadog, New Relic, Sentry cloud) y hace que la
+respuesta razonable sea gratuita y local:
+
+| Necesidad | Herramienta | Coste | Por que esta |
+|-----------|-------------|-------|--------------|
+| Uptime y pagina de estado | **Uptime Kuma** (Docker) | Gratis | Sondea `/api/sistema/salud`, entiende el 503, y trae pagina de estado y avisos a Slack/email/Telegram sin configurar nada mas. Ya hay Docker en el entorno de desarrollo. |
+| Metricas y graficas | **Prometheus + Grafana** | Gratis | Solo si se quiere historico largo. Requiere exponer las metricas en formato Prometheus, que hoy no se hace: `/api/sistema/metricas` devuelve JSON. Es trabajo adicional, no algo que ya funcione. |
+| Logs centralizados | **Reenvio de eventos de Windows (WEF)** | Incluido | Nativo, sin dependencias, y es lo que saca los eventos de seguridad de la maquina comprometible. Primera opcion. |
+| Logs con busqueda | **Grafana Loki** | Gratis | Si el volumen crece y hace falta buscar. Mas pesado de operar que WEF. |
+| Errores de aplicacion | **Sentry self-hosted** | Gratis | Solo si se quiere agrupacion de excepciones con stack trace. Para 4-8 usuarios, el log de Serilog mas las alertas de tasa de error suelen bastar. |
+
+Recomendacion concreta si hay que elegir una sola cosa: **Uptime Kuma apuntando a
+`/api/sistema/salud`**, mas el reenvio de eventos de Windows. Cubre uptime,
+pagina de estado, notificaciones y la copia de los logs fuera de la maquina, sin
+coste y sin dependencias de internet.
+
+Nota sobre la pagina de estado: no se ha construido una dentro de la aplicacion a
+proposito. Una pagina de estado servida por el propio servicio que se cae no
+informa de nada cuando mas falta hace; tiene que vivir fuera, y eso es
+exactamente lo que hace Uptime Kuma.

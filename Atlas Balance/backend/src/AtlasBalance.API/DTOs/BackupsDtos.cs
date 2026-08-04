@@ -60,8 +60,11 @@ public sealed class UpdateBackupConfigRequest
     public int DayOfMonth { get; set; } = 1;
     public int IntervalHours { get; set; } = 24;
     public string Destination { get; set; } = "LOCAL";
+    [System.ComponentModel.DataAnnotations.MaxLength(512)]
     public string GoogleDriveClientId { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MaxLength(2048)]
     public string GoogleDriveClientSecret { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MaxLength(256)]
     public string GoogleDriveFolderId { get; set; } = string.Empty;
 }
 
@@ -92,6 +95,9 @@ public sealed class GoogleDriveBackupFileResponse
 
 public sealed class GoogleDriveImportRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.MaxLength(256)]
+    [System.ComponentModel.DataAnnotations.RegularExpression("^[A-Za-z0-9_.-]{8,256}$")]
     public string? FileId { get; set; }
 }
 

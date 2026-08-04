@@ -142,13 +142,16 @@ public static class SeedData
             ["google_drive_folder_id"] = ("", "string", "Carpeta de Google Drive para backups"),
             ["backup_cloud_encryption_key"] = ("", "string", "Clave protegida de cifrado para backups en nube"),
             ["export_path"] = ("C:/AtlasBalance/exports", "string", "Ruta de exportaciones"),
-            // V-02.06 (PR F5): el seed debe estar alineado con el paquete que
-            // el operador esta ejecutando. Mantener "V-02-04" provoca que el
+            // V-02.07 (retencion de PII): defaults leidos por LimpiezaExportacionesJob.
+            ["exportacion_retention_days"] = ("90", "int", "Dias de retencion de exportaciones antes de purgarse"),
+            ["importacion_contenido_retention_days"] = ("180", "int", "Dias de retencion del contenido bruto de importacion antes de vaciarse"),
+            // V-02.07 (alineamiento runtime): el seed debe estar alineado con el paquete que
+            // el operador esta ejecutando. Mantener una version atras provoca que el
             // default de versiones y el campo "app_version" que reportan
             // servicios como ActualizacionService.Invoke o SettingsTray queden
-            // una version atras del runtime real. Se actualiza a V-02.06, que
+            // una version atras del runtime real. Se actualiza a V-02.07, que
             // es el InformationalVersion declarado en Directory.Build.props.
-            ["app_version"] = ("V-02.06", "string", "Version instalada"),
+            ["app_version"] = ("V-02.07", "string", "Version instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["app_update_auto_enabled"] = ("false", "bool", "Aplicar automaticamente releases firmados de GitHub"),
             ["app_update_auto_hour_utc"] = ("3", "int", "Hora UTC minima para la comprobacion automatica diaria"),
@@ -415,7 +418,11 @@ public static class SeedData
                 PaisId = espanaId,
                 Nombre = "Demo Sabadell Operativa EUR",
                 NumeroCuenta = "DEMO-ES-001",
-                Iban = "ES00 0000 0000 0000 0000 0001",
+                // V-02.07: los digitos de control eran 00 (imposibles en un IBAN
+                // real) y la validacion nueva de IbanValidator rechazaba la cuenta
+                // demo en cuanto alguien la editaba. 55 es el control correcto
+                // para este BBAN, asi que sigue pareciendo de demo y ya valida.
+                Iban = "ES55 0000 0000 0000 0000 0001",
                 BancoNombre = "Sabadell",
                 Divisa = "EUR",
                 FormatoId = sabadellFormatId,

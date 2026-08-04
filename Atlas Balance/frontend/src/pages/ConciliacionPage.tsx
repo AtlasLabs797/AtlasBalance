@@ -5,6 +5,7 @@ import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -19,6 +20,7 @@ function today(): string {
 
 export default function ConciliacionPage() {
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+  const invalidate = useInvalidateAfterMutation();
   const [cuentas, setCuentas] = useState<ImportCuentaContexto[]>([]);
   const [cuentaId, setCuentaId] = useState('');
   const [movimientos, setMovimientos] = useState<MovimientoEsperado[]>([]);
@@ -103,6 +105,7 @@ export default function ConciliacionPage() {
       setConcepto('');
       setSuccess('Movimiento esperado creado.');
       await loadData(selectedCuenta.id);
+      await invalidate('conciliacion');
     } catch (err: unknown) {
       setError(extractErrorMessage(err, 'No se pudo crear el movimiento esperado.'));
     } finally {
@@ -121,6 +124,7 @@ export default function ConciliacionPage() {
       });
       setSuccess(`Sugerencias creadas: ${data.sugerencias_creadas ?? 0}.`);
       await loadData(cuentaId);
+      await invalidate('conciliacion');
     } catch (err: unknown) {
       setError(extractErrorMessage(err, 'No se pudieron generar sugerencias.'));
     } finally {
@@ -147,6 +151,7 @@ export default function ConciliacionPage() {
       await api.post(`/conciliacion/${id}/${action}`, {});
       setSuccess(action === 'confirmar' ? 'Match conciliado.' : action === 'resolver' ? 'Excepcion resuelta.' : 'Marcado como excepcion.');
       await loadData(cuentaId);
+      await invalidate('conciliacion');
     } catch (err: unknown) {
       setError(extractErrorMessage(err, 'No se pudo actualizar la conciliacion.'));
     } finally {

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-02.06",
+    [string]$Version = "V-02.07",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall,
@@ -173,6 +173,23 @@ if (Test-Path -LiteralPath $publishedWwwroot) {
 }
 New-Item -ItemType Directory -Path $publishedWwwroot -Force | Out-Null
 Copy-DirectoryContents -Source $frontendBuildDist -Target $publishedWwwroot
+
+# Excluir sourcemaps del wwwroot publicado. Vite los genera con sourcemap:'hidden',
+# que solo omite el comentario sourceMappingURL del bundle: el .map se sigue sirviendo
+# a quien pida la ruta. Publicarlos expone todo el codigo fuente TypeScript original.
+# Se borran de forma explicita porque Copy-Item -Exclude no filtra de forma fiable en
+# copias recursivas. Sin SilentlyContinue: si esto falla, la release debe fallar.
+$mapFiles = @(Get-ChildItem -Path $publishedWwwroot -Filter "*.map" -Recurse -File -ErrorAction Stop)
+if ($mapFiles.Count -gt 0) {
+    $mapFiles | Remove-Item -Force -ErrorAction Stop
+    Write-Host "Se excluyeron $($mapFiles.Count) ficheros .map del wwwroot publicado." -ForegroundColor Yellow
+}
+
+$mapLeftovers = @(Get-ChildItem -Path $publishedWwwroot -Filter "*.map" -Recurse -File -ErrorAction Stop)
+if ($mapLeftovers.Count -gt 0) {
+    throw "Quedan $($mapLeftovers.Count) ficheros .map en $publishedWwwroot tras la limpieza."
+}
+
 Remove-Item -LiteralPath $frontendBuildDist -Recurse -Force -ErrorAction SilentlyContinue
 
 & $dotnetPath publish $watchdogProject `

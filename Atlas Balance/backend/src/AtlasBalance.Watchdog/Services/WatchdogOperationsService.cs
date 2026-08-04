@@ -176,9 +176,13 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         var zipVerification = VerifyPackageZipIntegrity(packageZipPath);
         if (zipVerification is not null)
         {
-            // V-02-06 (CodeQL #13): sanear {ReasonSafe} para evitar CWE-117 (log forging).
-            // zipVerification se construye a partir de packageZipPath, que llega del caller API.
-            _logger.LogError("Update rechazado por verificacion de integridad del ZIP: {ReasonSafe}", LogScrubber.Scrub(zipVerification));
+            // V-02.07 (CodeQL #18): la regla cs/log-forging no reconoce helpers
+            // externos; el patron valido es encadenar Replace("\r", "").Replace("\n", "")
+            // inline justo antes del sink. zipVerification se construye a partir
+            // de packageZipPath, que es input del caller API (tainted).
+            _logger.LogError(
+                "Update rechazado por verificacion de integridad del ZIP: {Reason}",
+                (zipVerification ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
             return false;
         }
 
@@ -307,7 +311,9 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 return (true, null);
             }
 
-            _logger.LogWarning("pg_restore local fallo: {Error}. Se intentara fallback docker.", localResult.ErrorMessage);
+            _logger.LogWarning(
+                "pg_restore local fallo: {ErrorSafe}. Se intentara fallback docker.",
+                LogScrubber.Scrub(localResult.ErrorMessage));
         }
         else
         {
@@ -833,7 +839,13 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             }
         }
 
-        return "powershell.exe";
+        // V-02.07: antes se caia a "powershell.exe" a secas, que CreateProcess resuelve
+        // buscando primero en el directorio del ejecutable. Este servicio corre con
+        // privilegios altos, asi que un binario plantado ahi se ejecutaria en su lugar.
+        // Mejor fallar con un mensaje claro que arrancar un PowerShell indeterminado.
+        throw new InvalidOperationException(
+            "No se encontro powershell.exe en System32\\WindowsPowerShell\\v1.0. " +
+            "No se resuelve por PATH por seguridad.");
     }
 
     private static string BuildOnlineUpdateHelperScript() =>
@@ -898,14 +910,26 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
 
         if (!IsLocalHealthUrl(healthUrl))
         {
-            _logger.LogWarning("Health check rechazado por URL no local: {HealthUrlSafe}", LogScrubber.Scrub(healthUrl));
+            _logger.LogWarning(
+                "Health check rechazado por URL no local: {HealthUrlSafe}",
+                (healthUrl ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
             return false;
         }
 
-        using var handler = new HttpClientHandler
+        // V-02.07: aceptar cualquier certificado solo cuando el destino es loopback,
+        // donde no hay red que interceptar y el cert es el self-signed que genera el
+        // instalador. IsLocalHealthUrl tambien admite MachineName y MachineName.local,
+        // que SI resuelven por red: ahi un atacante en la LAN capaz de suplantar ese
+        // nombre podria presentar su propio certificado y devolver un 200 falso,
+        // haciendo que el watchdog diera por buena una actualizacion rota y se salte
+        // el rollback. Para esos hosts se exige validacion normal del certificado.
+        var healthUri = new Uri(healthUrl);
+        using var handler = new HttpClientHandler();
+        if (healthUri.IsLoopback)
         {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        };
+            handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+        }
+
         using var http = new HttpClient(handler)
         {
             Timeout = TimeSpan.FromSeconds(10)
@@ -952,11 +976,16 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 CopyFileIfExists(Path.Combine(rollbackPath, file), Path.Combine(installPath, file));
             }
 
-            _logger.LogWarning("Rollback de binarios aplicado desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
+            _logger.LogWarning(
+                "Rollback de binarios aplicado desde {RollbackPathSafe}",
+                (rollbackPath ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
         }
         catch (Exception rollbackEx)
         {
-            _logger.LogError(rollbackEx, "No se pudo aplicar rollback de binarios desde {RollbackPathSafe}", LogScrubber.Scrub(rollbackPath));
+            _logger.LogError(
+                rollbackEx,
+                "No se pudo aplicar rollback de binarios desde {RollbackPathSafe}",
+                (rollbackPath ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty));
         }
     }
 
@@ -1093,7 +1122,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al verificar firma RSA del ZIP de actualizacion");
-            return "Error al verificar firma RSA: " + ex.Message;
+            return "Error al verificar firma RSA: " + (ex.Message ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty);
         }
     }
 

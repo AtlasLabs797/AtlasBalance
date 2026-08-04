@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.Logging;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Services;
@@ -32,19 +33,22 @@ public sealed class AtlasAiService : IAtlasAiService
     private readonly ISecretProtector _secretProtector;
     private readonly IUserAccessService _userAccessService;
     private readonly IAuditService _auditService;
+    private readonly ILogger<AtlasAiService> _logger;
 
     public AtlasAiService(
         AppDbContext dbContext,
         IHttpClientFactory httpClientFactory,
         ISecretProtector secretProtector,
         IUserAccessService userAccessService,
-        IAuditService auditService)
+        IAuditService auditService,
+        ILogger<AtlasAiService> logger)
     {
         _dbContext = dbContext;
         _httpClientFactory = httpClientFactory;
         _secretProtector = secretProtector;
         _userAccessService = userAccessService;
         _auditService = auditService;
+        _logger = logger;
     }
 
     public async Task<IaConfigResponse> GetConfigAsync(UserAccessScope scope, CancellationToken cancellationToken)
@@ -193,9 +197,26 @@ public sealed class AtlasAiService : IAtlasAiService
         await EnsureRequestLimitsAsync(scope.UserId, state, now, ipAddress, cancellationToken);
 
         var context = await BuildFinancialContextAsync(scope, prompt, state.MaxContextRows, paisId, cancellationToken);
+        // V-02-07: seudonimizacion reversible antes de salir hacia el proveedor de IA
+        // externo. BuildFinancialContextAsync ya se ejecuto con el prompt real (busca en
+        // BD por terminos de la pregunta); a partir de aqui solo se envia texto seudonimizado.
+        var pseudonyms = await BuildPseudonymMapAsync(scope, paisId, cancellationToken);
+        string safePrompt;
+        string safeContext;
+        try
+        {
+            safePrompt = pseudonyms.Apply(prompt);
+            safeContext = pseudonyms.Apply(context.Texto);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // Fail-closed: sin seudonimizacion no se envia nada al proveedor.
+            await LogBlockedAsync(scope.UserId, "pseudonymization_timeout", state, ipAddress, cancellationToken);
+            throw new IaProviderException("No se pudo anonimizar el contexto financiero antes de consultar a la IA. Reintenta la consulta.");
+        }
         var systemMessage = BuildSystemMessage();
-        var userMessage = "PREGUNTA_USUARIO_NO_CONFIABLE\n" + JsonSerializer.Serialize(prompt);
-        var contextMessage = $"CONTEXTO_FINANCIERO_NO_CONFIABLE\n{context.Texto}";
+        var userMessage = "PREGUNTA_USUARIO_NO_CONFIABLE\n" + JsonSerializer.Serialize(safePrompt);
+        var contextMessage = $"CONTEXTO_FINANCIERO_NO_CONFIABLE\n{safeContext}";
         var estimatedInputTokens = EstimateTokens(systemMessage + userMessage + contextMessage);
 
         if (estimatedInputTokens > state.MaxInputTokens)
@@ -242,7 +263,7 @@ public sealed class AtlasAiService : IAtlasAiService
                         provider_error = providerError,
                         retry_after_seconds = retryAfterSeconds
                     });
-                throw new IaProviderException(BuildProviderHttpErrorMessage(state, (int)response.StatusCode, providerError, retryAfterSeconds));
+                throw new IaProviderException(BuildProviderHttpErrorMessage(state, (int)response.StatusCode, LogScrubber.Scrub(providerError), retryAfterSeconds));
             }
 
             ProviderResponse parsed;
@@ -293,6 +314,10 @@ public sealed class AtlasAiService : IAtlasAiService
                 throw new IaProviderException("La IA devolvio una respuesta interna en vez de una respuesta final. Reintenta o prueba otro modelo.");
             }
 
+            // V-02-07: revertir la seudonimizacion despues del chequeo de fuga de analisis
+            // interno (que debe evaluar el texto tal como lo devolvio el proveedor).
+            visibleAnswer = pseudonyms.Reverse(visibleAnswer);
+
             var outputTokens = parsed.OutputTokens > 0 ? parsed.OutputTokens : EstimateTokens(parsed.Answer);
             var inputTokens = parsed.InputTokens > 0 ? parsed.InputTokens : estimatedInputTokens;
             var cost = EstimateCost(inputTokens, outputTokens, state);
@@ -323,6 +348,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     contexto_caracteres = context.Texto.Length,
                     tokens_entrada_estimados = inputTokens,
                     tokens_salida_estimados = outputTokens,
+                    entidades_seudonimizadas = pseudonyms.Count,
                     coste_estimado_eur = Math.Round(cost, 8),
                     coste_mes_estimado_eur = Math.Round(monthCostAfter, 8),
                     coste_mes_usuario_estimado_eur = Math.Round(userUsageAfter.CosteEstimadoEur, 8),
@@ -515,7 +541,7 @@ public sealed class AtlasAiService : IAtlasAiService
                     UsageMonthCostEur: 0m,
                     UsageTotalCostEur: 0m),
                 (int)response.StatusCode,
-                ExtractProviderErrorSummary(payload)));
+                LogScrubber.Scrub(ExtractProviderErrorSummary(payload))));
         }
 
         var models = ParseOpenRouterModels(payload);
@@ -1007,6 +1033,40 @@ public sealed class AtlasAiService : IAtlasAiService
             FinancialRankingMetric.Income => "ingresos",
             _ => "neto"
         };
+
+    // V-02-07: construye el mapa de seudonimizacion reversible con las entidades en el
+    // scope del usuario (mismo patron de scope que BuildFinancialContextAsync) para que
+    // el prompt y el contexto enviados al proveedor de IA no lleven nombres reales.
+    private async Task<AiPseudonymMap> BuildPseudonymMapAsync(UserAccessScope scope, Guid? paisId, CancellationToken cancellationToken)
+    {
+        var cuentasQuery = _userAccessService.ApplyCuentaScope(_dbContext.Cuentas.AsNoTracking(), scope).ApplyPaisScope(paisId);
+
+        var titulares = await (
+                from t in _dbContext.Titulares.AsNoTracking()
+                join c in cuentasQuery on t.Id equals c.TitularId
+                select t.Nombre)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var cuentas = await cuentasQuery
+            .Select(c => c.Nombre)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var terceros = await (
+                from d in _dbContext.ExtractosDesgloses.AsNoTracking()
+                join e in _dbContext.Extractos.AsNoTracking() on d.ExtractoId equals e.Id
+                join c in cuentasQuery on e.CuentaId equals c.Id
+                select d.TerceroNombre)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var entidades = titulares.Select(x => (Nombre: x, Tipo: "TITULAR"))
+            .Concat(cuentas.Select(x => (Nombre: x, Tipo: "CUENTA")))
+            .Concat(terceros.Select(x => (Nombre: x, Tipo: "TERCERO")));
+
+        return new AiPseudonymMap(entidades);
+    }
 
     private async Task<(string Texto, int MovimientosAnalizados)> BuildFinancialContextAsync(
         UserAccessScope scope,
@@ -1558,6 +1618,18 @@ public sealed class AtlasAiService : IAtlasAiService
         CancellationToken cancellationToken,
         object? extra = null)
     {
+        // V-02.07: desde que el detalle del proveedor dejo de viajar al cliente, la
+        // auditoria era el unico rastro del fallo. Se replica al log del servidor para
+        // poder diagnosticar sin consultar la BD. El texto ya viene redactado de
+        // ShortProviderPayload; aqui no se anade nada crudo.
+        _logger.LogWarning(
+            "Error de proveedor IA: motivo={Reason} provider={Provider} model={Model} status={StatusCode} detalle={Extra}",
+            reason,
+            state.Provider,
+            state.Model,
+            statusCode,
+            extra is null ? "-" : JsonSerializer.Serialize(extra));
+
         await _auditService.LogAsync(
             userId,
             AuditActions.IaConsultaError,
@@ -1760,32 +1832,35 @@ public sealed class AtlasAiService : IAtlasAiService
             _ => "openrouter.ai"
         };
 
+    // V-02-07 (bug): el detalle crudo del proveedor NO se expone al cliente (el regex de
+    // ShortProviderPayload no cubria todos los formatos de credencial y podia filtrar claves
+    // API al navegador). providerError se sigue usando solo para clasificar el caso; el texto
+    // completo queda registrado en auditoria (provider_error) y en el log del servidor.
     private static string BuildProviderHttpErrorMessage(IaGovernanceState state, int statusCode, string? providerError, int? retryAfterSeconds = null)
     {
         var provider = ProviderDisplayName(state);
-        var detail = string.IsNullOrWhiteSpace(providerError) ? string.Empty : $" Detalle proveedor: {providerError}";
         if ((statusCode == 429 || statusCode == 503) && retryAfterSeconds is > 0)
         {
-            return $"{provider} esta limitando la consulta ({statusCode}). Reintenta en {retryAfterSeconds.Value} segundos.{detail}";
+            return $"{provider} esta limitando la consulta ({statusCode}). Reintenta en {retryAfterSeconds.Value} segundos.";
         }
 
         if (state.Provider == "OPENROUTER" && statusCode == 404 && IsOpenRouterDataPolicyError(providerError))
         {
-            return $"{provider} no encontro endpoints compatibles con la privacidad configurada ({statusCode}). Revisa OpenRouter > Settings > Privacy o prueba un modelo con ruta ZDR disponible.{detail}";
+            return $"{provider} no encontro endpoints compatibles con la privacidad configurada ({statusCode}). Revisa OpenRouter > Settings > Privacy o prueba un modelo con ruta ZDR disponible.";
         }
 
         if (state.Provider == "OPENROUTER" && statusCode == 404 && IsOpenRouterModelRestrictionError(providerError))
         {
-            return $"{provider} no encontro ningun modelo compatible con las restricciones configuradas ({statusCode}). Revisa el ID del modelo, tu saldo/cuota o la configuracion de privacidad del proveedor.{detail}";
+            return $"{provider} no encontro ningun modelo compatible con las restricciones configuradas ({statusCode}). Revisa el ID del modelo, tu saldo/cuota o la configuracion de privacidad del proveedor.";
         }
 
         return statusCode switch
         {
-            401 or 403 => $"{provider} rechazo la autenticacion ({statusCode}). Revisa la clave API configurada.{detail}",
-            404 => $"{provider} no encontro el modelo solicitado ({statusCode}). Revisa que el ID exista y este disponible para tu cuenta.{detail}",
-            429 => $"{provider} limito la consulta ({statusCode}). Revisa cuota, rate limit o saldo del proveedor.{detail}",
-            503 => $"{provider} no tiene proveedor disponible ahora mismo ({statusCode}). Reintenta mas tarde o prueba otro modelo.{detail}",
-            _ => $"{provider} no ha respondido correctamente ({statusCode}).{detail}"
+            401 or 403 => $"{provider} rechazo la autenticacion ({statusCode}). Revisa la clave API configurada.",
+            404 => $"{provider} no encontro el modelo solicitado ({statusCode}). Revisa que el ID exista y este disponible para tu cuenta.",
+            429 => $"{provider} limito la consulta ({statusCode}). Revisa cuota, rate limit o saldo del proveedor.",
+            503 => $"{provider} no tiene proveedor disponible ahora mismo ({statusCode}). Reintenta mas tarde o prueba otro modelo.",
+            _ => $"{provider} no ha respondido correctamente ({statusCode})."
         };
     }
 
@@ -1928,6 +2003,22 @@ public sealed class AtlasAiService : IAtlasAiService
             "$1 REDACTED",
             RegexOptions.CultureInvariant,
             TimeSpan.FromMilliseconds(100));
+
+        // V-02-07 (bug): segunda pasada que redacta por FORMA de credencial, sin depender
+        // de la palabra clave vecina (el regex anterior falla cuando la palabra clave no
+        // esta pegada al valor, p.ej. "API key provided: sk-proj-...", donde "provided:"
+        // queda como si fuera el valor a redactar y la clave real sobrevive). Cubre
+        // prefijos conocidos de proveedores. Esto ya no llega al cliente: solo alimenta
+        // la auditoria y el log del servidor, ambos de acceso exclusivo de administrador,
+        // y ahi el mensaje tiene que seguir siendo legible para poder diagnosticar. Por
+        // eso NO se redacta por longitud generica: se cargaria el texto util del error.
+        sanitized = Regex.Replace(
+            sanitized,
+            @"(?i)\b(?:sk-proj-|sk-or-v1-|sk-|hf_|gsk_|xai-|AIza)[A-Za-z0-9_-]+",
+            "REDACTED",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(100));
+
         return sanitized.Length <= 180 ? sanitized : sanitized[..180];
     }
 
@@ -2449,19 +2540,20 @@ public sealed class AtlasAiService : IAtlasAiService
                property.GetArrayLength() > 0;
     }
 
+    // V-02-07 (bug): el detalle crudo del proveedor NO se expone al cliente (el regex de
+    // ShortProviderPayload no cubria todos los formatos de credencial y podia filtrar claves
+    // API al navegador). exception.ProviderError se sigue registrando en auditoria
+    // (provider_error) y en el log del servidor.
     private static string BuildProviderResponseErrorMessage(IaGovernanceState state, ProviderResponseException exception)
     {
         var provider = ProviderDisplayName(state);
-        var detail = string.IsNullOrWhiteSpace(exception.ProviderError)
-            ? string.Empty
-            : $" Detalle proveedor: {exception.ProviderError}";
 
         return exception.Kind switch
         {
-            "provider_error" => $"{provider} devolvio un error dentro de una respuesta 200.{detail}",
+            "provider_error" => $"{provider} devolvio un error dentro de una respuesta 200.",
             "content_filter" => "El modelo bloqueo la salida por filtro de contenido. Reformula la consulta financiera o reduce el contexto enviado.",
             "length" => "El proveedor corto la respuesta por limite de tokens. Reduce el alcance de la pregunta o aumenta MaxOutputTokens en Configuracion.",
-            "refusal" => $"El modelo rechazo la consulta.{detail}",
+            "refusal" => "El modelo rechazo la consulta.",
             "tool_calls_without_content" => "La IA no devolvio una respuesta legible. Prueba otro modelo disponible.",
             "empty_body" or "empty_choices" or "content_null" or "missing_message_content" => $"{provider} no devolvio contenido util. Reintenta o prueba otro modelo disponible.",
             _ => $"{provider} no devolvio una respuesta de chat compatible ({exception.Kind}). Reintenta o prueba otro modelo disponible."

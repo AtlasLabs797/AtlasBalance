@@ -305,7 +305,16 @@ public sealed class ExportacionService : IExportacionService
             throw new InvalidOperationException($"Configuracion '{configKey}' contiene segmentos de traversal.");
         }
 
-        if (!Path.IsPathRooted(trimmed) && !LooksLikeWindowsRootedPath(trimmed))
+        // V-02.07: rechazar rutas de red (UNC). Path.IsPathRooted("\\\\host\\share") devuelve
+        // true, asi que sin este filtro un valor UNC ya guardado en BD escribiria las
+        // exportaciones fuera de la maquina. Se revalida aqui aunque el controlador ya filtre.
+        if (IsUncPath(trimmed))
+        {
+            throw new InvalidOperationException($"Configuracion '{configKey}' no admite rutas de red (UNC).");
+        }
+
+        var isNativeAbsolutePath = !OperatingSystem.IsWindows() && Path.IsPathRooted(trimmed);
+        if (!LooksLikeWindowsRootedPath(trimmed) && !isNativeAbsolutePath)
         {
             throw new InvalidOperationException($"Configuracion '{configKey}' debe ser una ruta absoluta.");
         }
@@ -334,6 +343,12 @@ public sealed class ExportacionService : IExportacionService
                char.IsLetter(value[0]) &&
                value[1] == ':' &&
                (value[2] == '\\' || value[2] == '/');
+    }
+
+    private static bool IsUncPath(string value)
+    {
+        return value.StartsWith(@"\\", StringComparison.Ordinal) ||
+               value.StartsWith("//", StringComparison.Ordinal);
     }
 }
 

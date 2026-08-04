@@ -11,6 +11,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{1824868E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AtlasBalance.API.Tests", "tests\AtlasBalance.API.Tests\AtlasBalance.API.Tests.csproj", "{8AB9F47B-27F4-4565-ACD2-53325A9E49CF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AtlasBalance.Caching.Tests", "tests\AtlasBalance.Caching.Tests\AtlasBalance.Caching.Tests.csproj", "{C3A1B2D4-5E6F-7890-ABCD-EF1234567890}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -29,8 +31,13 @@ Global
 		{8AB9F47B-27F4-4565-ACD2-53325A9E49CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8AB9F47B-27F4-4565-ACD2-53325A9E49CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8AB9F47B-27F4-4565-ACD2-53325A9E49CF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3A1B2D4-5E6F-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3A1B2D4-5E6F-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3A1B2D4-5E6F-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3A1B2D4-5E6F-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{8AB9F47B-27F4-4565-ACD2-53325A9E49CF} = {1824868E-04D0-4307-99DD-386E353F68E0}
+		{C3A1B2D4-5E6F-7890-ABCD-EF1234567890} = {1824868E-04D0-4307-99DD-386E353F68E0}
 	EndGlobalSection
 EndGlobal

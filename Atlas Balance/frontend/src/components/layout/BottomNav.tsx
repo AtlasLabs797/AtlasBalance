@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { IconMenu } from '@/components/Icons';
 import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';

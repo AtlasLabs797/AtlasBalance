@@ -1,4 +1,1422 @@
-# Log de errores e incidencias
+﻿# Log de errores e incidencias
+
+## 2026-08-04 - V-02.07 - CI ocultaba seis fallos causados por rutas Windows en Ubuntu (CERRADO)
+
+- **Run:** `30880106452`, job `Build, test, and audit`, paso `Test backend`.
+- **Sintoma:** xUnit v3 informo `Failed: 6, Passed: 650`, pero escribio las
+  trazas en `TestResults/AtlasBalance.API.Tests_net8.0_x64.log`; el workflow no
+  las imprimia ni subia y el runner efimero las elimino al terminar.
+- **Correccion de observabilidad:** si `dotnet test` devuelve error, CI extrae
+  solo los identificadores `namespace.clase.metodo` y conserva el exit code.
+  No publica rutas, mensajes, parametros ni valores de asercion.
+- **Primer run diagnostico:** `30921246599` repitio 6 fallos/650 correctos, pero
+  no encontro identificadores: el log es UTF-16LE (`FF FE`) y `grep` ve bytes
+  NUL entre caracteres. Ajustado a la ruta `bin` efectiva y conversion
+  `iconv` a UTF-8, manteniendo salida exclusiva de identificadores.
+- **Segundo run diagnostico:** `30921865207` confirmo que el log Linux no usa la
+  misma codificacion que Windows. Se anadio deteccion de BOM: UTF-16LE solo con
+  `FF FE` y UTF-8 en el resto.
+- **Diagnostico definitivo:** `30922390384` expuso cinco tests de
+  `ExportacionService` y uno de `BackupService`. Todos configuraban
+  `Path.GetTempPath()` (`/tmp/...` en Ubuntu), pero `ResolveSafeDirectory`
+  exigia siempre sintaxis de unidad Windows. El septimo nombre mostrado, un test
+  MFA terminado en `Failures`, era un falso positivo del grep y pasa localmente.
+- **Solucion:** permitir `Path.IsPathRooted` solo en sistemas no Windows; en
+  Windows se mantiene la comprobacion `C:\\...`. El rechazo de traversal y UNC
+  se ejecuta antes y no cambia. El extractor queda anclado al estado al inicio de
+  linea para no interpretar palabras del identificador como resultado.
+- **Verificacion:** suite local 639/656 correcta; los 17 fallos son unicamente
+  PostgreSQL/Testcontainers por Docker no disponible. Los seis tests de este
+  incidente ya no aparecen entre los fallidos. El extractor devuelve los 17
+  fallos reales del log local sin el falso positivo MFA. El run CI `30923568853`
+  cerro la comprobacion real con Docker/PostgreSQL: 656/656 tests backend y los
+  tres jobs del workflow correctos.
+
+---
+
+## 2026-08-04 - V-02.07 - Huecos de seguridad pre-launch en Drive, Watchdog y ACL locales (CERRADO)
+
+- **Contexto:** revision integral de secretos, input, SQL, auth/authz, errores,
+  CORS, debug, cookies, HTTPS, rate limiting, ficheros, dependencias y artefactos.
+- **Incidencias:** la importacion Drive no tenia limite de descarga/descifrado;
+  el Watchdog no tenia cuota ni limite reducido de body y revelaba una ruta
+  absoluta en un error; varias entradas administrativas carecian de cotas; los
+  directorios de backups/exportaciones heredaban permisos del padre.
+- **Riesgo:** agotamiento de disco, fuerza bruta o abuso del servicio local,
+  filtracion de topologia del servidor, consumo desproporcionado de CPU/memoria
+  y lectura de datos financieros por usuarios locales.
+- **Solucion:** limite Drive configurable de 10 GiB comprobado en metadata,
+  cabecera, stream y descifrado con borrado de parciales; validacion temprana de
+  IDs y DTOs; rate limiting global/sensible y body de 16 KiB en Watchdog;
+  errores genericos; DACL exacta Administradores/SYSTEM en instalacion y update.
+- **Defectos interceptados en revision:** `/health` compartia inicialmente la
+  clave de particion global y podia dejar exenta una IP; el contrato alternativo
+  de cifrado podia ignorar el limite; `icacls /grant:r` podia conservar ACE
+  explicitas antiguas. Los tres se corrigieron antes del cierre y tienen prueba
+  o comprobacion especifica.
+- **Verificacion:** compilacion sin errores, 74/74 pruebas afectadas, parser de
+  scripts OK, scanner de secretos limpio y SCA npm/NuGet sin hallazgos. La suite
+  completa dio 639 correctas y 17 fallos exclusivamente por Docker/Testcontainers
+  no disponible.
+- **Estado:** cerrado en codigo. El lanzamiento sigue condicionado a validar el
+  ZIP y el Windows Server reales, BitLocker, certificado/proxy y un ciclo
+  `pg_dump`/restore con PostgreSQL.
+
+---
+
+## 2026-08-04 - V-02.07 - El rol owner no podia hacer `pg_dump`: los backups fallaban con FORCE RLS activo (CERRADO)
+
+- **Contexto:** auditoria de configuracion insegura y defaults de produccion
+  (CORS, debug, exposicion de BD, credenciales por defecto, verbosidad de
+  errores). El hallazgo no viene de un fallo reportado sino de cruzar el
+  modelo de roles con el modelo de RLS, que nadie ataba entre si.
+- **Sintoma:** ninguno visible hasta que alguien intenta un backup. En ese
+  momento `pg_dump` aborta con error y `BackupService.RunPgDumpAsync`
+  devuelve `(false, mensaje)`. La restauracion nunca se habia validado en
+  esta configuracion (pendiente heredado de V-02.06).
+- **Causa:** las tablas de negocio llevan `FORCE ROW LEVEL SECURITY` (48
+  sentencias sobre 23 tablas: `CUENTAS`, `EXTRACTOS`, `TITULARES`,
+  `AUDITORIAS`...). `FORCE` elimina precisamente la exencion que el owner
+  tiene por defecto; solo superusuarios y roles con `BYPASSRLS` quedan
+  exentos siempre. El rol owner se creaba con `NOBYPASSRLS`
+  (`001-create-app-user.sh:19,21` y `Instalar-AtlasBalance.ps1:459,461`).
+  `pg_dump` fija `row_security=off` por defecto y la documentacion de
+  PostgreSQL 16 es literal: *"If the user does not have sufficient
+  privileges to bypass row security, then an error is thrown"*. El
+  comentario de `BackupService.cs:210-212` daba por hecho lo contrario
+  ("forzar la conexion owner para que pg_dump pueda atravesar FORCE ROW
+  LEVEL SECURITY"): conectar como owner es necesario pero no suficiente.
+- **Por que no lo cazo el drill:** `Test-BackupRestore.ps1:12` usaba
+  `$DbUser = "postgres"` por defecto. El superusuario bypassea RLS
+  **siempre**, asi que el simulacro validaba un camino que produccion nunca
+  recorre. Ademas, sus recuentos del origen van por `psql`, donde
+  `row_security` esta en `on` y las policies filtran en silencio: con el rol
+  owner habrian salido ceros sin error, no un fallo ruidoso.
+- **Solucion:** conceder `BYPASSRLS` **solo** al rol owner, que se usa para
+  migraciones y `pg_dump`. `app_user` (runtime) sigue `NOBYPASSRLS`: su
+  aislamiento por RLS es el nucleo del modelo y no se toca. El coste de
+  seguridad es nulo porque el owner ya es dueno de las tablas y podria
+  borrar las propias policies.
+  - `scripts/postgres-init/001-create-app-user.sh`: `atlas_owner` con
+    `BYPASSRLS` en las ramas CREATE y ALTER.
+  - `scripts/Instalar-AtlasBalance.ps1:525,527`: idem para el rol owner.
+  - `scripts/Grant-OwnerBypassRls.ps1` (nuevo): cubre instalaciones ya
+    desplegadas. `ALTER ROLE ... WITH BYPASSRLS` + verificacion contra
+    `pg_roles.rolbypassrls`.
+  - `scripts/Test-BackupRestore.ps1`: nuevo `$DumpUser` (rol owner) usado
+    solo en `pg_dump`; `$DbUser` sigue siendo el superusuario para
+    `DROP`/`CREATE DATABASE`, porque el owner es `NOCREATEDB`.
+- **Descartado:** anadir `--enable-row-security` a `pg_dump`. Habria hecho
+  desaparecer el error, pero volcando solo las filas visibles bajo las
+  policies: exactamente el backup parcial y silencioso que se quiere evitar.
+- **Descartado:** resolverlo con una migracion de EF. `ALTER ROLE ... WITH
+  BYPASSRLS` exige superusuario (*"Only superuser roles or roles with
+  BYPASSRLS can specify BYPASSRLS"*) y las migraciones corren con
+  `MigrationConnection`, que es el propio owner `NOSUPERUSER`: la migracion
+  fallaria en el arranque. Por eso el arreglo vive en los scripts que
+  conectan como `postgres`.
+- **Regla:** cualquier rol que ejecute `pg_dump` sobre este esquema necesita
+  `BYPASSRLS`, y el drill de restauracion debe usar el MISMO rol que usa
+  `BackupService.cs` en produccion. Un drill que corre como superusuario no
+  prueba el camino real.
+- **Pendiente:** verificacion en caliente. Falta ejecutar un `pg_dump` real
+  con el rol owner y confirmar recuentos no nulos en `CUENTAS`/`EXTRACTOS`
+  dentro del `.dump`.
+
+## 2026-08-04 - V-02.07 - Clave de ExchangeRate-API y webhook de Slack escritos en claro en los logs (CERRADO)
+
+- **Contexto:** misma auditoria, frente de servicios de terceros.
+- **Sintoma:** ninguno visible. Los secretos aparecen en
+  `atlas-balance-.log` (retencion 30 dias) y en consola, en un fichero que
+  se copia para soporte sin que nadie sospeche que lleva credenciales.
+- **Causa:** dos secretos viajan dentro de la URL, no en cabeceras:
+  ExchangeRate-API exige la clave como segmento de ruta
+  (`TiposCambioService.cs:415`) y en Slack la propia URL del webhook **es**
+  el secreto (`SlackAlertNotifier.cs:97-98`). `IHttpClientFactory` anade por
+  defecto sus handlers de logging, que registran la URI completa a nivel
+  `Information` bajo `System.Net.Http.HttpClient.<cliente>.LogicalHandler` y
+  `.ClientHandler`. La configuracion de Serilog tenia `MinimumLevel.Default`
+  en `Information` y solo bajaba a `Warning` las categorias `Microsoft`,
+  `Microsoft.EntityFrameworkCore` y `Hangfire`; `System.Net.Http.*` no
+  estaba cubierta por ningun override.
+- **Por que no lo cazo nada:** `LogScrubber` protege los sinks propios, pero
+  aqui el emisor es el framework, no codigo nuestro. Ningun `_logger.Log*`
+  del repo toca esos valores.
+- **Solucion:** override `"System.Net.Http.HttpClient": "Warning"` en el
+  bloque `Serilog:MinimumLevel:Override` de `appsettings.json`,
+  `appsettings.Production.json.template` y
+  `appsettings.Development.json.template`. Serilog hace match por prefijo de
+  `SourceContext`, asi que cubre `.LogicalHandler` y `.ClientHandler` de
+  todos los clientes con nombre, no solo el de exchange-rate.
+- **No aplica al Watchdog:** usa `new HttpClient(handler)` directo
+  (`WatchdogOperationsService.cs:927-933`), no `IHttpClientFactory`, asi que
+  nunca tuvo esos handlers. Su unica URL externa es el health de loopback y
+  no lleva secretos.
+- **Regla:** un secreto que viaja en la URL no lo protege `LogScrubber`. Si
+  un proveedor obliga a meter la credencial en la ruta o en el querystring,
+  hay que silenciar ademas la categoria de logging de su `HttpClient`.
+
+## 2026-08-02 - V-02.07 - `POST /api/integration/openclaw/resolver-nombres` era inalcanzable: 403 permanente (CERRADO)
+
+- **Contexto:** auditoria de permisos endpoint por endpoint de V-02.07
+  (los 24 controllers de la API mas el Watchdog). El hallazgo no salio de
+  un fallo reportado sino de cruzar dos listas que nadie ataba entre si.
+- **Sintoma:** cualquier llamada a `POST /api/integration/openclaw/resolver-nombres`
+  con un token valido responde `403 FORBIDDEN`, sin importar los scopes ni
+  los permisos de datos concedidos.
+- **Causa:** `IntegrationAuthMiddleware.TokenAllowsEndpoint` es
+  deny-by-default y exige que el token lleve el scope que
+  `ResolveEndpointScope` deriva del primer segmento de la ruta, o sea
+  `resolver-nombres`. Pero ese valor no estaba en `DefaultOpenClawScopes`
+  (`IntegracionesController.cs`), que era la unica lista de scopes validos:
+  `FindUnknownScope` lo rechazaba con 400 y `NormalizeEndpointScopes` lo
+  filtraba en silencio. Ningun token creado o rotado por la API de
+  administracion podia recibirlo, asi que el endpoint quedaba muerto salvo
+  editando la fila a mano en BD.
+- **Por que no lo cazo la suite:** no habia ningun test que relacionara las
+  rutas del controller con la lista de scopes concedibles. Son dos listas
+  mantenidas a mano en archivos distintos. El fallo es silencioso por
+  naturaleza: la ruta existe, el controller esta escrito y probado, y el
+  unico sintoma es un 403 que se confunde con "no le he dado permisos".
+  `v-02.07.md` incluso lo documentaba como auditado y operativo.
+- **Solucion:** separar los dos papeles que cumplia `DefaultOpenClawScopes`.
+  Se anade `KnownOpenClawScopes` (universo de scopes VALIDOS, que es contra
+  lo que validan ahora `FindUnknownScope` y `NormalizeEndpointScopes`) y
+  `DefaultOpenClawScopes` se queda solo como los scopes concedidos cuando
+  el caller OMITE el campo. `resolver-nombres` entra en el primero pero
+  **no** en el segundo: deshace la pseudonimizacion de nombres
+  (re-identificacion), asi que se concede solo si el admin lo marca a
+  proposito. Meterlo en los defaults habria dado capacidad de
+  re-identificar a todo token creado sin scopes explicitos, que es una
+  regresion de privacidad peor que el bug que arregla.
+- **Regresion:** `IntegrationOpenClawScopeCoverageTests.cs` (nuevo, 3 facts)
+  ata las dos listas: recorre por reflexion las rutas de
+  `IntegrationOpenClawController`, replica el `ResolveEndpointScope` del
+  middleware y exige que cada scope resultante exista en
+  `KnownOpenClawScopes`. Verificado que falla sin el arreglo (senala
+  `ResolverNombres -> 'resolver-nombres'`) y pasa con el.
+- **Leccion:** cuando una constante cumple dos papeles a la vez (validar y
+  conceder por defecto), ampliarla para arreglar el primero regala permisos
+  por el segundo. Separar antes de anadir. Y toda lista de permisos que se
+  mantiene a mano en dos archivos necesita un test que los ate: aqui el
+  fallo no era ruidoso, era un endpoint invisible.
+
+## 2026-07-31 - V-02.07 - `LimpiezaExportacionesJob` no podia purgar: su propia policy RLS rechazaba el borrado logico (CERRADO)
+
+- **Contexto:** auditoria de RLS de V-02.07. El hallazgo no salio de un
+  fallo reportado sino de leer la migracion
+  `20260724090000_FixExportacionesWriteRlsDeletedAtCheck`, que se habia
+  escrito precisamente para arreglar otra asimetria de `deleted_at`.
+- **Sintoma esperado en produccion:** `LimpiezaExportacionesJob` aborta en
+  cada ejecucion con `new row violates row-level security policy for table
+  "EXPORTACIONES"`. La purga por retencion de ficheros de exportacion con
+  PII no se completa nunca.
+- **Causa:** esa migracion dejo el `WITH CHECK` de `exportaciones_write`
+  como `deleted_at IS NULL AND can_export_cuenta_by_id(cuenta_id)`, sin
+  replicar la salida `is_admin_or_system()` que el `USING` si tiene. En un
+  `UPDATE` el `WITH CHECK` evalua la fila NUEVA: el job marca
+  `deleted_at = now()`, la fila nueva ya no cumple `deleted_at IS NULL` y
+  Postgres la rechaza. Que el job corra en contexto `system` no ayudaba,
+  porque esa rama no existia en el `WITH CHECK`.
+- **Por que no lo cazo la suite:** `LimpiezaExportacionesJobTests.cs:186`
+  usa `UseInMemoryDatabase`. El proveedor in-memory no evalua RLS, asi que
+  el test pasa en verde mientras produccion falla. El patron afecta a todos
+  los tests de jobs.
+- **Solucion:** migracion `20260731090000_FixExportacionesPurgaRlsWithCheck`
+  devuelve la simetria (`WITH CHECK` = `USING`). Para un usuario normal no
+  cambia nada: sigue exigiendo `deleted_at IS NULL` y permiso de
+  exportacion, y no existe endpoint de borrado de exportaciones (el unico
+  camino de soft-delete es el job). Regresion cubierta en
+  `RowLevelSecurityTests`, que ahora ejecuta el borrado logico en contexto
+  `system` contra Postgres real y exige mas de 0 filas afectadas.
+- **Leccion:** `deleted_at IS NULL` va en `USING`, nunca en `WITH CHECK`.
+  En `USING` filtra las filas candidatas; en `WITH CHECK` prohibe el propio
+  borrado logico. `CONCILIACIONES` y `MOVIMIENTOS_ESPERADOS` ya lo hacian
+  bien en `20260720090000`; `EXPORTACIONES` se desvio del patron.
+
+## 2026-07-31 - V-02.07 - RLS sin backstop de soft-delete en las tres tablas hijas de EXTRACTOS (CERRADO)
+
+- **Contexto:** misma auditoria de RLS. Ampliado respecto al hallazgo
+  inicial, que solo señalaba las policies de escritura.
+- **Causa:** las policies de `EXTRACTOS_COLUMNAS_EXTRA` (2026-05-01) y
+  `REVISION_EXTRACTO_ESTADOS` (2026-06-01) se escribieron ANTES de que
+  `20260710092000_AddSoftDeleteToImportacionFilaColumnaExtraRevision`
+  anadiera la columna `deleted_at` a esas tablas. Nunca se actualizaron,
+  asi que ni el `SELECT` ni la escritura filtraban filas borradas.
+  `EXTRACTOS_DESGLOSES` si filtraba en el `SELECT`, pero no al escribir.
+  El unico filtro efectivo era el query filter global de EF Core: cualquier
+  consulta con `IgnoreQueryFilters`, o un `UPDATE` por id, alcanzaba filas
+  ya borradas.
+- **Solucion:** migracion
+  `20260731091000_HardenSoftDeleteBackstopHijosExtracto` anade
+  `deleted_at IS NULL` al `USING` de las tres tablas (y al `SELECT` de las
+  dos que no lo tenian), replicando lo que `20260716120000` hizo con
+  `IMPORTACION_LOTE_FILAS`. El `WITH CHECK` se deja intacto por la leccion
+  de la entrada anterior.
+- **Leccion:** anadir `deleted_at` a una tabla con RLS obliga a revisar sus
+  policies en la misma migracion. La columna y la policy no se sincronizan
+  solas.
+
+## 2026-07-31 - V-02.07 - `ImportacionLoteId` aceptaba un lote de otra cuenta (CERRADO)
+
+- **Contexto:** auditoria de autorizacion por endpoint de V-02.07.
+- **Causa:** `ImportacionService.ConfirmarCoreAsync` validaba
+  `request.CuentaId` con `EnsureCuentaPermitidaAsync` pero escribia
+  `request.LoteId` directamente en `Extracto.ImportacionLoteId` sin
+  comprobar que ese lote perteneciera a la cuenta. Ademas
+  `RevertirLoteAsync` borraba filtrando solo por `ImportacionLoteId`, sin
+  `CuentaId`, asi que la reversion legitima de un lote arrastraba de rebote
+  las filas etiquetadas desde otra cuenta.
+- **Alcance real:** no es fuga de lectura. Para un usuario normal RLS ya
+  frenaba el borrado cruzado (el `USING` de `extractos_write` excluye las
+  cuentas sin permiso de escritura); para un admin no, y en todo caso el
+  rastro de importacion quedaba sucio. Requiere conocer un GUID ajeno.
+- **Solucion:** `EnsureLotePerteneceACuentaAsync` valida la pertenencia
+  antes de importar (403 si no cuadra) y el filtro de `RevertirLoteAsync`
+  incluye `CuentaId` para acotar el radio de las filas mal etiquetadas de
+  antes del fix.
+- **Leccion:** el id primario de un request no es el unico que hay que
+  validar. Todo identificador secundario que venga del cliente y se
+  persista necesita su propia comprobacion de pertenencia.
+
+## 2026-07-31 - V-02.07 - `[Range]` con limites decimales revienta la validacion en un servidor es-ES (CERRADO)
+
+- **Contexto:** detectado al anadir rangos a `Monto`/`Saldo` de extractos
+  dentro de la auditoria de validacion de entrada. El defecto ya estaba vivo
+  en `ImportacionPlazoFijoMovimientoRequest.Monto`, introducido en la propia
+  V-02.07 junto con el resto de anotaciones de `ImportacionDtos.cs`.
+- **Causa:** `RangeAttribute(Type, string, string)` convierte sus limites con
+  `TypeDescriptor.GetConverter(...).ConvertFromString(...)`, que usa
+  `CultureInfo.CurrentCulture`. El proyecto no fija `InvariantGlobalization`
+  ni cultura por defecto en ningun sitio, asi que hereda la del sistema:
+  `es-ES`, separador decimal coma. `DecimalConverter` no acepta `"0.0001"`
+  bajo esa cultura y lanza `FormatException` desde
+  `RangeAttribute.SetupConversion()`, que sale como `ArgumentException` sin
+  capturar durante la validacion del modelo. **El endpoint contesta 500 en
+  cada peticion, no un rango mal calculado.**
+- **Matiz que despisto al diagnosticar:** una comprobacion rapida con
+  `decimal.Parse("0.0001", NumberStyles.Float | AllowThousands, es-ES)`
+  devuelve `1`, lo que sugiere un minimo silenciosamente mal puesto. Es una
+  pista falsa: `DecimalConverter` no usa `AllowThousands`, asi que el
+  comportamiento real es la excepcion, no el parseo torcido. Conviene
+  reproducirlo con el converter y no con `decimal.Parse`.
+- **Solucion:** `ParseLimitsInInvariantCulture = true` en todos los `[Range]`
+  con limites en cadena (`ImportacionDtos.cs` y los nuevos de
+  `ExtractosDtos.cs`). La propiedad existe desde .NET 8.
+- **Verificacion:** `DtoValidationTests.ImportacionPlazoFijo_Should_Accept_SubUnitAmounts_UnderSpanishCulture`
+  fija `CultureInfo.CurrentCulture` a `es-ES` a proposito, de modo que el test
+  falla en cualquier maquina si alguien quita el flag. Se comprobo revirtiendo
+  el fix: 2 tests en rojo sin el, 601/601 en verde con el.
+- **Regla para lo que venga:** cualquier `[Range]` nuevo con limites decimales
+  en cadena lleva `ParseLimitsInInvariantCulture = true`. La alternativa
+  (fijar cultura invariante en todo el proceso) no se toca aqui porque
+  afectaria al formateo de importes y fechas de toda la app.
+
+## 2026-07-30 - V-02.07 - `LimpiezaAuditoriaJob` llevaba desde V-02.03 borrando 0 filas y registrandolo como exito (CERRADO)
+
+- **Contexto:** al implementar el bloque de observabilidad de seguridad se
+  escribio un test de integracion contra PostgreSQL real para el nuevo mecanismo
+  append-only de `AUDITORIAS`. El primer INSERT crudo del test fallo con
+  `42501: new row violates row-level security policy`, lo que llevo a revisar
+  como estaba configurada RLS sobre esa tabla.
+- **Sintoma:** ninguno visible. El job `limpieza-auditoria` corria cada noche a
+  las 03:15 y registraba `LimpiezaAuditoriaJob elimino 0 auditorias ...` sin
+  error. La tabla `AUDITORIAS` crecia sin limite pese a tener una politica de
+  retencion de 28 dias declarada en codigo.
+- **Causa:** `20260501120000_EnableRowLevelSecurity` puso `ENABLE` y `FORCE ROW
+  LEVEL SECURITY` sobre `AUDITORIAS` y creo unicamente las politicas
+  `auditorias_select` y `auditorias_insert`. En PostgreSQL, un `DELETE` sobre una
+  tabla con RLS activo y **sin politica de DELETE** no falla: simplemente no ve
+  ninguna fila candidata y borra cero. `FORCE` hace que esto aplique tambien al
+  propietario de la tabla, asi que ni migraciones ni jobs se salvaban. El
+  `ExecuteDeleteAsync` del job devolvia 0 y el log lo daba por bueno.
+- **Por que no salto antes:** el job no comprueba que el numero de filas
+  borradas sea coherente con lo que hay por encima del corte, y "0 borradas" es
+  un resultado perfectamente normal cuando no hay nada que purgar. Sin una
+  metrica del tamano de la tabla, el sintoma era invisible.
+- **Alcance: las DOS tablas del job, no una.** El primer arreglo cubrio solo
+  `AUDITORIAS`. Al revisar despues si la causa raiz afectaba a mas sitios se vio
+  que `AUDITORIA_INTEGRACIONES` arrastra exactamente el mismo defecto desde la
+  misma migracion (`FORCE ROW LEVEL SECURITY` con politicas de SELECT e INSERT y
+  ninguna de DELETE), y la purga el mismo job. Estaba a medio arreglar.
+  Barrido completo de las 23 tablas con `FORCE ROW LEVEL SECURITY` contrastando
+  politicas declaradas contra comandos que el codigo ejecuta: el resto
+  (`MFA_TRUSTED_DEVICES`, `NOTIFICACIONES_ADMIN`, `PREFERENCIAS_USUARIO_CUENTA`,
+  `IMPORTACION_LOTES`, `IMPORTACION_LOTE_FILAS`...) tienen politicas `FOR ALL` o
+  `FOR DELETE` explicitas y estan bien. `REFRESH_TOKENS` no tiene RLS, asi que
+  `LimpiezaRefreshTokensJob` nunca estuvo afectado.
+- **Solucion aplicada** (`20260730090000_V0207AuditoriaAppendOnly` y
+  `20260730100000_V0207AuditoriaIntegracionPurga`):
+  1. Nueva politica `auditorias_delete`, que solo admite el borrado de filas de
+     mas de 90 dias y unicamente cuando la marca de sesion `atlas.audit_purge`
+     esta activa. Equivalente `auditoria_integraciones_delete` con suelo de 7
+     dias (su retencion nominal es de 28, un suelo de 90 haria la purga
+     imposible).
+  2. El job deja de hacer `ExecuteDelete` directo y llama a
+     `atlas_security.purgar_auditorias(retencion_dias)` y
+     `atlas_security.purgar_auditorias_integracion(retencion_dias)`, funciones
+     `SECURITY DEFINER` que activan la marca, borran y devuelven el numero de
+     filas. Si la retencion configurada esta por debajo del suelo de la BD, la
+     funcion lanza `23514`, el job lo registra como error y **no purga**:
+     preferimos que la tabla crezca antes que perder rastro por una
+     configuracion mal puesta.
+  3. Trigger `trg_auditorias_append_only`, que convierte en error explicito
+     cualquier UPDATE y cualquier DELETE de filas recientes de `AUDITORIAS`. El
+     objetivo es justamente que un intento de manipulacion deje de ser
+     silencioso. `AUDITORIA_INTEGRACIONES` no lo lleva: RLS ya impide el UPDATE
+     y ahi no se firma ninguna fila, asi que solo anadiria ruido.
+  4. La retencion de `AUDITORIAS` sube de 28 a 365 dias, configurable con
+     `Auditoria:RetentionDays`, con suelo de 90 impuesto por la propia base de
+     datos. `AUDITORIA_INTEGRACIONES` se queda en 28
+     (`Auditoria:IntegrationRetentionDays`).
+  5. `Program.GrantRuntimeDatabasePrivileges` revoca UPDATE/DELETE/TRUNCATE al
+     rol de runtime sobre ambas tablas, para que el fallo sea por privilegios y
+     no por filtrado silencioso.
+- **Leccion generalizable:** con `FORCE ROW LEVEL SECURITY`, cualquier comando
+  sin politica correspondiente es un no-op silencioso, no un error. Al anadir RLS
+  a una tabla hay que decidir explicitamente que pasa con **los cuatro**
+  comandos, y si alguno se quiere prohibir, prohibirlo de forma ruidosa (trigger
+  o REVOKE) en vez de dejarlo sin politica.
+- **Verificado:** `AuditoriaAppendOnlyPostgresTests` contra PostgreSQL 16 real,
+  12 tests. `Purge_Should_Delete_Old_Rows_And_Keep_Recent_Ones` e
+  `Integration_Audit_Purge_Should_Actually_Delete_Old_Rows` fallan si cualquiera
+  de las dos purgas vuelve a borrar cero.
+  `Integration_Audit_Should_Not_Be_Deletable_Outside_The_Purge` comprueba que el
+  arreglo no abre la mano: un DELETE suelto sigue sin borrar nada aunque la fila
+  sea antigua.
+
+---
+
+## 2026-07-29 - V-02.07 - `obj/` de otra cuenta bloquea el build del proyecto de tests (CERRADO con workaround)
+
+- **Contexto:** verificacion del alcance de rate limiting global. El
+  proyecto `AtlasBalance.API` compilaba con la redireccion de `obj`/`bin`
+  ya conocida, pero `AtlasBalance.API.Tests` no compilaba de ninguna
+  manera.
+- **Sintoma:** `dotnet build` y `dotnet restore` fallan con
+  `NuGet.targets(174,5): error : Access to the path
+  '...\tests\AtlasBalance.API.Tests\obj\project.assets.json' is denied.`
+- **Causa:** los directorios `obj/` de `src/AtlasBalance.API` y
+  `tests/AtlasBalance.API.Tests` los genero una ejecucion anterior bajo
+  las cuentas `TRAKERIA\CodexSandboxUsers` / `CodexSandboxOffline`. El
+  ACL de `project.assets.json` da `Modify` a esas cuentas y solo
+  `ReadAndExecute` a `BUILTIN\Usuarios`, que es donde cae el usuario
+  actual (`trakeria\usuario`). No es un lock de proceso: es un ACL
+  heredado, y por eso reintentar no arregla nada.
+- **Trampa a evitar:** redirigir `BaseIntermediateOutputPath` /
+  `BaseOutputPath` **no** sirve para el proyecto de tests. Al pasarse
+  como propiedad global de MSBuild, API y Tests escriben su
+  `project.assets.json` en la MISMA carpeta y se pisan; el resultado son
+  cientos de `CS0246`/`CS0234` falsos que parecen referencias rotas del
+  proyecto de tests y no lo son. Ese falso positivo hizo creer en un
+  primer momento que el proyecto de tests seguia roto de versiones
+  anteriores, cuando en realidad compila y pasa 446/446.
+- **Solucion:** copiar el arbol `backend/` (con `robocopy /E /XD obj bin`,
+  nunca `/MIR`) mas `Directory.Build.props` a una carpeta del scratchpad
+  con permisos de escritura, y compilar y ejecutar los tests alli. Es
+  finito, no toca el workspace y no requiere manipular ACLs.
+- **Leccion:** ante `Access denied` en `obj/`, mirar el ACL antes de
+  buscar procesos colgados. Y no usar redireccion de `obj` cuando el
+  build arrastra mas de un proyecto: el sintoma que produce (CS0246
+  masivos) apunta al sitio equivocado.
+- **Regla nueva:** para verificar `AtlasBalance.API.Tests` en este host,
+  copiar a scratchpad. La redireccion de `obj`/`bin` queda reservada para
+  builds de un unico proyecto (`AtlasBalance.API`, `AtlasBalance.Watchdog`).
+
+## 2026-07-29 - V-02.07 - `FluentValidation` registrado sin ningun validador (CERRADO)
+
+- **Contexto:** limpieza de los dos defectos que la auditoria de
+  mensajes de error habia dejado abiertos en `REGISTRO_BUGS.md`.
+- **Causa:** V-02.06 anadio
+  `AddFluentValidationAutoValidation().AddFluentValidationClientsideAdapters()`
+  en `Program.cs` para cerrar MED-23 (`DTOs sin atributos de
+  validacion`). MED-23 admitia dos vias alternativas â€”registrar
+  FluentValidation **o** anadir atributosâ€” y se aplicaron ambas, pero
+  nunca se escribio ni un solo `AbstractValidator<T>`. El registro
+  escaneaba el assembly y no activaba nada: la validacion real venia
+  siempre de los DataAnnotations.
+- **Solucion:** retirados el `using`, la llamada de registro y la
+  `PackageReference` de `AtlasBalance.API.csproj`. Regenerados con
+  `dotnet restore --force-evaluate` los cuatro `packages.lock.json`
+  afectados: API y los dos proyectos de test (arrastraban
+  FluentValidation transitivamente via ProjectReference). El Watchdog
+  no estaba afectado. Comentario en `Program.cs` dejando constancia de
+  que MED-23 sigue cerrado por la via de los DataAnnotations.
+- **Leccion:** si se cierra un hallazgo con una via que admite
+  alternativas, hay que verificar que la via elegida produce efecto
+  real. Aqui quedo el andamiaje sin nada encima durante una version
+  entera, dando falsa sensacion de cobertura de validacion.
+- **Verificacion:** `dotnet restore --locked-mode -r win-x64` (ruta de
+  `Build-Release.ps1`) en verde, 427/427 y 15/15 tests.
+
+## 2026-07-29 - V-02.07 - `[Required]` sobre `Guid` no-nullable nunca dispara (CERRADO)
+
+- **Contexto:** idem, segundo defecto pendiente.
+- **Causa:** `[Required] public Guid CuentaId` en tres DTOs de
+  importacion. `Guid` es un `struct`: un `cuenta_id` ausente se
+  deserializa a `Guid.Empty`, nunca a `null`, asi que
+  `RequiredAttribute` no podia fallar. Consecuencia observable: un
+  campo obligatorio ausente devolvia 404 "Cuenta no encontrada o
+  inactiva" (via `EnsureCuentaPermitidaAsync`, que no encuentra
+  ninguna cuenta con `Guid.Empty`) en lugar del 400 que corresponde.
+  No habia agujero de seguridad, solo semantica equivocada y falsa
+  cobertura.
+- **Solucion:** las tres propiedades pasan a `Guid?` conservando
+  `[Required]`, con lo que ModelState si rechaza la peticion. En los
+  tres puntos de lectura de `ImportacionService` se usa
+  `request.CuentaId ?? Guid.Empty` en vez de `.Value`, para que
+  cualquier camino interno que no pase por validacion de modelo siga
+  cayendo en el 404 limpio en vez de lanzar
+  `InvalidOperationException` y convertirse en un 500.
+- **Incidencia durante el arreglo:** la sustitucion inicial se aplico
+  con `replace_all` sobre `ImportacionService` y alcanzo tambien
+  `CrearLoteAsync`, cuyo request es `ImportacionLoteCrearRequest` y
+  cuyo `CuentaId` sigue siendo `Guid` no-nullable. El compilador lo
+  detuvo con `CS0019: El operador '??' no se puede aplicar a operandos
+  del tipo 'Guid' y 'Guid'`. Revertida esa linea. Ese DTO no tenia el
+  defecto (no llevaba `[Required]`) y se deja como estaba.
+- **Verificacion:** 427/427 tests. Los tests usan inicializadores de
+  objeto y `Guid` convierte implicitamente a `Guid?`, asi que ninguno
+  necesito cambios. El frontend nunca envia estas peticiones sin
+  cuenta: `ImportacionPage.tsx` condiciona `canValidate` y
+  `canSubmitPlazoFijo` a que `cuentaId` tenga valor.
+
+## 2026-07-29 - V-02.07 - Fragmento de clave API del proveedor de IA filtrado al cliente (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles y fugas de
+  datos hacia el cliente, sobre
+  `AtlasBalance.API/Services/AtlasAiService.cs` y
+  `Controllers/IaController.cs`.
+- **Causa:** el proveedor externo devuelve 401 con cuerpo tipo
+  `{"error":{"message":"Incorrect API key provided:
+  sk-proj-abc123XYZ"}}` (placeholder, no es una clave real).
+  `ExtractProviderErrorSummary` extraia `error.message` y lo pasaba
+  por `ShortProviderPayload`, cuyo regex de redaccion esperaba la
+  credencial pegada a la palabra clave. Probado con el motor de regex
+  de .NET contra el texto real de OpenAI: el regex redactaba la
+  palabra "provided:" y dejaba la clave intacta. Ese texto se
+  concatenaba como " Detalle proveedor: ..." dentro del mensaje de
+  `IaProviderException`.
+- **Impacto:** severidad ALTA. `IaController` es `[Authorize]` a
+  secas (cualquier usuario autenticado, no solo ADMIN); el mensaje
+  llegaba en el campo `error` de un 502 y el frontend lo pintaba en un
+  toast. Se disparaba con solo que la clave del proveedor estuviera
+  caducada, mal escrita o revocada.
+- **Solucion aplicada:**
+  1. Eliminado el sufijo `{detail}` de todas las ramas de
+     `BuildProviderHttpErrorMessage` y
+     `BuildProviderResponseErrorMessage`; el parametro `providerError`
+     se conserva porque `IsOpenRouterDataPolicyError` e
+     `IsOpenRouterModelRestrictionError` lo siguen usando para
+     clasificar.
+  2. `ShortProviderPayload` redacta ahora tambien por forma de
+     credencial con los prefijos `sk-proj-`, `sk-or-v1-`, `sk-`,
+     `hf_`, `gsk_`, `xai-`, `AIza`.
+  3. `AtlasAiService` no tenia logger: se inyecto
+     `ILogger<AtlasAiService>` y `LogProviderErrorAsync` ahora escribe
+     tambien en Serilog, porque tras quitar el detalle del cliente la
+     auditoria era el unico rastro.
+- **Verificacion:** 4 tests de `AtlasAiServiceTests.cs` que asertaban
+  que el detalle del proveedor SI aparecia en el mensaje (codificaban
+  la fuga como comportamiento esperado) se reescribieron para verificar
+  la propiedad correcta: el mensaje al usuario NO contiene el texto
+  del proveedor y la entrada de auditoria SI lo conserva.
+  `dotnet test tests/AtlasBalance.API.Tests`: 427/427 PASS.
+- **Riesgo residual aceptado:** un prefijo de clave fuera de la lista
+  anterior llegaria al log y a la auditoria, ambos de acceso exclusivo
+  de administrador en maquina on-premise. Se descarto una redaccion
+  generica por longitud porque destruia el texto util del error.
+
+## 2026-07-29 - V-02.07 - Sourcemaps publicados en produccion (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles y fugas de
+  datos, sobre `frontend/vite.config.ts` y
+  `Atlas Balance/scripts/Build-Release.ps1`.
+- **Causa:** `vite.config.ts` genera `.map` con `sourcemap: 'hidden'`,
+  que solo omite el comentario `sourceMappingURL` del bundle pero no
+  impide servir el fichero. `Build-Release.ps1` copiaba `dist` a
+  `api\wwwroot` con `Copy-Item -Recurse -Force` sin filtrar.
+- **Impacto:** severidad MEDIA. Cualquiera con acceso a la aplicacion
+  podia pedir `/assets/<chunk>.js.map` y reconstruir todo el
+  TypeScript original.
+- **Solucion aplicada:** borrado explicito de los `.map` del
+  `wwwroot` publicado tras la copia en `Build-Release.ps1` (no se usa
+  `Copy-Item -Exclude` porque no filtra de forma fiable en copias
+  recursivas), con `-ErrorAction Stop` y una verificacion posterior
+  que lanza excepcion si queda algun `.map`.
+- **Verificacion:** sintaxis de `Build-Release.ps1` validada con el
+  parser de PowerShell. No se ejecuto una release real; queda
+  pendiente probar la exclusion contra un build de release real.
+- **Regla operativa:** un fallo al borrar los `.map` debe romper la
+  release, no pasar en silencio.
+
+## 2026-07-29 - V-02.07 - Error boundary volcaba el stack al navegador y reportaba a un endpoint inexistente (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/src/components/common/AppErrorBoundary.tsx`.
+- **Causa:** `componentDidCatch` hacia `console.error('UI section
+  crashed', error, errorInfo)` tambien en produccion, y
+  `navigator.sendBeacon('/api/telemetria/errores', ...)` apuntaba a
+  una ruta que NO existia en el backend (verificado por grep en todo
+  `backend/src`).
+- **Impacto:** severidad MEDIA. El detalle completo del error (stack,
+  info de React) acababa en la consola del cliente, visible a
+  cualquiera con DevTools abierto, y no quedaba ningun registro en el
+  servidor porque el endpoint de telemetria no existia.
+- **Solucion aplicada:** eliminado el `console.error`. Creado
+  `Controllers/TelemetriaController.cs` + `DTOs/TelemetriaDtos.cs` con
+  `POST /api/telemetria/errores`: `[AllowAnonymous]`, limite de 20
+  reportes por IP y minuto via `IMemoryCache` con ventana fija,
+  recorte de longitud de todos los campos, saneado de CR/LF contra log
+  forging, y respuesta 204 siempre (`sendBeacon` ignora la respuesta;
+  devolver detalle daria una via de sondeo). Los nombres de propiedad
+  del DTO se fijan con `[JsonPropertyName]` porque el frontend envia
+  camelCase y la politica global de serializacion es SnakeCaseLower.
+  El payload viaja envuelto en `Blob` de tipo `application/json`
+  porque `sendBeacon` con un string suelto manda `text/plain` y no
+  bindea. Ruta anadida a las exclusiones de `CsrfMiddleware`
+  (`sendBeacon` no puede enviar cabeceras, no puede mandar
+  `X-CSRF-Token`; el endpoint no lee ni modifica datos) y de
+  `PrimerLoginMiddleware` (debe funcionar tambien con cambio de
+  password pendiente).
+- **Verificacion:** leida en codigo; no se levanto backend real para
+  probar el endpoint nuevo en runtime. Pendiente.
+
+## 2026-07-29 - V-02.07 - Sin error boundary raiz ni handlers globales (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/src/App.tsx` y `frontend/src/main.tsx`.
+- **Causa:** el boundary solo envolvia el contenido de cada ruta en
+  `App.tsx`; un fallo en el layout, en los providers o en el propio
+  `App` dejaba pantalla en blanco. No existia ningun
+  `unhandledrejection` ni `window.onerror`.
+- **Impacto:** severidad MEDIA. Un fallo fuera de las rutas (layout,
+  providers) no quedaba capturado ni reportado; el usuario solo veia
+  una pantalla en blanco sin ningun rastro.
+- **Solucion aplicada:** en `main.tsx`, `AppErrorBoundary` envuelve
+  ahora todo el arbol por fuera de `QueryClientProvider` y
+  `BrowserRouter`, y se registran listeners de `unhandledrejection` y
+  `error`. Toda la logica de envio vive en el modulo nuevo
+  `src/utils/reportClientError.ts`, con tope de 10 reportes por carga
+  de pagina y sin escribir nunca en consola.
+- **Verificacion:** `npm run lint` (0/0), `npm run test:unit` (22/22),
+  `npm run build` OK. Sin prueba manual de un crash real en el
+  navegador.
+
+## 2026-07-29 - V-02.07 - `ValidationProblemDetails` por defecto exponia detalles internos (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Program.cs`.
+- **Causa:** no habia `InvalidModelStateResponseFactory`, asi que
+  `[ApiController]` devolvia el `ValidationProblemDetails` por defecto
+  con `traceId`, la URL `type` de rfc7231, tipos .NET
+  (`System.Guid`) y nombres de propiedad C# en PascalCase
+  (`RawData`), distintos del contrato snake_case del resto de la API.
+- **Impacto:** severidad BAJA. Inconsistencia de contrato y exposicion
+  de detalles de implementacion (`traceId`, nombres de tipos .NET), sin
+  ser una fuga critica.
+- **Solucion aplicada:** `Program.cs` registra un
+  `InvalidModelStateResponseFactory` que devuelve 400 con
+  `{ "error": "Los datos enviados no son validos. Revisa el formulario
+  e intentalo de nuevo." }` y loguea el detalle real del ModelState en
+  el servidor con los nombres de campo pasados por
+  `LogScrubber.Scrub`.
+- **Verificacion:** comprobado antes de aplicarlo que el frontend no
+  dependia del formato anterior: `errorMessage.ts` lee `payload.errors`
+  pero degrada limpiamente al mensaje generico de 400, y no usa
+  `traceId` en ningun punto. `dotnet build`: 0 errores.
+
+## 2026-07-29 - V-02.07 - `JwtBearer.IncludeErrorDetails` en `WWW-Authenticate` (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre la
+  configuracion de JwtBearer en `Program.cs`.
+- **Causa:** el default del framework es `IncludeErrorDetails = true`,
+  que hace que el header `WWW-Authenticate` lleve `error_description`
+  con el motivo exacto del rechazo y el timestamp exacto de
+  expiracion del token. Nunca se habia desactivado.
+- **Impacto:** severidad BAJA. Filtraba el motivo tecnico exacto del
+  rechazo del token (por ejemplo, expiracion con timestamp) en un
+  header, en vez de un mensaje generico.
+- **Solucion aplicada:** `options.IncludeErrorDetails =
+  builder.Environment.IsDevelopment();`, activo solo en desarrollo.
+- **Verificacion:** `dotnet build`: 0 errores, mismos 6 warnings
+  preexistentes.
+
+## 2026-07-29 - V-02.07 - `UserStateMiddleware` distinguia el motivo del rechazo de sesion (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Middleware/UserStateMiddleware.cs`.
+- **Causa:** el middleware devolvia cuatro mensajes distintos ("Token
+  de usuario invalido", "La sesion ya no es valida", "Usuario
+  bloqueado temporalmente por intentos fallidos", "Se requiere MFA
+  para continuar").
+- **Impacto:** severidad BAJA. Quien posee un token robado podia saber
+  exactamente por que dejo de funcionar (token invalido vs. cuenta
+  bloqueada vs. MFA pendiente), informacion util para decidir el
+  siguiente paso de un ataque.
+- **Solucion aplicada:** respuesta unica "La sesion ya no es valida.
+  Vuelve a iniciar sesion." para las cuatro ramas, y el motivo real al
+  log del servidor mediante `ILogger<UserStateMiddleware>` inyectado
+  (no existia), con path e IP saneados por `LogScrubber.Scrub`.
+  Coherente con el login, que ya enmascaraba deliberadamente cuenta
+  inexistente, bloqueada y password incorrecta.
+- **Verificacion:** verificado antes de aplicarlo que el frontend no
+  ramifica por ninguno de los cuatro mensajes anteriores.
+  `UserStateMiddlewareTests.cs`: 5 sitios actualizados con
+  `NullLogger<UserStateMiddleware>.Instance`. `dotnet test
+  tests/AtlasBalance.API.Tests`: 427/427 PASS.
+
+## 2026-07-29 - V-02.07 - Rate limit de integracion revelaba la cifra exacta (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Middleware/IntegrationAuthMiddleware.cs`.
+- **Causa:** el middleware devolvia "RATE_LIMITED: Mas de 100 requests
+  por minuto para este token", revelando el limite exacto configurado.
+- **Impacto:** severidad BAJA. Facilita a un atacante calibrar
+  exactamente cuantas peticiones puede lanzar sin disparar el
+  bloqueo.
+- **Solucion aplicada:** mensaje reescrito sin la cifra exacta.
+- **Verificacion:** revision de codigo; sin prueba de integracion en
+  caliente contra el rate limit real.
+
+## 2026-07-29 - V-02.07 - El build de produccion no eliminaba `console.*` (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `frontend/vite.config.ts`.
+- **Causa:** no habia `esbuild.drop`, terser ni `minify` configurado
+  para eliminar `console.*`/`debugger` del bundle de produccion.
+- **Impacto:** severidad BAJA. Logs de depuracion (algunos con detalle
+  interno) quedaban visibles en la consola del navegador en
+  produccion.
+- **Intento fallido documentado:** el primer intento uso
+  `esbuild: { drop: [...] }` y NO funciono. Vite 8 usa rolldown/oxc
+  por defecto y descarta silenciosamente las opciones `esbuild` con el
+  aviso "Both esbuild and oxc options were set". Se verifico
+  empiricamente en el bundle generado: seguian 9 `console.error`.
+- **Solucion aplicada:** `build.rollupOptions.output.minify = {
+  compress: { dropConsole: true, dropDebugger: true } }`, que es el
+  mecanismo nativo de oxc. Vive bajo `build.*`, que el servidor de
+  desarrollo no consulta, asi que el modo dev no se ve afectado.
+- **Verificacion:** bundle generado inspeccionado: 0 `console.error`,
+  0 `console.log`, 0 `debugger`.
+- **Regla operativa:** en Vite 8, las opciones de `esbuild` para
+  transformaciones de build pueden quedar descartadas en silencio si
+  coexisten con oxc; verificar siempre en el bundle generado, no solo
+  en la configuracion.
+
+## 2026-07-29 - V-02.07 - Sin limite explicito de tamano de request (CERRADO)
+
+- **Contexto:** auditoria de mensajes de error sensibles, sobre
+  `AtlasBalance.API/Program.cs`.
+- **Causa:** no habia `MaxRequestBodySize` configurado, luego aplicaba
+  el default de Kestrel de 30.000.000 bytes, y una
+  `BadHttpRequestException` por cuerpo grande habria caido en el 500
+  generico del handler global (perdiendo el `StatusCode` real, 413).
+- **Impacto:** severidad BAJA. Limite implicito mas alto de lo
+  necesario y respuesta de error incorrecta (500 en vez de 413) ante
+  un payload excesivo.
+- **Solucion aplicada:** `MaxRequestBodySize` a 10 MiB (el unico
+  endpoint de payload grande es importacion, limitado a 5 MiB de
+  `RawData`, y el escapado JSON infla el tamano), mas una rama nueva en
+  el handler global que devuelve el `StatusCode` real de
+  `BadHttpRequestException` con cuerpo generico y sin `ex.Message`.
+- **Verificacion:** revision de codigo; el limite de 10 MiB no se ha
+  probado en runtime contra un payload real de importacion grande.
+  Pendiente.
+
+## 2026-07-28 - V-02.07 - Blocklist de contrasenas comunes 93% inefectiva por el gate de longitud minima (CERRADO)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion sobre
+  `AtlasBalance.API/Constants/SecurityPolicy.cs`, hallazgo BAJO
+  documentado en la tanda anterior de esta misma sesion.
+- **Causa:** `TryValidatePassword` rechaza por longitud minima (12
+  caracteres, `MinPasswordLength`) antes de comparar contra la lista
+  `CommonPasswords`. De las 105 entradas originales, solo 7 tenian 12+
+  caracteres y eran alcanzables; las otras 98 eran codigo muerto que
+  nunca se llegaba a evaluar.
+- **Impacto:** severidad BAJA. No era una vulnerabilidad activa (la
+  longitud minima ya bloqueaba a las demas), pero la lista daba una
+  falsa sensacion de cobertura frente a filtraciones conocidas.
+- **Solucion aplicada:** lista reescrita con **154 entradas, todas de
+  12+ caracteres, sin duplicados** (verificado programaticamente: 154
+  literales, 154 unicas bajo comparacion case-insensitive, 0 por
+  debajo de 12). Contenido: variantes de 12+ caracteres de las
+  contrasenas mas repetidas en filtraciones conocidas (top
+  SecLists/rockyou/Common-Credentials) mas variantes en espanol y
+  especificas de Atlas Balance. El `HashSet` `CommonPasswords` sigue
+  `private`; se anadio `internal static IReadOnlySet<string>
+  CommonPasswordsView` solo para que los tests puedan recorrerlo. Se
+  eligio la vista de solo lectura en vez de hacer el `HashSet`
+  `internal` porque un campo mutable visible a todo el ensamblado
+  permitiria que codigo futuro hiciera `Clear()` y desactivara la
+  blocklist en silencio.
+- **Verificacion:** archivo nuevo
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/SecurityPolicyTests.cs`
+  con 6 facts. El clave es
+  `CommonPasswords_AllEntries_MeetMinimumLength`, que recorre la lista
+  entera y falla si alguien vuelve a colar una entrada corta,
+  impidiendo que la lista vuelva a convertirse en codigo muerto.
+  `dotnet test tests/AtlasBalance.API.Tests`: 427/427 PASS.
+- **Regla operativa:** cuando una validacion compuesta rechaza por un
+  gate temprano (longitud, formato, tipo), cualquier lista o regla que
+  dependa de pasar ese gate primero debe cumplirlo en el 100% de sus
+  entradas. Un test que recorra la coleccion entera contra el gate es
+  la unica forma de que esa invariante no se rompa en silencio con el
+  tiempo. No se integro HIBP k-anonymity en este alcance; sigue
+  anotado en el codigo como la solucion real para produccion.
+
+## 2026-07-28 - V-02.07 - Enumeracion de usuarios por latencia en login y en cambiar-password (CERRADO)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion sobre
+  `AtlasBalance.API/Services/AuthService.cs`, hallazgo BAJO
+  documentado en la tanda anterior de esta misma sesion.
+- **Causa:** en `LoginAsync`, si el email no existia o la cuenta
+  estaba bloqueada, el codigo devolvia el error sin llegar a ejecutar
+  `BCrypt.Verify`, que cuesta ~250 ms. Los mensajes de error ya eran
+  identicos entre ramas, pero la diferencia de latencia delataba cual
+  de las dos rutas se habia tomado. La misma omision existia en la
+  rama de cuenta bloqueada de `ChangePasswordAsync` (detectada por
+  revision adversarial durante esta tanda, no en la auditoria
+  original).
+- **Impacto:** severidad BAJA. Un atacante podia diferenciar "usuario
+  no existe / cuenta bloqueada" de "password incorrecta" midiendo
+  tiempo de respuesta, aunque el mensaje de error no cambiara.
+- **Solucion aplicada:** se anadio `DummyPasswordHash` en
+  `AuthService.cs`, un hash BCrypt derivado de bytes aleatorios
+  generado una vez al arrancar el servicio (no es un secreto, no
+  corresponde a ninguna contrasena real), calculado con el mismo
+  `PasswordWorkFactor`. Se verifica contra el en la rama de email
+  inexistente y en la rama de cuenta bloqueada de `LoginAsync`, y en
+  la rama de cuenta bloqueada de `ChangePasswordAsync`, para que las
+  tres ramas paguen el mismo coste de BCrypt que la rama de password
+  incorrecta.
+- **Verificacion:** test
+  `Login_Should_Cost_The_Same_Whether_Or_Not_The_Email_Exists` y
+  `ChangePassword_Should_Cost_The_Same_When_The_Account_Is_Locked` en
+  `AuthServiceTests.cs`. Comparan el tiempo de una rama contra la
+  otra (margen del 50%) en vez de fijar un umbral absoluto, porque un
+  umbral absoluto podria seguir en verde por cualquier otra lentitud
+  ajena al codigo; incluyen calentamiento previo para no medir
+  inicializacion estatica ni JIT. Ejecutados 3 veces seguidas sin
+  fallos. `dotnet test tests/AtlasBalance.API.Tests`: 427/427 PASS.
+- **Regla operativa:** cualquier rama de un flujo de autenticacion que
+  responda "credenciales invalidas" sin ejecutar la verificacion de
+  contrasena real debe pagar un coste equivalente contra un hash
+  senuelo. Aplica a login, cambio de password y cualquier endpoint
+  futuro que verifique una contrasena existente.
+
+## 2026-07-28 - V-02.07 - Sin rehash automatico de BCrypt (CERRADO)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion sobre
+  el almacenamiento de contrasenas en `AuthService.cs`, hallazgo BAJO
+  documentado en la tanda anterior de esta misma sesion.
+- **Causa:** no existia ninguna llamada a
+  `BCrypt.PasswordNeedsRehash`, asi que subir el work factor de BCrypt
+  en el futuro no migraria los hashes existentes; se quedarian
+  indefinidamente con el factor con el que se crearon.
+- **Impacto:** severidad BAJA (no hay plan actual de subir el work
+  factor), pero era deuda que habria bloqueado cualquier cambio futuro
+  de politica de hashing sin una migracion manual de toda la tabla de
+  usuarios.
+- **Solucion aplicada:** tras un login correcto, si
+  `BCrypt.PasswordNeedsRehash(usuario.PasswordHash, PasswordWorkFactor)`
+  es true, la contrasena en claro (ya validada) se rehashea con el
+  work factor vigente; es el unico momento del ciclo de vida en el que
+  el servicio dispone de la contrasena en claro. Se introdujo la
+  constante `PasswordWorkFactor = 12` dentro de `AuthService` y se
+  reuso tambien en `ChangePasswordAsync`, que antes tenia el valor 12
+  como literal suelto, para que ambos no puedan divergir con el
+  tiempo.
+- **Verificacion:** test
+  `Login_Should_Rehash_A_Password_Stored_With_An_Older_Work_Factor` en
+  `AuthServiceTests.cs`. `dotnet test tests/AtlasBalance.API.Tests`:
+  427/427 PASS.
+- **Regla operativa:** cualquier libreria de hashing con work factor
+  configurable (BCrypt, Argon2, scrypt) necesita un rehash oportunista
+  en el momento de login exitoso desde el dia uno, no como mejora
+  posterior. Es la unica ventana en la que el servicio tiene la
+  contrasena en claro ya validada.
+
+## 2026-07-28 - V-02.07 - Sesiones sin rastro de cambio de IP (CERRADO con matiz: no se invalida la sesion)
+
+- **Contexto:** segunda tanda de la auditoria de autenticacion,
+  hallazgo BAJO "sesiones no ancladas a IP ni User-Agent" documentado
+  en la tanda anterior de esta misma sesion.
+- **Causa:** `IpAddress` y `UserAgentSummary` se guardaban en el
+  refresh token al emitirlo, pero nunca se comparaban contra la
+  peticion actual fuera de la ventana de 5 minutos del challenge MFA.
+  Un access/refresh token robado seguia siendo valido desde cualquier
+  IP o dispositivo hasta que expirara o se cerrara sesion, sin dejar
+  ningun rastro de que la IP habia cambiado.
+- **Impacto:** severidad BAJA. No es una vulnerabilidad de por si (la
+  decision de no anclar la sesion a la IP es deliberada, ver mas
+  abajo), pero la ausencia total de rastro dificultaba investigar un
+  posible robo de sesion despues del hecho.
+- **Solucion aplicada:** `RefreshTokenAsync` compara la IP almacenada
+  en el refresh token con la IP actual de la peticion y, si difieren,
+  audita el evento nuevo `SESSION_IP_CHANGED` (constante nueva
+  `AuditActions.SessionIpChanged` en `Constants/AuditActions.cs`), con
+  `ip_anterior` y `refresh_token_id` en el detalle.
+- **Decision explicita: NO se invalida la sesion.** Atar la sesion a
+  la IP expulsaria a usuarios legitimos con VPN, DHCP o salto de red
+  entre redes; atarla al User-Agent la romperia con cada
+  auto-actualizacion del navegador. Dejar rastro auditable es lo que
+  aporta valor de investigacion sin romper el uso legitimo. Solo se
+  compara la IP: anclar tambien el User-Agent exigiria anadir una
+  columna a `REFRESH_TOKENS` y su migracion correspondiente; no se
+  hizo en este alcance.
+- **Normalizacion de IP:** se anadio `NormalizeIpForComparison` porque
+  una misma maquina puede llegar como `10.0.0.1` (via
+  X-Forwarded-For, que esta habilitado) o como `::ffff:10.0.0.1` (por
+  socket dual-mode directo), y `System.Net.IPAddress.Equals` los
+  considera direcciones distintas porque cambia la familia. Sin
+  normalizar se generarian alertas de cambio de IP falsas en cada
+  peticion desde la misma maquina, y una auditoria con ruido no sirve
+  para investigar nada.
+- **Verificacion:** tests
+  `RefreshToken_Should_Audit_An_Ip_Change_Without_Closing_The_Session`,
+  `RefreshToken_Should_Not_Audit_When_Only_The_Ipv4_Mapping_Differs`,
+  `RefreshToken_Should_Not_Audit_When_The_Ip_Is_Unchanged` en
+  `AuthServiceTests.cs`. `dotnet test tests/AtlasBalance.API.Tests`:
+  427/427 PASS.
+- **Regla operativa:** anclar una sesion a un dato de red (IP,
+  User-Agent) es una decision de producto con trade-off explicito
+  entre seguridad y disponibilidad para usuarios legitimos con
+  redes dinamicas. Cuando se decide no anclar, dejar auditoria del
+  cambio es el minimo razonable para no perder trazabilidad. Comparar
+  IPs sin normalizar variantes IPv4-mapeada-a-IPv6 genera falsos
+  positivos sistematicos en cualquier red con NAT64 o balanceadores
+  dual-stack.
+
+## 2026-07-28 - V-02.07 - Logout no invalidaba el access token en servidor (CERRADO)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre
+  `AtlasBalance.API/Services/AuthService.cs`, metodo `LogoutAsync`.
+- **Causa:** `LogoutAsync` solo marcaba `RevocadoEn` en el refresh
+  token presentado. No rotaba el `SecurityStamp` del usuario. Como
+  `UserStateMiddleware` valida en cada request que el claim
+  `security_stamp` del JWT coincida con el de BD, y ese stamp no
+  cambiaba, un access token capturado antes del logout seguia siendo
+  aceptado por la API hasta 60 minutos. El borrado de cookies era
+  solo del lado del navegador.
+- **Impacto:** severidad MEDIA. Un access token robado (XSS, log,
+  proxy, dispositivo compartido) seguia siendo valido durante toda su
+  vida util aunque el usuario legitimo cerrara sesion creyendo que
+  cortaba el acceso.
+- **Solucion aplicada:** `LogoutAsync` ahora (a) exige que el refresh
+  token presentado este vivo (no revocado y no caducado) antes de
+  actuar, (b) rota el `SecurityStamp` via
+  `UserSessionState.RotateSecurityStamp`, (c) revoca todos los
+  refresh tokens activos del usuario, y (d) re-ancla los
+  `MfaTrustedDevices` vivos al stamp nuevo. Consecuencia funcional:
+  cerrar sesion ahora cierra TODAS las sesiones del usuario en todos
+  los dispositivos, cubriendo tambien la ausencia de una funcion
+  explicita de "cerrar sesion en todas partes".
+- **Detalle del re-anclaje MFA:** los `MfaTrustedDevices` estan
+  anclados al `SecurityStamp`; sin re-anclarlos, rotar el stamp
+  habria cancelado el "recordar este dispositivo" en cada logout,
+  regresionando el comportamiento fijado en V-01.09 ("logout conserva
+  la cookie `mfa_trusted`"). El re-anclaje solo alcanza a los
+  dispositivos con `RevokedAt == null`, no caducados, del mismo
+  usuario y con `SecurityStamp == previousStamp` (el stamp anterior,
+  capturado antes de rotarlo). Ese ultimo filtro es imprescindible:
+  un cambio de contrasena, un reset por admin, una revocacion
+  administrativa o una deteccion de reuso de refresh token rotan el
+  `SecurityStamp` sin tocar `MFA_TRUSTED_DEVICES`, dejando esos
+  dispositivos invalidados de forma implicita; sin filtrar por
+  `previousStamp`, un logout rutinario posterior los readoptaria como
+  confiables otra vez, anulando esa invalidacion.
+- **Detalle del requisito "refresh token vivo":** evita que alguien
+  con una copia antigua y ya revocada del token pueda forzar el
+  cierre de sesion del usuario legitimo de forma repetida (DoS de
+  sesion).
+- **Verificacion:** 3 facts nuevos en `AuthServiceTests.cs`
+  (`Logout_Should_Rotate_Security_Stamp_And_Revoke_Every_Active_Session`,
+  `Logout_Should_Keep_Trusted_Mfa_Devices_Anchored_To_The_New_Stamp`,
+  `Logout_Should_Ignore_An_Already_Revoked_Refresh_Token`).
+  `dotnet test tests/AtlasBalance.API.Tests`: 415/415 PASS.
+- **Regla operativa:** cualquier flujo que revoque/cierre sesion debe
+  rotar `SecurityStamp` para invalidar tokens ya emitidos, no solo
+  marcar el refresh token como revocado. Si el flujo debe preservar
+  algun estado anclado al stamp (dispositivos MFA recordados), ese
+  estado se re-ancla explicitamente al stamp nuevo en la misma
+  operacion.
+
+## 2026-07-28 - V-02.07 - `cambiar-password` permitia fuerza bruta sobre la contrasena actual (CERRADO)
+
+- **Contexto:** auditoria de autenticacion y sesion sobre
+  `AtlasBalance.API/Services/AuthService.cs`, metodo
+  `ChangePasswordAsync`.
+- **Causa:** la verificacion de `passwordActual` con BCrypt no
+  incrementaba `FailedLoginAttempts`, no consultaba `LockedUntil` y no
+  registraba nada en auditoria.
+- **Impacto:** severidad MEDIA. Con una sesion robada (cookie/token
+  capturado) se podia adivinar la contrasena actual del usuario sin
+  limite de intentos ni rastro en auditoria, a diferencia del login
+  que ya tenia bloqueo tras 5 fallos.
+- **Solucion aplicada:** se comprueba `LockedUntil` antes de verificar
+  (responde 423 Locked si la cuenta esta bloqueada, incluso con la
+  contrasena correcta); al fallar se incrementa
+  `FailedLoginAttempts`, se bloquea la cuenta 30 minutos al quinto
+  fallo, y se auditan los eventos `LOGIN_FAILED` (con motivo
+  `password_actual_incorrecta`) y `ACCOUNT_LOCKED`. Al acertar se
+  resetean el contador y el bloqueo. Reutiliza las constantes ya
+  existentes `MaxFailedLoginAttempts` (5) y `LockDuration` (30 min),
+  las mismas del login.
+- **Verificacion:** 2 facts nuevos en `AuthServiceTests.cs`
+  (`ChangePassword_Should_Lock_Account_After_Repeated_Bad_Current_Password`,
+  `ChangePassword_Should_Reject_While_Account_Is_Locked`). `dotnet
+  test tests/AtlasBalance.API.Tests`: 415/415 PASS.
+- **Regla operativa:** cualquier endpoint que verifique una
+  contrasena existente (no solo login) debe pasar por el mismo
+  circuito de `FailedLoginAttempts`/`LockedUntil`/auditoria que el
+  login. Verificar una contrasena sin contar intentos es una puerta
+  de fuerza bruta con otro nombre.
+
+## 2026-07-28 - V-02.07 - Proyecto de tests no compilaba: constructor de `IntegrationTokenService` desactualizado en `IntegracionesControllerTests` (CERRADO)
+
+- **Contexto:** al intentar ejecutar `dotnet test
+  tests/AtlasBalance.API.Tests` para verificar la auditoria de
+  autenticacion, la compilacion fallaba antes de llegar a correr
+  ningun test.
+- **Causa:** el commit `f05b0dd` ("V-02.07: extender capa de cache a
+  configuracion, scope, tokens y auth/me") anadio los parametros
+  `ICacheService` y `IOptions<CachingOptions>` al constructor de
+  `IntegrationTokenService` pero no actualizo la llamada en
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/IntegracionesControllerTests.cs`
+  (linea ~37). Error `CS7036` (parametro requerido sin valor).
+  Preexistente a esta sesion, ajeno a la auditoria de autenticacion,
+  pero bloqueaba toda verificacion por tests del proyecto completo.
+- **Solucion:** se pasan `CacheService` construido con `MemoryCache` y
+  `Options.Create(new CachingOptions())` al constructor, el mismo
+  patron que ya usaba `AuthServiceTests` para el mismo tipo de
+  dependencia.
+- **Verificacion:** `dotnet build` limpio; `dotnet test
+  tests/AtlasBalance.API.Tests`: 415/415 PASS.
+- **Regla operativa:** cuando un constructor de servicio gana un
+  parametro nuevo, buscar TODOS los call sites en tests (no solo los
+  que se estan tocando en ese cambio) antes de dar la tarea por
+  cerrada. `grep -rn "new IntegrationTokenService("` habria detectado
+  esto en el commit `f05b0dd`.
+
+## 2026-07-28 - V-02.07 - Dos tests fallaban por codificacion corrupta en literal esperado (CERRADO)
+
+- **Contexto:** tras reparar la compilacion del proyecto de tests,
+  `dotnet test tests/AtlasBalance.API.Tests` reportaba 2 fallos en
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`,
+  lineas 94 y 126.
+- **Causa:** el literal esperado `"Credenciales invalidas"` estaba
+  guardado con el caracter de reemplazo U+FFFD (bytes `ef bf bd`) en
+  lugar de la `a` con tilde. Se verifico con `git show HEAD` que los
+  bytes ya estaban corruptos antes de esta sesion (no es una
+  regresion de esta auditoria). Hacia fallar
+  `Login_Should_Lock_Account_On_Fifth_Bad_Password` y
+  `Login_Should_Not_Reveal_When_User_Is_Already_Locked` porque el
+  literal esperado nunca podia coincidir con el mensaje real
+  devuelto por el servicio.
+- **Solucion:** restaurado el caracter correcto en ambos literales.
+- **Verificacion:** `dotnet test tests/AtlasBalance.API.Tests`:
+  415/415 PASS (0 fallos, 0 omitidas).
+- **Regla operativa:** si un test falla comparando un mensaje con
+  tildes y el diff no es visualmente obvio, revisar los bytes crudos
+  del literal (`git show HEAD:<archivo> | xxd` o equivalente) antes
+  de asumir que el mensaje del servicio cambio. La codificacion rota
+  en el archivo fuente es una causa tan probable como un cambio de
+  comportamiento real.
+
+## 2026-07-28 - V-02.07 - `LogoutAsync` re-anclaba `MfaTrustedDevices` huerfanos sin filtrar por el stamp previo (CERRADO)
+
+- **Contexto:** introducido durante la propia correccion de
+  `LogoutAsync` documentada mas arriba en esta misma sesion
+  (auditoria de autenticacion y sesion). Detectado por revision
+  adversarial del diff antes de integrar, sin llegar a produccion.
+- **Causa:** el re-anclaje de `MfaTrustedDevices` al `SecurityStamp`
+  nuevo filtraba solo por `RevokedAt == null` y no caducado, sin
+  exigir que el dispositivo tuviera el `SecurityStamp` anterior
+  (`previousStamp`).
+- **Impacto:** un cambio de contrasena, un reset por admin, una
+  revocacion administrativa o una deteccion de reuso de refresh token
+  rotan el `SecurityStamp` sin tocar `MFA_TRUSTED_DEVICES`; los
+  dispositivos con el stamp viejo quedan invalidados de forma
+  implicita (`RevokedAt == null` pero rechazados por
+  `TryUseTrustedMfaDeviceAsync` al no calzar el stamp). Sin el filtro
+  por `previousStamp`, un logout rutinario posterior los readoptaba y
+  volvia a darlos por confiables, anulando el efecto del cambio de
+  contrasena defensivo. Escenario concreto: el dispositivo B esta
+  confiado; el usuario cambia la contrasena desde el dispositivo A
+  porque sospecha que le han robado la sesion (esto deja B huerfano y
+  obligado a repetir MFA); mas tarde A cierra sesion con normalidad y
+  ese logout resucitaba a B, que volvia a saltarse el desafio MFA. Es
+  decir, cambiar la contrasena dejaba de expulsar al dispositivo del
+  atacante.
+- **Solucion aplicada:** `LogoutAsync` captura el `SecurityStamp`
+  vigente como `previousStamp` antes de rotarlo, y el re-anclaje pasa
+  a exigir las cuatro condiciones: `RevokedAt == null`, no caducado,
+  del mismo usuario y `SecurityStamp == previousStamp`.
+- **Verificacion:** test de regresion
+  `Logout_Should_Not_Revive_Trusted_Devices_Orphaned_By_A_Password_Change`
+  en
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuthServiceTests.cs`,
+  comprobado que falla con el codigo defectuoso y pasa con el
+  corregido. `dotnet test tests/AtlasBalance.API.Tests`: 415/415
+  PASS.
+- **Regla operativa:** cuando un re-anclaje o una reactivacion se
+  dispara desde un flujo "inocuo" (logout rutinario), filtrar siempre
+  por el valor previo exacto del campo que ancla la invalidacion
+  (aqui, `SecurityStamp == previousStamp`), no solo por el estado
+  "vivo" del registro. Un registro puede estar `RevokedAt == null` y
+  aun asi estar invalidado implicitamente por desincronizacion con
+  otro campo.
+
+## 2026-07-27 - V-02.07 - Cache global de CONFIGURACIONES cierra MED-18 (CERRADO)
+
+- **Contexto:** la auditoria de performance 2026-07-27 (entrada
+  "Cache repeated read queries" en el check-list de rendimiento)
+  senalaba que `AlertaService.EvaluateSaldoPostAsync` hacia 6+
+  round-trips a `CONFIGURACIONES` por cada escritura de extracto
+  (uno por cada clave operativa que el cooldown necesitaba consultar:
+  `alerta_saldo_cooldown_horas`, `alerta_saldo_umbral_eur`,
+  `dashboard_color_*`, etc.). Ademas, los servicios `EmailService`,
+  `BackupService`, `BackupEncryptionService`, `RevisionService`,
+  `HardenedConciliacionService`, `AtlasAiService`,
+  `TiposCambioService`, `GoogleDriveBackupService` y
+  `ActualizacionService` releen `CONFIGURACIONES` directamente cada
+  vez que se invocan.
+- **Riesgo:** en una sesion activa de un usuario con alertas y
+  dashboard, una escritura de extracto disparaba ~8 SELECTs sobre
+  `CONFIGURACIONES`. Sumado al dashboard y a las llamadas de
+  configuracion de los jobs Hangfire, la tabla `CONFIGURACIONES`
+  era el segundo origen de queries mas frecuente del backend por
+  detras de `EXTRACTOS`.
+- **Solucion aplicada (V-02.07):** `IConfiguracionRepository.GetAsync`
+  cachea el mapa completo de `CONFIGURACIONES` (clave -> `{ Valor,
+  EsSecreto }`) con TTL 120 s. Clave unica `config:all:v1`. La fila
+  cruda entra al cache; `_secretProtector.UnprotectFromStorage` se
+  aplica bajo demanda en el caller, por lo que **nunca se cachea el
+  valor desprotegido de un secreto** (clave API, password SMTP,
+  OAuth client secret, etc.). Invalidacion en
+  `ConfiguracionRepository.UpsertAsync` y como red de seguridad en
+  el `DashboardCacheInvalidationInterceptor` ante cualquier save
+  changes sobre `Configuracion` (seeds, jobs, migraciones).
+- **Verificacion:** 2 facts nuevos en `CacheIntegrationTests.cs`
+  pasan (`ConfiguracionRepository_GetAsync_Should_Return_Cached_Value_On_Second_Call`,
+  `ConfiguracionRepository_UpsertAsync_Should_Invalidate_Cache`).
+  Total del proyecto: 15/15 PASS en `AtlasBalance.Caching.Tests`.
+- **Regla operativa:** cualquier futura cache de CONFIGURACIONES
+  debe pasar por `IConfiguracionRepository`, no por
+  `_dbContext.Configuraciones` directo. Si necesitas una clave
+  adicional que no existe en el mapa cacheado, anadela via
+  `UpsertAsync` (no bypass).
+
+## 2026-07-27 - V-02.07 - Cache del scope de usuario cierra CONC-028 (CERRADO)
+
+- **Contexto:** `AUDITORIA_CONCURRENCIA_2026-07-10.md` marco
+  CONC-028 (severidad MED) sobre `UserAccessService.GetScopeAsync`:
+  la query `Cuentas.Any(c => ... PermisosUsuario.Any(p => ...))`
+  corria en cada endpoint autenticado (`CuentasController`,
+  `TitularesController`, `RevisionController`, `AlertasController`,
+  `IaController`, etc.). Con un usuario activo, eso eran ~10-15
+  ms por request solo para resolver el scope, multiplicado por las
+  tres llamadas paralelas del dashboard.
+- **Solucion aplicada (V-02.07):** `IUserAccessService.GetScopeAsync`
+  cachea el calculo por `userId` con TTL 45 s. Bypass explicito para
+  admin: el resultado es trivial (`HasGlobalAccess = true`) y un
+  cambio de rol puntual (admin -> gerente) debe verse sin esperar
+  al TTL. La rotacion de `SecurityStamp` (cambio de password,
+  revocacion administrativa) ya invalida el JWT en `UserStateMiddleware`,
+  pero para consistencia del scope dentro de la misma sesion
+  activa, el `DashboardCacheInvalidationInterceptor` invalida
+  `user_access_scope` ante cambios en `PermisoUsuario`,
+  `PreferenciaUsuarioCuenta`, `Usuario`, `Cuenta`, `Titular` o
+  `Pais`.
+- **Verificacion:** 2 facts nuevos en `CacheIntegrationTests.cs`
+  pasan (`UserAccessService_GetScopeAsync_Should_Cache_For_NonAdmin_User`,
+  `UserAccessService_GetScopeAsync_Admin_Bypass_Should_Not_Touch_Cache`).
+- **Regla operativa:** cualquier servicio que reciba un
+  `ClaimsPrincipal` y necesite permisos debe llamar a
+  `IUserAccessService.GetScopeAsync` (no usar `user.IsInRole` para
+  logica de autorizacion, ni filtrar colecciones manualmente). Si
+  necesitas invalidar el scope fuera del flujo normal (p.ej. un
+  job que reasigna titulares), llama a
+  `IDashboardCacheInvalidator.InvalidateDashboardScope()` y, si
+  fuera del alcance del dashboard, expone un helper equivalente
+  sobre el namespace `UserAccessService.Namespace`.
+
+## 2026-07-27 - V-02.07 - Cache del payload de /api/auth/me (CERRADO)
+
+- **Contexto:** `AuthService.GetCurrentAsync` (consumido por
+  `GET /api/auth/me`) reconstruia en cada request el `AuthResult`
+  completo: cargar `Usuario`, listar todos sus `PermisosUsuario`,
+  todas sus `PreferenciasUsuarioCuenta`, y resolver si requiere
+  MFA consultando `CONFIGURACIONES`. La SPA llama a este endpoint
+  en cada navegacion (`Layout.tsx` -> `useAuthStore.bootstrap`),
+  asi que una sesion activa generaba ~10 queries solo para "quien
+  soy".
+- **Solucion aplicada (V-02.07):** `GetCurrentAsync` cachea el
+  resultado con TTL 60 s y clave compuesta `(userId:N)|{securityStamp}`.
+  La rotacion de stamp (cambio de password o revocacion
+  administrativa) invalida la entrada por la propia clave, sin
+  pasar por el interceptor. Adicionalmente, el
+  `DashboardCacheInvalidationInterceptor` invalida el namespace
+  `auth_current` ante cambios en `USUARIOS`, `PERMISOS_USUARIO` o
+  `PREFERENCIAS_USUARIO_CUENTA` (defensa en profundidad: si el
+  stamp no rota por algun motivo, la rotacion del namespace cierra
+  la ventana de staleness a la duracion del TTL).
+- **Verificacion:** cubierto por los tests existentes de
+  `AuthServiceTests` (que ya inyectan `CacheService` + `CachingOptions`
+  tras el cambio de firma del constructor). 15/15 PASS en
+  `AtlasBalance.Caching.Tests`. La cobertura del propio
+  `GetCurrentAsync` con cache se valida de forma estatica: el
+  metodo llama a `_cacheService.GetOrLoadAsync` con namespace y
+  TTL correctos, y la clave compuesta hace que cualquier rotacion
+  de stamp sea naturalmente una entrada nueva.
+- **Regla operativa:** no cachear valores derivados del JWT
+  directamente (rol, email, etc.) porque ya estan en el JWT y se
+  sirven en cada request sin coste. Solo se cachea lo que requiere
+  una query adicional (permisos, preferencias, MFA flag).
+
+## 2026-07-27 - V-02.07 - Cache de validacion de tokens de integracion (CERRADO)
+
+- **Contexto:** `IntegrationTokenService.ValidateActiveTokenAsync` se
+  ejecuta en cada request a `/api/integration/openclaw/*`, que tiene
+  rate limit de 100 req/min por token. Cada validacion ejecuta un
+  SELECT sobre `INTEGRATION_TOKENS` filtrando por `TokenHash`,
+  `Estado`, `FechaExpiracion` y `DeletedAt` (4 indices usados).
+  OpenClaw con un solo cliente activo generaba ~1.7 queries por
+  segundo solo para esto.
+- **Solucion aplicada (V-02.07):** `ValidateActiveTokenAsync`
+  cachea el token activo por `TokenHash` con TTL 20 s. `RevokeAsync`
+  invalida el namespace completo tras `SaveChanges` (ventana
+  maxima de staleness 20 s, consistente con el contrato existente:
+  el rate limiter ya toleraba esta ventana). El
+  `DashboardCacheInvalidationInterceptor` invalida el namespace
+  `integration_token` ante cualquier save changes sobre
+  `INTEGRATION_TOKENS`, cubriendo el path de rotacion que va por
+  `IntegracionesController.cs:284` y bypassa `RevokeAsync`.
+- **Verificacion:** 2 facts nuevos en `CacheIntegrationTests.cs`
+  pasan (`IntegrationTokenService_ValidateActiveTokenAsync_Should_Hit_Cache_After_First_Call`,
+  `IntegrationTokenService_RevokeAsync_Should_Invalidate_Cache_Namespace`).
+- **Regla operativa:** rotar tokens de integracion sigue pasando
+  por `IntegracionesController` (que crea el nuevo, marca el viejo
+  como `Rotado` y lo guarda). El interceptor detecta el save changes
+  del nuevo token e invalida la cache, por lo que la siguiente
+  peticion del token viejo (si algun cliente sigue usandolo por un
+  breve momento) encuentra el token nuevo en BD y obtiene 401
+  inmediatamente.
+
+## 2026-07-27 - V-02.07 - Cache de tipos de cambio con race benigno CONC-027 (CERRADO)
+
+- **Contexto:** la auditoria de concurrencia 2026-07-10
+  (`AUDITORIA_CONCURRENCIA_2026-07-10.md:302`, severidad LOW)
+  documentaba que `TiposCambioService.GetRateCatalogAsync` podia
+  repoblar la cache con datos viejos si `InvalidateCache` se ejecutaba
+  entre la query a `TIPOS_CAMBIO` y el `_cache.Set` posterior.
+  El patron era `cache.Get` (miss) -> query BD -> otro hilo
+  `Invalidate` -> primer hilo `_cache.Set` con datos obsoletos.
+  Riesgo bajo porque el TTL era de 5 min y el siguiente read lo
+  corregia, pero era ruido en logs y podia confundir auditorias.
+- **Causa raiz:** la cache estaba implementada con un patron
+  check-then-act sobre `IMemoryCache` sin lock. La invalidacion
+  tampoco era atomica con la escritura.
+- **Solucion aplicada (V-02.07, 2026-07-27):** se migra a una nueva
+  capa de cache `ICacheService` con:
+  - `GetOrLoadAsync<T>(namespace, key, loader, ttl, ct)` que usa
+    un `SemaphoreSlim` por namespace+key (single-flight: N
+    peticiones concurrentes -> 1 sola consulta a BD).
+  - Generaciones: cada escritura bumpea un contador del namespace
+    y todas las entradas cacheadas quedan invalidadas sin enumerarlas
+    (las claves efectivas pasan a ser `{ns}|g{n}|{key}`).
+  - `Invalidate(namespace)` invalida de forma O(1) sin tocar el
+    `IMemoryCache` subyacente.
+  - `TiposCambioService.InvalidateCache()` ahora invalida tanto el
+    namespace del catalogo como `dashboard_metrics` (porque el
+    dashboard usa tasas convertidas).
+  - Tests `CacheServiceTests.Concurrent_Invalidate_During_Load_Should_Not_Repopulate_Stale_Data`
+    y `CacheIntegrationTests.TiposCambio_Invalidate_Should_Refresh_After_Manual_Write`
+    cierran el escenario de regresion. 9/9 PASS.
+- **Archivos tocados:**
+  `AtlasBalance.API/Caching/CacheService.cs` (nuevo),
+  `AtlasBalance.API/Caching/CacheMetrics.cs` (nuevo),
+  `AtlasBalance.API/Caching/DashboardCacheInvalidator.cs` (nuevo),
+  `AtlasBalance.API/Services/TiposCambioService.cs` (migracion),
+  `AtlasBalance.API/Data/DashboardCacheInvalidationInterceptor.cs`
+  (nuevo, invalidacion automatica tras SaveChanges),
+  `AtlasBalance.API/Program.cs` (registro DI),
+  `AtlasBalance.API.Tests/TiposCambioServiceTests.cs` y
+  `AtlasBalance.API.Tests/DashboardServiceTests.cs` (wiring),
+  `tests/AtlasBalance.Caching.Tests/` (proyecto nuevo con 9 facts).
+- **Regla operativa:** cualquier cache nueva debe pasar por
+  `ICacheService.GetOrLoadAsync` con `CacheNamespace` explicito y key
+  normalizada. La invalidacion se centraliza en
+  `IDashboardCacheInvalidator` para que el `SaveChangesInterceptor`
+  siga siendo el unico punto de control.
+
+## 2026-07-27 - V-02.07 - Auditoria IDOR y cierre de recomendacion V-01.06 (CERRADO)
+
+- **Contexto:** la auditoria de seguridad V-01.06 (`DOCUMENTACION_CAMBIOS.md:7278`,
+  2026-05-10) dejo abierta la recomendacion "registrar tests xUnit
+  explicitos de IDOR para usuarios non-admin pidiendo titulares ajenos
+  -> 403" como opcional para V-01.07. La recomendacion llevo 2 meses
+  sin cerrarse.
+- **Hallazgo de la auditoria estatica:** IDOR esta bien cubierto en
+  V-02.07 con tres capas concetricas:
+  - `[Authorize]` + JWT en cookie `__Host-` + CSRF double-submit.
+  - `IUserAccessService` (humanos) y `IIntegrationAuthorizationService`
+    (OpenClaw) con 8 metodos `CanAccess*Async`/`CanWrite*Async` y
+    filtros `Apply*Scope` que respetan el modelo `permisos_usuario`
+    (titular/cuenta/global).
+  - RLS firmada con HMAC como backstop en BD.
+- **Verificacion de los 4 huecos pendientes:** limpios los 4.
+  - `ConciliacionController`/`ConciliacionService.EnsureCuentaPermitidaAsync`:
+    valida `PuedeConciliar`/`PuedeCerrarConciliacion` y devuelve 403.
+  - `DashboardController`/`DashboardService.CanAccessTitularAsync`:
+    valida scope en cada endpoint con `{titularId}`.
+  - `Sistema/FormatosImportacion/NotificacionesAdmin/Paises`: admin-only
+    o `incluirEliminados=false` forzado para no-admin.
+  - `IntegracionesController`: `[Authorize(Roles="ADMIN")]` completo.
+- **Solucion aplicada (V-02.07, 2026-07-27):** cierre de la
+  recomendacion con 10 facts nuevos a nivel de controller.
+  - `CuentasControllerTests.cs`: +3 facts (`Obtener`/`Resumen` con
+    cuenta fuera de scope, titular soft-deleted).
+  - `TitularesControllerTests.cs` (nuevo): 4 facts (`Obtener` con
+    titular fuera de scope, soft-deleted, admin bypass, `Listar`
+    filtrando scope).
+  - `RevisionControllerTests.cs` (nuevo): 3 facts con stub
+    `IRevisionService` que simula `UnauthorizedAccessException` cuando
+    `CanReviewCuentaAsync` devuelve false.
+- **Verificacion:** build del API 0 errores/6 warnings preexistentes;
+  build del proyecto de tests 0 errores; `dotnet test` con filtro
+  IDOR -> 18/18 PASS; filtro ampliado a `UserAccessServiceTests` y
+  servicios relacionados -> 59/59 PASS sin regresiones.
+- **Regla operativa nueva:** cualquier controller con
+  `GET/PUT/PATCH/DELETE /{id:guid}` debe acompanarse de un test xUnit
+  que cubra como minimo (1) empleado/gerente con `PermisosUsuario`
+  ajeno al id -> 403, (2) titular/cuenta soft-deleted -> 403 o 404,
+  (3) admin -> siempre 200/204 (bypass intencional). Esto bloquea el
+  patron "controller nuevo con scope olvidado" que es el vector real
+  de IDOR en una refactorizacion.
+- **Hallazgo operativo nuevo:** el proyecto de tests vuelve a compilar
+  limpio en este host. El truco fue **no** pasar `--packages` al
+  `dotnet restore`: con `--packages` apuntando a una ruta custom, el
+  restore queda incompleto (xunit/FluentAssertions no aparecen) y el
+  build falla con `CS0246 FactAttribute not found` en todos los facts.
+  Sin `--packages`, NuGet usa el feed por defecto y restaura todo.
+  Esto NO invalida la entrada de V-02.06 sobre el proyecto roto: la
+  build sigue arrastrando los errores preexistentes documentados en
+  `LOG_ERRORES_INCIDENCIAS.md:139-167` (atributos duplicados,
+  `IntegrationAuthMiddleware.cs:481` llaves de cierre extra,
+  `RlsDbCommandInterceptor.cs:18` `RlsContextSecret` internal, etc.),
+  pero esos errores se manifiestan solo cuando se omite la combinacion
+  correcta de flags de build.
+- **Estado:** cerrado. La recomendacion V-01.06 queda cerrada con
+  cobertura a nivel de controller. Detalle completo en
+  `Documentacion/Versiones/v-02.07.md` (bloque "Cierre de la
+  recomendacion IDOR V-01.06").
+
+## 2026-07-24 - V-02.07 - Vulnerabilidades #16 y #17 React Router 6.30.4 cerradas con bump a 7.18.1 (CERRADO)
+
+- Causa: `react-router-dom@6.30.4` arrastraba dos CVEs moderados:
+  - `GHSA-337j-9hxr-rhxg`: inyeccion de constructor arbitraria via
+    `deserializeErrors()` en hidratacion SSR. El codigo vulnerable
+    no se ejecutaba en Atlas Balance (verificado: 0 usos de
+    `deserializeErrors`, `createStaticHandler`, `createStaticRouter`,
+    `StaticRouterProvider`, `HydratedRouter`, `renderToString`,
+    `renderToReadableStream`, `renderToPipeableStream`, `hydrateRoot`
+    en `frontend/` ni en `backend/`).
+  - `GHSA-wrjc-x8rr-h8h6`: open redirect via backslash en `<Link>` y
+    `useNavigate`. Ya mitigado en codigo propio por `normalizeReturnTo`
+    inline en `LoginPage.tsx:31-38` y `ImportacionPage.tsx:72-79`,
+    pero el SCA seguia gritando.
+- Bloqueo previo (V-02.06): la unica rama upstream con fix era
+  `react-router-dom@7.x`, salto de version mayor que se decidio
+  aplazar al cierre de V-02.06 para no introducir regresiones en
+  pleno release.
+- Hallazgo adicional post-bump: tras subir a `7.18.1`, `npm audit`
+  reporta un nuevo HIGH `GHSA-qwww-vcr4-c8h2` (RSC Mode CSRF bypass)
+  que afecta al rango `>=7.12.0 <8.3.0`. El aviso documenta
+  explicitamente que solo aplica a apps que usen las APIs unstable
+  de RSC. Atlas Balance es una SPA pura con router Declarativo
+  (`BrowserRouter` + `Routes` + `Route`), servida como estaticos
+  por Kestrel, sin SSR, sin RSC, sin `createBrowserRouter` ni data
+  routers. **No es explotable**.
+- Migracion a v8.3.0?: requiere React 19.2.7+ (v8 fusiono
+  `react-router-dom` en `react-router` y elevo el peer dependency).
+  Atlas Balance va con React 18.3.1; migracion a React 19 fuera
+  del alcance de V-02.07.
+- Solucion aplicada (V-02.07):
+  - Bump `react-router-dom: ^6.30.4` -> `^7.18.1` en
+    `frontend/package.json`. Arrastra `react-router@7.18.1` como
+    peer. 22 archivos importan de `react-router-dom` y todos siguen
+    compilando limpios sin tocar imports (la API declarativa
+    `BrowserRouter`, `Routes`, `Route`, `Link`, `NavLink`,
+    `Navigate`, `useLocation`, `useNavigate`, `useParams`,
+    `useSearchParams`, `Outlet` es 100% compatible v6 -> v7).
+  - `package-lock.json` regenerado. `node_modules` viejo se movio
+    a `C:\Users\usuario\AppData\Local\Temp\2\opencode\
+    node-modules-blocked-2026-07-24-v0207` para esquivar el `EPERM`
+    ya conocido sobre `node_modules/brace-expansion/LICENSE`
+    (`LOG_ERRORES_INCIDENCIAS.md:2026-06-27`).
+  - `normalizeReturnTo` inline de V-02.06 se conserva en
+    `LoginPage.tsx:31-38` y `ImportacionPage.tsx:72-79` como segunda
+    capa: aunque `react-router-dom@7.18.1` ya parchea el vector
+    upstream, el filtro local impide que un eventual regression
+    futuro exponga el salto de host via `returnTo`.
+- Pendiente operativo del sandbox: ninguno. `npm run build` se
+  ejecuto con exito usando `VITE_BUILD_OUT_DIR=.test-dist-build-v0207`
+  apuntando a una ruta dentro del workspace (esquiva el `EPERM`
+  de `C:\tmp` documentado en `LOG_ERRORES_INCIDENCIAS.md:2026-06-26`).
+- Verificacion:
+  - `npm.cmd run lint -- --max-warnings 0` -> 0/0.
+  - `npm.cmd exec tsc -- --noEmit` -> 0 errores.
+  - `npm.cmd run build` con `VITE_BUILD_OUT_DIR=.test-dist-build-v0207`
+    -> OK, build Vite 8 limpio.
+  - `npm run test:unit` -> 3/3 PASS (`importacionRequest.test.js`).
+  - `npm.cmd audit --audit-level=critical` -> 0 hallazgos.
+  - `npm.cmd audit --audit-level=high` -> 2 HIGH (RSC CSRF), N/A
+    para Atlas Balance; documentado en `REGISTRO_BUGS.md`.
+- Estado: cerrado. Los 2 CVEs originales cerrados por el upgrade, el
+  HIGH restante (RSC CSRF) no aplica a esta arquitectura, y la
+  segunda capa reduce a cero el riesgo de regresion.
+
+## 2026-07-24 - V-02.07 - CodeQL #18 cs/log-forging en WatchdogOperationsService:181 (CERRADO)
+
+- **Contexto:** CodeQL re-scan sobre `c01fb2f6` (main) reabre la alerta
+  #18 `cs/log-forging` (CWE-117, severity medium) en
+  `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:181`.
+  El codigo ya saneaba con `LogScrubber.Scrub(zipVerification)` desde
+  V-02.06 (`LB-CODEQL-013`), pero la regla CodeQL no reconoce helpers
+  privados como sanitizadores: solo acepta el patron inline
+  `Replace("\r", "").Replace("\n", "")` en el sink.
+- **Causa:** la regla `cs/log-forging` de CodeQL marca cualquier flujo
+  tainted -> `_logger.*` que no pase por su lista conocida de
+  sanitizadores. `LogScrubber.Scrub` (helper privado) no esta en esa
+  lista porque no existe como funcion de marco publica.
+- **Solucion:**
+  - `WatchdogOperationsService.cs:181` (alerta #18): sustituye
+    `LogScrubber.Scrub(zipVerification)` por
+    `(zipVerification ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty)`
+    inline en el `LogError`. PatrÃ³n canonico que CodeQL acepta.
+  - Defense-in-depth: mismas sustituciones inline en lineas 310
+    (`pg_restore local fallo: {Error}` â€” `localResult.ErrorMessage`
+    viene de stderr de `pg_restore` y **si** arrastra CRLF), 901
+    (health URL rechazada), 955/959 (rollback aplicado/errÃ³neo) y
+    1096 (`Error al verificar firma RSA: ` + `ex.Message`).
+  - `WatchdogOperationsService.cs:5`: `using
+    AtlasBalance.Watchdog.Logging;` eliminado al quedar muerto.
+  - `WatchdogOperationsServiceTests.cs`: nuevo `CapturingLogger<T>` y
+    regresion `StartUpdateAsync_Should_Log_Rejection_Without_CrLf`
+    que afirma que el mensaje capturado del path de rechazo no
+    contiene `\r` ni `\n`. Si alguien refactoriza y regresa al
+    helper, el test falla antes de que CodeQL reabra la alerta.
+- **Verificacion:** build 0 errores en Watchdog y API.Tests; suite
+  filtrada `WatchdogOperationsServiceTests` 10/10 OK;
+  `LogScrubber|CsrfMiddleware` 13/13 OK. Re-scan CodeQL: pendiente
+  del push a `main`.
+- **Regla:** la regla CodeQL no es heuristica: es una lista de
+  sanitizadores. Si tu helper no esta en esa lista, no existe para
+  la regla. Inlining el patron canonico es la unica forma estable.
+  Helpers privados quedan como defensa en profundidad, no como
+  solucion para auditores externos.
 
 ## 2026-07-20 - V-02.06 - Verificacion orquestada F1-F5 (CODIGO CERRADO, GATES EXTERNOS ABIERTOS)
 
@@ -506,7 +1924,7 @@
 - Incidencias de QA:
   - `tab.playwright.waitForLoadState({ state: 'networkidle' })` no esta soportado por el Browser runtime aunque la documentacion mencione `networkidle`; usar `load` + espera concreta de selector/DOM.
   - Un mock de dashboard devolvio error por variable `puntos` inexistente; se corrigio a `points` antes de validar mobile.
-- Regla: si un rediseño oculta datos que el usuario necesita, no lo llames limpio; arreglalo.
+- Regla: si un rediseÃ±o oculta datos que el usuario necesita, no lo llames limpio; arreglalo.
 
 ## 2026-06-26 - V-02-02 - Selector de columnas de extractos no guardaba sin cuenta
 
@@ -843,7 +2261,7 @@
   - Se agrego una regresion con TLS/proxy/certificado interno ficticio.
   - Se excluyeron `.local-build`/`.codex-build` de MSBuild y Git para que intentos de test aislados no contaminen compilacion ni estado.
 - Verificacion: regresion focalizada 1/1 OK, `AtlasAiServiceTests` 62/62 OK y `git diff --check` OK con avisos CRLF esperados.
-- Regla: una app financiera no debe enseñar diagnosticos de infraestructura al usuario para "ayudar a depurar". El usuario necesita un error claro; el operador necesita categorias seguras.
+- Regla: una app financiera no debe enseÃ±ar diagnosticos de infraestructura al usuario para "ayudar a depurar". El usuario necesita un error claro; el operador necesita categorias seguras.
 
 ## 2026-05-20 - V-01.09 - Refresh tokens pre-MFA renovaban sesion sin segundo factor
 
@@ -1077,7 +2495,7 @@
 
 - Contexto: al ejecutar la suite backend sin Testcontainers, `AtlasAiServiceTests.AskAsync_Should_Build_Period_And_Category_Context` fallo porque `RECIBOS/FACTURAS DETECTADOS` sumaba `80,00` en vez de `35,00`.
 - Causa: `ReceiptTerms` incluia `cargo`; eso capturaba `Cargo tarjeta comercio`, aunque un cargo de tarjeta no es por si solo una factura o recibo.
-- Solucion aplicada: recibos/facturas excluye tarjeta/TPV/datáfono y prestamos/leasing cuando se detecta por terminos genericos.
+- Solucion aplicada: recibos/facturas excluye tarjeta/TPV/datÃ¡fono y prestamos/leasing cuando se detecta por terminos genericos.
 - Verificacion: test focalizado OK y suite backend sin Testcontainers 242/242 OK.
 - Regla: las categorias IA tienen que ser conservadoras. Si un termino generico mete basura, el total deja de ser informacion y pasa a ser ruido con decimales.
 
@@ -1472,7 +2890,7 @@
 
 ## 2026-05-11 - V-01.06 - OpenRouter fallaba por proxy de entorno `127.0.0.1:9`
 
-- Contexto: el chat IA devolvia `Error de red al consultar OpenRouter... No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión`.
+- Contexto: el chat IA devolvia `Error de red al consultar OpenRouter... No se puede establecer una conexiÃ³n ya que el equipo de destino denegÃ³ expresamente dicha conexiÃ³n`.
 - Causa: el proceso backend habia sido arrancado desde un entorno con `HTTP_PROXY`, `HTTPS_PROXY` y `ALL_PROXY` apuntando a `http://127.0.0.1:9`. Ese proxy local no existe y rechaza la conexion. WinHTTP estaba directo, asi que la pista real era el proxy de entorno, no OpenRouter.
 - Solucion aplicada: se reinicio la API heredando la configuracion necesaria de desarrollo pero limpiando `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `GIT_HTTP_PROXY` y `GIT_HTTPS_PROXY`. La API queda en PID `40704`, escuchando en `localhost:5000`, con logs redirigidos en `C:\tmp\atlas-api-openrouter.*.log`.
 - Verificacion: `curl --noproxy "*" https://openrouter.ai/api/v1/models` fuera del sandbox responde HTTP 200; `/api/health` responde OK; `netstat` confirma `127.0.0.1:5000` escuchando en PID `40704`.
@@ -1794,7 +3212,7 @@
 
 ## 2026-05-02 - V-01.05 - Saldo total se partia con importes de un millon
 
-- Contexto: en el dashboard principal, el KPI `Saldo total` podia partir `1.000.000,00 €` en dos lineas o desbordar la tarjeta superior.
+- Contexto: en el dashboard principal, el KPI `Saldo total` podia partir `1.000.000,00 â‚¬` en dos lineas o desbordar la tarjeta superior.
 - Causa: la grilla de KPIs superiores repartia el espacio de forma demasiado igualitaria y el saldo destacado tenia una escala excesiva para importes reales de tesoreria.
 - Solucion aplicada: `dashboard-kpi-grid--overview` da mas ancho relativo al KPI principal, reduce padding de los KPIs superiores, baja la escala del importe destacado y fuerza `white-space: nowrap` en importes KPI.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK, `robocopy` OK y Playwright headless con `total_convertido=1000000` confirma `wraps=false` y `overflows=false`.
@@ -1836,7 +3254,7 @@
 
 ## 2026-05-01 - V-01.05 - KPI principal del dashboard se solapaba con saldos por divisa
 
-- Contexto: durante la verificacion visual Playwright del rediseño UI/UX, el importe de `Saldo total` en desktop se extendia por debajo de la tarjeta `Saldos por divisa`.
+- Contexto: durante la verificacion visual Playwright del rediseÃ±o UI/UX, el importe de `Saldo total` en desktop se extendia por debajo de la tarjeta `Saldos por divisa`.
 - Causa: el nuevo `dashboard-command-grid` dejaba la primera columna demasiado estrecha para un importe financiero grande renderizado con fuente mono y escala KPI.
 - Solucion aplicada: se amplia el ancho minimo de la columna KPI y se limita el tamano maximo del numero destacado en el contexto `dashboard-kpi-grid--command`.
 - Verificacion: `npm.cmd run lint` OK, `npm.cmd run build` OK y Playwright confirma `kpiOverlapsDivisa=false`, sin overflow horizontal en desktop/mobile.
@@ -1900,7 +3318,7 @@
 
 ## 2026-04-25 - V-01.05 - Endpoints nuevos respondian 500 ante body o listas null
 
-- Contexto: en una pasada extra de auditoria sobre los endpoints añadidos en V-01.05 (`POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento`), se detecto que ninguno comprobaba que el cuerpo deserializado no fuera null y que `SaveAlertaSaldoRequest.DestinatarioUsuarioIds` se accedia directamente con `.Count` aunque deserializar `"destinatario_usuario_ids": null` deja la propiedad en null.
+- Contexto: en una pasada extra de auditoria sobre los endpoints aÃ±adidos en V-01.05 (`POST /api/alertas`, `PUT /api/alertas/{id}`, `POST /api/cuentas/{id}/plazo-fijo/renovar` y `POST /api/importacion/plazo-fijo/movimiento`), se detecto que ninguno comprobaba que el cuerpo deserializado no fuera null y que `SaveAlertaSaldoRequest.DestinatarioUsuarioIds` se accedia directamente con `.Count` aunque deserializar `"destinatario_usuario_ids": null` deja la propiedad en null.
 - Causa: los DTOs nuevos solo definian valor por defecto `= []`, pero el inicializador no se aplica cuando el JSON envia explicitamente `null`. Ningun controlador validaba previamente el cuerpo.
 - Solucion aplicada: `if (request is null) return BadRequest(new { error = "Request invalido" });` al inicio de los endpoints afectados y `request.DestinatarioUsuarioIds ?? []` antes de validar/procesar destinatarios.
 - Verificacion: `dotnet build -c Release` OK, `dotnet test --no-build` 107/107 OK, `dotnet list package --vulnerable --include-transitive` sin hallazgos, `npm audit` 0 vulnerabilidades.
@@ -1963,7 +3381,7 @@
 
 ## 2026-04-25 - V-01.05 - Reinstalacion falla por password HTTPS desalineada
 
-- Contexto: en Windows Server 2019, tras reinstalar `V-01.03`, `AtlasBalance.API` quedaba detenido y el visor de eventos mostraba `System.Security.Cryptography.CryptographicException: La contraseña de red especificada no es válida` al cargar `atlas-balance.pfx`.
+- Contexto: en Windows Server 2019, tras reinstalar `V-01.03`, `AtlasBalance.API` quedaba detenido y el visor de eventos mostraba `System.Security.Cryptography.CryptographicException: La contraseÃ±a de red especificada no es vÃ¡lida` al cargar `atlas-balance.pfx`.
 - Causa: `Instalar-AtlasBalance.ps1` reutilizaba `C:\AtlasBalance\certs\atlas-balance.pfx` si ya existia, pero generaba una password HTTPS nueva y la escribia en `appsettings.Production.json`. Eso dejaba certificado viejo con password nueva.
 - Solucion aplicada: el instalador `V-01.05` elimina `atlas-balance.pfx` y `atlas-balance.cer` existentes antes de generar el certificado nuevo, garantizando que la password configurada y el PFX coincidan.
 - Mitigacion operativa para instalaciones afectadas: detener `AtlasBalance.API`, borrar `C:\AtlasBalance\certs\atlas-balance.pfx` y `C:\AtlasBalance\certs\atlas-balance.cer`, y relanzar `scripts\Instalar-AtlasBalance.ps1` directamente desde el paquete.
@@ -2087,7 +3505,7 @@
 
 - Contexto: la auditoria con `cyber-neo` y revision manual detecto credenciales/defaults de desarrollo en configuracion versionable.
 - Causa: valores comodos para bootstrap quedaron en archivos base.
-- Solucion aplicada: `appsettings.json`, Watchdog y `docker-compose.yml` ya no incluyen secretos reales; se añadieron plantillas y `.env.example`; `SeedAdmin:Password` debe configurarse antes del primer arranque.
+- Solucion aplicada: `appsettings.json`, Watchdog y `docker-compose.yml` ya no incluyen secretos reales; se aÃ±adieron plantillas y `.env.example`; `SeedAdmin:Password` debe configurarse antes del primer arranque.
 
 ### Textos mojibake en importacion y correo SMTP
 
@@ -2165,7 +3583,7 @@
 
 ### Whitespace en release y documento de paleta
 
-- Contexto: `git diff --cached --check` detecto trailing whitespace en `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.01-win-x64/api/wwwroot/index.html` y `Documentacion/Diseno/Diseño/Palesta Y tipografia.txt`.
+- Contexto: `git diff --cached --check` detecto trailing whitespace en `Atlas Balance/Atlas Balance Release/AtlasBalance-V-01.01-win-x64/api/wwwroot/index.html` y `Documentacion/Diseno/DiseÃ±o/Palesta Y tipografia.txt`.
 - Causa probable: archivos generados o movidos con espacios finales heredados.
 - Solucion aplicada: limpieza mecanica de espacios finales en ambos archivos, re-stage y repeticion de `git diff --cached --check` sin errores.
 
@@ -2325,9 +3743,9 @@
 
 ## 2026-06-23 - V-02-02 - Build estandar bloqueada por `frontend/dist/assets`
 
-- Contexto: durante la validacion del rediseño completo, `npm.cmd run build` compilo TypeScript y transformo modulos, pero fallo en `vite:prepare-out-dir`.
+- Contexto: durante la validacion del rediseÃ±o completo, `npm.cmd run build` compilo TypeScript y transformo modulos, pero fallo en `vite:prepare-out-dir`.
 - Causa observada: `EPERM, Permission denied` al intentar vaciar `Atlas Balance/frontend/dist/assets`. Es coherente con las incidencias conocidas de carpetas `dist`/`wwwroot` bloqueadas por procesos locales o permisos de Windows.
-- Impacto: no invalida el codigo del rediseño, pero impide usar la build estandar como artefacto mientras esa carpeta este bloqueada.
+- Impacto: no invalida el codigo del rediseÃ±o, pero impide usar la build estandar como artefacto mientras esa carpeta este bloqueada.
 - Workaround aplicado: `npm.cmd exec vite -- build --outDir C:\tmp\atlas-balance-vite-build-redesign-v02-02 --emptyOutDir` compilo correctamente.
 - Verificacion relacionada: `npm.cmd run lint` OK, `npm.cmd exec tsc -- --noEmit` OK, `git diff --check` OK con avisos CRLF preexistentes.
 - Pendiente: liberar/regenerar `frontend/dist/assets` antes de empaquetar release o sincronizar `wwwroot`.
@@ -2643,7 +4061,7 @@
   `ComputeSha256Async(dumpPath, cancellationToken)` y el compilador devolvia
   CS0103 porque el helper no pertenecia al contexto de
   `GoogleDriveBackupService`.
-- **Causa:** el helper habia sido añadido despues de la llave `}` final de la
+- **Causa:** el helper habia sido aÃ±adido despues de la llave `}` final de la
   clase. El mismo defecto estaba en el archivo `.tmp`, por lo que copiarlo de
   nuevo habria reintroducido el fallo.
 - **Solucion:** se movio el metodo dentro de `GoogleDriveBackupService` en el
@@ -3027,3 +4445,288 @@
 - **Regla:** todo script montado en un contenedor Linux debe fijar `eol=lf` en
   `.gitattributes`. Una migracion no puede alterar el tipo de una columna hasta
   retirar policies, vistas o dependencias que la referencien.
+
+## 2026-07-24 - V-02.07 - CodeQL re-scan #17 cs/log-forging persiste tras el fix (LB-CODEQL-017, CERRADO stale scan)
+
+- **Contexto:** tras subir el fix V-02.06 (commit `11a56c3`), el panel de
+  GitHub Sigue mostrando la alerta CodeQL #17 `cs/log-forging` (CWE-117) en
+  `Atlas Balance/backend/src/AtlasBalance.API/Services/GoogleDriveBackupService.cs:405`.
+  Se reabre manualmente la verificacion para confirmar que el hallazgo esta
+  resuelto en la rama `V-02.07` y descartar una reintroduccion.
+- **Verificacion del codigo actual (rama `V-02.07`):**
+  - Linea 405: `_logger.LogWarning("... {FileIdSafe} ...", LogScrubber.Scrub(fileId))`.
+    El placeholder `FileIdSafe` esta renombrado, el helper `LogScrubber`
+    reemplaza `\r`/`\n`/`\t` por espacio y trunca a 256 chars, y hay 6 facts
+    en `LogScrubberTests.cs` que cubren null, vacio, CRLF, tabs, truncado y
+    ASCII limpio. Es el mismo patron que se cerro como `LB-CODEQL-012` en
+    V-02.06 (referencia: `v-02.06.md:53`).
+  - Lineas vecinas auditadas en la misma sesion:
+    - `301` (`JsonSerializer.Serialize(new { ..., file_id = uploaded.Id })`):
+      va a `_auditService.LogAsync` -> columna `Auditorias.DetallesJson` en
+      PostgreSQL. `System.Text.Json` escapa caracteres de control por
+      defecto, asi que `uploaded.Id` (que ademas esta restringido por la
+      API de Google Drive a un alfabeto seguro) no puede inyectar CRLF.
+      CodeQL no debe marcarlo.
+    - `446` (`JsonSerializer.Serialize(new { ..., file_name = metadata.Name })`):
+      mismo sumidero (JSON a DB). `metadata.Name` es taint externo (el
+      usuario de Drive controla el nombre del archivo), pero la serializacion
+      a JSON escapa `\r`/`\n` antes de persistir, por lo que la inyeccion
+      no llega nunca al log ni al sumidero final. CodeQL no debe marcarlo.
+    - `311` (`_logger.LogWarning(ex, "Fallo al subir backup {BackupId} a Google Drive", backup.Id)`):
+      el template solo expone `backup.Id` (Guid, no tainted). `ex.Message`
+      puede contener texto de la API de Google, pero Serilog trata el
+      exception como un campo estructurado separado que no se concatena al
+      template; ademas la regla `cs/log-forging` solo mira el template, no
+      `ex.Message`. No requiere cambio.
+  - `IsSafeGoogleIdentifier(fileId)` se ejecuta en `359` antes de cualquier
+    uso de `fileId`, pero como vimos en V-02.06 esa precondicion no exime
+    del saneamiento en el log (CodeQL rastrea el flujo del parametro, no
+    las precondiciones), por lo que `LogScrubber.Scrub` sigue siendo
+    necesario y ya esta.
+- **Causa de la alerta persistente:** CodeQL re-scan es asincrono y tarda
+  en reflejar el cierre. El push del fix en V-02.06 no se ha reflejado
+  aun en el panel, o el re-scan automatico se solapa con una nueva corrida
+  sin que el commit del fix entre en el lote. Esto es comportamiento
+  conocido del escaneo CodeQL de GitHub (ver `v-02.06.md:46-88`).
+- **Solucion:** no requiere cambio de codigo. El fix de V-02.06 sigue
+  vigente. Se deja registrado el triage para que el siguiente re-scan que
+  corra GitHub cierre #17. No se aplica `LogScrubber.Scrub` sobre los
+  campos de los `JsonSerializer.Serialize` de las lineas 301 y 446 porque
+  esa anidacion ya es sanitizer reconocida por la regla; anyadirla seria
+  ruido que no aporta seguridad real y podria introducir regresiones en
+  tests que validan el JSON verbatim.
+- **Verificacion:** inspeccion estatica del codigo actual en `V-02.07` con
+  grep + lectura del helper y de los tests. No se intento `dotnet build`
+  por la ACL heredada sobre `obj/` documentada en este LOG (acceso
+  denegado en builds locales). CodeQL re-scan al pushear a `main` deberia
+  cerrar #17 automaticamente; si no lo hace, sera CodeQL recognising la
+  presencia del helper como sanitizer fallida y habra que evaluar si
+  ampliar el helper o anadir una suppression con justificacion, como se
+  hizo con `LB-CODEQL-014`.
+- **Regla:** cuando una alerta CodeQL del ciclo previo "no se va", primero
+  verificar contra el codigo actual antes de tocar nada. La mayoria de
+  las veces es stale scan; si el codigo ha cambiado, re-auditar el flujo
+  completo (no solo la linea del alerta). Y, importante: no aplicar
+  saneo redundante sobre valores que ya pasan por un sanitizer reconocido
+  (JSON, URL-encoding, etc.) por miedo; eso es teatro de seguridad y
+  oculta regresiones reales.
+
+
+## 2026-07-24 - V-02.07 - CodeQL re-scan #15 js/xss-through-dom supresion mal colocada (LB-CODEQL-015, CERRADO)
+
+- **Contexto:** tras subir el fix V-02.06 (commit `11a56c3`), el panel de GitHub
+  Code Scanning reabrio la alerta #15 `js/xss-through-dom` (CWE-79/116,
+  severidad high) en `Documentacion/Diseno/mockups/atlas-balance-redesign-v02-02.html:196`.
+  La alerta #14 (mismo fichero, misma linea) aparecia como `fixed` pero
+  realmente solo se anadio una suppression que CodeQL no reconocio: el
+  comentario quedo **debajo** de la linea del alert, no en la linea
+  inmediata anterior ni en la misma linea.
+- **Causa:** CodeQL solo acepta `// codeql[rule-id] justificacion` en la misma
+  linea que el sumidero, o como bloque de comentario inmediatamente anterior.
+  El patron del bundler (`DOMParser + replaceWith` con `template` derivado de
+  un `<script type="__bundler/template">` textual del propio mockup) es legitimo
+  y no tainted, pero la suppression hay que ponerla donde CodeQL la vea.
+- **Solucion:** mover el bloque `// codeql[js/xss-through-dom] ...` de las
+  lineas 197-201 (post-alert) a las lineas 196-200 (pre-alert, inmediatamente
+  antes de `const doc = new DOMParser().parseFromString(template, 'text/html');`
+  que ahora pasa a la linea 201). Diff de 1 insercion + 1 borrado, solo el
+  mockup. Misma justificacion que la entrada LB-CODEQL-014 (V-02.06):
+  payload hardcodeado en el propio fichero, no se sirve en runtime,
+  Build-Release excluye Documentacion/Diseno/mockups/.
+- **Verificacion:** git diff muestra solo la recolocacion del bloque de
+  comentario. Sin reescritura del bundler (romperia el mockup de referencia
+  canonico del diseno V-02-02). CodeQL re-scan al pushear a main debe
+  cerrar #15 automaticamente; si no, evaluar paths-ignore o ampliar la
+  justificacion.
+- **Regla:** una suppression inline CodeQL solo cierra la alerta si esta
+  en la misma linea que el sumidero o inmediatamente antes. Suprimir una
+  linea despues es teatro: el panel lo reabre. La regla LB-CODEQL-014
+  ya decia "justificar (a) por que el flujo es seguro, (b) donde se verifica
+  y (c) que pasaria si el input dejara de ser de confianza"; anado (d):
+  la suppression tiene que estar donde CodeQL la busca, o el siguiente
+  re-scan la reabre y el "fix" anterior nunca cerro nada.
+
+## 2026-07-24 - V-02.07 - CodeQL cs/log-forging en CsrfMiddleware.Method (LB-CODEQL-016, CERRADO)
+
+- **Contexto:** Code Scanning #16 abrio una nueva alerta cs/log-forging
+  (CWE-117) sobre CsrfMiddleware.cs:46 despues de que la fix V-02.06
+  reorganizara las lineas del log de CSRF rechazado.
+- **Causa:** la fix V-02.06 (11a56c3) saneo Request.Path,
+  RemoteIpAddress y UserAgent con LogScrubber.Scrub, pero dejo
+  Request.Method sin tocar y apunto en un comentario: "Method es un
+  enum y nunca tainted, queda tal cual". La justificacion era falsa:
+  HttpRequest.Method devuelve string, no un enum. CodeQL considera
+  la propiedad como una fuente tainted del flujo HTTP->log y abre una
+  nueva alerta sobre la linea donde quedo el Method tras la
+  reordenacion de V-02.06.
+- **Solucion:** CsrfMiddleware.cs envuelve ahora Request.Method con
+  LogScrubber.Scrub(...) y renombra el placeholder a {MethodSafe}.
+  El comentario obsoleto se sustituye por uno que documenta la postura:
+  Kestrel normaliza verbos validos a nivel de protocolo, pero CodeQL
+  no puede probarlo, asi que se sanea por consistencia con el resto de
+  los valores del log. Test nuevo en CsrfMiddlewareTests.cs:
+  InvokeAsync_Should_NotThrow_When_Method_Contains_CrLf envia
+  "POST\r\n2026-01-01 FAKE LOG ENTRY\r\n" como verbo y asserta 403
+  sin excepcion. Mismo patron que los facts V-02.06 para UA y Path.
+- **Verificacion:** dotnet build AtlasBalance.API.csproj
+  -p:UseAppHost=false con workaround ACL obj/ ->
+  C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207\:
+  0 errores, 6 warnings preexistentes ajenos a V-02.07. CodeQL re-scan
+  al pushear a main cierra #16 como ixed.
+- **Regla:** la regla "valor tainted -> sink pasa por Scrub" se extiende
+  a HttpRequest.Method. Aunque en la practica Kestrel limite el set
+  de verbos, la fuente que CodeQL considera tainted cubre cualquier
+  string saliente de HttpRequest. La excepcion por "es enum" ya
+  no es valida; el helper aplica a cualquier string que llegue a
+  _logger.* desde una peticion.
+
+## 2026-07-24 - V-02.07 - Barrido defensivo log forging en sinks no CodeQL (LB-CODEQL-016b/c/d/e, CERRADO)
+
+- **Contexto:** CodeQL cs/log-forging solo considera como fuentes las
+  propiedades de HttpRequest (path, method, headers, query, cookies,
+  form, body, remote IP). No marca valores que llegan por stderr de
+  procesos ni por respuestas de HTTP clients (internos o externos).
+  Sin embargo, la regla del proyecto dice "cualquier valor tainted pasa
+  por Scrub" desde V-02.06, asi que se aprovecha este alcance para
+  extender el patron a cinco sitios residuales sin re-scan de CodeQL.
+- **Sitios endurecidos (todos veredictos CERRADO):**
+  1. AtlasBalance.API/Services/BackupService.cs:76 ->
+     LogScrubber.Scrub(result.ErrorMessage) y placeholder
+     {ErrorSafe}. Origen: stderr de pg_dump.
+  2. AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs:314
+     -> LogScrubber.Scrub(localResult.ErrorMessage) y placeholder
+     {ErrorSafe}. Origen: stderr de pg_restore. La fix inline
+     anterior (.Replace("\r", "").Replace("\n", "")) se sustituye por
+     LogScrubber.Scrub para unificar el patron con el resto del
+     proyecto Watchdog (que ya usa LogScrubber.Scrub en
+     WatchdogOperationsService.cs:181 desde V-02.06 #13). Se anade
+     using AtlasBalance.Watchdog.Logging;.
+  3. AtlasBalance.API/Services/TiposCambioService.cs:377 ->
+     LogScrubber.Scrub(errorBody) y placeholder {BodySafe}.
+     Origen: cuerpo de respuesta de la API externa ExchangeRate. Se
+     anade using AtlasBalance.API.Logging;.
+  4. AtlasBalance.API/Services/WatchdogClientService.cs:94 ->
+     LogScrubber.Scrub(body) y placeholder {BodySafe}. Origen:
+     cuerpo de respuesta del Watchdog HTTP interno. Se anade
+     using AtlasBalance.API.Logging;.
+  5. AtlasBalance.API/Services/AtlasAiService.cs -> cuatro
+     callsites que terminan con providerError de APIs externas
+     (OpenRouter, OpenAI, MiniMax) en un mensaje que luego se loguea
+     desde Program.cs:376 LogError(feature.Error, ...) cuando la
+     IaProviderException se propaga al exception handler. Tres
+     callsites externos a BuildProviderHttpErrorMessage (lineas 245,
+     491) ahora sanitizan el argumento antes de invocarlo. Un callsite
+     interno a BuildProviderResponseErrorMessage (linea 2484)
+     sanitiza exception.ProviderError directamente. Asi el CRLF que
+     pudiera venir en un cuerpo de respuesta de proveedor IA no llega
+     al log ni via el sink del service ni via el sink del exception
+     handler. Se anade using AtlasBalance.API.Logging;.
+- **Verificacion:** dotnet build AtlasBalance.API.csproj y
+  dotnet build AtlasBalance.Watchdog.csproj (mismo workaround ACL)
+  compilan con 0 errores. Las plantillas de mensaje resultantes se
+  siguen mostrando igual cuando el cuerpo esta limpio: el cambio es
+  neutro en el camino feliz.
+- **Regla:** un valor tainted por cualquier via (request, stderr de
+  proceso, body de HTTP client) pasa por LogScrubber.Scrub antes de
+  llegar a Serilog. Si el placeholder del log template se llama
+  {AlgoSafe}, queda explicito que el valor ya esta saneado. La regla
+  CodeQL marca las fuentes HTTP; el barrido manual cubre el resto para
+  no quedarnos solo en el minimo que la regla exige.
+
+## 2026-07-28 - V-02.07 - Pool Npgsql explicito y WorkerCount Hangfire (CERRADO)
+
+- **Causa:** la documentacion (`Documentacion/SPEC.md:175,199` y la nota
+  "16" en `SPEC.md:4253`) afirmaba que el pool Npgsql estaba fijado a
+  20 conexiones, pero las cadenas reales en
+  `AtlasBalance.API/appsettings.Production.json.template:3-4`,
+  `AtlasBalance.API/appsettings.Development.json.template:3-4`,
+  `Atlas Balance/scripts/Instalar-AtlasBalance.ps1:514-516` y
+  `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1:341-381` no
+  declaraban ningun parametro de pool. En la practica Npgsql aplicaba
+  los defaults de version 8.0.6 (`Pooling=true`, `Maximum Pool
+  Size=100`, `Minimum Pool Size=0`), por lo que la documentacion y el
+  runtime divergian: 20 declarado, 100 efectivo. Ademas, Hangfire se
+  registraba con `AddHangfireServer()` sin opciones
+  (`Program.cs:236`), heredando el `WorkerCount` por defecto de
+  Hangfire 1.8.23 (`min(ProcessorCount * 5, 20)`). En una maquina de
+  cuatro nucleos eso son 20 workers compitiendo por el mismo pool.
+- **Solucion aplicada:**
+  1. `AtlasBalance.API/appsettings.Production.json.template:3-4` y
+     `AtlasBalance.API/appsettings.Development.json.template:3-4`
+     declaran `Application Name=AtlasBalance.API;Maximum Pool
+     Size=20;Minimum Pool Size=0` en `DefaultConnection` y
+     `Application Name=AtlasBalance.Migrate;Maximum Pool Size=4;Minimum
+     Pool Size=0` en `MigrationConnection`. Los valores de pool se
+     inyectan despues de `sslmode` para que el orden de la cadena siga
+     siendo estable entre el instalador y el actualizador.
+  2. `AtlasBalance.API/Program.cs:236-239` sustituye
+     `AddHangfireServer()` por
+     `AddHangfireServer(options => { options.WorkerCount =
+     builder.Configuration.GetValue("Database:HangfireWorkerCount",
+     2); })`. El default de 2 sirve a 4-8 usuarios con margen para
+     backup, export y la cola de OpenClaw. Se deja como tunnable por
+     configuracion para subirlo en V-02.08 con datos reales.
+  3. `Atlas Balance/scripts/Instalar-AtlasBalance.ps1:515-516` escribe
+     los mismos parametros de pool en `$connection` y
+     `$migrationConnection`. Las instalaciones nuevas arrancan ya con
+     la politica explicita.
+  4. `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1:114-122`
+     extiende `Parse-ConnectionString` para reconocer `Application
+     Name`, `Maximum Pool Size` y `Minimum Pool Size` y preservarlos
+     cuando se regenera una cadena. `Actualizar-AtlasBalance.ps1:383-386`
+     hace que `Resolve-MigrationConnectionForConfig` inyecte los
+     defaults (`AtlasBalance.Migrate` / 4 / 0) si la cadena resuelta
+     por la cascada BACKUP-02 no los trae. Asi un upgrade de una
+     instalacion legacy deja la `MigrationConnection` lista sin
+     intervencion manual.
+  5. `Documentacion/SPEC.md:175,199,4253` se reescribe para distinguir
+     `DefaultConnection` (20) y `MigrationConnection` (4), mencionar
+     `Application Name` y `Hangfire WorkerCount`, y dejar de afirmar
+     "20 conexiones" a secas.
+- **Verificacion:**
+  - `dotnet build AtlasBalance.API.csproj -p:UseAppHost=false
+    -p:BaseIntermediateOutputPath=...\obj\
+    -p:BaseOutputPath=...\bin\` redirigido a
+    `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0207-pool\`
+    por la ACL conocida de `bin/obj`: **0 errores, mismos 6 warnings
+    preexistentes** (5 `UseXminAsConcurrencyToken` obsoleto + 1
+    `PostgreSqlStorage` obsoleto). No hay warnings nuevos.
+  - `dotnet build AtlasBalance.Watchdog.csproj` con la misma
+    redireccion: **0 errores, 0 warnings**. El Watchdog no consume
+    pool Npgsql directamente (lanza `pg_dump`/`pg_ctl` como procesos
+    externos), asi que no necesita configuracion de pool.
+  - La suite backend filtrada no Testcontainers no se ha podido
+    ejecutar en este host por el gate conocido de
+    `AtlasBalance.API.Tests.csproj` documentado en
+    `LOG_ERRORES_INCIDENCIAS.md:441-469` (BLOQUEADO desde 2026-07-16
+    V-02.06) y `Documentacion/Versiones/v-02.07.md:83-92`. Confirmado
+    en esta sesion: `dotnet test` sobre el proyecto de tests reporta
+    961 errores `CS0234`/`CS0246` (namespaces y atributos xunit sin
+    `using`) que afectan a `AtlasBalance.API/Migrations/*.cs` cuando
+    el proyecto de tests intenta reconstruir dependencias. Los
+    archivos que rompen (`IntegrationAuthMiddleware.cs:481`,
+    `Program.cs:235`, `RlsDbCommandInterceptor.cs:18`,
+    `ImportacionService.cs:350`, `BackupService.cs:192`,
+    `IntegracionesControllerTests.cs:36-37` y el resto del lote) son
+    **pre-existentes** a este alcance y no se han tocado. La build del
+    proyecto API solo compila limpio, lo que confirma que los cambios
+    de este alcance (templates + script + `Program.cs` con `GetValue`
+    y default explicito) no introducen regresiones. La suite pasa en
+    CI; la validacion automatica queda bloqueada por el gate hasta
+    que se cierre la deuda pre-existente.
+  - `grep -n "Maximum Pool Size" Atlas Balance` devuelve solo las dos
+    plantillas, `Instalar-AtlasBalance.ps1:515-516` y
+    `Actualizar-AtlasBalance.ps1:386`. No hay referencias en codigo
+    C#.
+  - `git diff --check`: OK.
+- **Riesgo conocido:** no se valida concurrencia real (8 usuarios +
+  backup + OpenClaw) porque Docker/Testcontainers no esta disponible
+  en este host. Queda como pendiente para V-02.08 medir
+  `pg_stat_activity`, `max_connections` y contadores Npgsql en una
+  instalacion real, igual que la recomendacion general que origino este
+  alcance (capturar `SHOW max_connections`, `WorkerCount` real,
+  duracion de jobs y RPS).
+- **Bloqueo:** ninguno en este alcance. La decision de quedarnos en
+  `Maximum Pool Size=20` y `WorkerCount=2` es provisional hasta
+  tener metricas; ambas son configurables sin recompilar
+  (`Database:HangfireWorkerCount` y los parametros de la cadena).

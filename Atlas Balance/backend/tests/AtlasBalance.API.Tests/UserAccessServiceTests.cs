@@ -6,6 +6,10 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
+using AtlasBalance.API.Caching;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 namespace AtlasBalance.API.Tests;
 
 public class UserAccessServiceTests
@@ -49,7 +53,7 @@ public class UserAccessServiceTests
             CuentaIds = []
         };
 
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
 
         (await service.CanAccessCuentaAsync(cuentaPermitida.Id, scope, CancellationToken.None)).Should().BeTrue();
         (await service.CanAccessCuentaAsync(cuentaBloqueada.Id, scope, CancellationToken.None)).Should().BeFalse();
@@ -78,7 +82,7 @@ public class UserAccessServiceTests
             new Claim(ClaimTypes.Role, nameof(RolUsuario.GERENTE))
         ], "TestAuth");
 
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var scope = await service.GetScopeAsync(new ClaimsPrincipal(identity), CancellationToken.None);
 
         scope.HasPermissions.Should().BeTrue();
@@ -113,7 +117,7 @@ public class UserAccessServiceTests
         ], "TestAuth");
 
         var principal = new ClaimsPrincipal(identity);
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var scope = await service.GetScopeAsync(principal, CancellationToken.None);
 
         scope.HasPermissions.Should().BeTrue();
@@ -146,7 +150,7 @@ public class UserAccessServiceTests
         ], "TestAuth");
 
         var principal = new ClaimsPrincipal(identity);
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var scope = await service.GetScopeAsync(principal, CancellationToken.None);
 
         scope.HasPermissions.Should().BeTrue();
@@ -181,7 +185,7 @@ public class UserAccessServiceTests
         ], "TestAuth");
 
         var principal = new ClaimsPrincipal(identity);
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var scope = await service.GetScopeAsync(principal, CancellationToken.None);
 
         scope.HasPermissions.Should().BeTrue();
@@ -216,7 +220,7 @@ public class UserAccessServiceTests
         ], "TestAuth");
 
         var principal = new ClaimsPrincipal(identity);
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
         var scope = await service.GetScopeAsync(principal, CancellationToken.None);
 
         scope.HasPermissions.Should().BeTrue();
@@ -247,7 +251,7 @@ public class UserAccessServiceTests
             HasGlobalAccess = true
         };
 
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
 
         var cuentas = await service.ApplyCuentaScope(db.Cuentas.IgnoreQueryFilters(), scope).ToListAsync();
 
@@ -287,7 +291,7 @@ public class UserAccessServiceTests
             HasGlobalAccess = false
         };
 
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
 
         var cuentas = await service.ApplyCuentaScope(db.Cuentas.AsNoTracking(), scope).ToListAsync();
 
@@ -324,7 +328,7 @@ public class UserAccessServiceTests
             HasGlobalAccess = false
         };
 
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
 
         (await service.CanWriteCuentaAsync(cuentaPermitida.Id, scope, CancellationToken.None)).Should().BeTrue();
         (await service.CanEditCuentaAsync(cuentaPermitida.Id, scope, CancellationToken.None)).Should().BeTrue();
@@ -363,7 +367,7 @@ public class UserAccessServiceTests
             CuentaIds = [cuentaId]
         };
 
-        var service = new UserAccessService(db);
+        var service = new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions()));
 
         var titulares = await service.ApplyTitularScope(db.Titulares.IgnoreQueryFilters(), scope).ToListAsync();
 

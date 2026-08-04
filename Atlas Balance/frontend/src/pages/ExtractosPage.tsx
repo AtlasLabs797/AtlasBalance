@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import axios from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
@@ -400,7 +400,7 @@ export default function ExtractosPage() {
     } catch (err) {
       const message = extractErrorMessage(err, 'No se pudo insertar la fila.');
       setError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: err });
     }
   };
 

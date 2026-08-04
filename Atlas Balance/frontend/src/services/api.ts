@@ -6,6 +6,7 @@ import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PermisoUsuario, Usuario } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { clearQueryClient } from '@/services/queryClient';
 
 const api = axios.create({
   baseURL: '/api',
@@ -35,6 +36,10 @@ const clearSessionState = () => {
   usePermisosStore.getState().clear();
   useAlertasStore.getState().clear();
   usePaisScopeStore.getState().clear();
+  // TanStack Query: tras logout, restore o cambio de usuario/permisos la
+  // caché en memoria contiene datos del usuario anterior (saldos,
+  // extractos, alertas). Limpiarla aqui evita fuga entre sesiones.
+  clearQueryClient();
 };
 
 const pushErrorToast = (message: string) => {
@@ -107,6 +112,31 @@ api.interceptors.response.use(
       clearSessionState();
       pushErrorToast('Sesión caducada. Vuelve a iniciar sesión para continuar.');
       window.location.href = '/login';
+      return Promise.reject(error);
+    }
+
+    if (status === 429) {
+      // Rate limit: el backend manda Retry-After en segundos. No reintentamos,
+      // no hacemos logout, no redirigimos: solo avisamos.
+      const retryAfterHeader = error.response?.headers?.['retry-after'];
+      const retryAfterSeconds = retryAfterHeader != null ? parseInt(retryAfterHeader, 10) : NaN;
+
+      if (!Number.isNaN(retryAfterSeconds) && retryAfterSeconds > 0) {
+        // Con Retry-After tenemos el dato mas util (cuanto esperar), asi que
+        // preferimos nuestro mensaje con la cifra antes que el generico de
+        // extractErrorMessage (que no incluye el tiempo de espera).
+        if (retryAfterSeconds > 60) {
+          const minutos = Math.round(retryAfterSeconds / 60);
+          pushErrorToast(`Demasiadas peticiones. Espera ${minutos} minuto${minutos === 1 ? '' : 's'} y vuelve a intentarlo.`);
+        } else {
+          pushErrorToast(`Demasiadas peticiones. Espera ${retryAfterSeconds} segundos y vuelve a intentarlo.`);
+        }
+      } else {
+        // Sin Retry-After preferimos el mensaje del backend si viene en el
+        // payload; si no, uno generico sin cifra.
+        pushErrorToast(extractErrorMessage(error, 'Demasiadas peticiones. Espera un momento y vuelve a intentarlo.'));
+      }
+
       return Promise.reject(error);
     }
 

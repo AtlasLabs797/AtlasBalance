@@ -471,6 +471,19 @@ public class AlertaServiceTests
             return Task.CompletedTask;
         }
 
+        // V-02.07: canal de alertas de seguridad. Estas pruebas son de alertas
+        // de saldo y no lo ejercitan.
+        public Task SendSecurityAlertAsync(
+            IReadOnlyList<string> recipients,
+            string regla,
+            string severidad,
+            string resumen,
+            IReadOnlyList<string> detalles,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task SendPlazoFijoVencimientoAsync(
             IReadOnlyList<string> recipients,
             string titularNombre,
