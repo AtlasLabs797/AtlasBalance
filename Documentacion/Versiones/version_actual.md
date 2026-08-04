@@ -33,5 +33,7 @@ nueva version. No implica por si solo una release ni cambios funcionales.
 
 La release anterior es `V-02.07-win-x64`, publicada el 2026-08-04:
 `https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-02.07-win-x64`.
+La rama de trabajo de V-02.08 esta publicada como `origin/V-02.08` desde el
+commit `b9975aa`.
 V-02.08 queda en preparacion hasta completar sus comprobaciones y publicar un
 paquete firmado independiente.

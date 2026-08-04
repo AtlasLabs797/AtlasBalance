@@ -34,8 +34,9 @@ historicas mantienen su version de origen.
 **Resultado de verificacion:** alineacion OK (`V-02.08` / `2.8.0`), parsers OK,
 `git diff --check` OK, TypeScript/lint/build OK y tests frontend 22/22 PASS. El
 test de fixtures del scanner pasa; el scanner general se detiene en el fixture
-positivo intencionado `scripts/.scanner-fixtures/positive.txt`. La publicacion
-de la rama queda pendiente de la validacion remota de GitHub.
+positivo intencionado `scripts/.scanner-fixtures/positive.txt`. La rama
+`V-02.08` se creo y publico correctamente como `origin/V-02.08`, con commit
+`b9975aa`.
 
 ---
 
