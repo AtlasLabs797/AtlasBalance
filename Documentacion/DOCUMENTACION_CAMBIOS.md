@@ -54,7 +54,8 @@ exclusivamente pruebas PostgreSQL/Testcontainers porque Docker local no esta
 disponible. Ningun fallo restante pertenece a `BackupServiceTests` ni
 `ExportacionServiceTests`. El extractor anclado devuelve exactamente esos 17
 identificadores contra el log local y ya no incluye el test MFA cuyo nombre acaba
-en `Failures`. Pendiente: confirmacion del run GitHub Actions posterior al push.
+en `Failures`. El run GitHub Actions `30923568853`, con Docker/PostgreSQL,
+confirmo 656/656 tests backend y el workflow completo en verde.
 
 ---
 

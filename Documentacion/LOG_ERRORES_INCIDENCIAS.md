@@ -1,6 +1,6 @@
 ﻿# Log de errores e incidencias
 
-## 2026-08-04 - V-02.07 - CI ocultaba seis fallos causados por rutas Windows en Ubuntu (CORREGIDO, PENDIENTE CI)
+## 2026-08-04 - V-02.07 - CI ocultaba seis fallos causados por rutas Windows en Ubuntu (CERRADO)
 
 - **Run:** `30880106452`, job `Build, test, and audit`, paso `Test backend`.
 - **Sintoma:** xUnit v3 informo `Failed: 6, Passed: 650`, pero escribio las
@@ -28,8 +28,9 @@
 - **Verificacion:** suite local 639/656 correcta; los 17 fallos son unicamente
   PostgreSQL/Testcontainers por Docker no disponible. Los seis tests de este
   incidente ya no aparecen entre los fallidos. El extractor devuelve los 17
-  fallos reales del log local sin el falso positivo MFA. Pendiente: run CI tras
-  publicar el parche.
+  fallos reales del log local sin el falso positivo MFA. El run CI `30923568853`
+  cerro la comprobacion real con Docker/PostgreSQL: 656/656 tests backend y los
+  tres jobs del workflow correctos.
 
 ---
 
