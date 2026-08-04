@@ -20,6 +20,10 @@ La firma detached mide 512 bytes y su SHA-256 es
 `43C49540EBC183B8A45D199C96EBFE2678C0CA35A9F85AEB82737F095F6A6ED5`.
 Verificacion .NET 8: clave RSA-4096, privada alineada con la publica de la
 plantilla, plantilla alineada con el instalador y firma RSA/SHA-256 valida.
+Publicado como GitHub Release `V-02.07-win-x64` y marcado `Latest`:
+`https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-02.07-win-x64`.
+El tag apunta al commit auditado `5325144` y GitHub muestra los mismos digests
+para el ZIP y la firma.
 
 ---
 

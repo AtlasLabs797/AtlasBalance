@@ -42,8 +42,11 @@ de build, fuentes ni arboles de desarrollo. Las conexiones/passwords de los
 la publica configurada, la plantilla coincide con el instalador y la firma
 valida el ZIP (`SIGNATURE_VALID=True`).
 
-**Pendiente:** publicar ZIP y `.sig` en GitHub Release. La autenticacion local
-de `gh` sigue caducada y requiere reautenticacion del operador.
+**Publicacion:** commit `5325144` subido a `origin/V-02.07`. GitHub Release
+`V-02.07-win-x64` publicado como `Latest`, apuntando a ese commit, con ZIP y
+`.zip.sig` disponibles en
+`https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-02.07-win-x64`.
+GitHub confirma en la pagina los mismos digests SHA-256 registrados arriba.
 
 ---
 
