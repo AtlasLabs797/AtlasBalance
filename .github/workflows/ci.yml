@@ -61,11 +61,18 @@ jobs:
           dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore
           test_exit=$?
           if (( test_exit != 0 )); then
+            read_test_log() {
+              if [[ "$(od -An -t x1 -N2 "$1" | tr -d '[:space:]')" == "fffe" ]]; then
+                iconv -f UTF-16LE -t UTF-8 "$1"
+              else
+                cat "$1"
+              fi
+            }
             found_log=0
             while IFS= read -r test_log; do
               found_log=1
-              iconv -f UTF-16LE -t UTF-8 "$test_log" \
-                | grep -Ei '(^|[[:space:]])(failed|con errores)[[:space:]]+AtlasBalance\.API\.Tests\.' \
+              read_test_log "$test_log" \
+                | grep -Ei '(failed|failure|error|con errores).*AtlasBalance\.API\.Tests\.|AtlasBalance\.API\.Tests\..*(failed|failure|error|con errores)' \
                 | grep -Eo 'AtlasBalance\.API\.Tests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+' \
                 | sort -u
             done < <(find "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/bin" -type f -name 'AtlasBalance.API.Tests_*.log' -print)

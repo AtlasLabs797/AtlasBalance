@@ -15,6 +15,9 @@
   no encontro identificadores: el log es UTF-16LE (`FF FE`) y `grep` ve bytes
   NUL entre caracteres. Ajustado a la ruta `bin` efectiva y conversion
   `iconv` a UTF-8, manteniendo salida exclusiva de identificadores.
+- **Segundo run diagnostico:** `30921865207` confirmo que el log Linux no usa la
+  misma codificacion que Windows. Se anadio deteccion de BOM: UTF-16LE solo con
+  `FF FE`, UTF-8 en el resto, y estado de fallo antes o despues del identificador.
 
 ---
 

@@ -34,6 +34,12 @@ acoto la busqueda al `bin` real de xUnit. La inspeccion local confirmo BOM
 de filtrar solo lineas `failed`/`con errores`. El extractor devuelve 17 nombres
 contra el log local conocido de 17 fallos Docker.
 
+**Ajuste multiplataforma tras `30921865207`:** Linux volvio a mostrar seis
+fallos pero ningun identificador. La causa es que el runner Linux escribe UTF-8,
+mientras el log local Windows lleva BOM UTF-16LE. El script detecta ahora `FF FE`
+antes de aplicar `iconv`; en otro caso lee UTF-8 directamente. El marcador de
+fallo acepta estado antes o despues del identificador.
+
 ---
 
 ## 2026-08-04 - V-02.07 - Auditoria y correccion de seguridad pre-launch
