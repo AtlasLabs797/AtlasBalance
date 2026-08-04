@@ -61,9 +61,17 @@ jobs:
           dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore
           test_exit=$?
           if (( test_exit != 0 )); then
+            found_log=0
             while IFS= read -r test_log; do
-              grep -Eo 'AtlasBalance\.API\.Tests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+' "$test_log"
-            done < <(find "./Atlas Balance/backend/tests/AtlasBalance.API.Tests" -path '*/TestResults/*.log' -type f -print)
+              found_log=1
+              iconv -f UTF-16LE -t UTF-8 "$test_log" \
+                | grep -Ei '(^|[[:space:]])(failed|con errores)[[:space:]]+AtlasBalance\.API\.Tests\.' \
+                | grep -Eo 'AtlasBalance\.API\.Tests\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+' \
+                | sort -u
+            done < <(find "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/bin" -type f -name 'AtlasBalance.API.Tests_*.log' -print)
+            if (( found_log == 0 )); then
+              echo "No se encontro el log de resultados de xUnit."
+            fi
             echo "Solo se muestran identificadores de test; detalles y parametros permanecen fuera del log publico."
           fi
           exit "$test_exit"

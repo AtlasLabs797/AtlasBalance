@@ -11,6 +11,10 @@
   No publica rutas, mensajes, parametros ni valores de asercion.
 - **Pendiente:** publicar el cambio, leer el nuevo run y cerrar aqui la causa y
   solucion de los seis tests. No se atribuye causa sin esa evidencia.
+- **Primer run diagnostico:** `30921246599` repitio 6 fallos/650 correctos, pero
+  no encontro identificadores: el log es UTF-16LE (`FF FE`) y `grep` ve bytes
+  NUL entre caracteres. Ajustado a la ruta `bin` efectiva y conversion
+  `iconv` a UTF-8, manteniendo salida exclusiva de identificadores.
 
 ---
 

@@ -27,6 +27,13 @@ solo recorre logs bajo el proyecto de tests y no publica rutas, mensajes,
 parametros ni valores de asercion. Pendiente: publicar y usar el nuevo run para
 identificar y corregir los seis fallos reales.
 
+**Ajuste tras el primer run diagnostico:** `30921246599` confirmo de nuevo
+6 fallos y 650 aciertos, pero el patron inicial no encontro el fichero. Se
+acoto la busqueda al `bin` real de xUnit. La inspeccion local confirmo BOM
+`FF FE`: el log es UTF-16LE, por lo que se convierte con `iconv` a UTF-8 antes
+de filtrar solo lineas `failed`/`con errores`. El extractor devuelve 17 nombres
+contra el log local conocido de 17 fallos Docker.
+
 ---
 
 ## 2026-08-04 - V-02.07 - Auditoria y correccion de seguridad pre-launch
