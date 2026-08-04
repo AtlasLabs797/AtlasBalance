@@ -111,7 +111,8 @@
       "Override": {
         "Microsoft": "Warning",
         "Microsoft.EntityFrameworkCore": "Warning",
-        "Hangfire": "Warning"
+        "Hangfire": "Warning",
+        "System.Net.Http.HttpClient": "Warning"
       }
     },
     "SecurityFilePath": "C:\\ProgramData\\AtlasBalance\\logs\\security\\atlas-security-.log"

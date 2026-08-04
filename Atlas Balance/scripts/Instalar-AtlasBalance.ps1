@@ -25,7 +25,8 @@ param(
     [string]$AdminEmail = "admin@atlasbalance.local",
     [string]$AdminPassword = "",
     [switch]$SkipDatabaseSetup,
-    [switch]$InstallDependencies
+    [switch]$InstallDependencies,
+    [switch]$AllowInternet
 )
 
 $ErrorActionPreference = "Stop"
@@ -391,6 +392,68 @@ function Try-InstallPostgres {
     return $false
 }
 
+# V-02.07 (DB-EXPOSURE): el instalador EDB de winget no fija listen_addresses y
+# suele dejarlo en '*' (todas las interfaces), asi que el puerto de PostgreSQL
+# queda accesible desde la LAN sin regla de firewall que lo cubra. Como esta
+# instancia es local y la gestiona este instalador, la restringimos a
+# localhost. Idempotente: si ya esta en 'localhost' no reescribe ni reinicia.
+function Set-PostgresListenLocalhost {
+    param(
+        [string]$DataPath,
+        [string]$ServiceName
+    )
+
+    $confPath = Join-Path $DataPath "postgresql.conf"
+    if (-not (Test-Path -LiteralPath $confPath -PathType Leaf)) {
+        Write-Warning "No se encontro postgresql.conf en '$confPath'; no se pudo restringir listen_addresses a localhost. Revisalo a mano."
+        return
+    }
+
+    # Solo cuentan las lineas ACTIVAS. postgresql.conf se distribuye con
+    # "#listen_addresses = 'localhost'" comentado, y el instalador EDB anade
+    # aparte su propia linea activa. Si mirasemos tambien las comentadas,
+    # dariamos por bueno un fichero que en realidad esta escuchando en '*'.
+    $activePattern = "^\s*listen_addresses\s*="
+    $lines = @(Get-Content -LiteralPath $confPath)
+    $activeLines = @($lines | Where-Object { $_ -match $activePattern })
+    if ($activeLines.Count -gt 0 -and
+        -not ($activeLines | Where-Object { $_ -notmatch "listen_addresses\s*=\s*'localhost'" })) {
+        return
+    }
+
+    $newLine = "listen_addresses = 'localhost'"
+    $replaced = $false
+    $newLines = foreach ($line in $lines) {
+        if ($line -match $activePattern) {
+            # Solo se conserva la primera: si quedasen varias activas, la
+            # ultima ganaria y dejaria en vigor el valor que veniamos a quitar.
+            if (-not $replaced) {
+                $replaced = $true
+                $newLine
+            }
+        } else {
+            $line
+        }
+    }
+    if (-not $replaced) {
+        $newLines += $newLine
+    }
+    # UTF8 sin BOM a proposito: Set-Content -Encoding UTF8 en Windows
+    # PowerShell 5.1 escribe BOM, y un BOM al inicio de postgresql.conf rompe
+    # el parser de PostgreSQL y deja el servicio sin arrancar tras el reinicio.
+    [System.IO.File]::WriteAllLines($confPath, [string[]]$newLines, (New-Object System.Text.UTF8Encoding($false)))
+
+    Write-Host "PostgreSQL local: listen_addresses fijado a 'localhost' en $confPath." -ForegroundColor Green
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($service) {
+        Restart-Service -Name $ServiceName
+        $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(60))
+        Write-Host "Servicio $ServiceName reiniciado para aplicar listen_addresses." -ForegroundColor Green
+    } else {
+        Write-Warning "No se encontro el servicio '$ServiceName' para reiniciarlo; el cambio de listen_addresses no tomara efecto hasta el proximo reinicio de PostgreSQL."
+    }
+}
+
 function Invoke-Psql {
     param(
         [string]$PsqlExe,
@@ -454,11 +517,14 @@ function Ensure-Database {
     $roleIdentifier = Quote-PgIdentifier $DbUser
     $dbIdentifier = Quote-PgIdentifier $DbName
 
+    # V-02.07 (BACKUP-RLS): el owner necesita BYPASSRLS. Las tablas de negocio
+    # llevan FORCE ROW LEVEL SECURITY, y pg_dump exige que el rol que lo ejecuta
+    # pueda saltarse RLS o el backup falla con error (no sale vacio en silencio).
     $ownerRoleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$ownerRoleName';"
     if ($ownerRoleExists -eq "1") {
-        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "ALTER ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;" | Out-Null
     } else {
-        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" | Out-Null
+        Invoke-Psql -PsqlExe $psql -Sql "CREATE ROLE $ownerRoleIdentifier WITH LOGIN PASSWORD '$ownerRolePassword' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;" | Out-Null
     }
 
     $roleExists = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SELECT 1 FROM pg_roles WHERE rolname = '$roleName';"
@@ -1060,6 +1126,20 @@ if (-not $SkipDatabaseSetup) {
         Write-Host "Base existente detectada. Las credenciales iniciales no se regeneran." -ForegroundColor Yellow
         Write-Host "Usa el admin ya creado o ejecuta scripts\Reset-AdminPassword.ps1 despues de instalar." -ForegroundColor Yellow
     }
+}
+
+# V-02.07 (DB-EXPOSURE): solo tocamos la configuracion de PostgreSQL cuando la
+# instancia es local Y la gestiona este instalador (via winget). Si el
+# operador apunta a un Postgres externo/preexistente, o si SkipDatabaseSetup
+# esta activo, no tocamos nada ajeno: solo avisamos por consola.
+if ($SkipDatabaseSetup) {
+    Write-Host "SkipDatabaseSetup activo: no se modifica la configuracion de PostgreSQL de este equipo (listen_addresses)." -ForegroundColor Yellow
+} elseif ($DbHost -notin @("localhost", "127.0.0.1", "::1")) {
+    Write-Host "DbHost ('$DbHost') no es local: no se modifica la configuracion de PostgreSQL de este equipo." -ForegroundColor Yellow
+} elseif ($ManagedPostgres) {
+    Set-PostgresListenLocalhost -DataPath $PostgresDataPath -ServiceName $PostgresServiceName
+} else {
+    Write-Host "PostgreSQL local no gestionado por este instalador: no se modifica su postgresql.conf. Verifica listen_addresses manualmente." -ForegroundColor Yellow
 }
 
 $apiPath = Join-Path $InstallPath "api"

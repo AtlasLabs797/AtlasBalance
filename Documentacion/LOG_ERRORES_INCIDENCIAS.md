@@ -1,5 +1,97 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-04 - V-02.07 - El rol owner no podia hacer `pg_dump`: los backups fallaban con FORCE RLS activo (CERRADO)
+
+- **Contexto:** auditoria de configuracion insegura y defaults de produccion
+  (CORS, debug, exposicion de BD, credenciales por defecto, verbosidad de
+  errores). El hallazgo no viene de un fallo reportado sino de cruzar el
+  modelo de roles con el modelo de RLS, que nadie ataba entre si.
+- **Sintoma:** ninguno visible hasta que alguien intenta un backup. En ese
+  momento `pg_dump` aborta con error y `BackupService.RunPgDumpAsync`
+  devuelve `(false, mensaje)`. La restauracion nunca se habia validado en
+  esta configuracion (pendiente heredado de V-02.06).
+- **Causa:** las tablas de negocio llevan `FORCE ROW LEVEL SECURITY` (48
+  sentencias sobre 23 tablas: `CUENTAS`, `EXTRACTOS`, `TITULARES`,
+  `AUDITORIAS`...). `FORCE` elimina precisamente la exencion que el owner
+  tiene por defecto; solo superusuarios y roles con `BYPASSRLS` quedan
+  exentos siempre. El rol owner se creaba con `NOBYPASSRLS`
+  (`001-create-app-user.sh:19,21` y `Instalar-AtlasBalance.ps1:459,461`).
+  `pg_dump` fija `row_security=off` por defecto y la documentacion de
+  PostgreSQL 16 es literal: *"If the user does not have sufficient
+  privileges to bypass row security, then an error is thrown"*. El
+  comentario de `BackupService.cs:210-212` daba por hecho lo contrario
+  ("forzar la conexion owner para que pg_dump pueda atravesar FORCE ROW
+  LEVEL SECURITY"): conectar como owner es necesario pero no suficiente.
+- **Por que no lo cazo el drill:** `Test-BackupRestore.ps1:12` usaba
+  `$DbUser = "postgres"` por defecto. El superusuario bypassea RLS
+  **siempre**, asi que el simulacro validaba un camino que produccion nunca
+  recorre. Ademas, sus recuentos del origen van por `psql`, donde
+  `row_security` esta en `on` y las policies filtran en silencio: con el rol
+  owner habrian salido ceros sin error, no un fallo ruidoso.
+- **Solucion:** conceder `BYPASSRLS` **solo** al rol owner, que se usa para
+  migraciones y `pg_dump`. `app_user` (runtime) sigue `NOBYPASSRLS`: su
+  aislamiento por RLS es el nucleo del modelo y no se toca. El coste de
+  seguridad es nulo porque el owner ya es dueno de las tablas y podria
+  borrar las propias policies.
+  - `scripts/postgres-init/001-create-app-user.sh`: `atlas_owner` con
+    `BYPASSRLS` en las ramas CREATE y ALTER.
+  - `scripts/Instalar-AtlasBalance.ps1:525,527`: idem para el rol owner.
+  - `scripts/Grant-OwnerBypassRls.ps1` (nuevo): cubre instalaciones ya
+    desplegadas. `ALTER ROLE ... WITH BYPASSRLS` + verificacion contra
+    `pg_roles.rolbypassrls`.
+  - `scripts/Test-BackupRestore.ps1`: nuevo `$DumpUser` (rol owner) usado
+    solo en `pg_dump`; `$DbUser` sigue siendo el superusuario para
+    `DROP`/`CREATE DATABASE`, porque el owner es `NOCREATEDB`.
+- **Descartado:** anadir `--enable-row-security` a `pg_dump`. Habria hecho
+  desaparecer el error, pero volcando solo las filas visibles bajo las
+  policies: exactamente el backup parcial y silencioso que se quiere evitar.
+- **Descartado:** resolverlo con una migracion de EF. `ALTER ROLE ... WITH
+  BYPASSRLS` exige superusuario (*"Only superuser roles or roles with
+  BYPASSRLS can specify BYPASSRLS"*) y las migraciones corren con
+  `MigrationConnection`, que es el propio owner `NOSUPERUSER`: la migracion
+  fallaria en el arranque. Por eso el arreglo vive en los scripts que
+  conectan como `postgres`.
+- **Regla:** cualquier rol que ejecute `pg_dump` sobre este esquema necesita
+  `BYPASSRLS`, y el drill de restauracion debe usar el MISMO rol que usa
+  `BackupService.cs` en produccion. Un drill que corre como superusuario no
+  prueba el camino real.
+- **Pendiente:** verificacion en caliente. Falta ejecutar un `pg_dump` real
+  con el rol owner y confirmar recuentos no nulos en `CUENTAS`/`EXTRACTOS`
+  dentro del `.dump`.
+
+## 2026-08-04 - V-02.07 - Clave de ExchangeRate-API y webhook de Slack escritos en claro en los logs (CERRADO)
+
+- **Contexto:** misma auditoria, frente de servicios de terceros.
+- **Sintoma:** ninguno visible. Los secretos aparecen en
+  `atlas-balance-.log` (retencion 30 dias) y en consola, en un fichero que
+  se copia para soporte sin que nadie sospeche que lleva credenciales.
+- **Causa:** dos secretos viajan dentro de la URL, no en cabeceras:
+  ExchangeRate-API exige la clave como segmento de ruta
+  (`TiposCambioService.cs:415`) y en Slack la propia URL del webhook **es**
+  el secreto (`SlackAlertNotifier.cs:97-98`). `IHttpClientFactory` anade por
+  defecto sus handlers de logging, que registran la URI completa a nivel
+  `Information` bajo `System.Net.Http.HttpClient.<cliente>.LogicalHandler` y
+  `.ClientHandler`. La configuracion de Serilog tenia `MinimumLevel.Default`
+  en `Information` y solo bajaba a `Warning` las categorias `Microsoft`,
+  `Microsoft.EntityFrameworkCore` y `Hangfire`; `System.Net.Http.*` no
+  estaba cubierta por ningun override.
+- **Por que no lo cazo nada:** `LogScrubber` protege los sinks propios, pero
+  aqui el emisor es el framework, no codigo nuestro. Ningun `_logger.Log*`
+  del repo toca esos valores.
+- **Solucion:** override `"System.Net.Http.HttpClient": "Warning"` en el
+  bloque `Serilog:MinimumLevel:Override` de `appsettings.json`,
+  `appsettings.Production.json.template` y
+  `appsettings.Development.json.template`. Serilog hace match por prefijo de
+  `SourceContext`, asi que cubre `.LogicalHandler` y `.ClientHandler` de
+  todos los clientes con nombre, no solo el de exchange-rate.
+- **No aplica al Watchdog:** usa `new HttpClient(handler)` directo
+  (`WatchdogOperationsService.cs:927-933`), no `IHttpClientFactory`, asi que
+  nunca tuvo esos handlers. Su unica URL externa es el health de loopback y
+  no lleva secretos.
+- **Regla:** un secreto que viaja en la URL no lo protege `LogScrubber`. Si
+  un proveedor obliga a meter la credencial en la ruta o en el querystring,
+  hay que silenciar ademas la categoria de logging de su `HttpClient`.
+
 ## 2026-08-02 - V-02.07 - `POST /api/integration/openclaw/resolver-nombres` era inalcanzable: 403 permanente (CERRADO)
 
 - **Contexto:** auditoria de permisos endpoint por endpoint de V-02.07

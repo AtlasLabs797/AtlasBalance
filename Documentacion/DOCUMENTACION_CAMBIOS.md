@@ -9,6 +9,120 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-04 - V-02.07 - Auditoria de configuracion insegura y defaults de produccion
+
+**Origen:** checklist de "insecure configuration and defaults" sobre cinco
+frentes: modo debug, CORS, base de datos, artefactos que no deben llegar a
+produccion, y servicios de terceros. Auditoria de solo lectura primero,
+correcciones despues.
+
+**Metodo:** cinco auditorias en paralelo, cada hallazgo contrastado despues
+contra el codigo antes de aceptarlo. Dos veredictos se corrigieron en esa
+revision (ver mas abajo) y uno se descarto por ruido.
+
+### Resultado de la auditoria
+
+La mayor parte del checklist ya estaba resuelta de ciclos anteriores: sin
+CORS en produccion (mismo origen), sin Swagger, Hangfire dashboard solo en
+Development, respuesta de error generica siempre, credenciales semilla
+fail-closed, datos demo imposibles fuera de Development, sourcemaps borrados
+por `Build-Release.ps1` con `throw` si sobra alguno, 0 marcadores
+`TODO/FIXME` reales y ningun secreto trackeado. Detalle completo en
+`Versiones/v-02.07.md`.
+
+Salieron cuatro huecos, todos en el area de base de datos y despliegue.
+
+### Trabajo realizado
+
+1. **Rol owner sin `BYPASSRLS`: los backups no podian funcionar.** Con
+   `FORCE ROW LEVEL SECURITY` en 23 tablas, el owner deja de estar exento y
+   `pg_dump` (que fija `row_security=off`) aborta con error. Concedido
+   `BYPASSRLS` solo al owner; `app_user` sigue `NOBYPASSRLS`. Anadido
+   `Grant-OwnerBypassRls.ps1` para instalaciones ya desplegadas y corregido
+   el drill de restauracion, que usaba el superusuario y por eso validaba un
+   camino que produccion nunca recorre.
+2. **PostgreSQL sin atar a loopback.** El instalador fija ahora
+   `listen_addresses = 'localhost'` en la instancia que el mismo gestiona,
+   con guardas para no tocar un PostgreSQL externo o preexistente.
+3. **Clave de ExchangeRate-API y webhook de Slack en claro en los logs.**
+   Ambos secretos viajan dentro de la URL y los handlers de
+   `IHttpClientFactory` registran la URI completa a nivel `Information`.
+   Override de Serilog para `System.Net.Http.HttpClient` a `Warning`.
+4. **`-AllowInternet` usado pero nunca declarado** en el `param(...)` del
+   instalador. Declarado como `[switch]`; el default no cambia.
+
+### Correcciones hechas durante la revision del cambio
+
+- La comprobacion de idempotencia de `listen_addresses` miraba tambien las
+  lineas comentadas. Como `postgresql.conf` trae `#listen_addresses =
+  'localhost'` de serie, la funcion habria dado por bueno un fichero con
+  `'*'` activo: la fix no habria hecho nada, en silencio.
+- `Set-Content -Encoding UTF8` escribe BOM en Windows PowerShell 5.1, y un
+  BOM al inicio de `postgresql.conf` rompe el parser de PostgreSQL. Como la
+  funcion reinicia el servicio acto seguido, habria dejado la BD sin
+  arrancar. Sustituido por `WriteAllLines` con `UTF8Encoding($false)`.
+
+### Correcciones a los veredictos de la auditoria
+
+- Se reporto que el `pg_dump` del owner produciria un **dump vacio en
+  silencio**. Es falso: la documentacion de PostgreSQL 16 dice que
+  `row_security=off` **lanza un error** si el rol no puede saltarse RLS. El
+  fallo es ruidoso, no silencioso. Cambia la severidad (backups rotos y
+  visibles, no perdida de datos encubierta) pero no la necesidad del
+  arreglo.
+- La fuga de secretos a logs se reporto solo para ExchangeRate-API. El
+  webhook de Slack tiene el mismo defecto por el mismo motivo y se encontro
+  al validar.
+
+### Archivos tocados
+
+- `Atlas Balance/scripts/postgres-init/001-create-app-user.sh`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Grant-OwnerBypassRls.ps1` (nuevo)
+- `Atlas Balance/scripts/Test-BackupRestore.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Production.json.template`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Documentacion/Versiones/v-02.07.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada)
+
+Sin cambios en codigo C# ni en frontend: las cuatro correcciones son de
+configuracion y scripts de despliegue.
+
+### Comandos ejecutados y resultado
+
+- `[System.Management.Automation.Language.Parser]::ParseFile` sobre
+  `Instalar-AtlasBalance.ps1`, `Grant-OwnerBypassRls.ps1` y
+  `Test-BackupRestore.ps1`: **PARSE OK** en los tres.
+- Harness propio para `Set-PostgresListenLocalhost` que extrae la funcion
+  real del instalador por AST (para que el test no derive de la fuente) y la
+  ejercita contra `postgresql.conf` de prueba, con nombre de servicio
+  inexistente para no reiniciar nada: **5/5 casos OK** (default comentado +
+  activo en `'*'`, ya en localhost sin reescritura, sin linea previa,
+  duplicadas, fichero inexistente). Sin BOM en ninguna salida.
+- Validacion JSON de los tres `appsettings*` y comprobacion del BOM de
+  `appsettings.json`: **OK**.
+- `grep` de `BYPASSRLS`: confirmado que solo el rol owner lo recibe y que
+  `app_user` sigue `NOBYPASSRLS` en los dos sitios donde se crea.
+- **No ejecutado:** `dotnet build`, `dotnet test`, `docker`, `psql` ni
+  ningun backup real. Los cambios no tocan codigo compilado.
+
+**Pendientes:**
+
+- **Verificacion en caliente del backup**, que es lo unico que cierra del
+  todo el hallazgo principal: correr `Grant-OwnerBypassRls.ps1` sobre la
+  instalacion, lanzar un `pg_dump` con el rol owner y confirmar recuentos no
+  nulos de `CUENTAS`/`EXTRACTOS` en el `.dump`. Hasta entonces el arreglo
+  esta razonado y probado en lo que se puede probar en frio, pero no
+  demostrado contra una BD real.
+- Backups locales sin cifrar (riesgo aceptado, documentado en
+  `DOCUMENTACION_TECNICA.md`).
+- Sigue abierta la evaluacion de `FallbackPolicy = RequireAuthenticatedUser`.
+
+---
+
 ## 2026-08-04 - V-02.07 - Tooling de desarrollo: ESLint 10 + flat config
 
 **Origen:** ultimo punto pendiente del inventario de dependencias. Tambien

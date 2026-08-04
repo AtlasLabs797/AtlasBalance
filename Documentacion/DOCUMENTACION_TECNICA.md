@@ -1,5 +1,50 @@
 # Documentacion tecnica
 
+## 2026-08-04 - V-02.07 - Auditoria de configuracion insegura: roles de BD, exposicion de PostgreSQL y secretos en logs
+
+- **Que:** auditoria de los defaults de produccion (modo debug, CORS,
+  exposicion de la BD, credenciales por defecto, verbosidad de errores,
+  artefactos de desarrollo y servicios de terceros) y las cuatro
+  correcciones que salieron de ella.
+- **Por que:** el checklist generico de "configuracion insegura" aplicado a
+  una app on-premise en LAN. La mayor parte ya estaba resuelta de ciclos
+  anteriores; lo que quedaba eran cuatro huecos concretos.
+- **Como:**
+  1. **Modelo de roles de BD (el cambio con impacto real).** El rol owner
+     pasa de `NOBYPASSRLS` a `BYPASSRLS`. Con `FORCE ROW LEVEL SECURITY`
+     activo en 23 tablas, el owner deja de estar exento y `pg_dump` aborta
+     con error, asi que los backups no podian funcionar. `app_user`
+     (runtime) sigue `NOBYPASSRLS` y su aislamiento por RLS no cambia. La
+     separacion queda: **owner = migraciones y dump, exento de RLS;
+     app_user = runtime, sujeto a RLS**. Detalle y descartes en
+     `LOG_ERRORES_INCIDENCIAS.md` (entrada del 2026-08-04).
+  2. **Exposicion de PostgreSQL.** El instalador fija ahora
+     `listen_addresses = 'localhost'` en el `postgresql.conf` de la
+     instancia que el mismo gestiona via winget, y reinicia el servicio solo
+     si hubo cambio. No toca la configuracion de un PostgreSQL externo o
+     preexistente: en ese caso solo avisa. Antes no se fijaba nada y el
+     instalador EDB suele dejarlo en `'*'`, sin regla de firewall que
+     cubriera el puerto de la BD (la unica regla existente es para el puerto
+     de la API, restringida a `LocalSubnet`).
+  3. **Secretos en logs.** Override de Serilog para
+     `System.Net.Http.HttpClient` a `Warning`. Los handlers de logging de
+     `IHttpClientFactory` registraban la URI completa a nivel `Information`,
+     y dos secretos viajan dentro de la URL (clave de ExchangeRate-API y
+     webhook de Slack).
+  4. **`-AllowInternet`.** Estaba usado en el bloque de firewall pero nunca
+     declarado en `param(...)`, asi que pasarlo hacia fallar la llamada.
+     Declarado como `[switch]`. El comportamiento por defecto
+     (`LocalSubnet`) no cambia.
+- **Sin cambios:** CORS (no existe en produccion; el frontend lo sirve el
+  mismo backend, mismo origen), verbosidad de errores (respuesta generica
+  siempre, incluso en Development), credenciales por defecto (falla cerrado
+  en `SeedData.cs`), datos demo (imposibles fuera de Development) y el
+  inventario de terceros, que salio limpio.
+- **Riesgo aceptado y documentado:** los `.dump` locales siguen sin cifrar;
+  solo se cifra la copia que sube a Google Drive. La defensa es la ACL del
+  directorio mas BitLocker, que el instalador comprueba y avisa pero no
+  fuerza.
+
 ## 2026-08-04 - V-02.07 - Actualizacion del stack: React 19, xunit v3, ESLint 10
 
 - **Que:** cierre completo de la deuda de dependencias. Frontend a React
