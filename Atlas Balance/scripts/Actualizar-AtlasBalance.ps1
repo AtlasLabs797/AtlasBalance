@@ -15,6 +15,23 @@ function Test-IsAdmin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Protect-RestrictedDirectory {
+    param([string]$Path)
+
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($sid in @("S-1-5-32-544", "S-1-5-18")) {
+        $identity = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", $inheritance, $propagation, "Allow")
+        $acl.AddAccessRule($rule)
+    }
+
+    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+}
+
 function Convert-SecureStringToPlain {
     param([Security.SecureString]$Value)
 
@@ -793,6 +810,11 @@ if (-not (Test-Path (Join-Path $apiTarget "appsettings.Production.json"))) {
 if (-not (Test-IsAdmin)) {
     throw "Ejecuta este actualizador como Administrador."
 }
+
+# Repara tambien instalaciones anteriores: backups y exportaciones contienen
+# datos financieros y PII, y no deben heredar lectura para usuarios locales.
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "backups")
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "exports")
 
 $newVersion = Read-PackageVersion -PackageRoot $packageRoot
 $runtime = Read-RuntimeConfig -BasePath $InstallPath

@@ -278,21 +278,23 @@ public sealed class BackupsController : ControllerBase
     [EnableRateLimiting(RateLimitingSetup.PolicyNames.Expensive)]
     public async Task<IActionResult> ImportGoogleDriveFile([FromBody] GoogleDriveImportRequest request, CancellationToken cancellationToken)
     {
-        if (request is null || string.IsNullOrWhiteSpace(request.FileId))
+        if (request is null || !GoogleDriveBackupService.IsSafeGoogleIdentifier(request.FileId ?? string.Empty))
         {
             return BadRequest(new { error = "Debe indicar el archivo de Google Drive." });
         }
+
+        var fileId = request.FileId!;
 
         if (_backgroundJobs is null)
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "El procesador de operaciones no esta disponible." });
         }
 
-        var operation = await CreateOperationAsync("DRIVE_IMPORT", request.FileId, cancellationToken);
+        var operation = await CreateOperationAsync("DRIVE_IMPORT", fileId, cancellationToken);
         var userId = operation.UsuarioId;
         try
         {
-            _backgroundJobs.Enqueue<BackupOperationJob>(job => job.ExecuteDriveImportAsync(operation.Id, request.FileId, userId, CancellationToken.None));
+            _backgroundJobs.Enqueue<BackupOperationJob>(job => job.ExecuteDriveImportAsync(operation.Id, fileId, userId, CancellationToken.None));
         }
         catch (Exception ex)
         {

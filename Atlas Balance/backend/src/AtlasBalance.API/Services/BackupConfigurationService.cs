@@ -97,7 +97,7 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
 
         var destination = NormalizeDestination(requestedDestination);
         if (!string.IsNullOrWhiteSpace(request.GoogleDriveFolderId) &&
-            !IsSafeGoogleIdentifier(request.GoogleDriveFolderId))
+            !GoogleDriveBackupService.IsSafeGoogleIdentifier(request.GoogleDriveFolderId))
         {
             return (false, "El identificador de carpeta de Google Drive no es valido.");
         }
@@ -208,13 +208,6 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
         item.EsSecreto = isSecret || IsSensitiveConfigKey(key);
         item.FechaModificacion = now;
         item.UsuarioModificacionId = userId;
-    }
-
-    private static bool IsSafeGoogleIdentifier(string value)
-    {
-        var trimmed = value.Trim();
-        return trimmed.Length is >= 8 and <= 256 &&
-               trimmed.All(c => char.IsLetterOrDigit(c) || c is '_' or '-' or '.');
     }
 
     private static Dictionary<string, string> RedactSensitiveConfig(IReadOnlyDictionary<string, string> source)

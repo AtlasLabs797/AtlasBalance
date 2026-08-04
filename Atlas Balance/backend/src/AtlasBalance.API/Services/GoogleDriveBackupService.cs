@@ -30,6 +30,7 @@ public interface IGoogleDriveBackupService
 
 public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
 {
+    private const long DefaultMaxCloudImportBytes = BackupEncryptionService.DefaultMaxPlaintextBytes;
     public const string ProviderName = "GOOGLE_DRIVE";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -44,6 +45,7 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
     private readonly IBackupEncryptionService _encryptionService;
     private readonly IAuditService _auditService;
     private readonly ILogger<GoogleDriveBackupService> _logger;
+    private readonly long _maxCloudImportBytes;
 
     public GoogleDriveBackupService(
         AppDbContext dbContext,
@@ -52,7 +54,8 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         ISecretProtector secretProtector,
         IBackupEncryptionService encryptionService,
         IAuditService auditService,
-        ILogger<GoogleDriveBackupService> logger)
+        ILogger<GoogleDriveBackupService> logger,
+        IConfiguration? configuration = null)
     {
         _dbContext = dbContext;
         _httpClientFactory = httpClientFactory;
@@ -61,6 +64,9 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         _encryptionService = encryptionService;
         _auditService = auditService;
         _logger = logger;
+        _maxCloudImportBytes = configuration is null
+            ? DefaultMaxCloudImportBytes
+            : ResolveMaxCloudImportBytes(configuration);
     }
 
     public async Task<GoogleDriveLinkStartResponse> StartLinkAsync(CancellationToken cancellationToken)
@@ -419,6 +425,8 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         var connection = await LoadActiveConnectionAsync(cancellationToken);
         var accessToken = await RefreshAccessTokenAsync(connection, cancellationToken);
         var metadata = await GetFileMetadataAsync(accessToken, fileId, cancellationToken);
+        var maxCloudImportBytes = _maxCloudImportBytes;
+        ValidateCloudImportSize(ParseLong(metadata.Size), maxCloudImportBytes, "metadata de Google Drive");
         var backupRoot = await ResolveBackupDirectoryAsync(cancellationToken);
         Directory.CreateDirectory(backupRoot);
 
@@ -429,7 +437,7 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         var keepDump = false;
         try
         {
-            await DownloadFileAsync(accessToken, fileId, encryptedPath, cancellationToken);
+            await DownloadFileAsync(accessToken, fileId, encryptedPath, maxCloudImportBytes, cancellationToken);
 
         // V-02.06 (PR F3): la verificacion se hace sobre el `.enc` descargado
         // (mismo dominio que el que se almaceno en upload). Antes se comparaba
@@ -463,7 +471,7 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         // Solo desciframos si la verificacion pasa o no hay registro contra
         // el que comparar; asi una copia manipulada se rechaza sin tocar el
         // dump plaintext.
-        await _encryptionService.DecryptAsync(encryptedPath, dumpPath, cancellationToken);
+        await _encryptionService.DecryptAsync(encryptedPath, dumpPath, maxCloudImportBytes, cancellationToken);
         var backup = new Backup
         {
             Id = Guid.NewGuid(),
@@ -714,7 +722,7 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         return metadata;
     }
 
-    private async Task DownloadFileAsync(string accessToken, string fileId, string destinationPath, CancellationToken cancellationToken)
+    private async Task DownloadFileAsync(string accessToken, string fileId, string destinationPath, long maxBytes, CancellationToken cancellationToken)
     {
         var client = CreateGoogleApiClient(accessToken);
         using var response = await client.GetAsync($"drive/v3/files/{Uri.EscapeDataString(fileId)}?alt=media", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -723,9 +731,87 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
             throw new InvalidOperationException("No se pudo descargar la copia desde Google Drive.");
         }
 
-        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, useAsync: true);
-        await source.CopyToAsync(destination, cancellationToken);
+        ValidateCloudImportSize(response.Content.Headers.ContentLength, maxBytes, "respuesta de Google Drive");
+        try
+        {
+            await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await CopyToFileWithLimitAsync(source, destinationPath, maxBytes, cancellationToken);
+        }
+        catch
+        {
+            TryDelete(destinationPath);
+            throw;
+        }
+    }
+
+    internal static async Task CopyToFileWithLimitAsync(Stream source, string destinationPath, long maxBytes, CancellationToken cancellationToken)
+    {
+        if (maxBytes < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        }
+
+        var completed = false;
+        try
+        {
+            var buffer = new byte[1024 * 1024];
+            long totalBytes = 0;
+            await using var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, buffer.Length, useAsync: true);
+            while (true)
+            {
+                var read = await source.ReadAsync(buffer.AsMemory(), cancellationToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                if (read > maxBytes - totalBytes)
+                {
+                    throw new InvalidOperationException("La copia de Google Drive supera el limite de tamano permitido.");
+                }
+
+                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                totalBytes += read;
+            }
+
+            completed = true;
+        }
+        finally
+        {
+            if (!completed)
+            {
+                TryDelete(destinationPath);
+            }
+        }
+    }
+
+    internal static void ValidateCloudImportSize(long? sizeBytes, long maxBytes, string source)
+    {
+        if (maxBytes < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        }
+
+        if (sizeBytes.HasValue && (sizeBytes.Value < 0 || sizeBytes.Value > maxBytes))
+        {
+            throw new InvalidOperationException($"El backup de {source} supera el limite de tamano permitido.");
+        }
+    }
+
+    internal static long ResolveMaxCloudImportBytes(IConfiguration configuration)
+    {
+        var raw = configuration["AtlasBalance:Backup:MaxCloudImportBytes"];
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return DefaultMaxCloudImportBytes;
+        }
+
+        if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) || value < 1)
+        {
+            throw new InvalidOperationException("AtlasBalance:Backup:MaxCloudImportBytes debe ser un entero positivo.");
+        }
+
+        return value;
     }
 
     private async Task<string> ResolveBackupDirectoryAsync(CancellationToken cancellationToken)
@@ -800,7 +886,7 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
             _ => "No se pudo completar la operacion con Google Drive."
         };
 
-    private static bool IsSafeGoogleIdentifier(string value)
+    internal static bool IsSafeGoogleIdentifier(string value)
     {
         var trimmed = value.Trim();
         return trimmed.Length is >= 8 and <= 256 &&

@@ -4,6 +4,23 @@
 
 La aplicacion esta en la carpeta `Atlas Balance`.
 
+## Seguridad antes de ponerla en produccion
+
+La aplicacion no debe publicarse solo porque compile. Antes del primer uso real,
+el tecnico debe comprobar en el servidor:
+
+- entorno `Production`, HTTPS con certificado confiable y redireccion desde HTTP;
+- BitLocker activo y permisos de `config`, `backups` y `exports` limitados a
+  Administradores y SYSTEM;
+- una copia y restauracion completas con la base real;
+- que el ZIP instalado no contiene `.env`, logs, dumps, sourcemaps, certificados
+  privados ni credenciales de instalacion.
+
+Las importaciones desde Google Drive admiten como maximo 10 GiB por defecto. El
+limite puede cambiarse por configuracion, pero subirlo sin calcular primero el
+espacio para el fichero cifrado, el dump descifrado y la restauracion es una mala
+idea. Los ficheros parciales se eliminan si se supera el limite.
+
 ## Datos demo en desarrollo
 
 En entorno `Development`, Atlas Balance puede cargar datos demo sinteticos para revisar la interfaz con contenido: paises, titulares, cuentas, extractos, alertas y plazo fijo.

@@ -30,8 +30,8 @@ public sealed class ImportacionService : IImportacionService
 {
     private const int MaxRawDataLength = 5 * 1024 * 1024;
     private const int MaxRows = 50_000;
-    private const int MaxExtraColumns = 64;
-    private const int MaxExtraColumnNameLength = 80;
+    internal const int MaxExtraColumns = 64;
+    internal const int MaxExtraColumnNameLength = 80;
     private const int MaxImportedCellLength = 4096;
 
     // Cotas de cordura para las fechas importadas. Ver AcceptIfWithinRange.

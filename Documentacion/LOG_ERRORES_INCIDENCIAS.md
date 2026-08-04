@@ -1,5 +1,35 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-04 - V-02.07 - Huecos de seguridad pre-launch en Drive, Watchdog y ACL locales (CERRADO)
+
+- **Contexto:** revision integral de secretos, input, SQL, auth/authz, errores,
+  CORS, debug, cookies, HTTPS, rate limiting, ficheros, dependencias y artefactos.
+- **Incidencias:** la importacion Drive no tenia limite de descarga/descifrado;
+  el Watchdog no tenia cuota ni limite reducido de body y revelaba una ruta
+  absoluta en un error; varias entradas administrativas carecian de cotas; los
+  directorios de backups/exportaciones heredaban permisos del padre.
+- **Riesgo:** agotamiento de disco, fuerza bruta o abuso del servicio local,
+  filtracion de topologia del servidor, consumo desproporcionado de CPU/memoria
+  y lectura de datos financieros por usuarios locales.
+- **Solucion:** limite Drive configurable de 10 GiB comprobado en metadata,
+  cabecera, stream y descifrado con borrado de parciales; validacion temprana de
+  IDs y DTOs; rate limiting global/sensible y body de 16 KiB en Watchdog;
+  errores genericos; DACL exacta Administradores/SYSTEM en instalacion y update.
+- **Defectos interceptados en revision:** `/health` compartia inicialmente la
+  clave de particion global y podia dejar exenta una IP; el contrato alternativo
+  de cifrado podia ignorar el limite; `icacls /grant:r` podia conservar ACE
+  explicitas antiguas. Los tres se corrigieron antes del cierre y tienen prueba
+  o comprobacion especifica.
+- **Verificacion:** compilacion sin errores, 74/74 pruebas afectadas, parser de
+  scripts OK, scanner de secretos limpio y SCA npm/NuGet sin hallazgos. La suite
+  completa dio 639 correctas y 17 fallos exclusivamente por Docker/Testcontainers
+  no disponible.
+- **Estado:** cerrado en codigo. El lanzamiento sigue condicionado a validar el
+  ZIP y el Windows Server reales, BitLocker, certificado/proxy y un ciclo
+  `pg_dump`/restore con PostgreSQL.
+
+---
+
 ## 2026-08-04 - V-02.07 - El rol owner no podia hacer `pg_dump`: los backups fallaban con FORCE RLS activo (CERRADO)
 
 - **Contexto:** auditoria de configuracion insegura y defaults de produccion

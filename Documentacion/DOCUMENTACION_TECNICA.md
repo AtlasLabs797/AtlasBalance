@@ -1,5 +1,29 @@
 # Documentacion tecnica
 
+## 2026-08-04 - V-02.07 - Cierre tecnico de seguridad pre-launch
+
+- **Entrada y consumo de recursos:** la importacion desde Google Drive valida
+  el identificador antes de crear el job y limita descarga y descifrado a
+  `AtlasBalance:Backup:MaxCloudImportBytes` (10 GiB por defecto). Se contrasta
+  metadata, `Content-Length` y bytes realmente copiados; cualquier fallo borra
+  el parcial. Los DTOs administrativos de IA/Drive, permisos y formatos de
+  importacion tienen ahora cotas explicitas.
+- **Watchdog:** limite global de 120 solicitudes/minuto por IP y 5/minuto para
+  restauracion/actualizacion, cuerpo maximo de 16 KiB y `429` con
+  `Retry-After`. El middleware corre antes del secreto compartido para que los
+  intentos invalidos consuman cuota. `/watchdog/health` usa una particion
+  independiente; compartirla con la IP global desactivaria accidentalmente el
+  limitador para esa IP. Los errores ya no devuelven rutas absolutas.
+- **Datos locales:** instalador y actualizador sustituyen la DACL de `backups`
+  y `exports` por una allowlist exacta de Administradores y SYSTEM, sin
+  conservar ACL heredadas o explicitas antiguas. Los dumps locales no se
+  cifran; BitLocker sigue siendo obligatorio para proteger el volumen en
+  reposo.
+- **Informe completo:** `AUDITORIA_SEGURIDAD_PRE_LAUNCH_2026-08-04.md` contiene
+  el pass/fail de los 13 controles, evidencia, correcciones y gates de salida.
+
+---
+
 ## 2026-08-04 - V-02.07 - Auditoria de configuracion insegura: roles de BD, exposicion de PostgreSQL y secretos en logs
 
 - **Que:** auditoria de los defaults de produccion (modo debug, CORS,
@@ -5837,4 +5861,3 @@ Nota sobre la pagina de estado: no se ha construido una dentro de la aplicacion 
 proposito. Una pagina de estado servida por el propio servicio que se cae no
 informa de nada cuando mas falta hace; tiene que vivir fuera, y eso es
 exactamente lo que hace Uptime Kuma.
-

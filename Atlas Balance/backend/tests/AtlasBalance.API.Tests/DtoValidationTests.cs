@@ -242,6 +242,41 @@ public class DtoValidationTests
     }
 
     [Fact]
+    public void UpdateIaConfig_Should_Bound_Provider_Model_And_ApiKeys()
+    {
+        var dto = new UpdateIaConfigRequest
+        {
+            Provider = new string('p', 33),
+            Model = new string('m', 257),
+            OpenRouterApiKey = new string('o', 1025),
+            OpenAiApiKey = new string('a', 1025),
+            MiniMaxApiKey = new string('x', 1025)
+        };
+
+        var results = Validate(dto);
+        HasErrorFor(results, nameof(UpdateIaConfigRequest.Provider)).Should().BeTrue();
+        HasErrorFor(results, nameof(UpdateIaConfigRequest.Model)).Should().BeTrue();
+        HasErrorFor(results, nameof(UpdateIaConfigRequest.OpenRouterApiKey)).Should().BeTrue();
+        HasErrorFor(results, nameof(UpdateIaConfigRequest.OpenAiApiKey)).Should().BeTrue();
+        HasErrorFor(results, nameof(UpdateIaConfigRequest.MiniMaxApiKey)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void UpdateIaConfig_Should_Accept_Omitted_Optional_Text_Fields()
+    {
+        var dto = new UpdateIaConfigRequest
+        {
+            Provider = string.Empty,
+            Model = string.Empty,
+            OpenRouterApiKey = string.Empty,
+            OpenAiApiKey = string.Empty,
+            MiniMaxApiKey = string.Empty
+        };
+
+        Validate(dto).Should().BeEmpty();
+    }
+
+    [Fact]
     public void CreateUsuario_Should_Cap_Emails_And_Permisos_Collections()
     {
         var dto = new CreateUsuarioRequest

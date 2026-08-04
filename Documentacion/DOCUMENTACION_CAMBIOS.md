@@ -9,6 +9,36 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-04 - V-02.07 - Auditoria y correccion de seguridad pre-launch
+
+**Trabajo realizado:** auditoria orquestada y validada de los 13 controles
+solicitados. Se corrigieron limites de entrada, importacion Drive sin cota,
+rate limiting/DTOs/errores del Watchdog y ACL de backups/exportaciones. Se creo
+`AUDITORIA_SEGURIDAD_PRE_LAUNCH_2026-08-04.md` con la matriz pass/fail y los
+gates de produccion.
+
+**Archivos tocados:** controladores y DTOs de backups, formatos, usuarios e IA;
+servicios de configuracion/cifrado/Drive/importacion; Watchdog y su nueva carpeta
+`RateLimiting`; `appsettings.json`; instalador/actualizador; pruebas backend; este
+registro, documentacion tecnica/usuario, log de incidencias y version V-02.07.
+
+**Comandos ejecutados:** scanner de secretos y fixtures; alineacion de version;
+build aislada; suite xUnit completa y ejecucion directa de clases afectadas;
+`npm audit`; `dotnet list package --vulnerable --include-transitive` para los
+cuatro proyectos; parser PowerShell; smoke de constructores ACL;
+`git diff --check`.
+
+**Resultado de verificacion:** 0 secretos; versiones alineadas; build sin
+errores; 74/74 pruebas afectadas correctas; suite completa 639 correctas y 17
+bloqueadas exclusivamente por Docker/Testcontainers; npm y NuGet sin
+vulnerabilidades conocidas a 2026-08-04; scripts parsean; diff limpio.
+
+**Pendientes:** inspeccionar el ZIP exacto; ejecutar los 17 tests PostgreSQL;
+validar entorno/certificado/proxy/DACL/BitLocker en el servidor y completar un
+`pg_dump`/restore real. Hasta entonces el release es NO-GO.
+
+---
+
 ## 2026-08-04 - V-02.07 - Auditoria de configuracion insegura y defaults de produccion
 
 **Origen:** checklist de "insecure configuration and defaults" sobre cinco
@@ -23137,4 +23167,3 @@ anterior (frontend sin las columnas nuevas de auditoria, reenvio de logs fuera d
 la maquina como decision de despliegue).
 
 ---
-

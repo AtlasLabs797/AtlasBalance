@@ -222,6 +222,25 @@ public class UsuariosControllerTests
     }
 
     [Fact]
+    public async Task GuardarPermisos_Should_Reject_More_Than_500_Items_Before_Querying_User()
+    {
+        await using var db = BuildDbContext();
+        var controller = new UsuariosController(db, TestAuditService.Create(db));
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+        var request = Enumerable.Range(0, 501)
+            .Select(_ => new SavePermisoUsuarioRequest())
+            .ToArray();
+
+        var result = await controller.GuardarPermisos(Guid.NewGuid(), request, CancellationToken.None);
+
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value.Should().BeEquivalentTo(new
+        {
+            error = "No se pueden guardar mas de 500 permisos por usuario"
+        });
+    }
+
+    [Fact]
     public async Task RevocarMfa_Should_Clear_Authenticator_And_Revoke_Target_User_Sessions()
     {
         await using var db = BuildDbContext();

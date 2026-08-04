@@ -111,14 +111,21 @@ function Test-IpValue {
     return [Net.IPAddress]::TryParse($Value, [ref]$address)
 }
 
-function Protect-SecretDirectory {
+function Protect-RestrictedDirectory {
     param([string]$Path)
 
     New-Item -ItemType Directory -Path $Path -Force | Out-Null
-    & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "No se pudo restringir ACL en $Path. No se escribiran credenciales en claro."
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($sid in @("S-1-5-32-544", "S-1-5-18")) {
+        $identity = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", $inheritance, $propagation, "Allow")
+        $acl.AddAccessRule($rule)
     }
+
+    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
 }
 
 # V-02.07: carpeta del log de eventos de seguridad, con retencion propia y mas
@@ -237,7 +244,7 @@ function Write-SecretFile {
     )
 
     $directory = Split-Path -Parent $Path
-    Protect-SecretDirectory -Path $directory
+    Protect-RestrictedDirectory -Path $directory
     Set-Content -LiteralPath $Path -Value $Lines -Encoding UTF8
     & icacls.exe $Path /inheritance:r /grant:r "*S-1-5-32-544:F" "*S-1-5-18:F" | Out-Null
     if ($LASTEXITCODE -ne 0) {
@@ -826,7 +833,7 @@ function Write-AppSettings {
     Write-JsonFile -Value $watchdogConfig -Path $watchdogSettingsPath
     Protect-SecretFile -Path $apiSettingsPath
     Protect-SecretFile -Path $watchdogSettingsPath
-    Protect-SecretDirectory -Path $dataProtectionKeysPath
+    Protect-RestrictedDirectory -Path $dataProtectionKeysPath
     Protect-SecurityLogDirectory -Path $securityLogPath
     Register-SecurityEventLogSource
 }
@@ -1090,6 +1097,12 @@ foreach ($dir in @("api", "watchdog", "scripts", "backups", "exports", "logs", "
     New-Item -ItemType Directory -Path (Join-Path $InstallPath $dir) -Force | Out-Null
 }
 
+# Backups y exportaciones contienen datos financieros y PII en claro. No deben
+# heredar lectura para usuarios locales del servidor: la API corre como SYSTEM
+# y la operacion la realizan Administradores.
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "backups")
+Protect-RestrictedDirectory -Path (Join-Path $InstallPath "exports")
+
 if (-not $SkipDatabaseSetup) {
     if ($InstallDependencies -and [string]::IsNullOrWhiteSpace($PostgresAdminPassword)) {
         $DbHost = "localhost"
@@ -1154,7 +1167,7 @@ $certPath = ""
 $effectiveCertPassword = ""
 if (-not $UseReverseProxy) {
     $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
-    Protect-SecretDirectory -Path (Join-Path $InstallPath "certs")
+    Protect-RestrictedDirectory -Path (Join-Path $InstallPath "certs")
     Protect-SecretFile -Path $cert.Path
     $certPath = $cert.Path
     $effectiveCertPassword = $cert.Password

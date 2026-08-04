@@ -219,5 +219,8 @@ public sealed class GoogleDriveBackupServiceTests
 
         public Task DecryptAsync(string encryptedPath, string destinationPath, CancellationToken cancellationToken) =>
             throw new NotSupportedException("No se esperaba descifrado en este test.");
+
+        public Task DecryptAsync(string encryptedPath, string destinationPath, long maxPlaintextBytes, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("No se esperaba descifrado en este test.");
     }
 }

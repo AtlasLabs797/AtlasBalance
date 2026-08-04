@@ -47,4 +47,40 @@ public class BackupEncryptionServiceTests
             }
         }
     }
+
+    [Fact]
+    public async Task DecryptAsync_Should_Reject_And_Delete_Partial_Output_When_Plaintext_Exceeds_Limit()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+        var service = new BackupEncryptionService(
+            db,
+            new PlainTextSecretProtector(),
+            NullLogger<BackupEncryptionService>.Instance);
+
+        var workDir = Path.Combine(Path.GetTempPath(), "atlas-backup-encryption-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workDir);
+        var sourcePath = Path.Combine(workDir, "sample.dump");
+        var restoredPath = Path.Combine(workDir, "restored.dump");
+
+        try
+        {
+            await File.WriteAllBytesAsync(sourcePath, new byte[2048], CancellationToken.None);
+            var encrypted = await service.EncryptAsync(sourcePath, CancellationToken.None);
+
+            var act = () => service.DecryptAsync(encrypted.Path, restoredPath, 1024, CancellationToken.None);
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+            File.Exists(restoredPath).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(workDir))
+            {
+                Directory.Delete(workDir, recursive: true);
+            }
+        }
+    }
 }
