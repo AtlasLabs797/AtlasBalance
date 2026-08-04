@@ -23217,3 +23217,10 @@ anterior (frontend sin las columnas nuevas de auditoria, reenvio de logs fuera d
 la maquina como decision de despliegue).
 
 ---
+# 2026-08-04 - V-02.07 - Actualización pública de README y capturas de producto
+
+- **Trabajo realizado:** se rehizo el README raíz para reflejar la funcionalidad verificada de V-02.07, el modelo on-premise, la arquitectura, la seguridad y las instrucciones de desarrollo. Se añadieron dos capturas responsive reconstruidas desde el mockup HTML del proyecto, usando datos demo sintéticos y los tokens visuales existentes.
+- **Archivos tocados:** `README.md`, `docs/assets/atlas-balance-dashboard.png`, `docs/assets/atlas-balance-mobile.png`.
+- **Comandos ejecutados:** consulta de metadatos y README del repositorio con GitHub CLI y conector GitHub; revisión de `version_actual.md`, `v-02.07.md`, `DOCUMENTACION_USUARIO.md`, `DOCUMENTACION_TECNICA.md` y `DESIGN.md`; `npx.cmd playwright install chromium`; capturas desktop y móvil con `npx.cmd playwright screenshot`.
+- **Resultado de verificación:** capturas revisadas visualmente; representan el dashboard, riesgo operativo, titulares, movimientos, importación y navegación móvil con la paleta real del mockup. `git diff --check` pasa y las rutas de las imágenes existen.
+- **Pendientes:** publicar la rama `V-02.07` y hacer merge en `main` para que el README actualizado sea visible por defecto en la portada pública, si se aprueba el cambio.
