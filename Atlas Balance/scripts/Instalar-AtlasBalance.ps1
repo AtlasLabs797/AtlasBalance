@@ -238,6 +238,108 @@ Activalo de forma consciente con: Enable-BitLocker -MountPoint $drive  (guarda l
     }
 }
 
+function Test-AtlasPreflight {
+    # V-02.08: preflight de entorno antes de instalar. El incidente V-02.07
+    # mostro que una primera instalacion se queda a medias sin rollback
+    # cuando el entorno no cumple condiciones basicas. Esta funcion es
+    # critica: PREFERIMOS abortar antes de escribir a que el operador se
+    # encuentre con un sistema a medio instalar.
+    param(
+        [string]$InstallPath,
+        [int]$ApiPort,
+        [int]$InternalApiPort,
+        [int]$WatchdogPort,
+        [int]$DbPort,
+        [int]$PublicPort
+    )
+
+    $errores = @()
+
+    # 1. Carpeta de instalacion escribible y con espacio.
+    if (-not (Test-Path -LiteralPath $InstallPath)) {
+        try {
+            New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
+        } catch {
+            $mensaje = $_.Exception.Message
+            $errores += ("No se puede crear la carpeta de instalacion {0}: {1}" -f $InstallPath, $mensaje)
+        }
+    }
+    $testFile = Join-Path $InstallPath "atlas-preflight-$(Get-Random).tmp"
+    try {
+        Set-Content -LiteralPath $testFile -Value "ok" -ErrorAction Stop
+        Remove-Item -LiteralPath $testFile -Force -ErrorAction SilentlyContinue
+    } catch {
+        $mensaje = $_.Exception.Message
+        $errores += ("La carpeta {0} no es escribible por el usuario actual: {1}" -f $InstallPath, $mensaje)
+    }
+
+    # 2. Espacio libre >= 2 GB en el volumen de la instalacion.
+    $drive = try { (Split-Path -Qualifier $InstallPath) } catch { $null }
+    if ($drive) {
+        try {
+            $unidad = New-Object System.IO.DriveInfo($drive)
+            $libresGb = [Math]::Round($unidad.AvailableFreeSpace / 1GB, 1)
+            if ($libresGb -lt 2) {
+                $errores += "Espacio libre insuficiente en $drive ($libresGb GB). Atlas Balance requiere >= 2 GB para PostgreSQL, binarios, backups y logs."
+            }
+        } catch {
+            $mensaje = $_.Exception.Message
+            $errores += ("No se pudo leer el espacio libre en {0}: {1}" -f $drive, $mensaje)
+        }
+    }
+
+    # 3. Puertos no ocupados por otra aplicacion.
+    $puertos = @($ApiPort, $InternalApiPort, $WatchdogPort, $DbPort, $PublicPort) | Where-Object { $_ -gt 0 } | Select-Object -Unique
+    foreach ($puerto in $puertos) {
+        $escuchador = Get-NetTCPConnection -LocalPort $puerto -State Listen -ErrorAction SilentlyContinue
+        if ($escuchador) {
+            $owningPid = ($escuchador | Select-Object -First 1).OwningProcess
+            $owningProcess = Get-Process -Id $owningPid -ErrorAction SilentlyContinue
+            $processName = if ($owningProcess) { $owningProcess.ProcessName } else { "?" }
+            if ($processName -like "AtlasBalance.*") {
+                Write-Host "  [OK] Puerto $puerto en uso por $processName (servicio actual de Atlas Balance)." -ForegroundColor DarkGray
+            }
+            else {
+                $errores += "Puerto $puerto ocupado por $processName (PID $owningPid). Librelo o cambia el puerto."
+            }
+        }
+    }
+
+    # 4. Binarios del paquete no bloqueados. Si la API esta corriendo,
+    #    el instalador la parara; probar primero que no hay un proceso
+    #    externo bloqueando.
+    $apiExe = Join-Path $InstallPath "api\AtlasBalance.API.exe"
+    if (Test-Path -LiteralPath $apiExe) {
+        try {
+            $stream = [System.IO.File]::Open($apiExe, "Open", "Read", "None")
+            $stream.Close()
+        } catch {
+            $mensaje = $_.Exception.Message
+            $errores += ("El binario {0} esta bloqueado por otro proceso: {1}. Para los servicios AtlasBalance.API y AtlasBalance.Watchdog antes de continuar." -f $apiExe, $mensaje)
+        }
+    }
+
+    # 5. Si ya existe una instalacion, los servicios deben existir o
+    #    poder recrearse. Comprobar que no hay archivos huerfanos.
+    if (Test-Path -LiteralPath (Join-Path $InstallPath "scripts")) {
+        $huerfanos = Get-ChildItem -LiteralPath (Join-Path $InstallPath "scripts") -Filter "*.tmp" -File -ErrorAction SilentlyContinue
+        if ($huerfanos) {
+            Write-Host "  [AVISO] Hay $($huerfanos.Count) ficheros .tmp en scripts/. Probablemente de una instalacion interrumpida." -ForegroundColor Yellow
+        }
+    }
+
+    if ($errores.Count -gt 0) {
+        Write-Host ""
+        Write-Host "Preflight FAIL: $($errores.Count) condicion(es) del entorno no se cumplen." -ForegroundColor Red
+        foreach ($error in $errores) {
+            Write-Host "  - $error" -ForegroundColor Red
+        }
+        throw "El preflight fallo. Resuelve las condiciones anteriores y ejecuta el instalador de nuevo."
+    }
+
+    Write-Host "Preflight OK: entorno listo para instalar." -ForegroundColor Green
+}
+
 function Protect-SecretFile {
     param([string]$Path)
 
@@ -1196,6 +1298,16 @@ if ($UseReverseProxy -and -not (Test-IpValue $ReverseProxyIp)) {
 if ($UseReverseProxy -and $InternalApiPort -eq $PublicPort) {
     throw "InternalApiPort y PublicPort no deben ser el mismo puerto en modo reverse proxy."
 }
+
+# V-02.08: preflight obligatorio antes de tocar nada. El incidente V-02.07
+# mostro que la primera instalacion se queda a medias por condiciones del
+# entorno que el instalador no comprueba hasta que ya ha escrito cosas.
+# Bloquea la instalacion si el disco esta casi lleno, si los puertos estan
+# ya ocupados por otro proceso, si los binarios previos estan bloqueados
+# o si la carpeta de instalacion no es escribible. Esto es lo que evita
+# el "lo dejo a medias pero no rollback" que fue el peor sintoma del
+# incidente.
+Test-AtlasPreflight -InstallPath $InstallPath -ApiPort $ApiPort -InternalApiPort $InternalApiPort -WatchdogPort $WatchdogPort -DbPort $DbPort -PublicPort $PublicPort
 $internalApiUrl = if ($UseReverseProxy) { "http://127.0.0.1:$InternalApiPort" } else { "https://0.0.0.0:$ApiPort" }
 $healthUrl = if ($UseReverseProxy) { "http://localhost:$InternalApiPort/api/health" } elseif ($ApiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$ApiPort/api/health" }
 $appUrl = if ($UseReverseProxy) {

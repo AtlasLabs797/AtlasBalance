@@ -75,6 +75,30 @@ try {
     if (-not $apiReady) {
         throw "La API corregida no abrio el puerto HTTPS 8443."
     }
+
+    # V-02.08: el incidente V-02.07 demostro que tener el puerto 8443 abierto
+    # no significa nada: el login puede estar devolviendo 500. /api/health/functional
+    # verifica que el contexto RLS esta firmado y que un INSERT firmado en
+    # AUDITORIAS funciona con el rol runtime. Si falla, el rollback del DLL
+    # vuelve a la version previa automaticamente.
+    $functionalReady = $false
+    for ($attempt = 1; $attempt -le 30; $attempt++) {
+        try {
+            $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://127.0.0.1:8443/api/health/functional" 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $statusCode -eq "200") {
+                $functionalReady = $true
+                break
+            }
+        }
+        catch {
+            # curl puede fallar transitoriamente; el siguiente reintento lo cubrira.
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    if (-not $functionalReady) {
+        throw "La API corrigio el puerto 8443 pero /api/health/functional no devolvio HTTP 200. El contexto RLS puede estar desalineado."
+    }
 }
 catch {
     Stop-Service -Name "AtlasBalance.API" -Force -ErrorAction SilentlyContinue
@@ -92,4 +116,5 @@ catch {
 
 Write-Host "Parche RLS instalado."
 Write-Host "Puerto HTTPS 8443 disponible."
+Write-Host "Health check funcional OK: /api/health/functional"
 Write-Host "Copia de seguridad: $backupDll"
