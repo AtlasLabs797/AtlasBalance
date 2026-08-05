@@ -188,3 +188,16 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// Algunas rutas devuelven array plano (catalogos pequenos) y otras
+// PaginatedResponse<T>. Este helper acepta ambos y devuelve la lista,
+// evitando que cada consumidor tenga que recordar cual endpoint usa cual.
+export function extractList<T>(payload: unknown): T[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload as T[];
+  if (typeof payload === 'object' && payload !== null && 'data' in payload) {
+    const data = (payload as { data: unknown }).data;
+    if (Array.isArray(data)) return data as T[];
+  }
+  return [];
+}

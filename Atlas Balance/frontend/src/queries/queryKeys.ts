@@ -200,6 +200,15 @@ export const queryKeys = {
     sistema: (params: { usuarioId: string }) => ['configuracion', 'sistema', params] as const,
     tiposCambio: (params: { usuarioId: string }) => ['configuracion', 'tipos-cambio', params] as const,
     divisas: (params: { usuarioId: string }) => ['configuracion', 'divisas', params] as const,
+    paises: (params: {
+      usuarioId: string;
+      page: number;
+      pageSize: number;
+      search?: string | null;
+      incluirEliminados?: boolean;
+      sortBy?: string;
+      sortDir?: 'asc' | 'desc';
+    }) => ['configuracion', 'paises', params] as const,
   },
 } as const;
 

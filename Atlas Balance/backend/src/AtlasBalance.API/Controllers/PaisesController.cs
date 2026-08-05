@@ -57,7 +57,10 @@ public sealed class PaisesController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 1000);
 
-        var paises = await query
+        var total = await query.CountAsync(cancellationToken);
+        var totalPages = total == 0 ? 1 : (int)Math.Ceiling((double)total / pageSize);
+
+        var data = await query
             .OrderBy(x => x.Nombre)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -73,7 +76,14 @@ public sealed class PaisesController : ControllerBase
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(paises);
+        return Ok(new PaginatedResponse<PaisResponse>
+        {
+            Data = data,
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages,
+        });
     }
 
     [HttpPost]

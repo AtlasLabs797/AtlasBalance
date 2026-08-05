@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import api from '@/services/api';
+import api, { extractList } from '@/services/api';
 import { queryKeys } from '@/queries/queryKeys';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
 import { useAuthStore } from '@/stores/authStore';
@@ -14,10 +14,10 @@ export function usePaisesQuery() {
   const query = useQuery<Pais[]>({
     queryKey: queryKeys.catalogo.paises({ usuarioId: usuarioId ?? '', page: 1, pageSize: 500, activos: true }),
     queryFn: ({ signal }) =>
-      api.get<Pais[]>('/paises', {
+      api.get<unknown>('/paises', {
         params: { page: 1, pageSize: 500, activos: true },
         signal,
-      }).then((res) => res.data ?? []),
+      }).then((res) => extractList<Pais>(res.data)),
     enabled: Boolean(usuarioId),
     staleTime: QUERY_STALE_TIMES.CATALOGO_LARGO_MS,
   });

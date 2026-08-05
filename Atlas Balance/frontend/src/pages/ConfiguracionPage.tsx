@@ -1,6 +1,7 @@
 ﻿import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Coins, KeyRound, Mail, ServerCog } from 'lucide-react';
+import { Bot, Coins, Globe, KeyRound, Mail, ServerCog } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
@@ -32,7 +33,7 @@ import type {
   WatchdogState,
 } from '@/types';
 
-type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones';
+type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones' | 'paises';
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 const MFA_REMEMBER_DEVICE_DAYS = 90;
 
@@ -42,6 +43,7 @@ const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
   { key: 'divisas', label: 'Divisas y Tipos', Icon: Coins },
   { key: 'sistema', label: 'Sistema', Icon: ServerCog },
   { key: 'integraciones', label: 'Integraciones', Icon: KeyRound },
+  { key: 'paises', label: 'Países', Icon: Globe },
 ];
 
 interface CatalogoPermisos {
@@ -59,6 +61,8 @@ function formatOptionalDateTime(value: string | null) {
 }
 
 export default function ConfiguracionPage() {
+  const location = useLocation();
+  const onPaisesSubroute = location.pathname.startsWith('/configuracion/paises');
   const [tab, setTab] = useState<TabKey>('general');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -716,30 +720,53 @@ export default function ConfiguracionPage() {
       </header>
 
       <div className="config-tabs config-tabs--settings" role="tablist" aria-label="Secciones de configuración">
-        {tabs.map(({ key, label, Icon }) => (
-          <button
-            key={key}
-            id={`config-tab-${key}`}
-            type="button"
-            className={tab === key ? 'config-tab config-tab--active' : 'config-tab'}
-            role="tab"
-            aria-selected={tab === key}
-            aria-controls={`config-panel-${key}`}
-            tabIndex={tab === key ? 0 : -1}
-            onClick={() => setTab(key)}
-            onKeyDown={(event) => handleTabKeyDown(event, key)}
-          >
-            <span className="config-tab-icon" aria-hidden="true">
-              <Icon size={18} strokeWidth={1.9} />
-            </span>
-            <span>{label}</span>
-          </button>
-        ))}
+        {tabs.map(({ key, label, Icon }) => {
+          const isActive = key === 'paises' ? onPaisesSubroute : tab === key;
+          if (key === 'paises') {
+            return (
+              <NavLink
+                key={key}
+                id={`config-tab-${key}`}
+                to="/configuracion/paises"
+                className={isActive ? 'config-tab config-tab--active' : 'config-tab'}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`config-panel-${key}`}
+              >
+                <span className="config-tab-icon" aria-hidden="true">
+                  <Icon size={18} strokeWidth={1.9} />
+                </span>
+                <span>{label}</span>
+              </NavLink>
+            );
+          }
+          return (
+            <button
+              key={key}
+              id={`config-tab-${key}`}
+              type="button"
+              className={isActive ? 'config-tab config-tab--active' : 'config-tab'}
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`config-panel-${key}`}
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => setTab(key)}
+              onKeyDown={(event) => handleTabKeyDown(event, key)}
+            >
+              <span className="config-tab-icon" aria-hidden="true">
+                <Icon size={18} strokeWidth={1.9} />
+              </span>
+              <span>{label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
       {feedback ? <p className="config-feedback" role="status">{feedback}</p> : null}
 
+      {!onPaisesSubroute ? (
+        <>
       {tab === 'general' && (
         <form
           id="config-panel-general"
@@ -1373,6 +1400,10 @@ export default function ConfiguracionPage() {
           </section>
         </div>
       )}
+        </>
+      ) : null}
+
+      <Outlet />
 
       <CreateTokenModal
         open={showCreateTokenModal}

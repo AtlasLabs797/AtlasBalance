@@ -35,10 +35,11 @@ public sealed class PaisesControllerTests
 
         var result = await controller.Listar(activos: false, cancellationToken: CancellationToken.None);
 
-        var paises = result.Should().BeOfType<OkObjectResult>().Subject.Value
-            .Should().BeAssignableTo<IReadOnlyList<PaisResponse>>().Subject;
-        paises.Should().ContainSingle();
-        paises.Single().Nombre.Should().Be("Activo");
+        var payload = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeAssignableTo<PaginatedResponse<PaisResponse>>().Subject;
+        payload.Total.Should().Be(1);
+        payload.Data.Should().ContainSingle();
+        payload.Data.Single().Nombre.Should().Be("Activo");
     }
 
     private static PaisesController BuildController(AppDbContext db, RolUsuario role)
