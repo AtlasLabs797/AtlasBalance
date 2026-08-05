@@ -200,11 +200,11 @@ public class PlanExecutorTests
                 Agrupaciones = new[] { FinancialGroupBy.Cuenta }
             }, Array.Empty<int>())
         };
-        // Forzamos un timeout imposible.
-        var plan = new CompoundPlan { Pasos = pasos, TimeoutGlobal = TimeSpan.FromMilliseconds(1) };
-        // Esperamos a que pase algo de tiempo antes de la primera
-        // llamada para garantizar que el cronometro ya esta por encima.
-        await Task.Delay(50);
+        // Forzamos un timeout que ya ha expirado: ejecutamos el
+        // plan con un TimeoutGlobal de 0 (siempre agotado). Esto
+        // es deterministico, no depende de la latencia de
+        // InMemory ni del scheduler.
+        var plan = new CompoundPlan { Pasos = pasos, TimeoutGlobal = TimeSpan.Zero };
         var result = await sut.EjecutarAsync(AdminScope(userId), plan, BuildTools(db), CancellationToken.None);
 
         result.Exito.Should().BeFalse();
