@@ -1023,10 +1023,17 @@ function Write-RuntimeAndCredentials {
             $lines[7..($lines.Count - 1)]
         ) | ForEach-Object { $_ }
     }
-    # V-02-05 (MED-26): mostrar credenciales en pantalla en lugar de escribirlas
-    # a un archivo. El operador debe capturarlas en su gestor de secretos.
-    # El archivo INSTALL_CREDENTIALS_ONCE.txt sigue existiendo como path para
-    # la tarea de limpieza (que se registra pero no tiene archivo que limpiar).
+    # V-02.08 (cierre del bug V-02.07): las credenciales se imprimen por
+    # consola UNA SOLA VEZ y tambien se guardan en
+    # config\INSTALL_CREDENTIALS_ONCE.txt con ACL restringida
+    # (Administrators + SYSTEM, herencia desactivada). La tarea programada
+    # `AtlasBalance.DeleteInstallCredentialsOnce` borra el archivo a las
+    # 24h. Si el instalador no consigue escribir el archivo, aborta con
+    # error: un instalador que no deja credenciales accesibles es mejor
+    # que uno que dice que las dejo y miente.
+    Write-SecretFile -Path $credentialsPath -Lines $lines
+    Register-CredentialsCleanupTask -CredentialsPath $credentialsPath
+
     Write-Host ""
     Write-Host "=============================================" -ForegroundColor Yellow
     Write-Host "CREDENCIALES INICIALES (captura esto en tu gestor de passwords)" -ForegroundColor Yellow
@@ -1036,10 +1043,8 @@ function Write-RuntimeAndCredentials {
     }
     Write-Host "=============================================" -ForegroundColor Yellow
     Write-Host ""
-    # Mantenemos el task de limpieza por compatibilidad, pero no escribimos archivo.
-    if (Test-Path -LiteralPath $credentialsPath) {
-        Remove-Item -LiteralPath $credentialsPath -Force -ErrorAction SilentlyContinue
-    }
+    Write-Host "Archivo de credenciales: $credentialsPath" -ForegroundColor Yellow
+    Write-Host "Se borrara automaticamente en 24 horas. Borralo a mano tras el primer acceso." -ForegroundColor Yellow
 }
 
 $packageRoot = Split-Path -Parent $PSScriptRoot
@@ -1161,7 +1166,28 @@ Sync-DirectoryPreserveConfig -Source $apiSource -Target $apiPath
 Sync-DirectoryPreserveConfig -Source $watchdogSource -Target $watchdogPath
 
 Copy-Item -LiteralPath (Join-Path $packageRoot "Atlas Balance.cmd") -Destination (Join-Path $InstallPath "Atlas Balance.cmd") -Force
-Copy-Item -LiteralPath (Join-Path $packageRoot "scripts\Launch-AtlasBalance.ps1") -Destination (Join-Path $InstallPath "scripts\Launch-AtlasBalance.ps1") -Force
+
+# V-02.08: copia los scripts de soporte que el operador necesitara si algo
+# se rompe en campo. V-02.07 demostro que sin ellos un cliente se queda
+# sin herramientas (los hotfix se quedan en el ZIP y el operador no sabe
+# donde mirar). Si el script no existe en el paquete se omite sin error.
+foreach ($supportScript in @(
+    "Launch-AtlasBalance.ps1",
+    "Reset-AdminPassword.ps1",
+    "Repair-RlsContext.ps1",
+    "Deploy-RlsHotfix.ps1",
+    "Grant-OwnerBypassRls.ps1",
+    "Test-BackupRestore.ps1",
+    "Test-AtlasSecrets.ps1",
+    "Smoke-Test-AtlasBalance.ps1",
+    "Mfa-Totp.ps1",
+    "Mfa-Totp.Tests.ps1"
+)) {
+    $source = Join-Path $packageRoot "scripts\$supportScript"
+    if (Test-Path -LiteralPath $source) {
+        Copy-Item -LiteralPath $source -Destination (Join-Path $InstallPath "scripts\$supportScript") -Force
+    }
+}
 
 $certPath = ""
 $effectiveCertPassword = ""
@@ -1253,5 +1279,6 @@ Test-VolumeEncryption -Paths @(
 Write-Host ""
 Write-Host "Atlas Balance $AppVersion instalado." -ForegroundColor Green
 Write-Host "URL: $appUrl" -ForegroundColor Cyan
-Write-Host "Credenciales iniciales: $InstallPath\config\INSTALL_CREDENTIALS_ONCE.txt" -ForegroundColor Yellow
+Write-Host "Credenciales iniciales (captura esto en tu gestor de passwords):" -ForegroundColor Yellow
+Write-Host "  $InstallPath\config\INSTALL_CREDENTIALS_ONCE.txt" -ForegroundColor Yellow
 Write-Host "Atajo creado: Atlas Balance" -ForegroundColor Cyan

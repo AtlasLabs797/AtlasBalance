@@ -234,9 +234,24 @@ foreach ($script in @(
     "Launch-AtlasBalance.ps1",
     "install-cert-client.ps1",
     "uninstall-services.ps1",
+    "Repair-RlsContext.ps1",
+    "Deploy-RlsHotfix.ps1",
+    "Grant-OwnerBypassRls.ps1",
+    "Test-BackupRestore.ps1",
+    "Test-AtlasSecrets.ps1",
+    "Smoke-Test-AtlasBalance.ps1",
+    "Mfa-Totp.ps1",
+    "Mfa-Totp.Tests.ps1",
     "Caddyfile.example"
 )) {
-    Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\$script") -Destination (Join-Path $packageRoot "scripts\$script") -Force
+    $source = Join-Path $repoRoot "scripts\$script"
+    if (-not (Test-Path -LiteralPath $source)) {
+        # V-02.08: cualquier script nuevo que se anada a la lista pero todavia
+        # no exista en scripts/ no debe abortar el build. Solo advertir.
+        Write-Host "Aviso: $script no existe en scripts/. Se omite del paquete." -ForegroundColor Yellow
+        continue
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $packageRoot "scripts\$script") -Force
 }
 
 foreach ($cmd in @(
