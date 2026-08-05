@@ -9,6 +9,74 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.08 - Pestanitas del dashboard y grafico de evolucion (CERRADO)
+
+- **Sintomas reportados:**
+  1. El dashboard pintaba una franja de "pestanitas" (`Importar extractos`,
+     `Revisar alertas`, `Conciliar pendientes`) que duplicaba entradas ya
+     presentes en el sidebar.
+  2. El grafico de evolucion del hero card del dashboard usaba dos ejes Y
+     (`saldo` a la izquierda, `movement` a la derecha) con un ancho fijo de
+     `74px` por eje. Etiquetas compactas como `61,31 mil` y `14,79 mil`
+     quedaban recortadas contra el borde del area de trazado.
+- **Decision de producto:** el comportamiento de "dashboard deshabilitado
+  no aparece en el menu" ya estaba implementado y se mantiene sin tocar
+  (`Sidebar.tsx` + `navigation.ts:75-77` filtran la entrada, `DashboardRoute`
+  en `App.tsx:38-45` redirige a `/extractos` si se accede por URL). El menu
+  del gerente ya comparte estructura con el del admin y sigue mostrando los
+  items permitidos por permisos; el alcance por paises/titulares/cuentas
+  lo aplica el backend y el frontend no lo modifica.
+- **Solucion:**
+  - Eliminado el bloque `<nav className="dashboard-quick-actions">` y sus
+    tres `<Link>` en `Atlas Balance/frontend/src/pages/DashboardPage.tsx`.
+  - Borradas las reglas CSS `.dashboard-quick-actions` y
+    `.dashboard-quick-actions a` en
+    `Atlas Balance/frontend/src/styles/layout/dashboard.css` (sin uso
+    restante).
+  - En `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`,
+    la variante `saldoArea` (unico consumidor: `DashboardPage`) pasa a un
+    unico eje Y a la izquierda:
+    - Eliminado el `<YAxis yAxisId="movement" orientation="right" />` y
+      todas las referencias a `yAxisId` en `Area`/`Line`/`CartesianGrid`.
+    - Dominio unificado con `getEvolutionDomain(points)` (mismo helper que
+      ya usa la variante `multiLine`).
+    - Ancho del eje calculado con un nuevo helper
+      `getEvolutionAxisWidthCompact(domain)` que reutiliza
+      `estimateAxisLabelWidth` pero formatee con `formatCompactAxis`
+      (etiqueta corta sin moneda), evitando el recorte de los ticks
+      compactos.
+    - Margen derecho del `ComposedChart` pasa de `0` a `12` para dejar
+      aire entre el area de trazado y el borde derecho.
+    - Eliminados `getSaldoDomain` y `getMovementDomain` (solo los usaba
+      esta variante).
+    - Eliminado el comentario que justificaba los `yAxisId` explicitos.
+  - Las variantes `multiLine` (usadas en `TitularesPage`, `CuentasPage` y
+    `DashboardTitularPage`) quedan inalteradas.
+- **Archivos tocados:**
+  - `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+  - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+  - `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- **Verificacion:**
+  - `npm.cmd run lint -- --max-warnings 0`: OK.
+  - `npx.cmd tsc --noEmit`: OK.
+  - `npm.cmd run test:unit`: 26/26 PASS.
+  - `npm.cmd run build`: bloqueado por EPERM conocido al copiar fuentes a
+    `dist/` (sandbox, AGENTS.md §8). El `tsc && vite build` pasa la fase
+    TypeScript y muere en `prepare-out-dir` con `copyfile ... HindMadurai-Bold.ttf`.
+    No afecta a la veracidad del cambio.
+  - Verificacion visual final no realizada en esta sesion (regla del
+    sandbox §8: no se levanta Vite dev server de larga duracion). Queda
+    pendiente revisar el render en el siguiente reinicio del cliente.
+- **Pendiente del usuario:** recargar con Ctrl+F5 para confirmar que (a)
+  las pestanitas han desaparecido y (b) el grafico del hero card muestra
+  un solo eje Y a la izquierda sin etiquetas recortadas. Si los picos de
+  ingresos/egresos del periodo quedan visualmente aplanados cerca del
+  cero por compartir escala con el saldo, avisar: hay una escapatoria
+  barata preparada (segunda tarjeta pequena con eje propio) que se
+  activaria si el resultado no convence.
+
+---
+
 ## 2026-08-05 - V-02.08 - Logo de marca invisible en pantalla de login (CERRADO)
 
 - **Sintoma:** al cargar la pagina de inicio, junto al texto "Atlas Balance"

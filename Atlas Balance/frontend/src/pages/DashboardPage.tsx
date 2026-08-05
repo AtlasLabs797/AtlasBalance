@@ -225,12 +225,6 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <nav className="dashboard-quick-actions" aria-label="Acciones principales">
-        <Link to="/importacion">Importar extractos</Link>
-        <Link to="/alertas">Revisar alertas</Link>
-        <Link to="/conciliacion">Conciliar pendientes</Link>
-      </nav>
-
       <section className="dashboard-hero-card">
         <div className="dashboard-hero-summary">
           <div className="dashboard-hero-balance">
