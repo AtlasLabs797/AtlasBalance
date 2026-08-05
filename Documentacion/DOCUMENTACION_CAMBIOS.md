@@ -9,6 +9,90 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.08 - Logo de marca invisible en pantalla de login (CERRADO)
+
+- **Sintoma:** al cargar la pagina de inicio, junto al texto "Atlas Balance"
+  se veia un cuadrado azul solido en lugar del isotipo de la marca. El mismo
+  cuadrado aparecia en el sidebar autenticado y en `ChangePasswordPage`.
+- **Causa confirmada:** la variable CSS `--logo-mask` (que define el SVG
+  usado por `mask` en `.auth-logo-image` y `.app-brand-logo`) estaba
+  declarada unicamente dentro de `[data-theme="dark"]` en
+  `Atlas Balance/frontend/src/styles/variables.css`. En modo claro
+  (`data-theme="light"` o sin atributo) la cascada no encontraba la
+  variable, `mask` se evaluaba como `none` y solo quedaba visible el fondo
+  azul (`--auth-logo-color: #285bd9` / `--color-sidebar-active-text`).
+- **Solucion:** mover `--logo-mask` al bloque `:root` y eliminar la
+  redefinicion dentro de `[data-theme="dark"]`. El SVG no depende del tema
+  porque la pintura la aporta el `background-color`/`currentColor` del
+  elemento, no el propio `mask`.
+- **Archivos tocados:** `Atlas Balance/frontend/src/styles/variables.css`
+  (unico archivo).
+- **Verificacion:** `npm.cmd run lint -- --max-warnings 0` OK. Build de
+  Vite bloqueado por EPERM conocido al copiar fuentes a `dist/`
+  (sandbox, AGENTS.md §8).
+- **Pendiente del usuario:** recargar la pagina con cache vacia (Ctrl+F5)
+  para que el navegador recoja el CSS actualizado.
+
+---
+
+## 2026-08-05 — Publicacion IIS del servidor cliente (V-02.08)
+
+**Trabajo realizado:** se configuro el sitio IIS existente
+`Atlasbalance` para publicar la instalacion V-02.07 del cliente mediante
+`https://atlasbalance.natalmagroup.com`. IIS termina TLS y reenvia todas las
+peticiones al backend en `http://127.0.0.1:5000`; el frontend sigue siendo el
+incluido en `C:\AtlasBalance\api\wwwroot`, evitando copias obsoletas tras una
+actualizacion. Se instalaron URL Rewrite 2.1 y ARR 3.0 desde los paquetes
+oficiales de Microsoft, ambos con firma Authenticode valida.
+
+**Archivos tocados en el servidor (fuera de Git):**
+
+- `C:\AtlasBalance\api\appsettings.Production.json`: URL publica,
+  `AllowedHosts`, proxy conocido y endpoint Kestrel loopback.
+- `C:\inetpub\wwwroot\atlasbalance\web.config`: regla de proxy inverso y
+  `X-Forwarded-Proto=https`.
+- Configuracion global de IIS: ARR habilitado con preservacion del host y
+  variable reenviada autorizada para el sitio `Atlasbalance`.
+- `C:\AtlasBalance\atlas-balance.runtime.json` y configuraciones API/Watchdog:
+  metadatos de actualizacion alineados con `UseReverseProxy=true`, URL publica,
+  puerto interno 5000 y health check `http://localhost:5000/api/health`. Esto
+  evita que una version futura se valide por el antiguo puerto 8443 y haga
+  rollback de una actualizacion correcta.
+
+**Comandos ejecutados:** inspeccion de servicios, listeners, binding y
+certificado; consulta DNS publica; validacion Authenticode y SHA-256 de los
+MSI; instalacion silenciosa con log; backups de IIS y de la configuracion;
+reinicios controlados de `AtlasBalance.API` e IIS; pruebas HTTPS mediante
+Node contra el binding local y el certificado real.
+
+**Resultado de verificacion:**
+
+- `AtlasBalance.API`, `AtlasBalance.Watchdog` y `W3SVC`: `Running` y
+  automaticos.
+- IIS HTTPS `443`: escuchando; API interna solo en `127.0.0.1:5000`.
+- `https://atlasbalance.natalmagroup.com/`: HTTP 200.
+- `https://atlasbalance.natalmagroup.com/api/health`: HTTP 200.
+- Certificado del dominio validado sin omitir la comprobacion TLS.
+- Metadatos runtime y health checks de API/Watchdog verificados tras escritura;
+  el backend continuo respondiendo HTTP 200 y los servicios siguieron activos.
+- Validacion posterior con navegador real: carga autenticada de `/dashboard`,
+  secciones principales visibles, navegacion a `/cuentas` y recarga directa de
+  la ruta SPA, todo sin alertas visibles ni imagenes rotas. La consola solo
+  mostro mensajes de canal cerrado de una extension de Chrome, sin mensajes
+  nuevos al navegar; no se atribuyen a Atlas Balance.
+- La lectura elevada del log de los ultimos 20 minutos no termino dentro del
+  timeout operativo y se corto sin reintentar. Por tanto, esta comprobacion no
+  declara el log completo limpio; se apoya en health, UI real y consola.
+- `/api/health/ready` y `/api/health/functional`: 404 esperado porque el
+  servidor cliente aun ejecuta V-02.07; estos endpoints pertenecen a V-02.08.
+
+**Pendientes:** comprobar el acceso desde una red externa real. El servidor
+no puede validar su propia IP publica por la politica de hairpin/salida local,
+aunque DNS publico, binding, certificado y el flujo IIS -> API estan
+verificados.
+
+---
+
 ## 2026-08-05 - V-02.08 - Toggle del boton de alerta en extractos de cuenta
 
 **Trabajo realizado:** en la ventana "Desglose de la cuenta" del dashboard
