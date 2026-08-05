@@ -26,6 +26,7 @@ import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import type { CuentaResumenKpi, Extracto, PaginatedResponse, PeriodoDashboard } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate, formatDateTime, getAmountTone, parseEuropeanNumber } from '@/utils/formatters';
+import { computeBulkFlagToggle } from '@/utils/bulkFlagToggle';
 
 const BULK_DELETE_PREVIEW_LIMIT = 6;
 const DEFAULT_ACCOUNT_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda del desglose' };
@@ -661,54 +662,71 @@ export default function CuentaDetailPage() {
       return;
     }
 
-    const rowsToFlag = selectedRows.filter((row) => !row.flagged);
-    if (rowsToFlag.length === 0) {
-      setBulkActionStatus('Los movimientos seleccionados ya están marcados con alerta.');
-      return;
-    }
+    const { action, targetIds } = computeBulkFlagToggle(selectedRows);
 
     setActionLoading(true);
     setError(null);
     setBulkActionStatus(null);
 
-    const flaggedIds = new Set<string>();
+    const processedIds = new Set<string>();
     const changedAt = new Date().toISOString();
+    const isUnflag = action === 'unflag';
 
     try {
-      for (const row of rowsToFlag) {
-        await api.patch(`/extractos/${row.id}/flag`, { flagged: true, nota: row.flagged_nota ?? undefined });
-        flaggedIds.add(row.id);
+      for (const row of selectedRows) {
+        if (!targetIds.includes(row.id)) {
+          continue;
+        }
+        await api.patch(`/extractos/${row.id}/flag`, {
+          flagged: !isUnflag,
+          nota: isUnflag ? undefined : row.flagged_nota ?? undefined,
+        });
+        processedIds.add(row.id);
         setRows((current) =>
           current.map((item) =>
             item.id === row.id
-              ? {
-                  ...item,
-                  flagged: true,
-                  flagged_at: changedAt,
-                  flagged_by_id: usuario?.id ?? item.flagged_by_id,
-                  fecha_modificacion: changedAt,
-                }
+              ? isUnflag
+                ? {
+                    ...item,
+                    flagged: false,
+                    flagged_nota: null,
+                    flagged_at: null,
+                    flagged_by_id: null,
+                    fecha_modificacion: changedAt,
+                  }
+                : {
+                    ...item,
+                    flagged: true,
+                    flagged_at: changedAt,
+                    flagged_by_id: usuario?.id ?? item.flagged_by_id,
+                    fecha_modificacion: changedAt,
+                  }
               : item
           )
         );
       }
       setBulkActionStatus(
-        `${flaggedIds.size} ${flaggedIds.size === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
+        isUnflag
+          ? `Quitada la alerta de ${processedIds.size} ${processedIds.size === 1 ? 'movimiento' : 'movimientos'}.`
+          : `${processedIds.size} ${processedIds.size === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
       );
       await invalidate('extractoFlag');
     } catch (err) {
       setError(
         extractErrorMessage(
           err,
-          flaggedIds.size > 0
-            ? `Se marcaron ${flaggedIds.size} de ${rowsToFlag.length} movimientos seleccionados.`
-            : 'No se pudo marcar la selección con alerta.'
+          processedIds.size > 0
+            ? `Se ${isUnflag ? 'quitó la alerta de' : 'marcaron'} ${processedIds.size} de ${targetIds.length} movimientos seleccionados.`
+            : `No se pudo ${isUnflag ? 'quitar la alerta de' : 'marcar'} la selección.`
         )
       );
     } finally {
       setActionLoading(false);
     }
   };
+
+  const bulkFlagIntent = useMemo(() => computeBulkFlagToggle(selectedRows), [selectedRows]);
+  const bulkFlagAction = bulkFlagIntent.targetIds.length === 0 ? null : bulkFlagIntent.action;
 
   const saveGeneralNotes = async () => {
     if (!summary || !canEditAccountNotes) {
@@ -925,8 +943,9 @@ export default function CuentaDetailPage() {
                   type="button"
                   className="dashboard-icon-action dashboard-flag-selected"
                   disabled={actionLoading || selectedRowsCount === 0}
-                  aria-label="Marcar selección con alerta"
-                  title="Marcar selección con alerta"
+                  aria-label={bulkFlagAction === 'unflag' ? 'Quitar alerta de la selección' : 'Marcar selección con alerta'}
+                  title={bulkFlagAction === 'unflag' ? 'Quitar alerta de la selección' : 'Marcar selección con alerta'}
+                  aria-pressed={bulkFlagAction === 'unflag'}
                   onClick={() => void flagSelectedRows()}
                 >
                   <Flag size={16} aria-hidden="true" />

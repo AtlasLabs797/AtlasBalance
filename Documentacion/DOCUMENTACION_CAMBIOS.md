@@ -9,6 +9,72 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.08 - Toggle del boton de alerta en extractos de cuenta
+
+**Trabajo realizado:** en la ventana "Desglose de la cuenta" del dashboard
+(`pages/CuentaDetailPage.tsx`), el boton con icono de banderola solo marcaba
+filas; al pulsarlo sobre una seleccion ya amarilla no pasaba nada. Se
+convierte en un unico boton toggle: si toda la seleccion ya tiene alerta,
+las quita; si falta alguna por marcar, marca solo las no marcadas. El
+backend (`ExtractosController.ToggleFlag`) ya soportaba `flagged: false`
+desde V-02.07, asi que el cambio es solo de UI/consistencia con el
+checkbox individual de `ExtractoTable`.
+
+**Archivos tocados:**
+
+Frontend:
+- `frontend/src/utils/bulkFlagToggle.ts` (nuevo): helper puro
+  `computeBulkFlagToggle(rows)` que devuelve `{ action, targetIds }`
+  segun el estado actual de la seleccion.
+- `frontend/src/pages/CuentaDetailPage.tsx:655-733`: `flagSelectedRows`
+  consume el helper y despacha PATCH con `flagged: true|false` segun
+  corresponda, limpiando `flagged_nota/at/by_id` al desmarcar.
+  `bulkFlagIntent` (memo) y `bulkFlagAction` alimentan el texto
+  accesible dinamico del boton.
+- `frontend/src/pages/CuentaDetailPage.tsx:945-957`: el boton cambia
+  `aria-label`, `title` y `aria-pressed` entre "Marcar seleccion con
+  alerta" y "Quitar alerta de la seleccion" en funcion de la intencion
+  que se ejecutara en la proxima pulsacion.
+- `frontend/tests/bulkFlagToggle.test.ts` (nuevo): 4 tests que cubren
+  todos amarillos, todos sin alerta, seleccion mixta y seleccion vacia.
+- `frontend/tsconfig.test.v2.json`: incluye el nuevo helper en el set
+  compilado de tests.
+- `frontend/package.json`: el script `test:unit` enlaza tambien
+  `bulkFlagToggle.test.js`.
+
+Backend:
+- `backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs:888-1012`:
+  dos tests nuevos, `ToggleFlag_Should_Clear_All_Flagged_Fields_When_Unflagging`
+  (cubre el camino `true -> false`, verifica limpieza de los 3 campos y
+  auditoria) y `ToggleFlag_Should_Forbid_Unflag_When_Flagged_Column_Not_In_Editable_Set`
+  (verifica que `columnas_editables=["flagged_nota"]` sigue bloqueando
+  el unflag, mismo patron que el test simetrico previo).
+
+**Comandos ejecutados y resultado de verificacion:**
+
+- `npm.cmd run lint -- --max-warnings 0`: OK, 0 errores, 0 warnings.
+- `npm.cmd run test:unit`: **26/26 PASS** (22 previos + 4 nuevos de
+  `bulkFlagToggle.test.js`).
+- `npx.cmd tsc --noEmit`: OK, 0 errores.
+- `npm.cmd run build`: **BLOQUEADO** por `EPERM` al copiar fuentes al
+  `dist` (limitacion de sandbox documentada en AGENTS.md §8, mismo
+  patron conocido en V-02.07). El `tsc` previo dentro del propio
+  build pasa limpio. Pendiente de reintento en CI o fuera del sandbox.
+- `dotnet test tests/AtlasBalance.API.Tests`: **BLOQUEADO** por AV
+  reteniendo `obj/Debug/net8.0/AtlasBalance.API.AssemblyInfoInputs.cache`
+  durante la compilacion (AGENTS.md §8). Los dos tests nuevos siguen el
+  mismo patron de fixture que los dos existentes y se compilan con la
+  misma toolchain; pendientes de correr en CI.
+
+**Pendientes:**
+
+- Reintentar `npm.cmd run build` y `dotnet test tests/AtlasBalance.API.Tests`
+  fuera del sandbox para cerrar el gate de CI.
+- QA visual del toggle end-to-end contra un backend levantado (no se
+  hace desde la shell por AGENTS.md §8).
+
+---
+
 ## 2026-08-05 - V-02.08 - Catalogo de paises en Configuracion (frontend)
 
 **Trabajo realizado:** se cierra la deuda del V-02.02 que dejo el CRUD de

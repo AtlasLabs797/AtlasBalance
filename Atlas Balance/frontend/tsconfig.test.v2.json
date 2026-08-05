@@ -25,6 +25,7 @@
   },
   "include": [
     "src/utils/importacionRequest.ts",
+    "src/utils/bulkFlagToggle.ts",
     "src/services/queryClient.ts",
     "src/queries/queryKeys.ts",
     "src/queries/invalidation.ts",

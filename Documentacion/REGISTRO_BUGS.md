@@ -2,6 +2,30 @@
 
 ## Abiertos
 
+### 2026-08-05 - V-02.08 - Cerrado - El icono de banderola en extractos de cuenta no desmarca filas amarillas
+
+- **Contexto:** reporte del operador del 2026-08-05. En la ventana
+  "Desglose de la cuenta" del dashboard, al seleccionar una fila ya
+  amarilla y pulsar de nuevo el boton con icono de banderola, no pasaba
+  nada: la fila seguia marcada.
+- **Causa raiz:** `flagSelectedRows` filtraba `rowsToFlag = selected.filter(!flagged)`
+  y, si la seleccion era 100% amarilla, devolvia el mensaje "Los
+  movimientos seleccionados ya estan marcados con alerta" sin hacer
+  ninguna llamada. No existia path simetrico para desmarcar. El backend
+  ya soportaba `flagged: false` desde V-02.07.
+- **Solucion:** el mismo boton alterna; logica extraida al helper puro
+  `computeBulkFlagToggle`. Texto accesible del boton y mensaje de
+  estado se adaptan a la accion que se ejecutara. Cubierto por
+  `bulkFlagToggle.test.js` (4 casos) y por dos tests nuevos en
+  `ExtractosControllerTests.cs` (pendientes de correr en CI por bloqueo
+  local de AV).
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+  (entrada "El icono de banderola en extractos de cuenta no desmarca
+  filas amarillas") y `Documentacion/Versiones/v-02.08.md` (seccion
+  "Toggle de bandera amarilla en extractos de cuenta").
+- **Estado:** cerrado en codigo, verificado por la suite automatizada
+  local. Pendiente: gate de CI con PostgreSQL/Testcontainers.
+
 ### 2026-08-02 - V-02.07 - Abierto - `AddAuthorization()` sin `FallbackPolicy`: una accion sin atributo queda publica
 
 - **Contexto:** auditoria de permisos endpoint por endpoint del 2026-08-02.

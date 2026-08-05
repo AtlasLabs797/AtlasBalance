@@ -484,7 +484,7 @@ El periodo se elige con tabs (`1m`, `3m`, `6m`, `9m`, `12m`, `18m`, `24m`) y la 
 
 En el dashboard de una cuenta, la tabla de movimientos permite seleccionar filas desde la primera columna.
 
-- Para marcar movimientos con flag, selecciona una o varias filas y pulsa el boton superior con icono de banderola.
+- Para marcar movimientos con flag, selecciona una o varias filas y pulsa el boton superior con icono de banderola. El mismo boton alterna entre marcar y quitar la alerta: si todas las seleccionadas ya estan amarillas, las desmarca; si hay alguna sin alerta, marca solo las que faltan. El icono y el permiso son los mismos, solo cambia el texto accesible del boton ("Marcar seleccion con alerta" / "Quitar alerta de la seleccion").
 - Para eliminar movimientos, selecciona una o varias filas y pulsa la papelera superior. La confirmacion de borrado se mantiene.
 - Para insertar una linea intermedia, pasa el cursor entre filas y pulsa el icono `+` que aparece.
 - Marcar checks, seleccionar filas, insertar, eliminar o aplicar flag no debe recargar la pagina ni mandarte arriba.

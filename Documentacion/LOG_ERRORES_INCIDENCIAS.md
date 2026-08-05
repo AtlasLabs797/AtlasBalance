@@ -1,5 +1,43 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-05 - V-02.08 - El icono de banderola en extractos de cuenta no desmarca filas amarillas (CERRADO)
+
+- **Sintoma:** en la ventana "Desglose de la cuenta", al seleccionar una
+  fila ya amarilla y pulsar de nuevo el boton con icono de banderola, no
+  pasaba nada: la fila seguia marcada y el estado no cambiaba.
+- **Causa confirmada:** `CuentaDetailPage.flagSelectedRows` (en la
+  version previa) filtraba `rowsToFlag = selected.filter(!flagged)` y,
+  si la seleccion era 100% amarilla, devolvia el mensaje "Los
+  movimientos seleccionados ya estan marcados con alerta" sin hacer
+  ninguna llamada. No existia path simetrico para desmarcar. El backend
+  (`ExtractosController.ToggleFlag`) ya soportaba `flagged: false` desde
+  V-02.07: limpiaba `FlaggedNota`, `FlaggedAt` y `FlaggedById`, asi que
+  el gap era solo de UI/inconsistencia con el toggle individual del
+  checkbox en `ExtractoTable`.
+- **Solucion:** el mismo boton alterna. Logica extraida al helper puro
+  `computeBulkFlagToggle` (`src/utils/bulkFlagToggle.ts`): si toda la
+  seleccion tiene `flagged === true`, devuelve
+  `{ action: 'unflag', targetIds: todos }`; en caso contrario,
+  `{ action: 'flag', targetIds: solo !flagged }`. El boton actualiza
+  `aria-label`, `title` y `aria-pressed` para reflejar que la proxima
+  pulsacion quitara la alerta cuando aplique, y el mensaje de estado
+  cambia de "N movimientos marcados con alerta." a "Quitada la alerta
+  de N movimientos." sin que el usuario tenga que cambiar de boton.
+- **Verificacion:** `npm.cmd run lint -- --max-warnings 0` OK;
+  `npm.cmd run test:unit` 26/26 PASS (4 nuevos casos en
+  `bulkFlagToggle.test.js`); `tsc --noEmit` OK. Tests backend nuevos en
+  `ExtractosControllerTests.cs:888-1012` (`ToggleFlag_Should_Clear_All_Flagged_Fields_When_Unflagging`
+  y `ToggleFlag_Should_Forbid_Unflag_When_Flagged_Column_Not_In_Editable_Set`)
+  pendientes de correr en CI; bloqueados localmente por AV reteniendo
+  `obj/Debug/net8.0/AtlasBalance.API.AssemblyInfoInputs.cache`. QA
+  visual con navegador queda fuera de AGENTS.md §8 (sin servidores de
+  larga duracion desde la shell).
+- **Estado:** cerrado en codigo y verificado por la suite automatizada
+  ejecutada localmente. Pendiente: gate de CI con PostgreSQL/Testcontainers
+  y paquete firmado `V-02.08-win-x64` independiente.
+
+---
+
 ## 2026-08-05 - V-02.08 - Verificacion MFA 500 por auditoria automatica bajo RLS (DESPLEGADO; VALIDACION PENDIENTE)
 
 - **Sintoma:** el login ya llegaba a `Verificar acceso`, pero el primer codigo
