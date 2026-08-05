@@ -243,6 +243,8 @@ foreach ($script in @(
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1",
+    "Sync-AtlasDirectory.ps1",
+    "Sync-AtlasDirectory.Tests.ps1",
     "Caddyfile.example"
 )) {
     $source = Join-Path $repoRoot "scripts\$script"

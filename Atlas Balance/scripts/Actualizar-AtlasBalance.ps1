@@ -871,6 +871,8 @@ foreach ($script in @(
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1",
+    "Sync-AtlasDirectory.ps1",
+    "Sync-AtlasDirectory.Tests.ps1",
     "install-cert-client.ps1",
     "install.ps1",
     "start.ps1",

@@ -36,6 +36,17 @@ $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
 $GeneratedPostgresAdminPassword = ""
 $ExistingUsersDetected = $false
+
+# V-02.08: dot-source de la copia atomica con rollback. Mantener
+# Sync-DirectoryPreserveConfig en un archivo separado permite
+# cubrirla con tests unitarios sin tener que ejecutar el instalador
+# entero. Si la funcion no se encuentra, abortamos aqui en lugar de
+# mas adelante con un mensaje menos claro.
+$syncModule = Join-Path $PSScriptRoot "Sync-AtlasDirectory.ps1"
+if (Test-Path -LiteralPath $syncModule) {
+    . $syncModule
+}
+
 $DefaultReleaseSigningPublicKeyPem = @"
 -----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxhpPLjgCCcX1jyi/BGyE
@@ -770,60 +781,6 @@ function Test-ExistingApplicationUsers {
     return $false
 }
 
-function Sync-DirectoryPreserveConfig {
-    param(
-        [string]$Source,
-        [string]$Target
-    )
-
-    if (-not (Test-Path $Source)) {
-        throw "No existe la carpeta origen: $Source"
-    }
-
-    New-Item -ItemType Directory -Path $Target -Force | Out-Null
-    $sourceFiles = Get-ChildItem -LiteralPath $Source -Recurse -File
-    $relativeFiles = New-Object "System.Collections.Generic.HashSet[string]" -ArgumentList ([StringComparer]::OrdinalIgnoreCase)
-
-    foreach ($file in $sourceFiles) {
-        $relative = Get-RelativePathCompat -BasePath $Source -FullPath $file.FullName
-        [void]$relativeFiles.Add($relative)
-
-        if ($relative -like "appsettings.Production.json" -and (Test-Path (Join-Path $Target $relative))) {
-            continue
-        }
-
-        $destination = Join-Path $Target $relative
-        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-        Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
-    }
-
-    $targetFiles = Get-ChildItem -LiteralPath $Target -Recurse -File
-    foreach ($file in $targetFiles) {
-        $relative = Get-RelativePathCompat -BasePath $Target -FullPath $file.FullName
-        if ($relativeFiles.Contains($relative)) {
-            continue
-        }
-        if ($relative -like "appsettings*.json" -or $relative -like "logs\*") {
-            continue
-        }
-        Remove-Item -LiteralPath $file.FullName -Force
-    }
-}
-
-function Get-RelativePathCompat {
-    param([string]$BasePath, [string]$FullPath)
-
-    $base = [IO.Path]::GetFullPath($BasePath).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-    $base = $base + [IO.Path]::DirectorySeparatorChar
-    $path = [IO.Path]::GetFullPath($FullPath)
-
-    if ($path.StartsWith($base, [StringComparison]::OrdinalIgnoreCase)) {
-        return $path.Substring($base.Length)
-    }
-
-    return Split-Path -Leaf $FullPath
-}
-
 function New-AtlasCertificate {
     param(
         [string]$CertDirectory,
@@ -1423,7 +1380,9 @@ foreach ($supportScript in @(
     "Test-AtlasSmtp.ps1",
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
-    "Mfa-Totp.Tests.ps1"
+    "Mfa-Totp.Tests.ps1",
+    "Sync-AtlasDirectory.ps1",
+    "Sync-AtlasDirectory.Tests.ps1"
 )) {
     $source = Join-Path $packageRoot "scripts\$supportScript"
     if (Test-Path -LiteralPath $source) {
