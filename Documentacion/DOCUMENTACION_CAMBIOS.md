@@ -73,6 +73,134 @@ Frontend:
   veces (incluyendo copia via `%TEMP%`). La entrada queda pendiente y se
   reporta abajo.
 
+## 2026-08-05 - V-02.08 - Tres niveles de health check
+
+**Trabajo realizado:** el incidente V-02.07 demostro que `/api/health`
+(devuelve `{status:"healthy"}` literal) daba 200 con login 500. El
+smoke post-instalacion y el actualizador deben golpear un endpoint
+que verifique que el RLS esta realmente operativo, no solo que el
+proceso responde.
+
+Tres niveles, los tres `AllowAnonymous` para que el instalador y el
+actualizador puedan sondearlos sin sesion:
+
+- `/api/health` (liveness): sin cambios. 200 si el proceso responde.
+- `/api/health/ready` (readiness): ejecuta `AppHealthService.ComprobarAsync`
+  (BD, disco, pool). 200 si todo SANO, 503 si NO_SANO.
+- `/api/health/functional` (functional readiness): ejecuta
+  `atlas_security.context_is_valid()` y un INSERT firmado en
+  `AUDITORIAS` con `BEGIN; ... ROLLBACK;`. 200 si pasa; 503 si falla.
+  Es el endpoint que el instalador y el actualizador deben golpear
+  para declarar OK: si el RLS no esta alineado o el INSERT da 42501,
+  devuelve 503 y se hace rollback.
+
+El rate limiter global se ampla para eximir cualquier ruta bajo
+`/api/health/*` (antes solo `/api/health` exacto estaba exento).
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs` (mapeo de
+  los tres endpoints; usa `AppDbContext`, `IAppHealthService`,
+  `EstadoSalud`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/ContextoRlsValidoDto.cs`
+  (nuevo, DTO interno para `SqlQueryRaw`).
+- `Atlas Balance/backend/src/AtlasBalance.API/RateLimiting/RateLimitingSetup.cs`
+  (exencion para `/api/health/*`).
+
+**Comandos ejecutados:**
+
+- `dotnet build -c Release -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj\
+  -p:BaseOutputPath=...bin\ -v:minimal --nologo` (workaround ACL
+  `obj/` -> `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0208-c4\`):
+  **0 errores, 7 warnings preexistentes** (deprecaciones
+  `UseXminAsConcurrencyToken` x 5, `PostgreSqlStorage` deprecado x 1,
+  `EF1002` sobre `SqlQueryRaw` con interpolacion de string de fecha x 1,
+  todas ajenas a V-02.08).
+
+**Resultado de verificacion:**
+
+- Los tres endpoints compilan y resuelven dependencias.
+- La logica del probe reproduce el camino del login: contexto
+  anonimo + INSERT en AUDITORIAS + ROLLBACK. Si la policy RLS
+  no permite el INSERT con ese contexto, el endpoint devuelve 503
+  y el actualizador (cuando se actualice) hace rollback del DLL.
+- El rate limiter no consume presupuesto en las sondas de
+  readiness.
+
+**Pendientes:**
+
+- Actualizar `Actualizar-AtlasBalance.ps1` y `Deploy-RlsHotfix.ps1`
+  para que golpeen `/api/health/functional` en lugar de `/api/health`
+  antes de declarar OK. El cambio en el script es de una linea cada
+  uno; queda como siguiente commit.
+- Anadir test de regresion con Testcontainers que verifique que
+  `/api/health/functional` devuelve 200 y 503 segun el contexto.
+
+---
+
+## 2026-08-05 - V-02.08 - Credenciales accesibles tras instalar
+
+**Trabajo realizado:** el instalador `Instalar-AtlasBalance.ps1`
+anunciaba en su mensaje final que las credenciales iniciales
+estaban en `C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt`
+pero no escribia el archivo (decision V-02.05 MED-26). El
+operador se quedaba con una promesa rota. Ademas, los scripts
+de soporte (Repair-RlsContext, Deploy-RlsHotfix, etc.) no se
+empaquetaban en la instalacion: si algo se rompe en campo, el
+operador no tiene a mano mas que el hotfix DLL del ZIP.
+
+V-02.08 cierra los dos:
+
+- `Installer.Instalar-AtlasBalance.ps1` vuelve a escribir
+  `INSTALL_CREDENTIALS_ONCE.txt` con `Write-SecretFile`
+  (ACL Administrators + SYSTEM, herencia desactivada) y registra
+  la tarea programada `AtlasBalance.DeleteInstallCredentialsOnce`
+  a 24h. El mensaje final indica la ruta y la fecha de borrado.
+- `Build-Release.ps1` y `Actualizar-AtlasBalance.ps1` copian
+  los scripts de soporte a `C:\AtlasBalance\scripts`:
+  `Repair-RlsContext.ps1`, `Deploy-RlsHotfix.ps1`,
+  `Grant-OwnerBypassRls.ps1`, `Test-BackupRestore.ps1`,
+  `Test-AtlasSecrets.ps1`, `Smoke-Test-AtlasBalance.ps1`,
+  `Mfa-Totp.ps1`, `Mfa-Totp.Tests.ps1`.
+- `Build-Release.ps1` usa un `Test-Path` previo con WARN en lugar
+  de abortar si un script futuro aun no existe en `scripts/`.
+
+**Archivos tocados:**
+
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1` (escritura
+  del archivo con ACL, registro de task, copia de scripts,
+  mensaje final mas preciso).
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1` (copia
+  de scripts de soporte en la actualizacion).
+- `Atlas Balance/scripts/Build-Release.ps1` (empaquetado de
+  los scripts en el ZIP firmado).
+
+**Comandos ejecutados:**
+
+- Parser PowerShell de los tres scripts modificados: **OK**.
+
+**Resultado de verificacion:**
+
+- Los tres scripts parsean correctamente.
+- INSTALL_CREDENTIALS_ONCE.txt se escribe con la ACL que ya
+  aplicaba `Write-SecretFile`. Si falla, se lanza
+  excepcion y se borra el archivo para no dejar
+  credenciales con ACL laxa.
+- El actualizador copia los scripts en `C:\AtlasBalance\scripts`
+  en cada actualizacion, manteniendo la disponibilidad.
+
+**Pendientes:**
+
+- Confirmar preflight + copia atomica con rollback en el
+  instalador. Hoy `Sync-DirectoryPreserveConfig` no tiene
+  rollback; si falla a mitad, deja el sistema inconsistente.
+- Confirmar el switch `-PostgresMode Managed|External` y las
+  validaciones de version/pgcrypto/RLS al instalar.
+- Confirmar SMTP test, BitLocker detection y cert SAN
+  validation en el instalador.
+
+---
+
 ## 2026-08-05 - V-02.08 - Testcontainers como gate obligatorio en CI/release
 
 **Trabajo realizado:** el incidente V-02.07 demostro que la regresion
