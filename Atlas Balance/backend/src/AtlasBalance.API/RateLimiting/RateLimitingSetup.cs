@@ -29,6 +29,7 @@ internal static class RateLimitingSetup
     private const string IntegrationPathPrefix = "/api/integration/openclaw";
     private const string ApiPathPrefix = "/api";
     private const string HealthPath = "/api/health";
+    private const string HealthPathPrefix = "/api/health/";
 
     /// <summary>
     /// Rutas que verifican credenciales. Van a su propio cubo por IP, mas
@@ -94,7 +95,12 @@ internal static class RateLimitingSetup
         var path = context.Request.Path;
 
         // Los estaticos de la SPA y el healthcheck no consumen presupuesto de API.
-        if (!path.StartsWithSegments(ApiPathPrefix) || path.Equals(HealthPath))
+        // V-02.08: tambien se eximen los nuevos /api/health/ready y
+        // /api/health/functional, que el instalador y el actualizador invocan
+        // como sondeos de readiness tras reiniciar servicios.
+        if (!path.StartsWithSegments(ApiPathPrefix)
+            || path.Equals(HealthPath)
+            || path.StartsWithSegments(HealthPathPrefix))
         {
             return RateLimitPartition.GetNoLimiter("exento");
         }

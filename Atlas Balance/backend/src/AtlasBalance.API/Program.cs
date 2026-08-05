@@ -1,5 +1,6 @@
 ﻿using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Logging;
 using AtlasBalance.API.Middleware;
@@ -11,6 +12,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
@@ -679,6 +681,104 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+
+// V-02.08: dos niveles adicionales de health check para distinguir el
+// "el proceso responde" del "el sistema esta sano" y del "el RLS funciona".
+// El incidente V-02.07 demostro que `/api/health` 200 con login 500 pasa
+// en silencio: el smoke post-instalacion y el actualizador deben golpear
+// `/api/health/functional` antes de declarar OK.
+//
+//  - /api/health           -> liveness. Responde 200 si el proceso responde.
+//  - /api/health/ready     -> readiness. Ejecuta AppHealthService.ComprobarAsync
+//                              (BD, disco, pool de conexiones). 200 si sano.
+//  - /api/health/functional -> functional readiness. Verifica que el contexto
+//                              RLS esta firmado y que un INSERT firmado en
+//                              AUDITORIAS funciona con el rol runtime. 200 si
+//                              pasa; 503 si falla. Pensado para instalador
+//                              y actualizador: antes de declarar OK, cerrar
+//                              el bucle que dejo al cliente V-02.07 con
+//                              "health 200" y login roto.
+app.MapGet("/api/health/ready", async (
+    [FromServices] IAppHealthService health,
+    CancellationToken cancellationToken) =>
+{
+    var salud = await health.ComprobarAsync(cancellationToken);
+    return salud.Estado == EstadoSalud.NoSano
+        ? Results.Json(salud, statusCode: StatusCodes.Status503ServiceUnavailable)
+        : Results.Ok(salud);
+}).AllowAnonymous();
+
+app.MapGet("/api/health/functional", async (
+    [FromServices] AtlasBalance.API.Data.AppDbContext dbContext,
+    [FromServices] ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
+{
+    // El RlsDbCommandInterceptor publica el contexto via set_config() antes
+    // de cada comando. Por eso basta con evaluar atlas_security.context_is_valid()
+    // y luego hacer un INSERT firmado en AUDITORIAS con ROLLBACK: si la policy
+    // RLS no permite el INSERT con el contexto actual, obtendremos un 42501.
+    var configValido = false;
+    var insertOk = false;
+    string? detalleConfig = null;
+    string? detalleInsert = null;
+    try
+    {
+        var result = await dbContext.Database
+            .SqlQueryRaw<ContextoRlsValidoDto>(
+                "SELECT atlas_security.context_is_valid() AS \"Value\"")
+            .ToListAsync(cancellationToken);
+        configValido = result.Count > 0 && result[0].Value;
+        if (!configValido)
+        {
+            detalleConfig = "atlas_security.context_is_valid() devolvio false: el secreto RLS no esta alineado o la policy no esta desplegada.";
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "No se pudo evaluar atlas_security.context_is_valid()");
+        detalleConfig = "No se pudo evaluar la funcion de validacion del contexto RLS. Revisa el log del servidor.";
+    }
+
+    if (configValido)
+    {
+        try
+        {
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $@"BEGIN;
+                    INSERT INTO ""AUDITORIAS""
+                        (id, tipo_accion, entidad_tipo, origen, ""timestamp"", detalles_json)
+                    VALUES
+                        (gen_random_uuid(), 'HEALTH_PROBE', 'SISTEMA', 'HEALTH', now(), '{{}}'::json);
+                    ROLLBACK;",
+                cancellationToken);
+            insertOk = true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo ejecutar el INSERT firmado de smoke en AUDITORIAS");
+            detalleInsert = "El INSERT firmado de smoke en AUDITORIAS fallo: " + ex.Message;
+        }
+    }
+
+    var respuesta = new
+    {
+        estado = configValido && insertOk ? "funcional" : "no_funcional",
+        contexto_rls = new
+        {
+            valido = configValido,
+            detalle = detalleConfig
+        },
+        auditoria_firmada = new
+        {
+            ok = insertOk,
+            detalle = detalleInsert
+        }
+    };
+    return configValido && insertOk
+        ? Results.Ok(respuesta)
+        : Results.Json(respuesta, statusCode: StatusCodes.Status503ServiceUnavailable);
+}).AllowAnonymous();
+
 app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" }));
 app.MapFallbackToFile("index.html", staticFileOptions);
 
