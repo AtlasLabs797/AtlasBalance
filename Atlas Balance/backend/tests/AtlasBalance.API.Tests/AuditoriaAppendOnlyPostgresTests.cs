@@ -4,6 +4,7 @@ using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Xunit;
@@ -123,6 +124,43 @@ public sealed class AuditoriaAppendOnlyPostgresTests
             $"INSERT INTO \"AUDITORIAS\" (id, tipo_accion, \"timestamp\", origen) VALUES ('{Guid.NewGuid()}', 'LOGIN', now(), 'UI');");
 
         await insert.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Auth_Audit_Should_Insert_Without_Requiring_Select_Policy()
+    {
+        var (owner, runtime) = await CrearRolesAsync();
+        await MigrarAsync(owner);
+        await ConcederPrivilegiosRuntimeAsync(owner, runtime);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = "/api/auth/login";
+        var accessor = new HttpContextAccessor { HttpContext = httpContext };
+        var interceptor = new RlsDbCommandInterceptor(accessor, new RlsContextSecret(RlsSecret));
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(runtime)
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using (var db = new AppDbContext(options))
+        {
+            var service = TestAuditService.Create(db, accessor);
+            var action = async () => await service.LogAsync(
+                null,
+                AuditActions.LoginFailed,
+                "USUARIOS",
+                null,
+                "127.0.0.1",
+                "{\"motivo\":\"test\"}",
+                CancellationToken.None);
+
+            await action.Should().NotThrowAsync();
+        }
+
+        await using var ownerDb = await ContextoConRlsAsync(owner);
+        (await ownerDb.Auditorias.CountAsync(a => a.TipoAccion == AuditActions.LoginFailed))
+            .Should().Be(1);
     }
 
     [Fact]

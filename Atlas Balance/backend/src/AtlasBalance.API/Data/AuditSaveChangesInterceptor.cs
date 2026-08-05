@@ -143,6 +143,18 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         // auditoria automatica sin atribucion cuando SetContextoAuditoria no
         // era llamado.
         var httpContext = _httpContextAccessor.HttpContext;
+
+        // Las rutas anonimas de autenticacion ya registran eventos de seguridad
+        // explicitos mediante AuditService, que inserta sin RETURNING para no
+        // exigir la policy SELECT de AUDITORIAS. Si tambien generasemos aqui la
+        // auditoria automatica, EF agruparia un INSERT ... RETURNING en el mismo
+        // SaveChanges de USUARIOS/REFRESH_TOKENS y PostgreSQL lo rechazaria por
+        // RLS antes de completar el login o la verificacion MFA.
+        if (AuditService.IsUnauthenticatedAuthFlow(httpContext))
+        {
+            return;
+        }
+
         Guid? usuarioId = _usuarioIdOverride.Value;
         if (usuarioId is null && httpContext?.User?.Identity?.IsAuthenticated == true)
         {

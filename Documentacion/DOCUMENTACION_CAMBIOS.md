@@ -9,6 +9,88 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.08 - Verificacion MFA compatible con auditoria RLS
+
+**Trabajo realizado:** se reprodujo el segundo HTTP 500 en
+`POST /api/auth/mfa/verify`. Tras aceptar el TOTP, `IssueTokensAsync` guardaba
+los cambios de `USUARIOS` y `REFRESH_TOKENS`; `AuditSaveChangesInterceptor`
+anadia una auditoria automatica al mismo batch y EF volvia a emitir
+`INSERT ... RETURNING secuencia`, rechazado por RLS con `42501`. El interceptor
+omite ahora esa auditoria generica solo en rutas auth anonimas, que ya registran
+los eventos semanticos `MFA_ENABLED`, `MFA_VERIFIED` y `LOGIN` mediante
+`AuditService` sin `RETURNING`. No se amplia ninguna policy.
+
+**Archivos tocados:** `AuditSaveChangesInterceptor.cs`,
+`AuditSaveChangesInterceptorTests.cs`, log de incidencias, documentacion
+tecnica, documento de V-02.08, `INFORME_INCIDENTE_LOGIN_MFA_V0207.md` y esta
+bitacora.
+
+**Comandos ejecutados:** inspeccion del log del servicio y del SQL fallido;
+runner xUnit v3 por clase; `dotnet build` Release; despliegue elevado con backup,
+hash y rollback; comprobacion de servicios, hash instalado, puerto 8443 y estado
+de Chrome.
+
+**Resultado de verificacion:** tests focalizados 4/4; compilacion Release con 0
+errores y 7 warnings preexistentes. DLL instalada con SHA-256
+`09D194A9AB2FE9AEF241E402E79E1A2229342CBEBFB5970AA79AE2DCA0EF8932`;
+API y Watchdog activos y puerto 8443 disponible. El proceso reiniciado invalido
+el challenge MFA anterior; queda pendiente repetir login con un challenge y un
+TOTP nuevos para cerrar la comprobacion end-to-end.
+
+---
+
+## 2026-08-05 - V-02.08 - Login y auditoria compatibles con RLS
+
+**Trabajo realizado:** se reprodujo el HTTP 500 contra la instalacion real. La
+password era valida y se llegaba a `LOGIN_MFA_REQUIRED`, pero EF generaba
+`INSERT ... RETURNING secuencia` para `AUDITORIAS`. PostgreSQL aplica la policy
+SELECT al `RETURNING`; el flujo auth puede insertar, pero no leer auditorias.
+`AuditService` usa ahora un INSERT parametrizado sin `RETURNING` solo en el
+flujo auth anonimo, sin ampliar ninguna policy.
+
+**Archivos tocados:** `AuditService.cs`,
+`AuditoriaAppendOnlyPostgresTests.cs`, `Deploy-RlsHotfix.ps1`, log de
+incidencias, documentacion tecnica, documento de V-02.08 y esta bitacora. Se
+revirtio el cambio especulativo del guardia RLS al comprobar que no era la causa.
+
+**Comandos ejecutados:** inspeccion de Chrome, Event Log, log de PostgreSQL y
+`C:\ProgramData\AtlasBalance\logs`; revision de policies y SQL generado;
+`dotnet build` Release; runner xUnit v3 por clase y por metodo PostgreSQL;
+parser PowerShell; `git diff --check`; dos despliegues elevados con rollback.
+
+**Resultado de verificacion:** compilacion correcta con 0 errores y 7 warnings
+preexistentes; tests de contexto RLS 10/10. La regresion PostgreSQL compila,
+pero Testcontainers queda bloqueado porque Docker no esta disponible. Tras dos
+intentos que no modificaron produccion por el entrecomillado de rutas, el tercer
+despliegue autorizado termino con exit code 0, backup previo y SHA-256 instalado
+`035893348A070A52F9796164B9F4C8FE715F66124E0F5F801323D6FC8996803F`.
+API/PostgreSQL/Watchdog quedaron activos. El login real de las 01:48:17 devolvio
+HTTP 200 en 1353 ms y Chrome avanzo a `Verificar acceso` (MFA), sin HTTP 500.
+
+---
+
+## 2026-08-05 - V-02.08 - Reset de administrador compatible con PowerShell 5.1
+
+**Trabajo realizado:** se corrigio el reset de administrador usado durante la
+instalacion real de V-02.07. El script intentaba cargar con `Add-Type` una DLL
+BCrypt compilada para .NET 8 desde Windows PowerShell 5.1/.NET Framework 4 y
+fallaba aunque se retirase la marca de descarga. El hash bcrypt de coste 12 se
+genera ahora en PostgreSQL mediante `pgcrypto` y la password viaja por stdin.
+
+**Archivos tocados:** `Atlas Balance/scripts/Reset-AdminPassword.ps1`, log de
+incidencias, documentacion tecnica, documento de V-02.08 y esta bitacora.
+
+**Comandos ejecutados:** inspeccion de streams `Zone.Identifier`; prueba de
+carga `Add-Type`; captura de `LoaderExceptions`; busqueda de uso de `pgcrypto`;
+parser PowerShell; busquedas estaticas de la ruta eliminada; copia controlada
+del script corregido al paquete V-02.07 y ejecucion real del reset.
+
+**Resultado de verificacion:** el reset real se ejecuto y el backend acepto la
+password nueva. El login quedo bloqueado despues por una incidencia separada
+de contexto RLS documentada en la entrada anterior.
+
+---
+
 ## 2026-08-04 - V-02.08 - Apertura de version y sincronizacion documental
 
 **Trabajo realizado:** se abrio V-02.08 desde V-02.07 y se alinearon los

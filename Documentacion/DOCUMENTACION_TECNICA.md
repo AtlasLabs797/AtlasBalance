@@ -7,6 +7,67 @@ documento conserva debajo el historial tecnico de V-02.07 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de
 cada cambio.
 
+## 2026-08-05 - V-02.08 - Auditoria automatica durante MFA
+
+La verificacion inicial MFA ejecuta un `SaveChanges` para persistir el secreto
+protegido, el estado del usuario y el nuevo refresh token. El interceptor de
+auditoria incluia una fila `AUDITORIAS` en ese mismo batch. Aunque los eventos
+explicitos del flujo auth ya usaban el INSERT sin `RETURNING`, esta segunda fila
+seguia siendo generada por EF con `RETURNING secuencia` y provocaba el mismo
+`42501` bajo la policy RLS sin SELECT.
+
+`AuditSaveChangesInterceptor` retorna sin generar diffs genericos cuando
+`AuditService.IsUnauthenticatedAuthFlow` identifica una peticion anonima bajo
+`/api/auth`. No se pierde el rastro de seguridad del MFA: `AuthService` registra
+eventos explicitos `MFA_ENABLED`, `MFA_VERIFIED` y `LOGIN`, ademas de fallos y
+bloqueos, mediante el camino firmado y sin `RETURNING`. Las operaciones
+autenticadas y los jobs conservan la auditoria automatica normal.
+
+Verificacion: tests del interceptor 4/4 y build Release con 0 errores. El DLL se
+desplego en `C:\AtlasBalance` con hash
+`09D194A9AB2FE9AEF241E402E79E1A2229342CBEBFB5970AA79AE2DCA0EF8932`;
+servicios activos y 8443 disponible. La prueba end-to-end requiere un challenge
+nuevo tras el reinicio del servicio.
+
+---
+
+## 2026-08-05 - V-02.08 - Auditoria de login compatible con RLS
+
+El HTTP 500 de V-02.07 no provenia de una password invalida ni de un secreto
+RLS desalineado. `AuditService` insertaba la auditoria mediante EF Core, que
+anade `RETURNING secuencia`. PostgreSQL trata los valores de `RETURNING` como
+lectura: ademas de `auditorias_insert`, exige la policy `SELECT`. El contexto
+anonimo de `/api/auth` puede insertar eventos firmados, pero deliberadamente no
+puede leer la tabla; el resultado correcto era `42501` para ese SQL concreto.
+
+`AuditService` emite ahora un INSERT parametrizado sin `RETURNING` unicamente
+cuando la peticion es anonima y su ruta esta bajo `/api/auth`. La secuencia
+`bigserial` sigue asignandose en PostgreSQL y la fila sigue pasando por
+`auditorias_insert`, `FORCE ROW LEVEL SECURITY` y el trigger append-only. No se
+abre `auditorias_select` al flujo de autenticacion ni se relajan UPDATE/DELETE.
+Los usuarios ya autenticados y los jobs conservan el camino EF existente.
+
+La regresion `Auth_Audit_Should_Insert_Without_Requiring_Select_Policy` reproduce
+el contrato con rol runtime y PostgreSQL real. En este host queda bloqueada por
+Docker/Testcontainers; la compilacion Release y los 10 tests unitarios del
+contexto RLS pasan. El hotfix se desplego sobre `C:\AtlasBalance` con backup y
+hash coincidente. El login real respondio HTTP 200 y avanzo al desafio MFA;
+API, PostgreSQL y Watchdog permanecieron activos.
+
+---
+
+## 2026-08-05 - V-02.08 - Reset de administrador compatible con PowerShell 5.1
+
+`Reset-AdminPassword.ps1` deja de cargar `BCrypt-Net-Next.dll` mediante
+`Add-Type`. El ensamblado de la release usa .NET 8 y no puede cargarse en
+Windows PowerShell 5.1, basado en .NET Framework 4. El reset genera ahora el
+hash bcrypt con coste 12 dentro de PostgreSQL mediante `pgcrypto`, ya presente
+desde la migracion inicial. La password temporal se interpola como literal SQL
+escapado en el contenido enviado por stdin a `psql`; no se pasa en la linea de
+comandos ni se registra en logs.
+
+---
+
 ## 2026-08-04 - V-02.07 - Higiene del paquete de release
 
 `Build-Release.ps1` limpia ahora, despues de publicar API y Watchdog y antes de

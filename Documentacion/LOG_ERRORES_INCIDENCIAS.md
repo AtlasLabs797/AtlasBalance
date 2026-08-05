@@ -1,5 +1,71 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-05 - V-02.08 - Verificacion MFA 500 por auditoria automatica bajo RLS (DESPLEGADO; VALIDACION PENDIENTE)
+
+- **Sintoma:** el login ya llegaba a `Verificar acceso`, pero el primer codigo
+  MFA valido terminaba en HTTP 500.
+- **Causa confirmada:** `IssueTokensAsync` guardaba `USUARIOS` y
+  `REFRESH_TOKENS`. `AuditSaveChangesInterceptor` anadia al mismo `SaveChanges`
+  una fila de `AUDITORIAS`, para la que EF generaba `INSERT ... RETURNING
+  secuencia`. El contexto auth anonimo puede insertar auditorias, pero no
+  leerlas; PostgreSQL respondia `42501` y abortaba la emision de sesion.
+- **Solucion:** no generar auditorias automaticas de entidad en rutas anonimas
+  `/api/auth`. Esas rutas conservan las auditorias explicitas y firmadas de
+  seguridad (`MFA_ENABLED`, `MFA_VERIFIED`, `LOGIN`, fallos y bloqueos), que
+  `AuditService` inserta sin `RETURNING`. No se relaja RLS ni se concede SELECT.
+- **Verificacion:** test de regresion del interceptor y suite focalizada 4/4;
+  Release con 0 errores; DLL desplegada con backup y SHA-256
+  `09D194A9AB2FE9AEF241E402E79E1A2229342CBEBFB5970AA79AE2DCA0EF8932`;
+  API/Watchdog activos y 8443 disponible. Pendiente repetir el flujo real con
+  un challenge y codigo TOTP nuevos, porque el reinicio invalido el anterior.
+
+---
+
+## 2026-08-05 - V-02.08 - Login 500 por INSERT RETURNING bajo RLS (CERRADO)
+
+- **Sintoma:** el login aceptaba la password y registraba
+  `LOGIN_MFA_REQUIRED`, pero respondia HTTP 500 antes de mostrar la
+  configuracion de Authenticator.
+- **Causa confirmada:** EF persiste `AUDITORIAS` con `INSERT ... RETURNING
+  secuencia`. PostgreSQL exige que la fila devuelta cumpla tambien una policy
+  `SELECT`. El contexto `auth` firmado si cumple `auditorias_insert`, pero no
+  debe poder leer `AUDITORIAS`; por eso el mismo INSERT sin `RETURNING` funciona
+  y el de EF termina con `42501`. La alineacion del secreto y el cambio
+  provisional del guardia `AsyncLocal` no resolvieron el fallo y se descartaron
+  como causa.
+- **Solucion preparada:** `AuditService` usa un INSERT parametrizado sin
+  `RETURNING` solo para peticiones anonimas bajo `/api/auth`. PostgreSQL sigue
+  generando `secuencia`, aplicando `auditorias_insert`, `FORCE RLS` y el trigger
+  append-only; no se amplia la policy `SELECT`. El camino autenticado y los jobs
+  conservan EF normal.
+- **Verificacion:** API Release compila con 0 errores; 10/10 tests del contexto
+  RLS pasan. Se anadio una regresion PostgreSQL especifica, bloqueada localmente
+  porque Docker/Testcontainers no esta disponible. El hotfix se instalo con
+  backup y hash SHA-256 coincidente; API, PostgreSQL y Watchdog quedaron activos.
+  El login real de las 01:48:17 registro `LOGIN_MFA_REQUIRED`, respondio HTTP 200
+  en 1353 ms y Chrome avanzo a `Verificar acceso` sin error 500.
+
+---
+
+## 2026-08-05 - V-02.08 - Reset de admin incompatible con Windows PowerShell 5.1 (CERRADO)
+
+- **Sintoma:** `Reset-AdminPassword.ps1` fallaba al cargar
+  `BCrypt-Net-Next.dll`, primero con `0x80131515` por la marca de descarga y,
+  tras retirarla, con `ReflectionTypeLoadException` sobre
+  `System.Private.CoreLib 8.0`.
+- **Causa:** el script se ejecutaba con Windows PowerShell 5.1/.NET Framework
+  4, pero la DLL distribuida pertenece al runtime self-contained .NET 8 de la
+  API. `Add-Type` no puede mezclar ambos runtimes.
+- **Solucion:** eliminar la carga de la DLL y generar el hash bcrypt de coste
+  12 con `pgcrypto` (`crypt` + `gen_salt('bf', 12)`), extension que la base de
+  Atlas Balance instala desde la migracion inicial. La password se envia por
+  stdin dentro del SQL y no aparece en argumentos de proceso.
+- **Verificacion:** parser PowerShell sin errores, ausencia de `Add-Type` y de
+  referencias a `BCrypt*.dll`; el reset real actualizo la password y el login
+  posterior la valido antes de llegar al flujo MFA.
+
+---
+
 ## 2026-08-04 - V-02.07 - El ZIP incluia simbolos y lockfiles de build (CERRADO)
 
 - **Sintoma:** el primer preflight generado por `Build-Release.ps1` contenia

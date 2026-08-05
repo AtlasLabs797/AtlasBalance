@@ -78,12 +78,23 @@ public sealed class AuditService : IAuditService
 
         auditoria.Firma = _auditSigner.Firmar(auditoria);
 
-        _dbContext.Auditorias.Add(auditoria);
-
         // Espejo fuera de la BD para los eventos de seguridad: si alguien con el
         // connection string borra la cola de AUDITORIAS, la copia del Windows
         // Event Log sigue ahi (ver ISecurityEventLog).
         _securityEventLog.RegistrarSiEsRelevante(auditoria);
+
+        // PostgreSQL exige que INSERT ... RETURNING cumpla tambien la policy
+        // SELECT. En el flujo auth anonimo la policy permite insertar la
+        // auditoria, pero deliberadamente no permite leer AUDITORIAS. Evitamos
+        // RETURNING solo en ese flujo; Postgres sigue asignando secuencia y
+        // aplicando la policy INSERT sin ampliar acceso de lectura.
+        if (IsUnauthenticatedAuthFlow(_httpContextAccessor.HttpContext))
+        {
+            await InsertWithoutReturningAsync(auditoria, cancellationToken);
+            return;
+        }
+
+        _dbContext.Auditorias.Add(auditoria);
 
         // V-02.06 (PR F1): SaveChanges siempre. Dentro de una transaccion
         // explicita del caller, SaveChanges encola la insercion en el ChangeTracker
@@ -94,6 +105,30 @@ public sealed class AuditService : IAuditService
         // grababa.
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    internal static bool IsUnauthenticatedAuthFlow(HttpContext? httpContext) =>
+        httpContext is not null &&
+        httpContext.User.Identity?.IsAuthenticated != true &&
+        httpContext.Request.Path.StartsWithSegments("/api/auth", StringComparison.OrdinalIgnoreCase);
+
+    private Task<int> InsertWithoutReturningAsync(Auditoria auditoria, CancellationToken cancellationToken) =>
+        _dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "AUDITORIAS"
+                (id, usuario_id, tipo_accion, entidad_tipo, entidad_id,
+                 celda_referencia, columna_nombre, valor_anterior, valor_nuevo,
+                 "timestamp", ip_address, user_agent, session_id, origen,
+                 firma, detalles_json)
+            VALUES
+                ({auditoria.Id}, {auditoria.UsuarioId}, {auditoria.TipoAccion},
+                 {auditoria.EntidadTipo}, {auditoria.EntidadId},
+                 {auditoria.CeldaReferencia}, {auditoria.ColumnaNombre},
+                 {auditoria.ValorAnterior}, {auditoria.ValorNuevo},
+                 {auditoria.Timestamp}, {auditoria.IpAddress},
+                 {auditoria.UserAgent}, {auditoria.SessionId}, {auditoria.Origen},
+                 {auditoria.Firma}, CAST({auditoria.DetallesJson} AS json))
+            """,
+            cancellationToken);
 
     private static string? TruncarDetalles(string? detallesJson)
     {

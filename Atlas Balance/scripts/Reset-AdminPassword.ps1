@@ -135,21 +135,9 @@ function Get-ConnectionInfo {
     }
 }
 
-function Get-PasswordHash {
-    param([string]$PlainPassword)
-
-    $apiPath = Join-Path $InstallPath "api"
-    foreach ($candidate in @(
-        (Join-Path $apiPath "BCrypt.Net-Next.dll"),
-        (Join-Path $apiPath "BCrypt.Net.dll")
-    )) {
-        if (Test-Path $candidate) {
-            Add-Type -Path $candidate
-            return [BCrypt.Net.BCrypt]::HashPassword($PlainPassword, 12)
-        }
-    }
-
-    throw "No se encontro BCrypt.Net en $apiPath. Ejecuta este script desde una instalacion completa de Atlas Balance."
+function Escape-SqlLiteral {
+    param([string]$Value)
+    return $Value.Replace("'", "''")
 }
 
 if (-not (Test-IsAdmin)) {
@@ -201,9 +189,13 @@ if ([string]::IsNullOrWhiteSpace($postgresBin)) {
 }
 
 $psql = Join-Path $postgresBin "psql.exe"
-$passwordHash = Get-PasswordHash -PlainPassword $plainPassword
+$passwordSqlLiteral = Escape-SqlLiteral -Value $plainPassword
 $securityStamp = [Guid]::NewGuid().ToString("N")
 
+# PostgreSQL ya dispone de pgcrypto desde la migracion inicial. Generar aqui el
+# hash bcrypt evita cargar desde Windows PowerShell 5.1 una DLL compilada para
+# .NET 8, combinacion que falla con FileLoadException/ReflectionTypeLoadException.
+# La password viaja por stdin dentro del SQL, nunca como argumento de psql.
 $sql = @"
 WITH target_user AS (
     SELECT id
@@ -215,7 +207,7 @@ WITH target_user AS (
 ),
 updated_user AS (
     UPDATE "USUARIOS" u
-    SET password_hash = :'password_hash',
+    SET password_hash = crypt('$passwordSqlLiteral', gen_salt('bf', 12)),
         primer_login = TRUE,
         activo = TRUE,
         failed_login_attempts = 0,
@@ -254,7 +246,6 @@ try {
         "-d", $connection.Database,
         "-v", "ON_ERROR_STOP=1",
         "-v", "email=$AdminEmail",
-        "-v", "password_hash=$passwordHash",
         "-v", "security_stamp=$securityStamp",
         "-t",
         "-A",

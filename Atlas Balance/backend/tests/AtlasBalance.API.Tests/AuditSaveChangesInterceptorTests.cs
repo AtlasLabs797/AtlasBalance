@@ -114,6 +114,34 @@ public sealed class AuditSaveChangesInterceptorTests
         audit.SessionId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task SaveChanges_Should_Not_Add_Automatic_Audit_During_Anonymous_Auth_Flow()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = "/api/auth/mfa/verify";
+        var interceptor = new AuditSaveChangesInterceptor(
+            new HttpContextAccessor { HttpContext = httpContext },
+            NullLogger<AuditSaveChangesInterceptor>.Instance,
+            new AuditSigner(new AuditSigningKey("clave-de-firma-de-pruebas-de-32-caracteres")));
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var db = new AppDbContext(options);
+        db.Usuarios.Add(new Usuario
+        {
+            Id = Guid.NewGuid(),
+            Email = "mfa@example.test",
+            NombreCompleto = "Prueba MFA",
+            PasswordHash = "hash-de-prueba"
+        });
+
+        await db.SaveChangesAsync();
+
+        (await db.Auditorias.CountAsync()).Should().Be(0);
+    }
+
     private sealed class TestCookies : IRequestCookieCollection
     {
         private readonly Dictionary<string, string> _valores;
