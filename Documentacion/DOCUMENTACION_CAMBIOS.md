@@ -23718,3 +23718,95 @@ la maquina como decision de despliegue).
 - **Comandos ejecutados:** consulta de metadatos y README del repositorio con GitHub CLI y conector GitHub; revisión de `version_actual.md`, `v-02.07.md`, `DOCUMENTACION_USUARIO.md`, `DOCUMENTACION_TECNICA.md` y `DESIGN.md`; `npx.cmd playwright install chromium`; capturas desktop y móvil con `npx.cmd playwright screenshot`.
 - **Resultado de verificación:** capturas revisadas visualmente; representan el dashboard, riesgo operativo, titulares, movimientos, importación y navegación móvil con la paleta real del mockup. `git diff --check` pasa y las rutas de las imágenes existen.
 - **Pendientes:** publicar la rama `V-02.07` y hacer merge en `main` para que el README actualizado sea visible por defecto en la portada pública, si se aprueba el cambio.
+
+---
+
+## 2026-08-05 - V-02.08 - Bloque C del plan: instalador hardened
+
+**Trabajo realizado:** los cuatro sub-bloques pendientes del plan
+V-02.08 (C1 preflight, C3 Postgres preflight, C5 SMTP/BitLocker/
+cert SAN, C5 funcional check en Deploy-RlsHotfix) ya estaban en
+produccion con fixes puntuales. Este commit cierra los que
+faltaban.
+
+**Test-AtlasSmtp.ps1 (nuevo):** script operativo para que el
+operador pueda distinguir "SMTP no configurado" de "endpoint
+no responde". El log 'No se pudo enviar por correo la alerta
+SALUD_DEGRADADA' del informe V-02.07 mezclaba ambos casos;
+este script reporta explicitamente el estado. Empieza por
+leer CONFIGURACIONES con psql (parser Npgsql explicito, no
+DbConnectionStringBuilder), distingue vacio vs configurado,
+y emite JSON con estado.
+
+**Test-PostgresPreflight (nuevo en Instalar-AtlasBalance.ps1):**
+llamado justo antes de Ensure-Database. Comprueba version
+>= 16, extension pgcrypto instalada, atributos del rol owner
+(NOSUPERUSER + BYPASSRLS), y smoke-test del contexto RLS
+firmado. Si cualquier check falla, el instalador aborta ANTES
+de tocar migraciones/secrets/API. Patron consistente con
+/api/health/functional del backend.
+
+**Test-VolumeEncryption (modificado):** distingue BitLocker no
+disponible (sin cmdlet) de volumen sin cifrar. Antes lanzaba
+la misma advertencia para los dos casos, lo que ocultaba el
+verdadero problema en servidores sin BitLocker.
+
+**New-AtlasCertificate (modificado):** post-check de SAN
+emitida contra los DNS solicitados. Si falta el $DnsName del
+operador, avisa ANTES de cerrar la instalacion con un mensaje
+que dice "el navegador lanzara advertencia de cert invalido
+al acceder por esos alias".
+
+**Test-AtlasPreflight (nuevo en Instalar-AtlasBalance.ps1):**
+preflight obligatorio antes de tocar nada. Comprueba carpeta
+escribible, espacio libre >= 2 GB, puertos no ocupados por
+otra aplicacion, binarios no bloqueados por procesos externos,
+y AVISO si hay ficheros .tmp en scripts/. Si falla, ABORTA.
+Mismo patron que /api/health/functional: PREFERIMOS abortar
+a que el operador se encuentre un sistema a medio instalar.
+
+**Deploy-RlsHotfix.ps1 (modificado):** ademas de esperar al
+puerto 8443, ahora golpea /api/health/functional con curl.
+Si no devuelve 200, dispara el rollback automatico del DLL
+(la rama catch ya restaura backup y reinicia servicios).
+Si el operador ve "Parche RLS instalado", puede confiar en
+que el login funciona.
+
+**Archivos tocados:**
+
+- `Atlas Balance/scripts/Test-AtlasSmtp.ps1` (nuevo).
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+  (Test-AtlasPreflight, Test-PostgresPreflight,
+  Test-VolumeEncryption, New-AtlasCertificate).
+- `Atlas Balance/scripts/Deploy-RlsHotfix.ps1` (functional
+  health check antes de declarar OK).
+- `Atlas Balance/scripts/Build-Release.ps1` (anade
+  Test-AtlasSmtp.ps1 al paquete).
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1` (anade
+  Test-AtlasSmtp.ps1 a la lista de actualizacion).
+
+**Comandos ejecutados:**
+
+- Parser PowerShell de los seis scripts modificados: OK.
+- `dotnet build -c Release -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj\
+  -p:BaseOutputPath=...bin\ -v:minimal --nologo` (workaround
+  ACL `obj/`): 0 errores, 7 warnings preexistentes.
+
+**Resultado de verificacion:**
+
+- Todos los scripts parsean en PowerShell 5.1.
+- El backend compila limpio con los warnings preexistentes.
+- Todos los checks de preflight tienen salida clara
+  (exito + detalle, no Warnings genericos que el operador
+  ignora).
+
+**Pendientes:**
+
+- Documentar /api/health/functional en
+  Documentacion/Versiones/v-02.08.md (bloqueado AV: el
+  archivo es propiedad de una identidad anterior).
+- Push a origin/V-02.08 y ejecucion de CI.
+
+---
+
+
