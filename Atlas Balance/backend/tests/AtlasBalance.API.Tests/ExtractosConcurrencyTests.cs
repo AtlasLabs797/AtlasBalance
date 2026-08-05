@@ -12,6 +12,7 @@ using Xunit;
 
 namespace AtlasBalance.API.Tests;
 
+[Trait("Category", "Postgres")]
 [Collection(PostgresCollection.Name)]
 public sealed class ExtractosConcurrencyTests
 {

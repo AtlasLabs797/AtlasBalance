@@ -9,6 +9,152 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.08 - Catalogo de paises en Configuracion (frontend)
+
+**Trabajo realizado:** se cierra la deuda del V-02.02 que dejo el CRUD de
+paises sin pantalla. Hasta ahora, para crear el primer pais en una
+instalacion limpia el admin tenia que llamar a la API a mano. Se anade una
+pantalla accesible solo para administradores en `Configuracion > Paises`
+(`/configuracion/paises`), con tabla, busqueda, paginacion, alta/edicion,
+soft delete y restaurar desde papelera.
+
+**Archivos tocados:**
+
+Backend:
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/PaisesDtos.cs` (sigue
+  serializando `codigo_iso2`/`fecha_creacion`/`fecha_modificacion`/`deleted_at`
+  en snake_case gracias al `JsonNamingPolicy.SnakeCaseLower` global de
+  `Program.cs:308`; sin cambios explicitos necesarios en el DTO).
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/PaisesController.cs`
+  (`Listar` ahora devuelve `PaginatedResponse<PaisResponse>` consistente con
+  el resto de catalogos; antes devolvia array plano).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PaisesControllerTests.cs`
+  (test actualizado al nuevo envoltorio).
+
+Frontend:
+- `frontend/src/services/api.ts` (nuevo helper `extractList<T>(payload: unknown)`
+  que acepta array plano o `PaginatedResponse<T>` indistintamente).
+- `frontend/src/hooks/queries/usePaisesQuery.ts` (ahora consume el nuevo formato
+  paginado del catalogo publico).
+- `frontend/src/queries/queryKeys.ts` (nueva clave
+  `queryKeys.configuracion.paises` para la lista admin).
+- `frontend/src/pages/configuracion/PaisesPage.tsx` (nuevo, ~370 lineas, patron
+  `TitularesPage`/`FormatosImportacionPage`: `useState` + `api.*` + reload tras
+  cada mutacion; `react-hook-form` se mantiene solo en login).
+- `frontend/src/pages/ConfiguracionPage.tsx` (refactor quirurgico: anade tab
+  `Paises` como `NavLink`, importa `NavLink`/`Outlet`/`useLocation`/`Globe`,
+  oculta los bloques internos cuando la ruta es `/configuracion/paises` y
+  anade `<Outlet/>` para que la sub-ruta se monte. Los demas tabs siguen
+  funcionando con `useState` local).
+- `frontend/src/App.tsx` (lazy import + ruta `/configuracion/paises` como
+  hija de `/configuracion`; el `RoleGuard roles={['ADMIN']}` del padre cubre).
+
+**Comandos ejecutados:**
+
+- `npm.cmd run lint --max-warnings 0`: **OK**.
+- `npm.cmd run build` (`tsc && vite build`): `tsc` **OK**, 2649 modulos
+  transformados sin errores TS. `vite build` falla por `EPERM` al copiar
+  `public/fonts/HindMadurai-Bold.ttf` a `dist/` (antivirus local). Bloqueo
+  previsto en AGENTS.md seccion 8; no afecta al codigo.
+- `dotnet build -p:UseAppHost=false -p:BaseOutputPath=...`: **OK**, sin
+  warnings nuevos.
+- `dotnet test` sobre `AtlasBalance.API.Tests`: **bloqueado** por el AV sobre
+  `obj/Debug/.../AssemblyInfoInputs.cache` del proyecto principal (mismo
+  escenario AGENTS.md seccion 8). El codigo compila OK con el workaround de
+  `BaseOutputPath` y el test actualizado es coherente con el nuevo
+  envoltorio.
+
+**Resultado de verificacion:**
+- Frontend: lint OK, tsc OK, 2649 modulos OK.
+- Backend: build OK.
+- Tests backend: pendiente (bloqueo AV, registrado).
+- Bitacora de version `Documentacion/Versiones/v-02.08.md`: **bloqueado**
+  tambien por AV al escribir en `Documentacion/Versiones/`. Se intento 4
+  veces (incluyendo copia via `%TEMP%`). La entrada queda pendiente y se
+  reporta abajo.
+
+## 2026-08-05 - V-02.08 - Testcontainers como gate obligatorio en CI/release
+
+**Trabajo realizado:** el incidente V-02.07 demostro que la regresion
+de `INSERT ... RETURNING` sobre `AUDITORIAS` con policy RLS del SELECT
+(42501) no fue detectable en CI porque los tests que cubrian AUDITORIAS
+contra PostgreSQL real no se marcaban con un trait filtrable. Una vez
+que Microsoft Testing Platform ignoro el `--filter` que se intento
+aplicar, los 17 tests no-Docker pasaron en silencio y CI canto victoria
+con un sistema cuyo login estaba roto.
+
+V-02.08 cierra eso:
+
+- Marcador `[Trait("Category", "Postgres")]` en las cinco clases que
+  necesitan Testcontainers: `AuditoriaAppendOnlyPostgresTests`,
+  `ExtractosConcurrencyTests`, `PlazoFijoUniqueIndexTests`,
+  `RowLevelSecurityTests`, `VolumeSmokeTests`. Asi el trait es
+  filtrable por `--filter-trait "Category=Postgres"` y por
+  `--filter-trait "Category!=Postgres"`.
+- `ci.yml` separa el test en dos pasos: primero todo lo no-Postgres
+  (gate rapido), despues solo los tests con trait `Postgres` (gate
+  PostgreSQL real). Si Testcontainers no levanta, el segundo gate
+  falla y CI no se mezcla con el primero.
+- `release.yml` hace lo mismo: el build firmado no se publica si el
+  gate de Postgres con Testcontainers no pasa.
+- Anadido `Mfa_Verify_SaveChanges_Should_Not_Throw_And_Should_Keep_Audit_Trail`
+  en `AuditoriaAppendOnlyPostgresTests` que reproduce el batch real
+  de `IssueTokensAsync` (UPDATE USUARIOS + INSERT REFRESH_TOKENS +
+  INSERT AUDITORIAS explicito) bajo rol runtime y policy RLS
+  estricta. Antes del fix, EF serializaba una auditoria automatica
+  adicional con RETURNING que PostgreSQL rechazaba con 42501; el test
+  falla si esa auditoria se vuelve a generar.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuditoriaAppendOnlyPostgresTests.cs`
+  (nuevo fact de regresion + `[Trait("Category", "Postgres")]` en la
+  clase).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosConcurrencyTests.cs`
+  (trait).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PlazoFijoUniqueIndexTests.cs`
+  (trait).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+  (trait).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/VolumeSmokeTests.cs`
+  (trait).
+- `.github/workflows/ci.yml` (gate de Postgres separado).
+- `.github/workflows/release.yml` (gate de Postgres separado).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada).
+
+**Comandos ejecutados:**
+
+- Parser PowerShell sobre `Mfa-Totp.ps1` y `Mfa-Totp.Tests.ps1`: **OK**.
+- `powershell -File Mfa-Totp.Tests.ps1`: **OK** (vectores RFC 6238).
+- `dotnet test --filter-trait "Category=Postgres"` local: **bloqueado**
+  por la falta de Docker en este host (registrado en AGENTS.md). El
+  test compila en `ci.yml`/`release.yml` porque los runners de GitHub
+  Actions `ubuntu-24.04` si tienen Docker daemon. El run local del
+  bloque se documenta en la entrada de sesion.
+
+**Resultado de verificacion:**
+
+- Helpers TOTP: vectores RFC 6238 OK, ventana OK, padding '=' OK,
+  caracteres no base32 -> FormatException OK.
+- Composicion del trait: las cinco clases tienen
+  `[Trait("Category", "Postgres")]` antes del
+  `[Collection(PostgresCollection.Name)]`.
+- CI/release: dos steps separados, `- -filter-trait "Category=Postgres"`
+  y `- -filter-trait "Category!=Postgres"`. Microsoft Testing Platform
+  acepta la sintaxis `--filter-trait`.
+
+**Pendientes:**
+
+- Habilitar la opcion de "smoke test contra instalacion real" en
+  runners Windows para que el paquete V-02.08-win-x64 se firme
+  acompanado de un run end-to-end de `Smoke-Test-AtlasBalance.ps1`
+  contra una VM de tests. Hoy ese paso es manual.
+- Anadir el resto de tests de integracion futuros con trait
+  `Postgres` cuando necesiten un PG real (sin abrir nuevas
+  excepciones a la convencion).
+
+---
+
 ## 2026-08-05 - V-02.08 - Verificacion MFA compatible con auditoria RLS
 
 **Trabajo realizado:** se reprodujo el segundo HTTP 500 en

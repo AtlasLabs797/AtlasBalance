@@ -6,6 +6,7 @@ using AtlasBalance.API.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Xunit;
 
@@ -20,6 +21,7 @@ namespace AtlasBalance.API.Tests;
 // suposiciones sobre precision de timestamp y normalizacion de JSON, y si se
 // rompe, TODA la auditoria se reporta como manipulada.
 // -----------------------------------------------------------------------
+[Trait("Category", "Postgres")]
 [Collection(PostgresCollection.Name)]
 public sealed class AuditoriaAppendOnlyPostgresTests
 {
@@ -161,6 +163,97 @@ public sealed class AuditoriaAppendOnlyPostgresTests
         await using var ownerDb = await ContextoConRlsAsync(owner);
         (await ownerDb.Auditorias.CountAsync(a => a.TipoAccion == AuditActions.LoginFailed))
             .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Mfa_Verify_SaveChanges_Should_Not_Throw_And_Should_Keep_Audit_Trail()
+    {
+        // Replica el batch que ejecuta IssueTokensAsync al verificar MFA:
+        //  - UPDATE sobre USUARIOS (rotacion de security_stamp).
+        //  - INSERT sobre REFRESH_TOKENS.
+        //  - INSERT sobre AUDITORIAS (evento explicito, no el diff automatico).
+        //
+        // Antes del fix V-02.08, AuditSaveChangesInterceptor anadia una fila
+        // de AUDITORIAS con RETURNING secuencia al mismo SaveChanges. EF volcaba
+        // los INSERT en el orden en que se anyadian al ChangeTracker, y el
+        // UPDATE iba despues. PostgreSQL devolvia 42501 sobre el INSERT
+        // automatico porque la policy SELECT no se cumplia con contexto auth.
+        //
+        // Con el fix, el interceptor omite el diff en rutas /api/auth anonimas
+        // y solo AuditService emite la fila explicita, sin RETURNING.
+        var (owner, runtime) = await CrearRolesAsync();
+        await MigrarAsync(owner);
+        await ConcederPrivilegiosRuntimeAsync(owner, runtime);
+
+        var userId = Guid.NewGuid();
+        await using (var ownerDb = await ContextoConRlsAsync(owner))
+        {
+            ownerDb.Usuarios.Add(new Models.Usuario
+            {
+                Id = userId,
+                Email = "mfa-verify@example.test",
+                NombreCompleto = "MFA Verify Test",
+                PasswordHash = "hash-de-prueba",
+                Rol = AtlasBalance.API.Constants.RolUsuario.Usuario,
+                MfaHabilitado = true,
+                MfaSecretProtegido = "secret-cifrado",
+                SecurityStamp = Guid.NewGuid().ToString("N")
+            });
+            await ownerDb.SaveChangesAsync();
+        }
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Path = "/api/auth/mfa/verify";
+        var accessor = new HttpContextAccessor { HttpContext = httpContext };
+        var rlsInterceptor = new RlsDbCommandInterceptor(accessor, new RlsContextSecret(RlsSecret));
+        var auditInterceptor = new AuditSaveChangesInterceptor(
+            accessor,
+            NullLogger<AuditSaveChangesInterceptor>.Instance,
+            TestAuditService.Signer());
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(runtime)
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(rlsInterceptor, auditInterceptor)
+            .Options;
+
+        await using (var db = new AppDbContext(options))
+        {
+            var usuario = await db.Usuarios.SingleAsync(u => u.Id == userId);
+            usuario.SecurityStamp = Guid.NewGuid().ToString("N");
+            db.RefreshTokens.Add(new Models.RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = userId,
+                TokenHash = "hash-de-prueba",
+                SecurityStamp = Guid.NewGuid().ToString("N"),
+                CreadoEn = DateTime.UtcNow,
+                ExpiraEn = DateTime.UtcNow.AddDays(7),
+                RevocadoEn = null
+            });
+
+            var auditService = TestAuditService.Create(db, accessor);
+            await auditService.LogAsync(
+                userId,
+                AtlasBalance.API.Constants.AuditActions.MfaVerified,
+                "USUARIOS",
+                userId,
+                "127.0.0.1",
+                "{\"motivo\":\"mfa-verify-test\"}",
+                CancellationToken.None);
+
+            var action = async () => await db.SaveChangesAsync();
+            await action.Should().NotThrowAsync("V-02.08: el interceptor ya no anyade auditoria automatica en /api/auth");
+        }
+
+        await using var ownerDb2 = await ContextoConRlsAsync(owner);
+        var auditorias = await ownerDb2.Auditorias
+            .Where(a => a.TipoAccion == AtlasBalance.API.Constants.AuditActions.MfaVerified)
+            .ToListAsync();
+        auditorias.Should().HaveCount(1, "la auditoria explicita de MFA_VERIFIED debe quedar persistida y firmada");
+        var refreshTokens = await ownerDb2.RefreshTokens.Where(r => r.UsuarioId == userId).ToListAsync();
+        refreshTokens.Should().HaveCount(1, "el refresh token emitido durante el verify debe quedar persistido");
+        var usuarioTras = await ownerDb2.Usuarios.SingleAsync(u => u.Id == userId);
+        usuarioTras.SecurityStamp.Should().NotBeNullOrEmpty("el security stamp del usuario debe quedar rotado");
     }
 
     [Fact]

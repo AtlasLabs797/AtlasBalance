@@ -20,6 +20,7 @@ namespace AtlasBalance.API.Tests;
 /// responden correctamente (forma de la respuesta, orden, totales) y en tiempo razonable.
 /// No es un benchmark: los umbrales de latencia son deliberadamente generosos (smoke test).
 /// </summary>
+[Trait("Category", "Postgres")]
 [Collection(PostgresCollection.Name)]
 public sealed class VolumeSmokeTests
 {
