@@ -978,7 +978,10 @@ public class AtlasAiServiceTests
         httpFactory.RequestCount.Should().Be(1);
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_http_error");
-        audit.DetallesJson.Should().Contain("model not found");
+        audit.DetallesJson.Should().Contain("404");
+        // V-02.09 (Fase 1.4): el texto libre del proveedor NO se persiste en
+        // auditoria ni en logs. Solo quedan los campos estructurados.
+        audit.DetallesJson.Should().NotContain("model not found");
     }
 
     [Fact]
@@ -1007,7 +1010,9 @@ public class AtlasAiServiceTests
         audit.DetallesJson.Should().Contain("provider_http_error");
         audit.DetallesJson.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
         audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
-        audit.DetallesJson.Should().Contain("data policy");
+        // V-02.09 (Fase 1.4): el texto libre del proveedor NO se persiste.
+        audit.DetallesJson.Should().NotContain("data policy");
+        audit.DetallesJson.Should().NotContain("guardrail");
     }
 
     [Fact]
@@ -1033,8 +1038,10 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
         httpFactory.LastPayload.Should().NotContain("\"models\"");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
-        audit.DetallesJson.Should().Contain("No models match");
+        // V-02.09 (Fase 1.4): el texto del proveedor NO se persiste en auditoria.
+        audit.DetallesJson.Should().NotContain("No models match");
         audit.DetallesJson.Should().NotContain("Resumen de gastos");
+        audit.DetallesJson.Should().Contain("404");
     }
 
     [Fact]
@@ -1055,17 +1062,19 @@ public class AtlasAiServiceTests
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
-        // V-02.07: el mensaje que ve el usuario no puede arrastrar el texto crudo del
-        // proveedor. Se comprueba que llega el codigo de estado y que el detalle queda
-        // solo en auditoria (assert de DetallesJson mas abajo).
+        // V-02.07 + V-02.09: el mensaje que ve el usuario no puede arrastrar el texto
+        // crudo del proveedor. La auditoria solo persiste campos estructurados.
         var exception = await act.Should().ThrowAsync<IaProviderException>()
             .WithMessage("*400*");
         exception.Which.Message.Should().NotContain("array");
         httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.OpenRouterAutoModel}\"");
         httpFactory.LastPayload.Should().NotContain("\"models\"");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
-        audit.DetallesJson.Should().Contain("models");
+        // V-02.09 (Fase 1.4): el texto del proveedor ("'models' array must...")
+        // NO se persiste. La auditoria solo guarda campos estructurados.
+        audit.DetallesJson.Should().NotContain("array must have");
         audit.DetallesJson.Should().NotContain("Resumen de gastos");
+        audit.DetallesJson.Should().Contain("400");
     }
 
     [Fact]
@@ -1087,14 +1096,15 @@ public class AtlasAiServiceTests
 
         var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
-        // V-02.07: el Retry-After si es util para el usuario y se mantiene; el texto
-        // del proveedor no llega al cliente pero si queda registrado en auditoria.
+        // V-02.07: el Retry-After si es util para el usuario y se mantiene.
         var exception = await act.Should().ThrowAsync<IaProviderException>()
             .WithMessage("*Reintenta en 60 segundos*");
         exception.Which.Message.Should().NotContain("Rate limit exceeded");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_http_error");
-        audit.DetallesJson.Should().Contain("Rate limit exceeded");
+        // V-02.09 (Fase 1.4): el texto del proveedor NO se persiste, pero el
+        // Retry-After (campo estructurado) si.
+        audit.DetallesJson.Should().NotContain("Rate limit exceeded");
         audit.DetallesJson.Should().Contain("\"retry_after_seconds\":60");
         audit.DetallesJson.Should().NotContain("Resumen de gastos");
     }
@@ -1241,7 +1251,8 @@ public class AtlasAiServiceTests
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsultaError);
         audit.DetallesJson.Should().Contain("provider_response_error");
         audit.DetallesJson.Should().Contain("\"provider_response_error_kind\":\"provider_error\"");
-        audit.DetallesJson.Should().Contain("Provider disconnected");
+        // V-02.09 (Fase 1.4): el texto del proveedor NO se persiste en auditoria.
+        audit.DetallesJson.Should().NotContain("Provider disconnected");
         audit.DetallesJson.Should().NotContain("Resumen mensual privado");
     }
 

@@ -513,6 +513,10 @@ export interface IaModel {
   id: string;
   nombre: string;
   context_length: number | null;
+  // V-02.09 (Fase 1.5): el backend ya filtra a solo modelos permitidos, pero el
+  // campo explicito permite etiquetar la entrada en el UI (p.ej. "(no permitido)"
+  // si en futuro se envia el catalogo completo).
+  permitido: boolean;
 }
 
 export interface BackupItem {

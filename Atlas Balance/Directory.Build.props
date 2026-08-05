@@ -2,10 +2,10 @@
   <PropertyGroup>
     <Company>Atlas Labs</Company>
     <Product>Atlas Balance</Product>
-    <Version>2.8.0</Version>
-    <AssemblyVersion>2.8.0.0</AssemblyVersion>
-    <FileVersion>2.8.0.0</FileVersion>
-    <InformationalVersion>V-02.08</InformationalVersion>
+    <Version>2.9.0</Version>
+    <AssemblyVersion>2.9.0.0</AssemblyVersion>
+    <FileVersion>2.9.0.0</FileVersion>
+    <InformationalVersion>V-02.09</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <DefaultItemExcludes>$(DefaultItemExcludes);**/.local-build/**;**/.codex-build/**</DefaultItemExcludes>
   </PropertyGroup>

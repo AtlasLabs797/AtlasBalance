@@ -9,6 +9,135 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.09 - IA financiera: estabilizacion (Fase 1 del plan de 12 fases) (CERRADO)
+
+- **Sintoma reportado:** la IA actual arrastra seis agujeros de estabilidad
+  previos al plan de reescritura: DbContext usado en paralelo dentro de un
+  mismo metodo, resumen anual que se anadia al contexto despues del await
+  (asi que nunca llegaba al proveedor), "ultimo mes" mapeado a ultimos 30
+  dias, timeout frontend de 15s contra HttpClient de 45s, texto libre del
+  proveedor persistido en auditoria y un catalogo OpenRouter que mostraba
+  ~80 modelos cuando la allowlist solo permite 7.
+- **Decision de producto:** cerrar la Fase 1 del plan antes de empezar a
+  construir capacidades nuevas. Cualquier Feature que se asiente sobre la
+  pila actual sin estos arreglos arrastraria el problema.
+- **Solucion:**
+  - **1.1 DbContext concurrente + resumen anual perdido**
+    (`Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`):
+    `BuildFinancialContextAsync` reemplaza el `Task.WhenAll(periodTasks)` por
+    awaits secuenciales. Cada bloque se ejecuta, se espera y se concatena en
+    orden. La condicion del resumen anual se evalua junto al resto, ya no
+    despues del await. Se elimina la variable `rollingMonthStart` que ya no
+    se usa tras 1.2.
+  - **1.2 "ultimo mes" -> mes natural anterior** (mismo fichero):
+    `BuildFinancialContextAsync` y `TryResolveFinancialRankingIntent` mueven
+    el caso "ultimo mes" / "ultimos 30" / "ultimas 4 semanas" al rango
+    `previousMonthStart` - `previousMonthEnd` (mes natural anterior). Coincide
+    ahora con "mes anterior" / "mes pasado" y elimina el solapamiento con
+    el mes en curso.
+  - **1.3 Timeout frontend 15s -> 45s para `/ia/chat`**
+    (`Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`): la peticion
+    a `/ia/chat` lleva `timeout: 45_000` solo en esa llamada, alineado con
+    el `HttpClient.Timeout` del backend para OpenRouter/OpenAI/MiniMax. El
+    resto del API mantiene el timeout defensivo de 15s.
+  - **1.4 Sin texto libre del proveedor en logs ni auditoria**
+    (`AtlasAiService.cs`): `LogProviderErrorAsync` ya no serializa
+    `provider_error` en el `extra` de la auditoria. El clasificador del
+    error (data policy, ZDR, model restrictions) sigue intacto en memoria.
+    El log del servidor ahora incluye `runtime_model` ademas de `model`
+    para distinguir el modelo configurado del que el proveedor uso
+    realmente.
+  - **1.5 Catalogo OpenRouter filtrado a solo permitidos**
+    (`AtlasAiService.cs` + `DTOs/IaDtos.cs` +
+    `frontend/src/types/index.ts`): `GetModelsAsync` filtra por proveedor
+    con `IsModelAllowedForProvider` (mismo criterio que `IsAllowedModel`
+    usa en `AskAsync`, asi que el catalogo y la ejecucion nunca divergen).
+    `IaModelResponse` gana el campo `Permitido: bool`. Frontend: `IaModel`
+    declara `permitido: boolean` para que el UI pueda etiquetar en el
+    futuro si se envia el catalogo completo.
+- **Tests:**
+  - **Nuevo** `backend/tests/AtlasBalance.API.Tests/AtlasAiServiceStabilizationTests.cs`
+    con 8 tests (3 theory + 5 fact): cubre los seis arreglos. En concreto:
+    - `AskAsync_DeterministicRanking_LastMonth_Should_Use_Previous_Calendar_Month`
+      (Theory, 2 casos): gasta del mes natural anterior dentro,
+      gasto de hace 3 dias (fuera del mes natural) fuera.
+    - `AskAsync_Context_For_Annual_Question_Should_Include_Annual_Summary`:
+      blinda que el bloque "PERIODO 01/01/AAAA" llega al payload del
+      proveedor. Antes se perdia silenciosamente.
+    - `AskAsync_Context_Should_Include_All_Matched_Periods_In_Order`:
+      mes actual antes que mes anterior antes que trimestre antes que ano.
+    - `AskAsync_Audit_Should_Not_Contain_Pii_From_Prompt` (Theory, 3 casos):
+      PII en la pregunta (email, IBAN, DNI, tarjeta) no llega a la
+      auditoria.
+    - `GetModelsAsync_OpenRouter_Should_Only_Return_Allowed_Models`:
+      el catalogo de OpenRouter solo expone los 7 modelos en allowlist.
+      Verifica que Claude 3.5, GPT-4o y Llama 3.1 NO aparecen.
+    - `GetModelsAsync_OpenAi_And_MiniMax_Should_Mark_All_Models_Allowed`:
+      OpenAI y MiniMax llevan `Permitido=true`.
+    - `AskAsync_ProviderHttpError_Audit_Should_Not_Contain_Provider_Free_Text`:
+      un error 500 con credenciales y hostnames internos no llega ni a
+      la auditoria ni al mensaje al usuario.
+    - `AskAsync_ProviderHttpError_Audit_Extra_Should_Not_Have_ProviderError_Key`:
+      la clave `provider_error` no se persiste; `retry_after_seconds` si
+      (es campo estructurado, no texto libre).
+  - **Modificado** `backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`:
+    seis tests que asertaban que el texto del proveedor estaba en la
+    auditoria se invierten. Ahora verifican que NO esta y que los
+    campos estructurados (status, kind, retry_after_seconds, model,
+    runtime_model) si lo estan:
+    - `AskAsync_Should_Handle_Provider_Model_Not_Found_Without_Fallback`
+    - `AskAsync_Should_Report_OpenRouter_Data_Policy_404_As_Privacy_Routing_Error`
+    - `AskAsync_Should_Report_OpenRouter_Model_Restrictions_404_Clearly`
+    - `AskAsync_Should_Surface_OpenRouter_Provider_Error_Without_Fallback_Array`
+    - `AskAsync_Should_Report_OpenRouter_Rate_Limit_Retry_After_Clearly`
+    - `AskAsync_Should_Handle_Top_Level_Provider_Error_With_Http_200`
+- **Archivos tocados:**
+  - Backend:
+    - `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+    - `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+    - `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+      (alineamiento `app_version = V-02.09`)
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceStabilizationTests.cs` (nuevo)
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+  - Frontend:
+    - `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+    - `Atlas Balance/frontend/src/types/index.ts`
+  - Versionado y runtime:
+    - `Atlas Balance/VERSION` -> `V-02.09`
+    - `Atlas Balance/Directory.Build.props` -> `2.9.0` / `V-02.09`
+    - `Atlas Balance/frontend/package.json` -> `2.9.0` / `V-02.09`
+    - `Atlas Balance/frontend/package-lock.json` -> `2.9.0`
+    - `Atlas Balance/scripts/Build-Release.ps1` -> `V-02.09`
+    - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1` -> `V-02.09`
+    - `Atlas Balance/scripts/install.ps1` -> `V-02.09`
+    - `.github/workflows/release.yml` -> `V-02-09`
+  - Documentacion:
+    - `Documentacion/Versiones/version_actual.md` -> `V-02.09`
+    - `Documentacion/Versiones/v-02.09.md` (nuevo, plan + Fase 1)
+    - `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada)
+- **Comandos ejecutados:**
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Atlas Balance/scripts/Check-VersionAlignment.ps1" -ExpectedVersion V-02.09`
+  - `dotnet build -c Release -p:OutputPath=C:\Users\...\atlas-bin\ -p:UseAppHost=false --no-restore` (obj bloqueado por `AtlasBalance.API.exe` y `AtlasBalance.Watchdog.exe` corriendo como SYSTEM; redirigido)
+  - `dotnet test --filter 'Category!=Postgres' -p:ArtifactsPath=C:\Users\...\atlas-artifacts\ -p:UseAppHost=true`
+  - `npx tsc --noEmit` en `Atlas Balance/frontend`
+  - `npm.cmd run lint` en `Atlas Balance/frontend`
+  - `npm.cmd run test:unit` en `Atlas Balance/frontend`
+  - `git diff --check`
+- **Resultado de verificacion:**
+  - `dotnet build` (Release): **0 errores, 7 warnings preexistentes** (deprecaciones V-02.04).
+  - `dotnet test --filter 'Category!=Postgres'`: **671/690** pasan. Los 19 fallos son tests `Category=Postgres` que necesitan Docker/Testcontainers (mismo patron que la baseline V-02.08). Los 11 tests anadidos en esta fase pasan.
+  - `npx tsc --noEmit`: **OK**.
+  - `npm.cmd run lint --max-warnings 0`: **OK**.
+  - `npm.cmd run test:unit`: **46/46 PASS**.
+  - `git diff --check`: **OK** (solo CRLF, normales en Windows).
+  - `Check-VersionAlignment.ps1`: **OK** (`V-02.09` / `2.9.0`).
+- **Bloqueado / pendiente:**
+  - `npm.cmd run build` (Vite): **BLOQUEADO** por `EPERM` al copiar fuentes a `dist/`. Mismo bloqueo conocido del sandbox. La compilacion `tsc --noEmit` y el lint pasan en limpio. La build se hara en host con permisos sobre `dist/`.
+  - `dotnet test --filter 'Category=Postgres'`: no se ha ejecutado en este host (sin Docker). El test de Fase 1.1 ("se anade el resumen anual al contexto") corre sobre InMemory y solo verifica la forma del payload HTTP. El test real contra PostgreSQL con 50k filas queda pendiente para CI.
+  - Fases 2 a 12 del plan, agrupadas en Bloque B (flexibilidad), C (analisis) y D (privacidad, conversacion, UX final).
+
+---
+
 ## 2026-08-05 - V-02.08 - Permisos jerarquicos Pais > Titular > Cuenta (CERRADO)
 
 - **Sintoma reportado:** la matriz de permisos del modal de Usuarios no

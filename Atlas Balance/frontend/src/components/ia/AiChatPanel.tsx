@@ -172,6 +172,13 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
         pregunta: prompt,
         model: activeModel,
         pais_id: selectedPaisId || undefined,
+      }, {
+        // V-02.09 (Fase 1.3): el HttpClient del backend (openrouter/openai/minimax)
+        // tiene timeout 45s; el default de axios es 15s, asi que cualquier consulta
+        // medianamente larga se cancela antes de poder recibir respuesta. La
+        // /ia/chat es la unica ruta con esta ventana amplia; el resto mantiene
+        // el timeout defensivo de 15s.
+        timeout: 45_000,
       });
       setMessages((current) => [
         ...current,

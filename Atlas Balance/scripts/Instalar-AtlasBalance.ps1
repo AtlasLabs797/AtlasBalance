@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-02.08"
+$AppVersion = "V-02.09"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false

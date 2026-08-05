@@ -70,14 +70,23 @@ public sealed class AtlasAiService : IAtlasAiService
         IReadOnlyList<IaModelResponse> models = normalizedProvider switch
         {
             "OPENAI" => AiConfiguration.OpenAiModels
-                .Select(x => new IaModelResponse { Id = x, Nombre = x })
+                .Select(x => new IaModelResponse { Id = x, Nombre = x, Permitido = true })
                 .ToList(),
             "MINIMAX" => AiConfiguration.MiniMaxModels
-                .Select(x => new IaModelResponse { Id = x, Nombre = x })
+                .Select(x => new IaModelResponse { Id = x, Nombre = x, Permitido = true })
                 .ToList(),
             "OPENROUTER" => await LoadOpenRouterModelsAsync(cancellationToken),
             _ => throw new IaConfigurationException("Proveedor de IA no soportado.")
         };
+
+        // V-02.09 (Fase 1.5): solo se exponen al frontend los modelos que pasan
+        // la allowlist del backend. Antes, el catalogo de OpenRouter mostraba
+        // ~80 modelos y el usuario podia seleccionar uno que no estaba en
+        // AllowedOpenRouterModels, recibiendo un 400 al consultar. El filtro
+        // resuelve la diferencia entre lo que se ve y lo que se puede usar.
+        models = models
+            .Where(x => IsModelAllowedForProvider(normalizedProvider, x.Id))
+            .ToList();
 
         var term = search?.Trim();
         if (!string.IsNullOrWhiteSpace(term))
@@ -99,6 +108,20 @@ public sealed class AtlasAiService : IAtlasAiService
         }
 
         return models.Take(80).ToList();
+    }
+
+    private static bool IsModelAllowedForProvider(string normalizedProvider, string? modelId)
+    {
+        return normalizedProvider switch
+        {
+            "OPENAI" => AiConfiguration.IsAllowedOpenAiModel(modelId),
+            "MINIMAX" => AiConfiguration.IsAllowedMiniMaxModel(modelId),
+            // Para OpenRouter el catalogo remoto puede traer modelos que no
+            // esten en la allowlist local; el caller ya valida con
+            // IsValidOpenRouterModelId, aqui solo pedimos el allowlist.
+            "OPENROUTER" => AiConfiguration.IsAllowedOpenRouterModel(modelId),
+            _ => false
+        };
     }
 
     public async Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null)
@@ -260,7 +283,6 @@ public sealed class AtlasAiService : IAtlasAiService
                         http_client = providerCall.HttpClientName,
                         used_http_fallback = providerCall.UsedFallback,
                         runtime_model = runtimeModel,
-                        provider_error = providerError,
                         retry_after_seconds = retryAfterSeconds
                     });
                 throw new IaProviderException(BuildProviderHttpErrorMessage(state, (int)response.StatusCode, LogScrubber.Scrub(providerError), retryAfterSeconds));
@@ -286,8 +308,7 @@ public sealed class AtlasAiService : IAtlasAiService
                         used_http_fallback = providerCall.UsedFallback,
                         runtime_model = runtimeModel,
                         provider_response_error_kind = ex.Kind,
-                        finish_reason = ex.FinishReason,
-                        provider_error = ex.ProviderError
+                        finish_reason = ex.FinishReason
                     });
                 throw new IaProviderException(BuildProviderResponseErrorMessage(state, ex));
             }
@@ -897,9 +918,12 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalized, "ultimos 30", "ultimos treinta", "ultimo mes", "ultimas 4 semanas", "ultimas cuatro semanas"))
         {
-            from = today.AddDays(-30);
-            to = today;
-            periodLabel = "los ultimos 30 dias";
+            // V-02.09 (Fase 1.2): "ultimo mes" pasa a ser el mes natural anterior
+            // (antes eran los ultimos 30 dias, lo que en meses de 31 dias se solapaba
+            // con el mes en curso). Coincide con "mes anterior"/"mes pasado".
+            from = previousMonthStart;
+            to = previousMonthEnd;
+            periodLabel = "el mes anterior";
         }
         else if (ContainsAny(normalized, "mes pasado", "mes anterior"))
         {
@@ -1077,7 +1101,6 @@ public sealed class AtlasAiService : IAtlasAiService
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
-        var rollingMonthStart = today.AddDays(-30);
         var previousMonthStart = monthStart.AddMonths(-1);
         var previousMonthEnd = monthStart.AddDays(-1);
         var quarterStart = new DateOnly(today.Year, ((today.Month - 1) / 3) * 3 + 1, 1);
@@ -1140,38 +1163,33 @@ public sealed class AtlasAiService : IAtlasAiService
             builder.AppendLine($"- {SanitizeContextText(row.Titular)} | {SanitizeContextText(row.Cuenta)} | {row.Divisa} | saldo {FormatMoney(row.Saldo)} | fecha {row.Fecha:dd/MM/yyyy}");
         }
 
-        // V-02-05 (MED-20): ejecutar los period summary en paralelo. Cada AppendPeriod
-        // escribe a un StringBuilder independiente y luego se concatenan en orden.
-        var periodTasks = new List<Task<StringBuilder>>();
+        // V-02.09 (Fase 1.1): DbContext no es thread-safe. Los period summary deben
+        // ejecutarse en serie, no con Task.WhenAll. Ademas, el resumen anual se
+        // anadia DESPUES del await, asi que la condicion nunca llegaba a ejecutarse
+        // y el bloque anual se perdia silenciosamente. Ahora cada bloque se
+        // ejecuta, se espera y se concatena en orden.
         if (ContainsAny(normalizedQuestion, "mes", "mensual", "actual"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, monthStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, monthStart, today, cancellationToken));
         }
+        // V-02.09 (Fase 1.2): "ultimo mes" pasa a ser el mes natural anterior
+        // (antes eran los ultimos 30 dias, lo que en meses de 31 dias se solapaba
+        // con el mes en curso). Coincide ahora con "mes anterior"/"mes pasado".
         if (ContainsAny(normalizedQuestion, "ultimo mes", "ultimos 30", "ultimas 4 semanas"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, rollingMonthStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken));
         }
         if (ContainsAny(normalizedQuestion, "mes pasado", "mes anterior"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken));
         }
         if (ContainsAny(normalizedQuestion, "trimestre", "trimestral"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, quarterStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, quarterStart, today, cancellationToken));
         }
-        // V-02-05 (MED-20): esperar en paralelo y concatenar en orden.
-        if (periodTasks.Count > 0)
-        {
-            var results = await Task.WhenAll(periodTasks);
-            foreach (var sub in results)
-            {
-                builder.Append(sub);
-            }
-        }
-
         if (ContainsAny(normalizedQuestion, "ano", "anual", "2026", "este ano"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, yearStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, yearStart, today, cancellationToken));
         }
 
         builder.AppendLine();
@@ -1618,15 +1636,19 @@ public sealed class AtlasAiService : IAtlasAiService
         CancellationToken cancellationToken,
         object? extra = null)
     {
-        // V-02.07: desde que el detalle del proveedor dejo de viajar al cliente, la
-        // auditoria era el unico rastro del fallo. Se replica al log del servidor para
-        // poder diagnosticar sin consultar la BD. El texto ya viene redactado de
-        // ShortProviderPayload; aqui no se anade nada crudo.
+        // V-02.09 (Fase 1.4): solo se registran en log y auditoria los campos
+        // estructurados del error (provider, modelo, status, finish_reason, retry_after).
+        // El texto libre del proveedor (provider_error) NO se persiste: el regex
+        // de redaction era una red de seguridad fragil y podia filtrar keys API si
+        // el formato del error cambiaba. El clasificador (IsOpenRouterDataPolicyError,
+        // IsOpenRouterModelRestrictionError) sigue funcionando sobre el payload
+        // en memoria, pero no se escribe.
         _logger.LogWarning(
-            "Error de proveedor IA: motivo={Reason} provider={Provider} model={Model} status={StatusCode} detalle={Extra}",
+            "Error de proveedor IA: motivo={Reason} provider={Provider} model={Model} runtime_model={RuntimeModel} status={StatusCode} detalle={Extra}",
             reason,
             state.Provider,
             state.Model,
+            ProviderRuntimeModel(state),
             statusCode,
             extra is null ? "-" : JsonSerializer.Serialize(extra));
 

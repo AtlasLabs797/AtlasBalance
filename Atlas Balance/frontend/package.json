@@ -1,8 +1,8 @@
 {
   "name": "atlas-balance-frontend",
   "private": true,
-  "version": "2.8.0",
-  "appVersion": "V-02.08",
+  "version": "2.9.0",
+  "appVersion": "V-02.09",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -81,6 +81,12 @@ public sealed class IaModelResponse
     public string Id { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public int? ContextLength { get; set; }
+    // V-02.09 (Fase 1.5): true si el modelo esta en la allowlist del backend.
+    // Antes, el catalogo de OpenRouter mostraba ~80 modelos libres y los usuarios
+    // podian intentar usar uno que no estaba en AllowedOpenRouterModels, recibiendo
+    // un 400 al preguntar. Ahora el backend filtra a solo los permitidos y marca
+    // el campo para que el frontend pueda etiquetar la entrada.
+    public bool Permitido { get; set; } = true;
 }
 
 public sealed class IaChatResponse
