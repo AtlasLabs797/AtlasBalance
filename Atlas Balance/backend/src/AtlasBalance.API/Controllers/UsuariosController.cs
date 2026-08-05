@@ -232,6 +232,20 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = roleValidation.Error });
         }
 
+        // V-02.08: deteccion de redundancias. Antes se guardaban en silencio y
+        // solo ocupaban espacio en PERMISOS_USUARIO y en la auditoria de cambios.
+        // Ahora se devuelven al admin para que decida: el contrato es 409 + lista
+        // de pares (redundante, cubierta_por) ordenados por indice de entrada.
+        var redundancias = DetectPermisosRedundantes(permisos);
+        if (redundancias.Count > 0)
+        {
+            return Conflict(new
+            {
+                error = "Hay permisos redundantes. Quita los más restrictivos o amplía los más generales antes de guardar.",
+                redundantes = redundancias
+            });
+        }
+
         var before = await LoadPermisosAuditSnapshotAsync(id, cancellationToken);
         await UpsertPermisosAsync(id, permisos, cancellationToken);
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
@@ -822,6 +836,14 @@ public sealed class UsuariosController : ControllerBase
     {
         foreach (var permiso in permisos)
         {
+            // V-02.08: si llega cuenta, titular o pais son obligatorios. Una fila
+            // "cuenta sin contexto" no se puede autorizar porque deja el alcance
+            // sin dimensiones mas amplias y rompe la jerarquia Pais > Titular > Cuenta.
+            if (permiso.CuentaId.HasValue && !permiso.TitularId.HasValue && !permiso.PaisId.HasValue)
+            {
+                return (false, "Una fila con cuenta debe indicar tambien el titular y/o el pais");
+            }
+
             if (permiso.CuentaId.HasValue)
             {
                 var cuenta = await _dbContext.Cuentas
@@ -833,6 +855,8 @@ public sealed class UsuariosController : ControllerBase
                     return (false, $"Cuenta inválida: {permiso.CuentaId}");
                 }
 
+                // V-02.08: titular y pais se validan de forma independiente.
+                // Antes solo se comprobaban al estar ambos presentes.
                 if (permiso.TitularId.HasValue && cuenta.TitularId != permiso.TitularId.Value)
                 {
                     return (false, "La cuenta indicada no pertenece al titular seleccionado");
@@ -877,6 +901,76 @@ public sealed class UsuariosController : ControllerBase
             ? (true, null)
             : (false, "Un gerente necesita al menos un permiso de datos: global, por país, titular o cuenta.");
     }
+
+    // V-02.08: lista de pares (redundante, cubierta_por) para que el admin decida.
+    // Politica: dos filas son redundantes si tienen los mismos flags y el scope
+    // de una cubre al de la otra (cada dimension: null O igual). Se reportan en
+    // orden de entrada para que el dialog del frontend pueda destacar las filas
+    // a retirar.
+    private static IReadOnlyList<object> DetectPermisosRedundantes(IReadOnlyList<SavePermisoUsuarioRequest> permisos)
+    {
+        var redundantes = new List<object>();
+        for (var i = 0; i < permisos.Count; i++)
+        {
+            for (var j = i + 1; j < permisos.Count; j++)
+            {
+                var outer = permisos[i];
+                var inner = permisos[j];
+                if (!PermisosFlagsCoinciden(outer, inner))
+                {
+                    continue;
+                }
+                if (!ScopeCubiertoPor(outer, inner))
+                {
+                    continue;
+                }
+                if (ScopesIguales(outer, inner))
+                {
+                    // Duplicado literal: j coincide con i, reporta i como cubre a j.
+                    redundantes.Add(new
+                    {
+                        scope = ScopeDto(inner),
+                        cubierta_por = ScopeDto(outer)
+                    });
+                }
+                else
+                {
+                    redundantes.Add(new
+                    {
+                        scope = ScopeDto(inner),
+                        cubierta_por = ScopeDto(outer)
+                    });
+                }
+            }
+        }
+        return redundantes;
+    }
+
+    private static bool PermisosFlagsCoinciden(SavePermisoUsuarioRequest a, SavePermisoUsuarioRequest b) =>
+        a.PuedeVerCuentas == b.PuedeVerCuentas &&
+        a.PuedeAgregarLineas == b.PuedeAgregarLineas &&
+        a.PuedeEditarLineas == b.PuedeEditarLineas &&
+        a.PuedeEliminarLineas == b.PuedeEliminarLineas &&
+        a.PuedeImportar == b.PuedeImportar &&
+        a.PuedeRevisarLineas == b.PuedeRevisarLineas &&
+        a.PuedeAprobarImportaciones == b.PuedeAprobarImportaciones &&
+        a.PuedeConciliar == b.PuedeConciliar &&
+        a.PuedeCerrarConciliacion == b.PuedeCerrarConciliacion;
+
+    private static bool ScopeCubiertoPor(SavePermisoUsuarioRequest outer, SavePermisoUsuarioRequest inner) =>
+        (outer.PaisId == null || outer.PaisId == inner.PaisId) &&
+        (outer.TitularId == null || outer.TitularId == inner.TitularId) &&
+        (outer.CuentaId == null || outer.CuentaId == inner.CuentaId);
+
+    private static bool ScopesIguales(SavePermisoUsuarioRequest a, SavePermisoUsuarioRequest b) =>
+        a.PaisId == b.PaisId && a.TitularId == b.TitularId && a.CuentaId == b.CuentaId;
+
+    private static object ScopeDto(SavePermisoUsuarioRequest permiso) => new
+    {
+        pais_id = permiso.PaisId,
+        titular_id = permiso.TitularId,
+        cuenta_id = permiso.CuentaId,
+    };
 
     private static bool GrantsAccountDataAccess(SavePermisoUsuarioRequest permiso) =>
         permiso.PuedeVerCuentas ||

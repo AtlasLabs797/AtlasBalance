@@ -194,9 +194,9 @@ public sealed class AuditoriaAppendOnlyPostgresTests
                 Email = "mfa-verify@example.test",
                 NombreCompleto = "MFA Verify Test",
                 PasswordHash = "hash-de-prueba",
-                Rol = AtlasBalance.API.Constants.RolUsuario.Usuario,
-                MfaHabilitado = true,
-                MfaSecretProtegido = "secret-cifrado",
+                Rol = RolUsuario.EMPLEADO,
+                MfaEnabled = true,
+                MfaSecret = "secret-cifrado",
                 SecurityStamp = Guid.NewGuid().ToString("N")
             });
             await ownerDb.SaveChangesAsync();

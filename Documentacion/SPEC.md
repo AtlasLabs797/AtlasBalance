@@ -4206,6 +4206,36 @@ No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mism
 
 > \* Solo cuentas/columnas autorizadas por el admin para ese usuario
 
+### Jerarquia Pais > Titular > Cuenta (V-02.08)
+
+`PERMISOS_USUARIO` opera como interseccion estricta en las tres
+dimensiones de alcance (Pais, Titular, Cuenta). Cada dimension se acota cuando
+se selecciona; si esta en blanco, ampla el alcance a todas las opciones de
+esa dimension. La fila con cuenta debe llevar al menos titular o pais
+(backend rechaza con 400); las filas redundantes devuelven `409` con la lista
+`redundantes: [{ scope, cubierta_por }]`.
+
+| Pais        | Titular        | Cuenta        | Alcance efectivo                                |
+|-------------|----------------|---------------|-------------------------------------------------|
+| Todos       | Todos          | (vacio)       | Todas las cuentas de todos los titulares        |
+| Todos       | Uno            | (vacio)       | Todas las cuentas de ese titular, en cualquier pais |
+| Todos       | Uno            | Una especifica | Solo esa cuenta                                 |
+| Uno         | Todos          | (vacio)       | Todas las cuentas de cualquier titular en ese pais |
+| Uno         | Uno            | (vacio)       | Todas las cuentas de ese titular en ese pais     |
+| Uno         | Uno            | Una especifica | Solo esa cuenta                                 |
+
+Implementacion: `UserAccessService.ApplyCuentaScope`
+(`Atlas Balance/backend/src/AtlasBalance.API/Services/UserAccessService.cs:181-207`)
+aplica la interseccion por la consulta EF;
+
+`(p.PaisId == null || p.PaisId == c.PaisId) &&
+ (p.TitularId == null || p.TitularId == c.TitularId) &&
+ (p.CuentaId == null || p.CuentaId == c.Id)`.
+
+El cache de scope se invalida al cambiar `PERMISOS_USUARIO`
+(`Data/DashboardCacheInvalidationInterceptor.cs:188`).
+
+
 
 
 ---

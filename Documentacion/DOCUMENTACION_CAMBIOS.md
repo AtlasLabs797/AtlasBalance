@@ -9,6 +9,145 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.08 - Permisos jerarquicos Pais > Titular > Cuenta (CERRADO)
+
+- **Sintoma reportado:** la matriz de permisos del modal de Usuarios no
+  dejaba claro que la jerarquia opera como interseccion estricta. Una fila
+  con `cuenta_id` sin `titular_id` ni `pais_id` pasaba (alcance mal definido).
+  Filas redundantes se guardaban en silencio y solo ocupaban sitio en
+  `PERMISOS_USUARIO` y en la auditoria.
+- **Decision de producto:** el comportamiento runtime de
+  `UserAccessService.ApplyCuentaScope` ya era interseccion estricta y se
+  mantiene sin cambios. Lo que se refuerza es:
+  1. Validacion de entrada: rechazar `cuenta_id` sin titular ni pais (400).
+  2. Validacion titular-cuenta y pais-cuenta independientes cuando llega
+     cuenta (antes anidadas).
+  3. Deduplicacion con `409` + lista `redundantes`, no silenciosa.
+  4. UX del modal: coherencia Pais/Titular/Cuenta en vivo, dropdown Titular
+     con label dinamico, preview de alcance por fila.
+- **Solucion:**
+  - Backend (`Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`):
+    - `ValidatePermisosAsync` rechaza fila `(cuenta != null, titular == null, pais == null)`
+      con 400. Las validaciones titular-cuenta y pais-cuenta salen del
+      bloque anidado y se ejecutan siempre que `cuenta_id` este presente.
+    - Nuevo `DetectPermisosRedundantes` antes de persistir en
+      `GuardarPermisos`: dos filas con mismo flagset y misma cobertura en
+      todas las dimensiones (`outer == null || outer == inner` en cada
+      dimension) → `409 Conflict` con body
+      `{ error, redundantes: [{ scope, cubierta_por }] }`.
+    - Helpers `PermisosFlagsCoinciden`, `ScopeCubiertoPor`, `ScopesIguales`,
+      `ScopeDto` privados para mantener la logica aislada y testeable.
+  - Frontend:
+    - `frontend/src/utils/permisosFormUtils.ts` con helpers puros:
+      `computeCoherence` (coherent | partial | dangling),
+      `computeTitularesParaPermiso`, `computeCuentasParaPermiso`,
+      `computeAlcance`, `corregirTitularYPaisDesdeCuenta`,
+      `titularDropdownPlaceholder`, `cuentaDropdownPlaceholder`,
+      `paisDropdownPlaceholder`.
+    - `frontend/src/components/usuarios/UsuarioModal.tsx` los consume:
+      - Dropdown Titular cambia de "Global o por cuenta" a
+        "Todos los titulares" / "Todos los titulares del pais" segun si
+        hay pais.
+      - Preview `Afecta a N cuenta(s)` por fila, calculado sobre el
+        catalogo en memoria.
+      - Barra de aviso si la coherencia es `partial` con tres botones:
+        "Mantener solo la cuenta", "Mantener pais y titular" y
+        "Corregir a la realidad de la cuenta".
+      - Aviso bloqueante si la coherencia es `dangling` (cuenta borrada).
+      - `parseRedundanciasDedup` y `redundanciasToHumanMessage`
+        muestran las redundancias del 409 en lenguaje entendible.
+  - Docs:
+    - `Documentacion/DOCUMENTACION_USUARIO.md` anade mini-tabla 6
+      combinaciones de Pais/Titular/Cuenta con alcance efectivo, justo
+      despues de la frase sobre "interseccion exacta".
+    - `Documentacion/SPEC.md` seccion 12 (Matriz de Permisos) recibe la
+      subseccion "Jerarquia Pais > Titular > Cuenta (V-02.08)" con la misma
+      tabla, la formula de `ApplyCuentaScope` y la nota de cache
+      invalidation.
+    - `Documentacion/Versiones/v-02.08.md` agrega bloque "Jerarquia de
+      permisos Pais > Titular > Cuenta" con cambios backend/frontend/tests
+      y actualiza "Verificacion local".
+- **Tests:**
+  - `backend/tests/AtlasBalance.API.Tests/UserAccessScopeMatrixTests.cs` (nuevo):
+    8 casos cubriendo `ApplyCuentaScope` y `GetScopeAsync` con
+    `Titular` con cuentas en dos paises, `Pais` solo, `Titular` solo,
+    `Titular + Pais`, `Cuenta` especifica, etc.
+  - `backend/tests/AtlasBalance.API.Tests/UsuariosControllerValidatePermisosTests.cs`
+    (nuevo, 7 casos): `cuenta sin titular/país` → 400, `cuenta + titular
+    que no la posee` → 400, `cuenta + país que no la posee` → 400,
+    `cuenta + titular + pais` valido → 200, `cuenta + titular sin pais`
+    valido → 200, `cuenta + pais sin titular` valido → 200,
+    `GuardarPermisoCuenta` con titular+pais incoherentes con la cuenta del
+    path → 400.
+  - `backend/tests/AtlasBalance.API.Tests/UsuariosControllerDeduplicacionTests.cs`
+    (nuevo, 4 casos): global + por pais → 409, `pais+titular` +
+    `pais+titular+cuenta` → 409, dos globals con flags distintos → 200,
+    `pais A + pais B` disjuntos → 200.
+  - `frontend/tests/permisosFormUtils.test.ts` (nuevo, 21 tests): cobertura
+    de los helpers extraidos. Se anade a `tsconfig.test.v2.json` y a la
+    lista de scripts de `package.json:test:unit`.
+- **Archivos tocados:**
+  - Backend:
+    - `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UserAccessScopeMatrixTests.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerValidatePermisosTests.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerDeduplicacionTests.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuditoriaAppendOnlyPostgresTests.cs`
+      (fix oportunista de MfaHabilitado→MfaEnabled para desbloquear build,
+      ver nota abajo).
+  - Frontend:
+    - `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
+    - `Atlas Balance/frontend/src/utils/permisosFormUtils.ts` (nuevo)
+    - `Atlas Balance/frontend/tests/permisosFormUtils.test.ts` (nuevo)
+    - `Atlas Balance/frontend/tsconfig.test.v2.json`
+    - `Atlas Balance/frontend/package.json`
+  - Documentacion:
+    - `Documentacion/DOCUMENTACION_USUARIO.md`
+    - `Documentacion/SPEC.md`
+    - `Documentacion/Versiones/v-02.08.md`
+    - `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada).
+- **Verificacion:**
+  - `npm.cmd exec tsc --noEmit -p tsconfig.json`: OK.
+  - `npm.cmd run lint -- --max-warnings 0`: OK.
+  - `npm.cmd run test:unit`: **46/46 PASS** (21 nuevos
+    + 25 previos).
+  - `npm.cmd run build`: BLOQUEADO por `EPERM` conocido del sandbox al
+    copiar `public/fonts/*.ttf` a `dist/fonts/` (AGENTS.md §8). `tsc`
+    pasa. Build de Vite requiere host con permisos sobre `dist/`. Sin
+    cambios que toquen public/.
+  - `dotnet build` con `BaseIntermediateOutputPath` redirigido:
+    `AtlasBalance.API.csproj` 0 errores.
+  - `dotnet test --filter "Category!=Postgres"`:
+    **660/679 PASS**. Los 19 fallos son tests `Category=Postgres` que
+    requieren Docker (no disponible local). Mis 3 nuevas clases
+    (`UserAccessScopeMatrixTests`, `UsuariosControllerValidatePermisosTests`,
+    `UsuariosControllerDeduplicacionTests`) pasan enteras.
+  - Verificacion visual del modal: NO realizada. Sin servidor dev de larga
+    duracion en sandbox (AGENTS.md §8). Queda pendiente revisar render en
+    siguiente arranque del cliente. Revisar:
+    - Dropdown Titular muestra "Todos los titulares" o "Todos los
+      titulares del pais" segun pais.
+    - Fila con Pais+Titular+Cuenta coherente: preview "Afecta a 1
+      cuenta".
+    - Fila con Pais+Titular pero Cuenta ajena: aparece la barra con 3
+      botones.
+    - Fila con cuenta borrada: aviso bloqueante.
+    - Enviar dos filas redundantes (global + por pais) y comprobar que
+      el modal muestra "Hay permisos redundantes (1): ...".
+- **Fix oportunista (auditoria build):** `AuditoriaAppendOnlyPostgresTests.cs`
+  referenciaba campos inexistentes (`MfaHabilitado`, `MfaSecretProtegido`)
+  y una llamada a `RolUsuario.Usuario` que no existe. Renombrado a
+  `MfaEnabled`, `MfaSecret` y `RolUsuario.EMPLEADO`. Minimo toque para
+  desbloquear la build; la fila no se usa en los tests InMemory ni en los
+  habilitados por `Category!=Postgres`. El test en si requiere Postgres.
+- **Pendiente:** la UI nueva del modal (los 3 botones, el preview, el
+  label dinamico) no ha sido inspeccionada visualmente. Regla del sandbox.
+  Si el operador detecta que el ancho de la barra de aviso rompe con
+  nombres de titular largos, ajustar `.permiso-coherence-actions` y
+  `.permiso-coherence-warning` en el CSS que toque.
+
+---
+
 ## 2026-08-05 - V-02.08 - Pestanitas del dashboard y grafico de evolucion (CERRADO)
 
 - **Sintomas reportados:**

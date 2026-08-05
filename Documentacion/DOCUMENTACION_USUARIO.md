@@ -365,6 +365,23 @@ En `Usuarios`, el modal de alta/edicion incluye `Acceso a todas las cuentas`. Es
 
 Para permisos manuales, marca `Pais` si el usuario solo debe operar en un pais. Luego puedes reducir mas con `Titular` y `Cuenta`. Un permiso con pais y titular no significa "todo el pais o todo el titular"; significa la interseccion exacta.
 
+### Jerarquia Pais > Titular > Cuenta
+
+La jerarquia opera asi: cada dimension se acota cuando se selecciona. Si una dimension esta en blanco, el alcance se ampla a todas sus opciones. Una cuenta solo puede ir acompanada de al menos un titular o pais; una fila "solo cuenta" no se acepta.
+
+| Pais        | Titular        | Cuenta        | Alcance efectivo                                |
+|-------------|----------------|---------------|-------------------------------------------------|
+| Todos       | Todos          | (vacio)       | Todas las cuentas de todos los titulares        |
+| Todos       | Uno            | (vacio)       | Todas las cuentas de ese titular, en cualquier pais |
+| Todos       | Uno            | Una especifica | Solo esa cuenta                                 |
+| Uno         | Todos          | (vacio)       | Todas las cuentas de cualquier titular en ese pais |
+| Uno         | Uno            | (vacio)       | Todas las cuentas de ese titular en ese pais     |
+| Uno         | Uno            | Una especifica | Solo esa cuenta                                 |
+
+Si una cuenta se asigna acompanada de titular o pais distintos al real, el backend rechaza el guardado y el modal muestra la incoherencia en vivo con tres botones: "Mantener solo la cuenta", "Mantener pais y titular" y "Corregir a la realidad de la cuenta". El modal tambien calcula y muestra "Afecta a N cuenta(s)" en cada fila antes de guardar.
+
+Si envias dos o mas filas con los mismos flags y una cubre a la otra en todas las dimensiones, el backend devuelve `409 Conflict` con la lista de redundancias y no guarda nada. Quita las restrictivas o ampla las generales antes de reintentar.
+
 Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
 
 Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas visibles en `Extractos` no concede permiso de edicion; la edicion de columnas se decide por los permisos configurados en `Usuarios`.
