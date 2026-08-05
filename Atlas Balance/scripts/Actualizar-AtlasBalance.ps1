@@ -867,6 +867,7 @@ foreach ($script in @(
     "Grant-OwnerBypassRls.ps1",
     "Test-BackupRestore.ps1",
     "Test-AtlasSecrets.ps1",
+    "Test-AtlasSmtp.ps1",
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1",
@@ -918,19 +919,25 @@ if ([string]::IsNullOrWhiteSpace($appUrl)) {
 
 Start-Sleep -Seconds 5
 $healthOk = $false
+# V-02.08: el incidente V-02.07 demostro que /api/health devuelve 200 con
+# login 500. Si el actualizador se conforma con eso, declara OK un sistema
+# roto. /api/health/functional verifica que el contexto RLS esta firmado
+# y que un INSERT firmado en AUDITORIAS funciona con el rol runtime. Si
+# falla, el actualizador hace rollback del DLL.
+$healthPath = "/api/health/functional"
 $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
 if ($curl) {
-    $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl/api/health" 2>$null)
+    $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl$healthPath" 2>$null)
     $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
     if (-not $healthOk -and -not $appUrl.Equals("https://localhost", [StringComparison]::OrdinalIgnoreCase)) {
-        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://localhost/api/health" 2>$null)
+        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://localhost$healthPath" 2>$null)
         $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
     }
 } else {
     try {
         # V-02-05 (CONFIG-020): evitar tocar el callback global. Usar -SkipCertificateCheck
         # en este request especifico (es un health check self-signed durante instalacion).
-        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
+        $health = Invoke-WebRequest -Uri "$appUrl$healthPath" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
         $healthOk = ($health.StatusCode -eq 200)
     } catch {
         $healthOk = $false
@@ -939,11 +946,11 @@ if ($curl) {
 
 if (-not $healthOk) {
     Restore-UpdatedBinaries -RollbackRoot $rollbackRoot -InstallPath $InstallPath -ApiTarget $apiTarget -WatchdogTarget $watchdogTarget
-    throw "La actualizacion fallo porque la API no respondio al health check. Se restauraron los binarios anteriores desde $rollbackRoot."
+    throw "La actualizacion fallo porque la API no respondio al health check funcional ($healthPath). Se restauraron los binarios anteriores desde $rollbackRoot."
 }
 
 Write-Host ""
 Write-Host "Atlas Balance actualizado a $newVersion." -ForegroundColor Green
 Write-Host "Copia rollback de binarios: $rollbackRoot" -ForegroundColor Cyan
 Write-Host "La base de datos no se reemplazo; las migraciones se aplican al arrancar la API." -ForegroundColor Cyan
-Write-Host "Health check OK: $appUrl/api/health" -ForegroundColor Green
+Write-Host "Health check OK: $appUrl$healthPath" -ForegroundColor Green

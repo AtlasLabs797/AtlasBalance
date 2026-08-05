@@ -203,6 +203,20 @@ function Test-VolumeEncryption {
         if ([string]::IsNullOrWhiteSpace($drive) -or $checked.ContainsKey($drive)) { continue }
         $checked[$drive] = $true
 
+        # V-02.08: distinguir "BitLocker no esta instalado" de "el volumen esta
+        # sin cifrar". Get-BitLockerVolume no existe en algunas ediciones
+        # de Windows Server (sin BitLocker) y el catch original emitia
+        # exactamente la misma advertencia para los dos casos, lo que
+        # ocultaba el verdadero problema al operador.
+        if ($null -eq (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue)) {
+            Write-Warning @"
+Esta edicion de Windows no expone Get-BitLockerVolume. No se puede
+verificar el cifrado del volumen $drive desde este instalador.
+"-ForegroundColor Yellow
+            Write-Host "    Verifica manualmente con: manage-bde -status $drive  o  fsutil behavior query disableencryption" -ForegroundColor Cyan
+            continue
+        }
+
         $status = $null
         try {
             $status = Get-BitLockerVolume -MountPoint $drive -ErrorAction Stop
@@ -503,6 +517,96 @@ function Invoke-Psql {
     }
 }
 
+function Test-PostgresPreflight {
+    param([string]$PostgresBin)
+
+    $psql = Join-Path $PostgresBin "psql.exe"
+    if (-not (Test-Path $psql)) {
+        throw "No se encontro psql.exe en $PostgresBin."
+    }
+
+    Write-Host "PostgreSQL preflight: comprobando version, extensiones y el rol..." -ForegroundColor Cyan
+
+    # 1. Version >= 16. Atlas Balance depende de caracteristicas de PG 16
+    #    (FORCE RLS, MERGE, etc.). Un PG 13 impediria migrar.
+    $serverVersion = Invoke-Psql -PsqlExe $psql -Scalar -Sql "SHOW server_version_num;"
+    $versionNum = 0
+    if (-not [int]::TryParse($serverVersion, [ref]$versionNum)) {
+        throw "No se pudo leer server_version_num de PostgreSQL (PSQL devolvio '$serverVersion')."
+    }
+    if ($versionNum -lt 160000) {
+        throw "PostgreSQL $versionNum detectado. Atlas Balance requiere PostgreSQL >= 16.000. Actualiza la instancia o instala una version soportada."
+    }
+    Write-Host "  [OK] PostgreSQL $($versionNum) >= 160000." -ForegroundColor Green
+
+    # 2. Extension pgcrypto. V-02.07 lo necesita para Reset-AdminPassword
+    #    (bcrypt con pgcrypto) y para la huella del importador.
+    $pgcrypto = Invoke-Psql -PsqlExe $psql -Database $DbName -Scalar -Sql "SELECT extname FROM pg_extension WHERE extname = 'pgcrypto';"
+    if ($pgcrypto -ne "pgcrypto") {
+        throw "La base de datos $DbName no tiene la extension pgcrypto instalada. Ejecuta: CREATE EXTENSION IF NOT EXISTS pgcrypto; con un superusuario."
+    }
+    Write-Host "  [OK] Extension pgcrypto instalada en $DbName." -ForegroundColor Green
+
+    # 3. El rol owner debe ser NOSUPERUSER. El instalador ya lo crea con
+    #    NOSUPERUSER pero un operador que apunte a una instancia existente
+    #    podria tener un owner con superpoderes: defenderse del propio
+    #    instalador es absurdo, pero comprobarlo aqui evita que el
+    #    incidente V-02.07 (mezcla managed->external) termine con un
+    #    superusuario ejecutando backups.
+    $ownerRole = Escape-SqlLiteral $DbOwnerUser
+    $ownerAttrs = Invoke-Psql -PsqlExe $psql -Database "postgres" -Scalar -Sql "SELECT rolsuper::text || '|' || rolbypassrls::text FROM pg_roles WHERE rolname = '$ownerRole';"
+    if ([string]::IsNullOrWhiteSpace($ownerAttrs)) {
+        Write-Host "  [AVISO] El rol $DbOwnerUser no existe todavia. Se creara con NOSUPERUSER NOBYPASSRLS por defecto." -ForegroundColor Yellow
+    }
+    else {
+        $parts = $ownerAttrs -split '\|'
+        $isSuper = ($parts[0].Trim() -eq "t")
+        $isBypassRls = ($parts[1].Trim() -eq "t")
+        if ($isSuper) {
+            Write-Host "  [AVISO] El rol $DbOwnerUser es SUPERUSER. Atlas Balance lo requiere NOSUPERUSER para que el modelo RLS funcione contra el rol." -ForegroundColor Yellow
+        }
+        if (-not $isBypassRls) {
+            Write-Host "  [AVISO] El rol $DbOwnerUser no tiene BYPASSRLS. Los backups con pg_dump fallaran contra tablas con FORCE ROW LEVEL SECURITY." -ForegroundColor Yellow
+        }
+    }
+
+    # 4. Smoke-test de RLS firmado. Inserta una fila firmada en AUDITORIAS
+    #    con el contexto auth anonimo y revierte. Es la misma traza que
+    #    sigue AuditService al loguear LOGIN_MFA_REQUIRED. Si el incidente
+    #    V-02.07 se reproduce, falla aqui y el instalador aborta antes
+    #    de tocar la API.
+    $rlsSecret = ""
+    $configPath = Join-Path $InstallPath "api\appsettings.Production.json"
+    if (Test-Path -LiteralPath $configPath) {
+        $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $rlsSecret = [string]$config.Security.RlsContextSecret
+    }
+    if (-not [string]::IsNullOrWhiteSpace($rlsSecret)) {
+        $payload = "auth|||false|false|auth"
+        $signature = ($payload | & "$env:WINDIR\System32\certutil.exe" -hashHMAC SHA256 -key $rlsSecret -noPrefix 2>$null) | Select-Object -Last 1
+        if (-not [string]::IsNullOrWhiteSpace($signature)) {
+            # Extrae solo el hex (certutil imprime lineas adicionales).
+            $hexSignature = ($signature -replace '[^a-fA-F0-9]', '').ToLower()
+            if ($hexSignature.Length -gt 0) {
+                $smokeSql = @"
+SELECT set_config('atlas.auth_mode', 'auth', false),
+       set_config('atlas.user_id', '', false),
+       set_config('atlas.integration_token_id', '', false),
+       set_config('atlas.is_admin', 'false', false),
+       set_config('atlas.system', 'false', false),
+       set_config('atlas.request_scope', 'auth', false),
+       set_config('atlas.context_signature', '$hexSignature', false);
+"@
+                Invoke-Psql -PsqlExe $psql -Database $DbName -Sql $smokeSql | Out-Null
+                Write-Host "  [OK] Contexto RLS firmable con el secreto desplegado." -ForegroundColor Green
+            }
+        }
+    }
+    else {
+        Write-Host "  [AVISO] Security:RlsContextSecret no estaba en appsettings.Production.json. La firma de contexto RLS se validara al iniciar la API." -ForegroundColor Yellow
+    }
+}
+
 function Ensure-Database {
     param([string]$PostgresBin)
 
@@ -647,6 +751,25 @@ function New-AtlasCertificate {
         -FriendlyName "Atlas Balance HTTPS" `
         -KeyExportPolicy Exportable `
         -NotAfter (Get-Date).AddYears(5)
+
+    # V-02.08: post-check de SAN. El incidente V-02.07 mostro que un cert
+    # emitido con un DNSName mal escrito deja la web inalcanzable desde
+    # el alias del operador. Verificar que la SAN devuelta por Windows
+    # contiene el $DnsName solicitado. Si falta, avisar antes de cerrar
+    # la instalacion.
+    $san = $cert.DnsNameList | ForEach-Object { $_.Unicode }
+    $sanFaltantes = $dnsNames | Where-Object { $san -notcontains $_ }
+    if ($sanFaltantes) {
+        Write-Warning @"
+SAN del certificado emitido NO contiene uno o varios DNS solicitados:
+  - Solicitados: $($dnsNames -join ', ')
+  - Emitidos:    $($san -join ', ')
+  - Faltantes:   $($sanFaltantes -join ', ')
+El navegador del operador lanzara advertencia de cert invalido al
+acceder por esos alias. Vuelve a emitir el cert con todos los DNS
+incluidos o distribuye el .cer a los puestos cliente.
+"@
+    }
 
     Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $securePassword | Out-Null
     Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
@@ -1138,6 +1261,12 @@ if (-not $SkipDatabaseSetup) {
         throw "No se encontro PostgreSQL 16+. Indica -PostgresBinPath o instala PostgreSQL manualmente."
     }
 
+    # V-02.08: preflight obligatorio antes de tocar la base. El incidente
+    # V-02.07 demostro que una version incompatible o una extension que
+    # falta se manifiestan tarde (en la primera migracion o el primer
+    # login) y dejan el sistema a medio instalar.
+    Test-PostgresPreflight -PostgresBin $PostgresBinPath
+
     Ensure-Database -PostgresBin $PostgresBinPath
     $ExistingUsersDetected = Test-ExistingApplicationUsers -PostgresBin $PostgresBinPath
     if ($ExistingUsersDetected) {
@@ -1179,6 +1308,7 @@ foreach ($supportScript in @(
     "Grant-OwnerBypassRls.ps1",
     "Test-BackupRestore.ps1",
     "Test-AtlasSecrets.ps1",
+    "Test-AtlasSmtp.ps1",
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1"

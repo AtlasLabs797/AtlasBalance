@@ -239,6 +239,7 @@ foreach ($script in @(
     "Grant-OwnerBypassRls.ps1",
     "Test-BackupRestore.ps1",
     "Test-AtlasSecrets.ps1",
+    "Test-AtlasSmtp.ps1",
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1",
