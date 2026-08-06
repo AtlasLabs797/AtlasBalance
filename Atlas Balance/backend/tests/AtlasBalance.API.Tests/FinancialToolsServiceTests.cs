@@ -389,6 +389,176 @@ public class FinancialToolsServiceTests
     }
 
     [Fact]
+    public async Task DetectAnomalies_Debe_Detectar_Saldo_En_Caida()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAsync(db, new[] {
+            ("Atlas Labs", "C1", "EUR", new decimal[] { -100m, -200m, -300m })
+        });
+        // Para que SALDO_EN_CAIDA dispare necesitamos 3 meses con
+        // saldos finales que caigan >= 25%. Sembramos extractos en
+        // 3 meses consecutivos con un patron decreciente.
+        var cuentaId = db.Cuentas.First().Id;
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var mesesAtras = new[]
+        {
+            hoy.AddMonths(-3).AddDays(5), // mes -3: saldo cae poco
+            hoy.AddMonths(-2).AddDays(5), // mes -2: cae mas
+            hoy.AddMonths(-1).AddDays(5)  // mes -1: cae mucho
+        };
+        // Limpiamos los extractos sembrados por SeedAsync.
+        db.Extractos.RemoveRange(db.Extractos);
+        await db.SaveChangesAsync();
+        for (int i = 0; i < mesesAtras.Length; i++)
+        {
+            db.Extractos.Add(new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = cuentaId,
+                Fecha = mesesAtras[i],
+                Concepto = $"Mes {i}",
+                Monto = -100m * (i + 1), // -100, -200, -300
+                Saldo = 1000m - (i * 250), // 1000, 750, 500
+                FilaNumero = i + 1
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var plan = new FinancialQueryPlan
+        {
+            Operacion = FinancialOperation.Anomalies,
+            Metrica = FinancialMetric.Gastos
+        };
+        var sut = BuildSut(db);
+        var result = await sut.DetectAnomaliesAsync(AdminScope(userId), plan, CancellationToken.None);
+
+        result.Data!.Should().Contain(a => a.Tipo == "SALDO_EN_CAIDA");
+    }
+
+    [Fact]
+    public async Task DetectAnomalies_Debe_Detectar_Gasto_Nuevo()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAsync(db, new[] {
+            ("Atlas Labs", "C1", "EUR", new decimal[] { -100m, -200m, -300m })
+        });
+        // Sembramos un concepto historico en meses anteriores y uno
+        // nuevo en el mes en curso.
+        var cuentaId = db.Cuentas.First().Id;
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        db.Extractos.RemoveRange(db.Extractos);
+        await db.SaveChangesAsync();
+        // Concepto "Netflix" en meses historicos.
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = hoy.AddMonths(-3),
+            Concepto = "Netflix suscripcion",
+            Monto = -12m,
+            Saldo = 1000m,
+            FilaNumero = 1
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = hoy.AddMonths(-2),
+            Concepto = "Netflix suscripcion",
+            Monto = -12m,
+            Saldo = 988m,
+            FilaNumero = 2
+        });
+        // Concepto "Adobe Creative Cloud" SOLO en el mes en curso.
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = hoy.AddDays(-2),
+            Concepto = "Adobe Creative Cloud",
+            Monto = -55m,
+            Saldo = 933m,
+            FilaNumero = 3
+        });
+        await db.SaveChangesAsync();
+
+        var plan = new FinancialQueryPlan
+        {
+            Operacion = FinancialOperation.Anomalies,
+            Metrica = FinancialMetric.Gastos
+        };
+        var sut = BuildSut(db);
+        var result = await sut.DetectAnomaliesAsync(AdminScope(userId), plan, CancellationToken.None);
+
+        result.Data!.Should().Contain(a => a.Tipo == "GASTO_NUEVO" && a.Descripcion.Contains("Adobe"));
+        result.Data!.Should().NotContain(a => a.Tipo == "GASTO_NUEVO" && a.Descripcion.Contains("Netflix"));
+    }
+
+    [Fact]
+    public async Task DetectAnomalies_Saldo_Estable_No_Marca_Caida()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAsync(db, new[] {
+            ("Atlas Labs", "C1", "EUR", new decimal[] { -10m, -10m, -10m })
+        });
+        // Si el saldo NO cae >= 25%, no hay SALDO_EN_CAIDA.
+        var plan = new FinancialQueryPlan
+        {
+            Operacion = FinancialOperation.Anomalies,
+            Metrica = FinancialMetric.Gastos
+        };
+        var sut = BuildSut(db);
+        var result = await sut.DetectAnomaliesAsync(AdminScope(userId), plan, CancellationToken.None);
+
+        result.Data!.Should().NotContain(a => a.Tipo == "SALDO_EN_CAIDA");
+    }
+
+    [Fact]
+    public async Task DetectAnomalies_Concepto_Recurrente_No_Marca_Gasto_Nuevo()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAsync(db, new[] {
+            ("Atlas Labs", "C1", "EUR", new decimal[] { -10m, -10m })
+        });
+        // Si el concepto aparece en meses anteriores, NO es nuevo.
+        var cuentaId = db.Cuentas.First().Id;
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        db.Extractos.RemoveRange(db.Extractos);
+        await db.SaveChangesAsync();
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = hoy.AddMonths(-3),
+            Concepto = "Spotify",
+            Monto = -10m,
+            Saldo = 1000m,
+            FilaNumero = 1
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = hoy.AddDays(-1),
+            Concepto = "Spotify",
+            Monto = -10m,
+            Saldo = 990m,
+            FilaNumero = 2
+        });
+        await db.SaveChangesAsync();
+
+        var plan = new FinancialQueryPlan
+        {
+            Operacion = FinancialOperation.Anomalies,
+            Metrica = FinancialMetric.Gastos
+        };
+        var sut = BuildSut(db);
+        var result = await sut.DetectAnomaliesAsync(AdminScope(userId), plan, CancellationToken.None);
+
+        result.Data!.Should().NotContain(a => a.Tipo == "GASTO_NUEVO");
+    }
+
+    [Fact]
     public void Constantes_Documentadas_Anomalias_Estan_Expuestas()
     {
         // Los tests pueden pinzar las constantes para que un cambio

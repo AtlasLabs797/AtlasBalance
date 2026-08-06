@@ -185,6 +185,8 @@ public sealed class TendenciasAnomaliasService
             {
                 "DUPLICADO_PROBABLE" => "duplicado probable",
                 "IMPORTE_ATIPICO" => "importe atipico",
+                "SALDO_EN_CAIDA" => "saldo en caida",
+                "GASTO_NUEVO" => "gasto nuevo",
                 _ => grupo.Key.ToLowerInvariant()
             });
             sb.Append("): ");

@@ -951,6 +951,98 @@ public sealed class FinancialToolsService : IFinancialToolsService
             }
         }
 
+        // 3. Caida de saldo: la cuenta muestra una tendencia
+        // descendente en los ultimos 3 meses consecutivos. La regla
+        // compara el saldo (campo Saldo del extracto) del tercer mes
+        // contra el saldo del primer mes: si cae mas de un 25%, se
+        // marca. Constante documentada para que los tests la pinzen.
+        var saldosReales = await (
+            from e in _dbContext.Extractos.AsNoTracking()
+            join c in cuentas on e.CuentaId equals c.Id
+            join t in _dbContext.Titulares.AsNoTracking() on c.TitularId equals t.Id
+            where e.Fecha >= inicio && e.Fecha <= hoy
+            group new { e.Saldo, e.Fecha, e.CuentaId } by new
+            {
+                e.CuentaId,
+                Cuenta = c.Nombre,
+                Titular = t.Nombre,
+                Mes = new DateOnly(e.Fecha.Year, e.Fecha.Month, 1)
+            }
+            into g
+            select new
+            {
+                g.Key.CuentaId,
+                g.Key.Cuenta,
+                g.Key.Titular,
+                g.Key.Mes,
+                SaldoFinal = g.OrderByDescending(e => e.Fecha).First().Saldo
+            }).ToListAsync(cancellationToken);
+
+        var saldoPorMesFiltrado = saldosReales
+            .Where(x => x.Mes < new DateOnly(hoy.Year, hoy.Month, 1))
+            .OrderBy(x => x.CuentaId)
+            .ThenBy(x => x.Mes)
+            .ToList();
+
+        var umbralCaidaPct = 25m; // V-02.09: 25% en 3 meses marca caida
+        var porCuenta = saldoPorMesFiltrado.GroupBy(x => new { x.CuentaId, x.Cuenta, x.Titular });
+        foreach (var cuenta in porCuenta)
+        {
+            var meses = cuenta.OrderByDescending(x => x.Mes).Take(3).OrderBy(x => x.Mes).ToList();
+            if (meses.Count < 3) continue;
+            var primero = meses.First().SaldoFinal;
+            var ultimo = meses.Last().SaldoFinal;
+            if (primero <= 0m) continue;
+            var variacion = (ultimo - primero) / Math.Abs(primero) * 100m;
+            if (variacion < -umbralCaidaPct)
+            {
+                anomalias.Add(new Anomaly(
+                    "SALDO_EN_CAIDA",
+                    "media",
+                    $"{cuenta.Key.Cuenta} muestra una caida de {Math.Abs(variacion):0.##}% en los ultimos 3 meses (de {primero:0.00} a {ultimo:0.00}).",
+                    null, cuenta.Key.CuentaId, cuenta.Key.Cuenta, cuenta.Key.Titular,
+                    meses.Last().Mes, null,
+                    $"Saldo inicial 3 meses: {primero:0.00}; saldo final: {ultimo:0.00}; variacion: {variacion:0.##}%"));
+            }
+        }
+
+        // 4. Gasto nuevo: un concepto de gasto (monto negativo) que
+        // aparece en el mes en curso pero que NO aparecio en los 5
+        // meses anteriores. Marca posibles suscripciones, cargos
+        // recurrentes nuevos o compras inusuales.
+        var inicioMesActual = new DateOnly(hoy.Year, hoy.Month, 1);
+        var finMesAnterior = inicioMesActual.AddDays(-1);
+        var inicioHist = finMesAnterior.AddMonths(-4);
+
+        var gastosRecientes = extractos
+            .Where(x => x.Fecha >= inicioMesActual && x.Fecha <= hoy && x.Monto < 0m && !string.IsNullOrWhiteSpace(x.Concepto))
+            .GroupBy(x => new { x.CuentaId, x.Cuenta, x.Titular, Concepto = x.Concepto!.Trim() })
+            .Select(g => new { g.Key.CuentaId, g.Key.Cuenta, g.Key.Titular, g.Key.Concepto, Importe = g.Min(x => x.Monto) })
+            .ToList();
+
+        var conceptosHistoricos = extractos
+            .Where(x => x.Fecha >= inicioHist && x.Fecha <= finMesAnterior && x.Monto < 0m && !string.IsNullOrWhiteSpace(x.Concepto))
+            .Select(x => new { x.CuentaId, Concepto = x.Concepto!.Trim() })
+            .Distinct()
+            .ToList();
+
+        var setHistorico = conceptosHistoricos
+            .Select(c => (c.CuentaId, c.Concepto.ToLowerInvariant()))
+            .ToHashSet();
+
+        foreach (var nuevo in gastosRecientes)
+        {
+            if (nuevo.Concepto.Length < 3) continue;
+            if (setHistorico.Contains((nuevo.CuentaId, nuevo.Concepto.ToLowerInvariant()))) continue;
+            anomalias.Add(new Anomaly(
+                "GASTO_NUEVO",
+                "baja",
+                $"'{nuevo.Concepto}' aparece como gasto en {nuevo.Cuenta} por primera vez en los ultimos 6 meses.",
+                null, nuevo.CuentaId, nuevo.Cuenta, nuevo.Titular,
+                hoy, nuevo.Importe,
+                $"Concepto no visto en {inicioHist:dd/MM/yyyy} - {finMesAnterior:dd/MM/yyyy}."));
+        }
+
         return new FinancialToolResult<IReadOnlyList<Anomaly>>
         {
             Data = anomalias.Take(plan.Limite).ToList(),
