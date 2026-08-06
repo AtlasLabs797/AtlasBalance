@@ -10,11 +10,26 @@ namespace AtlasBalance.API.Services.IaPlanner;
 // este documento y a las definiciones de estados/permisos que ya
 // estan en el codigo (no mezcla datos financieros con docs).
 //
-// Politica: si la pregunta del usuario es claramente de "ayuda
-// sobre Atlas Balance" (no financiera), la capa de planificacion
-// la redirige a este servicio. Si la pregunta es ambigua, gana
-// el plan financiero (mejor un resultado parcial que inventar
-// documentacion).
+// Politica (Fase 9 explicita): si la pregunta es claramente de
+// "ayuda sobre Atlas Balance" (no financiera), la capa de
+// planificacion la redirige a este servicio. Si la pregunta es
+// ambigua, gana el plan financiero (mejor un resultado parcial
+// que inventar documentacion).
+//
+// El resultado distingue tres estados via el enum HelpResultado:
+//   - Encontrado: el manual tiene secciones relevantes.
+//   - NoEncontrado: el manual esta cargado pero la busqueda no
+//     encontro coincidencias relevantes. ES UN RECHAZO EXPLICITO:
+//     el sistema no inventa contenido.
+//   - DocumentoNoCargado: el manual no esta disponible en este
+//     despliegue (ruta invalida o archivo ausente).
+
+public enum HelpResultado
+{
+    Encontrado,
+    NoEncontrado,
+    DocumentoNoCargado
+}
 
 public sealed record DocSection(
     string Titulo,
@@ -23,9 +38,10 @@ public sealed record DocSection(
 
 public sealed record HelpSearchResult
 {
+    public HelpResultado Resultado { get; init; } = HelpResultado.NoEncontrado;
     public IReadOnlyList<DocSection> Secciones { get; init; } = Array.Empty<DocSection>();
-    public string? Advertencia { get; init; }
-    public bool Encontrado => Secciones.Count > 0;
+    public string? Mensaje { get; init; }
+    public bool Encontrado => Resultado == HelpResultado.Encontrado;
 }
 
 public interface IDocumentationHelpService
@@ -61,20 +77,31 @@ public sealed class DocumentationHelpService : IDocumentationHelpService
 
     public HelpSearchResult Buscar(string pregunta, int maximo)
     {
-        if (string.IsNullOrWhiteSpace(pregunta) || _secciones.Count == 0)
+        if (_secciones.Count == 0)
         {
             return new HelpSearchResult
             {
-                Advertencia = _secciones.Count == 0
-                    ? "La documentacion canonica no esta disponible en este despliegue."
-                    : "Pregunta vacia."
+                Resultado = HelpResultado.DocumentoNoCargado,
+                Mensaje = "La documentacion canonica no esta disponible en este despliegue."
+            };
+        }
+        if (string.IsNullOrWhiteSpace(pregunta))
+        {
+            return new HelpSearchResult
+            {
+                Resultado = HelpResultado.NoEncontrado,
+                Mensaje = "Pregunta vacia."
             };
         }
 
         var tokens = Tokenizar(pregunta);
         if (tokens.Count == 0)
         {
-            return new HelpSearchResult { Advertencia = "No se pudo extraer terminos de la pregunta." };
+            return new HelpSearchResult
+            {
+                Resultado = HelpResultado.NoEncontrado,
+                Mensaje = "No se pudo extraer terminos relevantes de la pregunta."
+            };
         }
 
         var ranked = _secciones
@@ -87,13 +114,24 @@ public sealed class DocumentationHelpService : IDocumentationHelpService
 
         if (ranked.Count == 0)
         {
+            // RECHAZO EXPLICITO (Fase 9). El sistema no inventa
+            // documentacion: devuelve un NoEncontrado claro con
+            // sugerencias de reformulacion.
             return new HelpSearchResult
             {
-                Advertencia = "La documentacion canonica no contiene una respuesta a esa pregunta. Reformula con terminos del manual (extracto, comision, conciliacion...)."
+                Resultado = HelpResultado.NoEncontrado,
+                Mensaje = "La documentacion canonica de Atlas Balance no contiene una respuesta a esta pregunta. " +
+                          "Atlas Balance IA no inventa funcionalidades: reformula con terminos del manual " +
+                          "(ejemplos: extracto, comision, conciliacion, saldo, titular, alerta) o consulta " +
+                          "datos financieros con una pregunta concreta."
             };
         }
 
-        return new HelpSearchResult { Secciones = ranked };
+        return new HelpSearchResult
+        {
+            Resultado = HelpResultado.Encontrado,
+            Secciones = ranked
+        };
     }
 
     public static double Puntuar(DocSection seccion, IReadOnlyList<string> tokens)

@@ -66,33 +66,38 @@ public class DocumentationHelpServiceTests
     }
 
     [Fact]
-    public void Buscar_Pregunta_Vacia_Devuelve_Advertencia()
+    public void Buscar_Pregunta_Vacia_Devuelve_Rechazo_Explicito()
     {
         var sut = Construir();
         var resultado = sut.Buscar(string.Empty, 3);
 
         resultado.Encontrado.Should().BeFalse();
-        resultado.Advertencia.Should().NotBeNullOrEmpty();
+        resultado.Resultado.Should().Be(HelpResultado.NoEncontrado);
+        resultado.Mensaje.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
-    public void Buscar_Sin_Coincidencias_Devuelve_Advertencia_Con_Pista()
+    public void Buscar_Sin_Coincidencias_Devuelve_Rechazo_Explicito_Sin_Inventar()
     {
         var sut = Construir();
         var resultado = sut.Buscar("Que es la fusion fria de neutrones?", 3);
 
         resultado.Encontrado.Should().BeFalse();
-        resultado.Advertencia.Should().Contain("Reformula");
+        resultado.Resultado.Should().Be(HelpResultado.NoEncontrado);
+        resultado.Mensaje.Should().Contain("no inventa");
+        resultado.Mensaje.Should().Contain("reformula");
+        resultado.Secciones.Should().BeEmpty("rechazo explicito no devuelve secciones");
     }
 
     [Fact]
-    public void Buscar_Sin_Documento_Cargado_Devuelve_Advertencia_De_Despliegue()
+    public void Buscar_Sin_Documento_Cargado_Devuelve_Estado_Despliegue()
     {
         var sut = new DocumentationHelpService("C:/ruta/inexistente.md");
         var resultado = sut.Buscar("cualquier cosa", 3);
 
         resultado.Encontrado.Should().BeFalse();
-        resultado.Advertencia.Should().Contain("despliegue");
+        resultado.Resultado.Should().Be(HelpResultado.DocumentoNoCargado);
+        resultado.Mensaje.Should().Contain("despliegue");
     }
 
     [Fact]
