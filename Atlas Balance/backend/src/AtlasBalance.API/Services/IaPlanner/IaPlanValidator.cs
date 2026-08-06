@@ -36,6 +36,16 @@ public static class IaPlanValidator
             return Rechazado("Operacion no soportada.");
         }
 
+        if (!Enum.IsDefined(typeof(FinancialMetric), plan.Metrica))
+        {
+            return Rechazado("Metrica no soportada.");
+        }
+
+        if (plan.Orden.HasValue && !Enum.IsDefined(typeof(FinancialSort), plan.Orden.Value))
+        {
+            return Rechazado("Orden no soportado.");
+        }
+
         // Escritura nunca deberia llegar aqui (no esta en la enum), pero
         // por si una mano a la enum se cuela, lo bloqueamos igualmente.
         if (EsOperacionDeEscritura(plan.Operacion))
@@ -176,6 +186,10 @@ public static class IaPlanValidator
 
         foreach (var grupo in agrupaciones)
         {
+            if (!Enum.IsDefined(typeof(FinancialGroupBy), grupo))
+            {
+                return Rechazado("Agrupacion no soportada.");
+            }
             if (grupo is FinancialGroupBy.None)
             {
                 return Rechazado("Agrupacion 'None' no tiene sentido; quitala del plan.");

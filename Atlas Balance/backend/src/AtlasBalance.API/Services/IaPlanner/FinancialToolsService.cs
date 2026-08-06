@@ -206,6 +206,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
         public Guid CuentaId { get; set; }
         public string CuentaNombre { get; set; } = string.Empty;
         public string Titular { get; set; } = string.Empty;
+        public Guid TitularId { get; set; }
         public string Divisa { get; set; } = string.Empty;
         public DateOnly Fecha { get; set; }
         public decimal Monto { get; set; }
@@ -239,6 +240,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
                 CuentaId = c.Id,
                 CuentaNombre = c.Nombre,
                 Titular = t.Nombre,
+                TitularId = t.Id,
                 Divisa = c.Divisa,
                 Fecha = e.Fecha,
                 Monto = e.Monto,
@@ -250,7 +252,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (desde.HasValue) query = query.Where(x => x.Fecha >= desde.Value);
         if (hasta.HasValue) query = query.Where(x => x.Fecha <= hasta.Value);
         if (cuentaIds is { Count: > 0 }) query = query.Where(x => cuentaIds.Contains(x.CuentaId));
-        if (titularIds is { Count: > 0 }) query = query.Where(x => titularIds.Any(id => x.Titular != null && x.Titular.Length > 0));
+        if (titularIds is { Count: > 0 }) query = query.Where(x => titularIds.Contains(x.TitularId));
         if (divisas is { Count: > 0 }) query = query.Where(x => divisas.Contains(x.Divisa));
 
         IQueryable<ExtractoJoinRow> ordered = direction switch

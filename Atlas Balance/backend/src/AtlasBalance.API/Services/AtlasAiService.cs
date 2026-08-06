@@ -9,7 +9,9 @@ using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Logging;
+using AtlasBalance.API.Services.IaPlanner;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AtlasBalance.API.Services;
 
@@ -34,7 +36,14 @@ public sealed class AtlasAiService : IAtlasAiService
     private readonly IUserAccessService _userAccessService;
     private readonly IAuditService _auditService;
     private readonly ILogger<AtlasAiService> _logger;
+    private readonly IIntentPlanner _intentPlanner;
+    private readonly IPlanExecutor _planExecutor;
+    private readonly IFinancialToolsService _financialTools;
+    private readonly IDocumentationHelpService _documentationHelp;
+    private readonly IConversationMemory _conversationMemory;
 
+    // Conserva el constructor usado por las pruebas unitarias existentes. La
+    // composicion real se resuelve por DI con el constructor completo.
     public AtlasAiService(
         AppDbContext dbContext,
         IHttpClientFactory httpClientFactory,
@@ -42,6 +51,33 @@ public sealed class AtlasAiService : IAtlasAiService
         IUserAccessService userAccessService,
         IAuditService auditService,
         ILogger<AtlasAiService> logger)
+        : this(
+            dbContext,
+            httpClientFactory,
+            secretProtector,
+            userAccessService,
+            auditService,
+            logger,
+            new IntentPlanner(new NullSemanticPlannerClient(), NullLogger<IntentPlanner>.Instance),
+            new PlanExecutor(),
+            new FinancialToolsService(dbContext, userAccessService),
+            new DocumentationHelpService(string.Empty),
+            new InMemoryConversationMemory())
+    {
+    }
+
+    public AtlasAiService(
+        AppDbContext dbContext,
+        IHttpClientFactory httpClientFactory,
+        ISecretProtector secretProtector,
+        IUserAccessService userAccessService,
+        IAuditService auditService,
+        ILogger<AtlasAiService> logger,
+        IIntentPlanner intentPlanner,
+        IPlanExecutor planExecutor,
+        IFinancialToolsService financialTools,
+        IDocumentationHelpService documentationHelp,
+        IConversationMemory conversationMemory)
     {
         _dbContext = dbContext;
         _httpClientFactory = httpClientFactory;
@@ -49,6 +85,11 @@ public sealed class AtlasAiService : IAtlasAiService
         _userAccessService = userAccessService;
         _auditService = auditService;
         _logger = logger;
+        _intentPlanner = intentPlanner;
+        _planExecutor = planExecutor;
+        _financialTools = financialTools;
+        _documentationHelp = documentationHelp;
+        _conversationMemory = conversationMemory;
     }
 
     public async Task<IaConfigResponse> GetConfigAsync(UserAccessScope scope, CancellationToken cancellationToken)
@@ -186,6 +227,12 @@ public sealed class AtlasAiService : IAtlasAiService
             throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
         }
 
+        var plannedAnswer = await TryAnswerPlannedAsync(scope, prompt, paisId, cancellationToken);
+        if (plannedAnswer is not null)
+        {
+            return plannedAnswer;
+        }
+
         var deterministicAnswer = await TryAnswerDeterministicFinancialAsync(scope, prompt, state, now, ipAddress, paisId, cancellationToken);
         if (deterministicAnswer is not null)
         {
@@ -228,8 +275,16 @@ public sealed class AtlasAiService : IAtlasAiService
         string safeContext;
         try
         {
-            safePrompt = pseudonyms.Apply(prompt);
-            safeContext = pseudonyms.Apply(context.Texto);
+            var scrubber = new DlpScrubber(pseudonyms);
+            var promptScan = scrubber.Escanear(prompt, "pregunta");
+            var contextScan = scrubber.Escanear(context.Texto, "contexto");
+            if (promptScan.FalloCerrado || contextScan.FalloCerrado)
+            {
+                await LogBlockedAsync(scope.UserId, "dlp_fail_closed", state, ipAddress, cancellationToken);
+                throw new IaProviderException("No se pudo anonimizar la consulta antes de enviarla al proveedor.");
+            }
+            safePrompt = promptScan.Texto;
+            safeContext = contextScan.Texto;
         }
         catch (RegexMatchTimeoutException)
         {
@@ -357,6 +412,8 @@ public sealed class AtlasAiService : IAtlasAiService
                 ipAddress,
                 JsonSerializer.Serialize(new
                 {
+                    schema_version = IaAuditSchema.Version,
+                    origen = "proveedor",
                     provider = state.Provider,
                     model = state.Model,
                     runtime_model = selectedRuntimeModel,
@@ -415,7 +472,8 @@ public sealed class AtlasAiService : IAtlasAiService
                 TokensSalidaEstimados = outputTokens,
                 CosteEstimadoEur = Math.Round(cost, 8),
                 AvisoPresupuesto = budgetWarning,
-                Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null
+                Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null,
+                Origen = "proveedor"
             };
         }
         catch (JsonException ex)
@@ -736,6 +794,116 @@ public sealed class AtlasAiService : IAtlasAiService
         }
     }
 
+    private async Task<IaChatResponse?> TryAnswerPlannedAsync(
+        UserAccessScope scope,
+        string prompt,
+        Guid? paisId,
+        CancellationToken cancellationToken)
+    {
+        if (EsPreguntaDeAyuda(prompt))
+        {
+            var ayuda = _documentationHelp.Buscar(prompt, DocumentationHelpService.DefaultMaxSecciones);
+            return new IaChatResponse
+            {
+                Respuesta = ayuda.Encontrado
+                    ? string.Join("\n\n", ayuda.Secciones.Select(x => $"{x.Titulo}\n{x.Contenido}"))
+                    : ayuda.Mensaje ?? "La documentacion no contiene una respuesta para esta pregunta.",
+                Provider = "LOCAL",
+                Model = "documentacion",
+                Origen = "local"
+            };
+        }
+
+        var resolution = await _intentPlanner.ResolverAsync(prompt, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        if (resolution.Origen is PlanResolutionSource.Clarification)
+        {
+            return new IaChatResponse
+            {
+                Respuesta = resolution.Evaluacion.Motivo ?? "Necesito una aclaracion para continuar.",
+                Provider = "LOCAL",
+                Model = "planificador",
+                Origen = "local",
+                OpcionesAclaracion = resolution.Evaluacion.Opciones?
+                    .Select(x => new IaClarificationOptionResponse { Etiqueta = x.Etiqueta, Valor = x.Valor })
+                    .ToList()
+            };
+        }
+
+        if (resolution.Origen is PlanResolutionSource.Rejected)
+        {
+            // No convertimos un fallo del planificador en una llamada legacy con
+            // contexto financiero: esa degradacion rompería la frontera de datos.
+            return new IaChatResponse
+            {
+                Respuesta = resolution.Evaluacion.Motivo ?? "No se pudo interpretar la consulta financiera de forma segura.",
+                Provider = "LOCAL",
+                Model = "planificador",
+                Origen = "local"
+            };
+        }
+
+        if (resolution.Origen is not (PlanResolutionSource.Local or PlanResolutionSource.Semantic) || resolution.Evaluacion.Plan is null)
+        {
+            return null;
+        }
+
+        var execution = await _planExecutor.EjecutarAsync(
+            scope,
+            new CompoundPlan
+            {
+                Pasos = new[] { new PlanStep(0, resolution.PatronLocal ?? "consulta", resolution.Evaluacion.Plan, Array.Empty<int>()) }
+            },
+            _financialTools,
+            cancellationToken);
+        if (!execution.Exito)
+        {
+            return new IaChatResponse
+            {
+                Respuesta = execution.Advertencia ?? "No se pudo completar la consulta local.",
+                Provider = "LOCAL",
+                Model = "planificador",
+                Origen = "local"
+            };
+        }
+
+        var plan = resolution.Evaluacion.Plan;
+        _conversationMemory.Actualizar(scope.UserId, paisId, context => context with
+        {
+            UltimaIntencion = resolution.PatronLocal,
+            UltimaOperacion = plan.Operacion.ToString(),
+            UltimaMetrica = plan.Metrica.ToString(),
+            UltimoPeriodo = FormatearPeriodo(plan.Filtros.Periodo),
+            UltimasDivisas = plan.Filtros.Divisas
+        });
+
+        return new IaChatResponse
+        {
+            Respuesta = execution.Resumen ?? "Sin resultados.",
+            Provider = "LOCAL",
+            Model = resolution.Origen is PlanResolutionSource.Semantic ? "planificador-semantico" : "planificador",
+            Origen = "local",
+            MovimientosAnalizados = execution.Pasos.Sum(x => x.FilasAnalizadas),
+            Aviso = execution.Advertencia
+        };
+    }
+
+    private static bool EsPreguntaDeAyuda(string prompt)
+    {
+        var normalized = prompt.Trim().ToLowerInvariant();
+        return normalized.StartsWith("como ", StringComparison.Ordinal)
+            || normalized.StartsWith("cómo ", StringComparison.Ordinal)
+            || normalized.StartsWith("que significa", StringComparison.Ordinal)
+            || normalized.StartsWith("qué significa", StringComparison.Ordinal)
+            || normalized.StartsWith("por que no puedo", StringComparison.Ordinal)
+            || normalized.StartsWith("por qué no puedo", StringComparison.Ordinal);
+    }
+
+    private static string? FormatearPeriodo(FinancialPeriod? periodo) => periodo is null
+        ? null
+        : periodo.From is { } from && periodo.To is { } to
+            ? $"{from:dd/MM/yyyy} - {to:dd/MM/yyyy}"
+            : periodo.Tipo.ToString();
+
     private async Task<IaChatResponse?> TryAnswerDeterministicFinancialAsync(
         UserAccessScope scope,
         string prompt,
@@ -838,6 +1006,8 @@ public sealed class AtlasAiService : IAtlasAiService
             ipAddress,
             JsonSerializer.Serialize(new
             {
+                schema_version = IaAuditSchema.Version,
+                origen = "local",
                 provider = state.Provider,
                 model = state.Model,
                 runtime_model = ProviderRuntimeModel(state),
@@ -874,7 +1044,8 @@ public sealed class AtlasAiService : IAtlasAiService
             TokensSalidaEstimados = 0,
             CosteEstimadoEur = 0m,
             AvisoPresupuesto = budgetWarning,
-            Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null
+            Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null,
+            Origen = "local"
         };
     }
 
@@ -1616,13 +1787,12 @@ public sealed class AtlasAiService : IAtlasAiService
             "IA",
             null,
             ipAddress,
-            JsonSerializer.Serialize(new
+            IaAuditEventFactory.Bloqueada("sistema", new Dictionary<string, object?>
             {
-                motivo = reason,
-                provider = state.Provider,
-                model = state.Model,
-                runtime_model = ProviderRuntimeModel(state),
-                extra
+                ["motivo"] = reason,
+                ["provider"] = state.Provider,
+                ["model"] = state.Model,
+                ["runtime_model"] = ProviderRuntimeModel(state)
             }),
             cancellationToken);
     }
@@ -1658,14 +1828,13 @@ public sealed class AtlasAiService : IAtlasAiService
             "IA",
             null,
             ipAddress,
-            JsonSerializer.Serialize(new
+            IaAuditEventFactory.Error("proveedor", new Dictionary<string, object?>
             {
-                motivo = reason,
-                provider = state.Provider,
-                model = state.Model,
-                runtime_model = ProviderRuntimeModel(state),
-                status_code = statusCode,
-                extra
+                ["motivo"] = reason,
+                ["provider"] = state.Provider,
+                ["model"] = state.Model,
+                ["runtime_model"] = ProviderRuntimeModel(state),
+                ["status_code"] = statusCode
             }),
             cancellationToken);
     }

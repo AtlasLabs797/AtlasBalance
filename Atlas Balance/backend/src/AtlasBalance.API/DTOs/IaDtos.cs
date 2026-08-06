@@ -100,6 +100,14 @@ public sealed class IaChatResponse
     public decimal CosteEstimadoEur { get; set; }
     public bool AvisoPresupuesto { get; set; }
     public string? Aviso { get; set; }
+    public string Origen { get; set; } = "proveedor";
+    public IReadOnlyList<IaClarificationOptionResponse>? OpcionesAclaracion { get; set; }
+}
+
+public sealed class IaClarificationOptionResponse
+{
+    public string Etiqueta { get; set; } = string.Empty;
+    public string Valor { get; set; } = string.Empty;
 }
 
 public static class AiConfigurationDefaults

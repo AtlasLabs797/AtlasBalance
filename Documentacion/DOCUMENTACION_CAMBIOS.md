@@ -9,6 +9,70 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-06 - V-02.09 - Auditoria de ejecucion del plan IA
+
+- **Hallazgo:** los commits declaraban el plan de doce fases cerrado, pero el
+  endpoint `/api/ia/chat` seguia en el flujo legado y no invocaba el
+  planificador, ejecutor, memoria ni ayuda documental.
+- **Correccion:** se registran y conectan los servicios del planificador para
+  consultas locales, aclaraciones y ayuda documental; la memoria se actualiza
+  tras una consulta local y el boton de nueva conversacion invalida tambien la
+  memoria del servidor. El fallback de proveedor pasa por `DlpScrubber`.
+- **Correcciones adicionales:** filtro real por `titular_id` en ultimo
+  movimiento; rechazo de metricas, ordenes y agrupaciones enum invalidos; el
+  ejecutor valida cada paso y enruta `saldo` a la herramienta de saldos.
+- **Verificacion:** `dotnet build` de API (Release, `UseAppHost=false`) correcto
+  con 0 errores y 7 warnings preexistentes; `npx.cmd tsc --noEmit` y
+  `npm.cmd run lint -- --max-warnings 0` correctos; `npm.cmd run test:unit`
+  correcto (57/57). La suite backend focalizada queda bloqueada por ACLs
+  preexistentes en `obj/Debug` de API y Watchdog (`MSB3491`), sin reintentar
+  la misma via. Pendiente completar el
+  cliente semantico real, dependencias entre pasos, auditoria unificada y las
+  pruebas PostgreSQL de carga antes de declarar el plan cerrado.
+
+---
+
+## 2026-08-06 - V-02.09 - Planificador semantico y dependencias de planes
+
+- **Implementado:** `SemanticPlannerClient` consulta al proveedor solo con una
+  pregunta pasada por DLP y el contrato cerrado de operaciones; no construye ni
+  envia contexto financiero. Los JSON con propiedades desconocidas se rechazan
+  antes de validar y ejecutar las herramientas locales.
+- **Planes compuestos:** el ejecutor exige indices unicos, no negativos y
+  referencias exclusivamente a pasos anteriores. Las referencias actuan como
+  barrera de orden; no interpolan resultados como filtros o instrucciones sin
+  un contrato tipado.
+- **Auditoria:** los eventos de consulta local/proveedor, bloqueo y error
+  incluyen `schema_version` y `origen`.
+- **Verificacion:** `dotnet build` de API Release (output temporal aislado):
+  0 errores, 7 warnings preexistentes. `npx.cmd tsc --noEmit` y lint frontend:
+  correctos. La ejecucion de tests backend sigue bloqueada por ACLs preexistentes
+  en `obj/Debug` (`MSB3491`).
+- **Pendiente:** tests de aceptacion que inyecten el planificador real y el gate
+  PostgreSQL/Testcontainers de 50.000 movimientos. No se considera cierre del
+  plan hasta que esos tests esten implementados y verdes en CI.
+
+---
+
+## 2026-08-06 - V-02.09 - Cierre de frontera semantica y auditoria
+
+- **Privacidad:** si el planificador semantico rechaza, falla o devuelve JSON
+  invalido, el chat responde localmente y no degrada al flujo legado que arma
+  contexto financiero para el proveedor.
+- **Auditoria:** `IaAuditEventFactory` aplica una allowlist y anade siempre
+  `schema_version` y `origen`; los eventos bloqueados y de error ya pasan por
+  esa frontera. Se anadieron regresiones de allowlist y referencias posteriores
+  de planes.
+- **Verificacion:** API Release compila con 0 errores y 7 warnings preexistentes;
+  `npx.cmd tsc --noEmit`, lint y tests unitarios frontend pasan (57/57).
+- **Bloqueo:** xUnit backend y por tanto el gate PostgreSQL/Testcontainers no
+  pueden iniciarse en este host por ACLs heredados sobre
+  `obj/Debug/*AssemblyInfoInputs.cache` de API y Watchdog (`MSB3491`). No se
+  declara la suite backend ni PostgreSQL como verde: debe ejecutarse en CI o en
+  un checkout con permisos de escritura.
+
+---
+
 ## 2026-08-05 - V-02.09 - Cierre: anomalias faltantes + rechazo explicito + UI amigable
 
 - **Sintoma reportado:** quedaban tres flecos del plan que no se
@@ -82,10 +146,9 @@ Regla de trabajo desde ahora:
   - `npm run test:unit`: **57/57 PASS** (11 nuevos de
     friendlyIaError).
   - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`: **OK**.
-- **Estado del plan:** los 12 puntos del plan originalestan
-  cerrados. El unico pendiente fuera de CI es `npm run build`
-  (Vite) por el EPERM documentado en AGENTS.md seccion 8;
-  `tsc --noEmit` y `lint` pasan limpios.
+- **Estado del plan (corregido el 2026-08-06):** esta afirmacion de cierre fue
+  prematura. Vease la entrada de auditoria del 2026-08-06 para los pendientes
+  de integracion y verificacion restantes.
 
 ## 2026-08-05 - V-02.09 - IA financiera: plan completo de 12 fases (CERRADO)
 

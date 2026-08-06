@@ -53,6 +53,7 @@ public static class IaAuditSchema
     public static readonly IReadOnlyList<string> CamposBloqueadaPermitidos = new[]
     {
         "schema_version",
+        "origen",
         "motivo",
         "provider",
         "model",
@@ -64,6 +65,13 @@ public static class IaAuditSchema
     // Claves permitidas en el extra de IaConsultaError.
     public static readonly IReadOnlyList<string> CamposErrorPermitidos = new[]
     {
+        "schema_version",
+        "origen",
+        "motivo",
+        "provider",
+        "model",
+        "runtime_model",
+        "status_code",
         "http_client",
         "used_http_fallback",
         "runtime_model",

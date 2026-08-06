@@ -90,11 +90,43 @@ public sealed class PlanExecutor : IPlanExecutor
             };
         }
 
+        var indices = new HashSet<int>();
+        for (var position = 0; position < plan.Pasos.Count; position++)
+        {
+            var paso = plan.Pasos[position];
+            if (paso.Indice < 0 || !indices.Add(paso.Indice))
+            {
+                return new CompoundPlanResult
+                {
+                    Advertencia = "Los pasos del plan deben tener indices unicos y no negativos."
+                };
+            }
+
+            foreach (var referencia in paso.ReferenciasAPasos.Distinct())
+            {
+                if (!indices.Contains(referencia))
+                {
+                    return new CompoundPlanResult
+                    {
+                        Advertencia = $"El paso '{paso.Nombre}' referencia un paso inexistente o posterior ({referencia})."
+                    };
+                }
+            }
+        }
+
         // El CompoundPlan permite que un paso sea de escritura, pero
         // el ejecutor solo enruta a herramientas de lectura. Si el
         // plan intenta una operacion de escritura, la rechazamos.
         foreach (var paso in plan.Pasos)
         {
+            var validado = IaPlanValidator.Validar(paso.Plan, DateOnly.FromDateTime(DateTime.UtcNow));
+            if (validado.Estado is not FinancialPlanStatus.Ok || validado.Plan is null)
+            {
+                return new CompoundPlanResult
+                {
+                    Advertencia = $"El paso '{paso.Nombre}' no es valido: {validado.Motivo}"
+                };
+            }
             if (EsOperacionDeEscritura(paso.Plan.Operacion))
             {
                 return new CompoundPlanResult
@@ -124,6 +156,21 @@ public sealed class PlanExecutor : IPlanExecutor
 
             timeoutCts.Token.ThrowIfCancellationRequested();
             var paso = plan.Pasos[i];
+            var validado = IaPlanValidator.Validar(paso.Plan, DateOnly.FromDateTime(DateTime.UtcNow));
+            paso = paso with { Plan = validado.Plan! };
+            // Las referencias son una barrera de orden, no una plantilla de
+            // interpolacion: ningun dato de un paso se convierte en instrucciones
+            // o filtros del siguiente sin un campo tipado que lo permita.
+            if (paso.ReferenciasAPasos.Any(referencia => resultados.All(x => x.Indice != referencia)))
+            {
+                return new CompoundPlanResult
+                {
+                    Exito = false,
+                    Pasos = resultados,
+                    Advertencia = $"El paso '{paso.Nombre}' no puede ejecutarse porque falta un resultado previo.",
+                    DuracionTotal = cronometro.Elapsed
+                };
+            }
             var stepCronometro = Stopwatch.StartNew();
             try
             {
@@ -190,6 +237,18 @@ public sealed class PlanExecutor : IPlanExecutor
                         Datos: r.Data);
                 }
             case FinancialOperation.List:
+                if (plan.Metrica is FinancialMetric.Saldo)
+                {
+                    var r = await tools.GetBalancesAsync(scope, plan, cancellationToken);
+                    return new PlanStepResult(paso.Indice, paso.Nombre,
+                        Resumen: r.Data.Count == 0 ? "Sin saldos." : $"{r.Data.Count} saldo(s) devueltos.",
+                        FilasDevueltas: r.FilasDevueltas,
+                        FilasAnalizadas: r.FilasAnalizadas,
+                        Duracion: TimeSpan.Zero,
+                        Advertencia: r.Advertencia,
+                        Datos: r.Data);
+                }
+                goto case FinancialOperation.Sum;
             case FinancialOperation.Sum:
             case FinancialOperation.Count:
             case FinancialOperation.Group:

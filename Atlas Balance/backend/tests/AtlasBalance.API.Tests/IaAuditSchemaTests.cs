@@ -144,4 +144,20 @@ public class IaAuditSchemaTests
             }
         }
     }
+
+    [Fact]
+    public void Factory_Elimina_Campos_No_Permitidos_Y_Agrega_Envelope()
+    {
+        var json = IaAuditEventFactory.Consulta("local", new Dictionary<string, object?>
+        {
+            ["provider"] = "LOCAL",
+            ["movimientos_analizados"] = 3,
+            ["pregunta_completa"] = "dato que no debe persistir"
+        });
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("schema_version").GetString().Should().Be(IaAuditSchema.Version);
+        document.RootElement.GetProperty("origen").GetString().Should().Be("local");
+        document.RootElement.TryGetProperty("pregunta_completa", out _).Should().BeFalse();
+    }
 }

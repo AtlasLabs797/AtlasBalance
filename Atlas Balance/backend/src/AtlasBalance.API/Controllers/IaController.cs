@@ -1,5 +1,6 @@
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Services;
+using AtlasBalance.API.Services.IaPlanner;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,13 +13,16 @@ public sealed class IaController : ControllerBase
 {
     private readonly IAtlasAiService _atlasAiService;
     private readonly IUserAccessService _userAccessService;
+    private readonly IConversationMemory _conversationMemory;
 
     public IaController(
         IAtlasAiService atlasAiService,
-        IUserAccessService userAccessService)
+        IUserAccessService userAccessService,
+        IConversationMemory conversationMemory)
     {
         _atlasAiService = atlasAiService;
         _userAccessService = userAccessService;
+        _conversationMemory = conversationMemory;
     }
 
     [HttpGet("config")]
@@ -101,5 +105,18 @@ public sealed class IaController : ControllerBase
         {
             return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message });
         }
+    }
+
+    [HttpPost("conversacion/nueva")]
+    public async Task<IActionResult> NuevaConversacion(CancellationToken cancellationToken)
+    {
+        var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
+        if (scope.UserId == Guid.Empty)
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        _conversationMemory.Invalidar(scope.UserId);
+        return NoContent();
     }
 }

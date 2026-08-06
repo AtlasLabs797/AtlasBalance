@@ -246,6 +246,8 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
             tokens: `${data.tokens_entrada_estimados}/${data.tokens_salida_estimados}`,
             coste: `${data.coste_estimado_eur.toFixed(6)} EUR`,
             aviso: data.aviso,
+            origen: data.origen,
+            opcionesAclaracion: data.opciones_aclaracion ?? undefined,
           },
         },
       ]);
@@ -488,6 +490,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
                 type="button"
                 className="ai-chat-reset"
                 onClick={() => {
+                  void api.post('/ia/conversacion/nueva');
                   setMessages([]);
                   setError(null);
                   setLastFailedPrompt(null);

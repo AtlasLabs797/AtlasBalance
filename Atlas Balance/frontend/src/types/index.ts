@@ -507,6 +507,8 @@ export interface IaChatResponse {
   coste_estimado_eur: number;
   aviso_presupuesto: boolean;
   aviso: string | null;
+  origen: 'local' | 'proveedor';
+  opciones_aclaracion: { etiqueta: string; valor: string }[] | null;
 }
 
 export interface IaModel {

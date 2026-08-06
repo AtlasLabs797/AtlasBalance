@@ -392,12 +392,14 @@ public sealed class IntentPlanner : IIntentPlanner
             using var document = JsonDocument.Parse(raw);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
+            if (root.EnumerateObject().Any(x => x.Name is not ("operacion" or "metrica" or "filtros"))) return null;
             if (!root.TryGetProperty("operacion", out var op)) return null;
             if (!root.TryGetProperty("metrica", out var met)) return null;
             if (!Enum.TryParse<FinancialOperation>(op.GetString(), ignoreCase: true, out var opVal)) return null;
             if (!Enum.TryParse<FinancialMetric>(met.GetString(), ignoreCase: true, out var metVal)) return null;
 
             var filtros = ParseFiltros(root);
+            if (filtros is null) return null;
             return new FinancialQueryPlan
             {
                 Operacion = opVal,
@@ -411,11 +413,16 @@ public sealed class IntentPlanner : IIntentPlanner
         }
     }
 
-    private static FinancialFilters ParseFiltros(JsonElement root)
+    private static FinancialFilters? ParseFiltros(JsonElement root)
     {
         if (!root.TryGetProperty("filtros", out var f) || f.ValueKind != JsonValueKind.Object)
         {
             return new FinancialFilters();
+        }
+
+        if (f.EnumerateObject().Any(x => x.Name is not ("divisas" or "concepto")))
+        {
+            return null;
         }
 
         IReadOnlyList<string>? divisas = null;

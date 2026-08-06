@@ -216,4 +216,23 @@ public class PlanExecutorTests
     {
         PlanExecutor.MaxPasos.Should().Be(5);
     }
+
+    [Fact]
+    public async Task EjecutarAsync_Referencia_A_Paso_Posterior_Rechaza()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAsync(db);
+        var plan = new CompoundPlan
+        {
+            Pasos = new[]
+            {
+                new PlanStep(0, "primero", new FinancialQueryPlan { Operacion = FinancialOperation.GetLatest, Metrica = FinancialMetric.Gastos }, new[] { 1 }),
+                new PlanStep(1, "segundo", new FinancialQueryPlan { Operacion = FinancialOperation.GetLatest, Metrica = FinancialMetric.Gastos }, Array.Empty<int>())
+            }
+        };
+
+        var result = await new PlanExecutor().EjecutarAsync(AdminScope(userId), plan, BuildTools(db), CancellationToken.None);
+        result.Exito.Should().BeFalse();
+        result.Advertencia.Should().Contain("posterior");
+    }
 }

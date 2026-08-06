@@ -388,8 +388,15 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
 builder.Services.AddScoped<IPlazoFijoService, PlazoFijoService>();
 builder.Services.AddScoped<IRevisionService, RevisionService>();
-    builder.Services.AddScoped<IAtlasAiService, AtlasAiService>();
-    builder.Services.AddScoped<IFinancialToolsService, FinancialToolsService>();
+builder.Services.AddScoped<IAtlasAiService, AtlasAiService>();
+builder.Services.AddScoped<IFinancialToolsService, FinancialToolsService>();
+builder.Services.AddScoped<IIntentPlanner, IntentPlanner>();
+builder.Services.AddScoped<ISemanticPlannerClient, SemanticPlannerClient>();
+builder.Services.AddScoped<IPlanExecutor, PlanExecutor>();
+builder.Services.AddSingleton<IConversationMemory, InMemoryConversationMemory>();
+builder.Services.AddSingleton<IDocumentationHelpService>(_ => new DocumentationHelpService(
+    builder.Configuration["Documentation:UserPath"]
+    ?? Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "..", "..", "Documentacion", "DOCUMENTACION_USUARIO.md"))));
 builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<BackupConfigurationService>();
 builder.Services.AddScoped<IBackupConfigurationService, HardenedBackupConfigurationService>();
