@@ -9,6 +9,84 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.09 - Cierre: anomalias faltantes + rechazo explicito + UI amigable
+
+- **Sintoma reportado:** quedaban tres flecos del plan que no se
+  cerraron en el commit del plan completo:
+  - Faltaban dos tipos de anomalia (Fase 7): SALDO_EN_CAIDA y
+    GASTO_NUEVO.
+  - La ayuda documental solo decia "Reformula con terminos del
+    manual" cuando no encontraba respuesta. El plan pedia un
+    rechazo explicito.
+  - El frontend mostraba el texto crudo del backend cuando la IA
+    fallaba por motivos esperables (permisos, rate limit,
+    configuracion). El plan pedia mensajes amigables.
+- **Solucion:**
+  - **Fase 7 (cierre):** `DetectAnomaliesAsync` ahora detecta
+    cuatro tipos: DUPLICADO_PROBABLE, IMPORTE_ATIPICO,
+    SALDO_EN_CAIDA (caida >= 25% en 3 meses consecutivos, umbral
+    documentado) y GASTO_NUEVO (concepto de gasto que aparece
+    este mes pero no en los 5 meses anteriores, minimo 3
+    caracteres para evitar ruido).
+  - **Fase 9 (cierre):** `DocumentationHelpService` distingue
+    tres estados via el enum `HelpResultado`:
+    Encontrado / NoEncontrado / DocumentoNoCargado. Cuando es
+    NoEncontrado, el mensaje dice explicitamente que el manual
+    no contiene respuesta, que Atlas Balance IA no inventa
+    funcionalidades, y sugiere terminos para reformular.
+  - **Fase 10 (cierre):** nuevo helper `frontend/src/utils/
+    iaErrors.ts` que clasifica el mensaje de la excepcion y
+    devuelve un texto amigable + accion sugerida ('reformular',
+    'contactar_admin', 'esperar'). `AiChatPanel` lo usa en los
+    dos `catch` (carga de config + envio de pregunta).
+- **Tests:**
+  - `FinancialToolsServiceTests`: 5 casos nuevos
+    (SALDO_EN_CAIDA dispara, saldo estable no marca,
+    GASTO_NUEVO dispara, concepto recurrente no marca,
+    constantes documentadas).
+  - `DocumentationHelpServiceTests`: 3 tests actualizados para
+    assertar el estado explicito (`HelpResultado.NoEncontrado`,
+    `HelpResultado.DocumentoNoCargado`).
+  - `tests/iaErrors.test.ts`: 11 casos nuevos (uno por tipo de
+    excepcion + fallback + strings no-Error + null).
+- **Archivos tocados:**
+  - Backend:
+    - `AtlasBalance.API/Services/IaPlanner/FinancialToolsService.cs`
+      (anomalias SALDO_EN_CAIDA y GASTO_NUEVO).
+    - `AtlasBalance.API/Services/IaPlanner/TendenciasAnomaliasService.cs`
+      (etiquetas de las dos anomalias nuevas).
+    - `tests/AtlasBalance.API.Tests/FinancialToolsServiceTests.cs`
+      (5 casos nuevos).
+  - Frontend:
+    - `frontend/src/utils/iaErrors.ts` (nuevo).
+    - `frontend/src/components/ia/AiChatPanel.tsx`
+      (usa friendlyIaError en lugar de extractErrorMessage).
+    - `frontend/tests/iaErrors.test.ts` (nuevo).
+    - `frontend/tsconfig.test.v2.json` (anade iaErrors.ts al include).
+    - `frontend/package.json` (anade iaErrors.test.js al test:unit).
+- **Comandos ejecutados:**
+  - `dotnet build -c Release -p:OutputPath=... -p:UseAppHost=false`
+  - `dotnet test --filter 'Category!=Postgres' -p:ArtifactsPath=...`
+  - `npx tsc --noEmit`
+  - `npm run lint --max-warnings 0`
+  - `npm run test:unit`
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`
+- **Resultado de verificacion:**
+  - `dotnet build` (Release): **0 errores** (mismos 7 warnings
+    preexistentes).
+  - `dotnet test --filter 'Category!=Postgres'`: **847/847**.
+    Docker disponible en este host, asi que los 19 tests
+    Postgres tambien pasan.
+  - `npx tsc --noEmit`: **OK**.
+  - `npm run lint --max-warnings 0`: **OK**.
+  - `npm run test:unit`: **57/57 PASS** (11 nuevos de
+    friendlyIaError).
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`: **OK**.
+- **Estado del plan:** los 12 puntos del plan originalestan
+  cerrados. El unico pendiente fuera de CI es `npm run build`
+  (Vite) por el EPERM documentado en AGENTS.md seccion 8;
+  `tsc --noEmit` y `lint` pasan limpios.
+
 ## 2026-08-05 - V-02.09 - IA financiera: plan completo de 12 fases (CERRADO)
 
 - **Alcance:** ejecucion completa del plan de 12 fases del
