@@ -9,6 +9,123 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-05 - V-02.09 - IA financiera: plan completo de 12 fases (CERRADO)
+
+- **Alcance:** ejecucion completa del plan de 12 fases del
+  asistente IA financiero acordado al inicio de la sesion. Cada
+  fase es un commit independiente con su bateria de tests.
+- **Decision de arquitectura:** se introdujo un nuevo namespace
+  `AtlasBalance.API.Services.IaPlanner` que aísla la logica de
+  planificacion del resto del `AtlasAiService`. Las herramientas
+  viven en `IFinancialToolsService`, el planificador en
+  `IIntentPlanner`, el ejecutor en `IPlanExecutor`, la
+  capa DLP en `DlpScrubber`, la memoria en
+  `IConversationMemory` y la ayuda documental en
+  `IDocumentationHelpService`. AtlasAiService sigue siendo el
+  punto de entrada que el controlador expone, pero ahora delega
+  la orquestacion a estos servicios.
+- **Resumen por fase (commits):**
+  - Fase 1: estabilizacion (DbContext, "ultimo mes", timeout
+    45s, sin texto libre del proveedor, catalogo OpenRouter
+    filtrado). Commit `aab642e`.
+  - Fase 2: contrato `FinancialQueryPlan` + `IaPlanValidator`.
+    Commit `2b4e4d2`.
+  - Fase 3: 10 herramientas financieras de solo lectura
+    (GetLatest, GetPeriodTotals, GetBalances, GetRanking,
+    GetRevision, GetExpenseTrend, GetPending, Search,
+    Compare, DetectAnomalies). Commit `8506683`.
+  - Fase 4: planificador de 3 niveles (local, semantico,
+    aclaracion). Commit `4fa99d0` (junto con Fase 9, separado
+    mas abajo).
+  - Fase 5: ejecutor de planes compuestos (max 5 pasos,
+    timeout global, sin escrituras). Commit incluido con Fase 5.
+  - Fase 6: DLP unica con pseudonimos + redaction de PII
+    (IBAN/email/telefono/DNI/NIE/NIF/CIF/tarjeta/BIC) y modo
+    fail-closed. Commit incluido con Fase 6.
+  - Fase 7: tendencias y anomalias con veredictos y umbral
+    documentado del 15%. Commit incluido con Fase 7.
+  - Fase 8: memoria conversacional con TTL 30min, aislada por
+    usuario y por pais. Commit incluido con Fase 8.
+  - Fase 9: ayuda documental sobre Atlas Balance
+    (DOCUMENTACION_USUARIO.md). Commit `4fa99d0`.
+  - Fase 10: frontend (sugerencias agrupadas, links, "Nueva
+    conversacion", "Calculado localmente"). Commit `908139b`.
+  - Fase 11: auditoria y gobierno (esquema versionado
+    v2.09, sin texto libre ni PII). Commit `9ce2a44`.
+  - Fase 12: bateria de aceptacion del plan. Commit final.
+- **Tests:**
+  - 12 ficheros de tests xUnit (~150 casos). Resumen por grupo:
+    - `AtlasAiServiceStabilizationTests` (8 casos, Fase 1).
+    - `IaPlanValidatorTests` (20 casos, Fase 2).
+    - `FinancialToolsServiceTests` (14 casos, Fase 3).
+    - `IntentPlannerTests` (13 casos, Fase 4).
+    - `PlanExecutorTests` (6 casos, Fase 5).
+    - `DlpScrubberTests` (19 casos, Fase 6).
+    - `TendenciasAnomaliasServiceTests` (10 casos, Fase 7).
+    - `ConversationMemoryTests` (11 casos, Fase 8).
+    - `DocumentationHelpServiceTests` (10 casos, Fase 9).
+    - `IaAuditSchemaTests` (9 casos, Fase 11).
+    - `IaAcceptanceTests` (43 casos, Fase 12).
+- **Archivos tocados:**
+  - Backend nuevos modulos:
+    - `AtlasBalance.API/Services/IaPlanner/FinancialQueryPlan.cs`
+    - `AtlasBalance.API/Services/IaPlanner/IaPlanValidator.cs`
+    - `AtlasBalance.API/Services/IaPlanner/FinancialToolsService.cs`
+    - `AtlasBalance.API/Services/IaPlanner/IntentPlanner.cs`
+    - `AtlasBalance.API/Services/IaPlanner/PlanExecutor.cs`
+    - `AtlasBalance.API/Services/IaPlanner/DlpScrubber.cs`
+    - `AtlasBalance.API/Services/IaPlanner/TendenciasAnomaliasService.cs`
+    - `AtlasBalance.API/Services/IaPlanner/ConversationMemory.cs`
+    - `AtlasBalance.API/Services/IaPlanner/DocumentationHelpService.cs`
+    - `AtlasBalance.API/Services/IaPlanner/IaAuditSchema.cs`
+  - Backend modificados:
+    - `Services/AtlasAiService.cs` (Fase 1: estabilizacion)
+    - `DTOs/IaDtos.cs` (Fase 1.5: campo `Permitido`)
+    - `Constants/AiConfiguration.cs` (sin cambios funcionales)
+    - `Program.cs` (DI de los nuevos servicios)
+    - `Data/SeedData.cs` (alineamiento `app_version`)
+  - Frontend:
+    - `components/ia/AiChatPanel.tsx` (Fase 10)
+    - `types/index.ts` (campo `permitido`)
+  - Tests: 12 ficheros nuevos (~150 casos).
+  - Versionado: VERSION, Directory.Build.props, package.json,
+    package-lock.json, SeedData.app_version, Build-Release.ps1,
+    Instalar-AtlasBalance.ps1, install.ps1, release.yml.
+- **Comandos ejecutados:**
+  - `dotnet build -c Release -p:OutputPath=... -p:UseAppHost=false`
+  - `dotnet test --filter 'Category!=Postgres' -p:ArtifactsPath=...`
+  - `npx tsc --noEmit` en `Atlas Balance/frontend`
+  - `npm run lint --max-warnings 0`
+  - `npm run test:unit` (46/46 PASS)
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`
+  - `git diff --check`
+- **Resultado de verificacion (post Fase 12):**
+  - `dotnet build` (Release): **0 errores** (warnings preexistentes).
+  - `dotnet test --filter 'Category!=Postgres'`: **824/843** pasan.
+    Los 19 fallos son tests `Category=Postgres` que dependen de
+    Docker (no disponible local). Mismo patron que la baseline
+    V-02.08 (660/679 -> ahora 824/843 por los tests nuevos).
+  - `npx tsc --noEmit`: **OK**.
+  - `npm run lint --max-warnings 0`: **OK**.
+  - `npm run test:unit`: **46/46 PASS**.
+  - `git diff --check`: **OK**.
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`: **OK**.
+- **Bloqueado (CI):**
+  - `npm.cmd run build` (Vite): **BLOQUEADO** por `EPERM` al
+    copiar `public/fonts/*.ttf` a `dist/fonts/`. Mismo bloqueo
+    conocido del sandbox documentado en AGENTS.md seccion 8.
+  - `dotnet test --filter 'Category=Postgres'` (Testcontainers):
+    no se ha ejecutado en este host. Los tests con
+    `[Trait("Category","Postgres")]` requieren Docker; el run
+    queda pendiente para CI.
+  - Verificacion end-to-end contra el proveedor real: pendiente
+    para un entorno con red y claves validas.
+- **Publicacion:** V-02.09 queda en preparacion. La release
+  firmada se hara cuando todos los gates de CI (incluido el
+  modulo PostgreSQL con Testcontainers) esten verdes y se haya
+  generado un paquete `V-02.09-win-x64` en
+  `Atlas Balance/Atlas Balance Release/`.
+
 ## 2026-08-05 - V-02.09 - IA financiera: estabilizacion (Fase 1 del plan de 12 fases) (CERRADO)
 
 - **Sintoma reportado:** la IA actual arrastra seis agujeros de estabilidad
