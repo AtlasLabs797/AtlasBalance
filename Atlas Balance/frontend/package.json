@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
-    "test:unit": "tsc -p tsconfig.test.v2.json && node --test --test-force-exit .test-dist/tests/importacionRequest.test.js .test-dist/tests/safeRoute.test.js .test-dist/tests/queryKeys.test.js .test-dist/tests/queryClient.test.js .test-dist/tests/invalidation.test.js .test-dist/tests/bulkFlagToggle.test.js .test-dist/tests/permisosFormUtils.test.js",
+    "test:unit": "tsc -p tsconfig.test.v2.json && node --test --test-force-exit .test-dist/tests/importacionRequest.test.js .test-dist/tests/safeRoute.test.js .test-dist/tests/queryKeys.test.js .test-dist/tests/queryClient.test.js .test-dist/tests/invalidation.test.js .test-dist/tests/bulkFlagToggle.test.js .test-dist/tests/permisosFormUtils.test.js .test-dist/tests/iaErrors.test.js",
     "test:e2e": "playwright test"
   },
   "dependencies": {

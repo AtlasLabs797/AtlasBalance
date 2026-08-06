@@ -8,7 +8,7 @@ import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { IaChatResponse, IaConfig, IaModel } from '@/types';
 import { getAiModelLabel, getAiModelOptions, normalizeAiModel, normalizeAiProvider } from '@/utils/aiModels';
-import { extractErrorMessage } from '@/utils/errorMessage';
+import { friendlyIaError } from '@/utils/iaErrors';
 
 interface AssistantMessageMeta {
   movimientosAnalizados: number;
@@ -143,7 +143,8 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
         }
       } catch (err) {
         if (mounted) {
-          setError(extractErrorMessage(err, 'No se pudo cargar la configuración de IA.'));
+          const friendly = friendlyIaError(err, 'No se pudo cargar la configuración de IA.');
+          setError(friendly.texto);
         }
       }
     };
@@ -249,7 +250,14 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
         },
       ]);
     } catch (err) {
-      setError(extractErrorMessage(err, 'La IA no pudo responder con los datos actuales.'));
+      // V-02.09 (Fase 10): el backend lanza excepciones con tipos
+      // especificos (IaAccessDeniedException, IaOutOfScopeException,
+      // IaLimitExceededException, IaConfigurationException,
+      // IaProviderException). El helper las mapea a mensajes
+      // amigables para el usuario final en vez de mostrar el texto
+      // crudo del backend.
+      const friendly = friendlyIaError(err, 'La IA no pudo responder con los datos actuales.');
+      setError(friendly.texto);
       setLastFailedPrompt(prompt);
     } finally {
       setLoading(false);
