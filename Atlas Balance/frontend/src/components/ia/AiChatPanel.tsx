@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { SendHorizontal } from 'lucide-react';
+import { Link as LinkIcon, RotateCcw, SendHorizontal } from 'lucide-react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -16,6 +16,30 @@ interface AssistantMessageMeta {
   tokens: string;
   coste: string;
   aviso: string | null;
+  // V-02.09 (Fase 10): indica si la respuesta viene del calculo
+  // local (sin proveedor) o del modelo. Permite al usuario saber
+  // cuando no se ha gastado cuota.
+  origen?: 'local' | 'proveedor';
+  // V-02.09 (Fase 10): periodo y divisa que el sistema ha usado,
+  // para que el usuario entienda que limites se le han aplicado.
+  periodo?: string;
+  divisa?: string;
+  // V-02.09 (Fase 10): pistas para profundizar la consulta (links
+  // a Extractos, Revision, Conciliacion con filtros aplicados).
+  enlaces?: AssistantLink[];
+  // V-02.09 (Fase 10): opciones de aclaracion cuando la pregunta
+  // es ambigua. Cada opcion es un boton que rellena el input.
+  opcionesAclaracion?: AssistantClarificationOption[];
+}
+
+interface AssistantLink {
+  etiqueta: string;
+  ruta: string;
+}
+
+interface AssistantClarificationOption {
+  etiqueta: string;
+  valor: string;
 }
 
 interface ChatMessage {
@@ -29,10 +53,40 @@ interface AiChatPanelProps {
   onClose?: () => void;
 }
 
-const EXAMPLE_PROMPTS = [
-  '¿Qué comisiones bancarias están pendientes de devolución?',
-  '¿Cuánto se ha pagado en seguros este año?',
-  '¿Qué cuentas han tenido más gastos este trimestre?',
+// V-02.09 (Fase 10): sugerencias agrupadas por categoria. Cada
+// categoria tiene una cabecera y un par de ejemplos que disparan
+// el camino local (Fase 4) o el semantico (Fase 2/3) segun el
+// texto. La categoria sirve para que el usuario entienda donde
+// encaja su pregunta antes de escribirla.
+const SUGGESTED_PROMPTS: { categoria: string; ejemplos: string[] }[] = [
+  {
+    categoria: 'Movimientos',
+    ejemplos: [
+      'Cual fue el ultimo gasto?',
+      'Cual es el saldo actual de mis cuentas?'
+    ]
+  },
+  {
+    categoria: 'Tendencias',
+    ejemplos: [
+      'Cuanto hemos gastado este trimestre?',
+      'Tendencia de gastos del ultimo ano'
+    ]
+  },
+  {
+    categoria: 'Revision',
+    ejemplos: [
+      'Cuales son las comisiones pendientes?',
+      'Que movimientos tienen importe atipico?'
+    ]
+  },
+  {
+    categoria: 'Pendientes',
+    ejemplos: [
+      'Que cobros o pagos tengo esperados?',
+      'Hay conciliaciones abiertas?'
+    ]
+  }
 ];
 const MAX_PROMPT_LENGTH = 500;
 
@@ -295,10 +349,19 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
           <div ref={scrollRef} className="ai-chat-messages" aria-live="polite">
             {messages.length === 0 ? (
               <div className="ai-chat-empty">
-                {EXAMPLE_PROMPTS.map((prompt) => (
-                  <button key={prompt} type="button" onClick={() => void ask(prompt)} disabled={!canAsk || loading}>
-                    {prompt}
-                  </button>
+                {SUGGESTED_PROMPTS.map((grupo) => (
+                  <section key={grupo.categoria} className="ai-chat-suggestions">
+                    <h3>{grupo.categoria}</h3>
+                    <ul>
+                      {grupo.ejemplos.map((prompt) => (
+                        <li key={prompt}>
+                          <button type="button" onClick={() => void ask(prompt)} disabled={!canAsk || loading}>
+                            {prompt}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 ))}
               </div>
             ) : (
@@ -306,10 +369,39 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
                 <article key={`${message.role}-${index}`} className={`ai-chat-message ai-chat-message--${message.role}`}>
                   <span>{message.role === 'user' ? 'Tú' : message.role === 'assistant' ? 'IA' : 'Sistema'}</span>
                   <AiMessageContent content={message.content} />
+                  {message.meta?.opcionesAclaracion && message.meta.opcionesAclaracion.length > 0 ? (
+                    <div className="ai-chat-clarification">
+                      <p className="ai-chat-clarification-question">{message.content}</p>
+                      <ul>
+                        {message.meta.opcionesAclaracion.map((opcion) => (
+                          <li key={opcion.valor}>
+                            <button type="button" onClick={() => void ask(opcion.etiqueta)} disabled={!canAsk || loading}>
+                              {opcion.etiqueta}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {message.meta?.enlaces && message.meta.enlaces.length > 0 ? (
+                    <ul className="ai-chat-links">
+                      {message.meta.enlaces.map((enlace) => (
+                        <li key={enlace.ruta}>
+                          <a href={enlace.ruta}>
+                            <LinkIcon size={12} aria-hidden="true" /> {enlace.etiqueta}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   {message.meta ? (
                     <details className="ai-chat-message-meta">
                       <summary>Detalles de IA</summary>
                       <dl>
+                        <div>
+                          <dt>Origen</dt>
+                          <dd>{message.meta.origen === 'local' ? 'Calculado localmente' : 'Proveedor externo'}</dd>
+                        </div>
                         <div>
                           <dt>Movimientos</dt>
                           <dd>{message.meta.movimientosAnalizados}</dd>
@@ -318,6 +410,18 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
                           <dt>Modelo</dt>
                           <dd>{message.meta.model}</dd>
                         </div>
+                        {message.meta.periodo ? (
+                          <div>
+                            <dt>Periodo</dt>
+                            <dd>{message.meta.periodo}</dd>
+                          </div>
+                        ) : null}
+                        {message.meta.divisa ? (
+                          <div>
+                            <dt>Divisa</dt>
+                            <dd>{message.meta.divisa}</dd>
+                          </div>
+                        ) : null}
                         <div>
                           <dt>Tokens</dt>
                           <dd>{message.meta.tokens}</dd>
@@ -371,6 +475,22 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
               maxLength={MAX_PROMPT_LENGTH}
               rows={1}
             />
+            {messages.length > 0 ? (
+              <button
+                type="button"
+                className="ai-chat-reset"
+                onClick={() => {
+                  setMessages([]);
+                  setError(null);
+                  setLastFailedPrompt(null);
+                }}
+                disabled={loading}
+                aria-label="Nueva conversacion"
+                title="Nueva conversacion"
+              >
+                <RotateCcw size={16} aria-hidden="true" />
+              </button>
+            ) : null}
             <button type="submit" disabled={!canAsk || loading || !input.trim()} aria-label="Enviar pregunta a IA">
               <SendHorizontal size={18} aria-hidden="true" />
             </button>
