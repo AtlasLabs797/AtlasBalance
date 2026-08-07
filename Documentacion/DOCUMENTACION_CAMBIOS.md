@@ -9,6 +9,44 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-06 - V-02.09 - Chat unico: flotante y /ia comparten conversacion
+
+- **Motivacion:** el chat IA tenia dos mounts (`TopBar.tsx` flotante y
+  `pages/IaPage.tsx`) cada uno con su propio `useState`. Lo que el
+  usuario preguntaba en uno no aparecia en el otro y la seleccion de
+  modelo tampoco se compartia. Solo se compartia (de forma invisible
+  para el usuario) el `ConversationContext` estructurado del backend.
+- **Implementacion:** nuevo `stores/aiChatStore.ts` (Zustand) con el
+  estado de la conversacion y la eleccion de modelo; el componente
+  `AiChatPanel.tsx` pasa a consumirlo y queda casi-presentacional.
+  `services/api.ts` limpia el store en `clearSessionState` (logout,
+  419/440, refresh fallido) para que el siguiente usuario en el mismo
+  navegador no vea la conversacion del anterior. `types/index.ts`
+  reexporta los tipos del chat desde el store.
+- **Decisiones de scope:**
+  - `input` (texto a medio escribir) sigue siendo local por instancia:
+    si los dos textareas estan visibles a la vez, cada uno mantiene su
+    borrador. Mensajes, modelo, errores y `reset` ya son compartidos.
+  - No se persiste la conversacion entre reloads (sigue siendo en
+    memoria unicamente). Si en futuro se quiere, hace falta
+    `GET /api/ia/conversacion` en backend.
+  - Variantes visuales (`compact` vs full) intactas. `TopBar.tsx` y
+    `pages/IaPage.tsx` no se tocan.
+- **Verificacion:** `npm.cmd run lint --max-warnings 0` **OK**;
+  `npx.cmd tsc --noEmit` **OK**; `npm.cmd run test:unit` **57/57 PASS**.
+  `npm.cmd run build` (Vite) sigue **BLOQUEADO** por el `EPERM` ya
+  conocido al copiar `public/fonts/*.ttf` a `dist/fonts/` (mismo
+  bloqueo registrado en AGENTS.md seccion 8 y en v-02.09.md seccion
+  "Pendientes de Fase 1"). No se reintenta: la compilacion `tsc --noEmit`
+  cubre el lado TypeScript.
+- **Pendiente:** smoke manual entre flotante y `/ia` con dos preguntas
+  reales en cada mount para confirmar visualmente que la conversacion
+  y el modelo seleccionado se reflejan en ambos. No hay tests
+  automaticos del store todavia (el helper `friendlyIaError`, que es
+  lo unico que cubre la accion `ask`, sigue verde).
+
+---
+
 ## 2026-08-06 - V-02.09 - Auditoria de ejecucion del plan IA
 
 - **Hallazgo:** los commits declaraban el plan de doce fases cerrado, pero el

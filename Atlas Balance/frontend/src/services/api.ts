@@ -1,4 +1,5 @@
 ﻿import axios from 'axios';
+import { useAiChatStore } from '@/stores/aiChatStore';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
@@ -36,6 +37,10 @@ const clearSessionState = () => {
   usePermisosStore.getState().clear();
   useAlertasStore.getState().clear();
   usePaisScopeStore.getState().clear();
+  // V-02.09 (Fase 1.6): vacia mensajes, modelo seleccionado, errores y config
+  // del chat IA. Sin esto, el siguiente usuario que abra sesion en el mismo
+  // navegador veria la conversacion del usuario anterior al montar el panel.
+  useAiChatStore.getState().clear();
   // TanStack Query: tras logout, restore o cambio de usuario/permisos la
   // caché en memoria contiene datos del usuario anterior (saldos,
   // extractos, alertas). Limpiarla aqui evita fuga entre sesiones.

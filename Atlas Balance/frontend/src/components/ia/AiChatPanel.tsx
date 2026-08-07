@@ -4,49 +4,8 @@ import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
 import { AiMessageContent } from '@/components/ia/AiMessageContent';
-import api from '@/services/api';
-import { usePaisScopeStore } from '@/stores/paisScopeStore';
-import type { IaChatResponse, IaConfig, IaModel } from '@/types';
-import { getAiModelLabel, getAiModelOptions, normalizeAiModel, normalizeAiProvider } from '@/utils/aiModels';
-import { friendlyIaError } from '@/utils/iaErrors';
-
-interface AssistantMessageMeta {
-  movimientosAnalizados: number;
-  model: string;
-  tokens: string;
-  coste: string;
-  aviso: string | null;
-  // V-02.09 (Fase 10): indica si la respuesta viene del calculo
-  // local (sin proveedor) o del modelo. Permite al usuario saber
-  // cuando no se ha gastado cuota.
-  origen?: 'local' | 'proveedor';
-  // V-02.09 (Fase 10): periodo y divisa que el sistema ha usado,
-  // para que el usuario entienda que limites se le han aplicado.
-  periodo?: string;
-  divisa?: string;
-  // V-02.09 (Fase 10): pistas para profundizar la consulta (links
-  // a Extractos, Revision, Conciliacion con filtros aplicados).
-  enlaces?: AssistantLink[];
-  // V-02.09 (Fase 10): opciones de aclaracion cuando la pregunta
-  // es ambigua. Cada opcion es un boton que rellena el input.
-  opcionesAclaracion?: AssistantClarificationOption[];
-}
-
-interface AssistantLink {
-  etiqueta: string;
-  ruta: string;
-}
-
-interface AssistantClarificationOption {
-  etiqueta: string;
-  valor: string;
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  meta?: AssistantMessageMeta;
-}
+import { useAiChatStore } from '@/stores/aiChatStore';
+import { normalizeAiModel, normalizeAiProvider, getAiModelOptions } from '@/utils/aiModels';
 
 interface AiChatPanelProps {
   compact?: boolean;
@@ -95,17 +54,28 @@ function getCompactModelLabel(label: string) {
 }
 
 export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
-  const [config, setConfig] = useState<IaConfig | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // V-02.09 (Fase 1.6): estado de conversacion (mensajes, modelo seleccionado,
+  // errores, loading, config) vive en el store compartido entre el chat
+  // flotante y la pagina /ia. Asi ambas instancias ven la misma conversacion
+  // y la misma eleccion de modelo. El input (texto a medio escribir) sigue
+  // siendo local por instancia: si los dos textareas estan visibles a la vez,
+  // cada uno mantiene su propio borrador.
+  const messages = useAiChatStore((state) => state.messages);
+  const loading = useAiChatStore((state) => state.loading);
+  const error = useAiChatStore((state) => state.error);
+  const lastFailedPrompt = useAiChatStore((state) => state.lastFailedPrompt);
+  const selectedModel = useAiChatStore((state) => state.selectedModel);
+  const openRouterModels = useAiChatStore((state) => state.openRouterModels);
+  const config = useAiChatStore((state) => state.config);
+  const ensureConfig = useAiChatStore((state) => state.ensureConfig);
+  const loadOpenRouterModels = useAiChatStore((state) => state.loadOpenRouterModels);
+  const setSelectedModel = useAiChatStore((state) => state.setSelectedModel);
+  const reset = useAiChatStore((state) => state.reset);
+
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
-  const [openRouterModels, setOpenRouterModels] = useState<IaModel[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastFailedPrompt, setLastFailedPrompt] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
+
   const configured = Boolean(config?.configurada);
   const disabledReason = config?.mensaje_estado || 'Falta configurar la IA en Ajustes.';
   const accessBlocked = Boolean(config && (!config.habilitada || !config.usuario_puede_usar));
@@ -126,34 +96,8 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const providerLabel = selectedProvider === 'OPENAI' ? 'OpenAI' : selectedProvider === 'MINIMAX' ? 'MiniMax' : 'OpenRouter';
 
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const { data } = await api.get<IaConfig>('/ia/config');
-        if (!mounted) return;
-        setConfig(data);
-        setSelectedModel(normalizeAiModel(data.provider, data.model));
-        if (!data.configurada) {
-          setMessages([
-            {
-              role: 'system',
-              content: data.mensaje_estado || 'Falta configurar la IA en Ajustes.',
-            },
-          ]);
-        }
-      } catch (err) {
-        if (mounted) {
-          const friendly = friendlyIaError(err, 'No se pudo cargar la configuración de IA.');
-          setError(friendly.texto);
-        }
-      }
-    };
-
-    void load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    void ensureConfig();
+  }, [ensureConfig]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -169,106 +113,32 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     if (!configProvider) {
       return;
     }
-
-    setSelectedModel((current) => normalizeAiModel(configProvider, current || configModel));
-  }, [configProvider, configModel]);
+    const current = useAiChatStore.getState().selectedModel;
+    const normalized = normalizeAiModel(configProvider, current || configModel);
+    if (normalized !== current) {
+      setSelectedModel(normalized);
+    }
+  }, [configProvider, configModel, setSelectedModel]);
 
   useEffect(() => {
     if (selectedProvider !== 'OPENROUTER') {
       return;
     }
+    void loadOpenRouterModels(selectedModel || configModel);
+  }, [selectedProvider, selectedModel, configModel, loadOpenRouterModels]);
 
-    let mounted = true;
-    const loadModels = async () => {
-      try {
-        const { data } = await api.get<IaModel[]>('/ia/modelos', {
-          params: { provider: 'OPENROUTER', search: selectedModel || configModel || undefined },
-        });
-        if (mounted) {
-          setOpenRouterModels(data ?? []);
-        }
-      } catch {
-        if (mounted) {
-          setOpenRouterModels([]);
-        }
-      }
-    };
-
-    void loadModels();
-    return () => {
-      mounted = false;
-    };
-  }, [selectedProvider, selectedModel, configModel]);
-
-  const ask = async (question: string) => {
-    const prompt = question.trim();
-    if (!prompt || loading) {
-      return;
-    }
-
-    if (!canAsk) {
-      setError(disabledReason);
-      return;
-    }
-
-    if (prompt.length > MAX_PROMPT_LENGTH) {
-      setError(`La pregunta no puede superar ${MAX_PROMPT_LENGTH} caracteres.`);
-      return;
-    }
-
-    setInput('');
-    setError(null);
-    setLastFailedPrompt(null);
-    setMessages((current) => [...current, { role: 'user', content: prompt }]);
-    setLoading(true);
-
-    try {
-      const { data } = await api.post<IaChatResponse>('/ia/chat', {
-        pregunta: prompt,
-        model: activeModel,
-        pais_id: selectedPaisId || undefined,
-      }, {
-        // V-02.09 (Fase 1.3): el HttpClient del backend (openrouter/openai/minimax)
-        // tiene timeout 45s; el default de axios es 15s, asi que cualquier consulta
-        // medianamente larga se cancela antes de poder recibir respuesta. La
-        // /ia/chat es la unica ruta con esta ventana amplia; el resto mantiene
-        // el timeout defensivo de 15s.
-        timeout: 45_000,
-      });
-      setMessages((current) => [
-        ...current,
-        {
-          role: 'assistant',
-          content: data.respuesta,
-          meta: {
-            movimientosAnalizados: data.movimientos_analizados,
-            model: getAiModelLabel(data.provider, data.model),
-            tokens: `${data.tokens_entrada_estimados}/${data.tokens_salida_estimados}`,
-            coste: `${data.coste_estimado_eur.toFixed(6)} EUR`,
-            aviso: data.aviso,
-            origen: data.origen,
-            opcionesAclaracion: data.opciones_aclaracion ?? undefined,
-          },
-        },
-      ]);
-    } catch (err) {
-      // V-02.09 (Fase 10): el backend lanza excepciones con tipos
-      // especificos (IaAccessDeniedException, IaOutOfScopeException,
-      // IaLimitExceededException, IaConfigurationException,
-      // IaProviderException). El helper las mapea a mensajes
-      // amigables para el usuario final en vez de mostrar el texto
-      // crudo del backend.
-      const friendly = friendlyIaError(err, 'La IA no pudo responder con los datos actuales.');
-      setError(friendly.texto);
-      setLastFailedPrompt(prompt);
-    } finally {
-      setLoading(false);
-    }
+  const handleQuickAsk = (prompt: string) => {
+    void useAiChatStore.getState().ask(prompt);
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void ask(input);
+    const prompt = input.trim();
+    if (!prompt) {
+      return;
+    }
+    setInput('');
+    void useAiChatStore.getState().ask(prompt);
   };
 
   const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -284,7 +154,12 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     }
 
     event.preventDefault();
-    void ask(input);
+    const prompt = input.trim();
+    if (!prompt) {
+      return;
+    }
+    setInput('');
+    void useAiChatStore.getState().ask(prompt);
   };
 
   return (
@@ -365,7 +240,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
                     <ul>
                       {grupo.ejemplos.map((prompt) => (
                         <li key={prompt}>
-                          <button type="button" onClick={() => void ask(prompt)} disabled={!canAsk || loading}>
+                          <button type="button" onClick={() => handleQuickAsk(prompt)} disabled={!canAsk || loading}>
                             {prompt}
                           </button>
                         </li>
@@ -385,7 +260,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
                       <ul>
                         {message.meta.opcionesAclaracion.map((opcion) => (
                           <li key={opcion.valor}>
-                            <button type="button" onClick={() => void ask(opcion.etiqueta)} disabled={!canAsk || loading}>
+                            <button type="button" onClick={() => handleQuickAsk(opcion.etiqueta)} disabled={!canAsk || loading}>
                               {opcion.etiqueta}
                             </button>
                           </li>
@@ -463,7 +338,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
             <div className="auth-error" role="alert">
               <p>{error}</p>
               {lastFailedPrompt ? (
-                <button type="button" className="button-secondary" onClick={() => void ask(lastFailedPrompt)} disabled={loading}>
+                <button type="button" className="button-secondary" onClick={() => handleQuickAsk(lastFailedPrompt)} disabled={loading}>
                   Reintentar última pregunta
                 </button>
               ) : null}
@@ -490,10 +365,7 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
                 type="button"
                 className="ai-chat-reset"
                 onClick={() => {
-                  void api.post('/ia/conversacion/nueva');
-                  setMessages([]);
-                  setError(null);
-                  setLastFailedPrompt(null);
+                  void reset();
                 }}
                 disabled={loading}
                 aria-label="Nueva conversacion"

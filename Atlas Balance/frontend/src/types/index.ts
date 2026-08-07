@@ -521,6 +521,17 @@ export interface IaModel {
   permitido: boolean;
 }
 
+// V-02.09 (Fase 1.6): tipos del chat reexportados desde el store para que
+// componentes y stores compartan el mismo contrato sin acoplamiento circular.
+// El store es la fuente canonica; aqui solo se reexporta para que el resto
+// del frontend pueda seguir haciendo `import type { ChatMessage } from '@/types'`.
+export type {
+  AssistantLink,
+  AssistantClarificationOption,
+  AssistantMessageMeta,
+  ChatMessage,
+} from '@/stores/aiChatStore';
+
 export interface BackupItem {
   id: string;
   fecha_creacion: string;
