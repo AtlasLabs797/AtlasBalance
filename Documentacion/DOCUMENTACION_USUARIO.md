@@ -457,13 +457,23 @@ Algunas preguntas de ranking financiero se calculan directamente en Atlas Balanc
 
 Las respuestas del chat se muestran como texto legible. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
 
+Tu pregunta aparece como burbuja a la derecha con fondo suave; la respuesta de la IA aparece como texto plano a la izquierda, con la hora y el modelo debajo. Cuando cambia el dia entre mensajes se muestra un divisor `Hoy` / `Ayer` / `DD MMM`.
+
+El composer (la caja de texto inferior) es una tarjeta. En la fila inferior veras el **modo de pensamiento** (a la izquierda) y el modelo activo + el boton de enviar (a la derecha). El modo de pensamiento cambia la profundidad de razonamiento que pide al proveedor:
+
+- `OPENAI`: `Esfuerzo automatico / bajo / medio / alto` (mapeado a `reasoning_effort`).
+- `MINIMAX`: `Esfuerzo automatico / Pensamiento activado / Pensamiento desactivado` (mapeado a `thinking.type`).
+- `OPENROUTER`: solo `Esfuerzo automatico` (los modelos concretos pueden aceptar `reasoning.effort`, pero el `openrouter/auto` lo ignora).
+
+El modelo activo se sigue eligiendo desde `Configuracion` (no hay selector de modelo dentro del chat). En la cabecera del chat veras el chip del provider (`OpenAI` / `MiniMax` / `OpenRouter`); el boton de la flecha circular es `Nueva conversacion` (limpia los mensajes pero mantiene el modo de pensamiento elegido).
+
 Atlas Balance tambien filtra razonamiento interno del proveedor. No deberias ver textos como `We need to answer`, bloques `<think>`, notas de analisis ni placeholders tipo `[PERSON_NAME]`; si un dato no viene en el contexto accesible, la respuesta debe decir que no consta.
 
 Si el proveedor externo devuelve algo que Atlas Balance no puede usar, el error debe indicar una categoria tecnica corta, por ejemplo `invalid_json` o `unsupported_content`, en vez de repetir un mensaje generico de respuesta malformada.
 
 Si falla la conexion con OpenRouter, OpenAI o MiniMax, el chat muestra un error generico. El administrador puede revisar la auditoria, donde solo queda una categoria tecnica segura como `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`; no se muestran hostnames internos, proxy, puertos, certificados, prompt, respuesta completa ni API key.
 
-En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva. El selector de modelo queda discreto en la cabecera junto al proveedor y cambia el modelo solo para las siguientes consultas de esa conversacion; no modifica la configuracion global de la app.
+En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva.
 
 El chat esta limitado a Atlas Balance, funcionamiento de la app y datos financieros disponibles. Puede responder sobre gastos, ingresos, importes, montos, Seguridad Social, impuestos, comisiones, seguros, recibos, facturas, nominas, cuotas, cargos y cobros si esos datos estan en el contexto financiero accesible para tu usuario. Si preguntas por recetas, cocina, programacion, noticias, ocio, salud, asesoramiento legal externo o cualquier asunto externo, la app debe rechazar la consulta.
 

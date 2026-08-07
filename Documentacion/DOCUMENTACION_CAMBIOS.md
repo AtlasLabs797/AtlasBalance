@@ -1,6 +1,7 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
 ## Objetivo
+
 Bitacora tecnica acumulativa para registrar cambios implementados, comandos ejecutados, resultados y pendientes.
 
 Regla de trabajo desde ahora:
@@ -9,8 +10,165 @@ Regla de trabajo desde ahora:
 
 ---
 
-## 2026-08-06 - V-02.09 - Chat unico: flotante y /ia comparten conversacion
+## 2026-08-07 - V-02.09 - UI chat IA: composer, mensajes y modo de pensamiento
 
+- **Motivacion:** el chat IA (flotante del `TopBar` y pagina `/ia`)
+  compartia el mismo componente pero con un layout denso: cabecera con
+  selector de modelo + provider, mensajes como tarjetas con cabecera
+  "Tu / IA / Sistema", composer con textarea plana y boton de envio
+  alineado a la izquierda. La captura objetivo (adaptada al DS) lleva
+  los mensajes del usuario como burbujas redondeadas a la derecha y
+  los del asistente como texto plano a la izquierda con un pie
+  `HH:mm · modelo`, divisor "Hoy" cuando cambia el dia, y un composer
+  tipo tarjeta con selector de **modo de pensamiento** en lugar de un
+  selector de modelo dentro del chat.
+- **Decisiones de scope:**
+  - El selector de modelo se elimina del header del chat. El modelo
+    sigue configurandose unicamente desde Configuracion; el composer
+    expone el modelo activo como texto mono discreto, no como selector.
+  - El selector de modo de pensamiento reemplaza al antiguo selector
+    de modelo en el composer. Sus valores son por provider:
+    `OPENAI` -> `auto / low / medium / high` (mapeado a
+    `reasoning_effort`); `MINIMAX` -> `auto / on / off` (mapeado a
+    `thinking.type`); `OPENROUTER` -> `auto` (los modelos concretos
+    aceptarian `reasoning.effort` pero el `openrouter/auto` lo ignora,
+    asi que la UI solo expone `auto`).
+  - Icono de microfono fuera del composer (no se renderiza).
+  - Boton de "Nueva conversacion" se mueve del composer a la cabecera,
+    junto al boton de cerrar.
+  - El detalle tecnico (origen, tokens, coste, modelo, periodo, etc.)
+    sigue accesible en el `<details>` plegable bajo cada mensaje del
+    asistente.
+- **Implementacion frontend:**
+  - `Atlas Balance/frontend/src/utils/aiModels.ts`: nuevo tipo
+    `ThinkingMode` (`auto | low | medium | high | on | off`),
+    `ThinkingModeOption`, `getThinkingModeOptions(provider)` y
+    `normalizeThinkingMode(provider, value)`. La normalizacion
+    degrada a `auto` si el valor no encaja en el provider.
+  - `Atlas Balance/frontend/src/types/index.ts`: `IaConfig` gana
+    `thinking_modes?: IaThinkingModeOption[]` (publicados por el
+    backend). `IaChatResponse` gana `thinking_mode_aplicado?: string`.
+  - `Atlas Balance/frontend/src/stores/aiChatStore.ts`: nuevo estado
+    `thinkingMode` (default `auto`), accion `setThinkingMode`, envio
+    del campo en `POST /ia/chat`, lectura de
+    `thinking_mode_aplicado` en la respuesta. `reset()` ya no toca
+    `thinkingMode` (es preferencia del usuario). Se elimina el
+    override de modelo en el chat (`selectedModel` fuera del store;
+    el modelo activo es siempre `config.model`).
+  - `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`:
+    cabecera con titulo + chip provider + reset + cerrar; lista con
+    divisor "Hoy/Ayer/DD MMM"; usuario en burbuja
+    `bg-surface-soft` con radio asimetrico; asistente en texto plano
+    con pie `HH:mm · modelo · modo`; composer como tarjeta
+    `.ai-chat-composer` con textarea + footer (selector de modo +
+    chip de modelo + boton enviar `ArrowUp`). Reintenta enfocar el
+    input tras cada respuesta. Microfono eliminado.
+  - `Atlas Balance/frontend/src/styles/layout/revision-ai.css`: se
+    reescriben las clases de mensaje (`.ai-chat-message--user` /
+    `--assistant` / `--system` con el divisor `.ai-chat-day-divider`
+    entre grupos), se anade `.ai-chat-composer`,
+    `.ai-chat-composer-footer`, `.ai-chat-composer-trigger`,
+    `.ai-chat-composer-send`, `.ai-chat-composer-model`, y se
+    adaptan las existentes (`.ai-chat-messages`,
+    `.ai-chat-loading`, `.ai-chat-day-divider`, `.ai-chat-suggestions`).
+    Quitados los estilos del antiguo `ai-chat-toolbar` con
+    `AppSelect` de modelo. Movil <768 px oculta el chip de modelo
+    en el composer.
+- **Implementacion backend:**
+  - `AtlasBalance.API/Constants/AiConfiguration.cs`: constantes
+    `ThinkingModeAuto/Low/Medium/High/On/Off`, arrays por provider
+    (`ThinkingModesOpenAi`, `ThinkingModesMiniMax`,
+    `ThinkingModesOpenRouter`) y helpers `GetThinkingModesForProvider`,
+    `IsAllowedThinkingMode(provider, mode)` y
+    `NormalizeThinkingMode(provider, mode)`.
+  - `AtlasBalance.API/DTOs/IaDtos.cs`: `IaChatRequest.ThinkingMode`,
+    `IaConfigResponse.ThinkingModes` (lista de `IaThinkingModeOption`
+    con `value` + `label`), `IaChatResponse.ThinkingModeAplicado`.
+  - `AtlasBalance.API/Controllers/ConfiguracionController.cs` y
+    `AtlasAiService.BuildConfigResponse` publican
+    `IaConfigResponse.ThinkingModes` calculandolas desde
+    `AiConfiguration.GetThinkingModesForProvider(provider)`.
+  - `AtlasBalance.API/Controllers/IaController.cs`: reenvia
+    `request.ThinkingMode` al servicio.
+  - `AtlasBalance.API/Services/AtlasAiService.cs`: nuevo parametro
+    `requestedThinkingMode` en `AskAsync`. Validacion via
+    `AiConfiguration.NormalizeThinkingMode`; si el valor no encaja
+    con el provider (p.ej. `low` para MiniMax, `on` para OpenAI) se
+    emite auditoria `rejected_thinking_mode` y se degrada a `auto`.
+    `BuildProviderRequest` acepta `thinkingMode` y lo mapea:
+    OpenRouter -> `reasoning = { effort = mode | exclude = true }`,
+    OpenAI -> `reasoning_effort`, MiniMax -> `thinking = { type =
+    enabled | disabled }`. Para MiniMax-M2.7 (no soporta thinking)
+    el campo se omite aunque el usuario lo pida.
+  - `AtlasBalance.API/Services/IaPlanner/IaAuditSchema.cs`: nuevo
+    campo `requested_thinking_mode` en `CamposBloqueadaPermitidos`.
+  - `AtlasBalance.API/Services/AtlasAiService.cs`: `LogBlockedAsync`
+    propaga `extra` (propiedades del objeto anonimo) al payload de
+    auditoria para que `requested_model` y `requested_thinking_mode`
+    lleguen a la tabla.
+- **Tests:**
+  - Nuevo `AtlasBalance.API.Tests/AtlasAiServiceThinkingModeTests.cs`
+    con 11 tests que pinzan: MiniMax `on` -> `thinking.type=enabled`,
+    MiniMax `off` -> `thinking.type=disabled`, MiniMax `high` invalido
+    -> degrada a `auto` + auditoria `rejected_thinking_mode`,
+    OpenAI `high`/`low` -> `reasoning_effort` enviado,
+    OpenAI `on` invalido -> degrada a `auto` sin `reasoning_effort`,
+    OpenRouter `high` -> `reasoning.effort=high`,
+    OpenRouter `auto` -> `reasoning.exclude=true`,
+    OpenRouter `on` invalido -> degrada a `auto`, y tres tests
+    unitarios sobre `AiConfiguration.GetThinkingModesForProvider` /
+    `IsAllowedThinkingMode` / `NormalizeThinkingMode`.
+  - El codigo compila limpio. La ejecucion de `dotnet test` queda
+    **BLOQUEADA** en este host por el mismo problema de sandbox
+    documentado en AGENTS.md seccion 8: el runner de Microsoft
+    Testing Platform intenta escribir
+    `bin\Debug\net8.0\TestResults\*.log` en
+    `C:\Proyectos\Atlas Balance Dev\Atlas
+    Balance\backend\tests\AtlasBalance.API.Tests\bin\Debug\net8.0\`
+    y la ruta esta bloqueada con `Access to the path ... is denied`.
+    Probamos `Remove-Item` del log huerfano + `dotnet test` sin
+    exito. La bateria completa no se ha podido ejecutar en local;
+    queda pendiente de CI o de un host con permisos sobre `bin/Debug/`.
+- **Verificacion frontend:**
+  - `npx.cmd tsc --noEmit`: **OK** (0 errores).
+  - `npm.cmd run lint`: **OK** (0 warnings, `--max-warnings 0`).
+  - `npm.cmd run test:unit`: **57/57 PASS** (sin cambios en modulos
+    cubiertos).
+  - `npm.cmd run build` (Vite) sigue **BLOQUEADO** por el `EPERM` ya
+    conocido al copiar `public/fonts/*.ttf` a `dist/fonts/`. Mismo
+    bloqueo registrado en AGENTS.md seccion 8.
+- **Verificacion backend (build):**
+  - `dotnet build src/AtlasBalance.API -c Release
+    -p:UseAppHost=false -p:GenerateDepsFile=false -p:BaseOutputPath=...`:
+    **OK** (0 errores; 7 warnings preexistentes deprecando
+    `UseXminAsConcurrencyToken`, `PostgreSqlStorage` y SQL raw en
+    `LimpiezaAuditoriaJob`).
+  - `dotnet build src/AtlasBalance.Watchdog -c Release ...`: **OK**
+    (las flags `-p:UseAppHost=false -p:GenerateDepsFile=false` se
+    necesitan por el mismo bloqueo de `bin/Release/net8.0/` que
+    retiene los `.deps.json` y el `apphost.exe` entre sesiones; ver
+    AGENTS.md seccion 8).
+  - `dotnet build tests/AtlasBalance.API.Tests -c Release ...`:
+    **OK** (0 errores; 628 warnings preexistentes xUnit1051 sobre
+    `TestContext.Current.CancellationToken`, no introducidos por esta
+    fase).
+- **Verificacion runtime backend:**
+  - `dotnet test` queda **BLOQUEADO** por sandbox perms
+    (descrito arriba). La bateria completa se ejecutara en CI o en
+    un host con acceso de escritura a
+    `backend\tests\...\bin\Debug\net8.0\TestResults\`.
+- **Pendientes:**
+  - Bateria xUnit (`AtlasAiServiceThinkingModeTests` + resto) en
+    host sin bloqueo de `bin/Debug`.
+  - Build de Vite en host sin `EPERM` sobre `dist/fonts/`.
+  - Smoke visual: validar manualmente el nuevo composer y los
+    mensajes en `/ia` y en el flotante con los tres providers.
+  - Captura de pantalla del resultado para adjuntar en
+    `v-02.09.md` cuando el smoke pase.
+
+---
+
+## 2026-08-06 - V-02.09 - Chat unico: flotante y /ia comparten conversacion
 - **Motivacion:** el chat IA tenia dos mounts (`TopBar.tsx` flotante y
   `pages/IaPage.tsx`) cada uno con su propio `useState`. Lo que el
   usuario preguntaba en uno no aparecia en el otro y la seleccion de

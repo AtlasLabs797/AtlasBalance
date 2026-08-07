@@ -1,11 +1,16 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Link as LinkIcon, RotateCcw, SendHorizontal } from 'lucide-react';
+import { ArrowUp, Link as LinkIcon, RotateCcw, SendHorizontal } from 'lucide-react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
 import { AiMessageContent } from '@/components/ia/AiMessageContent';
-import { useAiChatStore } from '@/stores/aiChatStore';
-import { normalizeAiModel, normalizeAiProvider, getAiModelOptions } from '@/utils/aiModels';
+import { useAiChatStore, type ChatMessage } from '@/stores/aiChatStore';
+import {
+  getAiModelLabel,
+  getThinkingModeOptions,
+  normalizeAiProvider,
+  type ThinkingMode,
+} from '@/utils/aiModels';
 
 interface AiChatPanelProps {
   compact?: boolean;
@@ -49,8 +54,40 @@ const SUGGESTED_PROMPTS: { categoria: string; ejemplos: string[] }[] = [
 ];
 const MAX_PROMPT_LENGTH = 500;
 
-function getCompactModelLabel(label: string) {
-  return label.replace(' (elige el mejor)', '').replace(' (gratis permitido)', '').replace(' (free)', '');
+function formatMessageTime(timestamp: number) {
+  const date = new Date(timestamp);
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function isSameLocalDay(a: number, b: number) {
+  const left = new Date(a);
+  const right = new Date(b);
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function humanizeThinkingMode(value: string | null | undefined) {
+  switch (value) {
+    case 'low':
+      return 'Esfuerzo bajo';
+    case 'medium':
+      return 'Esfuerzo medio';
+    case 'high':
+      return 'Esfuerzo alto';
+    case 'on':
+      return 'Pensamiento activado';
+    case 'off':
+      return 'Pensamiento desactivado';
+    case 'auto':
+      return 'Esfuerzo automatico';
+    default:
+      return 'Esfuerzo automatico';
+  }
 }
 
 export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
@@ -64,12 +101,10 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const loading = useAiChatStore((state) => state.loading);
   const error = useAiChatStore((state) => state.error);
   const lastFailedPrompt = useAiChatStore((state) => state.lastFailedPrompt);
-  const selectedModel = useAiChatStore((state) => state.selectedModel);
-  const openRouterModels = useAiChatStore((state) => state.openRouterModels);
   const config = useAiChatStore((state) => state.config);
   const ensureConfig = useAiChatStore((state) => state.ensureConfig);
-  const loadOpenRouterModels = useAiChatStore((state) => state.loadOpenRouterModels);
-  const setSelectedModel = useAiChatStore((state) => state.setSelectedModel);
+  const thinkingMode = useAiChatStore((state) => state.thinkingMode);
+  const setThinkingMode = useAiChatStore((state) => state.setThinkingMode);
   const reset = useAiChatStore((state) => state.reset);
 
   const [input, setInput] = useState('');
@@ -83,17 +118,18 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   const configProvider = config?.provider;
   const configModel = config?.model;
   const selectedProvider = normalizeAiProvider(configProvider);
-  const modelOptions = useMemo(() => getAiModelOptions(selectedProvider), [selectedProvider]);
-  const openRouterModelOptions = useMemo(
-    () => (openRouterModels.length > 0 ? openRouterModels.map((model) => ({ value: model.id, label: model.nombre || model.id })) : modelOptions),
-    [modelOptions, openRouterModels],
-  );
-  const chatModelOptions = useMemo(
-    () => modelOptions.map((model) => ({ ...model, label: getCompactModelLabel(model.label) })),
-    [modelOptions],
-  );
-  const activeModel = normalizeAiModel(selectedProvider, selectedModel || configModel);
+  const activeModelLabel = getAiModelLabel(selectedProvider, configModel);
   const providerLabel = selectedProvider === 'OPENAI' ? 'OpenAI' : selectedProvider === 'MINIMAX' ? 'MiniMax' : 'OpenRouter';
+
+  // V-02.09 (Fase UI): el backend publica los modos de pensamiento del provider;
+  // si no llega la lista usamos el fallback local en `getThinkingModeOptions`.
+  const thinkingModeOptions = useMemo(() => {
+    const backend = config?.thinking_modes ?? [];
+    if (backend.length === 0) {
+      return getThinkingModeOptions(selectedProvider);
+    }
+    return backend.map((option) => ({ value: option.value, label: option.label }));
+  }, [config?.thinking_modes, selectedProvider]);
 
   useEffect(() => {
     void ensureConfig();
@@ -109,23 +145,14 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     }
   }, [canAsk, loading]);
 
+  // V-02.09 (Fase UI): si el provider actual no admite el thinking_mode
+  // seleccionado, degradamos a auto para no enviar valores no soportados.
   useEffect(() => {
-    if (!configProvider) {
-      return;
+    const allowed = thinkingModeOptions.map((option) => option.value);
+    if (!allowed.includes(thinkingMode)) {
+      setThinkingMode('auto');
     }
-    const current = useAiChatStore.getState().selectedModel;
-    const normalized = normalizeAiModel(configProvider, current || configModel);
-    if (normalized !== current) {
-      setSelectedModel(normalized);
-    }
-  }, [configProvider, configModel, setSelectedModel]);
-
-  useEffect(() => {
-    if (selectedProvider !== 'OPENROUTER') {
-      return;
-    }
-    void loadOpenRouterModels(selectedModel || configModel);
-  }, [selectedProvider, selectedModel, configModel, loadOpenRouterModels]);
+  }, [thinkingModeOptions, thinkingMode, setThinkingMode]);
 
   const handleQuickAsk = (prompt: string) => {
     void useAiChatStore.getState().ask(prompt);
@@ -162,6 +189,9 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     void useAiChatStore.getState().ask(prompt);
   };
 
+  const showReset = messages.length > 0;
+  const hasThinkingOptions = thinkingModeOptions.length > 1;
+
   return (
     <section
       className={`ai-chat-panel${compact ? ' ai-chat-panel--compact' : ''}`}
@@ -176,42 +206,29 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
       <header className="ai-chat-header">
         <div className="ai-chat-heading">
           <h2>Análisis IA</h2>
-          {canAsk ? (
-            <div className="ai-chat-toolbar" aria-label="Opciones de consulta IA">
-              <span className="ai-chat-provider">{providerLabel}</span>
-              {selectedProvider !== 'OPENROUTER' ? (
-                <AppSelect
-                  value={activeModel}
-                  options={chatModelOptions}
-                  onChange={setSelectedModel}
-                  ariaLabel={`Modelo de IA en ${providerLabel}`}
-                  disabled={!canAsk || loading}
-                />
-              ) : (
-                <>
-                  <input
-                    className="ai-chat-model-input"
-                    list="ai-chat-openrouter-modelos"
-                    value={selectedModel || activeModel}
-                    onChange={(event) => setSelectedModel(event.target.value)}
-                    aria-label={`Modelo de IA en ${providerLabel}`}
-                    disabled={!canAsk || loading}
-                  />
-                  <datalist id="ai-chat-openrouter-modelos">
-                    {openRouterModelOptions.map((model) => (
-                      <option key={model.value} value={model.value}>
-                        {getCompactModelLabel(model.label)}
-                      </option>
-                    ))}
-                  </datalist>
-                </>
-              )}
-            </div>
+          <span className="ai-chat-provider" aria-label={`Proveedor activo: ${providerLabel}`}>
+            {providerLabel}
+          </span>
+        </div>
+        <div className="ai-chat-header-actions">
+          {showReset ? (
+            <button
+              type="button"
+              className="ai-chat-header-button"
+              onClick={() => {
+                void reset();
+              }}
+              disabled={loading}
+              aria-label="Nueva conversacion"
+              title="Nueva conversacion"
+            >
+              <RotateCcw size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+          {onClose ? (
+            <CloseIconButton className="ai-chat-header-button" onClick={onClose} ariaLabel="Cerrar chat IA" title="Cerrar" />
           ) : null}
         </div>
-        {onClose ? (
-          <CloseIconButton className="ai-chat-close" onClick={onClose} ariaLabel="Cerrar chat IA" title="Cerrar" />
-        ) : null}
       </header>
 
       {!configured ? (
@@ -250,77 +267,9 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
                 ))}
               </div>
             ) : (
-              messages.map((message, index) => (
-                <article key={`${message.role}-${index}`} className={`ai-chat-message ai-chat-message--${message.role}`}>
-                  <span>{message.role === 'user' ? 'Tú' : message.role === 'assistant' ? 'IA' : 'Sistema'}</span>
-                  <AiMessageContent content={message.content} />
-                  {message.meta?.opcionesAclaracion && message.meta.opcionesAclaracion.length > 0 ? (
-                    <div className="ai-chat-clarification">
-                      <p className="ai-chat-clarification-question">{message.content}</p>
-                      <ul>
-                        {message.meta.opcionesAclaracion.map((opcion) => (
-                          <li key={opcion.valor}>
-                            <button type="button" onClick={() => handleQuickAsk(opcion.etiqueta)} disabled={!canAsk || loading}>
-                              {opcion.etiqueta}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {message.meta?.enlaces && message.meta.enlaces.length > 0 ? (
-                    <ul className="ai-chat-links">
-                      {message.meta.enlaces.map((enlace) => (
-                        <li key={enlace.ruta}>
-                          <a href={enlace.ruta}>
-                            <LinkIcon size={12} aria-hidden="true" /> {enlace.etiqueta}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {message.meta ? (
-                    <details className="ai-chat-message-meta">
-                      <summary>Detalles de IA</summary>
-                      <dl>
-                        <div>
-                          <dt>Origen</dt>
-                          <dd>{message.meta.origen === 'local' ? 'Calculado localmente' : 'Proveedor externo'}</dd>
-                        </div>
-                        <div>
-                          <dt>Movimientos</dt>
-                          <dd>{message.meta.movimientosAnalizados}</dd>
-                        </div>
-                        <div>
-                          <dt>Modelo</dt>
-                          <dd>{message.meta.model}</dd>
-                        </div>
-                        {message.meta.periodo ? (
-                          <div>
-                            <dt>Periodo</dt>
-                            <dd>{message.meta.periodo}</dd>
-                          </div>
-                        ) : null}
-                        {message.meta.divisa ? (
-                          <div>
-                            <dt>Divisa</dt>
-                            <dd>{message.meta.divisa}</dd>
-                          </div>
-                        ) : null}
-                        <div>
-                          <dt>Tokens</dt>
-                          <dd>{message.meta.tokens}</dd>
-                        </div>
-                        <div>
-                          <dt>Coste</dt>
-                          <dd>{message.meta.coste}</dd>
-                        </div>
-                      </dl>
-                      {message.meta.aviso ? <p>{message.meta.aviso}</p> : null}
-                    </details>
-                  ) : null}
-                </article>
-              ))
+              messages.map((message, index) =>
+                renderMessage(message, index, messages, activeModelLabel, loading),
+              )
             )}
             {loading ? (
               <p className="ai-chat-loading" role="status" aria-label="Analizando datos reales">
@@ -345,13 +294,14 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
             </div>
           ) : null}
 
-          <form className="ai-chat-form" onSubmit={submit}>
+          <form className="ai-chat-composer" onSubmit={submit}>
             <label className="sr-only" htmlFor={compact ? 'ai-chat-floating-question' : 'ai-chat-page-question'}>
               Pregunta para la IA financiera
             </label>
             <textarea
               ref={inputRef}
               id={compact ? 'ai-chat-floating-question' : 'ai-chat-page-question'}
+              className="ai-chat-composer-input"
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleInputKeyDown}
@@ -360,26 +310,192 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
               maxLength={MAX_PROMPT_LENGTH}
               rows={1}
             />
-            {messages.length > 0 ? (
-              <button
-                type="button"
-                className="ai-chat-reset"
-                onClick={() => {
-                  void reset();
-                }}
-                disabled={loading}
-                aria-label="Nueva conversacion"
-                title="Nueva conversacion"
-              >
-                <RotateCcw size={16} aria-hidden="true" />
-              </button>
-            ) : null}
-            <button type="submit" disabled={!canAsk || loading || !input.trim()} aria-label="Enviar pregunta a IA">
-              <SendHorizontal size={18} aria-hidden="true" />
-            </button>
+            <div className="ai-chat-composer-footer">
+              <div className="ai-chat-composer-footer-left">
+                {hasThinkingOptions ? (
+                  <AppSelect
+                    className="ai-chat-composer-trigger"
+                    value={thinkingMode}
+                    options={thinkingModeOptions}
+                    onChange={(value) => setThinkingMode(value as ThinkingMode)}
+                    ariaLabel="Modo de pensamiento"
+                    disabled={!canAsk || loading}
+                  />
+                ) : (
+                  <span className="ai-chat-composer-static" aria-label="Modo de pensamiento">
+                    {humanizeThinkingMode(thinkingMode)}
+                  </span>
+                )}
+              </div>
+              <div className="ai-chat-composer-footer-right">
+                <span className="ai-chat-composer-model" aria-label={`Modelo activo: ${activeModelLabel}`}>
+                  {activeModelLabel}
+                </span>
+                <button
+                  type="submit"
+                  className="ai-chat-composer-send"
+                  disabled={!canAsk || loading || !input.trim()}
+                  aria-label="Enviar pregunta a IA"
+                  title="Enviar"
+                >
+                  {loading ? <SendHorizontal size={18} aria-hidden="true" /> : <ArrowUp size={18} aria-hidden="true" />}
+                </button>
+              </div>
+            </div>
           </form>
         </>
       ) : null}
     </section>
   );
+}
+
+function renderMessage(
+  message: ChatMessage,
+  index: number,
+  messages: ChatMessage[],
+  activeModelLabel: string,
+  loading: boolean,
+) {
+  const showDayDivider =
+    index === 0 || !isSameLocalDay(messages[index - 1].timestamp, message.timestamp);
+  const dayLabel = showDayDivider ? formatDayLabel(message.timestamp) : null;
+
+  if (message.role === 'user') {
+    return (
+      <div key={`user-${index}`} className="ai-chat-message-group">
+        {dayLabel ? (
+          <div className="ai-chat-day-divider" role="separator">
+            <span>{dayLabel}</span>
+          </div>
+        ) : null}
+        <article className="ai-chat-message ai-chat-message--user">
+          <p>{message.content}</p>
+        </article>
+      </div>
+    );
+  }
+
+  if (message.role === 'system') {
+    return (
+      <div key={`system-${index}`} className="ai-chat-message-group">
+        {dayLabel ? (
+          <div className="ai-chat-day-divider" role="separator">
+            <span>{dayLabel}</span>
+          </div>
+        ) : null}
+        <article className="ai-chat-message ai-chat-message--system">
+          <p>{message.content}</p>
+        </article>
+      </div>
+    );
+  }
+
+  return (
+    <div key={`assistant-${index}`} className="ai-chat-message-group">
+      {dayLabel ? (
+        <div className="ai-chat-day-divider" role="separator">
+          <span>{dayLabel}</span>
+        </div>
+      ) : null}
+      <article className="ai-chat-message ai-chat-message--assistant">
+        <AiMessageContent content={message.content} />
+        {message.meta?.opcionesAclaracion && message.meta.opcionesAclaracion.length > 0 ? (
+          <div className="ai-chat-clarification">
+            <p className="ai-chat-clarification-question">{message.content}</p>
+            <ul>
+              {message.meta.opcionesAclaracion.map((opcion) => (
+                <li key={opcion.valor}>
+                  <button
+                    type="button"
+                    onClick={() => useAiChatStore.getState().ask(opcion.etiqueta)}
+                    disabled={loading}
+                  >
+                    {opcion.etiqueta}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {message.meta?.enlaces && message.meta.enlaces.length > 0 ? (
+          <ul className="ai-chat-links">
+            {message.meta.enlaces.map((enlace) => (
+              <li key={enlace.ruta}>
+                <a href={enlace.ruta}>
+                  <LinkIcon size={12} aria-hidden="true" /> {enlace.etiqueta}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <p className="ai-chat-message-meta-inline">
+          <span>{formatMessageTime(message.timestamp)}</span>
+          <span aria-hidden="true">·</span>
+          <span className="ai-chat-message-meta-model">
+            {message.meta?.model ?? activeModelLabel}
+          </span>
+          {message.meta?.thinkingModeAplicado && message.meta.thinkingModeAplicado !== 'auto' ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="ai-chat-message-meta-thinking">{humanizeThinkingMode(message.meta.thinkingModeAplicado)}</span>
+            </>
+          ) : null}
+        </p>
+        {message.meta ? (
+          <details className="ai-chat-message-meta">
+            <summary>Detalles de IA</summary>
+            <dl>
+              <div>
+                <dt>Origen</dt>
+                <dd>{message.meta.origen === 'local' ? 'Calculado localmente' : 'Proveedor externo'}</dd>
+              </div>
+              <div>
+                <dt>Movimientos</dt>
+                <dd>{message.meta.movimientosAnalizados}</dd>
+              </div>
+              <div>
+                <dt>Modelo</dt>
+                <dd>{message.meta.model}</dd>
+              </div>
+              {message.meta.periodo ? (
+                <div>
+                  <dt>Periodo</dt>
+                  <dd>{message.meta.periodo}</dd>
+                </div>
+              ) : null}
+              {message.meta.divisa ? (
+                <div>
+                  <dt>Divisa</dt>
+                  <dd>{message.meta.divisa}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Tokens</dt>
+                <dd>{message.meta.tokens}</dd>
+              </div>
+              <div>
+                <dt>Coste</dt>
+                <dd>{message.meta.coste}</dd>
+              </div>
+            </dl>
+            {message.meta.aviso ? <p>{message.meta.aviso}</p> : null}
+          </details>
+        ) : null}
+      </article>
+    </div>
+  );
+}
+
+function formatDayLabel(timestamp: number) {
+  const date = new Date(timestamp);
+  const today = new Date();
+  if (isSameLocalDay(timestamp, today.getTime())) {
+    return 'Hoy';
+  }
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (isSameLocalDay(timestamp, yesterday.getTime())) {
+    return 'Ayer';
+  }
+  return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
 }

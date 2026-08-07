@@ -36,6 +36,16 @@ public sealed class IaConfigResponse
     public int MaxInputTokens { get; set; } = AiConfigurationDefaults.MaxInputTokens;
     public int MaxOutputTokens { get; set; } = AiConfigurationDefaults.MaxOutputTokens;
     public int MaxContextRows { get; set; } = AiConfigurationDefaults.MaxContextRows;
+    // V-02.09 (Fase UI): modos de pensamiento que admite el provider
+    // configurado. El frontend los usa para pintar el selector del composer.
+    [JsonPropertyName("thinking_modes")]
+    public IReadOnlyList<IaThinkingModeOption> ThinkingModes { get; set; } = Array.Empty<IaThinkingModeOption>();
+}
+
+public sealed class IaThinkingModeOption
+{
+    public string Value { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
 }
 
 public sealed class UpdateIaConfigRequest
@@ -74,6 +84,12 @@ public sealed class IaChatRequest
     public string Pregunta { get; set; } = string.Empty;
     public string? Model { get; set; }
     public Guid? PaisId { get; set; }
+    // V-02.09 (Fase UI): modo de pensamiento solicitado por el usuario.
+    // "auto" = default del provider; "low"/"medium"/"high" = reasoning_effort
+    // (OpenAI / OpenRouter en modelos compatibles); "on"/"off" = thinking.type
+    // (MiniMax). Valores invalidos o no soportados por el provider se ignoran.
+    [JsonPropertyName("thinking_mode")]
+    public string? ThinkingMode { get; set; }
 }
 
 public sealed class IaModelResponse
@@ -102,6 +118,10 @@ public sealed class IaChatResponse
     public string? Aviso { get; set; }
     public string Origen { get; set; } = "proveedor";
     public IReadOnlyList<IaClarificationOptionResponse>? OpcionesAclaracion { get; set; }
+    // V-02.09 (Fase UI): modo de pensamiento que finalmente se ha aplicado
+    // (puede diferir del pedido si el provider/modelo no lo soporta).
+    [JsonPropertyName("thinking_mode_aplicado")]
+    public string? ThinkingModeAplicado { get; set; }
 }
 
 public sealed class IaClarificationOptionResponse

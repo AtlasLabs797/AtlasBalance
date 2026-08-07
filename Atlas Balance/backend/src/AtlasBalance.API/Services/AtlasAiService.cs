@@ -19,7 +19,7 @@ public interface IAtlasAiService
 {
     Task<IaConfigResponse> GetConfigAsync(UserAccessScope scope, CancellationToken cancellationToken);
     Task<IReadOnlyList<IaModelResponse>> GetModelsAsync(string? provider, string? search, CancellationToken cancellationToken);
-    Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null);
+    Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null, string? requestedThinkingMode = null);
 }
 
 public sealed class AtlasAiService : IAtlasAiService
@@ -165,7 +165,7 @@ public sealed class AtlasAiService : IAtlasAiService
         };
     }
 
-    public async Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null)
+    public async Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null, string? requestedThinkingMode = null)
     {
         if (scope.UserId == Guid.Empty)
         {
@@ -225,6 +225,25 @@ public sealed class AtlasAiService : IAtlasAiService
         {
             await LogBlockedAsync(scope.UserId, "model_invalid", state, ipAddress, cancellationToken);
             throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
+        }
+
+        // V-02.09 (Fase UI): modo de pensamiento por provider. Si el valor
+        // recibido no esta admitido por el provider (p.ej. "low" para MiniMax,
+        // que solo entiende on/off) o es invalido, degradamos a "auto" y lo
+        // dejamos registrado en auditoria como rejected_thinking_mode.
+        var normalizedThinkingMode = AiConfiguration.NormalizeThinkingMode(state.Provider, requestedThinkingMode);
+        if (!string.IsNullOrWhiteSpace(requestedThinkingMode) && normalizedThinkingMode is null)
+        {
+            await LogBlockedAsync(scope.UserId, "rejected_thinking_mode", state, ipAddress, cancellationToken, new
+            {
+                requested_thinking_mode = requestedThinkingMode?.Trim(),
+                provider = state.Provider
+            });
+            normalizedThinkingMode = AiConfiguration.ThinkingModeAuto;
+        }
+        if (normalizedThinkingMode is null)
+        {
+            normalizedThinkingMode = AiConfiguration.ThinkingModeAuto;
         }
 
         var plannedAnswer = await TryAnswerPlannedAsync(scope, prompt, paisId, cancellationToken);
@@ -319,7 +338,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 new { role = "user", content = contextMessage }
             };
 
-            var providerCall = await SendProviderRequestAsync(state, apiKey, messages, cancellationToken);
+            var providerCall = await SendProviderRequestAsync(state, apiKey, messages, cancellationToken, normalizedThinkingMode);
             using var response = providerCall.Response;
             var payload = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -473,7 +492,8 @@ public sealed class AtlasAiService : IAtlasAiService
                 CosteEstimadoEur = Math.Round(cost, 8),
                 AvisoPresupuesto = budgetWarning,
                 Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null,
-                Origen = "proveedor"
+                Origen = "proveedor",
+                ThinkingModeAplicado = normalizedThinkingMode
             };
         }
         catch (JsonException ex)
@@ -520,19 +540,20 @@ public sealed class AtlasAiService : IAtlasAiService
         IaGovernanceState state,
         string apiKey,
         IReadOnlyList<object> messages,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? thinkingMode = null)
     {
         var primaryClientName = HttpClientName(state);
         try
         {
-            return await SendProviderRequestOnceAsync(state, apiKey, messages, primaryClientName, usedFallback: false, cancellationToken);
+            return await SendProviderRequestOnceAsync(state, apiKey, messages, primaryClientName, usedFallback: false, cancellationToken, thinkingMode);
         }
         catch (HttpRequestException primaryException)
         {
             var fallbackClientName = FallbackHttpClientName(state);
             try
             {
-                return await SendProviderRequestOnceAsync(state, apiKey, messages, fallbackClientName, usedFallback: true, cancellationToken);
+                return await SendProviderRequestOnceAsync(state, apiKey, messages, fallbackClientName, usedFallback: true, cancellationToken, thinkingMode);
             }
             catch (HttpRequestException fallbackException)
             {
@@ -547,10 +568,11 @@ public sealed class AtlasAiService : IAtlasAiService
         IReadOnlyList<object> messages,
         string httpClientName,
         bool usedFallback,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? thinkingMode = null)
     {
         var http = _httpClientFactory.CreateClient(httpClientName);
-        using var request = BuildProviderRequest(state, apiKey, messages);
+        using var request = BuildProviderRequest(state, apiKey, messages, thinkingMode);
         var response = await http.SendAsync(request, cancellationToken);
         return new ProviderHttpCall(response, httpClientName, usedFallback);
     }
@@ -636,25 +658,36 @@ public sealed class AtlasAiService : IAtlasAiService
     private static HttpRequestMessage BuildProviderRequest(
         IaGovernanceState state,
         string apiKey,
-        IReadOnlyList<object> messages)
+        IReadOnlyList<object> messages,
+        string? thinkingMode = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        var normalizedThinkingMode = string.IsNullOrWhiteSpace(thinkingMode)
+            ? AiConfiguration.ThinkingModeAuto
+            : thinkingMode;
 
         if (state.Provider == "OPENROUTER")
         {
             request.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "Atlas Balance");
             request.Headers.TryAddWithoutValidation("X-Title", "Atlas Balance");
             var runtimeModel = AiConfiguration.ResolveOpenRouterRuntimeModel(state.Model);
+            // OpenRouter auto-enrutado ignora `reasoning.effort`; para modelos
+            // concretos que lo soportan, lo emitimos cuando el usuario lo pide.
+            object reasoningPayload = normalizedThinkingMode switch
+            {
+                AiConfiguration.ThinkingModeLow => new { effort = "low" },
+                AiConfiguration.ThinkingModeMedium => new { effort = "medium" },
+                AiConfiguration.ThinkingModeHigh => new { effort = "high" },
+                _ => new { exclude = true }
+            };
             request.Content = JsonContent.Create(new
             {
                 model = runtimeModel,
                 provider = OpenRouterPrivacyProvider(),
-                reasoning = new
-                {
-                    exclude = true
-                },
+                reasoning = reasoningPayload,
                 temperature = 0.1,
                 max_tokens = state.MaxOutputTokens,
                 stream = false,
@@ -665,15 +698,46 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (state.Provider == "MINIMAX")
         {
-            if (string.Equals(state.Model, AiConfiguration.DefaultMiniMaxModel, StringComparison.Ordinal))
+            // MiniMax-M3 acepta thinking.type; MiniMax-M2.7 no acepta el campo
+            // (lo ignora o devuelve 400), asi que solo lo emitimos en M3 y
+            // cuando el usuario lo pide de forma explicita.
+            var supportsThinking = string.Equals(state.Model, AiConfiguration.DefaultMiniMaxModel, StringComparison.Ordinal);
+            object? thinkingPayload = null;
+            if (supportsThinking)
+            {
+                var thinkingType = normalizedThinkingMode switch
+                {
+                    AiConfiguration.ThinkingModeOn => "enabled",
+                    AiConfiguration.ThinkingModeOff => "disabled",
+                    _ => null
+                };
+                if (thinkingType is not null)
+                {
+                    thinkingPayload = new { type = thinkingType };
+                }
+            }
+
+            if (thinkingPayload is not null)
             {
                 request.Content = JsonContent.Create(new
                 {
                     model = state.Model,
-                    thinking = new
-                    {
-                        type = "disabled"
-                    },
+                    thinking = thinkingPayload,
+                    reasoning_split = true,
+                    temperature = 0.1,
+                    max_completion_tokens = state.MaxOutputTokens,
+                    stream = false,
+                    messages
+                });
+                return request;
+            }
+
+            if (supportsThinking)
+            {
+                request.Content = JsonContent.Create(new
+                {
+                    model = state.Model,
+                    thinking = new { type = "disabled" },
                     reasoning_split = true,
                     temperature = 0.1,
                     max_completion_tokens = state.MaxOutputTokens,
@@ -689,6 +753,30 @@ public sealed class AtlasAiService : IAtlasAiService
                 reasoning_split = true,
                 temperature = 0.1,
                 max_completion_tokens = state.MaxOutputTokens,
+                stream = false,
+                messages
+            });
+            return request;
+        }
+
+        // OpenAI y resto: reasoning_effort se envia tal cual para los modelos
+        // que lo soportan (gpt-4.1-mini). Si el modelo no lo acepta, OpenAI
+        // devuelve 400 y AskAsync lo degrada con un mensaje amigable.
+        object? reasoningEffort = normalizedThinkingMode switch
+        {
+            AiConfiguration.ThinkingModeLow => "low",
+            AiConfiguration.ThinkingModeMedium => "medium",
+            AiConfiguration.ThinkingModeHigh => "high",
+            _ => null
+        };
+        if (reasoningEffort is not null)
+        {
+            request.Content = JsonContent.Create(new
+            {
+                model = state.Model,
+                reasoning_effort = reasoningEffort,
+                temperature = 0.1,
+                max_tokens = state.MaxOutputTokens,
                 stream = false,
                 messages
             });
@@ -1781,19 +1869,27 @@ public sealed class AtlasAiService : IAtlasAiService
 
     private async Task LogBlockedAsync(Guid userId, string reason, IaGovernanceState state, string? ipAddress, CancellationToken cancellationToken, object? extra = null)
     {
+        var fields = new Dictionary<string, object?>
+        {
+            ["motivo"] = reason,
+            ["provider"] = state.Provider,
+            ["model"] = state.Model,
+            ["runtime_model"] = ProviderRuntimeModel(state)
+        };
+        if (extra is not null)
+        {
+            foreach (var property in extra.GetType().GetProperties())
+            {
+                fields[property.Name] = property.GetValue(extra);
+            }
+        }
         await _auditService.LogAsync(
             userId,
             AuditActions.IaConsultaBloqueada,
             "IA",
             null,
             ipAddress,
-            IaAuditEventFactory.Bloqueada("sistema", new Dictionary<string, object?>
-            {
-                ["motivo"] = reason,
-                ["provider"] = state.Provider,
-                ["model"] = state.Model,
-                ["runtime_model"] = ProviderRuntimeModel(state)
-            }),
+            IaAuditEventFactory.Bloqueada("sistema", fields),
             cancellationToken);
     }
 
@@ -1888,7 +1984,23 @@ public sealed class AtlasAiService : IAtlasAiService
             OutputCostPerMillionTokensEur = state.OutputCostPerMillionTokensEur,
             MaxInputTokens = state.MaxInputTokens,
             MaxOutputTokens = state.MaxOutputTokens,
-            MaxContextRows = state.MaxContextRows
+            MaxContextRows = state.MaxContextRows,
+            ThinkingModes = AiConfiguration.GetThinkingModesForProvider(state.Provider)
+                .Select(value => new IaThinkingModeOption { Value = value, Label = HumanizeThinkingMode(value) })
+                .ToArray()
+        };
+    }
+
+    private static string HumanizeThinkingMode(string value)
+    {
+        return value switch
+        {
+            "low" => "Esfuerzo bajo",
+            "medium" => "Esfuerzo medio",
+            "high" => "Esfuerzo alto",
+            "on" => "Pensamiento activado",
+            "off" => "Pensamiento desactivado",
+            _ => "Esfuerzo automatico"
         };
     }
 

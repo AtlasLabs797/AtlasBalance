@@ -495,6 +495,10 @@ export interface IaConfig {
   max_input_tokens: number;
   max_output_tokens: number;
   max_context_rows: number;
+  // V-02.09 (Fase UI): lista de modos de pensamiento disponibles segun el
+  // provider. Si el backend no la envia (versiones anteriores) el frontend
+  // usa el fallback local de `getThinkingModeOptions`.
+  thinking_modes?: IaThinkingModeOption[];
 }
 
 export interface IaChatResponse {
@@ -509,6 +513,9 @@ export interface IaChatResponse {
   aviso: string | null;
   origen: 'local' | 'proveedor';
   opciones_aclaracion: { etiqueta: string; valor: string }[] | null;
+  // V-02.09 (Fase UI): modo de pensamiento aplicado por el backend (puede
+  // diferir del que pidio el usuario si el provider no lo soporta).
+  thinking_mode_aplicado?: string | null;
 }
 
 export interface IaModel {
@@ -519,6 +526,13 @@ export interface IaModel {
   // campo explicito permite etiquetar la entrada en el UI (p.ej. "(no permitido)"
   // si en futuro se envia el catalogo completo).
   permitido: boolean;
+}
+
+// V-02.09 (Fase UI): el backend publica los modos de pensamiento que admite el
+// provider configurado. Se renderizan en el selector dentro del composer.
+export interface IaThinkingModeOption {
+  value: string;
+  label: string;
 }
 
 // V-02.09 (Fase 1.6): tipos del chat reexportados desde el store para que

@@ -59,6 +59,7 @@ public static class IaAuditSchema
         "model",
         "runtime_model",
         "requested_model",
+        "requested_thinking_mode",
         "pais_id"
     };
 

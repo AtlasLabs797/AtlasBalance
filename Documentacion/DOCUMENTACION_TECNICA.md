@@ -1,11 +1,123 @@
 # Documentacion tecnica
 
-## Vigencia documental: V-02.08
+## Vigencia documental: V-02.09
 
-La version activa de la aplicacion es `V-02.08` (runtime `2.8.0`). Este
-documento conserva debajo el historial tecnico de V-02.07 y versiones
+La version activa de la aplicacion es `V-02.09` (runtime `2.9.0`). Este
+documento conserva debajo el historial tecnico de V-02.08 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de
 cada cambio.
+
+## 2026-08-07 - V-02.09 - Chat IA: composer, mensajes y modo de pensamiento
+
+### Que
+
+- Reescritura visual del chat IA (la ventana flotante del `TopBar` y la
+  pagina `/ia`, que ya comparten `AiChatPanel` desde la Fase 1.6) para
+  alinear el layout con el Design System.
+- Cabecera: titulo `Analisis IA` + chip del provider activo + boton
+  `Nueva conversacion` (`RotateCcw`) + boton cerrar.
+- Lista de mensajes: divisor `Hoy / Ayer / DD MMM` cuando el dia cambia;
+  asistente en texto plano a la izquierda con pie `HH:mm · modelo · modo`;
+  usuario en burbuja a la derecha con radio asimetrico y fondo
+  `bg-surface-soft`. El bloque tecnico plegable (`<details>`) sigue
+  bajo cada mensaje del asistente con origen, tokens, coste, periodo y
+  divisa.
+- Composer: tarjeta `.ai-chat-composer` con textarea y footer
+  (selector de modo de pensamiento a la izquierda, chip de modelo
+  activo + boton enviar `ArrowUp` a la derecha). Icono de microfono
+  fuera del composer.
+- Nuevo parametro `thinking_mode` en `POST /api/ia/chat`. Mapeo por
+  provider: OpenAI -> `reasoning_effort`, MiniMax -> `thinking.type`,
+  OpenRouter -> `reasoning.effort` (solo en modelos concretos).
+
+### Por que
+
+La composicion anterior densa (cabecera con provider + selector de
+modelo + boton enviar; mensajes como tarjetas con cabecera `Tu / IA /
+Sistema`; textarea plana + reset + enviar) cargaba ruido visual sobre
+un chat. La version nueva separa las responsabilidades: el header
+identifica, los mensajes cuentan, el composer pregunta y configura. El
+modo de pensamiento sustituye al selector de modelo dentro del chat
+porque el modelo activo sigue siendo el de Configuracion; el chat
+solo necesita decidir la profundidad de razonamiento.
+
+### Como
+
+- Frontend (`Atlas Balance/frontend/src/`):
+  - `utils/aiModels.ts`: tipo `ThinkingMode`
+    (`auto | low | medium | high | on | off`), `ThinkingModeOption`,
+    `getThinkingModeOptions(provider)` con arrays por provider y
+    `normalizeThinkingMode(provider, value)` que degrada a `auto` si
+    el valor no encaja.
+  - `types/index.ts`: `IaConfig.thinking_modes?: IaThinkingModeOption[]`,
+    `IaChatResponse.thinking_mode_aplicado?: string`.
+  - `stores/aiChatStore.ts`: estado `thinkingMode` (default `auto`),
+    accion `setThinkingMode`, envio del campo en `POST /ia/chat`,
+    lectura de `thinking_mode_aplicado` en la meta del mensaje.
+    `reset()` ya no toca `thinkingMode`. El override de modelo en el
+    chat se retira; el modelo activo es siempre `config.model`.
+  - `components/ia/AiChatPanel.tsx`: nueva composicion; helpers
+    `formatMessageTime`, `isSameLocalDay`, `humanizeThinkingMode`,
+    `formatDayLabel`. `renderMessage` factorizado para mostrar los
+    tres roles (`user`, `assistant`, `system`) con la marca visual
+    que toca en cada caso.
+  - `styles/layout/revision-ai.css`: clases reescritas para los
+    nuevos elementos y eliminadas las del antiguo `ai-chat-toolbar`
+    con `AppSelect` de modelo.
+- Backend (`Atlas Balance/backend/src/AtlasBalance.API/`):
+  - `Constants/AiConfiguration.cs`: constantes
+    `ThinkingModeAuto/Low/Medium/High/On/Off`, arrays por provider
+    y helpers `GetThinkingModesForProvider`,
+    `IsAllowedThinkingMode`, `NormalizeThinkingMode`.
+  - `DTOs/IaDtos.cs`: `IaChatRequest.ThinkingMode`,
+    `IaConfigResponse.ThinkingModes`, `IaChatResponse.ThinkingModeAplicado`.
+  - `Controllers/ConfiguracionController.cs` +
+    `Services/AtlasAiService.cs`: `IaConfigResponse` publica la
+    lista de modos del provider activo.
+  - `Controllers/IaController.cs`: reenvia el parametro al servicio.
+  - `Services/AtlasAiService.AskAsync`: nuevo parametro
+    `requestedThinkingMode`. Si el valor no encaja con el provider,
+    emite auditoria `rejected_thinking_mode` (nuevo campo en
+    `IaAuditSchema.CamposBloqueadaPermitidos`) y degrada a `auto`.
+  - `Services/AtlasAiService.BuildProviderRequest`: nuevo parametro
+    `thinkingMode`. Mapeo: OpenAI `reasoning_effort`, MiniMax
+    `thinking.type` (omitido para MiniMax-M2.7), OpenRouter
+    `reasoning.effort` o `reasoning.exclude=true` por defecto.
+  - `Services/IaPlanner/IaAuditSchema.cs`: nuevo campo
+    `requested_thinking_mode` en `CamposBloqueadaPermitidos`.
+  - `Services/AtlasAiService.LogBlockedAsync`: propaga `extra`
+    (propiedades del objeto anonimo) al payload de auditoria para
+    que `requested_model` y `requested_thinking_mode` lleguen a la
+    tabla.
+
+### Verificacion
+
+- Frontend: `npx.cmd tsc --noEmit` **OK**, `npm.cmd run lint`
+  **OK** (`--max-warnings 0`), `npm.cmd run test:unit` **57/57
+  PASS**. `npm.cmd run build` (Vite) sigue **BLOQUEADO** por el
+  `EPERM` al copiar `public/fonts/*.ttf` a `dist/fonts/`,
+  documentado en AGENTS.md seccion 8.
+- Backend: `dotnet build src/AtlasBalance.API -c Release
+  -p:UseAppHost=false -p:GenerateDepsFile=false
+  -p:BaseOutputPath=...` **OK** (0 errores; 7 warnings preexistentes
+  sobre `UseXminAsConcurrencyToken`, `PostgreSqlStorage` y
+  `LimpiezaAuditoriaJob`). Mismas flags necesarias para
+  `AtlasBalance.Watchdog` y `AtlasBalance.API.Tests` por el bloqueo
+  de `bin/Release/` y `bin/Debug/`.
+- Tests: `AtlasAiServiceThinkingModeTests` (11 tests) compila
+  limpio. `dotnet test` queda **BLOQUEADO** en este host por el
+  sandbox: el runner intenta escribir
+  `bin\Debug\net8.0\TestResults\*.log` y la ruta tiene `Access
+  to the path ... is denied`. La bateria completa queda pendiente
+  de CI o de un host sin bloqueo.
+
+### Pendientes
+
+- Bateria xUnit completa (`AtlasAiServiceThinkingModeTests` + resto)
+  en host sin bloqueo de `bin/Debug/`.
+- Build de Vite en host con acceso a `dist/fonts/`.
+- Smoke visual en `/ia` y en el flotante con los tres providers y
+  en ambos temas (claro/oscuro).
 
 ## 2026-08-05 - V-02.08 - Auditoria automatica durante MFA
 
