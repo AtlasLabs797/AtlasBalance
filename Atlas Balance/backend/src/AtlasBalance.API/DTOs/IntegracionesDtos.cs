@@ -99,7 +99,14 @@ public sealed class RotarIntegrationTokenRequest
 // demanda (POST api/integration/openclaw/resolver-nombres).
 public sealed class ResolverNombresRequest
 {
+    // V-02.09: tope declarativo que espeja el cap runtime del controller
+    // (MaxResolverNombresBatchSize = 200). El controller ya enforcaba por
+    // codigo, pero el DTO no lo acotaba y un payload artificialmente grande
+    // llegaba al servicio y disparaba 400 generico. Ahora ModelState lo
+    // intercepta antes.
+    [MaxLength(200)]
     public IReadOnlyList<Guid> TitularIds { get; set; } = [];
+    [MaxLength(200)]
     public IReadOnlyList<Guid> CuentaIds { get; set; } = [];
 }
 

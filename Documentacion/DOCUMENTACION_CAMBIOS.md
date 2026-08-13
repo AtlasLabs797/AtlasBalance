@@ -24683,4 +24683,133 @@ que el login funciona.
 
 ---
 
+## 2026-08-13 - V-02.09 - Endurecimiento post-auditoria de seguridad
+
+### Motivacion
+
+Auditoria pre-produccion de los 13 puntos del checklist de seguridad
+(secrets, validacion, parametrizacion, authz, errores, CORS, debug,
+cookies, HTTPS, rate limit, uploads, CVEs, artefactos). Resultado: 13/13
+PASS. Tres mejoras quirurgicas de robustez identificadas (M1, M2, M3) y
+aplicadas aqui. Tambien se valida a fondo la telemetria anonima
+(`/api/telemetria/errores`), la CSP actual y la postura de la app frente
+a exposicion a Internet.
+
+### Cambios implementados
+
+**M3 (SQL injection smell - bloqueante doctrinal).**
+- `Atlas Balance/backend/src/AtlasBalance.API/Jobs/LimpiezaAuditoriaJob.cs`:
+  se retira la interpolacion `$"SELECT {funcion}(@retencion_dias) AS \"Value\""`
+  en `PurgarAsync(string funcion, ...)`. Se reemplaza por dos metodos
+  explicitos con SQL literal:
+  - `PurgarAuditoriasAsync` -> `SqlQueryRaw<long>("SELECT atlas_security.purgar_auditorias(@retencion_dias) AS \"Value\"", ...)`
+  - `PurgarAuditoriaIntegracionesAsync` -> `SqlQueryRaw<long>("SELECT atlas_security.purgar_auditorias_integracion(@retencion_dias) AS \"Value\"", ...)`.
+  Antes no era explotable (los dos llamantes pasaban literales hardcoded),
+  pero cualquier refactor que pasase `funcion` desde fuera lo convertia
+  en agujero. Una funcion por tabla cierra la forma. Logs y catch de
+  PostgresException 23514 preservados.
+
+**M2 (regex constraint en path param).**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/RevisionController.cs`:
+  `[HttpPatch("{tipo}")]` -> `[HttpPatch("{tipo:regex(^(comision|seguro)$)}")]`.
+  Valores no esperados se rechazan con 404 en routing en vez de llegar
+  al servicio como InvalidOperationException.
+
+**M1 (anotaciones declarativas en DTOs que validaban en servicio).**
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/NotificacionesAdminDtos.cs`:
+  `MarcarNotificacionesLeidasRequest.Tipo` -> `[MaxLength(32)]`.
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/SistemaDtos.cs`:
+  `ActualizacionRequest.SourcePath/TargetPath` -> `[MaxLength(260)]`
+  (espejo MAX_PATH Windows).
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`:
+  `IaChatRequest.Pregunta` -> `[Required, MaxLength(500)]`,
+  `Model` -> `[MaxLength(256)]`, `ThinkingMode` -> `[MaxLength(16)]`.
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IntegracionesDtos.cs`:
+  `ResolverNombresRequest.TitularIds/CuentaIds` -> `[MaxLength(200)]`
+  (espejo de `MaxResolverNombresBatchSize`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/DivisasController.cs`:
+  `CrearDivisaRequest.Codigo` -> `[Required, MaxLength(8)]`, `Nombre` ->
+  `[MaxLength(128)]`, `Simbolo` -> `[MaxLength(8)]`. Mismo set para
+  `ActualizarDivisaRequest.Nombre/Simbolo` (sin Required porque son
+  opcionales en el update).
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/TiposCambioController.cs`:
+  `GuardarTipoCambioRequest.Tasa` -> `[Range(typeof(decimal),
+  "0.00000001", "9999999999.9999", ParseLimitsInInvariantCulture = true)]`.
+
+### Validacion adicional: telemetria, CSP, exposicion a Internet
+
+- **Telemetria (`/api/telemetria/errores`)**: veredicto PASS. Rate limit
+  20/min/IP (`TelemetriaController.cs:20-21`), campos recortados
+  (`MaxMensaje=500`, `MaxStack=4000`, `MaxPath=200`), `sendBeacon` solo
+  permitido por exclusion del CSRF (`CsrfMiddleware.cs:33`), `AllowAnonymous`
+  intencional (sendBeacon no soporta headers personalizados), respuesta
+  siempre 204 sin filtrar estado al cliente. CSRF no aplica porque el
+  endpoint no muta estado de negocio y la cuota es por IP. No se
+  anade autenticacion: romperia sendBeacon y la alternativa (API key en
+  header) tampoco es viable para ese transporte.
+- **CSP (`Program.cs:616-627`)**: `style-src 'self' 'unsafe-inline'` se
+  mantiene. Migrar a nonces requiere auditar cada insercion de style
+  inline en la SPA (recharts, MUI-like patterns, CSS variables en
+  inline) y el beneficio marginal no compensa el riesgo de regresion
+  visual. Documentado como aceptado.
+- **Postura frente a Internet**: la app esta pensada para LAN on-premise.
+  Para exponer a Internet faltaria: fail2ban en el reverse proxy, WAF
+  opcional (Cloudflare), rate limit mas estricto en login (10/min es
+  bajo contra botnets), cabeceras adicionales (`X-Permitted-Cross-Domain-Policies`).
+  No se aplica por ahora por estar fuera del scope de la auditoria.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Jobs/LimpiezaAuditoriaJob.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/RevisionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/DivisasController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/TiposCambioController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/NotificacionesAdminDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/SistemaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IntegracionesDtos.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (este bloque)
+
+### Comandos ejecutados
+
+- `dotnet build "backend/src/AtlasBalance.API/AtlasBalance.API.csproj" -c Debug -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj-api\ -p:BaseOutputPath=...bin-api\ --nologo`.
+- `powershell -File Atlas Balance/scripts/Check-VersionAlignment.ps1`.
+
+### Resultado de verificacion
+
+- Backend compila limpio: **0 errores**, 6 warnings preexistentes no
+  relacionados con este bloque (deprecation de `UseXminAsConcurrencyToken`
+  en AppDbContext.cs y overload obsoleto de `PostgreSqlStorage`).
+- Alineacion de version OK: V-02.09 (2.9.0).
+
+### Bloqueos documentados
+
+- **Tests del proyecto `AtlasBalance.API.Tests` BLOQUEADOS** en este
+  entorno: el bloqueo `obj/` documentado en AGENTS.md (seccion 8)
+  impide a MSBuild escribir `AtlasBalance.API.AssemblyInfoInputs.cache`
+  en el path por defecto. Con el workaround `BaseIntermediateOutputPath`
+  hacia `%TEMP%`, MSBuild restaura pero no resuelve los `Fact`/`Trait`
+  de xunit.v3 contra el output real. El apphost.exe generado en un
+  build anterior no tiene `runtimeconfig.json` (limpieza parcial
+  previa), asi que tampoco se puede invocar directamente con la
+  Microsoft Testing Platform. AGENTS.md marca cortar al segundo fallo
+  en la misma via: se documenta el bloqueo aqui en vez de seguir
+  iterando. Los cambios M1+M2+M3 son mecanicamente seguros (anotaciones
+  declarativas, regex de routing, separacion de dos metodos con SQL
+  literal) y no rompen la API publica de RevisionController ni de los
+  DTOs modificados. Pendiente ejecutar la suite en un entorno sin el
+  bloqueo de `obj/` antes de cerrar la version.
+
+### Pendientes
+
+- Re-ejecutar `dotnet test` en un entorno sin bloqueo de `obj/`
+  (CI o un clone limpio) para validar que los cambios M1+M2+M3 no
+  rompen la suite.
+- Documentar este endurecimiento en
+  `Documentacion/Versiones/v-02.09.md` cuando el archivo sea editable.
+- Si en algun momento se decide exponer la app a Internet, aplicar el
+  runbook de hardening Internet (B3) registrado en la auditoria.
+
+---
+
 

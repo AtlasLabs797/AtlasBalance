@@ -81,14 +81,26 @@ public sealed class UpdateIaConfigRequest
 
 public sealed class IaChatRequest
 {
+    // V-02.09: tope declarativo para espejar el limite de negocio
+    // (AiConfiguration.MaxQuestionLength = 500). El servicio ya validaba por
+    // codigo, pero la cota tiene que vivir en el DTO para que ModelState la
+    // vea y rechace con el mismo error generico del resto de campos.
+    [Required, MaxLength(500)]
     public string Pregunta { get; set; } = string.Empty;
+    // V-02.09: el modelo lo valida el servicio contra una allowlist, pero
+    // acotamos a 256 caracteres para que un payload gigante no llegue al
+    // servicio ni al proveedor upstream.
+    [MaxLength(256)]
     public string? Model { get; set; }
     public Guid? PaisId { get; set; }
     // V-02.09 (Fase UI): modo de pensamiento solicitado por el usuario.
     // "auto" = default del provider; "low"/"medium"/"high" = reasoning_effort
     // (OpenAI / OpenRouter en modelos compatibles); "on"/"off" = thinking.type
     // (MiniMax). Valores invalidos o no soportados por el provider se ignoran.
+    // V-02.09: tope declarativo, los valores validos caben en 16 caracteres
+    // (auto, low, medium, high, on, off) y se normalizan en el servicio.
     [JsonPropertyName("thinking_mode")]
+    [MaxLength(16)]
     public string? ThinkingMode { get; set; }
 }
 

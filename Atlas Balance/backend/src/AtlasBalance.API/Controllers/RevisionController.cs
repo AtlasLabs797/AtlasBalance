@@ -65,7 +65,11 @@ public sealed class RevisionController : ControllerBase
             cancellationToken));
     }
 
-    [HttpPatch("{tipo}/{extractoId:guid}")]
+    // V-02.09: regex explicito en el path param {tipo} para que un valor no
+    // esperado (typo, probing) se rechace con 404 en el routing en vez de
+    // llegar al servicio y rebotar como InvalidOperationException. Solo se
+    // esperan dos valores: "comision" y "seguro".
+    [HttpPatch("{tipo:regex(^(comision|seguro)$)}/{extractoId:guid}")]
     public async Task<IActionResult> ActualizarEstado(string tipo, Guid extractoId, [FromBody] UpdateRevisionEstadoRequest request, CancellationToken cancellationToken)
     {
         if (request is null)

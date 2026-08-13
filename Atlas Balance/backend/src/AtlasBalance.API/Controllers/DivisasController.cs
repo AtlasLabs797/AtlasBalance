@@ -94,8 +94,14 @@ public sealed class DivisasController : ControllerBase
 
 public sealed class CrearDivisaRequest
 {
+    // V-02.09: tope 8 (espejo DIVISAS.codigo). El servicio validaba por
+    // codigo, pero la cota tiene que vivir en el DTO.
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string Codigo { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MaxLength(128)]
     public string? Nombre { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string? Simbolo { get; set; }
     public bool Activa { get; set; } = true;
     public bool EsBase { get; set; }
@@ -103,7 +109,9 @@ public sealed class CrearDivisaRequest
 
 public sealed class ActualizarDivisaRequest
 {
+    [System.ComponentModel.DataAnnotations.MaxLength(128)]
     public string? Nombre { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(8)]
     public string? Simbolo { get; set; }
     public bool Activa { get; set; } = true;
     public bool EsBase { get; set; }
