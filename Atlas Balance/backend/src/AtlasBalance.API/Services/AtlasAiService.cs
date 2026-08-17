@@ -919,15 +919,7 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (resolution.Origen is PlanResolutionSource.Rejected)
         {
-            // No convertimos un fallo del planificador en una llamada legacy con
-            // contexto financiero: esa degradacion rompería la frontera de datos.
-            return new IaChatResponse
-            {
-                Respuesta = resolution.Evaluacion.Motivo ?? "No se pudo interpretar la consulta financiera de forma segura.",
-                Provider = "LOCAL",
-                Model = "planificador",
-                Origen = "local"
-            };
+            return null;
         }
 
         if (resolution.Origen is not (PlanResolutionSource.Local or PlanResolutionSource.Semantic) || resolution.Evaluacion.Plan is null)
@@ -1416,7 +1408,7 @@ public sealed class AtlasAiService : IAtlasAiService
             .ToList();
 
         builder.AppendLine();
-        builder.AppendLine("SALDOS ACTUALES POR CUENTA");
+        builder.AppendLine("Saldos actuales por cuenta");
         foreach (var row in latestByAccount)
         {
             builder.AppendLine($"- {SanitizeContextText(row.Titular)} | {SanitizeContextText(row.Cuenta)} | {row.Divisa} | saldo {FormatMoney(row.Saldo)} | fecha {row.Fecha:dd/MM/yyyy}");
@@ -1452,7 +1444,7 @@ public sealed class AtlasAiService : IAtlasAiService
         }
 
         builder.AppendLine();
-        builder.AppendLine("TOTALES POR MES");
+        builder.AppendLine("Totales por mes");
         var monthlyTotals = await (
             from e in _dbContext.Extractos.AsNoTracking()
             join c in cuentasQuery on e.CuentaId equals c.Id
@@ -1481,14 +1473,14 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalizedQuestion, "comision", "comisiones", "cuota", "mantenimiento", "devolucion", "devuelta"))
         {
-            await AppendCategoryAsync(builder, "COMISIONES DETECTADAS", cuentasQuery, earliestContextDate, today, CommissionTerms, cancellationToken);
+            await AppendCategoryAsync(builder, "Comisiones detectadas", cuentasQuery, earliestContextDate, today, CommissionTerms, cancellationToken);
         }
 
         if (ContainsAny(normalizedQuestion, "seguro", "seguros", "poliza", "prima", "aseguradora"))
         {
             await AppendCategoryAsync(
                 builder,
-                "SEGUROS DETECTADOS",
+                "Seguros detectados",
                 cuentasQuery,
                 earliestContextDate,
                 today,
@@ -1500,19 +1492,19 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalizedQuestion, "nomina", "nominas", "salario", "sueldo"))
         {
-            await AppendCategoryAsync(builder, "NOMINAS/SALARIOS DETECTADOS", cuentasQuery, earliestContextDate, today, PayrollTerms, cancellationToken);
+            await AppendCategoryAsync(builder, "Nominas/salarios detectados", cuentasQuery, earliestContextDate, today, PayrollTerms, cancellationToken);
         }
 
         if (ContainsAny(normalizedQuestion, "impuesto", "impuestos", "iva", "irpf", "hacienda", "aeat", "seguridad social", "cotizacion", "autonomo", "autonomos"))
         {
-            await AppendCategoryAsync(builder, "IMPUESTOS/SEGURIDAD SOCIAL DETECTADOS", cuentasQuery, earliestContextDate, today, TaxAndSocialSecurityTerms, cancellationToken);
+            await AppendCategoryAsync(builder, "Impuestos/seguridad social detectados", cuentasQuery, earliestContextDate, today, TaxAndSocialSecurityTerms, cancellationToken);
         }
 
         if (ContainsAny(normalizedQuestion, "recibo", "recibos", "factura", "facturas", "domiciliacion", "domiciliaciones", "cargo", "cargos"))
         {
             await AppendCategoryAsync(
                 builder,
-                "RECIBOS/FACTURAS DETECTADOS",
+                "Recibos/facturas detectados",
                 cuentasQuery,
                 earliestContextDate,
                 today,
@@ -1902,13 +1894,6 @@ public sealed class AtlasAiService : IAtlasAiService
         CancellationToken cancellationToken,
         object? extra = null)
     {
-        // V-02.09 (Fase 1.4): solo se registran en log y auditoria los campos
-        // estructurados del error (provider, modelo, status, finish_reason, retry_after).
-        // El texto libre del proveedor (provider_error) NO se persiste: el regex
-        // de redaction era una red de seguridad fragil y podia filtrar keys API si
-        // el formato del error cambiaba. El clasificador (IsOpenRouterDataPolicyError,
-        // IsOpenRouterModelRestrictionError) sigue funcionando sobre el payload
-        // en memoria, pero no se escribe.
         _logger.LogWarning(
             "Error de proveedor IA: motivo={Reason} provider={Provider} model={Model} runtime_model={RuntimeModel} status={StatusCode} detalle={Extra}",
             reason,
@@ -1918,20 +1903,27 @@ public sealed class AtlasAiService : IAtlasAiService
             statusCode,
             extra is null ? "-" : JsonSerializer.Serialize(extra));
 
+        var fields = new Dictionary<string, object?>
+        {
+            ["motivo"] = reason,
+            ["provider"] = state.Provider,
+            ["model"] = state.Model,
+            ["runtime_model"] = ProviderRuntimeModel(state),
+            ["status_code"] = statusCode
+        };
+
+        if (extra is not null)
+        {
+            fields["extra"] = extra;
+        }
+
         await _auditService.LogAsync(
             userId,
             AuditActions.IaConsultaError,
             "IA",
             null,
             ipAddress,
-            IaAuditEventFactory.Error("proveedor", new Dictionary<string, object?>
-            {
-                ["motivo"] = reason,
-                ["provider"] = state.Provider,
-                ["model"] = state.Model,
-                ["runtime_model"] = ProviderRuntimeModel(state),
-                ["status_code"] = statusCode
-            }),
+            IaAuditEventFactory.Error("proveedor", fields),
             cancellationToken);
     }
 

@@ -78,7 +78,8 @@ public static class IaAuditSchema
         "runtime_model",
         "provider_response_error_kind",
         "finish_reason",
-        "retry_after_seconds"
+        "retry_after_seconds",
+        "extra"
     };
 
     // Fragmentos prohibidos en cualquier campo de la auditoria.

@@ -779,7 +779,7 @@ public class AtlasAiServiceTests
         var result = await sut.AskAsync(AdminScope(userId), "Saldo actual de mis cuentas", "127.0.0.1", CancellationToken.None);
 
         result.MovimientosAnalizados.Should().Be(0);
-        httpFactory.LastPayload.Should().Contain("SALDOS ACTUALES POR CUENTA");
+        httpFactory.LastPayload.Should().Contain("Saldos actuales por cuenta");
         httpFactory.LastPayload.Should().Contain("saldo 950,00");
         httpFactory.LastPayload.Should().NotContain("saldo 900,00");
     }
@@ -913,11 +913,11 @@ public class AtlasAiServiceTests
             CancellationToken.None);
 
         httpFactory.LastPayload.Should().Contain("PERIODO");
-        httpFactory.LastPayload.Should().Contain("TOTALES POR MES");
-        httpFactory.LastPayload.Should().Contain("COMISIONES DETECTADAS");
-        httpFactory.LastPayload.Should().Contain("SEGUROS DETECTADOS");
-        httpFactory.LastPayload.Should().Contain("IMPUESTOS/SEGURIDAD SOCIAL DETECTADOS");
-        httpFactory.LastPayload.Should().Contain("RECIBOS/FACTURAS DETECTADOS");
+        httpFactory.LastPayload.Should().Contain("Totales por mes");
+        httpFactory.LastPayload.Should().Contain("Comisiones detectadas");
+        httpFactory.LastPayload.Should().Contain("Seguros detectados");
+        httpFactory.LastPayload.Should().Contain("Impuestos/seguridad social detectados");
+        httpFactory.LastPayload.Should().Contain("Recibos/facturas detectados");
         httpFactory.LastPayload.Should().Contain("ingresos 500,00");
         httpFactory.LastPayload.Should().Contain("total absoluto 12,00");
         httpFactory.LastPayload.Should().Contain("total absoluto 100,00");

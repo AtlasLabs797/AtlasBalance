@@ -42,6 +42,14 @@ public static class AiConfiguration
         ThinkingModeAuto
     ];
 
+    private static readonly string[] AllowedThinkingModesOpenRouter =
+    [
+        ThinkingModeAuto,
+        ThinkingModeLow,
+        ThinkingModeMedium,
+        ThinkingModeHigh
+    ];
+
     private static readonly string[] SuggestedOpenRouterModels =
     [
         OpenRouterAutoModel,
@@ -89,7 +97,7 @@ public static class AiConfiguration
     public static bool IsAllowedThinkingMode(string? provider, string? mode)
     {
         var normalized = NormalizeProvider(provider);
-        var trimmed = mode?.Trim();
+        var trimmed = mode?.Trim()?.ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(trimmed))
         {
             return false;
@@ -99,13 +107,13 @@ public static class AiConfiguration
         {
             "OPENAI" => ThinkingModesOpenAi.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
             "MINIMAX" => ThinkingModesMiniMax.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
-            _ => ThinkingModesOpenRouter.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal))
+            _ => AllowedThinkingModesOpenRouter.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal))
         };
     }
 
     public static string? NormalizeThinkingMode(string? provider, string? mode)
     {
-        var trimmed = mode?.Trim();
+        var trimmed = mode?.Trim()?.ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, ThinkingModeAuto, StringComparison.Ordinal))
         {
             return ThinkingModeAuto;

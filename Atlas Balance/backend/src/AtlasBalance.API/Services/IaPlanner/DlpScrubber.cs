@@ -215,9 +215,10 @@ public sealed class DlpScrubber
             RegexTimeout), "CARD"),
 
         // BIC/SWIFT: 4 letras + 2 letras/digitos + 2 letras/digitos + 3 letras/digitos opcionales
+        // ISO 9362 exige mayusculas; sin IgnoreCase para evitar falsos positivos en palabras comunes.
         (new Regex(
             @"\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+            RegexOptions.CultureInvariant,
             RegexTimeout), "BIC")
     };
 }
