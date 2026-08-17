@@ -64,16 +64,19 @@ jobs:
 
       - name: Test backend (sin Postgres)
         run: |
-          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- -trait- "Category=Postgres"
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-not-trait "Category=Postgres"
 
       - name: Test backend (Postgres con Testcontainers)
         # V-02.08: gate obligatorio de la release. El bug 42501 que mordio al
         # cliente V-02.07 (INSERT ... RETURNING tras login y MFA) sin Testcontainers
-        # en CI no se detectaria. Microsoft Testing Platform + xunit v3 aceptan
-        # -trait/-trait- (no --filter-trait, que es sintaxis VSTest) por
-        # Trait("Category", "Postgres") en la clase.
+        # en CI no se detectaria. Bajo "dotnet test -- <args>" (Microsoft
+        # Testing Platform via TestingPlatformDotnetTestSupport) los flags
+        # son --filter-trait/--filter-not-trait con formato name=value (sin
+        # "!=": ese operador no existe en este parser); el runner nativo del
+        # exe (fuera de "dotnet test") usa en cambio -trait/-trait-, un CLI
+        # totalmente distinto. Trait("Category", "Postgres") en la clase.
         run: |
-          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- -trait "Category=Postgres"
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-trait "Category=Postgres"
 
       - name: Audit NuGet vulnerabilities
         shell: pwsh
