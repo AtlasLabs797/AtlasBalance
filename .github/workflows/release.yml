@@ -64,15 +64,16 @@ jobs:
 
       - name: Test backend (sin Postgres)
         run: |
-          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-trait "Category!=Postgres"
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- -trait- "Category=Postgres"
 
       - name: Test backend (Postgres con Testcontainers)
         # V-02.08: gate obligatorio de la release. El bug 42501 que mordio al
         # cliente V-02.07 (INSERT ... RETURNING tras login y MFA) sin Testcontainers
         # en CI no se detectaria. Microsoft Testing Platform + xunit v3 aceptan
-        # --filter-trait por Trait("Category", "Postgres") en la clase.
+        # -trait/-trait- (no --filter-trait, que es sintaxis VSTest) por
+        # Trait("Category", "Postgres") en la clase.
         run: |
-          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-trait "Category=Postgres"
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- -trait "Category=Postgres"
 
       - name: Audit NuGet vulnerabilities
         shell: pwsh

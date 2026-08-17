@@ -58,7 +58,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-trait "Category!=Postgres"
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- -trait- "Category=Postgres"
           test_exit=$?
           if (( test_exit != 0 )); then
             read_test_log() {
@@ -85,12 +85,13 @@ jobs:
 
       - name: Test backend (Postgres con Testcontainers)
         run: |
-          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-trait "Category=Postgres"
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- -trait "Category=Postgres"
         # V-02.08: este gate es el que CI debe proteger de regresiones de RLS
         # sobre AUDITORIAS. Sin el, el bug 42501 que mordio al cliente V-02.07
         # (INSERT ... RETURNING tras login y MFA) volveria a pasar sin que
         # CI lo detectase. Microsoft Testing Platform + xunit v3 aceptan
-        # --filter-trait por Trait("Category", "Postgres") en la clase.
+        # -trait/-trait- (no --filter-trait, que es sintaxis VSTest) por
+        # Trait("Category", "Postgres") en la clase.
 
       - name: Audit NuGet vulnerabilities
         shell: pwsh
