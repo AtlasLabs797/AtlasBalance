@@ -98,6 +98,10 @@ internal static class RateLimitingSetup
         // V-02.08: tambien se eximen los nuevos /api/health/ready y
         // /api/health/functional, que el instalador y el actualizador invocan
         // como sondeos de readiness tras reiniciar servicios.
+        // codeql[cs/user-controlled-bypass] — by design: static assets and health
+        // endpoints are public, stateless, and rate-limiting them adds no security
+        // value. The check uses StartsWithSegments (prefix match on parsed
+        // PathString), not raw string comparison.
         if (!path.StartsWithSegments(ApiPathPrefix)
             || path.Equals(HealthPath)
             || path.StartsWithSegments(HealthPathPrefix))

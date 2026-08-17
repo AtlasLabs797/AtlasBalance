@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AtlasBalance.API.Constants;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
@@ -155,7 +156,7 @@ public sealed class AlertDispatcher : IAlertDispatcher
             _logger.LogError(
                 ex,
                 "No se pudo enviar por correo la alerta {Regla}. Queda registrada en AUDITORIAS y en notificaciones de admin.",
-                alerta.Regla);
+                LogScrubber.Scrub(alerta.Regla));
         }
     }
 
