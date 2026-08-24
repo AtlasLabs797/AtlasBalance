@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AxiosError } from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
@@ -42,15 +43,29 @@ export default function ConciliacionPage() {
   );
   const montoNumber = useMemo(() => parseEuropeanNumber(monto), [monto]);
 
+  // V-02.08: guard anti-carrera + gestion de error propia. Antes loadData
+  // propagaba la excepcion y los callers `void loadData(...)` producian un
+  // unhandled rejection sin feedback, dejando en pantalla los datos de la
+  // cuenta ANTERIOR bajo la cuenta recien seleccionada.
+  const loadDataRequestIdRef = useRef(0);
+
   const loadData = useCallback(async (targetCuentaId?: string) => {
+    const requestId = ++loadDataRequestIdRef.current;
     setError(null);
     const params = targetCuentaId ? { cuentaId: targetCuentaId } : undefined;
-    const [movimientosResponse, conciliacionesResponse] = await Promise.all([
-      api.get<MovimientoEsperado[]>('/conciliacion/movimientos-esperados', { params }),
-      api.get<Conciliacion[]>('/conciliacion', { params }),
-    ]);
-    setMovimientos(movimientosResponse.data);
-    setConciliaciones(conciliacionesResponse.data);
+    try {
+      const [movimientosResponse, conciliacionesResponse] = await Promise.all([
+        api.get<MovimientoEsperado[]>('/conciliacion/movimientos-esperados', { params }),
+        api.get<Conciliacion[]>('/conciliacion', { params }),
+      ]);
+      if (requestId !== loadDataRequestIdRef.current) return;
+      setMovimientos(movimientosResponse.data);
+      setConciliaciones(conciliacionesResponse.data);
+    } catch (err: unknown) {
+      if (requestId !== loadDataRequestIdRef.current) return;
+      setError(extractErrorMessage(err, 'No se pudo actualizar la conciliacion.'));
+      throw err;
+    }
   }, []);
 
   useEffect(() => {
@@ -154,6 +169,11 @@ export default function ConciliacionPage() {
       await invalidate('conciliacion');
     } catch (err: unknown) {
       setError(extractErrorMessage(err, 'No se pudo actualizar la conciliacion.'));
+      // V-02.08: tras un 409 otro usuario gano el match; resincroniza para no
+      // seguir mostrando la fila como pendiente (patron de ExtractosPage).
+      if (err instanceof AxiosError && err.response?.status === 409) {
+        await loadData(cuentaId).catch(() => undefined);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -188,10 +208,10 @@ export default function ConciliacionPage() {
             }))}
             onChange={(next) => {
               setCuentaId(next);
-              void loadData(next);
+              void loadData(next).catch(() => undefined);
             }}
           />
-          <button type="button" className="button-secondary" disabled={submitting} onClick={() => void loadData(cuentaId)}>
+          <button type="button" className="button-secondary" disabled={submitting} onClick={() => void loadData(cuentaId).catch(() => undefined)}>
             Actualizar
           </button>
         </div>

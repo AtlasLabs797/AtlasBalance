@@ -97,7 +97,15 @@ function Invoke-Psql {
         $args += @("-q")
     }
 
-    $output = $Sql | & $PsqlExe @args 2>&1
+    # V-02.08 (fix): 2>&1 sobre nativo bajo EAP=Stop convierte NOTICE/stderr
+    # de psql en terminating y daba "psql fallo" falso. Se baja EAP solo aqui.
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = $Sql | & $PsqlExe @args 2>&1
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "psql fallo: $output"
     }

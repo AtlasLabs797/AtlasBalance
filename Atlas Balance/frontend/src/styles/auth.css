@@ -446,6 +446,22 @@
   transform: translateY(-1px);
 }
 
+/* V-02.08: salida del paso MFA (challenge expirado / intentos agotados). */
+.auth-link-button {
+  width: 100%;
+  padding: 0.35rem;
+  border: none;
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.auth-link-button:hover {
+  color: var(--color-text-primary);
+}
+
 @media (max-width: 860px) {
   .auth-page {
     grid-template-columns: 1fr;

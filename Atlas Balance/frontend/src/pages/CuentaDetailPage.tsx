@@ -147,6 +147,10 @@ export default function CuentaDetailPage() {
   const [selectedCell, setSelectedCell] = useState(DEFAULT_ACCOUNT_CELL);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // V-02.08: separa fallos de CARGA (queries iniciales) de errores de ACCION
+  // (guardar celda, marcar, etc.). Antes ambos compartian `error` y un fallo
+  // cualquiera reemplazaba toda la pagina por un parrafo sin salida.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
   const allowedDashboard = usuario?.rol === 'ADMIN' || canViewDashboard();
@@ -233,16 +237,17 @@ export default function CuentaDetailPage() {
         setRowsTotal(0);
         setRowsTotalPages(1);
       } else {
-        setError(extractErrorMessage(summaryQuery.error, 'No se pudo cargar la cuenta'));
+        setLoadError(extractErrorMessage(summaryQuery.error, 'No se pudo cargar la cuenta'));
       }
     } else {
       setForbidden(false);
+      setLoadError(null);
     }
   }, [summaryQuery.error]);
 
   useEffect(() => {
     if (rowsQuery.error) {
-      setError(extractErrorMessage(rowsQuery.error, 'No se pudo cargar la cuenta'));
+      setLoadError(extractErrorMessage(rowsQuery.error, 'No se pudo cargar la cuenta'));
     }
   }, [rowsQuery.error]);
 
@@ -250,6 +255,7 @@ export default function CuentaDetailPage() {
     const summary = summaryQuery.data;
     if (summary) {
       setSummary(summary);
+      setLoadError(null);
     } else if (!summaryQuery.isLoading && !summaryQuery.error) {
       setSummary(null);
     }
@@ -607,6 +613,15 @@ export default function CuentaDetailPage() {
       // familias afectadas.
       await invalidate('extractoUpdate');
     } catch (err) {
+      // V-02.08: resincroniza si otro usuario gano la carrera sobre la celda
+      // (409), como ya hace ExtractosPage.
+      if (err instanceof AxiosError && err.response?.status === 409) {
+        try {
+          await loadCuentaData();
+        } catch {
+          // la carga ya gestiona sus propios errores
+        }
+      }
       setError(extractErrorMessage(err, 'No se pudo modificar el movimiento.'));
       throw err;
     } finally {
@@ -622,7 +637,6 @@ export default function CuentaDetailPage() {
     setActionLoading(true);
     setError(null);
 
-    const previousRows = rows;
     const changedAt = new Date().toISOString();
     setRows((current) =>
       current.map((item) =>
@@ -645,7 +659,10 @@ export default function CuentaDetailPage() {
       // ese campo re-consulten al recuperar foco.
       await invalidate('extractoCheck');
     } catch (err) {
-      setRows(previousRows);
+      // V-02.08: en vez de restaurar un snapshot de closure (que pisa datos
+      // frescos si llego un refetch durante el PATCH), resincroniza con el
+      // servidor.
+      await rowsQuery.refetch().catch(() => undefined);
       setError(extractErrorMessage(err, 'No se pudo marcar el movimiento como revisado.'));
     } finally {
       setActionLoading(false);
@@ -783,7 +800,32 @@ export default function CuentaDetailPage() {
   }
 
   if (loading) return <PageSkeleton rows={4} />;
-  if (error) return <p className="auth-error" role="alert">{error}</p>;
+  // V-02.08: fallo de carga inicial con estado propio y salida (reintentar).
+  // Antes cualquier `error` —incluido uno de validacion local de una celda—
+  // reemplazaba la pagina completa por un parrafo.
+  if (!summary && loadError && !forbidden) {
+    return (
+      <section className="page-placeholder">
+        <EmptyState
+          title="No se pudo cargar esta cuenta."
+          subtitle={loadError}
+          primaryAction={
+            <button
+              type="button"
+              onClick={() => {
+                setLoadError(null);
+                void summaryQuery.refetch();
+                void rowsQuery.refetch();
+              }}
+            >
+              Reintentar
+            </button>
+          }
+          secondaryAction={<Link to="/extractos">Ir a Extractos</Link>}
+        />
+      </section>
+    );
+  }
   if (!summary) {
     return (
       <EmptyState
@@ -807,6 +849,14 @@ export default function CuentaDetailPage() {
 
   return (
     <section className="dashboard-page cuenta-detail-page">
+      {error && (
+        <p className="auth-error" role="alert">
+          {error}
+          <button type="button" className="cuenta-error-dismiss" onClick={() => setError(null)}>
+            Cerrar
+          </button>
+        </p>
+      )}
       <header className="dashboard-toolbar">
         <div className="dashboard-toolbar-main">
           <div className="cuenta-heading-block">

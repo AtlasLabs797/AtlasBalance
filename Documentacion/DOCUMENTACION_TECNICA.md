@@ -6088,3 +6088,78 @@ Nota sobre la pagina de estado: no se ha construido una dentro de la aplicacion 
 proposito. Una pagina de estado servida por el propio servicio que se cae no
 informa de nada cuando mas falta hace; tiene que vivir fuera, y eso es
 exactamente lo que hace Uptime Kuma.
+
+
+## 2026-08-23 - V-02.08 - Devolucion automatica de comisiones en Revision
+
+### Que se modifico
+
+La seccion `Revision > Comisiones` empareja ahora cada cargo con su
+bonificacion y permite verificar la devolucion en un clic.
+
+**Modelo de datos.** Nueva migracion
+`20260823120000_AddExtractoDevolucionToRevisionEstados`: columna
+`extracto_devolucion_id uuid NULL` en `REVISION_EXTRACTO_ESTADOS`, FK a
+`EXTRACTOS` (`ON DELETE RESTRICT`, mismo criterio que `extracto_id`) e indice
+unico parcial sobre la columna filtrando filas activas y no nulas. Ese indice
+unico es la garantia a nivel PostgreSQL contra la carrera de dos usuarios
+verificando el mismo abono: el segundo `SaveChanges` recibe una violacion de
+unicidad que el controller traduce a HTTP 409. La fecha de devolucion que se
+muestra sale del `fecha` del extracto emparejado (join), sin columnas nuevas.
+Snapshot actualizado a mano; el drift preexistente del bloque (falta
+`deleted_at/deleted_by_id` desde la migracion manual V-02-05) se deja tal
+cual para no mezclar cambios.
+
+**Deteccion y listado.** `RevisionService.GetComisionesAsync` pasa de umbral
+por valor absoluto (`monto > u OR monto < -u`) a solo cargos
+(`monto < -umbral`). Tras paginar, `ResolveDevolucionesAsync` resuelve la
+columna `Devolucion` de toda la pagina con dos consultas batch (fechas de
+referencias persistidas + candidatos elegibles), sin N+1. Asignacion greedy:
+comisiones pendientes ordenadas por `fecha ASC, fila_numero ASC`; cada una
+toma el abono libre mas antiguo posterior a su fecha. Un abono solo se
+sugiere una vez por pagina; el estado persistido es lo que libera o reserva.
+
+**Verificacion.** Nuevo endpoint
+`POST /api/revision/comision/{id}/verificar-devolucion`
+(`RevisionController.VerificarDevolucion`). Busca el mejor candidato con las
+mismas reglas (`ApplyAbonoEligibility`: concepto tipo comision via
+`BuildConceptPredicate`, no referenciado por otra revision activa, no
+DESCARTADA previamente), comprueba que no exista otra comision pendiente mas
+antigua que reclame el mismo abono y persiste en una sola unidad de trabajo:
+estado `DEVUELTA` + `extracto_devolucion_id`. Respuestas: 200 con
+`{encontrada, message, devolucionExtractoId, devolucionFecha}`; 409 si no hay
+candidata, si el abono pertenece a una comision anterior o por carrera
+(`DbUpdateException`); 403 sin permiso (`CanReviewCuentaAsync`);
+400 extracto inexistente. Permisos identicos al PATCH existente.
+
+**Ciclo de vida.** `SetEstadoAsync` limpia `extracto_devolucion_id`
+automaticamente cuando el nuevo estado no es `DEVUELTA` (toggle a PENDIENTE o
+descarte), liberando el abono. Las entidades siguen auditadas via
+`AuditSaveChangesInterceptor`; las politicas RLS existentes de la tabla no
+cambian (una columna nueva no altera `can_read_extracto/can_write_extracto`).
+
+**Frontend.** `RevisionPage.tsx`: columna `Devolucion` entre Concepto y
+Revision, boton verde `.revision-verify-button` (icono Check) visible cuando
+hay candidata y `canEditCuenta`; update optimista, invalidacion
+`['revision']` y re-sincronizacion de la fila/lista ante 409 o sin candidata
+(el servidor puede haber reasignado sugerencias). Tipos nuevos en
+`types/index.ts`. Responsive movil reutiliza las tarjetas data-label ya
+existentes; sin cambios de layout para Seguros.
+
+### Por que
+
+Las bonificaciones ("BONIFIC. COMISION MANT. CUENTA") aparecian como filas
+mas de la lista y marcar la devolucion era manual fila a fila sin trazabilidad
+del movimiento que cubria cada comision. Con el emparejamiento automatico la
+revision queda en un clic y la referencia comision-abono queda persistida,
+auditada e imposibilitada de duplicarse.
+
+### Verificacion
+
+- Suite completa: 870 tests, 851 verdes, 19 fallos exclusivamente por
+  Testcontainers sin Docker en sandbox (`PostgresCollection`).
+- `RevisionServiceTests` completo: 19/19 verdes (incluye los 9 nuevos/actualizados).
+- Frontend: eslint limpio, `tsc` limpio, `test:unit` 57/57.
+- Build de produccion vite bloqueado en sandbox por EPERM copiando fuentes a
+  `dist/` (caso documentado); `dotnet build` normal bloqueado por ACL de
+  sandbox sobre `src/*/obj`; ambos validados via workaround documentado abajo.

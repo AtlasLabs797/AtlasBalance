@@ -8,6 +8,7 @@ using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -166,7 +167,7 @@ public sealed class ExtractosConcurrencyTests
 
     private static ExtractosController BuildController(AppDbContext db, Guid userId)
     {
-        var controller = new ExtractosController(db, new NoOpAlertaService());
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance);
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

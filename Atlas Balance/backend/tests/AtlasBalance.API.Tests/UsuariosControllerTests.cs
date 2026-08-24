@@ -359,6 +359,34 @@ public class UsuariosControllerTests
         (await db.Usuarios.SingleAsync(x => x.Id == admin.Id)).DeletedAt.Should().BeNull();
     }
 
+    // V-02.08: la lista Emails (alertas) solo tenia MaxLength en el numero de
+    // items; un email malformado almacenado rompia cada evaluacion de alertas
+    // (FormatException de MimeKit) y devolvia 500 tras insertar el extracto.
+    [Fact]
+    public async Task Crear_Should_Reject_Malformed_Alert_Email()
+    {
+        await using var db = BuildDbContext();
+        var controller = new UsuariosController(db, TestAuditService.Create(db));
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+
+        var request = new CreateUsuarioRequest
+        {
+            Email = "malformed.alerts@atlasbalance.local",
+            NombreCompleto = "Malformed Alert Email",
+            Rol = RolUsuario.EMPLEADO,
+            Activo = true,
+            PrimerLogin = true,
+            Password = "Valid1234!Ab",
+            Emails = new[] { "roto\r\n@atlasbalance.local" },
+            Permisos = Array.Empty<SavePermisoUsuarioRequest>()
+        };
+
+        var result = await controller.Crear(request, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        db.UsuarioEmails.Any(x => x.Email.Contains("roto")).Should().BeFalse();
+    }
+
     private static ControllerContext BuildControllerContext(Guid adminId)
     {
         var identity = new ClaimsIdentity(new[]

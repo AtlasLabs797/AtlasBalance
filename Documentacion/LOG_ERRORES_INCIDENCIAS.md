@@ -1,5 +1,70 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-23 - V-02.08 - Fixes de la auditoria integral de seguridad y bugs (CERRADO PARCIAL)
+
+- **Sintoma/contexto:** la auditoria integral del 2026-08-23 (ver
+  `REGISTRO_BUGS.md`) identifico 4 altos, 6 medios backend, 6 medios
+  frontend y varias medias en scripts. Esta entrada documenta los fixes
+  APLICADOS; el detalle completo con archivo:línea esta en la entrada de
+  `REGISTRO_BUGS.md`.
+- **Soluciones aplicadas:**
+  - Backend: `CsrfMiddleware` exime `/api/integration/*` (clientes Bearer
+    sin cookies; el Origin check sigue cubriendo la ruta); `IntegrationToken
+    Service.InvalidateActiveTokensCache()` nuevo y llamado tras SaveChanges
+    en PUT y Rotar de `IntegracionesController` (antes solo RevokeAsync
+    invalidaba); `ImportacionService.TryAcquireAdvisoryXactLockAsync`
+    fail-closed si la BD es relacional (antes `catch { return true; }`);
+    validacion estricta de formato en email principal y lista `Emails` de
+    `UsuariosController` reutilizando `EmailService.ValidateEmailAddressPublic`,
+    y `ExtractosController.Crear` envuelve `EvaluateSaldoPostAsync` en
+    try/catch con logger (un fallo de alerta ya no devuelve 500 tras insert);
+    `ConciliacionService` exige titular activo en lectura
+    (`ResolveAccessibleCuentas`) y escritura no-ADMIN
+    (`EnsureCuentaPermitidaAsync`).
+  - `scripts/Instalar-AtlasBalance.ps1` (Test-VolumeEncryption): restaurado
+    el terminador del here-string corrupto (linea literal
+    `"-ForegroundColor Yellow`). El check BitLocker vuelve a evaluar
+    ProtectionStatus; verificado por parser. Mismo patron stderr/EAP corregido
+    en su helper psql y en `Grant-OwnerBypassRls.ps1`.
+  - `scripts/backup-manual.ps1`: defecto `-DbUser atlas_owner`, preflight
+    que aborta si el rol no tiene BYPASSRLS (evita dumps vacios exit 0 bajo
+    FORCE RLS) y exit codes propagados.
+  - `scripts/Actualizar-AtlasBalance.ps1`: try/catch global alrededor de
+    sync/config/servicios/VERSION con rollback automatico via
+    `Restore-UpdatedBinaries`; stderr de curl.exe neutralizado bajando EAP
+    solo para la llamada nativa; fallback PS 5.1 para el healthcheck sin
+    `-SkipCertificateCheck` (callback TLS acotado con restauracion);
+    reintento + post-verificacion del exe en `Restore-UpdatedBinaries`.
+  - `frontend/src/pages/CuentaDetailPage.tsx`: separados `error` (acciones)
+    y `loadError` (carga inicial); fallo de carga muestra EmptyState con
+    "Reintentar"; errores de accion son banner no destructivo con cerrar;
+    rollback de toggleCheck via refetch; resincronizacion en 409 de saveCell.
+  - Frontend races: guards request-id en `ExtractosPage`
+    (loadRows/loadResumen/loadVisibleColumns), `RevisionPage.load`,
+    `ImportacionPage.loadLotes`; `ConciliacionPage.loadData` gestiona su
+    error (sin unhandled rejection) y resincroniza tras 409;
+    `LoginPage` anade salida del paso MFA; `ImportacionPage` bloquea abrir
+    lotes cerrados (confirmado/revertido/error) y anade guard anti doble-click
+    en movimiento de plazo fijo; tope de 5 toasts en `uiStore`.
+- **Verificacion:** suite backend completa 853/853 PASS (filtro no-Postgres,
+  ejecutada localmente compilando con `-p:OutputPath` redirigido para esquivar
+  el bloqueo ACL de bin/); incluye 2 tests nuevos (`CsrfMiddlewareTests.
+  InvokeAsync_Should_SkipCsrf_For_Integration_Paths`,
+  `UsuariosControllerTests.Crear_Should_Reject_Malformed_Alert_Email`).
+  Frontend: tsc OK, lint OK, test:unit 57/57. Scripts: parser OK en los 6
+  modificados.
+- **NO aplicado deliberadamente:** ventana de gracia en refresh concurrente
+  (`AuthService.RefreshTokenAsync`): contradice el contrato documentado por
+  `AuthServiceTests.RefreshToken_Should_Revoke_Active_Sessions_When_Rotated_
+  Token_Is_Reused` (revocacion inmediata ante reuso). Requiere decision de
+  producto. Pendientes ademas: credenciales por argv en Smoke-Test,
+  rotacion de claves al reejecutar instalador, servicio como LocalSystem en
+  install-services.ps1.
+- **Correccion al informe:** "rol GERENTE en SPEC.md" era falso positivo:
+  `SPEC.md` documenta GERENTE (tabla L621, ENUM L1531, matriz L4161) y
+  legitima ahi la exportacion manual de GERENTE, con lo que el diseno F5
+  queda validado por especificacion.
+
 ## 2026-08-05 - V-02.08 - El icono de banderola en extractos de cuenta no desmarca filas amarillas (CERRADO)
 
 - **Sintoma:** en la ventana "Desglose de la cuenta", al seleccionar una

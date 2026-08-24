@@ -449,7 +449,16 @@ export interface RevisionComisionItem {
   monto: number;
   concepto: string;
   estado_devolucion: RevisionEstadoComision;
+  devolucion_extracto_id: string | null;
+  devolucion_fecha: string | null;
   divisa: string;
+}
+
+export interface VerificarDevolucionResponse {
+  encontrada: boolean;
+  message: string;
+  devolucion_extracto_id: string | null;
+  devolucion_fecha: string | null;
 }
 
 export interface RevisionSeguroItem {

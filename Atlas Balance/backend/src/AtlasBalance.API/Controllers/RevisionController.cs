@@ -2,6 +2,7 @@ using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Controllers;
 
@@ -63,6 +64,39 @@ public sealed class RevisionController : ControllerBase
             scope,
             new RevisionQueryRequest { Estado = estado, PaisId = paisId, Page = page, PageSize = pageSize },
             cancellationToken));
+    }
+
+    // V-02.08: verifica la devolucion de una comision emparejandola
+    // automaticamente con su bonificacion (misma cuenta, importe exacto
+    // opuesto, fecha posterior). Sin candidata -> 409.
+    [HttpPost("comision/{extractoId:guid}/verificar-devolucion")]
+    public async Task<IActionResult> VerificarDevolucion(Guid extractoId, CancellationToken cancellationToken)
+    {
+        var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
+        if (scope.UserId == Guid.Empty)
+        {
+            return Unauthorized(new { error = "Usuario no autenticado" });
+        }
+
+        try
+        {
+            var result = await _revisionService.VerificarDevolucionAsync(scope, extractoId, cancellationToken);
+            return result.Encontrada ? Ok(result) : Conflict(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (DbUpdateException)
+        {
+            // Indice unico parcial sobre extracto_devolucion_id: el abono ya se
+            // asigno a otra comision en carrera.
+            return Conflict(new { error = "La bonificacion ya ha sido asignada a otra comision." });
+        }
     }
 
     // V-02.09: regex explicito en el path param {tipo} para que un valor no

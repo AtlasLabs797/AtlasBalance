@@ -2,6 +2,128 @@
 
 ## Abiertos
 
+### 2026-08-23 - V-02.08 - Cerrado parcial - Auditoria integral de seguridad y bugs: 4 altos, 6 medios y cola de menores
+
+- **Contexto:** revision completa del codigo (backend C#, frontend React,
+  scripts PowerShell) pedida el 2026-08-23. Metodologia: barrido paralelo de
+  las superficies criticas (auth, permisos/IDOR, inyeccion/ficheros/red,
+  frontend, secretos/config, scripts), validacion manual de cada hallazgo
+  leyendo el codigo y baseline de tests. Resultado global: **sin hallazgos
+  criticos ni altos de seguridad en la aplicacion**; los altos estan en
+  scripts operativos y en un bug de UI.
+- **Estado:** los fixes se APLICARON el mismo dia; solucion detallada en
+  `LOG_ERRORES_INCIDENCIAS.md` ("Fixes de la auditoria integral"). Suite
+  backend 853/853 PASS, frontend tsc/lint/test:unit verdes, parser PS OK.
+  Quedan ABIERTOS por requerir decision de producto o cirugia mayor:
+  ventana de gracia en refresh concurrente (contradice un test contrato),
+  credenciales por argv en Smoke-Test, rotacion de claves al reejecutar el
+  instalador (B8) y install-services como LocalSystem (B9).
+  Correccion post-verificacion: el presunto pendiente "rol GERENTE en
+  SPEC.md" era un falso positivo del barrido — `SPEC.md` documenta GERENTE
+  en su tabla de roles (L621), el ENUM de USUARIOS (L1531) y la matriz de
+  permisos (L4161), y legitima ahi mismo la exportacion manual de GERENTE,
+  por lo que tambien queda validado por especificacion el diseno de
+  exportaciones (F5).
+- **ALTOS (4):**
+  1. `scripts/Instalar-AtlasBalance.ps1:226` - here-string roto (linea
+     literal `"-ForegroundColor Yellow` en vez de `"@`): se traga las lineas
+     224-246 y convierte `Test-VolumeEncryption` (check BitLocker de V-02.08)
+     en un no-op silencioso o en basura interpolada. Verificado por AST.
+     Fix: restaurar el terminador y anadir test de parser del bloque.
+  2. `scripts/backup-manual.ps1:9,44` - pg_dump con rol runtime
+     (`atlas_balance_app`, NOBYPASSRLS): con FORCE RLS el dump termina exit 0
+     SIN las filas de negocio. Backup incompleto indetectable hasta
+     restaurar. Fix: usar rol owner con BYPASSRLS o abortar como hace
+     `Actualizar-AtlasBalance.ps1:536`.
+  3. `scripts/Actualizar-AtlasBalance.ps1:844-951` - el rollback automatico
+     solo cubre healthcheck negativo; cualquier excepcion entre la copia y el
+     healthcheck (JSON config, `sc.exe`, `Copy-Item` bloqueado, stderr de
+     curl.exe bajo EAP=Stop en L932) muere sin `Restore-UpdatedBinaries`,
+     dejando servicios parados y VERSION ya escrita. Fix: try/catch global
+     con rollback + neutralizar el patron `2>$null` como ya hace
+     `Test-BackupRestore.ps1:46`.
+  4. `frontend/src/pages/CuentaDetailPage.tsx:786` - `if (error) return <p>`
+     reemplaza TODA la pagina; `saveCell` hace `setError()` incluso con
+     errores de validacion local ("Importe debe ser numerico"). Editar una
+     celda mal colapsa tabla, notas y modales sin salida. Fix: error local de
+     celda fuera del estado global y banner de error no destructivo.
+- **MEDIOS BACKEND (6, todos verificados en codigo):**
+  1. `Middleware/CsrfMiddleware.cs:26` - `ExcludedPaths` no contempla
+     `/api/integration/*`: el unico POST mutante de OpenClaw (Bearer-only, sin
+     cookies) exige cookie csrf + header igualados. Fail-closed, pero rompe el
+     contrato salvo que el cliente fabrique pareja arbitraria. Fix: eximir el
+     prefijo de integracion (la autenticacion Bearer hace irrelevante CSRF).
+  2. `Services/AuthService.cs:519-531` - refresh concurrente (dos pestanas
+     in-flight con el mismo token): la segunda encuentra `RevocadoEn +
+     ReemplazadoPor` y dispara revocacion total de sesiones + alerta falsa.
+     Fix: ventana de gracia corta sobre el token recien reemplazado.
+  3. `Controllers/IntegracionesController.cs:246-259 y :300-365` - PUT y Rotar
+     mutan tokens sin `_cacheService.Invalidate`; solo `RevokeAsync`
+     invalida (`IntegrationTokenService.cs:138`). Token con scopes recortados
+     o rotado sigue autorizando hasta `IntegrationTokenTtl`. Fix: invalidar
+     namespace tras SaveChanges en ambos paths.
+  4. `Services/ImportacionService.cs:1505-1508` - advisory lock fail-open:
+     `catch { return true; }` desactiva en silencio la proteccion contra
+     doble confirmacion ante cualquier error real de BD. Fix: si es
+     relacional, loguear y fail-closed (return false); solo tolerar en
+     provider InMemory.
+  5. `Controllers/UsuariosController.cs:1100` + `ExtractosController.cs:262` -
+     emails de alerta dados de alta sin validar formato; MimeKit lanza
+     FormatException en cada evaluacion y `EvaluateSaldoPostAsync` va sin
+     try/catch tras el insert: extracto guardado devuelve 500. Fix: aplicar
+     `ValidateEmailAddressPublic` en alta/edicion + envolver evaluacion como
+     ya hace `ImportacionService.EvaluateSaldoAlertSafelyAsync`.
+  6. `Services/ConciliacionService.cs:397-413` - `ResolveAccessibleCuentas`
+     filtra cuentas borradas (query filter global ISoftDelete) pero NO
+     titulares borrados: un usuario con permiso sigue viendo conciliaciones
+     de cuentas cuyo titular fue eliminado logicamente. Fix: join a Titulares
+     con DeletedAt null (o reutilizar ApplyActiveTitularCuentaScope).
+- **MEDIOS FRONTEND (6):** races sin AbortController/request-id en
+  `ExtractosPage.tsx:141`, `RevisionPage.tsx:36` y `ImportacionPage.tsx:285`;
+  `ConciliacionPage.tsx:45-54,191` unhandled rejection sin feedback y datos
+  de la cuenta anterior tras fallo; `LoginPage.tsx:140-188` challenge MFA
+  expirado deja dead-end sin volver al paso password;
+  `ImportacionPage.tsx:788-806` abrir lote del historial no comprueba su
+  estado (permite intentar reconfirmar CADUCADO/CONFIRMADO) y
+  `:598-648` submitPlazoFijoMovimiento sin idempotency key ni submittingRef
+  (doble click = doble movimiento).
+- **SCRIPTS MEDIAS:** `Actualizar-AtlasBalance.ps1:942` usa
+  `-SkipCertificateCheck` (PS6+) inexistente en 5.1 (rollback siempre en
+  Server 2016); `:837-842+949` el rollback restaura appsettings previo y puede
+  invalidar AuditSigningKey sobre filas ya firmadas; `restore-backup.ps1:11,68`
+  pg_restore con rol no-owner tratado como "advertencias" y exit 0 final;
+  `Smoke-Test-AtlasBalance.ps1:5,6` credenciales por argv (historial/proceso)
+  y `:69,93` `ConvertFrom-Json -Depth` inexistente en 5.1;
+  `Instalar-AtlasBalance.ps1:1276-1290` reejecutar el instalador rota
+  JWT/RLS/AuditSigningKey (historico de AUDITORIAS queda "sin firma");
+  `install-services.ps1:59-99` crea servicio como LocalSystem pese al relato
+  de usuario dedicado.
+- **BAJOS/INFO (resumen):** ningun job Hangfire lleva
+  `[DisableConcurrentExecution]` y `BackupOperationJob.cs:50` puede quedar
+  RUNNING eterno si el proceso muere a mitad; toasts sin tope maximo
+  (`uiStore.ts:68`) pausados con pestana oculta; rollbacks optimistas con
+  snapshot de closure obsoleto (`CuentaDetailPage.tsx:625`,
+  `ExtractosPage.tsx:299`); 409 sin resincronizacion en `CuentaDetailPage`;
+  cookies legacy aceptadas en prod (`AuthController.cs:232`); MaxAge de
+  cookies hardcodeado desacoplado de config JWT; contadores antifuerza-bruta
+  volatiles en memoria; superpassword PostgreSQL por argv de winget y
+  secreto RLS por argv de certutil (instalador one-shot, mitigado).
+  (Nota post-verificacion: el rol GERENTE SI esta documentado en SPEC.md;
+  el punto F9 del barrido era un falso positivo.)
+- **Verificado limpio (no re-auditar):** JWT/cookies/refresh rotation/MFA/
+  logout/lockout; RLS firmado HMAC + interceptor; permisos endpoint a endpoint
+  en los 24 controllers (sin IDOR clasico); SQL crudo parametrizado (16
+  puntos); subida de ficheros (no hay IFormFile; limites correctos);
+  formula-injection Excel; rutas export/backup con 4 lectores independientes;
+  cadena de actualizacion con firma RSA + digest + anti-zip-slip; Watchdog
+  localhost-only con secreto >=32; secretos cifrados con SecretProtector y
+  NADA commiteado; frontend sin XSS sinks ni any; refresh queue axios
+  correcto; open redirect cerrado; calculos financieros (PlazoFijo con side
+  effects post-commit, TiposCambio BFS con guardas, Revision devoluciones con
+  indice unico parcial anti-carrera).
+- **Estado:** cerrado parcial el 2026-08-23 (fixes aplicados y verificados;
+  ver cabecera de esta entrada y `LOG_ERRORES_INCIDENCIAS.md`).
+
 ### 2026-08-05 - V-02.08 - Cerrado - El icono de banderola en extractos de cuenta no desmarca filas amarillas
 
 - **Contexto:** reporte del operador del 2026-08-05. En la ventana

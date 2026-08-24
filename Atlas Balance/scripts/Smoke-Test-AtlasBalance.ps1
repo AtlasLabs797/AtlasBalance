@@ -66,7 +66,15 @@ function Invoke-ApiJson {
         }
         $parsed = $null
         if (-not [string]::IsNullOrEmpty($bodyText)) {
-            try { $parsed = $bodyText | ConvertFrom-Json -Depth 12 }
+            # V-02.08 (fix): -Depth no existe en PS 5.1; el binding error se
+            # tragaba el catch y parsed era siempre null con fallos enganosos.
+            try {
+                if ($PSVersionTable.PSVersion.Major -ge 6) {
+                    $parsed = $bodyText | ConvertFrom-Json -Depth 12
+                } else {
+                    $parsed = $bodyText | ConvertFrom-Json
+                }
+            }
             catch { $parsed = $null }
         }
         return @{
@@ -90,7 +98,14 @@ function Invoke-ApiJson {
         }
         $parsed = $null
         if (-not [string]::IsNullOrEmpty($bodyText)) {
-            try { $parsed = $bodyText | ConvertFrom-Json -Depth 6 }
+            # V-02.08 (fix): -Depth no existe en PS 5.1 (ver nota anterior).
+            try {
+                if ($PSVersionTable.PSVersion.Major -ge 6) {
+                    $parsed = $bodyText | ConvertFrom-Json -Depth 6
+                } else {
+                    $parsed = $bodyText | ConvertFrom-Json
+                }
+            }
             catch { $parsed = $bodyText }
         }
         return @{ StatusCode = $statusCode; Body = $parsed; RawBody = $bodyText }

@@ -434,16 +434,24 @@ Las importaciones de extractos y los movimientos manuales de plazo fijo tambien 
 
 El menu lateral incluye `Revision` con dos apartados:
 
-- `Comisiones`: busca movimientos con conceptos de comision, mantenimiento, administracion, reclamacion, descubierto o gastos bancarios. `Tarjeta`, `cuota`, `leasing`, `prestamo`, `servicio` o `transferencia` por si solos no cuentan como comision.
+- `Comisiones`: busca cargos (importe negativo) con conceptos de comision, mantenimiento, administracion, reclamacion, descubierto o gastos bancarios. `Tarjeta`, `cuota`, `leasing`, `prestamo`, `servicio` o `transferencia` por si solos no cuentan como comision. Los abonos en positivo no aparecen como lineas: son las devoluciones de esas comisiones.
 - `Seguros`: busca cargos negativos con conceptos de seguro, poliza, prima y aseguradoras habituales. Quedan fuera Seguridad Social, Seguro Social, Seguros Sociales, TGSS, Tesoreria General, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
 
 En comisiones puedes marcar una linea como `Devuelta`. En seguros puedes marcarla como `Correcto`. Si la deteccion automatica se equivoca, usa `No es comision` o `No es seguro`; la linea queda como `Descartada` y puedes recuperarla con `Restaurar`.
 
+### Devolucion automatica de comisiones
+
+Cuando una comision tiene su bonificacion en el mismo banco y cuenta, la columna `Devolucion` muestra automaticamente la fecha del abono emparejado y aparece un boton verde de `Verificar`. Un clic marca la comision como `Devuelta` y guarda que abono concreto la cubre; si desmarcas la linea, el abono queda libre de nuevo.
+
+El emparejamiento sigue tres reglas: mismo importe exacto (la bonificacion invierte el cargo), misma cuenta y fecha posterior a la comision. Si hay varias comisiones iguales, el abono siempre se asigna a la mas antigua; mientras esa siga pendiente, Atlas Balance no deja verificar la mas reciente con ese mismo abono. Los abonos que descartaste como `No es comision` nunca se usan.
+
+Si no hay ningun abono candidato, la columna muestra `—` y puedes seguir marcando la devolucion a mano.
+
 El estado queda guardado y puedes filtrar por pendientes, revisadas o descartadas. La vista `Todas/Todos` no muestra descartadas; para verlas, usa el filtro `Descartadas/Descartados`. Para cambiar estados necesitas permiso de escritura sobre la cuenta o titular de esa linea; si solo tienes lectura, veras `Solo lectura`.
 
-El importe minimo de comisiones se configura en `Configuracion > Revision e IA`. Se compara por valor absoluto: con umbral `1`, aparecen `-1,20` y `1,20`.
+El importe minimo de comisiones se configura en `Configuracion > Revision e IA`. Con umbral `1` aparecen los cargos a partir de `-1,20`; los abonos equivalentes ya no se listan, se reservan para el emparejamiento automatico.
 
-En movil, `Revision` muestra cada movimiento como tarjeta etiquetada para que puedas leer titular, cuenta, importe, concepto y estado sin arrastrar una tabla ancha.
+En movil, `Revision` muestra cada movimiento como tarjeta etiquetada para que puedas leer titular, cuenta, importe, concepto, fecha de devolucion y estado sin arrastrar una tabla ancha.
 
 ## IA
 

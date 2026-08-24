@@ -375,7 +375,14 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = "Email obligatorio" });
         }
 
+        // V-02.08: sin validacion de formato, un email malformado almacenado
+        // rompia cada evaluacion de alertas (FormatException de MimeKit).
         var normalizedEmail = NormalizeEmail(request.Email);
+        if (!TryValidateEmail(normalizedEmail, out var emailError))
+        {
+            return BadRequest(new { error = emailError });
+        }
+
         var exists = await _dbContext.UsuarioEmails.AnyAsync(
             x => x.UsuarioId == id && x.Email.ToLower() == normalizedEmail,
             cancellationToken);
@@ -478,6 +485,12 @@ public sealed class UsuariosController : ControllerBase
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
+        // V-02.08: validar formato tambien en alta y edicion de usuario (ver CrearEmail).
+        if (!TryValidateEmail(normalizedEmail, out var emailError))
+        {
+            return BadRequest(new { error = emailError });
+        }
+
         var exists = await _dbContext.Usuarios.IgnoreQueryFilters().AnyAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
         if (exists)
         {
@@ -514,6 +527,12 @@ public sealed class UsuariosController : ControllerBase
         _dbContext.Usuarios.Add(usuario);
 
         var normalizedEmails = NormalizeEmails(request.Emails);
+        var invalidEmail = FindInvalidEmail(normalizedEmails);
+        if (invalidEmail is not null)
+        {
+            return BadRequest(new { error = $"Email de alerta invalido: {invalidEmail}" });
+        }
+
         await UpsertEmailsAsync(usuario.Id, normalizedEmails, cancellationToken);
         await UpsertPermisosAsync(usuario.Id, request.Permisos, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -576,6 +595,12 @@ public sealed class UsuariosController : ControllerBase
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
+        // V-02.08: validar formato tambien en edicion de usuario (ver CrearEmail).
+        if (!TryValidateEmail(normalizedEmail, out var emailError))
+        {
+            return BadRequest(new { error = emailError });
+        }
+
         var emailAlreadyExists = await _dbContext.Usuarios
             .IgnoreQueryFilters()
             .AnyAsync(u => u.Id != id && u.Email.ToLower() == normalizedEmail, cancellationToken);
@@ -644,6 +669,14 @@ public sealed class UsuariosController : ControllerBase
         }
 
         var normalizedEmails = NormalizeEmails(request.Emails);
+        // V-02.08: validacion antes de persistir; si falla, nada se ha guardado
+        // todavia (SaveChanges viene despues).
+        var invalidEmail = FindInvalidEmail(normalizedEmails);
+        if (invalidEmail is not null)
+        {
+            return BadRequest(new { error = $"Email de alerta invalido: {invalidEmail}" });
+        }
+
         await UpsertEmailsAsync(usuario.Id, normalizedEmails, cancellationToken);
         await UpsertPermisosAsync(usuario.Id, request.Permisos, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -1098,6 +1131,38 @@ public sealed class UsuariosController : ControllerBase
     }
 
     private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+    // V-02.08: los emails de usuario alimentan las alertas (EmailService con
+    // MimeKit). Un email malformado almacenado rompia cada evaluacion de alertas
+    // y devolvia 500 tras insertar el extracto. Reutiliza el validador estricto
+    // que ya existia para smtp_from.
+    private static bool TryValidateEmail(string normalizedEmail, out string error)
+    {
+        try
+        {
+            EmailService.ValidateEmailAddressPublic(normalizedEmail, "Email");
+            error = string.Empty;
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static string? FindInvalidEmail(IReadOnlyList<string> normalizedEmails)
+    {
+        foreach (var email in normalizedEmails)
+        {
+            if (!TryValidateEmail(email, out _))
+            {
+                return email;
+            }
+        }
+
+        return null;
+    }
 
     private static List<string> NormalizeEmails(IReadOnlyList<string> emails)
     {

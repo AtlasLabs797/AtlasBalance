@@ -10,6 +10,121 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-23 - V-02.08 - Aplicacion de fixes de la auditoria integral
+
+- **Motivacion:** tras el informe del mismo dia (entrada anterior), el
+  operador aprobo aplicar los fixes. Decision destacada: NO se toca la
+  ventana de gracia de refresh concurrente porque un test documenta la
+  revocacion inmediata como contrato deliberado.
+- **Trabajo realizado:** 6 fixes backend, ~10 frontend (+2 CSS), 6 scripts.
+  Detalle completo en `v-02.08.md` seccion "Fixes de la auditoria integral",
+  solucion en `LOG_ERRORES_INCIDENCIAS.md`, estado en `REGISTRO_BUGS.md`.
+- **Archivos tocados:**
+  - Backend: `Middleware/CsrfMiddleware.cs`,
+    `Services/IntegrationTokenService.cs`, `Services/ImportacionService.cs`,
+    `Services/ConciliacionService.cs`, `Controllers/IntegracionesController.cs`,
+    `Controllers/UsuariosController.cs`, `Controllers/ExtractosController.cs`.
+  - Frontend: `pages/CuentaDetailPage.tsx`, `pages/ExtractosPage.tsx`,
+    `pages/RevisionPage.tsx`, `pages/ConciliacionPage.tsx`,
+    `pages/LoginPage.tsx`, `pages/ImportacionPage.tsx`,
+    `stores/uiStore.ts`, `styles/auth.css`, `styles/layout/entities.css`.
+  - Scripts: `Instalar-AtlasBalance.ps1`, `Actualizar-AtlasBalance.ps1`,
+    `backup-manual.ps1`, `restore-backup.ps1`, `Smoke-Test-AtlasBalance.ps1`,
+    `Grant-OwnerBypassRls.ps1`.
+  - Tests: `CsrfMiddlewareTests.cs` (+1), `UsuariosControllerTests.cs` (+1),
+    `IntegrationAuthMiddlewareTests.cs` (stub), `ExtractosConcurrencyTests.cs`
+    /`ExtractosControllerTests.cs`/`VolumeSmokeTests.cs` (constructor
+    ExtractosController + NullLogger).
+- **Comandos ejecutados y verificacion:**
+  - Backend: `dotnet build` API OK; suite completa no-Postgres **853/853
+    PASS** via `dotnet test -p:OutputPath=<temp>` (esquiva el bloqueo ACL;
+    primera corrida local verde desde 2026-08-17; confirma el fix IA de
+    `31f4529`). Tests Postgres siguen pendientes de CI/Docker.
+  - Frontend: `tsc --noEmit` OK, `lint --max-warnings 0` OK,
+    `test:unit` 57/57.
+  - Scripts: parser PowerShell OK (0 errores) en los 6 modificados.
+- **Pendientes:** decision sobre gracia de refresh, Smoke argv, B8/B9
+  ("GERENTE en SPEC" resulto falso positivo del barrido: SPEC.md ya lo
+  documenta en L621/L1531/L4161); pushear y validar gate Postgres/CI;
+  working tree lleva ademas la feature devoluciones sin commitear.
+
+---
+
+## 2026-08-23 - V-02.08 - Auditoria integral de seguridad y bugs (solo lectura)
+
+- **Motivacion:** revision completa del codigo pedida por el operador para
+  verificar seguridad y bugs. Alcance acordado: todo (backend, frontend,
+  scripts PowerShell), prioridad seguridad, entregable = informe + plan de
+  fixes sin aplicar codigo.
+- **Trabajo realizado:**
+  - Barrido paralelo con subagentes de 5 superficies: auth/sesiones,
+    permisos/IDOR (24 controllers endpoint a endpoint),
+    inyeccion/ficheros/red/jobs, frontend (services/stores/paginas) y
+    secretos/config/scripts.
+  - Validacion manual de los 6 medios iniciales leyendo el codigo
+    (`CsrfMiddleware`, `AuthService`, `IntegracionesController`,
+    `ImportacionService`, `UsuariosController`/`ExtractosController`,
+    `ConciliacionService`). Uno se corrigio en el informe: el filtro global
+    `ISoftDelete` de `AppDbContext.cs:612` ya cubre cuentas borradas; el gap
+    real de conciliacion es el titular borrado.
+  - Revision dirigida de logica financiera (`RevisionService` devoluciones,
+    `PlazoFijoService`, `TiposCambioService`) y jobs Hangfire.
+  - Registro de todos los hallazgos en `REGISTRO_BUGS.md` (entrada del
+    2026-08-23).
+- **Archivos tocados:** solo documentacion (`REGISTRO_BUGS.md`, esta
+  bitacora). Cero cambios de codigo por decision del alcance.
+- **Comandos ejecutados y verificacion:**
+  - `npm.cmd exec tsc --noEmit`: OK (exit 0).
+  - `npm.cmd run lint -- --max-warnings 0`: OK (exit 0).
+  - `npm.cmd run test:unit`: OK, 57/57.
+  - `dotnet test` local (filtro no-Postgres): BLOQUEADO, dos intentos
+    (redirect de obj/bin sin y con restore previo): los Migrations no
+    resuelven tipos EF bajo redirect; servicios Windows corriendo bloquean
+    `bin/Release` y el daemon Docker no esta disponible, asi que la via
+    contenedor documentada tampoco aplica hoy. Estado real de la suite
+    backend SIN VERIFICAR desde 2026-08-17: la ultima corrida CI
+    (31989471616) fallo con 80 tests de AtlasAiService, el fix
+    (`31f4529`) esta commitado pero NO pusheado (origin/V-02.08 sigue en
+    `6e40176`), y hay feature de devoluciones de comisiones sin commitear
+    en el working tree.
+- **Resultado:** 0 criticos/altos de seguridad en la app; 4 altos (3 scripts
+  + 1 UI), 6 medios backend, 6 medios frontend, ~7 medias de scripts y cola
+  de bajos/info. Detalle completo con archivo:línea y propuesta de fix en
+  `REGISTRO_BUGS.md`.
+- **Pendientes:** decidir que fixes entran y bajo que version; pushear
+  `31f4529` y validar suite via CI/Docker; commitear la feature de
+  devoluciones pendiente en el working tree; realinear version runtime
+  (documentado en `version_actual.md`).
+
+---
+
+## 2026-08-17 - V-02.08 - Fix regresion AtlasAiService (80 tests)
+
+- **Motivacion:** la Parte 2 del informe de handoff del 2026-08-17
+  identifico 80 tests fallando en 3 clases (`AtlasAiServiceTests`,
+  `AtlasAiServiceStabilizationTests`, `AtlasAiServiceThinkingModeTests`)
+  tras la introduccion del `IntentPlanner` de 3 niveles. El guard en
+  `TryAnswerPlannedAsync:920-931` bloqueaba la caida al flujo legacy
+  cuando el planificador rechazaba una pregunta, devolviendo un mensaje
+  enlatado en vez de `null`. En tests, `NullSemanticPlannerClient` siempre
+  devuelve null, causando que toda pregunta libre termine en `Rejected` sin
+  llegar al mock HTTP.
+- **Archivos tocados:**
+  - `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+    — lineas 920-931: guard `Rejected` devuelve `null` en vez de respuesta
+    local.
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/IaAcceptanceTests.cs`
+    — 6 tests: anadido `catch (IaProviderException) { }` para cubrir el
+    caso donde la pregunta llega al proveedor sin red en sandbox.
+  - `Documentacion/Versiones/v-02.08.md` — actualizado con el fix.
+- **Verificacion:** `dotnet build Release` compila sin errores de
+  compilacion (los errores MSB3021 son el bloqueo de ACL conocido de los
+  servicios Windows sobre `bin/Release/`). Pendiente: suite completa en
+  Docker.
+- **Pendiente:** correr suite completa via Docker para confirmar 0 fallos.
+
+---
+
 ## 2026-08-07 - V-02.09 - UI chat IA: composer, mensajes y modo de pensamiento
 
 - **Motivacion:** el chat IA (flotante del `TopBar` y pagina `/ia`)
@@ -24813,3 +24928,83 @@ a exposicion a Internet.
 ---
 
 
+## 2026-08-23 - V-02.08 - Devolucion automatica de comisiones (Revision)
+
+### Version
+
+V-02.08 (rama `V-02.08`). `version_actual.md` realineado a V-02.08 por
+decision de direccion; `v-02.09.md` queda como historico del ciclo IA.
+
+### Trabajo realizado
+
+Emparejamiento automatico comision-bonificacion en `Revision > Comisiones`:
+solo cargos listados, columna `Devolucion` con fecha del abono, boton
+Verificar que marca `Devuelta` y persiste la referencia. Regla global: un
+abono, una comision; gana la mas antigua que encaje.
+
+### Archivos tocados
+
+Backend:
+- `Models/Entities.cs`: `RevisionExtractoEstado.ExtractoDevolucionId`.
+- `Data/AppDbContext.cs`: FK Restrict + indice unico parcial filtrado.
+- `Migrations/20260823120000_AddExtractoDevolucionToRevisionEstados.cs` (nueva).
+- `Migrations/AppDbContextModelSnapshot.cs`: propiedad, indice y FK nuevos.
+- `DTOs/RevisionDtos.cs`: 2 campos en item comisiones + response verificar.
+- `Services/RevisionService.cs`: listado solo negativos, sugerencias batch,
+  limpieza al desmarcar, `VerificarDevolucionAsync`.
+- `Controllers/RevisionController.cs`: POST verificar-devolucion (409/403/400).
+Tests:
+- `tests/.../RevisionServiceTests.cs`: test umbral reescrito + 8 nuevos + Npgsql.
+- `tests/.../RevisionControllerTests.cs`: stub con metodo nuevo.
+Frontend:
+- `src/types/index.ts`, `src/pages/RevisionPage.tsx`,
+  `src/styles/layout/revision-ai.css`.
+Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
+`Versiones/version_actual.md`, `Versiones/v-02.08.md`, esta bitacora.
+
+### Comandos ejecutados
+
+- `dotnet build API.csproj -p:BaseIntermediateOutputPath=... -p:OutputPath=...`
+  (workaround sandbox, ver bloqueos) -> Compilacion correcta.
+- `dotnet restore/test tests.csproj -p:BaseIntermediateOutputPath=.codex-build/obj/
+  -p:OutputPath=.codex-build/bin/` -> suite ejecutada.
+- `dotnet <dll> -class AtlasBalance.API.Tests.RevisionServiceTests` -> 19/19.
+- `npm run lint` OK; `npm run build` -> tsc OK + EPERM de sandbox al copiar a dist;
+  `npm run test:unit` -> 57/57.
+- Workaround reutilizable contra el bloqueo de `obj/` documentado antes:
+  las rutas intermedias/salida bajo `.codex-build/` ya estan excluidas en
+  `Directory.Build.props` (`DefaultItemExcludes`) y el sandbox permite
+  escribirlas; compila y corre toda la suite no-Docker.
+
+### Resultado de verificacion
+
+- Backend: 0 errores de compilacion; 870 tests = 851 verdes + 19 fallos solo
+  por Docker/Testcontainers no disponible (`PostgresCollection`).
+- `RevisionServiceTests`: 19/19 verdes.
+- Frontend: lint limpio, tsc limpio, unit 57/57.
+
+### Decisiones visuales frontend
+
+- Columna `Devolucion` entre Concepto y Revision, misma fuente mono/tabular
+  que Fecha; celda vacia con em-dash para no parecer error.
+- Boton Verificar cuadrado verde con Check, gemelo del boton rojo X de
+  descarte (misma metrica), tooltip con la fecha del abono.
+- Sin cambios en Seguros ni en filtros.
+
+### Pendientes de diseno abiertos
+
+- Valor opcional: mostrar concepto/cuenta del abono emparejado en tooltip
+  (requiere exponer campos extra en DTO).
+
+### Bloqueos y pendientes
+
+- Migracion sin aplicar a BD local (requiere `dotnet ef database update` o
+  arranque de app fuera de sandbox). Pendiente validar en entorno real.
+- Build vite de produccion bloqueado por EPERM copiando fuentes public/ a
+  dist/ dentro del sandbox; tsc ya valida tipos. Ejecutar `npm run build`
+  fuera del sandbox si se necesita el bundle antes del release.
+- Los 19 tests Docker quedan como puerta del release (sin Docker aqui).
+- Runtime (`VERSION`, `Directory.Build.props`, `package.json`) sigue en
+  V-02.09/2.9.0: decidir si se rebaja a V-02.08 o se retoma ese numero.
+
+---

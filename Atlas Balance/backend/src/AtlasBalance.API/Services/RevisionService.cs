@@ -13,6 +13,7 @@ public interface IRevisionService
     Task<PaginatedResponse<RevisionComisionItemResponse>> GetComisionesAsync(UserAccessScope scope, RevisionQueryRequest request, CancellationToken cancellationToken);
     Task<PaginatedResponse<RevisionSeguroItemResponse>> GetSegurosAsync(UserAccessScope scope, RevisionQueryRequest request, CancellationToken cancellationToken);
     Task SetEstadoAsync(UserAccessScope scope, Guid extractoId, string tipo, string estado, CancellationToken cancellationToken);
+    Task<VerificarDevolucionResponse> VerificarDevolucionAsync(UserAccessScope scope, Guid extractoId, CancellationToken cancellationToken);
     Task<RevisionSettingsResponse> GetSettingsAsync(CancellationToken cancellationToken);
 }
 
@@ -157,37 +158,51 @@ public sealed class RevisionService : IRevisionService
         var estadoFiltro = NormalizeEstadoFilter(request.Estado);
         var page = NormalizePage(request.Page);
         var pageSize = NormalizePageSize(request.PageSize);
-        var query = BuildRevisionBaseQuery(scope, request.PaisId, TipoComision, ComisionSearchTerms)
-            .Where(x => x.Monto > settings.ComisionesImporteMinimo || x.Monto < -settings.ComisionesImporteMinimo)
-            .Select(x => new RevisionComisionItemResponse
-            {
-                ExtractoId = x.ExtractoId,
-                CuentaId = x.CuentaId,
-                TitularId = x.TitularId,
-                PaisId = x.PaisId,
-                Titular = x.Titular,
-                Cuenta = x.Cuenta,
-                Divisa = x.Divisa,
-                Fecha = x.Fecha,
-                Monto = x.Monto,
-                Concepto = x.Concepto,
-                EstadoDevolucion = x.Estado
-            });
+        var query = BuildRevisionBaseQuery(scope, request.PaisId, TipoComision, ComisionSearchTerms);
+        // V-02.08: solo comisiones (cargo, negativo). Los movimientos en positivo
+        // son devoluciones/bonificaciones y se muestran como columna de
+        // emparejamiento, no como filas de la lista.
+        query = query.Where(x => x.Monto < -settings.ComisionesImporteMinimo);
 
         if (estadoFiltro is not null)
         {
-            query = query.Where(x => x.EstadoDevolucion == estadoFiltro);
+            query = query.Where(x => x.Estado == estadoFiltro);
         }
         else
         {
-            query = query.Where(x => x.EstadoDevolucion != EstadoDescartada);
+            query = query.Where(x => x.Estado != EstadoDescartada);
         }
 
         query = query
             .OrderByDescending(x => x.Fecha)
             .ThenByDescending(x => x.Monto < 0 ? -x.Monto : x.Monto);
 
-        return await ToPaginatedResponseAsync(query, page, pageSize, cancellationToken);
+        var total = await query.CountAsync(cancellationToken);
+        var rows = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var devoluciones = await ResolveDevolucionesAsync(rows, cancellationToken);
+
+        return new PaginatedResponse<RevisionComisionItemResponse>
+        {
+            Data = rows.Select(row =>
+            {
+                var item = ToComisionResponse(row);
+                if (devoluciones.TryGetValue(row.ExtractoId, out var devolucion))
+                {
+                    item.DevolucionExtractoId = devolucion.ExtractoId;
+                    item.DevolucionFecha = devolucion.Fecha;
+                }
+
+                return item;
+            }).ToList(),
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize)
+        };
     }
 
     public async Task<PaginatedResponse<RevisionSeguroItemResponse>> GetSegurosAsync(
@@ -264,9 +279,107 @@ public sealed class RevisionService : IRevisionService
         }
 
         current.Estado = normalizedEstado;
+        // V-02.08: al salir de DEVUELTA se limpia el emparejamiento para que el
+        // abono quede libre y pueda volver a sugerirse para otra comision.
+        if (normalizedEstado != EstadoDevuelta)
+        {
+            current.ExtractoDevolucionId = null;
+        }
+
         current.FechaModificacion = DateTime.UtcNow;
         current.UsuarioModificacionId = scope.UserId == Guid.Empty ? null : scope.UserId;
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    // V-02.08: verifica la devolucion de una comision emparejandola con su
+    // bonificacion (mismo cuenta, importe exacto opuesto, fecha posterior,
+    // concepto tipo comision). Regla global: un abono solo puede asignarse a
+    // una comision, y gana siempre la comision mas antigua que encaje.
+    public async Task<VerificarDevolucionResponse> VerificarDevolucionAsync(UserAccessScope scope, Guid extractoId, CancellationToken cancellationToken)
+    {
+        var extracto = await _dbContext.Extractos
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == extractoId, cancellationToken);
+
+        if (extracto is null)
+        {
+            throw new InvalidOperationException("Extracto no encontrado.");
+        }
+
+        if (!await _userAccessService.CanReviewCuentaAsync(extracto.CuentaId, scope, cancellationToken))
+        {
+            throw new UnauthorizedAccessException();
+        }
+
+        var montoAbono = -extracto.Monto;
+        var candidato = await BuildAbonoCandidatesQuery(extracto.CuentaId, montoAbono, extracto.Fecha)
+            .OrderBy(e => e.Fecha)
+            .ThenBy(e => e.FilaNumero)
+            .Select(e => new { e.Id, e.Fecha })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (candidato is null)
+        {
+            return new VerificarDevolucionResponse
+            {
+                Encontrada = false,
+                Message = "No hay ninguna bonificacion candidata para esta comision."
+            };
+        }
+
+        // Regla global acordada: el abono pertenece a la comision pendiente mas
+        // antigua que encaje. Si existe otra comision anterior que tambien podria
+        // reclamarlo (misma cuenta e importe, abono posterior a su fecha), se
+        // rechaza la verificacion de esta.
+        var compiteOtraMasAntigua = await _dbContext.Extractos.AsNoTracking()
+            .Where(z => z.Id != extractoId
+                && z.CuentaId == extracto.CuentaId
+                && z.Monto == extracto.Monto
+                && z.Fecha <= candidato.Fecha
+                && (z.Fecha < extracto.Fecha || (z.Fecha == extracto.Fecha && z.FilaNumero < extracto.FilaNumero)))
+            .Where(BuildConceptPredicate(ComisionSearchTerms, ComisionExcludedSearchTerms))
+            .Where(z => !_dbContext.RevisionExtractoEstados.Any(r => r.ExtractoId == z.Id && r.Tipo == TipoComision && r.Estado != EstadoPendiente))
+            .AnyAsync(cancellationToken);
+
+        if (compiteOtraMasAntigua)
+        {
+            return new VerificarDevolucionResponse
+            {
+                Encontrada = false,
+                Message = "La bonificacion candidata corresponde a una comision mas antigua aun pendiente."
+            };
+        }
+
+        var current = await _dbContext.RevisionExtractoEstados
+            .FirstOrDefaultAsync(x => x.ExtractoId == extractoId && x.Tipo == TipoComision, cancellationToken);
+
+        if (current is null)
+        {
+            current = new RevisionExtractoEstado
+            {
+                Id = Guid.NewGuid(),
+                ExtractoId = extractoId,
+                Tipo = TipoComision
+            };
+            _dbContext.RevisionExtractoEstados.Add(current);
+        }
+
+        current.Estado = EstadoDevuelta;
+        current.ExtractoDevolucionId = candidato.Id;
+        current.FechaModificacion = DateTime.UtcNow;
+        current.UsuarioModificacionId = scope.UserId == Guid.Empty ? null : scope.UserId;
+        // Si dos usuarios verifican a la vez el mismo abono, el indice unico
+        // parcial sobre extracto_devolucion_id rechaza la doble asignacion
+        // (DbUpdateException que el controller traduce a 409).
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new VerificarDevolucionResponse
+        {
+            Encontrada = true,
+            Message = "Devolucion verificada",
+            DevolucionExtractoId = candidato.Id,
+            DevolucionFecha = candidato.Fecha
+        };
     }
 
     public async Task<RevisionSettingsResponse> GetSettingsAsync(CancellationToken cancellationToken)
@@ -315,10 +428,119 @@ public sealed class RevisionService : IRevisionService
                 Divisa = c.Divisa,
                 Fecha = e.Fecha,
                 Monto = e.Monto,
+                FilaNumero = e.FilaNumero,
                 Concepto = e.Concepto ?? string.Empty,
-                Estado = estado == null ? EstadoPendiente : estado.Estado
+                Estado = estado == null ? EstadoPendiente : estado.Estado,
+                ExtractoDevolucionId = estado == null ? null : estado.ExtractoDevolucionId
             };
     }
+
+    // V-02.08: resuelve la columna Devolucion de cada comision de la pagina.
+    // - Filas ya verificadas: fecha del extracto emparejado persistido (una query).
+    // - Pendientes: sugerencia automatica por lotes. Un abono se sugiere como
+    //   maximo una vez por pagina; gana siempre la comision mas antigua
+    //   (fecha asc, fila_numero asc). La asignacion definitiva la hace
+    //   VerificarDevolucionAsync al persistir.
+    private async Task<Dictionary<Guid, DevolucionInfo>> ResolveDevolucionesAsync(List<RevisionRawRow> rows, CancellationToken cancellationToken)
+    {
+        var resultado = new Dictionary<Guid, DevolucionInfo>();
+        if (rows.Count == 0)
+        {
+            return resultado;
+        }
+
+        var referenciadas = rows
+            .Where(x => x.ExtractoDevolucionId is not null)
+            .Select(x => x.ExtractoDevolucionId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (referenciadas.Count > 0)
+        {
+            var fechas = await _dbContext.Extractos.AsNoTracking()
+                .Where(x => referenciadas.Contains(x.Id))
+                .Select(x => new { x.Id, x.Fecha })
+                .ToDictionaryAsync(x => x.Id, x => x.Fecha, cancellationToken);
+
+            foreach (var row in rows)
+            {
+                if (row.ExtractoDevolucionId is not null && fechas.TryGetValue(row.ExtractoDevolucionId.Value, out var fecha))
+                {
+                    resultado[row.ExtractoId] = new DevolucionInfo(row.ExtractoDevolucionId.Value, fecha);
+                }
+            }
+        }
+
+        var pendientes = rows
+            .Where(x => x.Estado == EstadoPendiente && x.ExtractoDevolucionId is null && !resultado.ContainsKey(x.ExtractoId))
+            .OrderBy(x => x.Fecha)
+            .ThenBy(x => x.FilaNumero)
+            .ToList();
+
+        if (pendientes.Count == 0)
+        {
+            return resultado;
+        }
+
+        var cuentaIds = pendientes.Select(x => x.CuentaId).Distinct().ToList();
+        var importes = pendientes.Select(x => -x.Monto).Distinct().ToList();
+        var fechaMinima = pendientes.Min(x => x.Fecha);
+
+        var candidatos = await BuildAbonoCandidatesBatchQuery(cuentaIds, importesAbono: importes, fechaDesde: fechaMinima)
+            .Select(e => new AbonoCandidate
+            {
+                Id = e.Id,
+                CuentaId = e.CuentaId,
+                Monto = e.Monto,
+                Fecha = e.Fecha,
+                FilaNumero = e.FilaNumero
+            })
+            .ToListAsync(cancellationToken);
+
+        var candidatosPorClave = candidatos
+            .GroupBy(x => (x.CuentaId, x.Monto))
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Fecha).ThenBy(x => x.FilaNumero).ThenBy(x => x.Id).ToList());
+
+        var usados = new HashSet<Guid>();
+        foreach (var pendiente in pendientes)
+        {
+            if (!candidatosPorClave.TryGetValue((pendiente.CuentaId, -pendiente.Monto), out var lista))
+            {
+                continue;
+            }
+
+            var candidato = lista.FirstOrDefault(x => !usados.Contains(x.Id));
+            if (candidato is null)
+            {
+                continue;
+            }
+
+            usados.Add(candidato.Id);
+            resultado[pendiente.ExtractoId] = new DevolucionInfo(candidato.Id, candidato.Fecha);
+        }
+
+        return resultado;
+    }
+
+    // Candidatos de abono para una sola comision (endpoint verificar).
+    private IQueryable<Extracto> BuildAbonoCandidatesQuery(Guid cuentaId, decimal montoAbono, DateOnly fechaDesde) =>
+        ApplyAbonoEligibility(_dbContext.Extractos.AsNoTracking())
+            .Where(e => e.CuentaId == cuentaId && e.Monto == montoAbono && e.Fecha >= fechaDesde);
+
+    // Candidatos de abono por lotes para toda una pagina de comisiones.
+    private IQueryable<Extracto> BuildAbonoCandidatesBatchQuery(List<Guid> cuentaIds, List<decimal> importesAbono, DateOnly fechaDesde) =>
+        ApplyAbonoEligibility(_dbContext.Extractos.AsNoTracking())
+            .Where(e => cuentaIds.Contains(e.CuentaId) && importesAbono.Contains(e.Monto) && e.Fecha >= fechaDesde);
+
+    // Reglas comunes de elegibilidad de un abono: concepto tipo comision/
+    // bonificacion, no descartado previamente como comision y sin emparejar
+    // todavia con otra revision. El filtro global de soft delete excluye solo
+    // los extractos y estados borrados.
+    private IQueryable<Extracto> ApplyAbonoEligibility(IQueryable<Extracto> query) =>
+        query
+            .Where(BuildConceptPredicate(ComisionSearchTerms, ComisionExcludedSearchTerms))
+            .Where(e => !_dbContext.RevisionExtractoEstados.Any(r => r.ExtractoDevolucionId == e.Id))
+            .Where(e => !_dbContext.RevisionExtractoEstados.Any(r => r.ExtractoId == e.Id && r.Tipo == TipoComision && r.Estado == EstadoDescartada));
 
     private static async Task<PaginatedResponse<T>> ToPaginatedResponseAsync<T>(
         IQueryable<T> query,
@@ -458,6 +680,32 @@ public sealed class RevisionService : IRevisionService
         return builder.ToString().Normalize(NormalizationForm.FormC);
     }
 
+    private static RevisionComisionItemResponse ToComisionResponse(RevisionRawRow row) => new()
+    {
+        ExtractoId = row.ExtractoId,
+        CuentaId = row.CuentaId,
+        TitularId = row.TitularId,
+        PaisId = row.PaisId,
+        Titular = row.Titular,
+        Cuenta = row.Cuenta,
+        Divisa = row.Divisa,
+        Fecha = row.Fecha,
+        Monto = row.Monto,
+        Concepto = row.Concepto,
+        EstadoDevolucion = row.Estado
+    };
+
+    private readonly record struct DevolucionInfo(Guid ExtractoId, DateOnly Fecha);
+
+    private sealed class AbonoCandidate
+    {
+        public Guid Id { get; init; }
+        public Guid CuentaId { get; init; }
+        public decimal Monto { get; init; }
+        public DateOnly Fecha { get; init; }
+        public int FilaNumero { get; init; }
+    }
+
     private sealed class RevisionRawRow
     {
         public Guid ExtractoId { get; init; }
@@ -469,7 +717,9 @@ public sealed class RevisionService : IRevisionService
         public string Divisa { get; init; } = string.Empty;
         public DateOnly Fecha { get; init; }
         public decimal Monto { get; init; }
+        public int FilaNumero { get; init; }
         public string Concepto { get; init; } = string.Empty;
         public string Estado { get; init; } = string.Empty;
+        public Guid? ExtractoDevolucionId { get; init; }
     }
 }

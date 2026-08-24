@@ -316,6 +316,15 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.Estado);
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
+            // V-02.08: referencia al extracto positivo emparejado como devolucion.
+            // Restrict, mismo criterio que extracto_id: los extractos son soft-delete.
+            // Indice unico parcial: un abono solo puede estar emparejado con una
+            // comision activa; es la garantia real contra la carrera de dos
+            // usuarios verificando el mismo abono a la vez.
+            entity.HasIndex(e => e.ExtractoDevolucionId)
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL AND \"extracto_devolucion_id\" IS NOT NULL");
+            entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoDevolucionId).OnDelete(DeleteBehavior.Restrict);
             // V-02-03 (MEDIUM): cambiar cascade a restrict para no quemar historial
             // cuando se borra un extracto (que ya es soft-delete).
             entity.HasOne<Extracto>().WithMany().HasForeignKey(e => e.ExtractoId).OnDelete(DeleteBehavior.Restrict);

@@ -220,10 +220,14 @@ function Test-VolumeEncryption {
         # exactamente la misma advertencia para los dos casos, lo que
         # ocultaba el verdadero problema al operador.
         if ($null -eq (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue)) {
+            # V-02.08 (fix): el terminador del here-string estaba corrupto
+            # (linea literal "-ForegroundColor Yellow), lo que convertia este
+            # bloque y todo el try/catch de Get-BitLockerVolume en parte del
+            # string: el check de cifrado era un no-op silencioso.
             Write-Warning @"
 Esta edicion de Windows no expone Get-BitLockerVolume. No se puede
 verificar el cifrado del volumen $drive desde este instalador.
-"-ForegroundColor Yellow
+"@
             Write-Host "    Verifica manualmente con: manage-bde -status $drive  o  fsutil behavior query disableencryption" -ForegroundColor Cyan
             continue
         }
@@ -616,7 +620,16 @@ function Invoke-Psql {
             $args += @("-q")
         }
 
-        $output = $Sql | & $PsqlExe @args 2>&1
+        # V-02.08 (fix): 2>&1 sobre un nativo bajo EAP=Stop convierte cada
+        # NOTICE/stderr de psql en ErrorRecord terminating y daba "psql fallo"
+        # falso. Se baja EAP solo para la llamada.
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            $output = $Sql | & $PsqlExe @args 2>&1
+        } finally {
+            $ErrorActionPreference = $previousEap
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "psql fallo: $output"
         }

@@ -2315,6 +2315,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("character varying(24)")
                         .HasColumnName("estado");
 
+                    b.Property<Guid?>("ExtractoDevolucionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("extracto_devolucion_id");
+
                     b.Property<Guid>("ExtractoId")
                         .HasColumnType("uuid")
                         .HasColumnName("extracto_id");
@@ -2344,6 +2348,11 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("Estado")
                         .HasDatabaseName("ix_revision_extracto_estados_estado");
+
+                    b.HasIndex("ExtractoDevolucionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_revision_extracto_estados_extracto_devolucion_id")
+                        .HasFilter("\"deleted_at\" IS NULL AND \"extracto_devolucion_id\" IS NOT NULL");
 
                     b.HasIndex("Tipo")
                         .HasDatabaseName("ix_revision_extracto_estados_tipo");
@@ -3178,6 +3187,12 @@ namespace AtlasBalance.API.Migrations
 
             modelBuilder.Entity("AtlasBalance.API.Models.RevisionExtractoEstado", b =>
                 {
+                    b.HasOne("AtlasBalance.API.Models.Extracto", null)
+                        .WithMany()
+                        .HasForeignKey("ExtractoDevolucionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_revision_extracto_estados_extractos_extracto_devolucion_id");
+
                     b.HasOne("AtlasBalance.API.Models.Extracto", null)
                         .WithMany()
                         .HasForeignKey("ExtractoId")

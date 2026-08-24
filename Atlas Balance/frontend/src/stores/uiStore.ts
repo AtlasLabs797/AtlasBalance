@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+const MAX_TOASTS = 5;
+
 type Theme = 'light' | 'dark';
 
 function normalizeTheme(value: string | null): Theme {
@@ -67,7 +69,10 @@ export const useUiStore = create<UiState>((set) => ({
 
   addToast: (toast) =>
     set((state) => ({
-      toasts: [...state.toasts, { ...toast, id: crypto.randomUUID() }],
+      // V-02.08: tope maximo. Con la pestana oculta los timers de
+      // auto-dismiss se pausan y errores en rafaga podian acumular toasts
+      // sin limite.
+      toasts: [...state.toasts, { ...toast, id: crypto.randomUUID() }].slice(-MAX_TOASTS),
     })),
 
   removeToast: (id) =>

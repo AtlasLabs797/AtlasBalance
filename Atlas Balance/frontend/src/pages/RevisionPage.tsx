@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
@@ -8,10 +8,10 @@ import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMu
 import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
-import type { PaginatedResponse, RevisionComisionItem, RevisionEstadoComision, RevisionEstadoSeguro, RevisionSeguroItem } from '@/types';
+import type { PaginatedResponse, RevisionComisionItem, RevisionEstadoComision, RevisionEstadoSeguro, RevisionSeguroItem, VerificarDevolucionResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate } from '@/utils/formatters';
-import { RotateCcw, X } from 'lucide-react';
+import { Check, RotateCcw, X } from 'lucide-react';
 
 type RevisionTab = 'comisiones' | 'seguros';
 type EstadoFiltro = 'TODAS' | 'PENDIENTE' | 'DEVUELTA' | 'CORRECTO' | 'DESCARTADA';
@@ -33,7 +33,12 @@ export default function RevisionPage() {
   usePermisosStore((state) => state.permisos);
   const invalidate = useInvalidateAfterMutation();
 
+  // V-02.08: guard anti-carrera. Sin el, cambiar rapido de pagina/filtro podia
+  // dejar pintada la respuesta de una peticion antigua que llegaba ultima.
+  const loadRequestIdRef = useRef(0);
+
   const load = async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -42,19 +47,24 @@ export default function RevisionPage() {
         : { estado, page, pageSize, paisId: selectedPaisId || undefined };
       if (tab === 'comisiones') {
         const { data } = await api.get<PaginatedResponse<RevisionComisionItem>>('/revision/comisiones', { params });
+        if (requestId !== loadRequestIdRef.current) return;
         setComisiones(data?.data ?? []);
         setTotal(data?.total ?? 0);
         setTotalPages(data?.total_pages ?? 0);
       } else {
         const { data } = await api.get<PaginatedResponse<RevisionSeguroItem>>('/revision/seguros', { params });
+        if (requestId !== loadRequestIdRef.current) return;
         setSeguros(data?.data ?? []);
         setTotal(data?.total ?? 0);
         setTotalPages(data?.total_pages ?? 0);
       }
     } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return;
       setError(extractErrorMessage(err, 'No se pudo cargar la revisión.'));
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -98,6 +108,43 @@ export default function RevisionPage() {
       await invalidate('revision');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo guardar el estado de devolucion.'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // V-02.08: empareja la comision con su bonificacion (misma cuenta e importe
+  // exacto) y la marca como devuelta en un solo clic. Si el abono ya se asigno
+  // a otra comision (409) o no hay candidata, se resincroniza la lista.
+  const verificarDevolucion = async (item: RevisionComisionItem) => {
+    setBusyId(item.extracto_id);
+    setError(null);
+    try {
+      const { data } = await api.post<VerificarDevolucionResponse>(`/revision/comision/${item.extracto_id}/verificar-devolucion`);
+      if (data?.encontrada && data.devolucion_extracto_id) {
+        setComisiones((current) =>
+          current.map((row) => (
+            row.extracto_id === item.extracto_id
+              ? {
+                  ...row,
+                  estado_devolucion: 'DEVUELTA' as RevisionEstadoComision,
+                  devolucion_extracto_id: data.devolucion_extracto_id,
+                  devolucion_fecha: data.devolucion_fecha ?? row.devolucion_fecha,
+                }
+              : row
+          ))
+        );
+        if (estado !== 'TODAS' && estado !== 'DEVUELTA') {
+          setComisiones((current) => current.filter((row) => row.extracto_id !== item.extracto_id));
+        }
+      } else {
+        setError(data?.message || 'No hay ninguna bonificación candidata para esta comisión.');
+        await load();
+      }
+      await invalidate('revision');
+    } catch (err) {
+      setError(extractErrorMessage(err, 'No se pudo verificar la devolución.'));
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -173,6 +220,7 @@ export default function RevisionPage() {
           busyId={busyId}
           canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setComisionEstado}
+          onVerificar={verificarDevolucion}
         />
       ) : (
         <SegurosTable
@@ -218,11 +266,13 @@ function ComisionesTable({
   busyId,
   canEditItem,
   onSetEstado,
+  onVerificar,
 }: {
   rows: RevisionComisionItem[];
   busyId: string | null;
   canEditItem: (item: RevisionComisionItem) => boolean;
   onSetEstado: (item: RevisionComisionItem, next: RevisionEstadoComision) => void;
+  onVerificar: (item: RevisionComisionItem) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyState title="Sin comisiones detectadas." subtitle="Ajusta el umbral en Configuración si necesitas afinar la revisión." />;
@@ -238,6 +288,7 @@ function ComisionesTable({
             <th>Fecha</th>
             <th>Monto</th>
             <th>Concepto</th>
+            <th>Devolución</th>
             <th>Revisión</th>
           </tr>
         </thead>
@@ -251,12 +302,16 @@ function ComisionesTable({
                 <SignedAmount value={item.monto}>{formatCurrency(item.monto, item.divisa)}</SignedAmount>
               </td>
               <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
+              <td data-label="Devolución" className="revision-cell-fixed" title={item.devolucion_fecha ? `Bonificación del ${formatDate(item.devolucion_fecha)}` : undefined}>
+                {item.devolucion_fecha ? formatDate(item.devolucion_fecha) : '—'}
+              </td>
               <td data-label="Revision">
                 <RevisionComisionActions
                   item={item}
                   busy={busyId === item.extracto_id}
                   canEdit={canEditItem(item)}
                   onSetEstado={onSetEstado}
+                  onVerificar={onVerificar}
                 />
               </td>
             </tr>
@@ -326,11 +381,13 @@ function RevisionComisionActions({
   busy,
   canEdit,
   onSetEstado,
+  onVerificar,
 }: {
   item: RevisionComisionItem;
   busy: boolean;
   canEdit: boolean;
   onSetEstado: (item: RevisionComisionItem, next: RevisionEstadoComision) => void;
+  onVerificar: (item: RevisionComisionItem) => void;
 }) {
   if (!canEdit) {
     return <span className="revision-status revision-status--readonly">Solo lectura</span>;
@@ -355,6 +412,18 @@ function RevisionComisionActions({
           {item.estado_devolucion === 'DEVUELTA' ? 'Devuelta' : 'Pendiente'}
         </button>
       )}
+      {item.estado_devolucion === 'PENDIENTE' && item.devolucion_extracto_id && item.devolucion_fecha ? (
+        <button
+          type="button"
+          className="revision-verify-button"
+          aria-label={`Verificar devolución del ${formatDate(item.devolucion_fecha)}`}
+          title={`Verificar devolución del ${formatDate(item.devolucion_fecha)}`}
+          disabled={busy}
+          onClick={() => onVerificar(item)}
+        >
+          <Check aria-hidden="true" />
+        </button>
+      ) : null}
       <button
         type="button"
         className="revision-discard-button"

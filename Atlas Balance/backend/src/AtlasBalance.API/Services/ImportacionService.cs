@@ -1502,9 +1502,20 @@ public sealed class ImportacionService : IImportacionService
                 .ToListAsync(cancellationToken);
             return result.Count > 0 && result[0] == 1;
         }
-        catch
+        catch (Exception ex)
         {
-            return true; // fail-open si la BD no soporta advisory lock (tests)
+            // V-02.08: antes el catch devolvia true (fail-open) para no romper los
+            // tests InMemory. En produccion eso desactivaba en silencio la
+            // proteccion contra doble confirmacion ante cualquier error real de BD.
+            // Ahora: fail-closed si la BD es relacional (no se confirma el lote) y
+            // tolerante solo con providers en memoria.
+            if (_dbContext.Database.IsRelational())
+            {
+                _logger.LogError(ex, "No se pudo adquirir el advisory lock de confirmacion para {LockKey}; se bloquea la confirmacion (fail-closed)", lockKey);
+                return false;
+            }
+
+            return true; // provider InMemory: no hay advisory locks que adquirir
         }
     }
 

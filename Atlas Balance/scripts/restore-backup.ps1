@@ -8,7 +8,10 @@ param(
     [string]$BackupFile,
     [string]$PgBinPath = "C:\Program Files\PostgreSQL\16\bin",
     [string]$DbName = "atlas_balance",
-    [string]$DbUser = "atlas_balance_app",
+    # V-02.08 (fix): pg_restore --clean necesita derechos de dueno para hacer
+    # DROP/CREATE de objetos; con el rol runtime fallaba en cascada y el
+    # script lo vendia como "advertencias". Defecto ahora: rol owner.
+    [string]$DbUser = "atlas_owner",
     [string]$DbHost = "localhost",
     [int]$DbPort = 5432
 )
@@ -64,21 +67,32 @@ $env:PGPASSWORD = Convert-SecureStringToPlain (Read-Host "Password para $DbUser"
 $pgRestore = Join-Path $PgBinPath "pg_restore.exe"
 
 Write-Host "Restaurando..." -ForegroundColor Yellow
+$restoreOk = $false
 try {
     & $pgRestore -h $DbHost -p $DbPort -U $DbUser -d $DbName --clean --if-exists -v $BackupFile
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Restauración completada" -ForegroundColor Green
+        $restoreOk = $true
     } else {
-        Write-Host "Restauración completada con advertencias (código: $LASTEXITCODE)" -ForegroundColor Yellow
+        # V-02.08 (fix): antes cualquier codigo != 0 se presentaba como
+        # "advertencias" y el script acababa en exit 0. Ahora es un fallo con
+        # exit 1: una restauracion a medias no debe parecer exitosa.
+        Write-Host "ERROR: pg_restore devolvio codigo $LASTEXITCODE. La base de datos puede haber quedado a medias." -ForegroundColor Red
+        Write-Host "Revisa el log de arriba; para reintentar, restaura de nuevo desde el .dump." -ForegroundColor Red
     }
 } finally {
     $env:PGPASSWORD = $previousPassword
 }
 
-# Restart API service
-if ($apiService) {
-    Write-Host "Reiniciando $apiServiceName..." -ForegroundColor Yellow
-    Start-Service -Name $apiServiceName
-    Write-Host "Servicio iniciado" -ForegroundColor Green
+# V-02.08 (fix): solo reiniciar la API si la restauracion termino bien.
+if ($restoreOk) {
+    if ($apiService) {
+        Write-Host "Reiniciando $apiServiceName..." -ForegroundColor Yellow
+        Start-Service -Name $apiServiceName
+        Write-Host "Servicio iniciado" -ForegroundColor Green
+    }
+    exit 0
 }
+
+exit 1

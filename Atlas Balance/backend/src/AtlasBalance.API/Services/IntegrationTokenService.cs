@@ -18,6 +18,7 @@ public interface IIntegrationTokenService
         bool noExpirationConfirmed,
         string? noExpirationConfirmationText = null);
     Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken);
+    void InvalidateActiveTokensCache();
 }
 
 public sealed class IntegrationTokenService : IIntegrationTokenService
@@ -138,5 +139,14 @@ public sealed class IntegrationTokenService : IIntegrationTokenService
         _cacheService.Invalidate(new CacheNamespace(Namespace));
 
         return true;
+    }
+
+    // V-02.08: PUT y Rotar del controller mutan tokens directamente en BD sin
+    // pasar por RevokeAsync; sin esta invalidacion, la entrada cacheada por hash
+    // (TTL IntegrationTokenTtl) seguia autorizando con los scopes/estado
+    // anteriores. La llama el controller tras SaveChanges.
+    public void InvalidateActiveTokensCache()
+    {
+        _cacheService.Invalidate(new CacheNamespace(Namespace));
     }
 }

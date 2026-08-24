@@ -362,6 +362,30 @@ public sealed class CsrfMiddlewareTests
         nextCalled.Should().BeFalse();
     }
 
+    // V-02.08: la integracion OpenClaw se autentica con Bearer token (sin
+    // cookies de sesion), asi que la validacion CSRF no aplica a su ruta.
+    // Antes exigia cookie csrf_token + header a clientes Bearer-only.
+    [Fact]
+    public async Task InvokeAsync_Should_SkipCsrf_For_Integration_Paths()
+    {
+        var nextCalled = false;
+        var middleware = new CsrfMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            NullLogger<CsrfMiddleware>.Instance,
+            new FakeWebHostEnvironment());
+
+        var context = BuildContext("/api/integration/openclaw/resolver-nombres", "POST", userAgent: "OpenClaw/1.0");
+
+        await middleware.InvokeAsync(context, new RejectingCsrfService());
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        nextCalled.Should().BeTrue();
+    }
+
     private static DefaultHttpContext BuildContext(string path, string method, string userAgent)
     {
         var context = new DefaultHttpContext();
