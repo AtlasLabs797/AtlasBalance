@@ -26,6 +26,7 @@ import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import type { CuentaResumenKpi, Extracto, PaginatedResponse, PeriodoDashboard } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate, formatDateTime, getAmountTone, parseEuropeanNumber } from '@/utils/formatters';
+import { computeBulkFlagToggle } from '@/utils/bulkFlagToggle';
 
 const BULK_DELETE_PREVIEW_LIMIT = 6;
 const DEFAULT_ACCOUNT_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda del desglose' };
@@ -146,6 +147,10 @@ export default function CuentaDetailPage() {
   const [selectedCell, setSelectedCell] = useState(DEFAULT_ACCOUNT_CELL);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // V-02.08: separa fallos de CARGA (queries iniciales) de errores de ACCION
+  // (guardar celda, marcar, etc.). Antes ambos compartian `error` y un fallo
+  // cualquiera reemplazaba toda la pagina por un parrafo sin salida.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
   const allowedDashboard = usuario?.rol === 'ADMIN' || canViewDashboard();
@@ -232,16 +237,17 @@ export default function CuentaDetailPage() {
         setRowsTotal(0);
         setRowsTotalPages(1);
       } else {
-        setError(extractErrorMessage(summaryQuery.error, 'No se pudo cargar la cuenta'));
+        setLoadError(extractErrorMessage(summaryQuery.error, 'No se pudo cargar la cuenta'));
       }
     } else {
       setForbidden(false);
+      setLoadError(null);
     }
   }, [summaryQuery.error]);
 
   useEffect(() => {
     if (rowsQuery.error) {
-      setError(extractErrorMessage(rowsQuery.error, 'No se pudo cargar la cuenta'));
+      setLoadError(extractErrorMessage(rowsQuery.error, 'No se pudo cargar la cuenta'));
     }
   }, [rowsQuery.error]);
 
@@ -249,6 +255,7 @@ export default function CuentaDetailPage() {
     const summary = summaryQuery.data;
     if (summary) {
       setSummary(summary);
+      setLoadError(null);
     } else if (!summaryQuery.isLoading && !summaryQuery.error) {
       setSummary(null);
     }
@@ -606,6 +613,15 @@ export default function CuentaDetailPage() {
       // familias afectadas.
       await invalidate('extractoUpdate');
     } catch (err) {
+      // V-02.08: resincroniza si otro usuario gano la carrera sobre la celda
+      // (409), como ya hace ExtractosPage.
+      if (err instanceof AxiosError && err.response?.status === 409) {
+        try {
+          await loadCuentaData();
+        } catch {
+          // la carga ya gestiona sus propios errores
+        }
+      }
       setError(extractErrorMessage(err, 'No se pudo modificar el movimiento.'));
       throw err;
     } finally {
@@ -621,7 +637,6 @@ export default function CuentaDetailPage() {
     setActionLoading(true);
     setError(null);
 
-    const previousRows = rows;
     const changedAt = new Date().toISOString();
     setRows((current) =>
       current.map((item) =>
@@ -644,7 +659,10 @@ export default function CuentaDetailPage() {
       // ese campo re-consulten al recuperar foco.
       await invalidate('extractoCheck');
     } catch (err) {
-      setRows(previousRows);
+      // V-02.08: en vez de restaurar un snapshot de closure (que pisa datos
+      // frescos si llego un refetch durante el PATCH), resincroniza con el
+      // servidor.
+      await rowsQuery.refetch().catch(() => undefined);
       setError(extractErrorMessage(err, 'No se pudo marcar el movimiento como revisado.'));
     } finally {
       setActionLoading(false);
@@ -661,54 +679,71 @@ export default function CuentaDetailPage() {
       return;
     }
 
-    const rowsToFlag = selectedRows.filter((row) => !row.flagged);
-    if (rowsToFlag.length === 0) {
-      setBulkActionStatus('Los movimientos seleccionados ya están marcados con alerta.');
-      return;
-    }
+    const { action, targetIds } = computeBulkFlagToggle(selectedRows);
 
     setActionLoading(true);
     setError(null);
     setBulkActionStatus(null);
 
-    const flaggedIds = new Set<string>();
+    const processedIds = new Set<string>();
     const changedAt = new Date().toISOString();
+    const isUnflag = action === 'unflag';
 
     try {
-      for (const row of rowsToFlag) {
-        await api.patch(`/extractos/${row.id}/flag`, { flagged: true, nota: row.flagged_nota ?? undefined });
-        flaggedIds.add(row.id);
+      for (const row of selectedRows) {
+        if (!targetIds.includes(row.id)) {
+          continue;
+        }
+        await api.patch(`/extractos/${row.id}/flag`, {
+          flagged: !isUnflag,
+          nota: isUnflag ? undefined : row.flagged_nota ?? undefined,
+        });
+        processedIds.add(row.id);
         setRows((current) =>
           current.map((item) =>
             item.id === row.id
-              ? {
-                  ...item,
-                  flagged: true,
-                  flagged_at: changedAt,
-                  flagged_by_id: usuario?.id ?? item.flagged_by_id,
-                  fecha_modificacion: changedAt,
-                }
+              ? isUnflag
+                ? {
+                    ...item,
+                    flagged: false,
+                    flagged_nota: null,
+                    flagged_at: null,
+                    flagged_by_id: null,
+                    fecha_modificacion: changedAt,
+                  }
+                : {
+                    ...item,
+                    flagged: true,
+                    flagged_at: changedAt,
+                    flagged_by_id: usuario?.id ?? item.flagged_by_id,
+                    fecha_modificacion: changedAt,
+                  }
               : item
           )
         );
       }
       setBulkActionStatus(
-        `${flaggedIds.size} ${flaggedIds.size === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
+        isUnflag
+          ? `Quitada la alerta de ${processedIds.size} ${processedIds.size === 1 ? 'movimiento' : 'movimientos'}.`
+          : `${processedIds.size} ${processedIds.size === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
       );
       await invalidate('extractoFlag');
     } catch (err) {
       setError(
         extractErrorMessage(
           err,
-          flaggedIds.size > 0
-            ? `Se marcaron ${flaggedIds.size} de ${rowsToFlag.length} movimientos seleccionados.`
-            : 'No se pudo marcar la selección con alerta.'
+          processedIds.size > 0
+            ? `Se ${isUnflag ? 'quitó la alerta de' : 'marcaron'} ${processedIds.size} de ${targetIds.length} movimientos seleccionados.`
+            : `No se pudo ${isUnflag ? 'quitar la alerta de' : 'marcar'} la selección.`
         )
       );
     } finally {
       setActionLoading(false);
     }
   };
+
+  const bulkFlagIntent = useMemo(() => computeBulkFlagToggle(selectedRows), [selectedRows]);
+  const bulkFlagAction = bulkFlagIntent.targetIds.length === 0 ? null : bulkFlagIntent.action;
 
   const saveGeneralNotes = async () => {
     if (!summary || !canEditAccountNotes) {
@@ -765,7 +800,32 @@ export default function CuentaDetailPage() {
   }
 
   if (loading) return <PageSkeleton rows={4} />;
-  if (error) return <p className="auth-error" role="alert">{error}</p>;
+  // V-02.08: fallo de carga inicial con estado propio y salida (reintentar).
+  // Antes cualquier `error` —incluido uno de validacion local de una celda—
+  // reemplazaba la pagina completa por un parrafo.
+  if (!summary && loadError && !forbidden) {
+    return (
+      <section className="page-placeholder">
+        <EmptyState
+          title="No se pudo cargar esta cuenta."
+          subtitle={loadError}
+          primaryAction={
+            <button
+              type="button"
+              onClick={() => {
+                setLoadError(null);
+                void summaryQuery.refetch();
+                void rowsQuery.refetch();
+              }}
+            >
+              Reintentar
+            </button>
+          }
+          secondaryAction={<Link to="/extractos">Ir a Extractos</Link>}
+        />
+      </section>
+    );
+  }
   if (!summary) {
     return (
       <EmptyState
@@ -789,6 +849,14 @@ export default function CuentaDetailPage() {
 
   return (
     <section className="dashboard-page cuenta-detail-page">
+      {error && (
+        <p className="auth-error" role="alert">
+          {error}
+          <button type="button" className="cuenta-error-dismiss" onClick={() => setError(null)}>
+            Cerrar
+          </button>
+        </p>
+      )}
       <header className="dashboard-toolbar">
         <div className="dashboard-toolbar-main">
           <div className="cuenta-heading-block">
@@ -925,8 +993,9 @@ export default function CuentaDetailPage() {
                   type="button"
                   className="dashboard-icon-action dashboard-flag-selected"
                   disabled={actionLoading || selectedRowsCount === 0}
-                  aria-label="Marcar selección con alerta"
-                  title="Marcar selección con alerta"
+                  aria-label={bulkFlagAction === 'unflag' ? 'Quitar alerta de la selección' : 'Marcar selección con alerta'}
+                  title={bulkFlagAction === 'unflag' ? 'Quitar alerta de la selección' : 'Marcar selección con alerta'}
+                  aria-pressed={bulkFlagAction === 'unflag'}
                   onClick={() => void flagSelectedRows()}
                 >
                   <Flag size={16} aria-hidden="true" />

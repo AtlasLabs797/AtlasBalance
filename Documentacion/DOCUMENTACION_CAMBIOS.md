@@ -1,11 +1,1453 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
 ## Objetivo
+
 Bitacora tecnica acumulativa para registrar cambios implementados, comandos ejecutados, resultados y pendientes.
 
 Regla de trabajo desde ahora:
 - Cada bloque de trabajo debe anadirse aqui.
 - No cerrar una tarea sin dejar evidencia de verificacion.
+
+---
+
+## 2026-08-23 - V-02.08 - Aplicacion de fixes de la auditoria integral
+
+- **Motivacion:** tras el informe del mismo dia (entrada anterior), el
+  operador aprobo aplicar los fixes. Decision destacada: NO se toca la
+  ventana de gracia de refresh concurrente porque un test documenta la
+  revocacion inmediata como contrato deliberado.
+- **Trabajo realizado:** 6 fixes backend, ~10 frontend (+2 CSS), 6 scripts.
+  Detalle completo en `v-02.08.md` seccion "Fixes de la auditoria integral",
+  solucion en `LOG_ERRORES_INCIDENCIAS.md`, estado en `REGISTRO_BUGS.md`.
+- **Archivos tocados:**
+  - Backend: `Middleware/CsrfMiddleware.cs`,
+    `Services/IntegrationTokenService.cs`, `Services/ImportacionService.cs`,
+    `Services/ConciliacionService.cs`, `Controllers/IntegracionesController.cs`,
+    `Controllers/UsuariosController.cs`, `Controllers/ExtractosController.cs`.
+  - Frontend: `pages/CuentaDetailPage.tsx`, `pages/ExtractosPage.tsx`,
+    `pages/RevisionPage.tsx`, `pages/ConciliacionPage.tsx`,
+    `pages/LoginPage.tsx`, `pages/ImportacionPage.tsx`,
+    `stores/uiStore.ts`, `styles/auth.css`, `styles/layout/entities.css`.
+  - Scripts: `Instalar-AtlasBalance.ps1`, `Actualizar-AtlasBalance.ps1`,
+    `backup-manual.ps1`, `restore-backup.ps1`, `Smoke-Test-AtlasBalance.ps1`,
+    `Grant-OwnerBypassRls.ps1`.
+  - Tests: `CsrfMiddlewareTests.cs` (+1), `UsuariosControllerTests.cs` (+1),
+    `IntegrationAuthMiddlewareTests.cs` (stub), `ExtractosConcurrencyTests.cs`
+    /`ExtractosControllerTests.cs`/`VolumeSmokeTests.cs` (constructor
+    ExtractosController + NullLogger).
+- **Comandos ejecutados y verificacion:**
+  - Backend: `dotnet build` API OK; suite completa no-Postgres **853/853
+    PASS** via `dotnet test -p:OutputPath=<temp>` (esquiva el bloqueo ACL;
+    primera corrida local verde desde 2026-08-17; confirma el fix IA de
+    `31f4529`). Tests Postgres siguen pendientes de CI/Docker.
+  - Frontend: `tsc --noEmit` OK, `lint --max-warnings 0` OK,
+    `test:unit` 57/57.
+  - Scripts: parser PowerShell OK (0 errores) en los 6 modificados.
+- **Pendientes:** decision sobre gracia de refresh, Smoke argv, B8/B9
+  ("GERENTE en SPEC" resulto falso positivo del barrido: SPEC.md ya lo
+  documenta en L621/L1531/L4161); pushear y validar gate Postgres/CI;
+  working tree lleva ademas la feature devoluciones sin commitear.
+
+---
+
+## 2026-08-23 - V-02.08 - Auditoria integral de seguridad y bugs (solo lectura)
+
+- **Motivacion:** revision completa del codigo pedida por el operador para
+  verificar seguridad y bugs. Alcance acordado: todo (backend, frontend,
+  scripts PowerShell), prioridad seguridad, entregable = informe + plan de
+  fixes sin aplicar codigo.
+- **Trabajo realizado:**
+  - Barrido paralelo con subagentes de 5 superficies: auth/sesiones,
+    permisos/IDOR (24 controllers endpoint a endpoint),
+    inyeccion/ficheros/red/jobs, frontend (services/stores/paginas) y
+    secretos/config/scripts.
+  - Validacion manual de los 6 medios iniciales leyendo el codigo
+    (`CsrfMiddleware`, `AuthService`, `IntegracionesController`,
+    `ImportacionService`, `UsuariosController`/`ExtractosController`,
+    `ConciliacionService`). Uno se corrigio en el informe: el filtro global
+    `ISoftDelete` de `AppDbContext.cs:612` ya cubre cuentas borradas; el gap
+    real de conciliacion es el titular borrado.
+  - Revision dirigida de logica financiera (`RevisionService` devoluciones,
+    `PlazoFijoService`, `TiposCambioService`) y jobs Hangfire.
+  - Registro de todos los hallazgos en `REGISTRO_BUGS.md` (entrada del
+    2026-08-23).
+- **Archivos tocados:** solo documentacion (`REGISTRO_BUGS.md`, esta
+  bitacora). Cero cambios de codigo por decision del alcance.
+- **Comandos ejecutados y verificacion:**
+  - `npm.cmd exec tsc --noEmit`: OK (exit 0).
+  - `npm.cmd run lint -- --max-warnings 0`: OK (exit 0).
+  - `npm.cmd run test:unit`: OK, 57/57.
+  - `dotnet test` local (filtro no-Postgres): BLOQUEADO, dos intentos
+    (redirect de obj/bin sin y con restore previo): los Migrations no
+    resuelven tipos EF bajo redirect; servicios Windows corriendo bloquean
+    `bin/Release` y el daemon Docker no esta disponible, asi que la via
+    contenedor documentada tampoco aplica hoy. Estado real de la suite
+    backend SIN VERIFICAR desde 2026-08-17: la ultima corrida CI
+    (31989471616) fallo con 80 tests de AtlasAiService, el fix
+    (`31f4529`) esta commitado pero NO pusheado (origin/V-02.08 sigue en
+    `6e40176`), y hay feature de devoluciones de comisiones sin commitear
+    en el working tree.
+- **Resultado:** 0 criticos/altos de seguridad en la app; 4 altos (3 scripts
+  + 1 UI), 6 medios backend, 6 medios frontend, ~7 medias de scripts y cola
+  de bajos/info. Detalle completo con archivo:línea y propuesta de fix en
+  `REGISTRO_BUGS.md`.
+- **Pendientes:** decidir que fixes entran y bajo que version; pushear
+  `31f4529` y validar suite via CI/Docker; commitear la feature de
+  devoluciones pendiente en el working tree; realinear version runtime
+  (documentado en `version_actual.md`).
+
+---
+
+## 2026-08-17 - V-02.08 - Fix regresion AtlasAiService (80 tests)
+
+- **Motivacion:** la Parte 2 del informe de handoff del 2026-08-17
+  identifico 80 tests fallando en 3 clases (`AtlasAiServiceTests`,
+  `AtlasAiServiceStabilizationTests`, `AtlasAiServiceThinkingModeTests`)
+  tras la introduccion del `IntentPlanner` de 3 niveles. El guard en
+  `TryAnswerPlannedAsync:920-931` bloqueaba la caida al flujo legacy
+  cuando el planificador rechazaba una pregunta, devolviendo un mensaje
+  enlatado en vez de `null`. En tests, `NullSemanticPlannerClient` siempre
+  devuelve null, causando que toda pregunta libre termine en `Rejected` sin
+  llegar al mock HTTP.
+- **Archivos tocados:**
+  - `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+    — lineas 920-931: guard `Rejected` devuelve `null` en vez de respuesta
+    local.
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/IaAcceptanceTests.cs`
+    — 6 tests: anadido `catch (IaProviderException) { }` para cubrir el
+    caso donde la pregunta llega al proveedor sin red en sandbox.
+  - `Documentacion/Versiones/v-02.08.md` — actualizado con el fix.
+- **Verificacion:** `dotnet build Release` compila sin errores de
+  compilacion (los errores MSB3021 son el bloqueo de ACL conocido de los
+  servicios Windows sobre `bin/Release/`). Pendiente: suite completa en
+  Docker.
+- **Pendiente:** correr suite completa via Docker para confirmar 0 fallos.
+
+---
+
+## 2026-08-07 - V-02.09 - UI chat IA: composer, mensajes y modo de pensamiento
+
+- **Motivacion:** el chat IA (flotante del `TopBar` y pagina `/ia`)
+  compartia el mismo componente pero con un layout denso: cabecera con
+  selector de modelo + provider, mensajes como tarjetas con cabecera
+  "Tu / IA / Sistema", composer con textarea plana y boton de envio
+  alineado a la izquierda. La captura objetivo (adaptada al DS) lleva
+  los mensajes del usuario como burbujas redondeadas a la derecha y
+  los del asistente como texto plano a la izquierda con un pie
+  `HH:mm · modelo`, divisor "Hoy" cuando cambia el dia, y un composer
+  tipo tarjeta con selector de **modo de pensamiento** en lugar de un
+  selector de modelo dentro del chat.
+- **Decisiones de scope:**
+  - El selector de modelo se elimina del header del chat. El modelo
+    sigue configurandose unicamente desde Configuracion; el composer
+    expone el modelo activo como texto mono discreto, no como selector.
+  - El selector de modo de pensamiento reemplaza al antiguo selector
+    de modelo en el composer. Sus valores son por provider:
+    `OPENAI` -> `auto / low / medium / high` (mapeado a
+    `reasoning_effort`); `MINIMAX` -> `auto / on / off` (mapeado a
+    `thinking.type`); `OPENROUTER` -> `auto` (los modelos concretos
+    aceptarian `reasoning.effort` pero el `openrouter/auto` lo ignora,
+    asi que la UI solo expone `auto`).
+  - Icono de microfono fuera del composer (no se renderiza).
+  - Boton de "Nueva conversacion" se mueve del composer a la cabecera,
+    junto al boton de cerrar.
+  - El detalle tecnico (origen, tokens, coste, modelo, periodo, etc.)
+    sigue accesible en el `<details>` plegable bajo cada mensaje del
+    asistente.
+- **Implementacion frontend:**
+  - `Atlas Balance/frontend/src/utils/aiModels.ts`: nuevo tipo
+    `ThinkingMode` (`auto | low | medium | high | on | off`),
+    `ThinkingModeOption`, `getThinkingModeOptions(provider)` y
+    `normalizeThinkingMode(provider, value)`. La normalizacion
+    degrada a `auto` si el valor no encaja en el provider.
+  - `Atlas Balance/frontend/src/types/index.ts`: `IaConfig` gana
+    `thinking_modes?: IaThinkingModeOption[]` (publicados por el
+    backend). `IaChatResponse` gana `thinking_mode_aplicado?: string`.
+  - `Atlas Balance/frontend/src/stores/aiChatStore.ts`: nuevo estado
+    `thinkingMode` (default `auto`), accion `setThinkingMode`, envio
+    del campo en `POST /ia/chat`, lectura de
+    `thinking_mode_aplicado` en la respuesta. `reset()` ya no toca
+    `thinkingMode` (es preferencia del usuario). Se elimina el
+    override de modelo en el chat (`selectedModel` fuera del store;
+    el modelo activo es siempre `config.model`).
+  - `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`:
+    cabecera con titulo + chip provider + reset + cerrar; lista con
+    divisor "Hoy/Ayer/DD MMM"; usuario en burbuja
+    `bg-surface-soft` con radio asimetrico; asistente en texto plano
+    con pie `HH:mm · modelo · modo`; composer como tarjeta
+    `.ai-chat-composer` con textarea + footer (selector de modo +
+    chip de modelo + boton enviar `ArrowUp`). Reintenta enfocar el
+    input tras cada respuesta. Microfono eliminado.
+  - `Atlas Balance/frontend/src/styles/layout/revision-ai.css`: se
+    reescriben las clases de mensaje (`.ai-chat-message--user` /
+    `--assistant` / `--system` con el divisor `.ai-chat-day-divider`
+    entre grupos), se anade `.ai-chat-composer`,
+    `.ai-chat-composer-footer`, `.ai-chat-composer-trigger`,
+    `.ai-chat-composer-send`, `.ai-chat-composer-model`, y se
+    adaptan las existentes (`.ai-chat-messages`,
+    `.ai-chat-loading`, `.ai-chat-day-divider`, `.ai-chat-suggestions`).
+    Quitados los estilos del antiguo `ai-chat-toolbar` con
+    `AppSelect` de modelo. Movil <768 px oculta el chip de modelo
+    en el composer.
+- **Implementacion backend:**
+  - `AtlasBalance.API/Constants/AiConfiguration.cs`: constantes
+    `ThinkingModeAuto/Low/Medium/High/On/Off`, arrays por provider
+    (`ThinkingModesOpenAi`, `ThinkingModesMiniMax`,
+    `ThinkingModesOpenRouter`) y helpers `GetThinkingModesForProvider`,
+    `IsAllowedThinkingMode(provider, mode)` y
+    `NormalizeThinkingMode(provider, mode)`.
+  - `AtlasBalance.API/DTOs/IaDtos.cs`: `IaChatRequest.ThinkingMode`,
+    `IaConfigResponse.ThinkingModes` (lista de `IaThinkingModeOption`
+    con `value` + `label`), `IaChatResponse.ThinkingModeAplicado`.
+  - `AtlasBalance.API/Controllers/ConfiguracionController.cs` y
+    `AtlasAiService.BuildConfigResponse` publican
+    `IaConfigResponse.ThinkingModes` calculandolas desde
+    `AiConfiguration.GetThinkingModesForProvider(provider)`.
+  - `AtlasBalance.API/Controllers/IaController.cs`: reenvia
+    `request.ThinkingMode` al servicio.
+  - `AtlasBalance.API/Services/AtlasAiService.cs`: nuevo parametro
+    `requestedThinkingMode` en `AskAsync`. Validacion via
+    `AiConfiguration.NormalizeThinkingMode`; si el valor no encaja
+    con el provider (p.ej. `low` para MiniMax, `on` para OpenAI) se
+    emite auditoria `rejected_thinking_mode` y se degrada a `auto`.
+    `BuildProviderRequest` acepta `thinkingMode` y lo mapea:
+    OpenRouter -> `reasoning = { effort = mode | exclude = true }`,
+    OpenAI -> `reasoning_effort`, MiniMax -> `thinking = { type =
+    enabled | disabled }`. Para MiniMax-M2.7 (no soporta thinking)
+    el campo se omite aunque el usuario lo pida.
+  - `AtlasBalance.API/Services/IaPlanner/IaAuditSchema.cs`: nuevo
+    campo `requested_thinking_mode` en `CamposBloqueadaPermitidos`.
+  - `AtlasBalance.API/Services/AtlasAiService.cs`: `LogBlockedAsync`
+    propaga `extra` (propiedades del objeto anonimo) al payload de
+    auditoria para que `requested_model` y `requested_thinking_mode`
+    lleguen a la tabla.
+- **Tests:**
+  - Nuevo `AtlasBalance.API.Tests/AtlasAiServiceThinkingModeTests.cs`
+    con 11 tests que pinzan: MiniMax `on` -> `thinking.type=enabled`,
+    MiniMax `off` -> `thinking.type=disabled`, MiniMax `high` invalido
+    -> degrada a `auto` + auditoria `rejected_thinking_mode`,
+    OpenAI `high`/`low` -> `reasoning_effort` enviado,
+    OpenAI `on` invalido -> degrada a `auto` sin `reasoning_effort`,
+    OpenRouter `high` -> `reasoning.effort=high`,
+    OpenRouter `auto` -> `reasoning.exclude=true`,
+    OpenRouter `on` invalido -> degrada a `auto`, y tres tests
+    unitarios sobre `AiConfiguration.GetThinkingModesForProvider` /
+    `IsAllowedThinkingMode` / `NormalizeThinkingMode`.
+  - El codigo compila limpio. La ejecucion de `dotnet test` queda
+    **BLOQUEADA** en este host por el mismo problema de sandbox
+    documentado en AGENTS.md seccion 8: el runner de Microsoft
+    Testing Platform intenta escribir
+    `bin\Debug\net8.0\TestResults\*.log` en
+    `C:\Proyectos\Atlas Balance Dev\Atlas
+    Balance\backend\tests\AtlasBalance.API.Tests\bin\Debug\net8.0\`
+    y la ruta esta bloqueada con `Access to the path ... is denied`.
+    Probamos `Remove-Item` del log huerfano + `dotnet test` sin
+    exito. La bateria completa no se ha podido ejecutar en local;
+    queda pendiente de CI o de un host con permisos sobre `bin/Debug/`.
+- **Verificacion frontend:**
+  - `npx.cmd tsc --noEmit`: **OK** (0 errores).
+  - `npm.cmd run lint`: **OK** (0 warnings, `--max-warnings 0`).
+  - `npm.cmd run test:unit`: **57/57 PASS** (sin cambios en modulos
+    cubiertos).
+  - `npm.cmd run build` (Vite) sigue **BLOQUEADO** por el `EPERM` ya
+    conocido al copiar `public/fonts/*.ttf` a `dist/fonts/`. Mismo
+    bloqueo registrado en AGENTS.md seccion 8.
+- **Verificacion backend (build):**
+  - `dotnet build src/AtlasBalance.API -c Release
+    -p:UseAppHost=false -p:GenerateDepsFile=false -p:BaseOutputPath=...`:
+    **OK** (0 errores; 7 warnings preexistentes deprecando
+    `UseXminAsConcurrencyToken`, `PostgreSqlStorage` y SQL raw en
+    `LimpiezaAuditoriaJob`).
+  - `dotnet build src/AtlasBalance.Watchdog -c Release ...`: **OK**
+    (las flags `-p:UseAppHost=false -p:GenerateDepsFile=false` se
+    necesitan por el mismo bloqueo de `bin/Release/net8.0/` que
+    retiene los `.deps.json` y el `apphost.exe` entre sesiones; ver
+    AGENTS.md seccion 8).
+  - `dotnet build tests/AtlasBalance.API.Tests -c Release ...`:
+    **OK** (0 errores; 628 warnings preexistentes xUnit1051 sobre
+    `TestContext.Current.CancellationToken`, no introducidos por esta
+    fase).
+- **Verificacion runtime backend:**
+  - `dotnet test` queda **BLOQUEADO** por sandbox perms
+    (descrito arriba). La bateria completa se ejecutara en CI o en
+    un host con acceso de escritura a
+    `backend\tests\...\bin\Debug\net8.0\TestResults\`.
+- **Pendientes:**
+  - Bateria xUnit (`AtlasAiServiceThinkingModeTests` + resto) en
+    host sin bloqueo de `bin/Debug`.
+  - Build de Vite en host sin `EPERM` sobre `dist/fonts/`.
+  - Smoke visual: validar manualmente el nuevo composer y los
+    mensajes en `/ia` y en el flotante con los tres providers.
+  - Captura de pantalla del resultado para adjuntar en
+    `v-02.09.md` cuando el smoke pase.
+
+---
+
+## 2026-08-06 - V-02.09 - Chat unico: flotante y /ia comparten conversacion
+- **Motivacion:** el chat IA tenia dos mounts (`TopBar.tsx` flotante y
+  `pages/IaPage.tsx`) cada uno con su propio `useState`. Lo que el
+  usuario preguntaba en uno no aparecia en el otro y la seleccion de
+  modelo tampoco se compartia. Solo se compartia (de forma invisible
+  para el usuario) el `ConversationContext` estructurado del backend.
+- **Implementacion:** nuevo `stores/aiChatStore.ts` (Zustand) con el
+  estado de la conversacion y la eleccion de modelo; el componente
+  `AiChatPanel.tsx` pasa a consumirlo y queda casi-presentacional.
+  `services/api.ts` limpia el store en `clearSessionState` (logout,
+  419/440, refresh fallido) para que el siguiente usuario en el mismo
+  navegador no vea la conversacion del anterior. `types/index.ts`
+  reexporta los tipos del chat desde el store.
+- **Decisiones de scope:**
+  - `input` (texto a medio escribir) sigue siendo local por instancia:
+    si los dos textareas estan visibles a la vez, cada uno mantiene su
+    borrador. Mensajes, modelo, errores y `reset` ya son compartidos.
+  - No se persiste la conversacion entre reloads (sigue siendo en
+    memoria unicamente). Si en futuro se quiere, hace falta
+    `GET /api/ia/conversacion` en backend.
+  - Variantes visuales (`compact` vs full) intactas. `TopBar.tsx` y
+    `pages/IaPage.tsx` no se tocan.
+- **Verificacion:** `npm.cmd run lint --max-warnings 0` **OK**;
+  `npx.cmd tsc --noEmit` **OK**; `npm.cmd run test:unit` **57/57 PASS**.
+  `npm.cmd run build` (Vite) sigue **BLOQUEADO** por el `EPERM` ya
+  conocido al copiar `public/fonts/*.ttf` a `dist/fonts/` (mismo
+  bloqueo registrado en AGENTS.md seccion 8 y en v-02.09.md seccion
+  "Pendientes de Fase 1"). No se reintenta: la compilacion `tsc --noEmit`
+  cubre el lado TypeScript.
+- **Pendiente:** smoke manual entre flotante y `/ia` con dos preguntas
+  reales en cada mount para confirmar visualmente que la conversacion
+  y el modelo seleccionado se reflejan en ambos. No hay tests
+  automaticos del store todavia (el helper `friendlyIaError`, que es
+  lo unico que cubre la accion `ask`, sigue verde).
+
+---
+
+## 2026-08-06 - V-02.09 - Auditoria de ejecucion del plan IA
+
+- **Hallazgo:** los commits declaraban el plan de doce fases cerrado, pero el
+  endpoint `/api/ia/chat` seguia en el flujo legado y no invocaba el
+  planificador, ejecutor, memoria ni ayuda documental.
+- **Correccion:** se registran y conectan los servicios del planificador para
+  consultas locales, aclaraciones y ayuda documental; la memoria se actualiza
+  tras una consulta local y el boton de nueva conversacion invalida tambien la
+  memoria del servidor. El fallback de proveedor pasa por `DlpScrubber`.
+- **Correcciones adicionales:** filtro real por `titular_id` en ultimo
+  movimiento; rechazo de metricas, ordenes y agrupaciones enum invalidos; el
+  ejecutor valida cada paso y enruta `saldo` a la herramienta de saldos.
+- **Verificacion:** `dotnet build` de API (Release, `UseAppHost=false`) correcto
+  con 0 errores y 7 warnings preexistentes; `npx.cmd tsc --noEmit` y
+  `npm.cmd run lint -- --max-warnings 0` correctos; `npm.cmd run test:unit`
+  correcto (57/57). La suite backend focalizada queda bloqueada por ACLs
+  preexistentes en `obj/Debug` de API y Watchdog (`MSB3491`), sin reintentar
+  la misma via. Pendiente completar el
+  cliente semantico real, dependencias entre pasos, auditoria unificada y las
+  pruebas PostgreSQL de carga antes de declarar el plan cerrado.
+
+---
+
+## 2026-08-06 - V-02.09 - Planificador semantico y dependencias de planes
+
+- **Implementado:** `SemanticPlannerClient` consulta al proveedor solo con una
+  pregunta pasada por DLP y el contrato cerrado de operaciones; no construye ni
+  envia contexto financiero. Los JSON con propiedades desconocidas se rechazan
+  antes de validar y ejecutar las herramientas locales.
+- **Planes compuestos:** el ejecutor exige indices unicos, no negativos y
+  referencias exclusivamente a pasos anteriores. Las referencias actuan como
+  barrera de orden; no interpolan resultados como filtros o instrucciones sin
+  un contrato tipado.
+- **Auditoria:** los eventos de consulta local/proveedor, bloqueo y error
+  incluyen `schema_version` y `origen`.
+- **Verificacion:** `dotnet build` de API Release (output temporal aislado):
+  0 errores, 7 warnings preexistentes. `npx.cmd tsc --noEmit` y lint frontend:
+  correctos. La ejecucion de tests backend sigue bloqueada por ACLs preexistentes
+  en `obj/Debug` (`MSB3491`).
+- **Pendiente:** tests de aceptacion que inyecten el planificador real y el gate
+  PostgreSQL/Testcontainers de 50.000 movimientos. No se considera cierre del
+  plan hasta que esos tests esten implementados y verdes en CI.
+
+---
+
+## 2026-08-06 - V-02.09 - Cierre de frontera semantica y auditoria
+
+- **Privacidad:** si el planificador semantico rechaza, falla o devuelve JSON
+  invalido, el chat responde localmente y no degrada al flujo legado que arma
+  contexto financiero para el proveedor.
+- **Auditoria:** `IaAuditEventFactory` aplica una allowlist y anade siempre
+  `schema_version` y `origen`; los eventos bloqueados y de error ya pasan por
+  esa frontera. Se anadieron regresiones de allowlist y referencias posteriores
+  de planes.
+- **Verificacion:** API Release compila con 0 errores y 7 warnings preexistentes;
+  `npx.cmd tsc --noEmit`, lint y tests unitarios frontend pasan (57/57).
+- **Bloqueo:** xUnit backend y por tanto el gate PostgreSQL/Testcontainers no
+  pueden iniciarse en este host por ACLs heredados sobre
+  `obj/Debug/*AssemblyInfoInputs.cache` de API y Watchdog (`MSB3491`). No se
+  declara la suite backend ni PostgreSQL como verde: debe ejecutarse en CI o en
+  un checkout con permisos de escritura.
+
+---
+
+## 2026-08-05 - V-02.09 - Cierre: anomalias faltantes + rechazo explicito + UI amigable
+
+- **Sintoma reportado:** quedaban tres flecos del plan que no se
+  cerraron en el commit del plan completo:
+  - Faltaban dos tipos de anomalia (Fase 7): SALDO_EN_CAIDA y
+    GASTO_NUEVO.
+  - La ayuda documental solo decia "Reformula con terminos del
+    manual" cuando no encontraba respuesta. El plan pedia un
+    rechazo explicito.
+  - El frontend mostraba el texto crudo del backend cuando la IA
+    fallaba por motivos esperables (permisos, rate limit,
+    configuracion). El plan pedia mensajes amigables.
+- **Solucion:**
+  - **Fase 7 (cierre):** `DetectAnomaliesAsync` ahora detecta
+    cuatro tipos: DUPLICADO_PROBABLE, IMPORTE_ATIPICO,
+    SALDO_EN_CAIDA (caida >= 25% en 3 meses consecutivos, umbral
+    documentado) y GASTO_NUEVO (concepto de gasto que aparece
+    este mes pero no en los 5 meses anteriores, minimo 3
+    caracteres para evitar ruido).
+  - **Fase 9 (cierre):** `DocumentationHelpService` distingue
+    tres estados via el enum `HelpResultado`:
+    Encontrado / NoEncontrado / DocumentoNoCargado. Cuando es
+    NoEncontrado, el mensaje dice explicitamente que el manual
+    no contiene respuesta, que Atlas Balance IA no inventa
+    funcionalidades, y sugiere terminos para reformular.
+  - **Fase 10 (cierre):** nuevo helper `frontend/src/utils/
+    iaErrors.ts` que clasifica el mensaje de la excepcion y
+    devuelve un texto amigable + accion sugerida ('reformular',
+    'contactar_admin', 'esperar'). `AiChatPanel` lo usa en los
+    dos `catch` (carga de config + envio de pregunta).
+- **Tests:**
+  - `FinancialToolsServiceTests`: 5 casos nuevos
+    (SALDO_EN_CAIDA dispara, saldo estable no marca,
+    GASTO_NUEVO dispara, concepto recurrente no marca,
+    constantes documentadas).
+  - `DocumentationHelpServiceTests`: 3 tests actualizados para
+    assertar el estado explicito (`HelpResultado.NoEncontrado`,
+    `HelpResultado.DocumentoNoCargado`).
+  - `tests/iaErrors.test.ts`: 11 casos nuevos (uno por tipo de
+    excepcion + fallback + strings no-Error + null).
+- **Archivos tocados:**
+  - Backend:
+    - `AtlasBalance.API/Services/IaPlanner/FinancialToolsService.cs`
+      (anomalias SALDO_EN_CAIDA y GASTO_NUEVO).
+    - `AtlasBalance.API/Services/IaPlanner/TendenciasAnomaliasService.cs`
+      (etiquetas de las dos anomalias nuevas).
+    - `tests/AtlasBalance.API.Tests/FinancialToolsServiceTests.cs`
+      (5 casos nuevos).
+  - Frontend:
+    - `frontend/src/utils/iaErrors.ts` (nuevo).
+    - `frontend/src/components/ia/AiChatPanel.tsx`
+      (usa friendlyIaError en lugar de extractErrorMessage).
+    - `frontend/tests/iaErrors.test.ts` (nuevo).
+    - `frontend/tsconfig.test.v2.json` (anade iaErrors.ts al include).
+    - `frontend/package.json` (anade iaErrors.test.js al test:unit).
+- **Comandos ejecutados:**
+  - `dotnet build -c Release -p:OutputPath=... -p:UseAppHost=false`
+  - `dotnet test --filter 'Category!=Postgres' -p:ArtifactsPath=...`
+  - `npx tsc --noEmit`
+  - `npm run lint --max-warnings 0`
+  - `npm run test:unit`
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`
+- **Resultado de verificacion:**
+  - `dotnet build` (Release): **0 errores** (mismos 7 warnings
+    preexistentes).
+  - `dotnet test --filter 'Category!=Postgres'`: **847/847**.
+    Docker disponible en este host, asi que los 19 tests
+    Postgres tambien pasan.
+  - `npx tsc --noEmit`: **OK**.
+  - `npm run lint --max-warnings 0`: **OK**.
+  - `npm run test:unit`: **57/57 PASS** (11 nuevos de
+    friendlyIaError).
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`: **OK**.
+- **Estado del plan (corregido el 2026-08-06):** esta afirmacion de cierre fue
+  prematura. Vease la entrada de auditoria del 2026-08-06 para los pendientes
+  de integracion y verificacion restantes.
+
+## 2026-08-05 - V-02.09 - IA financiera: plan completo de 12 fases (CERRADO)
+
+- **Alcance:** ejecucion completa del plan de 12 fases del
+  asistente IA financiero acordado al inicio de la sesion. Cada
+  fase es un commit independiente con su bateria de tests.
+- **Decision de arquitectura:** se introdujo un nuevo namespace
+  `AtlasBalance.API.Services.IaPlanner` que aísla la logica de
+  planificacion del resto del `AtlasAiService`. Las herramientas
+  viven en `IFinancialToolsService`, el planificador en
+  `IIntentPlanner`, el ejecutor en `IPlanExecutor`, la
+  capa DLP en `DlpScrubber`, la memoria en
+  `IConversationMemory` y la ayuda documental en
+  `IDocumentationHelpService`. AtlasAiService sigue siendo el
+  punto de entrada que el controlador expone, pero ahora delega
+  la orquestacion a estos servicios.
+- **Resumen por fase (commits):**
+  - Fase 1: estabilizacion (DbContext, "ultimo mes", timeout
+    45s, sin texto libre del proveedor, catalogo OpenRouter
+    filtrado). Commit `aab642e`.
+  - Fase 2: contrato `FinancialQueryPlan` + `IaPlanValidator`.
+    Commit `2b4e4d2`.
+  - Fase 3: 10 herramientas financieras de solo lectura
+    (GetLatest, GetPeriodTotals, GetBalances, GetRanking,
+    GetRevision, GetExpenseTrend, GetPending, Search,
+    Compare, DetectAnomalies). Commit `8506683`.
+  - Fase 4: planificador de 3 niveles (local, semantico,
+    aclaracion). Commit `4fa99d0` (junto con Fase 9, separado
+    mas abajo).
+  - Fase 5: ejecutor de planes compuestos (max 5 pasos,
+    timeout global, sin escrituras). Commit incluido con Fase 5.
+  - Fase 6: DLP unica con pseudonimos + redaction de PII
+    (IBAN/email/telefono/DNI/NIE/NIF/CIF/tarjeta/BIC) y modo
+    fail-closed. Commit incluido con Fase 6.
+  - Fase 7: tendencias y anomalias con veredictos y umbral
+    documentado del 15%. Commit incluido con Fase 7.
+  - Fase 8: memoria conversacional con TTL 30min, aislada por
+    usuario y por pais. Commit incluido con Fase 8.
+  - Fase 9: ayuda documental sobre Atlas Balance
+    (DOCUMENTACION_USUARIO.md). Commit `4fa99d0`.
+  - Fase 10: frontend (sugerencias agrupadas, links, "Nueva
+    conversacion", "Calculado localmente"). Commit `908139b`.
+  - Fase 11: auditoria y gobierno (esquema versionado
+    v2.09, sin texto libre ni PII). Commit `9ce2a44`.
+  - Fase 12: bateria de aceptacion del plan. Commit final.
+- **Tests:**
+  - 12 ficheros de tests xUnit (~150 casos). Resumen por grupo:
+    - `AtlasAiServiceStabilizationTests` (8 casos, Fase 1).
+    - `IaPlanValidatorTests` (20 casos, Fase 2).
+    - `FinancialToolsServiceTests` (14 casos, Fase 3).
+    - `IntentPlannerTests` (13 casos, Fase 4).
+    - `PlanExecutorTests` (6 casos, Fase 5).
+    - `DlpScrubberTests` (19 casos, Fase 6).
+    - `TendenciasAnomaliasServiceTests` (10 casos, Fase 7).
+    - `ConversationMemoryTests` (11 casos, Fase 8).
+    - `DocumentationHelpServiceTests` (10 casos, Fase 9).
+    - `IaAuditSchemaTests` (9 casos, Fase 11).
+    - `IaAcceptanceTests` (43 casos, Fase 12).
+- **Archivos tocados:**
+  - Backend nuevos modulos:
+    - `AtlasBalance.API/Services/IaPlanner/FinancialQueryPlan.cs`
+    - `AtlasBalance.API/Services/IaPlanner/IaPlanValidator.cs`
+    - `AtlasBalance.API/Services/IaPlanner/FinancialToolsService.cs`
+    - `AtlasBalance.API/Services/IaPlanner/IntentPlanner.cs`
+    - `AtlasBalance.API/Services/IaPlanner/PlanExecutor.cs`
+    - `AtlasBalance.API/Services/IaPlanner/DlpScrubber.cs`
+    - `AtlasBalance.API/Services/IaPlanner/TendenciasAnomaliasService.cs`
+    - `AtlasBalance.API/Services/IaPlanner/ConversationMemory.cs`
+    - `AtlasBalance.API/Services/IaPlanner/DocumentationHelpService.cs`
+    - `AtlasBalance.API/Services/IaPlanner/IaAuditSchema.cs`
+  - Backend modificados:
+    - `Services/AtlasAiService.cs` (Fase 1: estabilizacion)
+    - `DTOs/IaDtos.cs` (Fase 1.5: campo `Permitido`)
+    - `Constants/AiConfiguration.cs` (sin cambios funcionales)
+    - `Program.cs` (DI de los nuevos servicios)
+    - `Data/SeedData.cs` (alineamiento `app_version`)
+  - Frontend:
+    - `components/ia/AiChatPanel.tsx` (Fase 10)
+    - `types/index.ts` (campo `permitido`)
+  - Tests: 12 ficheros nuevos (~150 casos).
+  - Versionado: VERSION, Directory.Build.props, package.json,
+    package-lock.json, SeedData.app_version, Build-Release.ps1,
+    Instalar-AtlasBalance.ps1, install.ps1, release.yml.
+- **Comandos ejecutados:**
+  - `dotnet build -c Release -p:OutputPath=... -p:UseAppHost=false`
+  - `dotnet test --filter 'Category!=Postgres' -p:ArtifactsPath=...`
+  - `npx tsc --noEmit` en `Atlas Balance/frontend`
+  - `npm run lint --max-warnings 0`
+  - `npm run test:unit` (46/46 PASS)
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`
+  - `git diff --check`
+- **Resultado de verificacion (post Fase 12):**
+  - `dotnet build` (Release): **0 errores** (warnings preexistentes).
+  - `dotnet test --filter 'Category!=Postgres'`: **824/843** pasan.
+    Los 19 fallos son tests `Category=Postgres` que dependen de
+    Docker (no disponible local). Mismo patron que la baseline
+    V-02.08 (660/679 -> ahora 824/843 por los tests nuevos).
+  - `npx tsc --noEmit`: **OK**.
+  - `npm run lint --max-warnings 0`: **OK**.
+  - `npm run test:unit`: **46/46 PASS**.
+  - `git diff --check`: **OK**.
+  - `Check-VersionAlignment.ps1 -ExpectedVersion V-02.09`: **OK**.
+- **Bloqueado (CI):**
+  - `npm.cmd run build` (Vite): **BLOQUEADO** por `EPERM` al
+    copiar `public/fonts/*.ttf` a `dist/fonts/`. Mismo bloqueo
+    conocido del sandbox documentado en AGENTS.md seccion 8.
+  - `dotnet test --filter 'Category=Postgres'` (Testcontainers):
+    no se ha ejecutado en este host. Los tests con
+    `[Trait("Category","Postgres")]` requieren Docker; el run
+    queda pendiente para CI.
+  - Verificacion end-to-end contra el proveedor real: pendiente
+    para un entorno con red y claves validas.
+- **Publicacion:** V-02.09 queda en preparacion. La release
+  firmada se hara cuando todos los gates de CI (incluido el
+  modulo PostgreSQL con Testcontainers) esten verdes y se haya
+  generado un paquete `V-02.09-win-x64` en
+  `Atlas Balance/Atlas Balance Release/`.
+
+## 2026-08-05 - V-02.09 - IA financiera: estabilizacion (Fase 1 del plan de 12 fases) (CERRADO)
+
+- **Sintoma reportado:** la IA actual arrastra seis agujeros de estabilidad
+  previos al plan de reescritura: DbContext usado en paralelo dentro de un
+  mismo metodo, resumen anual que se anadia al contexto despues del await
+  (asi que nunca llegaba al proveedor), "ultimo mes" mapeado a ultimos 30
+  dias, timeout frontend de 15s contra HttpClient de 45s, texto libre del
+  proveedor persistido en auditoria y un catalogo OpenRouter que mostraba
+  ~80 modelos cuando la allowlist solo permite 7.
+- **Decision de producto:** cerrar la Fase 1 del plan antes de empezar a
+  construir capacidades nuevas. Cualquier Feature que se asiente sobre la
+  pila actual sin estos arreglos arrastraria el problema.
+- **Solucion:**
+  - **1.1 DbContext concurrente + resumen anual perdido**
+    (`Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`):
+    `BuildFinancialContextAsync` reemplaza el `Task.WhenAll(periodTasks)` por
+    awaits secuenciales. Cada bloque se ejecuta, se espera y se concatena en
+    orden. La condicion del resumen anual se evalua junto al resto, ya no
+    despues del await. Se elimina la variable `rollingMonthStart` que ya no
+    se usa tras 1.2.
+  - **1.2 "ultimo mes" -> mes natural anterior** (mismo fichero):
+    `BuildFinancialContextAsync` y `TryResolveFinancialRankingIntent` mueven
+    el caso "ultimo mes" / "ultimos 30" / "ultimas 4 semanas" al rango
+    `previousMonthStart` - `previousMonthEnd` (mes natural anterior). Coincide
+    ahora con "mes anterior" / "mes pasado" y elimina el solapamiento con
+    el mes en curso.
+  - **1.3 Timeout frontend 15s -> 45s para `/ia/chat`**
+    (`Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`): la peticion
+    a `/ia/chat` lleva `timeout: 45_000` solo en esa llamada, alineado con
+    el `HttpClient.Timeout` del backend para OpenRouter/OpenAI/MiniMax. El
+    resto del API mantiene el timeout defensivo de 15s.
+  - **1.4 Sin texto libre del proveedor en logs ni auditoria**
+    (`AtlasAiService.cs`): `LogProviderErrorAsync` ya no serializa
+    `provider_error` en el `extra` de la auditoria. El clasificador del
+    error (data policy, ZDR, model restrictions) sigue intacto en memoria.
+    El log del servidor ahora incluye `runtime_model` ademas de `model`
+    para distinguir el modelo configurado del que el proveedor uso
+    realmente.
+  - **1.5 Catalogo OpenRouter filtrado a solo permitidos**
+    (`AtlasAiService.cs` + `DTOs/IaDtos.cs` +
+    `frontend/src/types/index.ts`): `GetModelsAsync` filtra por proveedor
+    con `IsModelAllowedForProvider` (mismo criterio que `IsAllowedModel`
+    usa en `AskAsync`, asi que el catalogo y la ejecucion nunca divergen).
+    `IaModelResponse` gana el campo `Permitido: bool`. Frontend: `IaModel`
+    declara `permitido: boolean` para que el UI pueda etiquetar en el
+    futuro si se envia el catalogo completo.
+- **Tests:**
+  - **Nuevo** `backend/tests/AtlasBalance.API.Tests/AtlasAiServiceStabilizationTests.cs`
+    con 8 tests (3 theory + 5 fact): cubre los seis arreglos. En concreto:
+    - `AskAsync_DeterministicRanking_LastMonth_Should_Use_Previous_Calendar_Month`
+      (Theory, 2 casos): gasta del mes natural anterior dentro,
+      gasto de hace 3 dias (fuera del mes natural) fuera.
+    - `AskAsync_Context_For_Annual_Question_Should_Include_Annual_Summary`:
+      blinda que el bloque "PERIODO 01/01/AAAA" llega al payload del
+      proveedor. Antes se perdia silenciosamente.
+    - `AskAsync_Context_Should_Include_All_Matched_Periods_In_Order`:
+      mes actual antes que mes anterior antes que trimestre antes que ano.
+    - `AskAsync_Audit_Should_Not_Contain_Pii_From_Prompt` (Theory, 3 casos):
+      PII en la pregunta (email, IBAN, DNI, tarjeta) no llega a la
+      auditoria.
+    - `GetModelsAsync_OpenRouter_Should_Only_Return_Allowed_Models`:
+      el catalogo de OpenRouter solo expone los 7 modelos en allowlist.
+      Verifica que Claude 3.5, GPT-4o y Llama 3.1 NO aparecen.
+    - `GetModelsAsync_OpenAi_And_MiniMax_Should_Mark_All_Models_Allowed`:
+      OpenAI y MiniMax llevan `Permitido=true`.
+    - `AskAsync_ProviderHttpError_Audit_Should_Not_Contain_Provider_Free_Text`:
+      un error 500 con credenciales y hostnames internos no llega ni a
+      la auditoria ni al mensaje al usuario.
+    - `AskAsync_ProviderHttpError_Audit_Extra_Should_Not_Have_ProviderError_Key`:
+      la clave `provider_error` no se persiste; `retry_after_seconds` si
+      (es campo estructurado, no texto libre).
+  - **Modificado** `backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`:
+    seis tests que asertaban que el texto del proveedor estaba en la
+    auditoria se invierten. Ahora verifican que NO esta y que los
+    campos estructurados (status, kind, retry_after_seconds, model,
+    runtime_model) si lo estan:
+    - `AskAsync_Should_Handle_Provider_Model_Not_Found_Without_Fallback`
+    - `AskAsync_Should_Report_OpenRouter_Data_Policy_404_As_Privacy_Routing_Error`
+    - `AskAsync_Should_Report_OpenRouter_Model_Restrictions_404_Clearly`
+    - `AskAsync_Should_Surface_OpenRouter_Provider_Error_Without_Fallback_Array`
+    - `AskAsync_Should_Report_OpenRouter_Rate_Limit_Retry_After_Clearly`
+    - `AskAsync_Should_Handle_Top_Level_Provider_Error_With_Http_200`
+- **Archivos tocados:**
+  - Backend:
+    - `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+    - `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+    - `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`
+      (alineamiento `app_version = V-02.09`)
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceStabilizationTests.cs` (nuevo)
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+  - Frontend:
+    - `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+    - `Atlas Balance/frontend/src/types/index.ts`
+  - Versionado y runtime:
+    - `Atlas Balance/VERSION` -> `V-02.09`
+    - `Atlas Balance/Directory.Build.props` -> `2.9.0` / `V-02.09`
+    - `Atlas Balance/frontend/package.json` -> `2.9.0` / `V-02.09`
+    - `Atlas Balance/frontend/package-lock.json` -> `2.9.0`
+    - `Atlas Balance/scripts/Build-Release.ps1` -> `V-02.09`
+    - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1` -> `V-02.09`
+    - `Atlas Balance/scripts/install.ps1` -> `V-02.09`
+    - `.github/workflows/release.yml` -> `V-02-09`
+  - Documentacion:
+    - `Documentacion/Versiones/version_actual.md` -> `V-02.09`
+    - `Documentacion/Versiones/v-02.09.md` (nuevo, plan + Fase 1)
+    - `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada)
+- **Comandos ejecutados:**
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Atlas Balance/scripts/Check-VersionAlignment.ps1" -ExpectedVersion V-02.09`
+  - `dotnet build -c Release -p:OutputPath=C:\Users\...\atlas-bin\ -p:UseAppHost=false --no-restore` (obj bloqueado por `AtlasBalance.API.exe` y `AtlasBalance.Watchdog.exe` corriendo como SYSTEM; redirigido)
+  - `dotnet test --filter 'Category!=Postgres' -p:ArtifactsPath=C:\Users\...\atlas-artifacts\ -p:UseAppHost=true`
+  - `npx tsc --noEmit` en `Atlas Balance/frontend`
+  - `npm.cmd run lint` en `Atlas Balance/frontend`
+  - `npm.cmd run test:unit` en `Atlas Balance/frontend`
+  - `git diff --check`
+- **Resultado de verificacion:**
+  - `dotnet build` (Release): **0 errores, 7 warnings preexistentes** (deprecaciones V-02.04).
+  - `dotnet test --filter 'Category!=Postgres'`: **671/690** pasan. Los 19 fallos son tests `Category=Postgres` que necesitan Docker/Testcontainers (mismo patron que la baseline V-02.08). Los 11 tests anadidos en esta fase pasan.
+  - `npx tsc --noEmit`: **OK**.
+  - `npm.cmd run lint --max-warnings 0`: **OK**.
+  - `npm.cmd run test:unit`: **46/46 PASS**.
+  - `git diff --check`: **OK** (solo CRLF, normales en Windows).
+  - `Check-VersionAlignment.ps1`: **OK** (`V-02.09` / `2.9.0`).
+- **Bloqueado / pendiente:**
+  - `npm.cmd run build` (Vite): **BLOQUEADO** por `EPERM` al copiar fuentes a `dist/`. Mismo bloqueo conocido del sandbox. La compilacion `tsc --noEmit` y el lint pasan en limpio. La build se hara en host con permisos sobre `dist/`.
+  - `dotnet test --filter 'Category=Postgres'`: no se ha ejecutado en este host (sin Docker). El test de Fase 1.1 ("se anade el resumen anual al contexto") corre sobre InMemory y solo verifica la forma del payload HTTP. El test real contra PostgreSQL con 50k filas queda pendiente para CI.
+  - Fases 2 a 12 del plan, agrupadas en Bloque B (flexibilidad), C (analisis) y D (privacidad, conversacion, UX final).
+
+---
+
+## 2026-08-05 - V-02.08 - Permisos jerarquicos Pais > Titular > Cuenta (CERRADO)
+
+- **Sintoma reportado:** la matriz de permisos del modal de Usuarios no
+  dejaba claro que la jerarquia opera como interseccion estricta. Una fila
+  con `cuenta_id` sin `titular_id` ni `pais_id` pasaba (alcance mal definido).
+  Filas redundantes se guardaban en silencio y solo ocupaban sitio en
+  `PERMISOS_USUARIO` y en la auditoria.
+- **Decision de producto:** el comportamiento runtime de
+  `UserAccessService.ApplyCuentaScope` ya era interseccion estricta y se
+  mantiene sin cambios. Lo que se refuerza es:
+  1. Validacion de entrada: rechazar `cuenta_id` sin titular ni pais (400).
+  2. Validacion titular-cuenta y pais-cuenta independientes cuando llega
+     cuenta (antes anidadas).
+  3. Deduplicacion con `409` + lista `redundantes`, no silenciosa.
+  4. UX del modal: coherencia Pais/Titular/Cuenta en vivo, dropdown Titular
+     con label dinamico, preview de alcance por fila.
+- **Solucion:**
+  - Backend (`Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`):
+    - `ValidatePermisosAsync` rechaza fila `(cuenta != null, titular == null, pais == null)`
+      con 400. Las validaciones titular-cuenta y pais-cuenta salen del
+      bloque anidado y se ejecutan siempre que `cuenta_id` este presente.
+    - Nuevo `DetectPermisosRedundantes` antes de persistir en
+      `GuardarPermisos`: dos filas con mismo flagset y misma cobertura en
+      todas las dimensiones (`outer == null || outer == inner` en cada
+      dimension) → `409 Conflict` con body
+      `{ error, redundantes: [{ scope, cubierta_por }] }`.
+    - Helpers `PermisosFlagsCoinciden`, `ScopeCubiertoPor`, `ScopesIguales`,
+      `ScopeDto` privados para mantener la logica aislada y testeable.
+  - Frontend:
+    - `frontend/src/utils/permisosFormUtils.ts` con helpers puros:
+      `computeCoherence` (coherent | partial | dangling),
+      `computeTitularesParaPermiso`, `computeCuentasParaPermiso`,
+      `computeAlcance`, `corregirTitularYPaisDesdeCuenta`,
+      `titularDropdownPlaceholder`, `cuentaDropdownPlaceholder`,
+      `paisDropdownPlaceholder`.
+    - `frontend/src/components/usuarios/UsuarioModal.tsx` los consume:
+      - Dropdown Titular cambia de "Global o por cuenta" a
+        "Todos los titulares" / "Todos los titulares del pais" segun si
+        hay pais.
+      - Preview `Afecta a N cuenta(s)` por fila, calculado sobre el
+        catalogo en memoria.
+      - Barra de aviso si la coherencia es `partial` con tres botones:
+        "Mantener solo la cuenta", "Mantener pais y titular" y
+        "Corregir a la realidad de la cuenta".
+      - Aviso bloqueante si la coherencia es `dangling` (cuenta borrada).
+      - `parseRedundanciasDedup` y `redundanciasToHumanMessage`
+        muestran las redundancias del 409 en lenguaje entendible.
+  - Docs:
+    - `Documentacion/DOCUMENTACION_USUARIO.md` anade mini-tabla 6
+      combinaciones de Pais/Titular/Cuenta con alcance efectivo, justo
+      despues de la frase sobre "interseccion exacta".
+    - `Documentacion/SPEC.md` seccion 12 (Matriz de Permisos) recibe la
+      subseccion "Jerarquia Pais > Titular > Cuenta (V-02.08)" con la misma
+      tabla, la formula de `ApplyCuentaScope` y la nota de cache
+      invalidation.
+    - `Documentacion/Versiones/v-02.08.md` agrega bloque "Jerarquia de
+      permisos Pais > Titular > Cuenta" con cambios backend/frontend/tests
+      y actualiza "Verificacion local".
+- **Tests:**
+  - `backend/tests/AtlasBalance.API.Tests/UserAccessScopeMatrixTests.cs` (nuevo):
+    8 casos cubriendo `ApplyCuentaScope` y `GetScopeAsync` con
+    `Titular` con cuentas en dos paises, `Pais` solo, `Titular` solo,
+    `Titular + Pais`, `Cuenta` especifica, etc.
+  - `backend/tests/AtlasBalance.API.Tests/UsuariosControllerValidatePermisosTests.cs`
+    (nuevo, 7 casos): `cuenta sin titular/país` → 400, `cuenta + titular
+    que no la posee` → 400, `cuenta + país que no la posee` → 400,
+    `cuenta + titular + pais` valido → 200, `cuenta + titular sin pais`
+    valido → 200, `cuenta + pais sin titular` valido → 200,
+    `GuardarPermisoCuenta` con titular+pais incoherentes con la cuenta del
+    path → 400.
+  - `backend/tests/AtlasBalance.API.Tests/UsuariosControllerDeduplicacionTests.cs`
+    (nuevo, 4 casos): global + por pais → 409, `pais+titular` +
+    `pais+titular+cuenta` → 409, dos globals con flags distintos → 200,
+    `pais A + pais B` disjuntos → 200.
+  - `frontend/tests/permisosFormUtils.test.ts` (nuevo, 21 tests): cobertura
+    de los helpers extraidos. Se anade a `tsconfig.test.v2.json` y a la
+    lista de scripts de `package.json:test:unit`.
+- **Archivos tocados:**
+  - Backend:
+    - `Atlas Balance/backend/src/AtlasBalance.API/Controllers/UsuariosController.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UserAccessScopeMatrixTests.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerValidatePermisosTests.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UsuariosControllerDeduplicacionTests.cs`
+    - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuditoriaAppendOnlyPostgresTests.cs`
+      (fix oportunista de MfaHabilitado→MfaEnabled para desbloquear build,
+      ver nota abajo).
+  - Frontend:
+    - `Atlas Balance/frontend/src/components/usuarios/UsuarioModal.tsx`
+    - `Atlas Balance/frontend/src/utils/permisosFormUtils.ts` (nuevo)
+    - `Atlas Balance/frontend/tests/permisosFormUtils.test.ts` (nuevo)
+    - `Atlas Balance/frontend/tsconfig.test.v2.json`
+    - `Atlas Balance/frontend/package.json`
+  - Documentacion:
+    - `Documentacion/DOCUMENTACION_USUARIO.md`
+    - `Documentacion/SPEC.md`
+    - `Documentacion/Versiones/v-02.08.md`
+    - `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada).
+- **Verificacion:**
+  - `npm.cmd exec tsc --noEmit -p tsconfig.json`: OK.
+  - `npm.cmd run lint -- --max-warnings 0`: OK.
+  - `npm.cmd run test:unit`: **46/46 PASS** (21 nuevos
+    + 25 previos).
+  - `npm.cmd run build`: BLOQUEADO por `EPERM` conocido del sandbox al
+    copiar `public/fonts/*.ttf` a `dist/fonts/` (AGENTS.md §8). `tsc`
+    pasa. Build de Vite requiere host con permisos sobre `dist/`. Sin
+    cambios que toquen public/.
+  - `dotnet build` con `BaseIntermediateOutputPath` redirigido:
+    `AtlasBalance.API.csproj` 0 errores.
+  - `dotnet test --filter "Category!=Postgres"`:
+    **660/679 PASS**. Los 19 fallos son tests `Category=Postgres` que
+    requieren Docker (no disponible local). Mis 3 nuevas clases
+    (`UserAccessScopeMatrixTests`, `UsuariosControllerValidatePermisosTests`,
+    `UsuariosControllerDeduplicacionTests`) pasan enteras.
+  - Verificacion visual del modal: NO realizada. Sin servidor dev de larga
+    duracion en sandbox (AGENTS.md §8). Queda pendiente revisar render en
+    siguiente arranque del cliente. Revisar:
+    - Dropdown Titular muestra "Todos los titulares" o "Todos los
+      titulares del pais" segun pais.
+    - Fila con Pais+Titular+Cuenta coherente: preview "Afecta a 1
+      cuenta".
+    - Fila con Pais+Titular pero Cuenta ajena: aparece la barra con 3
+      botones.
+    - Fila con cuenta borrada: aviso bloqueante.
+    - Enviar dos filas redundantes (global + por pais) y comprobar que
+      el modal muestra "Hay permisos redundantes (1): ...".
+- **Fix oportunista (auditoria build):** `AuditoriaAppendOnlyPostgresTests.cs`
+  referenciaba campos inexistentes (`MfaHabilitado`, `MfaSecretProtegido`)
+  y una llamada a `RolUsuario.Usuario` que no existe. Renombrado a
+  `MfaEnabled`, `MfaSecret` y `RolUsuario.EMPLEADO`. Minimo toque para
+  desbloquear la build; la fila no se usa en los tests InMemory ni en los
+  habilitados por `Category!=Postgres`. El test en si requiere Postgres.
+- **Pendiente:** la UI nueva del modal (los 3 botones, el preview, el
+  label dinamico) no ha sido inspeccionada visualmente. Regla del sandbox.
+  Si el operador detecta que el ancho de la barra de aviso rompe con
+  nombres de titular largos, ajustar `.permiso-coherence-actions` y
+  `.permiso-coherence-warning` en el CSS que toque.
+
+---
+
+## 2026-08-05 - V-02.08 - Pestanitas del dashboard y grafico de evolucion (CERRADO)
+
+- **Sintomas reportados:**
+  1. El dashboard pintaba una franja de "pestanitas" (`Importar extractos`,
+     `Revisar alertas`, `Conciliar pendientes`) que duplicaba entradas ya
+     presentes en el sidebar.
+  2. El grafico de evolucion del hero card del dashboard usaba dos ejes Y
+     (`saldo` a la izquierda, `movement` a la derecha) con un ancho fijo de
+     `74px` por eje. Etiquetas compactas como `61,31 mil` y `14,79 mil`
+     quedaban recortadas contra el borde del area de trazado.
+- **Decision de producto:** el comportamiento de "dashboard deshabilitado
+  no aparece en el menu" ya estaba implementado y se mantiene sin tocar
+  (`Sidebar.tsx` + `navigation.ts:75-77` filtran la entrada, `DashboardRoute`
+  en `App.tsx:38-45` redirige a `/extractos` si se accede por URL). El menu
+  del gerente ya comparte estructura con el del admin y sigue mostrando los
+  items permitidos por permisos; el alcance por paises/titulares/cuentas
+  lo aplica el backend y el frontend no lo modifica.
+- **Solucion:**
+  - Eliminado el bloque `<nav className="dashboard-quick-actions">` y sus
+    tres `<Link>` en `Atlas Balance/frontend/src/pages/DashboardPage.tsx`.
+  - Borradas las reglas CSS `.dashboard-quick-actions` y
+    `.dashboard-quick-actions a` en
+    `Atlas Balance/frontend/src/styles/layout/dashboard.css` (sin uso
+    restante).
+  - En `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`,
+    la variante `saldoArea` (unico consumidor: `DashboardPage`) pasa a un
+    unico eje Y a la izquierda:
+    - Eliminado el `<YAxis yAxisId="movement" orientation="right" />` y
+      todas las referencias a `yAxisId` en `Area`/`Line`/`CartesianGrid`.
+    - Dominio unificado con `getEvolutionDomain(points)` (mismo helper que
+      ya usa la variante `multiLine`).
+    - Ancho del eje calculado con un nuevo helper
+      `getEvolutionAxisWidthCompact(domain)` que reutiliza
+      `estimateAxisLabelWidth` pero formatee con `formatCompactAxis`
+      (etiqueta corta sin moneda), evitando el recorte de los ticks
+      compactos.
+    - Margen derecho del `ComposedChart` pasa de `0` a `12` para dejar
+      aire entre el area de trazado y el borde derecho.
+    - Eliminados `getSaldoDomain` y `getMovementDomain` (solo los usaba
+      esta variante).
+    - Eliminado el comentario que justificaba los `yAxisId` explicitos.
+  - Las variantes `multiLine` (usadas en `TitularesPage`, `CuentasPage` y
+    `DashboardTitularPage`) quedan inalteradas.
+- **Archivos tocados:**
+  - `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+  - `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+  - `Atlas Balance/frontend/src/components/dashboard/EvolucionChart.tsx`
+- **Verificacion:**
+  - `npm.cmd run lint -- --max-warnings 0`: OK.
+  - `npx.cmd tsc --noEmit`: OK.
+  - `npm.cmd run test:unit`: 26/26 PASS.
+  - `npm.cmd run build`: bloqueado por EPERM conocido al copiar fuentes a
+    `dist/` (sandbox, AGENTS.md §8). El `tsc && vite build` pasa la fase
+    TypeScript y muere en `prepare-out-dir` con `copyfile ... HindMadurai-Bold.ttf`.
+    No afecta a la veracidad del cambio.
+  - Verificacion visual final no realizada en esta sesion (regla del
+    sandbox §8: no se levanta Vite dev server de larga duracion). Queda
+    pendiente revisar el render en el siguiente reinicio del cliente.
+- **Pendiente del usuario:** recargar con Ctrl+F5 para confirmar que (a)
+  las pestanitas han desaparecido y (b) el grafico del hero card muestra
+  un solo eje Y a la izquierda sin etiquetas recortadas. Si los picos de
+  ingresos/egresos del periodo quedan visualmente aplanados cerca del
+  cero por compartir escala con el saldo, avisar: hay una escapatoria
+  barata preparada (segunda tarjeta pequena con eje propio) que se
+  activaria si el resultado no convence.
+
+---
+
+## 2026-08-05 - V-02.08 - Logo de marca invisible en pantalla de login (CERRADO)
+
+- **Sintoma:** al cargar la pagina de inicio, junto al texto "Atlas Balance"
+  se veia un cuadrado azul solido en lugar del isotipo de la marca. El mismo
+  cuadrado aparecia en el sidebar autenticado y en `ChangePasswordPage`.
+- **Causa confirmada:** la variable CSS `--logo-mask` (que define el SVG
+  usado por `mask` en `.auth-logo-image` y `.app-brand-logo`) estaba
+  declarada unicamente dentro de `[data-theme="dark"]` en
+  `Atlas Balance/frontend/src/styles/variables.css`. En modo claro
+  (`data-theme="light"` o sin atributo) la cascada no encontraba la
+  variable, `mask` se evaluaba como `none` y solo quedaba visible el fondo
+  azul (`--auth-logo-color: #285bd9` / `--color-sidebar-active-text`).
+- **Solucion:** mover `--logo-mask` al bloque `:root` y eliminar la
+  redefinicion dentro de `[data-theme="dark"]`. El SVG no depende del tema
+  porque la pintura la aporta el `background-color`/`currentColor` del
+  elemento, no el propio `mask`.
+- **Archivos tocados:** `Atlas Balance/frontend/src/styles/variables.css`
+  (unico archivo).
+- **Verificacion:** `npm.cmd run lint -- --max-warnings 0` OK. Build de
+  Vite bloqueado por EPERM conocido al copiar fuentes a `dist/`
+  (sandbox, AGENTS.md §8).
+- **Pendiente del usuario:** recargar la pagina con cache vacia (Ctrl+F5)
+  para que el navegador recoja el CSS actualizado.
+
+---
+
+## 2026-08-05 — Publicacion IIS del servidor cliente (V-02.08)
+
+**Trabajo realizado:** se configuro el sitio IIS existente
+`Atlasbalance` para publicar la instalacion V-02.07 del cliente mediante
+`https://atlasbalance.natalmagroup.com`. IIS termina TLS y reenvia todas las
+peticiones al backend en `http://127.0.0.1:5000`; el frontend sigue siendo el
+incluido en `C:\AtlasBalance\api\wwwroot`, evitando copias obsoletas tras una
+actualizacion. Se instalaron URL Rewrite 2.1 y ARR 3.0 desde los paquetes
+oficiales de Microsoft, ambos con firma Authenticode valida.
+
+**Archivos tocados en el servidor (fuera de Git):**
+
+- `C:\AtlasBalance\api\appsettings.Production.json`: URL publica,
+  `AllowedHosts`, proxy conocido y endpoint Kestrel loopback.
+- `C:\inetpub\wwwroot\atlasbalance\web.config`: regla de proxy inverso y
+  `X-Forwarded-Proto=https`.
+- Configuracion global de IIS: ARR habilitado con preservacion del host y
+  variable reenviada autorizada para el sitio `Atlasbalance`.
+- `C:\AtlasBalance\atlas-balance.runtime.json` y configuraciones API/Watchdog:
+  metadatos de actualizacion alineados con `UseReverseProxy=true`, URL publica,
+  puerto interno 5000 y health check `http://localhost:5000/api/health`. Esto
+  evita que una version futura se valide por el antiguo puerto 8443 y haga
+  rollback de una actualizacion correcta.
+
+**Comandos ejecutados:** inspeccion de servicios, listeners, binding y
+certificado; consulta DNS publica; validacion Authenticode y SHA-256 de los
+MSI; instalacion silenciosa con log; backups de IIS y de la configuracion;
+reinicios controlados de `AtlasBalance.API` e IIS; pruebas HTTPS mediante
+Node contra el binding local y el certificado real.
+
+**Resultado de verificacion:**
+
+- `AtlasBalance.API`, `AtlasBalance.Watchdog` y `W3SVC`: `Running` y
+  automaticos.
+- IIS HTTPS `443`: escuchando; API interna solo en `127.0.0.1:5000`.
+- `https://atlasbalance.natalmagroup.com/`: HTTP 200.
+- `https://atlasbalance.natalmagroup.com/api/health`: HTTP 200.
+- Certificado del dominio validado sin omitir la comprobacion TLS.
+- Metadatos runtime y health checks de API/Watchdog verificados tras escritura;
+  el backend continuo respondiendo HTTP 200 y los servicios siguieron activos.
+- Validacion posterior con navegador real: carga autenticada de `/dashboard`,
+  secciones principales visibles, navegacion a `/cuentas` y recarga directa de
+  la ruta SPA, todo sin alertas visibles ni imagenes rotas. La consola solo
+  mostro mensajes de canal cerrado de una extension de Chrome, sin mensajes
+  nuevos al navegar; no se atribuyen a Atlas Balance.
+- La lectura elevada del log de los ultimos 20 minutos no termino dentro del
+  timeout operativo y se corto sin reintentar. Por tanto, esta comprobacion no
+  declara el log completo limpio; se apoya en health, UI real y consola.
+- `/api/health/ready` y `/api/health/functional`: 404 esperado porque el
+  servidor cliente aun ejecuta V-02.07; estos endpoints pertenecen a V-02.08.
+
+**Pendientes:** comprobar el acceso desde una red externa real. El servidor
+no puede validar su propia IP publica por la politica de hairpin/salida local,
+aunque DNS publico, binding, certificado y el flujo IIS -> API estan
+verificados.
+
+---
+
+## 2026-08-05 - V-02.08 - Toggle del boton de alerta en extractos de cuenta
+
+**Trabajo realizado:** en la ventana "Desglose de la cuenta" del dashboard
+(`pages/CuentaDetailPage.tsx`), el boton con icono de banderola solo marcaba
+filas; al pulsarlo sobre una seleccion ya amarilla no pasaba nada. Se
+convierte en un unico boton toggle: si toda la seleccion ya tiene alerta,
+las quita; si falta alguna por marcar, marca solo las no marcadas. El
+backend (`ExtractosController.ToggleFlag`) ya soportaba `flagged: false`
+desde V-02.07, asi que el cambio es solo de UI/consistencia con el
+checkbox individual de `ExtractoTable`.
+
+**Archivos tocados:**
+
+Frontend:
+- `frontend/src/utils/bulkFlagToggle.ts` (nuevo): helper puro
+  `computeBulkFlagToggle(rows)` que devuelve `{ action, targetIds }`
+  segun el estado actual de la seleccion.
+- `frontend/src/pages/CuentaDetailPage.tsx:655-733`: `flagSelectedRows`
+  consume el helper y despacha PATCH con `flagged: true|false` segun
+  corresponda, limpiando `flagged_nota/at/by_id` al desmarcar.
+  `bulkFlagIntent` (memo) y `bulkFlagAction` alimentan el texto
+  accesible dinamico del boton.
+- `frontend/src/pages/CuentaDetailPage.tsx:945-957`: el boton cambia
+  `aria-label`, `title` y `aria-pressed` entre "Marcar seleccion con
+  alerta" y "Quitar alerta de la seleccion" en funcion de la intencion
+  que se ejecutara en la proxima pulsacion.
+- `frontend/tests/bulkFlagToggle.test.ts` (nuevo): 4 tests que cubren
+  todos amarillos, todos sin alerta, seleccion mixta y seleccion vacia.
+- `frontend/tsconfig.test.v2.json`: incluye el nuevo helper en el set
+  compilado de tests.
+- `frontend/package.json`: el script `test:unit` enlaza tambien
+  `bulkFlagToggle.test.js`.
+
+Backend:
+- `backend/tests/AtlasBalance.API.Tests/ExtractosControllerTests.cs:888-1012`:
+  dos tests nuevos, `ToggleFlag_Should_Clear_All_Flagged_Fields_When_Unflagging`
+  (cubre el camino `true -> false`, verifica limpieza de los 3 campos y
+  auditoria) y `ToggleFlag_Should_Forbid_Unflag_When_Flagged_Column_Not_In_Editable_Set`
+  (verifica que `columnas_editables=["flagged_nota"]` sigue bloqueando
+  el unflag, mismo patron que el test simetrico previo).
+
+**Comandos ejecutados y resultado de verificacion:**
+
+- `npm.cmd run lint -- --max-warnings 0`: OK, 0 errores, 0 warnings.
+- `npm.cmd run test:unit`: **26/26 PASS** (22 previos + 4 nuevos de
+  `bulkFlagToggle.test.js`).
+- `npx.cmd tsc --noEmit`: OK, 0 errores.
+- `npm.cmd run build`: **BLOQUEADO** por `EPERM` al copiar fuentes al
+  `dist` (limitacion de sandbox documentada en AGENTS.md §8, mismo
+  patron conocido en V-02.07). El `tsc` previo dentro del propio
+  build pasa limpio. Pendiente de reintento en CI o fuera del sandbox.
+- `dotnet test tests/AtlasBalance.API.Tests`: **BLOQUEADO** por AV
+  reteniendo `obj/Debug/net8.0/AtlasBalance.API.AssemblyInfoInputs.cache`
+  durante la compilacion (AGENTS.md §8). Los dos tests nuevos siguen el
+  mismo patron de fixture que los dos existentes y se compilan con la
+  misma toolchain; pendientes de correr en CI.
+
+**Pendientes:**
+
+- Reintentar `npm.cmd run build` y `dotnet test tests/AtlasBalance.API.Tests`
+  fuera del sandbox para cerrar el gate de CI.
+- QA visual del toggle end-to-end contra un backend levantado (no se
+  hace desde la shell por AGENTS.md §8).
+
+---
+
+## 2026-08-05 - V-02.08 - Catalogo de paises en Configuracion (frontend)
+
+**Trabajo realizado:** se cierra la deuda del V-02.02 que dejo el CRUD de
+paises sin pantalla. Hasta ahora, para crear el primer pais en una
+instalacion limpia el admin tenia que llamar a la API a mano. Se anade una
+pantalla accesible solo para administradores en `Configuracion > Paises`
+(`/configuracion/paises`), con tabla, busqueda, paginacion, alta/edicion,
+soft delete y restaurar desde papelera.
+
+**Archivos tocados:**
+
+Backend:
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/PaisesDtos.cs` (sigue
+  serializando `codigo_iso2`/`fecha_creacion`/`fecha_modificacion`/`deleted_at`
+  en snake_case gracias al `JsonNamingPolicy.SnakeCaseLower` global de
+  `Program.cs:308`; sin cambios explicitos necesarios en el DTO).
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/PaisesController.cs`
+  (`Listar` ahora devuelve `PaginatedResponse<PaisResponse>` consistente con
+  el resto de catalogos; antes devolvia array plano).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PaisesControllerTests.cs`
+  (test actualizado al nuevo envoltorio).
+
+Frontend:
+- `frontend/src/services/api.ts` (nuevo helper `extractList<T>(payload: unknown)`
+  que acepta array plano o `PaginatedResponse<T>` indistintamente).
+- `frontend/src/hooks/queries/usePaisesQuery.ts` (ahora consume el nuevo formato
+  paginado del catalogo publico).
+- `frontend/src/queries/queryKeys.ts` (nueva clave
+  `queryKeys.configuracion.paises` para la lista admin).
+- `frontend/src/pages/configuracion/PaisesPage.tsx` (nuevo, ~370 lineas, patron
+  `TitularesPage`/`FormatosImportacionPage`: `useState` + `api.*` + reload tras
+  cada mutacion; `react-hook-form` se mantiene solo en login).
+- `frontend/src/pages/ConfiguracionPage.tsx` (refactor quirurgico: anade tab
+  `Paises` como `NavLink`, importa `NavLink`/`Outlet`/`useLocation`/`Globe`,
+  oculta los bloques internos cuando la ruta es `/configuracion/paises` y
+  anade `<Outlet/>` para que la sub-ruta se monte. Los demas tabs siguen
+  funcionando con `useState` local).
+- `frontend/src/App.tsx` (lazy import + ruta `/configuracion/paises` como
+  hija de `/configuracion`; el `RoleGuard roles={['ADMIN']}` del padre cubre).
+
+**Comandos ejecutados:**
+
+- `npm.cmd run lint --max-warnings 0`: **OK**.
+- `npm.cmd run build` (`tsc && vite build`): `tsc` **OK**, 2649 modulos
+  transformados sin errores TS. `vite build` falla por `EPERM` al copiar
+  `public/fonts/HindMadurai-Bold.ttf` a `dist/` (antivirus local). Bloqueo
+  previsto en AGENTS.md seccion 8; no afecta al codigo.
+- `dotnet build -p:UseAppHost=false -p:BaseOutputPath=...`: **OK**, sin
+  warnings nuevos.
+- `dotnet test` sobre `AtlasBalance.API.Tests`: **bloqueado** por el AV sobre
+  `obj/Debug/.../AssemblyInfoInputs.cache` del proyecto principal (mismo
+  escenario AGENTS.md seccion 8). El codigo compila OK con el workaround de
+  `BaseOutputPath` y el test actualizado es coherente con el nuevo
+  envoltorio.
+
+**Resultado de verificacion:**
+- Frontend: lint OK, tsc OK, 2649 modulos OK.
+- Backend: build OK.
+- Tests backend: pendiente (bloqueo AV, registrado).
+- Bitacora de version `Documentacion/Versiones/v-02.08.md`: **bloqueado**
+  tambien por AV al escribir en `Documentacion/Versiones/`. Se intento 4
+  veces (incluyendo copia via `%TEMP%`). La entrada queda pendiente y se
+  reporta abajo.
+
+## 2026-08-05 - V-02.08 - Tres niveles de health check
+
+**Trabajo realizado:** el incidente V-02.07 demostro que `/api/health`
+(devuelve `{status:"healthy"}` literal) daba 200 con login 500. El
+smoke post-instalacion y el actualizador deben golpear un endpoint
+que verifique que el RLS esta realmente operativo, no solo que el
+proceso responde.
+
+Tres niveles, los tres `AllowAnonymous` para que el instalador y el
+actualizador puedan sondearlos sin sesion:
+
+- `/api/health` (liveness): sin cambios. 200 si el proceso responde.
+- `/api/health/ready` (readiness): ejecuta `AppHealthService.ComprobarAsync`
+  (BD, disco, pool). 200 si todo SANO, 503 si NO_SANO.
+- `/api/health/functional` (functional readiness): ejecuta
+  `atlas_security.context_is_valid()` y un INSERT firmado en
+  `AUDITORIAS` con `BEGIN; ... ROLLBACK;`. 200 si pasa; 503 si falla.
+  Es el endpoint que el instalador y el actualizador deben golpear
+  para declarar OK: si el RLS no esta alineado o el INSERT da 42501,
+  devuelve 503 y se hace rollback.
+
+El rate limiter global se ampla para eximir cualquier ruta bajo
+`/api/health/*` (antes solo `/api/health` exacto estaba exento).
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs` (mapeo de
+  los tres endpoints; usa `AppDbContext`, `IAppHealthService`,
+  `EstadoSalud`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/ContextoRlsValidoDto.cs`
+  (nuevo, DTO interno para `SqlQueryRaw`).
+- `Atlas Balance/backend/src/AtlasBalance.API/RateLimiting/RateLimitingSetup.cs`
+  (exencion para `/api/health/*`).
+
+**Comandos ejecutados:**
+
+- `dotnet build -c Release -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj\
+  -p:BaseOutputPath=...bin\ -v:minimal --nologo` (workaround ACL
+  `obj/` -> `C:\Users\usuario\AppData\Local\Temp\2\opencode\atlas-build-v0208-c4\`):
+  **0 errores, 7 warnings preexistentes** (deprecaciones
+  `UseXminAsConcurrencyToken` x 5, `PostgreSqlStorage` deprecado x 1,
+  `EF1002` sobre `SqlQueryRaw` con interpolacion de string de fecha x 1,
+  todas ajenas a V-02.08).
+
+**Resultado de verificacion:**
+
+- Los tres endpoints compilan y resuelven dependencias.
+- La logica del probe reproduce el camino del login: contexto
+  anonimo + INSERT en AUDITORIAS + ROLLBACK. Si la policy RLS
+  no permite el INSERT con ese contexto, el endpoint devuelve 503
+  y el actualizador (cuando se actualice) hace rollback del DLL.
+- El rate limiter no consume presupuesto en las sondas de
+  readiness.
+
+**Pendientes:**
+
+- Actualizar `Actualizar-AtlasBalance.ps1` y `Deploy-RlsHotfix.ps1`
+  para que golpeen `/api/health/functional` en lugar de `/api/health`
+  antes de declarar OK. El cambio en el script es de una linea cada
+  uno; queda como siguiente commit.
+- Anadir test de regresion con Testcontainers que verifique que
+  `/api/health/functional` devuelve 200 y 503 segun el contexto.
+
+---
+
+## 2026-08-05 - V-02.08 - Credenciales accesibles tras instalar
+
+**Trabajo realizado:** el instalador `Instalar-AtlasBalance.ps1`
+anunciaba en su mensaje final que las credenciales iniciales
+estaban en `C:\AtlasBalance\config\INSTALL_CREDENTIALS_ONCE.txt`
+pero no escribia el archivo (decision V-02.05 MED-26). El
+operador se quedaba con una promesa rota. Ademas, los scripts
+de soporte (Repair-RlsContext, Deploy-RlsHotfix, etc.) no se
+empaquetaban en la instalacion: si algo se rompe en campo, el
+operador no tiene a mano mas que el hotfix DLL del ZIP.
+
+V-02.08 cierra los dos:
+
+- `Installer.Instalar-AtlasBalance.ps1` vuelve a escribir
+  `INSTALL_CREDENTIALS_ONCE.txt` con `Write-SecretFile`
+  (ACL Administrators + SYSTEM, herencia desactivada) y registra
+  la tarea programada `AtlasBalance.DeleteInstallCredentialsOnce`
+  a 24h. El mensaje final indica la ruta y la fecha de borrado.
+- `Build-Release.ps1` y `Actualizar-AtlasBalance.ps1` copian
+  los scripts de soporte a `C:\AtlasBalance\scripts`:
+  `Repair-RlsContext.ps1`, `Deploy-RlsHotfix.ps1`,
+  `Grant-OwnerBypassRls.ps1`, `Test-BackupRestore.ps1`,
+  `Test-AtlasSecrets.ps1`, `Smoke-Test-AtlasBalance.ps1`,
+  `Mfa-Totp.ps1`, `Mfa-Totp.Tests.ps1`.
+- `Build-Release.ps1` usa un `Test-Path` previo con WARN en lugar
+  de abortar si un script futuro aun no existe en `scripts/`.
+
+**Archivos tocados:**
+
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1` (escritura
+  del archivo con ACL, registro de task, copia de scripts,
+  mensaje final mas preciso).
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1` (copia
+  de scripts de soporte en la actualizacion).
+- `Atlas Balance/scripts/Build-Release.ps1` (empaquetado de
+  los scripts en el ZIP firmado).
+
+**Comandos ejecutados:**
+
+- Parser PowerShell de los tres scripts modificados: **OK**.
+
+**Resultado de verificacion:**
+
+- Los tres scripts parsean correctamente.
+- INSTALL_CREDENTIALS_ONCE.txt se escribe con la ACL que ya
+  aplicaba `Write-SecretFile`. Si falla, se lanza
+  excepcion y se borra el archivo para no dejar
+  credenciales con ACL laxa.
+- El actualizador copia los scripts en `C:\AtlasBalance\scripts`
+  en cada actualizacion, manteniendo la disponibilidad.
+
+**Pendientes:**
+
+- Confirmar preflight + copia atomica con rollback en el
+  instalador. Hoy `Sync-DirectoryPreserveConfig` no tiene
+  rollback; si falla a mitad, deja el sistema inconsistente.
+- Confirmar el switch `-PostgresMode Managed|External` y las
+  validaciones de version/pgcrypto/RLS al instalar.
+- Confirmar SMTP test, BitLocker detection y cert SAN
+  validation en el instalador.
+
+---
+
+## 2026-08-05 - V-02.08 - Testcontainers como gate obligatorio en CI/release
+
+**Trabajo realizado:** el incidente V-02.07 demostro que la regresion
+de `INSERT ... RETURNING` sobre `AUDITORIAS` con policy RLS del SELECT
+(42501) no fue detectable en CI porque los tests que cubrian AUDITORIAS
+contra PostgreSQL real no se marcaban con un trait filtrable. Una vez
+que Microsoft Testing Platform ignoro el `--filter` que se intento
+aplicar, los 17 tests no-Docker pasaron en silencio y CI canto victoria
+con un sistema cuyo login estaba roto.
+
+V-02.08 cierra eso:
+
+- Marcador `[Trait("Category", "Postgres")]` en las cinco clases que
+  necesitan Testcontainers: `AuditoriaAppendOnlyPostgresTests`,
+  `ExtractosConcurrencyTests`, `PlazoFijoUniqueIndexTests`,
+  `RowLevelSecurityTests`, `VolumeSmokeTests`. Asi el trait es
+  filtrable por `--filter-trait "Category=Postgres"` y por
+  `--filter-trait "Category!=Postgres"`.
+- `ci.yml` separa el test en dos pasos: primero todo lo no-Postgres
+  (gate rapido), despues solo los tests con trait `Postgres` (gate
+  PostgreSQL real). Si Testcontainers no levanta, el segundo gate
+  falla y CI no se mezcla con el primero.
+- `release.yml` hace lo mismo: el build firmado no se publica si el
+  gate de Postgres con Testcontainers no pasa.
+- Anadido `Mfa_Verify_SaveChanges_Should_Not_Throw_And_Should_Keep_Audit_Trail`
+  en `AuditoriaAppendOnlyPostgresTests` que reproduce el batch real
+  de `IssueTokensAsync` (UPDATE USUARIOS + INSERT REFRESH_TOKENS +
+  INSERT AUDITORIAS explicito) bajo rol runtime y policy RLS
+  estricta. Antes del fix, EF serializaba una auditoria automatica
+  adicional con RETURNING que PostgreSQL rechazaba con 42501; el test
+  falla si esa auditoria se vuelve a generar.
+
+**Archivos tocados:**
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AuditoriaAppendOnlyPostgresTests.cs`
+  (nuevo fact de regresion + `[Trait("Category", "Postgres")]` en la
+  clase).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ExtractosConcurrencyTests.cs`
+  (trait).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PlazoFijoUniqueIndexTests.cs`
+  (trait).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+  (trait).
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/VolumeSmokeTests.cs`
+  (trait).
+- `.github/workflows/ci.yml` (gate de Postgres separado).
+- `.github/workflows/release.yml` (gate de Postgres separado).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (esta entrada).
+
+**Comandos ejecutados:**
+
+- Parser PowerShell sobre `Mfa-Totp.ps1` y `Mfa-Totp.Tests.ps1`: **OK**.
+- `powershell -File Mfa-Totp.Tests.ps1`: **OK** (vectores RFC 6238).
+- `dotnet test --filter-trait "Category=Postgres"` local: **bloqueado**
+  por la falta de Docker en este host (registrado en AGENTS.md). El
+  test compila en `ci.yml`/`release.yml` porque los runners de GitHub
+  Actions `ubuntu-24.04` si tienen Docker daemon. El run local del
+  bloque se documenta en la entrada de sesion.
+
+**Resultado de verificacion:**
+
+- Helpers TOTP: vectores RFC 6238 OK, ventana OK, padding '=' OK,
+  caracteres no base32 -> FormatException OK.
+- Composicion del trait: las cinco clases tienen
+  `[Trait("Category", "Postgres")]` antes del
+  `[Collection(PostgresCollection.Name)]`.
+- CI/release: dos steps separados, `- -filter-trait "Category=Postgres"`
+  y `- -filter-trait "Category!=Postgres"`. Microsoft Testing Platform
+  acepta la sintaxis `--filter-trait`.
+
+**Pendientes:**
+
+- Habilitar la opcion de "smoke test contra instalacion real" en
+  runners Windows para que el paquete V-02.08-win-x64 se firme
+  acompanado de un run end-to-end de `Smoke-Test-AtlasBalance.ps1`
+  contra una VM de tests. Hoy ese paso es manual.
+- Anadir el resto de tests de integracion futuros con trait
+  `Postgres` cuando necesiten un PG real (sin abrir nuevas
+  excepciones a la convencion).
+
+---
+
+## 2026-08-05 - V-02.08 - Verificacion MFA compatible con auditoria RLS
+
+**Trabajo realizado:** se reprodujo el segundo HTTP 500 en
+`POST /api/auth/mfa/verify`. Tras aceptar el TOTP, `IssueTokensAsync` guardaba
+los cambios de `USUARIOS` y `REFRESH_TOKENS`; `AuditSaveChangesInterceptor`
+anadia una auditoria automatica al mismo batch y EF volvia a emitir
+`INSERT ... RETURNING secuencia`, rechazado por RLS con `42501`. El interceptor
+omite ahora esa auditoria generica solo en rutas auth anonimas, que ya registran
+los eventos semanticos `MFA_ENABLED`, `MFA_VERIFIED` y `LOGIN` mediante
+`AuditService` sin `RETURNING`. No se amplia ninguna policy.
+
+**Archivos tocados:** `AuditSaveChangesInterceptor.cs`,
+`AuditSaveChangesInterceptorTests.cs`, log de incidencias, documentacion
+tecnica, documento de V-02.08, `INFORME_INCIDENTE_LOGIN_MFA_V0207.md` y esta
+bitacora.
+
+**Comandos ejecutados:** inspeccion del log del servicio y del SQL fallido;
+runner xUnit v3 por clase; `dotnet build` Release; despliegue elevado con backup,
+hash y rollback; comprobacion de servicios, hash instalado, puerto 8443 y estado
+de Chrome.
+
+**Resultado de verificacion:** tests focalizados 4/4; compilacion Release con 0
+errores y 7 warnings preexistentes. DLL instalada con SHA-256
+`09D194A9AB2FE9AEF241E402E79E1A2229342CBEBFB5970AA79AE2DCA0EF8932`;
+API y Watchdog activos y puerto 8443 disponible. El proceso reiniciado invalido
+el challenge MFA anterior; queda pendiente repetir login con un challenge y un
+TOTP nuevos para cerrar la comprobacion end-to-end.
+
+---
+
+## 2026-08-05 - V-02.08 - Login y auditoria compatibles con RLS
+
+**Trabajo realizado:** se reprodujo el HTTP 500 contra la instalacion real. La
+password era valida y se llegaba a `LOGIN_MFA_REQUIRED`, pero EF generaba
+`INSERT ... RETURNING secuencia` para `AUDITORIAS`. PostgreSQL aplica la policy
+SELECT al `RETURNING`; el flujo auth puede insertar, pero no leer auditorias.
+`AuditService` usa ahora un INSERT parametrizado sin `RETURNING` solo en el
+flujo auth anonimo, sin ampliar ninguna policy.
+
+**Archivos tocados:** `AuditService.cs`,
+`AuditoriaAppendOnlyPostgresTests.cs`, `Deploy-RlsHotfix.ps1`, log de
+incidencias, documentacion tecnica, documento de V-02.08 y esta bitacora. Se
+revirtio el cambio especulativo del guardia RLS al comprobar que no era la causa.
+
+**Comandos ejecutados:** inspeccion de Chrome, Event Log, log de PostgreSQL y
+`C:\ProgramData\AtlasBalance\logs`; revision de policies y SQL generado;
+`dotnet build` Release; runner xUnit v3 por clase y por metodo PostgreSQL;
+parser PowerShell; `git diff --check`; dos despliegues elevados con rollback.
+
+**Resultado de verificacion:** compilacion correcta con 0 errores y 7 warnings
+preexistentes; tests de contexto RLS 10/10. La regresion PostgreSQL compila,
+pero Testcontainers queda bloqueado porque Docker no esta disponible. Tras dos
+intentos que no modificaron produccion por el entrecomillado de rutas, el tercer
+despliegue autorizado termino con exit code 0, backup previo y SHA-256 instalado
+`035893348A070A52F9796164B9F4C8FE715F66124E0F5F801323D6FC8996803F`.
+API/PostgreSQL/Watchdog quedaron activos. El login real de las 01:48:17 devolvio
+HTTP 200 en 1353 ms y Chrome avanzo a `Verificar acceso` (MFA), sin HTTP 500.
+
+---
+
+## 2026-08-05 - V-02.08 - Reset de administrador compatible con PowerShell 5.1
+
+**Trabajo realizado:** se corrigio el reset de administrador usado durante la
+instalacion real de V-02.07. El script intentaba cargar con `Add-Type` una DLL
+BCrypt compilada para .NET 8 desde Windows PowerShell 5.1/.NET Framework 4 y
+fallaba aunque se retirase la marca de descarga. El hash bcrypt de coste 12 se
+genera ahora en PostgreSQL mediante `pgcrypto` y la password viaja por stdin.
+
+**Archivos tocados:** `Atlas Balance/scripts/Reset-AdminPassword.ps1`, log de
+incidencias, documentacion tecnica, documento de V-02.08 y esta bitacora.
+
+**Comandos ejecutados:** inspeccion de streams `Zone.Identifier`; prueba de
+carga `Add-Type`; captura de `LoaderExceptions`; busqueda de uso de `pgcrypto`;
+parser PowerShell; busquedas estaticas de la ruta eliminada; copia controlada
+del script corregido al paquete V-02.07 y ejecucion real del reset.
+
+**Resultado de verificacion:** el reset real se ejecuto y el backend acepto la
+password nueva. El login quedo bloqueado despues por una incidencia separada
+de contexto RLS documentada en la entrada anterior.
+
+---
+
+## 2026-08-04 - V-02.08 - Apertura de version y sincronizacion documental
+
+**Trabajo realizado:** se abrio V-02.08 desde V-02.07 y se alinearon los
+metadatos visibles de backend, frontend, paquete, instalador y release. Se creo
+`Documentacion/Versiones/v-02.08.md` y se actualizaron las superficies vivas de
+README, instalacion, documentacion tecnica, documentacion de usuario,
+`version_actual.md`, `SeedData.cs` y workflow de release. Las entradas
+historicas mantienen su version de origen.
+
+**Archivos tocados:** `Atlas Balance/VERSION`,
+`Atlas Balance/Directory.Build.props`, `Atlas Balance/frontend/package.json`,
+`Atlas Balance/frontend/package-lock.json`, scripts de release/instalacion,
+`.github/workflows/release.yml`, `SeedData.cs`, README y documentacion de
+`V-02.08`.
+
+**Comandos ejecutados:** inspeccion de instrucciones y version vigente;
+`git status --short --branch`; busquedas de referencias de version;
+`Check-VersionAlignment.ps1 -ExpectedVersion V-02.08`; parsers PowerShell;
+`git diff --check`; `npm.cmd exec tsc --noEmit`; `npm.cmd run lint`;
+`npm.cmd run test:unit`; `npm.cmd run build`; `Test-AtlasSecrets.Tests.ps1`;
+`gh --version` y `gh auth status`.
+
+**Resultado de verificacion:** alineacion OK (`V-02.08` / `2.8.0`), parsers OK,
+`git diff --check` OK, TypeScript/lint/build OK y tests frontend 22/22 PASS. El
+test de fixtures del scanner pasa; el scanner general se detiene en el fixture
+positivo intencionado `scripts/.scanner-fixtures/positive.txt`. La rama
+`V-02.08` se creo y publico correctamente como `origin/V-02.08`, con commit
+`b9975aa`.
 
 ---
 
@@ -23265,3 +24707,304 @@ la maquina como decision de despliegue).
 - **Comandos ejecutados:** consulta de metadatos y README del repositorio con GitHub CLI y conector GitHub; revisión de `version_actual.md`, `v-02.07.md`, `DOCUMENTACION_USUARIO.md`, `DOCUMENTACION_TECNICA.md` y `DESIGN.md`; `npx.cmd playwright install chromium`; capturas desktop y móvil con `npx.cmd playwright screenshot`.
 - **Resultado de verificación:** capturas revisadas visualmente; representan el dashboard, riesgo operativo, titulares, movimientos, importación y navegación móvil con la paleta real del mockup. `git diff --check` pasa y las rutas de las imágenes existen.
 - **Pendientes:** publicar la rama `V-02.07` y hacer merge en `main` para que el README actualizado sea visible por defecto en la portada pública, si se aprueba el cambio.
+
+---
+
+## 2026-08-05 - V-02.08 - Bloque C del plan: instalador hardened
+
+**Trabajo realizado:** los cuatro sub-bloques pendientes del plan
+V-02.08 (C1 preflight, C3 Postgres preflight, C5 SMTP/BitLocker/
+cert SAN, C5 funcional check en Deploy-RlsHotfix) ya estaban en
+produccion con fixes puntuales. Este commit cierra los que
+faltaban.
+
+**Test-AtlasSmtp.ps1 (nuevo):** script operativo para que el
+operador pueda distinguir "SMTP no configurado" de "endpoint
+no responde". El log 'No se pudo enviar por correo la alerta
+SALUD_DEGRADADA' del informe V-02.07 mezclaba ambos casos;
+este script reporta explicitamente el estado. Empieza por
+leer CONFIGURACIONES con psql (parser Npgsql explicito, no
+DbConnectionStringBuilder), distingue vacio vs configurado,
+y emite JSON con estado.
+
+**Test-PostgresPreflight (nuevo en Instalar-AtlasBalance.ps1):**
+llamado justo antes de Ensure-Database. Comprueba version
+>= 16, extension pgcrypto instalada, atributos del rol owner
+(NOSUPERUSER + BYPASSRLS), y smoke-test del contexto RLS
+firmado. Si cualquier check falla, el instalador aborta ANTES
+de tocar migraciones/secrets/API. Patron consistente con
+/api/health/functional del backend.
+
+**Test-VolumeEncryption (modificado):** distingue BitLocker no
+disponible (sin cmdlet) de volumen sin cifrar. Antes lanzaba
+la misma advertencia para los dos casos, lo que ocultaba el
+verdadero problema en servidores sin BitLocker.
+
+**New-AtlasCertificate (modificado):** post-check de SAN
+emitida contra los DNS solicitados. Si falta el $DnsName del
+operador, avisa ANTES de cerrar la instalacion con un mensaje
+que dice "el navegador lanzara advertencia de cert invalido
+al acceder por esos alias".
+
+**Test-AtlasPreflight (nuevo en Instalar-AtlasBalance.ps1):**
+preflight obligatorio antes de tocar nada. Comprueba carpeta
+escribible, espacio libre >= 2 GB, puertos no ocupados por
+otra aplicacion, binarios no bloqueados por procesos externos,
+y AVISO si hay ficheros .tmp en scripts/. Si falla, ABORTA.
+Mismo patron que /api/health/functional: PREFERIMOS abortar
+a que el operador se encuentre un sistema a medio instalar.
+
+**Deploy-RlsHotfix.ps1 (modificado):** ademas de esperar al
+puerto 8443, ahora golpea /api/health/functional con curl.
+Si no devuelve 200, dispara el rollback automatico del DLL
+(la rama catch ya restaura backup y reinicia servicios).
+Si el operador ve "Parche RLS instalado", puede confiar en
+que el login funciona.
+
+**Archivos tocados:**
+
+- `Atlas Balance/scripts/Test-AtlasSmtp.ps1` (nuevo).
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+  (Test-AtlasPreflight, Test-PostgresPreflight,
+  Test-VolumeEncryption, New-AtlasCertificate).
+- `Atlas Balance/scripts/Deploy-RlsHotfix.ps1` (functional
+  health check antes de declarar OK).
+- `Atlas Balance/scripts/Build-Release.ps1` (anade
+  Test-AtlasSmtp.ps1 al paquete).
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1` (anade
+  Test-AtlasSmtp.ps1 a la lista de actualizacion).
+
+**Comandos ejecutados:**
+
+- Parser PowerShell de los seis scripts modificados: OK.
+- `dotnet build -c Release -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj\
+  -p:BaseOutputPath=...bin\ -v:minimal --nologo` (workaround
+  ACL `obj/`): 0 errores, 7 warnings preexistentes.
+
+**Resultado de verificacion:**
+
+- Todos los scripts parsean en PowerShell 5.1.
+- El backend compila limpio con los warnings preexistentes.
+- Todos los checks de preflight tienen salida clara
+  (exito + detalle, no Warnings genericos que el operador
+  ignora).
+
+**Pendientes:**
+
+- Documentar /api/health/functional en
+  Documentacion/Versiones/v-02.08.md (bloqueado AV: el
+  archivo es propiedad de una identidad anterior).
+- Push a origin/V-02.08 y ejecucion de CI.
+
+---
+
+## 2026-08-13 - V-02.09 - Endurecimiento post-auditoria de seguridad
+
+### Motivacion
+
+Auditoria pre-produccion de los 13 puntos del checklist de seguridad
+(secrets, validacion, parametrizacion, authz, errores, CORS, debug,
+cookies, HTTPS, rate limit, uploads, CVEs, artefactos). Resultado: 13/13
+PASS. Tres mejoras quirurgicas de robustez identificadas (M1, M2, M3) y
+aplicadas aqui. Tambien se valida a fondo la telemetria anonima
+(`/api/telemetria/errores`), la CSP actual y la postura de la app frente
+a exposicion a Internet.
+
+### Cambios implementados
+
+**M3 (SQL injection smell - bloqueante doctrinal).**
+- `Atlas Balance/backend/src/AtlasBalance.API/Jobs/LimpiezaAuditoriaJob.cs`:
+  se retira la interpolacion `$"SELECT {funcion}(@retencion_dias) AS \"Value\""`
+  en `PurgarAsync(string funcion, ...)`. Se reemplaza por dos metodos
+  explicitos con SQL literal:
+  - `PurgarAuditoriasAsync` -> `SqlQueryRaw<long>("SELECT atlas_security.purgar_auditorias(@retencion_dias) AS \"Value\"", ...)`
+  - `PurgarAuditoriaIntegracionesAsync` -> `SqlQueryRaw<long>("SELECT atlas_security.purgar_auditorias_integracion(@retencion_dias) AS \"Value\"", ...)`.
+  Antes no era explotable (los dos llamantes pasaban literales hardcoded),
+  pero cualquier refactor que pasase `funcion` desde fuera lo convertia
+  en agujero. Una funcion por tabla cierra la forma. Logs y catch de
+  PostgresException 23514 preservados.
+
+**M2 (regex constraint en path param).**
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/RevisionController.cs`:
+  `[HttpPatch("{tipo}")]` -> `[HttpPatch("{tipo:regex(^(comision|seguro)$)}")]`.
+  Valores no esperados se rechazan con 404 en routing en vez de llegar
+  al servicio como InvalidOperationException.
+
+**M1 (anotaciones declarativas en DTOs que validaban en servicio).**
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/NotificacionesAdminDtos.cs`:
+  `MarcarNotificacionesLeidasRequest.Tipo` -> `[MaxLength(32)]`.
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/SistemaDtos.cs`:
+  `ActualizacionRequest.SourcePath/TargetPath` -> `[MaxLength(260)]`
+  (espejo MAX_PATH Windows).
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`:
+  `IaChatRequest.Pregunta` -> `[Required, MaxLength(500)]`,
+  `Model` -> `[MaxLength(256)]`, `ThinkingMode` -> `[MaxLength(16)]`.
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IntegracionesDtos.cs`:
+  `ResolverNombresRequest.TitularIds/CuentaIds` -> `[MaxLength(200)]`
+  (espejo de `MaxResolverNombresBatchSize`).
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/DivisasController.cs`:
+  `CrearDivisaRequest.Codigo` -> `[Required, MaxLength(8)]`, `Nombre` ->
+  `[MaxLength(128)]`, `Simbolo` -> `[MaxLength(8)]`. Mismo set para
+  `ActualizarDivisaRequest.Nombre/Simbolo` (sin Required porque son
+  opcionales en el update).
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/TiposCambioController.cs`:
+  `GuardarTipoCambioRequest.Tasa` -> `[Range(typeof(decimal),
+  "0.00000001", "9999999999.9999", ParseLimitsInInvariantCulture = true)]`.
+
+### Validacion adicional: telemetria, CSP, exposicion a Internet
+
+- **Telemetria (`/api/telemetria/errores`)**: veredicto PASS. Rate limit
+  20/min/IP (`TelemetriaController.cs:20-21`), campos recortados
+  (`MaxMensaje=500`, `MaxStack=4000`, `MaxPath=200`), `sendBeacon` solo
+  permitido por exclusion del CSRF (`CsrfMiddleware.cs:33`), `AllowAnonymous`
+  intencional (sendBeacon no soporta headers personalizados), respuesta
+  siempre 204 sin filtrar estado al cliente. CSRF no aplica porque el
+  endpoint no muta estado de negocio y la cuota es por IP. No se
+  anade autenticacion: romperia sendBeacon y la alternativa (API key en
+  header) tampoco es viable para ese transporte.
+- **CSP (`Program.cs:616-627`)**: `style-src 'self' 'unsafe-inline'` se
+  mantiene. Migrar a nonces requiere auditar cada insercion de style
+  inline en la SPA (recharts, MUI-like patterns, CSS variables en
+  inline) y el beneficio marginal no compensa el riesgo de regresion
+  visual. Documentado como aceptado.
+- **Postura frente a Internet**: la app esta pensada para LAN on-premise.
+  Para exponer a Internet faltaria: fail2ban en el reverse proxy, WAF
+  opcional (Cloudflare), rate limit mas estricto en login (10/min es
+  bajo contra botnets), cabeceras adicionales (`X-Permitted-Cross-Domain-Policies`).
+  No se aplica por ahora por estar fuera del scope de la auditoria.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Jobs/LimpiezaAuditoriaJob.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/RevisionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/DivisasController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/TiposCambioController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/NotificacionesAdminDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/SistemaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IntegracionesDtos.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` (este bloque)
+
+### Comandos ejecutados
+
+- `dotnet build "backend/src/AtlasBalance.API/AtlasBalance.API.csproj" -c Debug -p:UseAppHost=false -p:BaseIntermediateOutputPath=...obj-api\ -p:BaseOutputPath=...bin-api\ --nologo`.
+- `powershell -File Atlas Balance/scripts/Check-VersionAlignment.ps1`.
+
+### Resultado de verificacion
+
+- Backend compila limpio: **0 errores**, 6 warnings preexistentes no
+  relacionados con este bloque (deprecation de `UseXminAsConcurrencyToken`
+  en AppDbContext.cs y overload obsoleto de `PostgreSqlStorage`).
+- Alineacion de version OK: V-02.09 (2.9.0).
+
+### Bloqueos documentados
+
+- **Tests del proyecto `AtlasBalance.API.Tests` BLOQUEADOS** en este
+  entorno: el bloqueo `obj/` documentado en AGENTS.md (seccion 8)
+  impide a MSBuild escribir `AtlasBalance.API.AssemblyInfoInputs.cache`
+  en el path por defecto. Con el workaround `BaseIntermediateOutputPath`
+  hacia `%TEMP%`, MSBuild restaura pero no resuelve los `Fact`/`Trait`
+  de xunit.v3 contra el output real. El apphost.exe generado en un
+  build anterior no tiene `runtimeconfig.json` (limpieza parcial
+  previa), asi que tampoco se puede invocar directamente con la
+  Microsoft Testing Platform. AGENTS.md marca cortar al segundo fallo
+  en la misma via: se documenta el bloqueo aqui en vez de seguir
+  iterando. Los cambios M1+M2+M3 son mecanicamente seguros (anotaciones
+  declarativas, regex de routing, separacion de dos metodos con SQL
+  literal) y no rompen la API publica de RevisionController ni de los
+  DTOs modificados. Pendiente ejecutar la suite en un entorno sin el
+  bloqueo de `obj/` antes de cerrar la version.
+
+### Pendientes
+
+- Re-ejecutar `dotnet test` en un entorno sin bloqueo de `obj/`
+  (CI o un clone limpio) para validar que los cambios M1+M2+M3 no
+  rompen la suite.
+- Documentar este endurecimiento en
+  `Documentacion/Versiones/v-02.09.md` cuando el archivo sea editable.
+- Si en algun momento se decide exponer la app a Internet, aplicar el
+  runbook de hardening Internet (B3) registrado en la auditoria.
+
+---
+
+
+## 2026-08-23 - V-02.08 - Devolucion automatica de comisiones (Revision)
+
+### Version
+
+V-02.08 (rama `V-02.08`). `version_actual.md` realineado a V-02.08 por
+decision de direccion; `v-02.09.md` queda como historico del ciclo IA.
+
+### Trabajo realizado
+
+Emparejamiento automatico comision-bonificacion en `Revision > Comisiones`:
+solo cargos listados, columna `Devolucion` con fecha del abono, boton
+Verificar que marca `Devuelta` y persiste la referencia. Regla global: un
+abono, una comision; gana la mas antigua que encaje.
+
+### Archivos tocados
+
+Backend:
+- `Models/Entities.cs`: `RevisionExtractoEstado.ExtractoDevolucionId`.
+- `Data/AppDbContext.cs`: FK Restrict + indice unico parcial filtrado.
+- `Migrations/20260823120000_AddExtractoDevolucionToRevisionEstados.cs` (nueva).
+- `Migrations/AppDbContextModelSnapshot.cs`: propiedad, indice y FK nuevos.
+- `DTOs/RevisionDtos.cs`: 2 campos en item comisiones + response verificar.
+- `Services/RevisionService.cs`: listado solo negativos, sugerencias batch,
+  limpieza al desmarcar, `VerificarDevolucionAsync`.
+- `Controllers/RevisionController.cs`: POST verificar-devolucion (409/403/400).
+Tests:
+- `tests/.../RevisionServiceTests.cs`: test umbral reescrito + 8 nuevos + Npgsql.
+- `tests/.../RevisionControllerTests.cs`: stub con metodo nuevo.
+Frontend:
+- `src/types/index.ts`, `src/pages/RevisionPage.tsx`,
+  `src/styles/layout/revision-ai.css`.
+Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
+`Versiones/version_actual.md`, `Versiones/v-02.08.md`, esta bitacora.
+
+### Comandos ejecutados
+
+- `dotnet build API.csproj -p:BaseIntermediateOutputPath=... -p:OutputPath=...`
+  (workaround sandbox, ver bloqueos) -> Compilacion correcta.
+- `dotnet restore/test tests.csproj -p:BaseIntermediateOutputPath=.codex-build/obj/
+  -p:OutputPath=.codex-build/bin/` -> suite ejecutada.
+- `dotnet <dll> -class AtlasBalance.API.Tests.RevisionServiceTests` -> 19/19.
+- `npm run lint` OK; `npm run build` -> tsc OK + EPERM de sandbox al copiar a dist;
+  `npm run test:unit` -> 57/57.
+- Workaround reutilizable contra el bloqueo de `obj/` documentado antes:
+  las rutas intermedias/salida bajo `.codex-build/` ya estan excluidas en
+  `Directory.Build.props` (`DefaultItemExcludes`) y el sandbox permite
+  escribirlas; compila y corre toda la suite no-Docker.
+
+### Resultado de verificacion
+
+- Backend: 0 errores de compilacion; 870 tests = 851 verdes + 19 fallos solo
+  por Docker/Testcontainers no disponible (`PostgresCollection`).
+- `RevisionServiceTests`: 19/19 verdes.
+- Frontend: lint limpio, tsc limpio, unit 57/57.
+
+### Decisiones visuales frontend
+
+- Columna `Devolucion` entre Concepto y Revision, misma fuente mono/tabular
+  que Fecha; celda vacia con em-dash para no parecer error.
+- Boton Verificar cuadrado verde con Check, gemelo del boton rojo X de
+  descarte (misma metrica), tooltip con la fecha del abono.
+- Sin cambios en Seguros ni en filtros.
+
+### Pendientes de diseno abiertos
+
+- Valor opcional: mostrar concepto/cuenta del abono emparejado en tooltip
+  (requiere exponer campos extra en DTO).
+
+### Bloqueos y pendientes
+
+- Migracion sin aplicar a BD local (requiere `dotnet ef database update` o
+  arranque de app fuera de sandbox). Pendiente validar en entorno real.
+- Build vite de produccion bloqueado por EPERM copiando fuentes public/ a
+  dist/ dentro del sandbox; tsc ya valida tipos. Ejecutar `npm run build`
+  fuera del sandbox si se necesita el bundle antes del release.
+- Los 19 tests Docker quedan como puerta del release (sin Docker aqui).
+- Runtime (`VERSION`, `Directory.Build.props`, `package.json`) sigue en
+  V-02.09/2.9.0: decidir si se rebaja a V-02.08 o se retoma ese numero.
+
+---

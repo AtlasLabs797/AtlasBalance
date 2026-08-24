@@ -60,15 +60,8 @@ public sealed class LimpiezaAuditoriaJob
         // como este job estuvo sin purgar nada durante meses. La purga va por las
         // unicas vias sancionadas, que ademas validan el suelo de retencion
         // dentro de la propia base de datos.
-        var auditoriasDeleted = await PurgarAsync(
-            "atlas_security.purgar_auditorias",
-            retentionDays,
-            "Auditoria:RetentionDays");
-
-        var integrationAuditsDeleted = await PurgarAsync(
-            "atlas_security.purgar_auditorias_integracion",
-            integrationRetentionDays,
-            "Auditoria:IntegrationRetentionDays");
+        var auditoriasDeleted = await PurgarAuditoriasAsync(retentionDays);
+        var integrationAuditsDeleted = await PurgarAuditoriaIntegracionesAsync(integrationRetentionDays);
 
         if (auditoriasDeleted is null && integrationAuditsDeleted is null)
         {
@@ -84,28 +77,58 @@ public sealed class LimpiezaAuditoriaJob
     }
 
     /// <summary>
-    /// Devuelve las filas borradas, o null si la retencion configurada esta por
-    /// debajo del suelo de la base de datos. En ese caso no se purga nada a
-    /// proposito: preferimos que la tabla crezca antes que perder rastro por una
-    /// configuracion mal puesta.
+    /// Purga AUDITORIAS reteniendo los ultimos N dias. Devuelve las filas borradas,
+    /// o null si la retencion configurada esta por debajo del suelo de la base de
+    /// datos. En ese caso no se purga nada a proposito: preferimos que la tabla
+    /// crezca antes que perder rastro por una configuracion mal puesta.
+    ///
+    /// V-02.09: la llamada SQL usa un literal explicito en vez de interpolar el
+    /// nombre de la funcion. Sigue el patron canonico de SQL injection que la
+    /// auditoria de seguridad V-02.09 senalo como smell: <c>SqlQueryRaw</c> con
+    /// <c>$"SELECT {funcion}(...)"</c>. Antes no era explotable porque los dos
+    /// unicos llamantes pasaban literales hardcoded, pero cualquier refactor que
+    /// pasase el nombre desde fuera lo convertia en agujero. Mejor cerrar la
+    /// forma: una funcion por tabla, ambas con SQL literal especifico.
     /// </summary>
-    private async Task<long?> PurgarAsync(string funcion, int retentionDays, string claveConfiguracion)
+    private async Task<long?> PurgarAuditoriasAsync(int retentionDays)
     {
         var retentionParam = new NpgsqlParameter("retencion_dias", NpgsqlDbType.Integer) { Value = retentionDays };
         try
         {
             return await _dbContext.Database
-                .SqlQueryRaw<long>($"SELECT {funcion}(@retencion_dias) AS \"Value\"", retentionParam)
+                .SqlQueryRaw<long>("SELECT atlas_security.purgar_auditorias(@retencion_dias) AS \"Value\"", retentionParam)
                 .SingleAsync();
         }
         catch (PostgresException ex) when (ex.SqlState == "23514")
         {
             _logger.LogError(
                 ex,
-                "{ClaveConfiguracion}={RetentionDays} esta por debajo del suelo que impone la base de datos. No se purgo {Funcion}.",
-                claveConfiguracion,
-                retentionDays,
-                funcion);
+                "Auditoria:RetentionDays={RetentionDays} esta por debajo del suelo que impone la base de datos. No se purgo atlas_security.purgar_auditorias.",
+                retentionDays);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Purga AUDITORIA_INTEGRACIONES reteniendo los ultimos N dias. Misma politica
+    /// fail-closed que <see cref="PurgarAuditoriasAsync"/>. V-02.09: SQL literal
+    /// explicito, sin interpolacion del nombre de funcion.
+    /// </summary>
+    private async Task<long?> PurgarAuditoriaIntegracionesAsync(int retentionDays)
+    {
+        var retentionParam = new NpgsqlParameter("retencion_dias", NpgsqlDbType.Integer) { Value = retentionDays };
+        try
+        {
+            return await _dbContext.Database
+                .SqlQueryRaw<long>("SELECT atlas_security.purgar_auditorias_integracion(@retencion_dias) AS \"Value\"", retentionParam)
+                .SingleAsync();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23514")
+        {
+            _logger.LogError(
+                ex,
+                "Auditoria:IntegrationRetentionDays={RetentionDays} esta por debajo del suelo que impone la base de datos. No se purgo atlas_security.purgar_auditorias_integracion.",
+                retentionDays);
             return null;
         }
     }

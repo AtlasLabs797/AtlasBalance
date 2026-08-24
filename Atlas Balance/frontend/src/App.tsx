@@ -29,6 +29,7 @@ const ImportacionPage        = lazy(() => import('@/pages/ImportacionPage'));
 const IaPage                 = lazy(() => import('@/pages/IaPage'));
 const NotFoundPage           = lazy(() => import('@/pages/NotFoundPage'));
 const PapeleraPage           = lazy(() => import('@/pages/PapeleraPage'));
+const PaisesPage             = lazy(() => import('@/pages/configuracion/PaisesPage'));
 const RevisionPage           = lazy(() => import('@/pages/RevisionPage'));
 const TitularDetailPage      = lazy(() => import('@/pages/TitularDetailPage'));
 const TitularesPage          = lazy(() => import('@/pages/TitularesPage'));
@@ -200,7 +201,9 @@ export default function App() {
               <ConfiguracionPage />
             </RoleGuard>
           )}
-        />
+        >
+          <Route path="paises" element={section(<PaisesPage />)} />
+        </Route>
         <Route
           path="/backups"
           element={section(

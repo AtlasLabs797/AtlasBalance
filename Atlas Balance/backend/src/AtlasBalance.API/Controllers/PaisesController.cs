@@ -29,6 +29,7 @@ public sealed class PaisesController : ControllerBase
         [FromQuery] bool incluirInactivos = false,
         [FromQuery] bool incluirEliminados = false,
         [FromQuery] bool? activos = null,
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 500,
         CancellationToken cancellationToken = default)
@@ -54,10 +55,24 @@ public sealed class PaisesController : ControllerBase
             query = query.Where(x => x.Activo);
         }
 
+        // V-02.08: el campo de busqueda de la UI (PaisesPage) mandaba "search"
+        // sin que el backend lo aceptara, asi que el servidor lo ignoraba y
+        // devolvia siempre la misma pagina sin filtrar.
+        var searchTerm = search?.Trim();
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Nombre, $"%{searchTerm}%") ||
+                (x.CodigoIso2 != null && EF.Functions.ILike(x.CodigoIso2, $"%{searchTerm}%")));
+        }
+
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 1000);
 
-        var paises = await query
+        var total = await query.CountAsync(cancellationToken);
+        var totalPages = total == 0 ? 1 : (int)Math.Ceiling((double)total / pageSize);
+
+        var data = await query
             .OrderBy(x => x.Nombre)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -73,7 +88,14 @@ public sealed class PaisesController : ControllerBase
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(paises);
+        return Ok(new PaginatedResponse<PaisResponse>
+        {
+            Data = data,
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages,
+        });
     }
 
     [HttpPost]

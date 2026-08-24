@@ -35,6 +35,19 @@ public sealed class RevisionComisionItemResponse
     public decimal Monto { get; set; }
     public string Concepto { get; set; } = string.Empty;
     public string EstadoDevolucion { get; set; } = "PENDIENTE";
+    // V-02.08: extracto positivo emparejado como devolucion (persistido o
+    // sugerido automaticamente). Null = sin devolucion asociada.
+    public Guid? DevolucionExtractoId { get; set; }
+    public DateOnly? DevolucionFecha { get; set; }
+}
+
+// V-02.08: resultado de POST /api/revision/comision/{id}/verificar-devolucion.
+public sealed class VerificarDevolucionResponse
+{
+    public bool Encontrada { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public Guid? DevolucionExtractoId { get; set; }
+    public DateOnly? DevolucionFecha { get; set; }
 }
 
 public sealed class RevisionSeguroItemResponse

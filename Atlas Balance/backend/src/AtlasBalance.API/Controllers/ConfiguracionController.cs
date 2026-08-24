@@ -471,7 +471,32 @@ public sealed class ConfiguracionController : ControllerBase
             OutputCostPerMillionTokensEur = Math.Max(0, ParseDecimal(GetValue(config, "ai_output_cost_per_1m_tokens_eur"), 0m)),
             MaxInputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_input_tokens"), AiConfigurationDefaults.MaxInputTokens), 1000, 50000),
             MaxOutputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_output_tokens"), AiConfigurationDefaults.MaxOutputTokens), 64, 4000),
-            MaxContextRows = Math.Clamp(ParseInt(GetValue(config, "ai_max_context_rows"), AiConfigurationDefaults.MaxContextRows), 0, 500)
+            MaxContextRows = Math.Clamp(ParseInt(GetValue(config, "ai_max_context_rows"), AiConfigurationDefaults.MaxContextRows), 0, 500),
+            ThinkingModes = BuildThinkingModeOptions(provider)
+        };
+    }
+
+    private static IReadOnlyList<IaThinkingModeOption> BuildThinkingModeOptions(string provider)
+    {
+        return AiConfiguration.GetThinkingModesForProvider(provider)
+            .Select(value => new IaThinkingModeOption
+            {
+                Value = value,
+                Label = HumanizeThinkingMode(value)
+            })
+            .ToArray();
+    }
+
+    private static string HumanizeThinkingMode(string value)
+    {
+        return value switch
+        {
+            "low" => "Esfuerzo bajo",
+            "medium" => "Esfuerzo medio",
+            "high" => "Esfuerzo alto",
+            "on" => "Pensamiento activado",
+            "off" => "Pensamiento desactivado",
+            _ => "Esfuerzo automatico"
         };
     }
 

@@ -397,14 +397,21 @@ public sealed class ConciliacionService : IConciliacionService
     private HashSet<Guid> ResolveAccessibleCuentas(Guid usuarioId)
     {
         // V-02-05 (MED-17): una sola query con join cruzado PermisosUsuario x Cuentas.
+        // V-02.08: las cuentas ya excluyen borradas por el query filter global
+        // ISoftDelete, pero faltaba exigir TITULAR activo (mismo criterio que
+        // UserAccessService.ApplyActiveTitularCuentaScope); sin ello, un usuario
+        // seguia viendo movimientos/conciliaciones de cuentas cuyo titular fue
+        // eliminado logicamente.
         var rows = (
             from p in _dbContext.PermisosUsuario.AsNoTracking()
             where p.UsuarioId == usuarioId
                   && (p.PuedeConciliar || p.PuedeCerrarConciliacion)
             from c in _dbContext.Cuentas.AsNoTracking()
+            join t in _dbContext.Titulares.AsNoTracking() on c.TitularId equals t.Id
             where (p.PaisId == null || p.PaisId == c.PaisId)
                && (p.TitularId == null || p.TitularId == c.TitularId)
                && (p.CuentaId == null || p.CuentaId == c.Id)
+               && t.DeletedAt == null
             select c.Id)
             .Distinct()
             .ToList();
@@ -425,6 +432,16 @@ public sealed class ConciliacionService : IConciliacionService
         if (string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             return cuenta;
+        }
+
+        // V-02.08: mismo criterio de titular activo que la lectura
+        // (ResolveAccessibleCuentas / UserAccessService); el ADMIN conserva su
+        // bypass de arriba.
+        var titularActivo = await _dbContext.Titulares.AsNoTracking()
+            .AnyAsync(t => t.Id == cuenta.TitularId && t.DeletedAt == null, cancellationToken);
+        if (!titularActivo)
+        {
+            throw new ConciliacionException("Cuenta no encontrada o inactiva", StatusCodes.Status404NotFound);
         }
 
         var allowed = await _dbContext.PermisosUsuario.AnyAsync(p =>

@@ -270,6 +270,9 @@ public class RevisionExtractoEstado : ISoftDelete
 {
     public Guid Id { get; set; }
     public Guid ExtractoId { get; set; }
+    // V-02.08: extracto positivo (bonificacion) emparejado como devolucion de
+    // una comision. Null = sin devolucion asociada.
+    public Guid? ExtractoDevolucionId { get; set; }
     public string Tipo { get; set; } = string.Empty;
     public string Estado { get; set; } = string.Empty;
     public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;

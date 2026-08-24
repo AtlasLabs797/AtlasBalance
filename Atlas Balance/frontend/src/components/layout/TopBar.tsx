@@ -3,11 +3,9 @@ import { Bot } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
 import { IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
 import { navigationItems } from '@/utils/navigation';
-import api from '@/services/api';
-import { useAlertasStore } from '@/stores/alertasStore';
+import api, { clearSessionState } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
-import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 
 const AiChatPanel = lazy(() =>
@@ -29,9 +27,6 @@ export function TopBar() {
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const usuario = useAuthStore((state) => state.usuario);
-  const logout = useAuthStore((state) => state.logout);
-  const clearPermisos = usePermisosStore((state) => state.clear);
-  const clearAlertas = useAlertasStore((state) => state.clear);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
   const [chatOpen, setChatOpen] = useState(false);
   const userName = usuario?.nombre_completo ?? 'Sin sesión';
@@ -59,9 +54,10 @@ export function TopBar() {
     } catch {
       // no-op
     } finally {
-      logout();
-      clearPermisos();
-      clearAlertas();
+      // V-02.08: clearSessionState() tambien vacia el chat IA y el pais-scope
+      // (logout() por si solo no lo hacia), evitando que el siguiente usuario
+      // que abra sesion en la misma pestana vea datos financieros ajenos.
+      clearSessionState();
       navigate('/login', { replace: true });
     }
   };

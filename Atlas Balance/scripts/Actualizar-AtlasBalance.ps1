@@ -753,17 +753,40 @@ function Restore-UpdatedBinaries {
         [string]$WatchdogTarget
     )
 
+    # V-02.08 (fix): copia con reintento. Antes, un DLL bloqueado durante el
+    # borrado dejaba una mezcla viejo/nuevo silenciosa (SilentlyContinue) y
+    # el propio rollback restauraba a medias.
+    function Copy-RollbackTree {
+        param([string]$From, [string]$To)
+
+        for ($attempt = 1; $attempt -le 2; $attempt++) {
+            Remove-Item -LiteralPath $To -Recurse -Force -ErrorAction SilentlyContinue
+            try {
+                Copy-Item -LiteralPath $From -Destination $To -Recurse -Force -ErrorAction Stop
+                return
+            } catch {
+                if ($attempt -eq 2) { throw }
+                Write-Warning "Copia de rollback bloqueada ($($_.Exception.Message)); reintento en 3 segundos."
+                Start-Sleep -Seconds 3
+            }
+        }
+    }
+
     Write-Warning "Health check fallido. Restaurando binarios anteriores desde $RollbackRoot."
     Stop-ServiceIfExists -Name $ApiServiceName
     Stop-ServiceIfExists -Name $WatchdogServiceName
 
     if (Test-Path -LiteralPath (Join-Path $RollbackRoot "api")) {
-        Remove-Item -LiteralPath $ApiTarget -Recurse -Force -ErrorAction SilentlyContinue
-        Copy-Item -LiteralPath (Join-Path $RollbackRoot "api") -Destination $ApiTarget -Recurse -Force
+        Copy-RollbackTree -From (Join-Path $RollbackRoot "api") -To $ApiTarget
+        if (-not (Test-Path (Join-Path $ApiTarget "AtlasBalance.API.exe"))) {
+            throw "El rollback no restauro AtlasBalance.API.exe; revisa $ApiTarget manualmente desde $RollbackRoot."
+        }
     }
     if (Test-Path -LiteralPath (Join-Path $RollbackRoot "watchdog")) {
-        Remove-Item -LiteralPath $WatchdogTarget -Recurse -Force -ErrorAction SilentlyContinue
-        Copy-Item -LiteralPath (Join-Path $RollbackRoot "watchdog") -Destination $WatchdogTarget -Recurse -Force
+        Copy-RollbackTree -From (Join-Path $RollbackRoot "watchdog") -To $WatchdogTarget
+        if (-not (Test-Path (Join-Path $WatchdogTarget "AtlasBalance.Watchdog.exe"))) {
+            throw "El rollback no restauro AtlasBalance.Watchdog.exe; revisa $WatchdogTarget manualmente desde $RollbackRoot."
+        }
     }
     Copy-IfExists -Source (Join-Path $RollbackRoot "VERSION") -Destination (Join-Path $InstallPath "VERSION")
     Copy-IfExists -Source (Join-Path $RollbackRoot "atlas-balance.runtime.json") -Destination (Join-Path $InstallPath "atlas-balance.runtime.json")
@@ -841,19 +864,25 @@ Copy-Item -LiteralPath $watchdogTarget -Destination (Join-Path $rollbackRoot "wa
 Copy-IfExists -Source (Join-Path $InstallPath "VERSION") -Destination (Join-Path $rollbackRoot "VERSION")
 Copy-IfExists -Source (Join-Path $InstallPath "atlas-balance.runtime.json") -Destination (Join-Path $rollbackRoot "atlas-balance.runtime.json")
 
-Sync-DirectoryPreserveConfig -Source $apiSource -Target $apiTarget
-Sync-DirectoryPreserveConfig -Source $watchdogSource -Target $watchdogTarget
-Update-ProductionConfigDefaults `
-    -ApiConfigPath (Join-Path $apiTarget "appsettings.Production.json") `
-    -WatchdogConfigPath (Join-Path $watchdogTarget "appsettings.Production.json") `
-    -ApiSource $apiSource `
-    -InstallPath $InstallPath `
-    -Runtime $runtime
+# V-02.08 (fix): antes solo un healthcheck negativo disparaba rollback;
+# cualquier excepcion entre la copia y el healthcheck (JSON de config,
+# sc.exe, Copy-Item bloqueado por AV...) moria con EAP=Stop dejando
+# servicios parados, VERSION ya escrita y binarios a medias, sin restaurar.
+$updateSucceeded = $false
+try {
+    Sync-DirectoryPreserveConfig -Source $apiSource -Target $apiTarget
+    Sync-DirectoryPreserveConfig -Source $watchdogSource -Target $watchdogTarget
+    Update-ProductionConfigDefaults `
+        -ApiConfigPath (Join-Path $apiTarget "appsettings.Production.json") `
+        -WatchdogConfigPath (Join-Path $watchdogTarget "appsettings.Production.json") `
+        -ApiSource $apiSource `
+        -InstallPath $InstallPath `
+        -Runtime $runtime
 
-Set-ServiceBinaryPathIfExists -Name $WatchdogServiceName -ExePath (Join-Path $watchdogTarget "AtlasBalance.Watchdog.exe")
-Set-ServiceBinaryPathIfExists -Name $ApiServiceName -ExePath (Join-Path $apiTarget "AtlasBalance.API.exe")
+    Set-ServiceBinaryPathIfExists -Name $WatchdogServiceName -ExePath (Join-Path $watchdogTarget "AtlasBalance.Watchdog.exe")
+    Set-ServiceBinaryPathIfExists -Name $ApiServiceName -ExePath (Join-Path $apiTarget "AtlasBalance.API.exe")
 
-Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $newVersion -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $newVersion -Encoding UTF8
 
 $installScriptsPath = Join-Path $InstallPath "scripts"
 New-Item -ItemType Directory -Path $installScriptsPath -Force | Out-Null
@@ -862,6 +891,17 @@ foreach ($script in @(
     "Instalar-AtlasBalance.ps1",
     "Launch-AtlasBalance.ps1",
     "Reset-AdminPassword.ps1",
+    "Repair-RlsContext.ps1",
+    "Deploy-RlsHotfix.ps1",
+    "Grant-OwnerBypassRls.ps1",
+    "Test-BackupRestore.ps1",
+    "Test-AtlasSecrets.ps1",
+    "Test-AtlasSmtp.ps1",
+    "Smoke-Test-AtlasBalance.ps1",
+    "Mfa-Totp.ps1",
+    "Mfa-Totp.Tests.ps1",
+    "Sync-AtlasDirectory.ps1",
+    "Sync-AtlasDirectory.Tests.ps1",
     "install-cert-client.ps1",
     "install.ps1",
     "start.ps1",
@@ -902,6 +942,12 @@ if ($runtime) {
 
 Start-ServiceIfExists -Name $WatchdogServiceName
 Start-ServiceIfExists -Name $ApiServiceName
+$updateSucceeded = $true
+} catch {
+    Write-Warning "La actualizacion fallo antes del health check: $($_.Exception.Message)"
+    Restore-UpdatedBinaries -RollbackRoot $rollbackRoot -InstallPath $InstallPath -ApiTarget $apiTarget -WatchdogTarget $watchdogTarget
+    throw "La actualizacion fallo y se restauraron los binarios anteriores desde $rollbackRoot. Causa: $($_.Exception.Message)"
+}
 
 $appUrl = if ($runtime -and $runtime.AppUrl) { [string]$runtime.AppUrl } else { "" }
 if ([string]::IsNullOrWhiteSpace($appUrl)) {
@@ -910,20 +956,51 @@ if ([string]::IsNullOrWhiteSpace($appUrl)) {
 
 Start-Sleep -Seconds 5
 $healthOk = $false
+# V-02.08: el incidente V-02.07 demostro que /api/health devuelve 200 con
+# login 500. Si el actualizador se conforma con eso, declara OK un sistema
+# roto. /api/health/functional verifica que el contexto RLS esta firmado
+# y que un INSERT firmado en AUDITORIAS funciona con el rol runtime. Si
+# falla, el actualizador hace rollback del DLL.
+$healthPath = "/api/health/functional"
+# V-02.08 (fix): redirigir stderr de un nativo bajo EAP=Stop convierte cada
+# linea en ErrorRecord terminating; un warning de TLS/proxy mataba el script
+# fuera de todo try/catch. Se baja EAP solo para la llamada nativa, como ya
+# hace Test-BackupRestore.ps1.
 $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
 if ($curl) {
-    $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl/api/health" 2>$null)
-    $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
-    if (-not $healthOk -and -not $appUrl.Equals("https://localhost", [StringComparison]::OrdinalIgnoreCase)) {
-        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://localhost/api/health" 2>$null)
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl$healthPath" 2>$null)
         $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
+        if (-not $healthOk -and -not $appUrl.Equals("https://localhost", [StringComparison]::OrdinalIgnoreCase)) {
+            $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://localhost$healthPath" 2>$null)
+            $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
+        }
+    } finally {
+        $ErrorActionPreference = $previousEap
     }
 } else {
     try {
-        # V-02-05 (CONFIG-020): evitar tocar el callback global. Usar -SkipCertificateCheck
-        # en este request especifico (es un health check self-signed durante instalacion).
-        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
-        $healthOk = ($health.StatusCode -eq 200)
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            # V-02-05 (CONFIG-020): evitar tocar el callback global. Usar -SkipCertificateCheck
+            # en este request especifico (es un health check self-signed durante instalacion).
+            $health = Invoke-WebRequest -Uri "$appUrl$healthPath" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
+            $healthOk = ($health.StatusCode -eq 200)
+        } else {
+            # V-02.08 (fix): -SkipCertificateCheck no existe en PS 5.1 (Windows
+            # Server 2016 sin curl.exe): el binding error se tragaba el catch,
+            # healthOk quedaba false y el actualizador hacia rollback SIEMPRE.
+            # Callback TLS acotado a esta peticion, con restauracion garantizada.
+            $previousCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+            try {
+                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+                $health = Invoke-WebRequest -Uri "$appUrl$healthPath" -UseBasicParsing -TimeoutSec 20
+                $healthOk = ($health.StatusCode -eq 200)
+            } finally {
+                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCallback
+            }
+        }
     } catch {
         $healthOk = $false
     }
@@ -931,11 +1008,11 @@ if ($curl) {
 
 if (-not $healthOk) {
     Restore-UpdatedBinaries -RollbackRoot $rollbackRoot -InstallPath $InstallPath -ApiTarget $apiTarget -WatchdogTarget $watchdogTarget
-    throw "La actualizacion fallo porque la API no respondio al health check. Se restauraron los binarios anteriores desde $rollbackRoot."
+    throw "La actualizacion fallo porque la API no respondio al health check funcional ($healthPath). Se restauraron los binarios anteriores desde $rollbackRoot."
 }
 
 Write-Host ""
 Write-Host "Atlas Balance actualizado a $newVersion." -ForegroundColor Green
 Write-Host "Copia rollback de binarios: $rollbackRoot" -ForegroundColor Cyan
 Write-Host "La base de datos no se reemplazo; las migraciones se aplican al arrancar la API." -ForegroundColor Cyan
-Write-Host "Health check OK: $appUrl/api/health" -ForegroundColor Green
+Write-Host "Health check OK: $appUrl$healthPath" -ForegroundColor Green

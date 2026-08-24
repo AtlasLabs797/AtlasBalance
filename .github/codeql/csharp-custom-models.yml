@@ -1,0 +1,11 @@
+extensions:
+  - addsTo:
+      pack: codeql/csharp-all
+      extensible: summaryModel
+    data:
+      # LogScrubber.Scrub sanitizes tainted strings (strips CR/LF/TAB, truncates).
+      - ["AtlasBalance.API.Logging", "LogScrubber", false, "Scrub", "(System.String)", "", "Argument[0]", "ReturnValue", "taint", "manual"]
+      # LogScrubber.RedactPii sanitizes and redacts PII from tainted strings.
+      - ["AtlasBalance.API.Logging", "LogScrubber", false, "RedactPii", "(System.String)", "", "Argument[0]", "ReturnValue", "taint", "manual"]
+      # AuditSigner.NormalizarIp converts IPAddress to a safe normalized string.
+      - ["AtlasBalance.API.Services", "AuditSigner", false, "NormalizarIp", "(System.Net.IPAddress)", "", "Argument[0]", "ReturnValue", "taint", "manual"]

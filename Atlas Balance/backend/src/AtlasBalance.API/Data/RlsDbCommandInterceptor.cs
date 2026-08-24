@@ -139,6 +139,44 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
     /// en un hilo y decrementarse en otro). `AsyncLocal&lt;int&gt;` mantiene
     /// el contador anidado por contexto logico.
     /// </summary>
+    /// <summary>
+    /// V-02.08: eleva a contexto RLS "system" el trabajo que el servidor
+    /// ejecuta en su propio nombre durante una request anonima. Usa
+    /// <c>AsyncLocal</c> por el mismo motivo que <see cref="ReentryGuard"/>:
+    /// debe sobrevivir a las continuaciones de <c>await</c>. Abrir el scope
+    /// no da acceso a datos del llamante, solo cambia el contexto publicado
+    /// para los comandos emitidos dentro del <c>using</c>, asi que el SQL que
+    /// se ejecute dentro debe ser fijo y nunca derivarse de entrada externa.
+    /// </summary>
+    internal static class SystemContextScope
+    {
+        private static readonly AsyncLocal<int> _depth = new();
+
+        public static bool IsActive => _depth.Value > 0;
+
+        public static IDisposable Enter()
+        {
+            _depth.Value++;
+            return new Handle();
+        }
+
+        private sealed class Handle : IDisposable
+        {
+            private bool _disposed;
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                _depth.Value--;
+            }
+        }
+    }
+
     internal static class ReentryGuard
     {
         private static readonly AsyncLocal<int> _depth = new();
@@ -156,6 +194,17 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
     // conectado a PostgreSQL).
     internal RlsSessionContext BuildContext()
     {
+        // V-02.08: escotilla explicita para el trabajo que el propio servidor
+        // ejecuta en su nombre dentro de una request anonima (hoy solo la
+        // sonda de `/api/health/functional`). Sin esto habria que refirmar el
+        // contexto a mano fuera del interceptor, duplicando la criptografia
+        // de firma; asi la firma se sigue acunando en un unico sitio y la
+        // elevacion queda explicita, greppable y acotada por un `using`.
+        if (SystemContextScope.IsActive)
+        {
+            return RlsSessionContext.System();
+        }
+
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext is null)
         {

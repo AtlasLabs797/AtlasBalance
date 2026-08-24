@@ -63,5 +63,15 @@ public sealed class TiposCambioController : ControllerBase
 
 public sealed class GuardarTipoCambioRequest
 {
+    // V-02.09: cota explicita para que ModelState rechace tasas fuera de
+    // rango antes de llegar al servicio. ParseLimitsInInvariantCulture=true
+    // evita que en servidores con cultura es-ES la coma como separador
+    // decimal rompa la validacion (mismo bug que ya documento
+    // ImportacionPlazoFijoMovimientoRequest.Monto).
+    [System.ComponentModel.DataAnnotations.Range(
+        typeof(decimal),
+        "0.00000001",
+        "9999999999.9999",
+        ParseLimitsInInvariantCulture = true)]
     public decimal Tasa { get; set; }
 }

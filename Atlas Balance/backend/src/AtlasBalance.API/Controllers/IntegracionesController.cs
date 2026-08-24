@@ -257,6 +257,9 @@ public sealed class IntegracionesController : ControllerBase
         AddPermissions(token.Id, request.Permisos);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        // V-02.08: los scopes/permisos pueden haberse recortado; sin invalidar,
+        // la entrada cacheada por hash seguia autorizando hasta el TTL.
+        _integrationTokenService.InvalidateActiveTokensCache();
 
         await _auditService.LogAsync(
             GetCurrentUserId(),
@@ -363,6 +366,10 @@ public sealed class IntegracionesController : ControllerBase
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        // V-02.08: el token viejo queda revocado en BD; invalidar la cache para
+        // que deje de autorizar inmediatamente (era el punto de la rotacion) y
+        // no hasta que expirara su entrada por TTL.
+        _integrationTokenService.InvalidateActiveTokensCache();
         await _auditService.LogAsync(
             creatorId,
             "ROTATE_INTEGRATION_TOKEN",

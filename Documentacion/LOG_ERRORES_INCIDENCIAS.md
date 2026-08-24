@@ -1,5 +1,174 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-23 - V-02.08 - Fixes de la auditoria integral de seguridad y bugs (CERRADO PARCIAL)
+
+- **Sintoma/contexto:** la auditoria integral del 2026-08-23 (ver
+  `REGISTRO_BUGS.md`) identifico 4 altos, 6 medios backend, 6 medios
+  frontend y varias medias en scripts. Esta entrada documenta los fixes
+  APLICADOS; el detalle completo con archivo:línea esta en la entrada de
+  `REGISTRO_BUGS.md`.
+- **Soluciones aplicadas:**
+  - Backend: `CsrfMiddleware` exime `/api/integration/*` (clientes Bearer
+    sin cookies; el Origin check sigue cubriendo la ruta); `IntegrationToken
+    Service.InvalidateActiveTokensCache()` nuevo y llamado tras SaveChanges
+    en PUT y Rotar de `IntegracionesController` (antes solo RevokeAsync
+    invalidaba); `ImportacionService.TryAcquireAdvisoryXactLockAsync`
+    fail-closed si la BD es relacional (antes `catch { return true; }`);
+    validacion estricta de formato en email principal y lista `Emails` de
+    `UsuariosController` reutilizando `EmailService.ValidateEmailAddressPublic`,
+    y `ExtractosController.Crear` envuelve `EvaluateSaldoPostAsync` en
+    try/catch con logger (un fallo de alerta ya no devuelve 500 tras insert);
+    `ConciliacionService` exige titular activo en lectura
+    (`ResolveAccessibleCuentas`) y escritura no-ADMIN
+    (`EnsureCuentaPermitidaAsync`).
+  - `scripts/Instalar-AtlasBalance.ps1` (Test-VolumeEncryption): restaurado
+    el terminador del here-string corrupto (linea literal
+    `"-ForegroundColor Yellow`). El check BitLocker vuelve a evaluar
+    ProtectionStatus; verificado por parser. Mismo patron stderr/EAP corregido
+    en su helper psql y en `Grant-OwnerBypassRls.ps1`.
+  - `scripts/backup-manual.ps1`: defecto `-DbUser atlas_owner`, preflight
+    que aborta si el rol no tiene BYPASSRLS (evita dumps vacios exit 0 bajo
+    FORCE RLS) y exit codes propagados.
+  - `scripts/Actualizar-AtlasBalance.ps1`: try/catch global alrededor de
+    sync/config/servicios/VERSION con rollback automatico via
+    `Restore-UpdatedBinaries`; stderr de curl.exe neutralizado bajando EAP
+    solo para la llamada nativa; fallback PS 5.1 para el healthcheck sin
+    `-SkipCertificateCheck` (callback TLS acotado con restauracion);
+    reintento + post-verificacion del exe en `Restore-UpdatedBinaries`.
+  - `frontend/src/pages/CuentaDetailPage.tsx`: separados `error` (acciones)
+    y `loadError` (carga inicial); fallo de carga muestra EmptyState con
+    "Reintentar"; errores de accion son banner no destructivo con cerrar;
+    rollback de toggleCheck via refetch; resincronizacion en 409 de saveCell.
+  - Frontend races: guards request-id en `ExtractosPage`
+    (loadRows/loadResumen/loadVisibleColumns), `RevisionPage.load`,
+    `ImportacionPage.loadLotes`; `ConciliacionPage.loadData` gestiona su
+    error (sin unhandled rejection) y resincroniza tras 409;
+    `LoginPage` anade salida del paso MFA; `ImportacionPage` bloquea abrir
+    lotes cerrados (confirmado/revertido/error) y anade guard anti doble-click
+    en movimiento de plazo fijo; tope de 5 toasts en `uiStore`.
+- **Verificacion:** suite backend completa 853/853 PASS (filtro no-Postgres,
+  ejecutada localmente compilando con `-p:OutputPath` redirigido para esquivar
+  el bloqueo ACL de bin/); incluye 2 tests nuevos (`CsrfMiddlewareTests.
+  InvokeAsync_Should_SkipCsrf_For_Integration_Paths`,
+  `UsuariosControllerTests.Crear_Should_Reject_Malformed_Alert_Email`).
+  Frontend: tsc OK, lint OK, test:unit 57/57. Scripts: parser OK en los 6
+  modificados.
+- **NO aplicado deliberadamente:** ventana de gracia en refresh concurrente
+  (`AuthService.RefreshTokenAsync`): contradice el contrato documentado por
+  `AuthServiceTests.RefreshToken_Should_Revoke_Active_Sessions_When_Rotated_
+  Token_Is_Reused` (revocacion inmediata ante reuso). Requiere decision de
+  producto. Pendientes ademas: credenciales por argv en Smoke-Test,
+  rotacion de claves al reejecutar instalador, servicio como LocalSystem en
+  install-services.ps1.
+- **Correccion al informe:** "rol GERENTE en SPEC.md" era falso positivo:
+  `SPEC.md` documenta GERENTE (tabla L621, ENUM L1531, matriz L4161) y
+  legitima ahi la exportacion manual de GERENTE, con lo que el diseno F5
+  queda validado por especificacion.
+
+## 2026-08-05 - V-02.08 - El icono de banderola en extractos de cuenta no desmarca filas amarillas (CERRADO)
+
+- **Sintoma:** en la ventana "Desglose de la cuenta", al seleccionar una
+  fila ya amarilla y pulsar de nuevo el boton con icono de banderola, no
+  pasaba nada: la fila seguia marcada y el estado no cambiaba.
+- **Causa confirmada:** `CuentaDetailPage.flagSelectedRows` (en la
+  version previa) filtraba `rowsToFlag = selected.filter(!flagged)` y,
+  si la seleccion era 100% amarilla, devolvia el mensaje "Los
+  movimientos seleccionados ya estan marcados con alerta" sin hacer
+  ninguna llamada. No existia path simetrico para desmarcar. El backend
+  (`ExtractosController.ToggleFlag`) ya soportaba `flagged: false` desde
+  V-02.07: limpiaba `FlaggedNota`, `FlaggedAt` y `FlaggedById`, asi que
+  el gap era solo de UI/inconsistencia con el toggle individual del
+  checkbox en `ExtractoTable`.
+- **Solucion:** el mismo boton alterna. Logica extraida al helper puro
+  `computeBulkFlagToggle` (`src/utils/bulkFlagToggle.ts`): si toda la
+  seleccion tiene `flagged === true`, devuelve
+  `{ action: 'unflag', targetIds: todos }`; en caso contrario,
+  `{ action: 'flag', targetIds: solo !flagged }`. El boton actualiza
+  `aria-label`, `title` y `aria-pressed` para reflejar que la proxima
+  pulsacion quitara la alerta cuando aplique, y el mensaje de estado
+  cambia de "N movimientos marcados con alerta." a "Quitada la alerta
+  de N movimientos." sin que el usuario tenga que cambiar de boton.
+- **Verificacion:** `npm.cmd run lint -- --max-warnings 0` OK;
+  `npm.cmd run test:unit` 26/26 PASS (4 nuevos casos en
+  `bulkFlagToggle.test.js`); `tsc --noEmit` OK. Tests backend nuevos en
+  `ExtractosControllerTests.cs:888-1012` (`ToggleFlag_Should_Clear_All_Flagged_Fields_When_Unflagging`
+  y `ToggleFlag_Should_Forbid_Unflag_When_Flagged_Column_Not_In_Editable_Set`)
+  pendientes de correr en CI; bloqueados localmente por AV reteniendo
+  `obj/Debug/net8.0/AtlasBalance.API.AssemblyInfoInputs.cache`. QA
+  visual con navegador queda fuera de AGENTS.md §8 (sin servidores de
+  larga duracion desde la shell).
+- **Estado:** cerrado en codigo y verificado por la suite automatizada
+  ejecutada localmente. Pendiente: gate de CI con PostgreSQL/Testcontainers
+  y paquete firmado `V-02.08-win-x64` independiente.
+
+---
+
+## 2026-08-05 - V-02.08 - Verificacion MFA 500 por auditoria automatica bajo RLS (DESPLEGADO; VALIDACION PENDIENTE)
+
+- **Sintoma:** el login ya llegaba a `Verificar acceso`, pero el primer codigo
+  MFA valido terminaba en HTTP 500.
+- **Causa confirmada:** `IssueTokensAsync` guardaba `USUARIOS` y
+  `REFRESH_TOKENS`. `AuditSaveChangesInterceptor` anadia al mismo `SaveChanges`
+  una fila de `AUDITORIAS`, para la que EF generaba `INSERT ... RETURNING
+  secuencia`. El contexto auth anonimo puede insertar auditorias, pero no
+  leerlas; PostgreSQL respondia `42501` y abortaba la emision de sesion.
+- **Solucion:** no generar auditorias automaticas de entidad en rutas anonimas
+  `/api/auth`. Esas rutas conservan las auditorias explicitas y firmadas de
+  seguridad (`MFA_ENABLED`, `MFA_VERIFIED`, `LOGIN`, fallos y bloqueos), que
+  `AuditService` inserta sin `RETURNING`. No se relaja RLS ni se concede SELECT.
+- **Verificacion:** test de regresion del interceptor y suite focalizada 4/4;
+  Release con 0 errores; DLL desplegada con backup y SHA-256
+  `09D194A9AB2FE9AEF241E402E79E1A2229342CBEBFB5970AA79AE2DCA0EF8932`;
+  API/Watchdog activos y 8443 disponible. Pendiente repetir el flujo real con
+  un challenge y codigo TOTP nuevos, porque el reinicio invalido el anterior.
+
+---
+
+## 2026-08-05 - V-02.08 - Login 500 por INSERT RETURNING bajo RLS (CERRADO)
+
+- **Sintoma:** el login aceptaba la password y registraba
+  `LOGIN_MFA_REQUIRED`, pero respondia HTTP 500 antes de mostrar la
+  configuracion de Authenticator.
+- **Causa confirmada:** EF persiste `AUDITORIAS` con `INSERT ... RETURNING
+  secuencia`. PostgreSQL exige que la fila devuelta cumpla tambien una policy
+  `SELECT`. El contexto `auth` firmado si cumple `auditorias_insert`, pero no
+  debe poder leer `AUDITORIAS`; por eso el mismo INSERT sin `RETURNING` funciona
+  y el de EF termina con `42501`. La alineacion del secreto y el cambio
+  provisional del guardia `AsyncLocal` no resolvieron el fallo y se descartaron
+  como causa.
+- **Solucion preparada:** `AuditService` usa un INSERT parametrizado sin
+  `RETURNING` solo para peticiones anonimas bajo `/api/auth`. PostgreSQL sigue
+  generando `secuencia`, aplicando `auditorias_insert`, `FORCE RLS` y el trigger
+  append-only; no se amplia la policy `SELECT`. El camino autenticado y los jobs
+  conservan EF normal.
+- **Verificacion:** API Release compila con 0 errores; 10/10 tests del contexto
+  RLS pasan. Se anadio una regresion PostgreSQL especifica, bloqueada localmente
+  porque Docker/Testcontainers no esta disponible. El hotfix se instalo con
+  backup y hash SHA-256 coincidente; API, PostgreSQL y Watchdog quedaron activos.
+  El login real de las 01:48:17 registro `LOGIN_MFA_REQUIRED`, respondio HTTP 200
+  en 1353 ms y Chrome avanzo a `Verificar acceso` sin error 500.
+
+---
+
+## 2026-08-05 - V-02.08 - Reset de admin incompatible con Windows PowerShell 5.1 (CERRADO)
+
+- **Sintoma:** `Reset-AdminPassword.ps1` fallaba al cargar
+  `BCrypt-Net-Next.dll`, primero con `0x80131515` por la marca de descarga y,
+  tras retirarla, con `ReflectionTypeLoadException` sobre
+  `System.Private.CoreLib 8.0`.
+- **Causa:** el script se ejecutaba con Windows PowerShell 5.1/.NET Framework
+  4, pero la DLL distribuida pertenece al runtime self-contained .NET 8 de la
+  API. `Add-Type` no puede mezclar ambos runtimes.
+- **Solucion:** eliminar la carga de la DLL y generar el hash bcrypt de coste
+  12 con `pgcrypto` (`crypt` + `gen_salt('bf', 12)`), extension que la base de
+  Atlas Balance instala desde la migracion inicial. La password se envia por
+  stdin dentro del SQL y no aparece en argumentos de proceso.
+- **Verificacion:** parser PowerShell sin errores, ausencia de `Add-Type` y de
+  referencias a `BCrypt*.dll`; el reset real actualizo la password y el login
+  posterior la valido antes de llegar al flujo MFA.
+
+---
+
 ## 2026-08-04 - V-02.07 - El ZIP incluia simbolos y lockfiles de build (CERRADO)
 
 - **Sintoma:** el primer preflight generado por `Build-Release.ps1` contenia

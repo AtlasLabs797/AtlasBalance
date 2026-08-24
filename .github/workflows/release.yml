@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, for example V-02-07"
+        description: "Version to publish, for example V-02.09"
         required: true
-        default: "V-02-07"
+        default: "V-02-09"
       runtime:
         description: "Runtime identifier"
         required: true
@@ -62,8 +62,21 @@ jobs:
       - name: Pull PostgreSQL test image
         run: docker pull postgres:16-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
 
-      - name: Test backend
-        run: dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore
+      - name: Test backend (sin Postgres)
+        run: |
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-not-trait "Category=Postgres"
+
+      - name: Test backend (Postgres con Testcontainers)
+        # V-02.08: gate obligatorio de la release. El bug 42501 que mordio al
+        # cliente V-02.07 (INSERT ... RETURNING tras login y MFA) sin Testcontainers
+        # en CI no se detectaria. Bajo "dotnet test -- <args>" (Microsoft
+        # Testing Platform via TestingPlatformDotnetTestSupport) los flags
+        # son --filter-trait/--filter-not-trait con formato name=value (sin
+        # "!=": ese operador no existe en este parser); el runner nativo del
+        # exe (fuera de "dotnet test") usa en cambio -trait/-trait-, un CLI
+        # totalmente distinto. Trait("Category", "Postgres") en la clase.
+        run: |
+          dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-trait "Category=Postgres"
 
       - name: Audit NuGet vulnerabilities
         shell: pwsh

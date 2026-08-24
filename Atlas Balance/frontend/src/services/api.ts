@@ -1,4 +1,5 @@
 ﻿import axios from 'axios';
+import { useAiChatStore } from '@/stores/aiChatStore';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
@@ -31,11 +32,15 @@ const syncSessionState = (usuario: Usuario | null | undefined, csrfToken: string
   usePermisosStore.getState().setPermisos(permisos ?? []);
 };
 
-const clearSessionState = () => {
+export const clearSessionState = () => {
   useAuthStore.getState().logout();
   usePermisosStore.getState().clear();
   useAlertasStore.getState().clear();
   usePaisScopeStore.getState().clear();
+  // V-02.09 (Fase 1.6): vacia mensajes, modelo seleccionado, errores y config
+  // del chat IA. Sin esto, el siguiente usuario que abra sesion en el mismo
+  // navegador veria la conversacion del usuario anterior al montar el panel.
+  useAiChatStore.getState().clear();
   // TanStack Query: tras logout, restore o cambio de usuario/permisos la
   // caché en memoria contiene datos del usuario anterior (saldos,
   // extractos, alertas). Limpiarla aqui evita fuga entre sesiones.
@@ -188,3 +193,16 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// Algunas rutas devuelven array plano (catalogos pequenos) y otras
+// PaginatedResponse<T>. Este helper acepta ambos y devuelve la lista,
+// evitando que cada consumidor tenga que recordar cual endpoint usa cual.
+export function extractList<T>(payload: unknown): T[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload as T[];
+  if (typeof payload === 'object' && payload !== null && 'data' in payload) {
+    const data = (payload as { data: unknown }).data;
+    if (Array.isArray(data)) return data as T[];
+  }
+  return [];
+}

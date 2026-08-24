@@ -232,6 +232,20 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = roleValidation.Error });
         }
 
+        // V-02.08: deteccion de redundancias. Antes se guardaban en silencio y
+        // solo ocupaban espacio en PERMISOS_USUARIO y en la auditoria de cambios.
+        // Ahora se devuelven al admin para que decida: el contrato es 409 + lista
+        // de pares (redundante, cubierta_por) ordenados por indice de entrada.
+        var redundancias = DetectPermisosRedundantes(permisos);
+        if (redundancias.Count > 0)
+        {
+            return Conflict(new
+            {
+                error = "Hay permisos redundantes. Quita los más restrictivos o amplía los más generales antes de guardar.",
+                redundantes = redundancias
+            });
+        }
+
         var before = await LoadPermisosAuditSnapshotAsync(id, cancellationToken);
         await UpsertPermisosAsync(id, permisos, cancellationToken);
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
@@ -361,7 +375,14 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = "Email obligatorio" });
         }
 
+        // V-02.08: sin validacion de formato, un email malformado almacenado
+        // rompia cada evaluacion de alertas (FormatException de MimeKit).
         var normalizedEmail = NormalizeEmail(request.Email);
+        if (!TryValidateEmail(normalizedEmail, out var emailError))
+        {
+            return BadRequest(new { error = emailError });
+        }
+
         var exists = await _dbContext.UsuarioEmails.AnyAsync(
             x => x.UsuarioId == id && x.Email.ToLower() == normalizedEmail,
             cancellationToken);
@@ -464,6 +485,12 @@ public sealed class UsuariosController : ControllerBase
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
+        // V-02.08: validar formato tambien en alta y edicion de usuario (ver CrearEmail).
+        if (!TryValidateEmail(normalizedEmail, out var emailError))
+        {
+            return BadRequest(new { error = emailError });
+        }
+
         var exists = await _dbContext.Usuarios.IgnoreQueryFilters().AnyAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
         if (exists)
         {
@@ -480,6 +507,20 @@ public sealed class UsuariosController : ControllerBase
         if (!roleValidation.Ok)
         {
             return BadRequest(new { error = roleValidation.Error });
+        }
+
+        // V-02.08: mismo chequeo de redundancia que PUT /usuarios/{id}/permisos.
+        // El alta real de usuario pasa los permisos por este endpoint, no por
+        // aquel, asi que sin esto la deteccion nunca se ejecutaba en el flujo
+        // de UsuarioModal.save.
+        var redundanciasCrear = DetectPermisosRedundantes(request.Permisos);
+        if (redundanciasCrear.Count > 0)
+        {
+            return Conflict(new
+            {
+                error = "Hay permisos redundantes. Quita los más restrictivos o amplía los más generales antes de guardar.",
+                redundantes = redundanciasCrear
+            });
         }
 
         var usuario = new Usuario
@@ -500,6 +541,12 @@ public sealed class UsuariosController : ControllerBase
         _dbContext.Usuarios.Add(usuario);
 
         var normalizedEmails = NormalizeEmails(request.Emails);
+        var invalidEmail = FindInvalidEmail(normalizedEmails);
+        if (invalidEmail is not null)
+        {
+            return BadRequest(new { error = $"Email de alerta invalido: {invalidEmail}" });
+        }
+
         await UpsertEmailsAsync(usuario.Id, normalizedEmails, cancellationToken);
         await UpsertPermisosAsync(usuario.Id, request.Permisos, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -561,7 +608,27 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = roleValidation.Error });
         }
 
+        // V-02.08: mismo chequeo de redundancia que PUT /usuarios/{id}/permisos.
+        // La edicion real de usuario pasa los permisos por este endpoint, no por
+        // aquel, asi que sin esto la deteccion nunca se ejecutaba en el flujo
+        // de UsuarioModal.save.
+        var redundanciasActualizar = DetectPermisosRedundantes(request.Permisos);
+        if (redundanciasActualizar.Count > 0)
+        {
+            return Conflict(new
+            {
+                error = "Hay permisos redundantes. Quita los más restrictivos o amplía los más generales antes de guardar.",
+                redundantes = redundanciasActualizar
+            });
+        }
+
         var normalizedEmail = NormalizeEmail(request.Email);
+        // V-02.08: validar formato tambien en edicion de usuario (ver CrearEmail).
+        if (!TryValidateEmail(normalizedEmail, out var emailError))
+        {
+            return BadRequest(new { error = emailError });
+        }
+
         var emailAlreadyExists = await _dbContext.Usuarios
             .IgnoreQueryFilters()
             .AnyAsync(u => u.Id != id && u.Email.ToLower() == normalizedEmail, cancellationToken);
@@ -630,6 +697,14 @@ public sealed class UsuariosController : ControllerBase
         }
 
         var normalizedEmails = NormalizeEmails(request.Emails);
+        // V-02.08: validacion antes de persistir; si falla, nada se ha guardado
+        // todavia (SaveChanges viene despues).
+        var invalidEmail = FindInvalidEmail(normalizedEmails);
+        if (invalidEmail is not null)
+        {
+            return BadRequest(new { error = $"Email de alerta invalido: {invalidEmail}" });
+        }
+
         await UpsertEmailsAsync(usuario.Id, normalizedEmails, cancellationToken);
         await UpsertPermisosAsync(usuario.Id, request.Permisos, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -822,6 +897,14 @@ public sealed class UsuariosController : ControllerBase
     {
         foreach (var permiso in permisos)
         {
+            // V-02.08: si llega cuenta, titular o pais son obligatorios. Una fila
+            // "cuenta sin contexto" no se puede autorizar porque deja el alcance
+            // sin dimensiones mas amplias y rompe la jerarquia Pais > Titular > Cuenta.
+            if (permiso.CuentaId.HasValue && !permiso.TitularId.HasValue && !permiso.PaisId.HasValue)
+            {
+                return (false, "Una fila con cuenta debe indicar tambien el titular y/o el pais");
+            }
+
             if (permiso.CuentaId.HasValue)
             {
                 var cuenta = await _dbContext.Cuentas
@@ -833,6 +916,8 @@ public sealed class UsuariosController : ControllerBase
                     return (false, $"Cuenta inválida: {permiso.CuentaId}");
                 }
 
+                // V-02.08: titular y pais se validan de forma independiente.
+                // Antes solo se comprobaban al estar ambos presentes.
                 if (permiso.TitularId.HasValue && cuenta.TitularId != permiso.TitularId.Value)
                 {
                     return (false, "La cuenta indicada no pertenece al titular seleccionado");
@@ -877,6 +962,71 @@ public sealed class UsuariosController : ControllerBase
             ? (true, null)
             : (false, "Un gerente necesita al menos un permiso de datos: global, por país, titular o cuenta.");
     }
+
+    // V-02.08: lista de pares (redundante, cubierta_por) para que el admin decida.
+    // Politica: dos filas son redundantes si tienen los mismos flags y el scope
+    // de una cubre al de la otra (cada dimension: null O igual). Se reportan en
+    // orden de entrada para que el dialog del frontend pueda destacar las filas
+    // a retirar.
+    private static IReadOnlyList<object> DetectPermisosRedundantes(IReadOnlyList<SavePermisoUsuarioRequest> permisos)
+    {
+        var redundantes = new List<object>();
+        for (var i = 0; i < permisos.Count; i++)
+        {
+            for (var j = i + 1; j < permisos.Count; j++)
+            {
+                var outer = permisos[i];
+                var inner = permisos[j];
+                if (!PermisosFlagsCoinciden(outer, inner))
+                {
+                    continue;
+                }
+                // V-02.08: probar ambas direcciones. Si la fila restrictiva va
+                // primera (i) y la mas amplia despues (j), outer no cubre a inner
+                // pero inner si cubre a outer, y el par tambien es redundante.
+                if (ScopeCubiertoPor(outer, inner))
+                {
+                    redundantes.Add(new
+                    {
+                        scope = ScopeDto(inner),
+                        cubierta_por = ScopeDto(outer)
+                    });
+                }
+                else if (ScopeCubiertoPor(inner, outer))
+                {
+                    redundantes.Add(new
+                    {
+                        scope = ScopeDto(outer),
+                        cubierta_por = ScopeDto(inner)
+                    });
+                }
+            }
+        }
+        return redundantes;
+    }
+
+    private static bool PermisosFlagsCoinciden(SavePermisoUsuarioRequest a, SavePermisoUsuarioRequest b) =>
+        a.PuedeVerCuentas == b.PuedeVerCuentas &&
+        a.PuedeAgregarLineas == b.PuedeAgregarLineas &&
+        a.PuedeEditarLineas == b.PuedeEditarLineas &&
+        a.PuedeEliminarLineas == b.PuedeEliminarLineas &&
+        a.PuedeImportar == b.PuedeImportar &&
+        a.PuedeRevisarLineas == b.PuedeRevisarLineas &&
+        a.PuedeAprobarImportaciones == b.PuedeAprobarImportaciones &&
+        a.PuedeConciliar == b.PuedeConciliar &&
+        a.PuedeCerrarConciliacion == b.PuedeCerrarConciliacion;
+
+    private static bool ScopeCubiertoPor(SavePermisoUsuarioRequest outer, SavePermisoUsuarioRequest inner) =>
+        (outer.PaisId == null || outer.PaisId == inner.PaisId) &&
+        (outer.TitularId == null || outer.TitularId == inner.TitularId) &&
+        (outer.CuentaId == null || outer.CuentaId == inner.CuentaId);
+
+    private static object ScopeDto(SavePermisoUsuarioRequest permiso) => new
+    {
+        pais_id = permiso.PaisId,
+        titular_id = permiso.TitularId,
+        cuenta_id = permiso.CuentaId,
+    };
 
     private static bool GrantsAccountDataAccess(SavePermisoUsuarioRequest permiso) =>
         permiso.PuedeVerCuentas ||
@@ -1004,6 +1154,38 @@ public sealed class UsuariosController : ControllerBase
     }
 
     private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+    // V-02.08: los emails de usuario alimentan las alertas (EmailService con
+    // MimeKit). Un email malformado almacenado rompia cada evaluacion de alertas
+    // y devolvia 500 tras insertar el extracto. Reutiliza el validador estricto
+    // que ya existia para smtp_from.
+    private static bool TryValidateEmail(string normalizedEmail, out string error)
+    {
+        try
+        {
+            EmailService.ValidateEmailAddressPublic(normalizedEmail, "Email");
+            error = string.Empty;
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static string? FindInvalidEmail(IReadOnlyList<string> normalizedEmails)
+    {
+        foreach (var email in normalizedEmails)
+        {
+            if (!TryValidateEmail(email, out _))
+            {
+                return email;
+            }
+        }
+
+        return null;
+    }
 
     private static List<string> NormalizeEmails(IReadOnlyList<string> emails)
     {

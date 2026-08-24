@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useAiChatStore } from '@/stores/aiChatStore';
 import type { Usuario } from '@/types';
 
 interface AuthState {
@@ -39,8 +40,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       isLoading: false,
     })),
 
-  logout: () =>
-    set({ usuario: null, csrfToken: null, isAuthenticated: false, isLoading: false }),
+  logout: () => {
+    // V-02.08: todos los caminos de logout (TopBar, useSessionTimeout,
+    // expiracion de sesion en api.ts, etc.) pasan por aqui. Sin este clear, el
+    // siguiente usuario que abra sesion en el mismo navegador veria las
+    // preguntas y respuestas de IA del usuario anterior en aiChatStore.
+    useAiChatStore.getState().clear();
+    set({ usuario: null, csrfToken: null, isAuthenticated: false, isLoading: false });
+  },
 
   setLoading: (isLoading) => set({ isLoading }),
 }));

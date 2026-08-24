@@ -3,6 +3,21 @@
   gap: var(--space-4);
 }
 
+/* V-02.08: banner de error de acciones en CuentaDetailPage (no destructivo,
+   sustituye al early-return que colapsaba la pagina completa). */
+.cuenta-error-dismiss {
+  justify-self: start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+
 .account-notes-card {
   display: grid;
   gap: var(--space-3);

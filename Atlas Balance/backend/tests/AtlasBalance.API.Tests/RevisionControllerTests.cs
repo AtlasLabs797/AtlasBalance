@@ -146,5 +146,8 @@ public sealed class RevisionControllerTests
 
         public Task SetEstadoAsync(UserAccessScope scope, Guid extractoId, string tipo, string estado, CancellationToken cancellationToken)
             => _setEstado(scope);
+
+        public Task<VerificarDevolucionResponse> VerificarDevolucionAsync(UserAccessScope scope, Guid extractoId, CancellationToken cancellationToken)
+            => Task.FromResult(new VerificarDevolucionResponse { Encontrada = true, Message = "Devolucion verificada" });
     }
 }

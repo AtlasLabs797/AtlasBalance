@@ -274,6 +274,10 @@ public sealed class IntegrationAuthMiddlewareTests
 
         public Task<bool> RevokeAsync(Guid tokenId, CancellationToken cancellationToken)
             => Task.FromResult(false);
+
+        public void InvalidateActiveTokensCache()
+        {
+        }
     }
 
     // -----------------------------------------------------------------------

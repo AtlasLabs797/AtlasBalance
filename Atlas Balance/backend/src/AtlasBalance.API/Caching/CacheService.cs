@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
+using AtlasBalance.API.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace AtlasBalance.API.Caching;
@@ -113,13 +114,13 @@ public sealed class CacheService : ICacheService
                 }
                 else
                 {
-                    _logger.LogDebug("Cache miss load returned null for {Namespace} {Key}", ns.Name, key);
+                    _logger.LogDebug("Cache miss load returned null for {Namespace} {Key}", ns.Name, LogScrubber.Scrub(key));
                 }
 
                 _logger.LogDebug(
                     "Cache load {Namespace} {Key} elapsed_ms={ElapsedMs}",
                     ns.Name,
-                    key,
+                    LogScrubber.Scrub(key),
                     stopwatch.ElapsedMilliseconds);
 
                 return value;

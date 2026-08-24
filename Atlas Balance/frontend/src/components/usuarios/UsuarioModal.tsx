@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import axios from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -7,6 +8,16 @@ import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import {
+  computeAlcance,
+  computeCoherence,
+  computeCuentasParaPermiso,
+  computeTitularesParaPermiso,
+  corregirTitularYPaisDesdeCuenta,
+  cuentaDropdownPlaceholder,
+  paisDropdownPlaceholder,
+  titularDropdownPlaceholder,
+} from '@/utils/permisosFormUtils';
 
 export interface CatalogTitular {
   id: string;
@@ -148,6 +159,51 @@ const getPermisoScopeLabel = (
 
   return 'Permiso global';
 };
+
+const formatAlcance = (n: number): string => {
+  if (n === 0) return 'Sin cuentas en este alcance';
+  if (n === 1) return 'Afecta a 1 cuenta';
+  return `Afecta a ${n} cuentas`;
+};
+
+interface PermisoScopeDto {
+  pais_id: string | null;
+  titular_id: string | null;
+  cuenta_id: string | null;
+}
+
+interface RedundanciaDto {
+  scope: PermisoScopeDto;
+  cubierta_por: PermisoScopeDto;
+}
+
+// V-02.08: detecta el 409 con redundancias que envia el backend. Devuelve la
+// lista de pares si la respuesta coincide con el formato { error, redundantes }.
+function parseRedundanciasDedup(err: unknown): RedundanciaDto[] | null {
+  if (!axios.isAxiosError(err)) return null;
+  const data = err.response?.data;
+  if (!data || typeof data !== 'object') return null;
+  const payload = data as Record<string, unknown>;
+  const redundantes = payload.redundantes;
+  if (!Array.isArray(redundantes)) return null;
+  if (redundantes.length === 0) return null;
+  return redundantes as RedundanciaDto[];
+}
+
+function redundanciasToHumanMessage(redundancias: RedundanciaDto[]): string {
+  const detalle = redundancias
+    .map((r) => `[${scopeToTexto(r.scope)}] cubierta por [${scopeToTexto(r.cubierta_por)}]`)
+    .join('; ');
+  return `Hay permisos redundantes (${redundancias.length}): ${detalle}. Quita los mas restrictivos o ampla los mas generales.`;
+}
+
+function scopeToTexto(scope: PermisoScopeDto): string {
+  const parts: string[] = [];
+  parts.push(scope.pais_id ? `pais=${scope.pais_id.slice(0, 6)}…` : 'todos los paises');
+  parts.push(scope.titular_id ? `titular=${scope.titular_id.slice(0, 6)}…` : 'todos los titulares');
+  parts.push(scope.cuenta_id ? `cuenta=${scope.cuenta_id.slice(0, 6)}…` : 'todas las cuentas');
+  return parts.join(' / ');
+}
 
 const globalAccessPermiso = (): PermisoFormRow => ({
   ...emptyPermiso(),
@@ -428,7 +484,12 @@ export default function UsuarioModal({
       await onSaved();
       onClose();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar el usuario. Revisa los datos y vuelve a intentarlo.'));
+      const dedup = parseRedundanciasDedup(err);
+      if (dedup) {
+        setError(redundanciasToHumanMessage(dedup));
+      } else {
+        setError(extractErrorMessage(err, 'No se pudo guardar el usuario. Revisa los datos y vuelve a intentarlo.'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -617,15 +678,15 @@ export default function UsuarioModal({
 
               <div className="users-permisos-list">
                 {form.permisos.map((permiso, index) => {
-                  const cuentasFiltradas = cuentas
-                    .filter((cuenta) => !permiso.pais_id || cuenta.pais_id === permiso.pais_id)
-                    .filter((cuenta) => !permiso.titular_id || cuenta.titular_id === permiso.titular_id);
-                  const titularesFiltrados = permiso.pais_id
-                    ? titulares.filter((titular) =>
-                        cuentas.some((cuenta) => cuenta.pais_id === permiso.pais_id && cuenta.titular_id === titular.id)
-                      )
-                    : titulares;
+                  const cuentasFiltradas = computeCuentasParaPermiso(permiso, cuentas);
+                  const titularesFiltrados = computeTitularesParaPermiso(permiso, titulares, cuentas);
+                  const coherence = computeCoherence(permiso, cuentas);
+                  const alcance = computeAlcance(permiso, cuentas);
+                  const alcanceLabel = formatAlcance(alcance);
                   const scopeLabel = getPermisoScopeLabel(permiso, paises, titulares, cuentas);
+                  const correccion = coherence === 'partial'
+                    ? corregirTitularYPaisDesdeCuenta(permiso, cuentas)
+                    : null;
 
                   return (
                     <div key={permiso.key} className="permiso-row">
@@ -633,6 +694,9 @@ export default function UsuarioModal({
                         <div className="permiso-row-title">
                           <strong>Permiso #{index + 1}</strong>
                           <p className="permiso-scope">{scopeLabel}</p>
+                          <p className="permiso-alcance" data-testid={`permiso-alcance-${index}`}>
+                            {alcanceLabel}
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -648,7 +712,7 @@ export default function UsuarioModal({
                           label="País"
                           value={permiso.pais_id}
                           options={[
-                            { value: '', label: 'Todos los países' },
+                            { value: '', label: paisDropdownPlaceholder },
                             ...paises.map((pais) => ({ value: pais.id, label: pais.nombre })),
                           ]}
                           onChange={(next) =>
@@ -664,7 +728,10 @@ export default function UsuarioModal({
                           label="Titular"
                           value={permiso.titular_id}
                           options={[
-                            { value: '', label: 'Global o por cuenta' },
+                            {
+                              value: '',
+                              label: titularDropdownPlaceholder(!!permiso.pais_id),
+                            },
                             ...titularesFiltrados.map((titular) => ({ value: titular.id, label: titular.nombre })),
                           ]}
                           onChange={(next) =>
@@ -679,7 +746,7 @@ export default function UsuarioModal({
                           label="Cuenta"
                           value={permiso.cuenta_id}
                           options={[
-                            { value: '', label: 'Sin cuenta especifica' },
+                            { value: '', label: cuentaDropdownPlaceholder },
                             ...cuentasFiltradas.map((cuenta) => ({
                               value: cuenta.id,
                               label: `${cuenta.nombre}${cuenta.titular_nombre ? ` (${cuenta.titular_nombre})` : ''}`,
@@ -718,6 +785,62 @@ export default function UsuarioModal({
                           />
                         </label>
                       </div>
+
+                      {coherence === 'partial' && (
+                        <div className="permiso-coherence-warning" data-testid={`permiso-coherence-warning-${index}`}>
+                          <p>
+                            La cuenta seleccionada no coincide con el titular o el pais elegidos.
+                          </p>
+                          <div className="permiso-coherence-actions">
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              onClick={() =>
+                                updatePermiso(permiso.key, {
+                                  titular_id: '',
+                                  pais_id: '',
+                                  cuenta_id: permiso.cuenta_id,
+                                })
+                              }
+                            >
+                              Mantener solo la cuenta
+                            </button>
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              onClick={() =>
+                                updatePermiso(permiso.key, {
+                                  cuenta_id: '',
+                                })
+                              }
+                            >
+                              Mantener pais y titular
+                            </button>
+                            {correccion && (
+                              <button
+                                type="button"
+                                className="button-primary"
+                                onClick={() =>
+                                  updatePermiso(permiso.key, {
+                                    titular_id: correccion.titular_id,
+                                    pais_id: correccion.pais_id,
+                                  })
+                                }
+                              >
+                                Corregir a la realidad de la cuenta
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {coherence === 'dangling' && (
+                        <div className="permiso-coherence-error" data-testid={`permiso-coherence-error-${index}`}>
+                          <p>
+                            La cuenta indicada ya no existe. Quita esta fila o elige otra cuenta antes de guardar.
+                          </p>
+                        </div>
+                      )}
 
                       <div className="users-check-grid">
                         <label className="users-check-danger">

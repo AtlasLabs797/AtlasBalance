@@ -58,8 +58,7 @@ export function EvolucionChart({
   const lastPoint = points[points.length - 1];
   const yDomain = getEvolutionDomain(points);
   const axisWidth = getEvolutionAxisWidth(points, divisa, yDomain);
-  const saldoDomain = getSaldoDomain(points);
-  const movementDomain = getMovementDomain(points);
+  const saldoAreaAxisWidth = getEvolutionAxisWidthCompact(yDomain);
   const chartColors = {
     ingresos: resolveChartColor(colors.ingresos, 'var(--chart-ingresos)'),
     egresos: resolveChartColor(colors.egresos, 'var(--chart-egresos)'),
@@ -80,18 +79,14 @@ export function EvolucionChart({
           <span style={{ '--series-color': chartColors.egresos } as CSSProperties}>Egresos</span>
         </div>
         <ResponsiveContainer width="100%" height={height}>
-          <ComposedChart data={points} margin={{ top: 12, right: 0, bottom: 8, left: 0 }}>
+          <ComposedChart data={points} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
             <defs>
               <linearGradient id="dashboardSaldoArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={chartColors.saldo} stopOpacity={0.22} />
                 <stop offset="100%" stopColor={chartColors.saldo} stopOpacity={0.04} />
               </linearGradient>
             </defs>
-            {/* yAxisId explicito: este chart tiene dos ejes Y con dominios
-                distintos (saldo y movement). recharts 2 alineaba la rejilla
-                al primero declarado; v3 exige decirlo para que sea
-                determinista. Se fija a "saldo" para conservar el aspecto. */}
-            <CartesianGrid stroke="var(--chart-grid)" vertical={false} yAxisId="saldo" />
+            <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
             <XAxis
               dataKey="fecha"
               tickFormatter={tickFormatter}
@@ -103,21 +98,9 @@ export function EvolucionChart({
               tick={EVOLUTION_AXIS_TICK_STYLE}
             />
             <YAxis
-              yAxisId="saldo"
               tickFormatter={(value) => formatCompactAxis(value)}
-              domain={saldoDomain}
-              width={74}
-              axisLine={false}
-              tickLine={false}
-              tickMargin={EVOLUTION_AXIS_TICK_MARGIN}
-              tick={EVOLUTION_AXIS_TICK_STYLE}
-            />
-            <YAxis
-              yAxisId="movement"
-              orientation="right"
-              tickFormatter={(value) => formatCompactAxis(value)}
-              domain={movementDomain}
-              width={74}
+              domain={yDomain}
+              width={saldoAreaAxisWidth}
               axisLine={false}
               tickLine={false}
               tickMargin={EVOLUTION_AXIS_TICK_MARGIN}
@@ -128,7 +111,6 @@ export function EvolucionChart({
             cursor={{ stroke: 'var(--chart-grid)' }}
           />
             <Area
-              yAxisId="saldo"
               type="monotone"
               name="Saldo"
               dataKey="saldo"
@@ -140,7 +122,6 @@ export function EvolucionChart({
               activeDot={{ r: 5, strokeWidth: 0, fill: chartColors.saldo }}
             />
             <Line
-              yAxisId="movement"
               type="monotone"
               name="Ingresos"
               dataKey="ingresos"
@@ -151,7 +132,6 @@ export function EvolucionChart({
               activeDot={{ r: 4, strokeWidth: 0, fill: chartColors.ingresos }}
             />
             <Line
-              yAxisId="movement"
               type="monotone"
               name="Egresos"
               dataKey="egresos"
@@ -304,33 +284,6 @@ function getEvolutionDomain(points: DashboardPuntoEvolucion[]): [number, number]
   return [min, max];
 }
 
-function getSaldoDomain(points: DashboardPuntoEvolucion[]): [number, number] {
-  const values = points.map((point) => point.saldo);
-  const dataMin = Math.min(...values);
-  const dataMax = Math.max(...values);
-  if (dataMin === dataMax) {
-    return [dataMin - 1, dataMax + 1];
-  }
-
-  const span = dataMax - dataMin;
-  const padding = Math.max(span * 0.12, Math.max(Math.abs(dataMin), Math.abs(dataMax), 1) * 0.015);
-  return [dataMin - padding, dataMax + padding];
-}
-
-function getMovementDomain(points: DashboardPuntoEvolucion[]): [number, number] {
-  const values = points.flatMap((point) => [point.ingresos, point.egresos]);
-  const dataMin = Math.min(...values, 0);
-  const dataMax = Math.max(...values, 0);
-
-  if (dataMin === dataMax) {
-    return [dataMin - 1, dataMax + 1];
-  }
-
-  const span = dataMax - dataMin;
-  const padding = Math.max(span * 0.12, Math.max(Math.abs(dataMin), Math.abs(dataMax), 1) * 0.04);
-  return [dataMin < 0 ? dataMin - padding : 0, dataMax > 0 ? dataMax + padding : 0];
-}
-
 function formatCompactAxis(value: number | string): string {
   const numeric = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(numeric)) {
@@ -354,6 +307,16 @@ function getEvolutionAxisWidth(
 
   const maxLabelWidth = labelValues.reduce((maxWidth, value) => {
     return Math.max(maxWidth, estimateAxisLabelWidth(formatCompactCurrency(value, divisa)));
+  }, 0);
+
+  const estimatedWidth = Math.ceil(maxLabelWidth + EVOLUTION_AXIS_TICK_MARGIN + EVOLUTION_AXIS_PADDING);
+  return Math.min(EVOLUTION_AXIS_MAX_WIDTH, Math.max(EVOLUTION_AXIS_MIN_WIDTH, estimatedWidth));
+}
+
+function getEvolutionAxisWidthCompact(domain: [number, number]): number {
+  const labelValues = [domain[0], domain[1], 0];
+  const maxLabelWidth = labelValues.reduce((maxWidth, value) => {
+    return Math.max(maxWidth, estimateAxisLabelWidth(formatCompactAxis(value)));
   }, 0);
 
   const estimatedWidth = Math.ceil(maxLabelWidth + EVOLUTION_AXIS_TICK_MARGIN + EVOLUTION_AXIS_PADDING);

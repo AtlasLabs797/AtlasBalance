@@ -126,19 +126,29 @@ export default function ExtractosPage() {
     [cuentaFiltro, cuentasOptions]
   );
 
+  // V-02.08: guards anti-carrera. Sin ellos, una respuesta vieja (cuenta o
+  // pagina anterior) podia pisar a la nueva si llegaba ultima.
+  const resumenRequestIdRef = useRef(0);
+  const rowsRequestIdRef = useRef(0);
+  const visibleColumnsRequestIdRef = useRef(0);
+
   const loadResumen = useCallback(async () => {
+    const requestId = ++resumenRequestIdRef.current;
     try {
       const { data } = await api.get<TitularConCuentas[]>('/extractos/titulares-resumen', {
         params: { paisId: selectedPaisId || undefined },
       });
+      if (requestId !== resumenRequestIdRef.current) return;
       setTitularesResumen(data);
     } catch (err) {
+      if (requestId !== resumenRequestIdRef.current) return;
       setTitularesResumen([]);
       setError(extractErrorMessage(err, 'No se pudieron cargar las cuentas disponibles.'));
     }
   }, [selectedPaisId]);
 
   const loadRows = useCallback(async () => {
+    const requestId = ++rowsRequestIdRef.current;
     setLoading(true);
     setError(null);
     if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
@@ -165,22 +175,27 @@ export default function ExtractosPage() {
           fechaHasta: fechaHasta || undefined
         }
       });
+      if (requestId !== rowsRequestIdRef.current) return;
       setRows(data.data ?? []);
       setAvailableExtraColumns(data.columnas_disponibles ?? []);
       setTotalPages(Math.max(1, data.total_pages ?? 1));
       setTotalRows(data.total ?? data.data?.length ?? 0);
     } catch (err) {
+      if (requestId !== rowsRequestIdRef.current) return;
       setError(extractErrorMessage(err, 'No se pudieron cargar extractos'));
       setRows([]);
       setAvailableExtraColumns([]);
       setTotalPages(1);
       setTotalRows(0);
     } finally {
-      setLoading(false);
+      if (requestId === rowsRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [page, pageSize, sortBy, sortDir, cuentaFiltro, titularFiltro, selectedPaisId, fechaDesde, fechaHasta]);
 
   const loadVisibleColumns = useCallback(async () => {
+    const requestId = ++visibleColumnsRequestIdRef.current;
     try {
       const { data } = await api.get('/extractos/columnas-visibles', {
         params: {
@@ -189,8 +204,10 @@ export default function ExtractosPage() {
           paisId: asUuidOrUndefined(selectedCuenta?.pais_id) ?? asUuidOrUndefined(selectedPaisId)
         }
       });
+      if (requestId !== visibleColumnsRequestIdRef.current) return;
       setVisibleColumns(data.columnas_visibles ?? null);
     } catch (err) {
+      if (requestId !== visibleColumnsRequestIdRef.current) return;
       setVisibleColumns(null);
       setError(extractErrorMessage(err, 'No se pudieron cargar las preferencias de columnas.'));
     }

@@ -9,7 +9,9 @@ using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Logging;
+using AtlasBalance.API.Services.IaPlanner;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AtlasBalance.API.Services;
 
@@ -17,7 +19,7 @@ public interface IAtlasAiService
 {
     Task<IaConfigResponse> GetConfigAsync(UserAccessScope scope, CancellationToken cancellationToken);
     Task<IReadOnlyList<IaModelResponse>> GetModelsAsync(string? provider, string? search, CancellationToken cancellationToken);
-    Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null);
+    Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null, string? requestedThinkingMode = null);
 }
 
 public sealed class AtlasAiService : IAtlasAiService
@@ -34,7 +36,14 @@ public sealed class AtlasAiService : IAtlasAiService
     private readonly IUserAccessService _userAccessService;
     private readonly IAuditService _auditService;
     private readonly ILogger<AtlasAiService> _logger;
+    private readonly IIntentPlanner _intentPlanner;
+    private readonly IPlanExecutor _planExecutor;
+    private readonly IFinancialToolsService _financialTools;
+    private readonly IDocumentationHelpService _documentationHelp;
+    private readonly IConversationMemory _conversationMemory;
 
+    // Conserva el constructor usado por las pruebas unitarias existentes. La
+    // composicion real se resuelve por DI con el constructor completo.
     public AtlasAiService(
         AppDbContext dbContext,
         IHttpClientFactory httpClientFactory,
@@ -42,6 +51,33 @@ public sealed class AtlasAiService : IAtlasAiService
         IUserAccessService userAccessService,
         IAuditService auditService,
         ILogger<AtlasAiService> logger)
+        : this(
+            dbContext,
+            httpClientFactory,
+            secretProtector,
+            userAccessService,
+            auditService,
+            logger,
+            new IntentPlanner(new NullSemanticPlannerClient(), NullLogger<IntentPlanner>.Instance),
+            new PlanExecutor(),
+            new FinancialToolsService(dbContext, userAccessService),
+            new DocumentationHelpService(string.Empty),
+            new InMemoryConversationMemory())
+    {
+    }
+
+    public AtlasAiService(
+        AppDbContext dbContext,
+        IHttpClientFactory httpClientFactory,
+        ISecretProtector secretProtector,
+        IUserAccessService userAccessService,
+        IAuditService auditService,
+        ILogger<AtlasAiService> logger,
+        IIntentPlanner intentPlanner,
+        IPlanExecutor planExecutor,
+        IFinancialToolsService financialTools,
+        IDocumentationHelpService documentationHelp,
+        IConversationMemory conversationMemory)
     {
         _dbContext = dbContext;
         _httpClientFactory = httpClientFactory;
@@ -49,6 +85,11 @@ public sealed class AtlasAiService : IAtlasAiService
         _userAccessService = userAccessService;
         _auditService = auditService;
         _logger = logger;
+        _intentPlanner = intentPlanner;
+        _planExecutor = planExecutor;
+        _financialTools = financialTools;
+        _documentationHelp = documentationHelp;
+        _conversationMemory = conversationMemory;
     }
 
     public async Task<IaConfigResponse> GetConfigAsync(UserAccessScope scope, CancellationToken cancellationToken)
@@ -70,14 +111,23 @@ public sealed class AtlasAiService : IAtlasAiService
         IReadOnlyList<IaModelResponse> models = normalizedProvider switch
         {
             "OPENAI" => AiConfiguration.OpenAiModels
-                .Select(x => new IaModelResponse { Id = x, Nombre = x })
+                .Select(x => new IaModelResponse { Id = x, Nombre = x, Permitido = true })
                 .ToList(),
             "MINIMAX" => AiConfiguration.MiniMaxModels
-                .Select(x => new IaModelResponse { Id = x, Nombre = x })
+                .Select(x => new IaModelResponse { Id = x, Nombre = x, Permitido = true })
                 .ToList(),
             "OPENROUTER" => await LoadOpenRouterModelsAsync(cancellationToken),
             _ => throw new IaConfigurationException("Proveedor de IA no soportado.")
         };
+
+        // V-02.09 (Fase 1.5): solo se exponen al frontend los modelos que pasan
+        // la allowlist del backend. Antes, el catalogo de OpenRouter mostraba
+        // ~80 modelos y el usuario podia seleccionar uno que no estaba en
+        // AllowedOpenRouterModels, recibiendo un 400 al consultar. El filtro
+        // resuelve la diferencia entre lo que se ve y lo que se puede usar.
+        models = models
+            .Where(x => IsModelAllowedForProvider(normalizedProvider, x.Id))
+            .ToList();
 
         var term = search?.Trim();
         if (!string.IsNullOrWhiteSpace(term))
@@ -101,7 +151,21 @@ public sealed class AtlasAiService : IAtlasAiService
         return models.Take(80).ToList();
     }
 
-    public async Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null)
+    private static bool IsModelAllowedForProvider(string normalizedProvider, string? modelId)
+    {
+        return normalizedProvider switch
+        {
+            "OPENAI" => AiConfiguration.IsAllowedOpenAiModel(modelId),
+            "MINIMAX" => AiConfiguration.IsAllowedMiniMaxModel(modelId),
+            // Para OpenRouter el catalogo remoto puede traer modelos que no
+            // esten en la allowlist local; el caller ya valida con
+            // IsValidOpenRouterModelId, aqui solo pedimos el allowlist.
+            "OPENROUTER" => AiConfiguration.IsAllowedOpenRouterModel(modelId),
+            _ => false
+        };
+    }
+
+    public async Task<IaChatResponse> AskAsync(UserAccessScope scope, string question, string? ipAddress, CancellationToken cancellationToken, string? requestedModel = null, Guid? paisId = null, string? requestedThinkingMode = null)
     {
         if (scope.UserId == Guid.Empty)
         {
@@ -163,6 +227,31 @@ public sealed class AtlasAiService : IAtlasAiService
             throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
         }
 
+        // V-02.09 (Fase UI): modo de pensamiento por provider. Si el valor
+        // recibido no esta admitido por el provider (p.ej. "low" para MiniMax,
+        // que solo entiende on/off) o es invalido, degradamos a "auto" y lo
+        // dejamos registrado en auditoria como rejected_thinking_mode.
+        var normalizedThinkingMode = AiConfiguration.NormalizeThinkingMode(state.Provider, requestedThinkingMode);
+        if (!string.IsNullOrWhiteSpace(requestedThinkingMode) && normalizedThinkingMode is null)
+        {
+            await LogBlockedAsync(scope.UserId, "rejected_thinking_mode", state, ipAddress, cancellationToken, new
+            {
+                requested_thinking_mode = requestedThinkingMode?.Trim(),
+                provider = state.Provider
+            });
+            normalizedThinkingMode = AiConfiguration.ThinkingModeAuto;
+        }
+        if (normalizedThinkingMode is null)
+        {
+            normalizedThinkingMode = AiConfiguration.ThinkingModeAuto;
+        }
+
+        var plannedAnswer = await TryAnswerPlannedAsync(scope, prompt, paisId, state, now, ipAddress, cancellationToken);
+        if (plannedAnswer is not null)
+        {
+            return plannedAnswer;
+        }
+
         var deterministicAnswer = await TryAnswerDeterministicFinancialAsync(scope, prompt, state, now, ipAddress, paisId, cancellationToken);
         if (deterministicAnswer is not null)
         {
@@ -205,8 +294,16 @@ public sealed class AtlasAiService : IAtlasAiService
         string safeContext;
         try
         {
-            safePrompt = pseudonyms.Apply(prompt);
-            safeContext = pseudonyms.Apply(context.Texto);
+            var scrubber = new DlpScrubber(pseudonyms);
+            var promptScan = scrubber.Escanear(prompt, "pregunta");
+            var contextScan = scrubber.Escanear(context.Texto, "contexto");
+            if (promptScan.FalloCerrado || contextScan.FalloCerrado)
+            {
+                await LogBlockedAsync(scope.UserId, "dlp_fail_closed", state, ipAddress, cancellationToken);
+                throw new IaProviderException("No se pudo anonimizar la consulta antes de enviarla al proveedor.");
+            }
+            safePrompt = promptScan.Texto;
+            safeContext = contextScan.Texto;
         }
         catch (RegexMatchTimeoutException)
         {
@@ -241,7 +338,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 new { role = "user", content = contextMessage }
             };
 
-            var providerCall = await SendProviderRequestAsync(state, apiKey, messages, cancellationToken);
+            var providerCall = await SendProviderRequestAsync(state, apiKey, messages, cancellationToken, normalizedThinkingMode);
             using var response = providerCall.Response;
             var payload = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -260,7 +357,6 @@ public sealed class AtlasAiService : IAtlasAiService
                         http_client = providerCall.HttpClientName,
                         used_http_fallback = providerCall.UsedFallback,
                         runtime_model = runtimeModel,
-                        provider_error = providerError,
                         retry_after_seconds = retryAfterSeconds
                     });
                 throw new IaProviderException(BuildProviderHttpErrorMessage(state, (int)response.StatusCode, LogScrubber.Scrub(providerError), retryAfterSeconds));
@@ -286,8 +382,7 @@ public sealed class AtlasAiService : IAtlasAiService
                         used_http_fallback = providerCall.UsedFallback,
                         runtime_model = runtimeModel,
                         provider_response_error_kind = ex.Kind,
-                        finish_reason = ex.FinishReason,
-                        provider_error = ex.ProviderError
+                        finish_reason = ex.FinishReason
                     });
                 throw new IaProviderException(BuildProviderResponseErrorMessage(state, ex));
             }
@@ -336,6 +431,8 @@ public sealed class AtlasAiService : IAtlasAiService
                 ipAddress,
                 JsonSerializer.Serialize(new
                 {
+                    schema_version = IaAuditSchema.Version,
+                    origen = "proveedor",
                     provider = state.Provider,
                     model = state.Model,
                     runtime_model = selectedRuntimeModel,
@@ -394,7 +491,9 @@ public sealed class AtlasAiService : IAtlasAiService
                 TokensSalidaEstimados = outputTokens,
                 CosteEstimadoEur = Math.Round(cost, 8),
                 AvisoPresupuesto = budgetWarning,
-                Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null
+                Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null,
+                Origen = "proveedor",
+                ThinkingModeAplicado = normalizedThinkingMode
             };
         }
         catch (JsonException ex)
@@ -441,19 +540,20 @@ public sealed class AtlasAiService : IAtlasAiService
         IaGovernanceState state,
         string apiKey,
         IReadOnlyList<object> messages,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? thinkingMode = null)
     {
         var primaryClientName = HttpClientName(state);
         try
         {
-            return await SendProviderRequestOnceAsync(state, apiKey, messages, primaryClientName, usedFallback: false, cancellationToken);
+            return await SendProviderRequestOnceAsync(state, apiKey, messages, primaryClientName, usedFallback: false, cancellationToken, thinkingMode);
         }
         catch (HttpRequestException primaryException)
         {
             var fallbackClientName = FallbackHttpClientName(state);
             try
             {
-                return await SendProviderRequestOnceAsync(state, apiKey, messages, fallbackClientName, usedFallback: true, cancellationToken);
+                return await SendProviderRequestOnceAsync(state, apiKey, messages, fallbackClientName, usedFallback: true, cancellationToken, thinkingMode);
             }
             catch (HttpRequestException fallbackException)
             {
@@ -468,10 +568,11 @@ public sealed class AtlasAiService : IAtlasAiService
         IReadOnlyList<object> messages,
         string httpClientName,
         bool usedFallback,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? thinkingMode = null)
     {
         var http = _httpClientFactory.CreateClient(httpClientName);
-        using var request = BuildProviderRequest(state, apiKey, messages);
+        using var request = BuildProviderRequest(state, apiKey, messages, thinkingMode);
         var response = await http.SendAsync(request, cancellationToken);
         return new ProviderHttpCall(response, httpClientName, usedFallback);
     }
@@ -557,25 +658,36 @@ public sealed class AtlasAiService : IAtlasAiService
     private static HttpRequestMessage BuildProviderRequest(
         IaGovernanceState state,
         string apiKey,
-        IReadOnlyList<object> messages)
+        IReadOnlyList<object> messages,
+        string? thinkingMode = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        var normalizedThinkingMode = string.IsNullOrWhiteSpace(thinkingMode)
+            ? AiConfiguration.ThinkingModeAuto
+            : thinkingMode;
 
         if (state.Provider == "OPENROUTER")
         {
             request.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "Atlas Balance");
             request.Headers.TryAddWithoutValidation("X-Title", "Atlas Balance");
             var runtimeModel = AiConfiguration.ResolveOpenRouterRuntimeModel(state.Model);
+            // OpenRouter auto-enrutado ignora `reasoning.effort`; para modelos
+            // concretos que lo soportan, lo emitimos cuando el usuario lo pide.
+            object reasoningPayload = normalizedThinkingMode switch
+            {
+                AiConfiguration.ThinkingModeLow => new { effort = "low" },
+                AiConfiguration.ThinkingModeMedium => new { effort = "medium" },
+                AiConfiguration.ThinkingModeHigh => new { effort = "high" },
+                _ => new { exclude = true }
+            };
             request.Content = JsonContent.Create(new
             {
                 model = runtimeModel,
                 provider = OpenRouterPrivacyProvider(),
-                reasoning = new
-                {
-                    exclude = true
-                },
+                reasoning = reasoningPayload,
                 temperature = 0.1,
                 max_tokens = state.MaxOutputTokens,
                 stream = false,
@@ -586,15 +698,46 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (state.Provider == "MINIMAX")
         {
-            if (string.Equals(state.Model, AiConfiguration.DefaultMiniMaxModel, StringComparison.Ordinal))
+            // MiniMax-M3 acepta thinking.type; MiniMax-M2.7 no acepta el campo
+            // (lo ignora o devuelve 400), asi que solo lo emitimos en M3 y
+            // cuando el usuario lo pide de forma explicita.
+            var supportsThinking = string.Equals(state.Model, AiConfiguration.DefaultMiniMaxModel, StringComparison.Ordinal);
+            object? thinkingPayload = null;
+            if (supportsThinking)
+            {
+                var thinkingType = normalizedThinkingMode switch
+                {
+                    AiConfiguration.ThinkingModeOn => "enabled",
+                    AiConfiguration.ThinkingModeOff => "disabled",
+                    _ => null
+                };
+                if (thinkingType is not null)
+                {
+                    thinkingPayload = new { type = thinkingType };
+                }
+            }
+
+            if (thinkingPayload is not null)
             {
                 request.Content = JsonContent.Create(new
                 {
                     model = state.Model,
-                    thinking = new
-                    {
-                        type = "disabled"
-                    },
+                    thinking = thinkingPayload,
+                    reasoning_split = true,
+                    temperature = 0.1,
+                    max_completion_tokens = state.MaxOutputTokens,
+                    stream = false,
+                    messages
+                });
+                return request;
+            }
+
+            if (supportsThinking)
+            {
+                request.Content = JsonContent.Create(new
+                {
+                    model = state.Model,
+                    thinking = new { type = "disabled" },
                     reasoning_split = true,
                     temperature = 0.1,
                     max_completion_tokens = state.MaxOutputTokens,
@@ -610,6 +753,30 @@ public sealed class AtlasAiService : IAtlasAiService
                 reasoning_split = true,
                 temperature = 0.1,
                 max_completion_tokens = state.MaxOutputTokens,
+                stream = false,
+                messages
+            });
+            return request;
+        }
+
+        // OpenAI y resto: reasoning_effort se envia tal cual para los modelos
+        // que lo soportan (gpt-4.1-mini). Si el modelo no lo acepta, OpenAI
+        // devuelve 400 y AskAsync lo degrada con un mensaje amigable.
+        object? reasoningEffort = normalizedThinkingMode switch
+        {
+            AiConfiguration.ThinkingModeLow => "low",
+            AiConfiguration.ThinkingModeMedium => "medium",
+            AiConfiguration.ThinkingModeHigh => "high",
+            _ => null
+        };
+        if (reasoningEffort is not null)
+        {
+            request.Content = JsonContent.Create(new
+            {
+                model = state.Model,
+                reasoning_effort = reasoningEffort,
+                temperature = 0.1,
+                max_tokens = state.MaxOutputTokens,
                 stream = false,
                 messages
             });
@@ -715,6 +882,431 @@ public sealed class AtlasAiService : IAtlasAiService
         }
     }
 
+    private async Task<IaChatResponse?> TryAnswerPlannedAsync(
+        UserAccessScope scope,
+        string prompt,
+        Guid? paisId,
+        IaGovernanceState state,
+        DateTime now,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        if (EsPreguntaDeAyuda(prompt))
+        {
+            var ayuda = _documentationHelp.Buscar(prompt, DocumentationHelpService.DefaultMaxSecciones);
+            return new IaChatResponse
+            {
+                Respuesta = ayuda.Encontrado
+                    ? string.Join("\n\n", ayuda.Secciones.Select(x => $"{x.Titulo}\n{x.Contenido}"))
+                    : ayuda.Mensaje ?? "La documentacion no contiene una respuesta para esta pregunta.",
+                Provider = "LOCAL",
+                Model = "documentacion",
+                Origen = "local"
+            };
+        }
+
+        // V-02.08: memoria conversacional para heredar metrica/operacion/
+        // divisas en seguimientos ("¿y el mes anterior?").
+        var previousContext = _conversationMemory.Obtener(scope.UserId, paisId);
+
+        // V-02.08: el planificador semantico (nivel 2 dentro de ResolverAsync)
+        // hace una llamada facturable al proveedor. EnsureSemanticDispatchAllowedAsync
+        // se invoca justo antes de esa llamada (no antes, para no penalizar las
+        // preguntas que el nivel 1 ya resuelve gratis) y aplica los mismos
+        // limites de tasa y presupuesto que el resto de llamadas a IA.
+        var resolution = await _intentPlanner.ResolverAsync(
+            prompt,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            cancellationToken,
+            pseudonymsFactory: ct => BuildPseudonymMapAsync(scope, paisId, ct),
+            previousContext: previousContext,
+            beforeSemanticDispatchAsync: ct => EnsureSemanticPlannerBudgetAsync(scope.UserId, prompt, state, now, ipAddress, ct));
+
+        // V-02.08: el registro de uso del planificador semantico se hace UNA
+        // sola vez por peticion, y solo en las ramas donde TryAnswerPlannedAsync
+        // devuelve una respuesta y por tanto el camino normal (deterministico o
+        // proveedor) NUNCA se alcanza y nunca audita esta peticion por su cuenta.
+        // Cuando el planificador semantico es rechazado (SemanticCallAttempted
+        // pero Origen = Rejected), esta funcion devuelve null y el flujo sigue
+        // hacia el camino normal, que aplica sus propios limites/presupuesto y
+        // audita la peticion al terminar: registrar aqui ademas duplicaria la
+        // fila de auditoria y el contador mensual para la misma peticion.
+        async Task RegisterSemanticUsageIfAttemptedAsync()
+        {
+            if (resolution.SemanticCallAttempted)
+            {
+                await RegisterSemanticPlannerUsageAsync(scope.UserId, prompt, paisId, state, now, ipAddress, cancellationToken);
+            }
+        }
+
+        if (resolution.Origen is PlanResolutionSource.Clarification)
+        {
+            await RegisterSemanticUsageIfAttemptedAsync();
+            return new IaChatResponse
+            {
+                Respuesta = resolution.Evaluacion.Motivo ?? "Necesito una aclaracion para continuar.",
+                Provider = "LOCAL",
+                Model = "planificador",
+                Origen = "local",
+                OpcionesAclaracion = resolution.Evaluacion.Opciones?
+                    .Select(x => new IaClarificationOptionResponse { Etiqueta = x.Etiqueta, Valor = x.Valor })
+                    .ToList()
+            };
+        }
+
+        if (resolution.Origen is PlanResolutionSource.Rejected)
+        {
+            // V-02.08: el proveedor semantico ya fue llamado (SemanticCallAttempted)
+            // aunque su respuesta fue rechazada; sin este registro, el camino normal
+            // solo contabiliza la llamada legacy posterior y el presupuesto ve un
+            // proveedor en vez de los dos que realmente se facturaron.
+            await RegisterSemanticUsageIfAttemptedAsync();
+            return null;
+        }
+
+        if (resolution.Origen is not (PlanResolutionSource.Local or PlanResolutionSource.Semantic) || resolution.Evaluacion.Plan is null)
+        {
+            return null;
+        }
+
+        // V-02.08: el pais activo en la UI se inyecta en el plan antes de
+        // ejecutarlo. Ni los patrones locales ni el planificador semantico
+        // conocen el pais seleccionado; sin esto, la consulta ignoraba el
+        // scope de pais y devolvia todos los paises accesibles al usuario.
+        var plan = resolution.Evaluacion.Plan;
+        if (paisId.HasValue && (plan.Filtros.PaisIds is null || plan.Filtros.PaisIds.Count == 0))
+        {
+            plan = plan with { Filtros = plan.Filtros with { PaisIds = new[] { paisId.Value } } };
+        }
+
+        var execution = await _planExecutor.EjecutarAsync(
+            scope,
+            new CompoundPlan
+            {
+                Pasos = new[] { new PlanStep(0, resolution.PatronLocal ?? "consulta", plan, Array.Empty<int>()) }
+            },
+            _financialTools,
+            cancellationToken);
+        if (!execution.Exito)
+        {
+            await RegisterSemanticUsageIfAttemptedAsync();
+            return new IaChatResponse
+            {
+                Respuesta = execution.Advertencia ?? "No se pudo completar la consulta local.",
+                Provider = "LOCAL",
+                Model = "planificador",
+                Origen = "local"
+            };
+        }
+
+        _conversationMemory.Actualizar(scope.UserId, paisId, context => context with
+        {
+            UltimaIntencion = resolution.PatronLocal,
+            UltimaOperacion = plan.Operacion.ToString(),
+            UltimaMetrica = plan.Metrica.ToString(),
+            UltimoPeriodo = FormatearPeriodo(plan.Filtros.Periodo),
+            UltimasDivisas = plan.Filtros.Divisas
+        });
+
+        await RegisterSemanticUsageIfAttemptedAsync();
+        return new IaChatResponse
+        {
+            // V-02.08: se formatean los datos estructurados devueltos por
+            // las herramientas (saldos, importes, rankings...) en vez del
+            // recuento generico de filas que traia execution.Resumen.
+            Respuesta = BuildPlannedAnswerText(execution),
+            Provider = "LOCAL",
+            Model = resolution.Origen is PlanResolutionSource.Semantic ? "planificador-semantico" : "planificador",
+            Origen = "local",
+            MovimientosAnalizados = execution.Pasos.Sum(x => x.FilasAnalizadas),
+            Aviso = execution.Advertencia
+        };
+    }
+
+    // V-02.08: cost/limit gate para la llamada facturable del planificador
+    // semantico (max_tokens=500 en SemanticPlannerClient). Reusa el mismo
+    // par de chequeos que protege la llamada al proveedor principal.
+    private const int SemanticPlannerEstimatedOutputTokens = 500;
+
+    private async Task EnsureSemanticPlannerBudgetAsync(
+        Guid userId,
+        string prompt,
+        IaGovernanceState state,
+        DateTime now,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRequestLimitsAsync(userId, state, now, ipAddress, cancellationToken);
+        var preflightCost = EstimateCost(EstimateTokens(prompt), SemanticPlannerEstimatedOutputTokens, state);
+        await EnsureBudgetAsync(userId, state, now, preflightCost, ipAddress, cancellationToken);
+    }
+
+    private async Task RegisterSemanticPlannerUsageAsync(
+        Guid userId,
+        string prompt,
+        Guid? paisId,
+        IaGovernanceState state,
+        DateTime now,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var inputTokens = EstimateTokens(prompt);
+        var cost = EstimateCost(inputTokens, SemanticPlannerEstimatedOutputTokens, state);
+        var userUsageAfter = await UpdateUsageCountersAsync(userId, now, inputTokens, 0, cost, cancellationToken);
+
+        await _auditService.LogAsync(
+            userId,
+            AuditActions.IaConsulta,
+            "IA",
+            null,
+            ipAddress,
+            JsonSerializer.Serialize(new
+            {
+                schema_version = IaAuditSchema.Version,
+                origen = "planificador-semantico",
+                provider = state.Provider,
+                model = state.Model,
+                pais_id = paisId,
+                pregunta_caracteres = prompt.Length,
+                tokens_entrada_estimados = inputTokens,
+                coste_estimado_eur = Math.Round(cost, 8),
+                coste_mes_usuario_estimado_eur = Math.Round(userUsageAfter.CosteEstimadoEur, 8),
+                requests_mes_usuario = userUsageAfter.Requests
+            }),
+            cancellationToken);
+    }
+
+    // V-02.08: formatea los Datos estructurados de cada paso del plan en
+    // vez del recuento generico ("N fila(s) devueltas") que traia
+    // PlanExecutor.BuildResumen. Cae al Resumen generico solo si el tipo de
+    // Datos no tiene formato especifico.
+    private const int MaxPlannedAnswerRows = 20;
+
+    private static string BuildPlannedAnswerText(CompoundPlanResult execution)
+    {
+        if (execution.Pasos.Count == 0)
+        {
+            return execution.Resumen ?? "Sin resultados.";
+        }
+
+        if (execution.Pasos.Count == 1)
+        {
+            return FormatStepDatos(execution.Pasos[0].Datos) ?? execution.Pasos[0].Resumen ?? "Sin resultados.";
+        }
+
+        var builder = new StringBuilder();
+        foreach (var paso in execution.Pasos)
+        {
+            builder.AppendLine(FormatStepDatos(paso.Datos) ?? paso.Resumen ?? "Sin resultados.");
+        }
+        return builder.ToString().Trim();
+    }
+
+    private static string? FormatStepDatos(object? datos) => datos switch
+    {
+        LatestTransaction lt => FormatLatestTransaction(lt),
+        IReadOnlyList<BalanceRow> rows => FormatBalanceRows(rows),
+        IReadOnlyList<PeriodTotalsRow> rows => FormatPeriodTotalsRows(rows),
+        IReadOnlyList<RevisionItem> rows => FormatRevisionItems(rows),
+        IReadOnlyList<TrendPoint> rows => FormatTrendPoints(rows),
+        IReadOnlyList<RankingRow> rows => FormatRankingDataRows(rows),
+        IReadOnlyList<SearchHit> rows => FormatSearchHits(rows),
+        IReadOnlyList<Anomaly> rows => FormatAnomalies(rows),
+        ComparisonResult cmp => FormatComparisonResult(cmp),
+        _ => null
+    };
+
+    private static void AppendMoreNote(StringBuilder builder, int totalCount)
+    {
+        if (totalCount > MaxPlannedAnswerRows)
+        {
+            builder.Append("... y ").Append(totalCount - MaxPlannedAnswerRows).AppendLine(" fila(s) mas.");
+        }
+    }
+
+    private static string FormatLatestTransaction(LatestTransaction lt)
+    {
+        var text = $"{lt.Fecha:dd/MM/yyyy} | {SanitizeContextText(lt.TitularNombre)} | {SanitizeContextText(lt.CuentaNombre)} | {FormatMoney(lt.Monto)} {lt.Divisa} | saldo {FormatMoney(lt.Saldo)}";
+        return string.IsNullOrWhiteSpace(lt.Concepto) ? text : $"{text} | {SanitizeContextText(lt.Concepto)}";
+    }
+
+    private static string FormatBalanceRows(IReadOnlyList<BalanceRow> rows)
+    {
+        if (rows.Count == 0) return "Sin saldos.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(SanitizeContextText(row.TitularNombre)).Append(" | ").Append(SanitizeContextText(row.CuentaNombre))
+                .Append(" | ").Append(row.Divisa).Append(": ").Append(FormatMoney(row.Saldo))
+                .Append(" (").Append(row.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).AppendLine(")");
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatPeriodTotalsRows(IReadOnlyList<PeriodTotalsRow> rows)
+    {
+        if (rows.Count == 0) return "Sin resultados.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(SanitizeContextText(row.Titular)).Append(" | ").Append(SanitizeContextText(row.Cuenta))
+                .Append(" | ").Append(row.Divisa).Append(": ingresos ").Append(FormatMoney(row.Ingresos))
+                .Append(", gastos ").Append(FormatMoney(row.Gastos)).Append(", neto ").Append(FormatMoney(row.Neto))
+                .Append(" (").Append(row.MovimientosTotal.ToString(CultureInfo.InvariantCulture))
+                .AppendLine(row.MovimientosTotal == 1 ? " movimiento)" : " movimientos)");
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatRevisionItems(IReadOnlyList<RevisionItem> rows)
+    {
+        if (rows.Count == 0) return "Sin items.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(row.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append(" | ")
+                .Append(SanitizeContextText(row.TitularNombre)).Append(" | ").Append(SanitizeContextText(row.CuentaNombre))
+                .Append(" | ").Append(FormatMoney(row.Monto)).Append(' ').Append(row.Divisa)
+                .Append(" | estado ").Append(row.Estado).Append(" | ").AppendLine(SanitizeContextText(row.Concepto));
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatTrendPoints(IReadOnlyList<TrendPoint> rows)
+    {
+        if (rows.Count == 0) return "Sin datos para la tendencia.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(row.Month.ToString("00", CultureInfo.InvariantCulture)).Append('/').Append(row.Year)
+                .Append(' ').Append(row.Divisa).Append(": ingresos ").Append(FormatMoney(row.Ingresos))
+                .Append(", gastos ").Append(FormatMoney(row.Gastos)).Append(", neto ").AppendLine(FormatMoney(row.Neto));
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatRankingDataRows(IReadOnlyList<RankingRow> rows)
+    {
+        if (rows.Count == 0) return "Sin resultados.";
+        var builder = new StringBuilder();
+        var index = 1;
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append(index.ToString(CultureInfo.InvariantCulture)).Append(". ").Append(SanitizeContextText(row.Titular));
+            if (!string.IsNullOrWhiteSpace(row.Cuenta))
+            {
+                builder.Append(" | ").Append(SanitizeContextText(row.Cuenta));
+            }
+            builder.Append(" | ").Append(row.Divisa).Append(": gastos ").Append(FormatMoney(row.Gastos))
+                .Append(", ingresos ").Append(FormatMoney(row.Ingresos)).Append(", neto ").Append(FormatMoney(row.Neto))
+                .Append(" (").Append(row.Movimientos.ToString(CultureInfo.InvariantCulture))
+                .AppendLine(row.Movimientos == 1 ? " movimiento)" : " movimientos)");
+            index++;
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatSearchHits(IReadOnlyList<SearchHit> rows)
+    {
+        if (rows.Count == 0) return "Sin resultados.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(row.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append(" | ")
+                .Append(SanitizeContextText(row.TitularNombre)).Append(" | ").Append(SanitizeContextText(row.CuentaNombre))
+                .Append(" | ").Append(FormatMoney(row.Monto)).Append(' ').Append(row.Divisa)
+                .Append(" | saldo ").Append(FormatMoney(row.Saldo)).Append(" | ").AppendLine(SanitizeContextText(row.Concepto));
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatAnomalies(IReadOnlyList<Anomaly> rows)
+    {
+        if (rows.Count == 0) return "Sin anomalias.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- [").Append(row.Severidad).Append("] ").Append(row.Tipo).Append(": ").Append(SanitizeContextText(row.Descripcion));
+            if (row.Importe is { } importe)
+            {
+                builder.Append(" | ").Append(FormatMoney(importe));
+            }
+            if (row.Fecha is { } fecha)
+            {
+                builder.Append(" | ").Append(fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture));
+            }
+            if (!string.IsNullOrWhiteSpace(row.CuentaNombre))
+            {
+                builder.Append(" | ").Append(SanitizeContextText(row.CuentaNombre));
+            }
+            builder.AppendLine();
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatComparisonResult(ComparisonResult cmp)
+    {
+        var builder = new StringBuilder();
+        builder.Append(cmp.Base.Etiqueta).Append(" (").Append(cmp.Base.From.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))
+            .Append(" a ").Append(cmp.Base.To.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append("): ingresos ")
+            .Append(FormatMoney(cmp.Base.Ingresos)).Append(", gastos ").Append(FormatMoney(cmp.Base.Gastos))
+            .Append(", neto ").AppendLine(FormatMoney(cmp.Base.Neto));
+        builder.Append(cmp.Referencia.Etiqueta).Append(" (").Append(cmp.Referencia.From.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))
+            .Append(" a ").Append(cmp.Referencia.To.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append("): ingresos ")
+            .Append(FormatMoney(cmp.Referencia.Ingresos)).Append(", gastos ").Append(FormatMoney(cmp.Referencia.Gastos))
+            .Append(", neto ").AppendLine(FormatMoney(cmp.Referencia.Neto));
+        builder.Append("Variacion: ingresos ").Append(FormatMoney(cmp.VariacionIngresos))
+            .Append(" (").Append(cmp.VariacionIngresosPct.ToString("0.00", CultureInfo.InvariantCulture)).Append("%), gastos ")
+            .Append(FormatMoney(cmp.VariacionGastos)).Append(" (").Append(cmp.VariacionGastosPct.ToString("0.00", CultureInfo.InvariantCulture)).Append("%), neto ")
+            .Append(FormatMoney(cmp.VariacionNeto)).Append(" (").Append(cmp.VariacionNetoPct.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine("%)");
+        return builder.ToString().Trim();
+    }
+
+    // V-02.08: "como"/"cómo" tambien encabeza preguntas financieras legitimas
+    // ("¿Cómo evolucionan los gastos?"), que deben llegar al planificador en
+    // vez de a la ayuda de documentacion. Solo se trata como pregunta de ayuda
+    // si, ademas del prefijo, no menciona ninguno de estos terminos de datos.
+    private static readonly string[] FinancialQueryTermsForHelpCarveOut =
+    [
+        "gasto", "gastos", "ingreso", "ingresos", "saldo", "saldos", "movimiento", "movimientos",
+        "extracto", "extractos", "cuenta", "cuentas", "comision", "comisión", "comisiones",
+        "evoluc", "tendencia", "tendencias", "ranking", "titular", "titulares", "importe", "importes",
+        "monto", "montos", "total", "totales", "conciliacion", "conciliación", "conciliaciones",
+        "anomalia", "anomalía", "anomalias", "anomalías"
+    ];
+
+    private static bool EsPreguntaDeAyuda(string prompt)
+    {
+        var normalized = prompt.Trim().ToLowerInvariant();
+        var empiezaConComo = normalized.StartsWith("como ", StringComparison.Ordinal)
+            || normalized.StartsWith("cómo ", StringComparison.Ordinal);
+        if (empiezaConComo)
+        {
+            var normalizedSinAcentos = RemoveDiacritics(normalized);
+            var esPreguntaFinanciera = FinancialQueryTermsForHelpCarveOut.Any(term =>
+                normalizedSinAcentos.Contains(RemoveDiacritics(term), StringComparison.OrdinalIgnoreCase));
+            return !esPreguntaFinanciera;
+        }
+
+        return normalized.StartsWith("que significa", StringComparison.Ordinal)
+            || normalized.StartsWith("qué significa", StringComparison.Ordinal)
+            || normalized.StartsWith("por que no puedo", StringComparison.Ordinal)
+            || normalized.StartsWith("por qué no puedo", StringComparison.Ordinal);
+    }
+
+    private static string? FormatearPeriodo(FinancialPeriod? periodo) => periodo is null
+        ? null
+        : periodo.From is { } from && periodo.To is { } to
+            ? $"{from:dd/MM/yyyy} - {to:dd/MM/yyyy}"
+            : periodo.Tipo.ToString();
+
     private async Task<IaChatResponse?> TryAnswerDeterministicFinancialAsync(
         UserAccessScope scope,
         string prompt,
@@ -817,6 +1409,8 @@ public sealed class AtlasAiService : IAtlasAiService
             ipAddress,
             JsonSerializer.Serialize(new
             {
+                schema_version = IaAuditSchema.Version,
+                origen = "local",
                 provider = state.Provider,
                 model = state.Model,
                 runtime_model = ProviderRuntimeModel(state),
@@ -853,7 +1447,8 @@ public sealed class AtlasAiService : IAtlasAiService
             TokensSalidaEstimados = 0,
             CosteEstimadoEur = 0m,
             AvisoPresupuesto = budgetWarning,
-            Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null
+            Aviso = budgetWarning ? "Aviso: el uso de IA se acerca al presupuesto configurado." : null,
+            Origen = "local"
         };
     }
 
@@ -897,9 +1492,12 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalized, "ultimos 30", "ultimos treinta", "ultimo mes", "ultimas 4 semanas", "ultimas cuatro semanas"))
         {
-            from = today.AddDays(-30);
-            to = today;
-            periodLabel = "los ultimos 30 dias";
+            // V-02.09 (Fase 1.2): "ultimo mes" pasa a ser el mes natural anterior
+            // (antes eran los ultimos 30 dias, lo que en meses de 31 dias se solapaba
+            // con el mes en curso). Coincide con "mes anterior"/"mes pasado".
+            from = previousMonthStart;
+            to = previousMonthEnd;
+            periodLabel = "el mes anterior";
         }
         else if (ContainsAny(normalized, "mes pasado", "mes anterior"))
         {
@@ -1077,7 +1675,6 @@ public sealed class AtlasAiService : IAtlasAiService
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
-        var rollingMonthStart = today.AddDays(-30);
         var previousMonthStart = monthStart.AddMonths(-1);
         var previousMonthEnd = monthStart.AddDays(-1);
         var quarterStart = new DateOnly(today.Year, ((today.Month - 1) / 3) * 3 + 1, 1);
@@ -1134,48 +1731,43 @@ public sealed class AtlasAiService : IAtlasAiService
             .ToList();
 
         builder.AppendLine();
-        builder.AppendLine("SALDOS ACTUALES POR CUENTA");
+        builder.AppendLine("Saldos actuales por cuenta");
         foreach (var row in latestByAccount)
         {
             builder.AppendLine($"- {SanitizeContextText(row.Titular)} | {SanitizeContextText(row.Cuenta)} | {row.Divisa} | saldo {FormatMoney(row.Saldo)} | fecha {row.Fecha:dd/MM/yyyy}");
         }
 
-        // V-02-05 (MED-20): ejecutar los period summary en paralelo. Cada AppendPeriod
-        // escribe a un StringBuilder independiente y luego se concatenan en orden.
-        var periodTasks = new List<Task<StringBuilder>>();
+        // V-02.09 (Fase 1.1): DbContext no es thread-safe. Los period summary deben
+        // ejecutarse en serie, no con Task.WhenAll. Ademas, el resumen anual se
+        // anadia DESPUES del await, asi que la condicion nunca llegaba a ejecutarse
+        // y el bloque anual se perdia silenciosamente. Ahora cada bloque se
+        // ejecuta, se espera y se concatena en orden.
         if (ContainsAny(normalizedQuestion, "mes", "mensual", "actual"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, monthStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, monthStart, today, cancellationToken));
         }
+        // V-02.09 (Fase 1.2): "ultimo mes" pasa a ser el mes natural anterior
+        // (antes eran los ultimos 30 dias, lo que en meses de 31 dias se solapaba
+        // con el mes en curso). Coincide ahora con "mes anterior"/"mes pasado".
         if (ContainsAny(normalizedQuestion, "ultimo mes", "ultimos 30", "ultimas 4 semanas"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, rollingMonthStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken));
         }
         if (ContainsAny(normalizedQuestion, "mes pasado", "mes anterior"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, previousMonthStart, previousMonthEnd, cancellationToken));
         }
         if (ContainsAny(normalizedQuestion, "trimestre", "trimestral"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, quarterStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, quarterStart, today, cancellationToken));
         }
-        // V-02-05 (MED-20): esperar en paralelo y concatenar en orden.
-        if (periodTasks.Count > 0)
-        {
-            var results = await Task.WhenAll(periodTasks);
-            foreach (var sub in results)
-            {
-                builder.Append(sub);
-            }
-        }
-
         if (ContainsAny(normalizedQuestion, "ano", "anual", "2026", "este ano"))
         {
-            periodTasks.Add(AppendPeriodSummaryAsync(cuentasQuery, yearStart, today, cancellationToken));
+            builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, yearStart, today, cancellationToken));
         }
 
         builder.AppendLine();
-        builder.AppendLine("TOTALES POR MES");
+        builder.AppendLine("Totales por mes");
         var monthlyTotals = await (
             from e in _dbContext.Extractos.AsNoTracking()
             join c in cuentasQuery on e.CuentaId equals c.Id
@@ -1204,14 +1796,14 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalizedQuestion, "comision", "comisiones", "cuota", "mantenimiento", "devolucion", "devuelta"))
         {
-            await AppendCategoryAsync(builder, "COMISIONES DETECTADAS", cuentasQuery, earliestContextDate, today, CommissionTerms, cancellationToken);
+            await AppendCategoryAsync(builder, "Comisiones detectadas", cuentasQuery, earliestContextDate, today, CommissionTerms, cancellationToken);
         }
 
         if (ContainsAny(normalizedQuestion, "seguro", "seguros", "poliza", "prima", "aseguradora"))
         {
             await AppendCategoryAsync(
                 builder,
-                "SEGUROS DETECTADOS",
+                "Seguros detectados",
                 cuentasQuery,
                 earliestContextDate,
                 today,
@@ -1223,19 +1815,19 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (ContainsAny(normalizedQuestion, "nomina", "nominas", "salario", "sueldo"))
         {
-            await AppendCategoryAsync(builder, "NOMINAS/SALARIOS DETECTADOS", cuentasQuery, earliestContextDate, today, PayrollTerms, cancellationToken);
+            await AppendCategoryAsync(builder, "Nominas/salarios detectados", cuentasQuery, earliestContextDate, today, PayrollTerms, cancellationToken);
         }
 
         if (ContainsAny(normalizedQuestion, "impuesto", "impuestos", "iva", "irpf", "hacienda", "aeat", "seguridad social", "cotizacion", "autonomo", "autonomos"))
         {
-            await AppendCategoryAsync(builder, "IMPUESTOS/SEGURIDAD SOCIAL DETECTADOS", cuentasQuery, earliestContextDate, today, TaxAndSocialSecurityTerms, cancellationToken);
+            await AppendCategoryAsync(builder, "Impuestos/seguridad social detectados", cuentasQuery, earliestContextDate, today, TaxAndSocialSecurityTerms, cancellationToken);
         }
 
         if (ContainsAny(normalizedQuestion, "recibo", "recibos", "factura", "facturas", "domiciliacion", "domiciliaciones", "cargo", "cargos"))
         {
             await AppendCategoryAsync(
                 builder,
-                "RECIBOS/FACTURAS DETECTADOS",
+                "Recibos/facturas detectados",
                 cuentasQuery,
                 earliestContextDate,
                 today,
@@ -1592,20 +2184,27 @@ public sealed class AtlasAiService : IAtlasAiService
 
     private async Task LogBlockedAsync(Guid userId, string reason, IaGovernanceState state, string? ipAddress, CancellationToken cancellationToken, object? extra = null)
     {
+        var fields = new Dictionary<string, object?>
+        {
+            ["motivo"] = reason,
+            ["provider"] = state.Provider,
+            ["model"] = state.Model,
+            ["runtime_model"] = ProviderRuntimeModel(state)
+        };
+        if (extra is not null)
+        {
+            foreach (var property in extra.GetType().GetProperties())
+            {
+                fields[property.Name] = property.GetValue(extra);
+            }
+        }
         await _auditService.LogAsync(
             userId,
             AuditActions.IaConsultaBloqueada,
             "IA",
             null,
             ipAddress,
-            JsonSerializer.Serialize(new
-            {
-                motivo = reason,
-                provider = state.Provider,
-                model = state.Model,
-                runtime_model = ProviderRuntimeModel(state),
-                extra
-            }),
+            IaAuditEventFactory.Bloqueada("sistema", fields),
             cancellationToken);
     }
 
@@ -1618,17 +2217,28 @@ public sealed class AtlasAiService : IAtlasAiService
         CancellationToken cancellationToken,
         object? extra = null)
     {
-        // V-02.07: desde que el detalle del proveedor dejo de viajar al cliente, la
-        // auditoria era el unico rastro del fallo. Se replica al log del servidor para
-        // poder diagnosticar sin consultar la BD. El texto ya viene redactado de
-        // ShortProviderPayload; aqui no se anade nada crudo.
         _logger.LogWarning(
-            "Error de proveedor IA: motivo={Reason} provider={Provider} model={Model} status={StatusCode} detalle={Extra}",
+            "Error de proveedor IA: motivo={Reason} provider={Provider} model={Model} runtime_model={RuntimeModel} status={StatusCode} detalle={Extra}",
             reason,
             state.Provider,
             state.Model,
+            ProviderRuntimeModel(state),
             statusCode,
             extra is null ? "-" : JsonSerializer.Serialize(extra));
+
+        var fields = new Dictionary<string, object?>
+        {
+            ["motivo"] = reason,
+            ["provider"] = state.Provider,
+            ["model"] = state.Model,
+            ["runtime_model"] = ProviderRuntimeModel(state),
+            ["status_code"] = statusCode
+        };
+
+        if (extra is not null)
+        {
+            fields["extra"] = extra;
+        }
 
         await _auditService.LogAsync(
             userId,
@@ -1636,15 +2246,7 @@ public sealed class AtlasAiService : IAtlasAiService
             "IA",
             null,
             ipAddress,
-            JsonSerializer.Serialize(new
-            {
-                motivo = reason,
-                provider = state.Provider,
-                model = state.Model,
-                runtime_model = ProviderRuntimeModel(state),
-                status_code = statusCode,
-                extra
-            }),
+            IaAuditEventFactory.Error("proveedor", fields),
             cancellationToken);
     }
 
@@ -1697,7 +2299,23 @@ public sealed class AtlasAiService : IAtlasAiService
             OutputCostPerMillionTokensEur = state.OutputCostPerMillionTokensEur,
             MaxInputTokens = state.MaxInputTokens,
             MaxOutputTokens = state.MaxOutputTokens,
-            MaxContextRows = state.MaxContextRows
+            MaxContextRows = state.MaxContextRows,
+            ThinkingModes = AiConfiguration.GetThinkingModesForProvider(state.Provider)
+                .Select(value => new IaThinkingModeOption { Value = value, Label = HumanizeThinkingMode(value) })
+                .ToArray()
+        };
+    }
+
+    private static string HumanizeThinkingMode(string value)
+    {
+        return value switch
+        {
+            "low" => "Esfuerzo bajo",
+            "medium" => "Esfuerzo medio",
+            "high" => "Esfuerzo alto",
+            "on" => "Pensamiento activado",
+            "off" => "Pensamiento desactivado",
+            _ => "Esfuerzo automatico"
         };
     }
 
@@ -2719,6 +3337,7 @@ public sealed class AtlasAiService : IAtlasAiService
         "retencion", "retención", "retenciones", "tributo", "tributos", "tasa", "tasas", "autonomo", "autónomo", "autonomos", "autónomos",
         "nomina", "nómina", "salario", "salarios", "sueldo", "sueldos", "divisa", "divisas", "tipo de cambio", "plazo fijo", "vencimiento",
         "revision", "revisión", "importacion", "importación", "exportacion", "exportación",
+        "conciliacion", "conciliación", "conciliaciones",
         "dashboard", "configuracion", "configuración", "permiso", "permisos", "usuario",
         "usuarios", "alerta", "alertas", "backup", "auditoria", "auditoría", "excel",
         "xlsx", "csv", "proveedor", "modelo", "api key", "openrouter", "openai", "minimax", "ia financiera"

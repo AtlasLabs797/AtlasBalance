@@ -20,11 +20,13 @@ public sealed class ExtractosController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IAlertaService _alertaService;
+    private readonly ILogger<ExtractosController> _logger;
 
-    public ExtractosController(AppDbContext db, IAlertaService alertaService)
+    public ExtractosController(AppDbContext db, IAlertaService alertaService, ILogger<ExtractosController> logger)
     {
         _db = db;
         _alertaService = alertaService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -259,7 +261,22 @@ public sealed class ExtractosController : ControllerBase
             }
         }
 
-        await _alertaService.EvaluateSaldoPostAsync(ex.CuentaId, actor.Id, ct);
+        // V-02.08: la evaluacion de alertas es un side effect post-commit; un
+        // fallo (p.ej. email de alerta malformado) no debe convertir en 500 una
+        // creacion que SI se guardo. Mismo patron que ImportacionService.
+        try
+        {
+            await _alertaService.EvaluateSaldoPostAsync(ex.CuentaId, actor.Id, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception alertEx)
+        {
+            _logger.LogWarning(alertEx, "Evaluacion de alerta de saldo fallo tras crear extracto {ExtractoId} de cuenta {CuentaId}", ex.Id, ex.CuentaId);
+        }
+
         return Ok(new { id = ex.Id, fila_numero = ex.FilaNumero });
     }
 

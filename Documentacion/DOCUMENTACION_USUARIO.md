@@ -1,5 +1,9 @@
 # Documentacion de usuario
 
+Documento vigente para `V-02.08`. Las menciones `Desde V-02.07` conservan la
+version en la que se introdujo cada comportamiento; no son una referencia a una
+version anterior instalada.
+
 ## Ubicacion principal
 
 La aplicacion esta en la carpeta `Atlas Balance`.
@@ -202,28 +206,28 @@ Los paquetes de release estan en:
 Atlas Balance/Atlas Balance Release
 ```
 
-Ultimo paquete publicado documentado antes de `V-02-03`:
+Ultimo paquete publicado documentado antes de `V-02.08`:
 
 ```text
-AtlasBalance-V-01.09-win-x64.zip
-AtlasBalance-V-01.09-win-x64.zip.sig
+AtlasBalance-V-02.07-win-x64.zip
+AtlasBalance-V-02.07-win-x64.zip.sig
 ```
 
-SHA256 del ZIP firmado de `V-01.09`:
+SHA256 del ZIP firmado de `V-02.07`:
 
 ```text
-4E3256141498450775AB581FC5DFF38F066867592D38F3123CAEED8940B38128
+B2EEE529B4B3A16C05E077162E6D6510945485B98E4944FC6A3305840A5E5101
 ```
 
-No reutilices hashes ni paquetes de `V-01.09` para publicar `V-02-03`. Cuando se genere `V-02-03`, debe tener ZIP y `.sig` propios.
+No reutilices hashes ni paquetes de `V-02.07` para publicar `V-02.08`. Cuando se genere `V-02.08`, debe tener ZIP y `.sig` propios.
 
 Para instalar o actualizar desde una build local, usa los archivos del paquete generado para la version correspondiente.
 
-No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-02-03-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
+No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquete instalable debe llamarse como `AtlasBalance-V-02.08-win-x64.zip` y contener `api\AtlasBalance.API.exe`, `watchdog\AtlasBalance.Watchdog.exe`, `scripts` y wrappers `.cmd`.
 
-Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02-03-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
+Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02.08-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
-Nota dura de `V-01.09`: el codigo ya prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este cambio puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
+Nota vigente de `V-02.08`: el codigo prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este flujo puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
 
 ## Limpieza antes de publicar
 
@@ -361,6 +365,23 @@ En `Usuarios`, el modal de alta/edicion incluye `Acceso a todas las cuentas`. Es
 
 Para permisos manuales, marca `Pais` si el usuario solo debe operar en un pais. Luego puedes reducir mas con `Titular` y `Cuenta`. Un permiso con pais y titular no significa "todo el pais o todo el titular"; significa la interseccion exacta.
 
+### Jerarquia Pais > Titular > Cuenta
+
+La jerarquia opera asi: cada dimension se acota cuando se selecciona. Si una dimension esta en blanco, el alcance se ampla a todas sus opciones. Una cuenta solo puede ir acompanada de al menos un titular o pais; una fila "solo cuenta" no se acepta.
+
+| Pais        | Titular        | Cuenta        | Alcance efectivo                                |
+|-------------|----------------|---------------|-------------------------------------------------|
+| Todos       | Todos          | (vacio)       | Todas las cuentas de todos los titulares        |
+| Todos       | Uno            | (vacio)       | Todas las cuentas de ese titular, en cualquier pais |
+| Todos       | Uno            | Una especifica | Solo esa cuenta                                 |
+| Uno         | Todos          | (vacio)       | Todas las cuentas de cualquier titular en ese pais |
+| Uno         | Uno            | (vacio)       | Todas las cuentas de ese titular en ese pais     |
+| Uno         | Uno            | Una especifica | Solo esa cuenta                                 |
+
+Si una cuenta se asigna acompanada de titular o pais distintos al real, el backend rechaza el guardado y el modal muestra la incoherencia en vivo con tres botones: "Mantener solo la cuenta", "Mantener pais y titular" y "Corregir a la realidad de la cuenta". El modal tambien calcula y muestra "Afecta a N cuenta(s)" en cada fila antes de guardar.
+
+Si envias dos o mas filas con los mismos flags y una cubre a la otra en todas las dimensiones, el backend devuelve `409 Conflict` con la lista de redundancias y no guarda nada. Quita las restrictivas o ampla las generales antes de reintentar.
+
 Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
 
 Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas visibles en `Extractos` no concede permiso de edicion; la edicion de columnas se decide por los permisos configurados en `Usuarios`.
@@ -413,16 +434,24 @@ Las importaciones de extractos y los movimientos manuales de plazo fijo tambien 
 
 El menu lateral incluye `Revision` con dos apartados:
 
-- `Comisiones`: busca movimientos con conceptos de comision, mantenimiento, administracion, reclamacion, descubierto o gastos bancarios. `Tarjeta`, `cuota`, `leasing`, `prestamo`, `servicio` o `transferencia` por si solos no cuentan como comision.
+- `Comisiones`: busca cargos (importe negativo) con conceptos de comision, mantenimiento, administracion, reclamacion, descubierto o gastos bancarios. `Tarjeta`, `cuota`, `leasing`, `prestamo`, `servicio` o `transferencia` por si solos no cuentan como comision. Los abonos en positivo no aparecen como lineas: son las devoluciones de esas comisiones.
 - `Seguros`: busca cargos negativos con conceptos de seguro, poliza, prima y aseguradoras habituales. Quedan fuera Seguridad Social, Seguro Social, Seguros Sociales, TGSS, Tesoreria General, Generalitat, transferencias, anulaciones, devoluciones y reembolsos.
 
 En comisiones puedes marcar una linea como `Devuelta`. En seguros puedes marcarla como `Correcto`. Si la deteccion automatica se equivoca, usa `No es comision` o `No es seguro`; la linea queda como `Descartada` y puedes recuperarla con `Restaurar`.
 
+### Devolucion automatica de comisiones
+
+Cuando una comision tiene su bonificacion en el mismo banco y cuenta, la columna `Devolucion` muestra automaticamente la fecha del abono emparejado y aparece un boton verde de `Verificar`. Un clic marca la comision como `Devuelta` y guarda que abono concreto la cubre; si desmarcas la linea, el abono queda libre de nuevo.
+
+El emparejamiento sigue tres reglas: mismo importe exacto (la bonificacion invierte el cargo), misma cuenta y fecha posterior a la comision. Si hay varias comisiones iguales, el abono siempre se asigna a la mas antigua; mientras esa siga pendiente, Atlas Balance no deja verificar la mas reciente con ese mismo abono. Los abonos que descartaste como `No es comision` nunca se usan.
+
+Si no hay ningun abono candidato, la columna muestra `—` y puedes seguir marcando la devolucion a mano.
+
 El estado queda guardado y puedes filtrar por pendientes, revisadas o descartadas. La vista `Todas/Todos` no muestra descartadas; para verlas, usa el filtro `Descartadas/Descartados`. Para cambiar estados necesitas permiso de escritura sobre la cuenta o titular de esa linea; si solo tienes lectura, veras `Solo lectura`.
 
-El importe minimo de comisiones se configura en `Configuracion > Revision e IA`. Se compara por valor absoluto: con umbral `1`, aparecen `-1,20` y `1,20`.
+El importe minimo de comisiones se configura en `Configuracion > Revision e IA`. Con umbral `1` aparecen los cargos a partir de `-1,20`; los abonos equivalentes ya no se listan, se reservan para el emparejamiento automatico.
 
-En movil, `Revision` muestra cada movimiento como tarjeta etiquetada para que puedas leer titular, cuenta, importe, concepto y estado sin arrastrar una tabla ancha.
+En movil, `Revision` muestra cada movimiento como tarjeta etiquetada para que puedas leer titular, cuenta, importe, concepto, fecha de devolucion y estado sin arrastrar una tabla ancha.
 
 ## IA
 
@@ -436,13 +465,23 @@ Algunas preguntas de ranking financiero se calculan directamente en Atlas Balanc
 
 Las respuestas del chat se muestran como texto legible. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
 
+Tu pregunta aparece como burbuja a la derecha con fondo suave; la respuesta de la IA aparece como texto plano a la izquierda, con la hora y el modelo debajo. Cuando cambia el dia entre mensajes se muestra un divisor `Hoy` / `Ayer` / `DD MMM`.
+
+El composer (la caja de texto inferior) es una tarjeta. En la fila inferior veras el **modo de pensamiento** (a la izquierda) y el modelo activo + el boton de enviar (a la derecha). El modo de pensamiento cambia la profundidad de razonamiento que pide al proveedor:
+
+- `OPENAI`: `Esfuerzo automatico / bajo / medio / alto` (mapeado a `reasoning_effort`).
+- `MINIMAX`: `Esfuerzo automatico / Pensamiento activado / Pensamiento desactivado` (mapeado a `thinking.type`).
+- `OPENROUTER`: solo `Esfuerzo automatico` (los modelos concretos pueden aceptar `reasoning.effort`, pero el `openrouter/auto` lo ignora).
+
+El modelo activo se sigue eligiendo desde `Configuracion` (no hay selector de modelo dentro del chat). En la cabecera del chat veras el chip del provider (`OpenAI` / `MiniMax` / `OpenRouter`); el boton de la flecha circular es `Nueva conversacion` (limpia los mensajes pero mantiene el modo de pensamiento elegido).
+
 Atlas Balance tambien filtra razonamiento interno del proveedor. No deberias ver textos como `We need to answer`, bloques `<think>`, notas de analisis ni placeholders tipo `[PERSON_NAME]`; si un dato no viene en el contexto accesible, la respuesta debe decir que no consta.
 
 Si el proveedor externo devuelve algo que Atlas Balance no puede usar, el error debe indicar una categoria tecnica corta, por ejemplo `invalid_json` o `unsupported_content`, en vez de repetir un mensaje generico de respuesta malformada.
 
 Si falla la conexion con OpenRouter, OpenAI o MiniMax, el chat muestra un error generico. El administrador puede revisar la auditoria, donde solo queda una categoria tecnica segura como `tls_certificate`, `proxy_unavailable`, `dns_resolution_failed`, `connection_refused` o `network_error`; no se muestran hostnames internos, proxy, puertos, certificados, prompt, respuesta completa ni API key.
 
-En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva. El selector de modelo queda discreto en la cabecera junto al proveedor y cambia el modelo solo para las siguientes consultas de esa conversacion; no modifica la configuracion global de la app.
+En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva.
 
 El chat esta limitado a Atlas Balance, funcionamiento de la app y datos financieros disponibles. Puede responder sobre gastos, ingresos, importes, montos, Seguridad Social, impuestos, comisiones, seguros, recibos, facturas, nominas, cuotas, cargos y cobros si esos datos estan en el contexto financiero accesible para tu usuario. Si preguntas por recetas, cocina, programacion, noticias, ocio, salud, asesoramiento legal externo o cualquier asunto externo, la app debe rechazar la consulta.
 
@@ -480,7 +519,7 @@ El periodo se elige con tabs (`1m`, `3m`, `6m`, `9m`, `12m`, `18m`, `24m`) y la 
 
 En el dashboard de una cuenta, la tabla de movimientos permite seleccionar filas desde la primera columna.
 
-- Para marcar movimientos con flag, selecciona una o varias filas y pulsa el boton superior con icono de banderola.
+- Para marcar movimientos con flag, selecciona una o varias filas y pulsa el boton superior con icono de banderola. El mismo boton alterna entre marcar y quitar la alerta: si todas las seleccionadas ya estan amarillas, las desmarca; si hay alguna sin alerta, marca solo las que faltan. El icono y el permiso son los mismos, solo cambia el texto accesible del boton ("Marcar seleccion con alerta" / "Quitar alerta de la seleccion").
 - Para eliminar movimientos, selecciona una o varias filas y pulsa la papelera superior. La confirmacion de borrado se mantiene.
 - Para insertar una linea intermedia, pasa el cursor entre filas y pulsa el icono `+` que aparece.
 - Marcar checks, seleccionar filas, insertar, eliminar o aplicar flag no debe recargar la pagina ni mandarte arriba.
@@ -610,7 +649,7 @@ Atlas Balance usa el nuevo simbolo de marca en login, cambio obligatorio de pass
 
 El logo se adapta automaticamente a modo claro y oscuro. No cambia ningun flujo de uso.
 
-## Rutas de backups y exportaciones V-02.07
+## Rutas de backups y exportaciones (vigente en V-02.08; introducido en V-02.07)
 
 Las carpetas de backups y de exportaciones deben estar en un disco de la propia maquina. Se escriben asi:
 
@@ -627,7 +666,7 @@ Si necesitas que las copias acaben en un NAS o en un servidor de la oficina, mon
 
 Nada mas cambia: el resto del funcionamiento de backups y exportaciones es identico.
 
-## Avisos de seguridad y estado del sistema V-02.07
+## Avisos de seguridad y estado del sistema (vigente en V-02.08; introducido en V-02.07)
 
 Solo para administradores.
 

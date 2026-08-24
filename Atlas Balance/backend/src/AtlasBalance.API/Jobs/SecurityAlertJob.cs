@@ -1,3 +1,4 @@
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Services;
 
 namespace AtlasBalance.API.Jobs;
@@ -30,6 +31,6 @@ public sealed class SecurityAlertJob
         _logger.LogWarning(
             "SecurityAlertJob notifico {Count} alertas de seguridad: {Reglas}",
             alertas.Count,
-            string.Join(", ", alertas.Select(a => a.Regla).Distinct()));
+            LogScrubber.Scrub(string.Join(", ", alertas.Select(a => a.Regla).Distinct())));
     }
 }

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-02.07",
+    [string]$Version = "V-02.09",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall,
@@ -234,9 +234,27 @@ foreach ($script in @(
     "Launch-AtlasBalance.ps1",
     "install-cert-client.ps1",
     "uninstall-services.ps1",
+    "Repair-RlsContext.ps1",
+    "Deploy-RlsHotfix.ps1",
+    "Grant-OwnerBypassRls.ps1",
+    "Test-BackupRestore.ps1",
+    "Test-AtlasSecrets.ps1",
+    "Test-AtlasSmtp.ps1",
+    "Smoke-Test-AtlasBalance.ps1",
+    "Mfa-Totp.ps1",
+    "Mfa-Totp.Tests.ps1",
+    "Sync-AtlasDirectory.ps1",
+    "Sync-AtlasDirectory.Tests.ps1",
     "Caddyfile.example"
 )) {
-    Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\$script") -Destination (Join-Path $packageRoot "scripts\$script") -Force
+    $source = Join-Path $repoRoot "scripts\$script"
+    if (-not (Test-Path -LiteralPath $source)) {
+        # V-02.08: cualquier script nuevo que se anada a la lista pero todavia
+        # no exista en scripts/ no debe abortar el build. Solo advertir.
+        Write-Host "Aviso: $script no existe en scripts/. Se omite del paquete." -ForegroundColor Yellow
+        continue
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $packageRoot "scripts\$script") -Force
 }
 
 foreach ($cmd in @(
@@ -260,9 +278,18 @@ $releaseGitignore = Join-Path $repoRoot "RELEASE.gitignore"
 if (Test-Path $releaseGitignore) {
     Copy-Item -LiteralPath $releaseGitignore -Destination (Join-Path $packageRoot ".gitignore") -Force
 }
-$userDocumentation = Join-Path $documentationRoot "documentacion.md"
+# V-02.08: se empaqueta DOCUMENTACION_USUARIO.md (la fuente canonica que lee
+# DocumentationHelpService, ver AGENTS.md seccion 6) dentro de api\Documentacion,
+# no "documentacion.md" en la raiz del paquete. Asi queda dentro de la carpeta
+# que Sync-DirectoryPreserveConfig copia a <InstallPath>\api en cada instalacion
+# o actualizacion, y Documentation:UserPath (fijado por el instalador) la
+# encuentra sin depender del fallback relativo de Program.cs, que solo resuelve
+# en el layout del repositorio de desarrollo.
+$userDocumentation = Join-Path $documentationRoot "DOCUMENTACION_USUARIO.md"
 if (Test-Path $userDocumentation) {
-    Copy-Item -LiteralPath $userDocumentation -Destination (Join-Path $packageRoot "documentacion.md") -Force
+    $packagedDocumentationDir = Join-Path $packageRoot "api\Documentacion"
+    New-Item -ItemType Directory -Path $packagedDocumentationDir -Force | Out-Null
+    Copy-Item -LiteralPath $userDocumentation -Destination (Join-Path $packagedDocumentationDir "DOCUMENTACION_USUARIO.md") -Force
 }
 
 $manifest = [ordered]@{

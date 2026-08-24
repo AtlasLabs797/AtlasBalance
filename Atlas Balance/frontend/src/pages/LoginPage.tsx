@@ -356,6 +356,23 @@ export default function LoginPage() {
         >
           {isSubmitting ? 'Validando...' : (mfaChallenge ? 'Verificar acceso' : 'Entrar')}
         </button>
+
+        {mfaChallenge && !isSubmitting && (
+          <button
+            type="button"
+            className="auth-link-button"
+            onClick={() => {
+              // V-02.08: salida del paso MFA. Antes, un challenge expirado o con
+              // intentos agotados dejaba al usuario encerrado en este paso sin
+              // mas remedio que recargar la pagina.
+              setMfaChallenge(null);
+              setError(null);
+              setValue('mfaCode', '');
+            }}
+          >
+            Volver al inicio de sesión
+          </button>
+        )}
       </form>
       </main>
     </section>

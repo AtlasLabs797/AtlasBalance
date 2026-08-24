@@ -10,6 +10,46 @@ public static class AiConfiguration
     public const string DefaultMiniMaxModel = "MiniMax-M3";
     public const string MiniMaxM27Model = "MiniMax-M2.7";
 
+    // V-02.09 (Fase UI): modos de pensamiento admitidos por provider.
+    // OpenAI expone reasoning_effort, MiniMax expone thinking.type,
+    // OpenRouter acepta reasoning.effort en modelos concretos. Cada
+    // provider tiene un set explicito para no enviar valores que el
+    // backend del proveedor rechazaria con 400.
+    public const string ThinkingModeAuto = "auto";
+    public const string ThinkingModeLow = "low";
+    public const string ThinkingModeMedium = "medium";
+    public const string ThinkingModeHigh = "high";
+    public const string ThinkingModeOn = "on";
+    public const string ThinkingModeOff = "off";
+
+    private static readonly string[] ThinkingModesOpenAi =
+    [
+        ThinkingModeAuto,
+        ThinkingModeLow,
+        ThinkingModeMedium,
+        ThinkingModeHigh
+    ];
+
+    private static readonly string[] ThinkingModesMiniMax =
+    [
+        ThinkingModeAuto,
+        ThinkingModeOn,
+        ThinkingModeOff
+    ];
+
+    private static readonly string[] ThinkingModesOpenRouter =
+    [
+        ThinkingModeAuto
+    ];
+
+    private static readonly string[] AllowedThinkingModesOpenRouter =
+    [
+        ThinkingModeAuto,
+        ThinkingModeLow,
+        ThinkingModeMedium,
+        ThinkingModeHigh
+    ];
+
     private static readonly string[] SuggestedOpenRouterModels =
     [
         OpenRouterAutoModel,
@@ -42,6 +82,45 @@ public static class AiConfiguration
     public static IReadOnlyList<string> OpenRouterModels => SuggestedOpenRouterModels;
     public static IReadOnlyList<string> OpenAiModels => AllowedOpenAiModels;
     public static IReadOnlyList<string> MiniMaxModels => AllowedMiniMaxModels;
+
+    public static IReadOnlyList<string> GetThinkingModesForProvider(string? provider)
+    {
+        var normalized = NormalizeProvider(provider);
+        return normalized switch
+        {
+            "OPENAI" => ThinkingModesOpenAi,
+            "MINIMAX" => ThinkingModesMiniMax,
+            _ => ThinkingModesOpenRouter
+        };
+    }
+
+    public static bool IsAllowedThinkingMode(string? provider, string? mode)
+    {
+        var normalized = NormalizeProvider(provider);
+        var trimmed = mode?.Trim()?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return false;
+        }
+
+        return normalized switch
+        {
+            "OPENAI" => ThinkingModesOpenAi.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
+            "MINIMAX" => ThinkingModesMiniMax.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
+            _ => AllowedThinkingModesOpenRouter.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal))
+        };
+    }
+
+    public static string? NormalizeThinkingMode(string? provider, string? mode)
+    {
+        var trimmed = mode?.Trim()?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, ThinkingModeAuto, StringComparison.Ordinal))
+        {
+            return ThinkingModeAuto;
+        }
+
+        return IsAllowedThinkingMode(provider, trimmed) ? trimmed : null;
+    }
 
     public static bool IsAllowedOpenRouterModel(string? model)
     {

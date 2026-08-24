@@ -26,13 +26,13 @@ public class RevisionServiceTests
     }
 
     [Fact]
-    public async Task GetComisionesAsync_Should_Use_Absolute_Threshold_And_Persist_State()
+    public async Task GetComisionesAsync_Should_List_Only_Negative_Commissions_And_Persist_State()
     {
         await using var db = BuildDbContext();
         var cuentaId = await SeedBaseAsync(db);
         var smallCommissionId = Guid.NewGuid();
         var negativeCommissionId = Guid.NewGuid();
-        var positiveCommissionId = Guid.NewGuid();
+        var positiveRefundId = Guid.NewGuid();
 
         db.Configuraciones.Add(new Configuracion
         {
@@ -64,10 +64,10 @@ public class RevisionServiceTests
             },
             new Extracto
             {
-                Id = positiveCommissionId,
+                Id = positiveRefundId,
                 CuentaId = cuentaId,
                 Fecha = new DateOnly(2026, 5, 3),
-                Concepto = "Comision tarjeta devuelta",
+                Concepto = "BONIFIC. COMISION MANT. CUENTA",
                 Monto = 1.20m,
                 Saldo = 100m,
                 FilaNumero = 3
@@ -87,11 +87,14 @@ public class RevisionServiceTests
         var scope = AdminScope();
         var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
 
+        // V-02.08: solo cargos por debajo del umbral negativo. El positivo es la
+        // devolucion de la comision y no se lista como fila propia.
         var result = await sut.GetComisionesAsync(scope, new RevisionQueryRequest(), CancellationToken.None);
 
-        result.Total.Should().Be(2);
-        result.Data.Select(x => x.ExtractoId).Should().BeEquivalentTo([negativeCommissionId, positiveCommissionId]);
-        result.Data.Should().OnlyContain(x => Math.Abs(x.Monto) > 1m);
+        result.Total.Should().Be(1);
+        result.Data.Should().ContainSingle();
+        result.Data[0].ExtractoId.Should().Be(negativeCommissionId);
+        result.Data.Should().OnlyContain(x => x.Monto < 0);
         result.Data.Should().OnlyContain(x => x.EstadoDevolucion == RevisionService.EstadoPendiente);
 
         await sut.SetEstadoAsync(scope, negativeCommissionId, RevisionService.TipoComision, RevisionService.EstadoDevuelta, CancellationToken.None);
@@ -104,7 +107,7 @@ public class RevisionServiceTests
         devueltas.Data.Should().ContainSingle();
         devueltas.Data[0].ExtractoId.Should().Be(negativeCommissionId);
 
-        await sut.SetEstadoAsync(scope, positiveCommissionId, RevisionService.TipoComision, RevisionService.EstadoDescartada, CancellationToken.None);
+        await sut.SetEstadoAsync(scope, negativeCommissionId, RevisionService.TipoComision, RevisionService.EstadoDescartada, CancellationToken.None);
 
         var descartadas = await sut.GetComisionesAsync(
             scope,
@@ -112,7 +115,7 @@ public class RevisionServiceTests
             CancellationToken.None);
 
         descartadas.Data.Should().ContainSingle();
-        descartadas.Data[0].ExtractoId.Should().Be(positiveCommissionId);
+        descartadas.Data[0].ExtractoId.Should().Be(negativeCommissionId);
         descartadas.Data[0].EstadoDevolucion.Should().Be(RevisionService.EstadoDescartada);
 
         var todasTrasDescartar = await sut.GetComisionesAsync(
@@ -120,8 +123,375 @@ public class RevisionServiceTests
             new RevisionQueryRequest(),
             CancellationToken.None);
 
-        todasTrasDescartar.Data.Select(x => x.ExtractoId).Should().NotContain(positiveCommissionId);
-        todasTrasDescartar.Data.Should().OnlyContain(x => x.EstadoDevolucion != RevisionService.EstadoDescartada);
+        todasTrasDescartar.Data.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetComisionesAsync_Should_Suggest_Automatic_Refund_For_Pending_Commission()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var commissionId = Guid.NewGuid();
+        var refundId = Guid.NewGuid();
+
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = commissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 24),
+                Concepto = "INTERESES Y/O COMISIONES CUENTA",
+                Monto = -60m,
+                Saldo = 940m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = refundId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 25),
+                Concepto = "BONIFIC. COMISION MANT. CUENTA",
+                Monto = 60m,
+                Saldo = 1_000m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+        var result = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
+
+        result.Data.Should().ContainSingle();
+        result.Data[0].ExtractoId.Should().Be(commissionId);
+        result.Data[0].DevolucionExtractoId.Should().Be(refundId);
+        result.Data[0].DevolucionFecha.Should().Be(new DateOnly(2026, 6, 25));
+    }
+
+    [Fact]
+    public async Task GetComisionesAsync_Should_Assign_Abono_To_Oldest_Commission_Only()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var olderCommissionId = Guid.NewGuid();
+        var newerCommissionId = Guid.NewGuid();
+        var refundId = Guid.NewGuid();
+
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = olderCommissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 1),
+                Concepto = "COMISION MANTENIMIENTO",
+                Monto = -60m,
+                Saldo = 940m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = newerCommissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 10),
+                Concepto = "COMISION MANTENIMIENTO",
+                Monto = -60m,
+                Saldo = 880m,
+                FilaNumero = 2
+            },
+            new Extracto
+            {
+                Id = refundId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 15),
+                Concepto = "BONIFIC. COMISION MANT. CUENTA",
+                Monto = 60m,
+                Saldo = 940m,
+                FilaNumero = 3
+            });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+        var result = await sut.GetComisionesAsync(AdminScope(), new RevisionQueryRequest(), CancellationToken.None);
+
+        result.Total.Should().Be(2);
+        var older = result.Data.Single(x => x.ExtractoId == olderCommissionId);
+        var newer = result.Data.Single(x => x.ExtractoId == newerCommissionId);
+        older.DevolucionExtractoId.Should().Be(refundId);
+        newer.DevolucionExtractoId.Should().BeNull();
+        newer.DevolucionFecha.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task VerificarDevolucionAsync_Should_Persist_Reference_And_Mark_Devuelta()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var commissionId = Guid.NewGuid();
+        var refundId = Guid.NewGuid();
+
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = commissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 24),
+                Concepto = "INTERESES Y/O COMISIONES CUENTA",
+                Monto = -60m,
+                Saldo = 940m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = refundId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 24),
+                Concepto = "BONIFIC. COMISION MANT. CUENTA",
+                Monto = 60m,
+                Saldo = 1_000m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var scope = AdminScope();
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+
+        var response = await sut.VerificarDevolucionAsync(scope, commissionId, CancellationToken.None);
+
+        response.Encontrada.Should().BeTrue();
+        response.DevolucionExtractoId.Should().Be(refundId);
+
+        var estado = await db.RevisionExtractoEstados.AsNoTracking().SingleAsync(x => x.ExtractoId == commissionId);
+        estado.Estado.Should().Be(RevisionService.EstadoDevuelta);
+        estado.ExtractoDevolucionId.Should().Be(refundId);
+
+        var result = await sut.GetComisionesAsync(scope, new RevisionQueryRequest { Estado = RevisionService.EstadoDevuelta }, CancellationToken.None);
+        result.Data.Should().ContainSingle();
+        result.Data[0].EstadoDevolucion.Should().Be(RevisionService.EstadoDevuelta);
+        result.Data[0].DevolucionExtractoId.Should().Be(refundId);
+        result.Data[0].DevolucionFecha.Should().Be(new DateOnly(2026, 6, 24));
+    }
+
+    [Fact]
+    public async Task VerificarDevolucionAsync_Should_Report_No_Candidate_When_Refund_Missing()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var commissionId = Guid.NewGuid();
+
+        db.Extractos.Add(new Extracto
+        {
+            Id = commissionId,
+            CuentaId = cuentaId,
+            Fecha = new DateOnly(2026, 6, 24),
+            Concepto = "INTERESES Y/O COMISIONES CUENTA",
+            Monto = -60m,
+            Saldo = 940m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+        var response = await sut.VerificarDevolucionAsync(AdminScope(), commissionId, CancellationToken.None);
+
+        response.Encontrada.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task VerificarDevolucionAsync_Should_Give_Abono_To_Oldest_Commission_And_Reject_Newer()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var olderCommissionId = Guid.NewGuid();
+        var newerCommissionId = Guid.NewGuid();
+        var refundId = Guid.NewGuid();
+
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = olderCommissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 1),
+                Concepto = "COMISION MANTENIMIENTO",
+                Monto = -60m,
+                Saldo = 940m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = newerCommissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 10),
+                Concepto = "COMISION MANTENIMIENTO",
+                Monto = -60m,
+                Saldo = 880m,
+                FilaNumero = 2
+            },
+            new Extracto
+            {
+                Id = refundId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 15),
+                Concepto = "BONIFIC. COMISION MANT. CUENTA",
+                Monto = 60m,
+                Saldo = 940m,
+                FilaNumero = 3
+            });
+        await db.SaveChangesAsync();
+
+        var scope = AdminScope();
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+
+        var rechazo = await sut.VerificarDevolucionAsync(scope, newerCommissionId, CancellationToken.None);
+        rechazo.Encontrada.Should().BeFalse();
+        rechazo.Message.Should().Contain("mas antigua");
+
+        var asignacion = await sut.VerificarDevolucionAsync(scope, olderCommissionId, CancellationToken.None);
+        asignacion.Encontrada.Should().BeTrue();
+        asignacion.DevolucionExtractoId.Should().Be(refundId);
+    }
+
+    [Fact]
+    public async Task VerificarDevolucionAsync_Should_Exclude_Discarded_Positive_As_Candidate()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var commissionId = Guid.NewGuid();
+        var refundId = Guid.NewGuid();
+
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = commissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 24),
+                Concepto = "INTERESES Y/O COMISIONES CUENTA",
+                Monto = -60m,
+                Saldo = 940m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = refundId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 25),
+                Concepto = "BONIFIC. COMISION MANT. CUENTA",
+                Monto = 60m,
+                Saldo = 1_000m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var scope = AdminScope();
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+
+        // El usuario marco el positivo como "no es comision": deja de ser candidato.
+        await sut.SetEstadoAsync(scope, refundId, RevisionService.TipoComision, RevisionService.EstadoDescartada, CancellationToken.None);
+
+        var response = await sut.VerificarDevolucionAsync(scope, commissionId, CancellationToken.None);
+
+        response.Encontrada.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SetEstadoAsync_Should_Clear_Devolucion_Reference_On_Unverify()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var commissionId = Guid.NewGuid();
+        var refundId = Guid.NewGuid();
+
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = commissionId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 24),
+                Concepto = "INTERESES Y/O COMISIONES CUENTA",
+                Monto = -60m,
+                Saldo = 940m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = refundId,
+                CuentaId = cuentaId,
+                Fecha = new DateOnly(2026, 6, 25),
+                Concepto = "BONIFIC. COMISION MANT. CUENTA",
+                Monto = 60m,
+                Saldo = 1_000m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var scope = AdminScope();
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+
+        await sut.VerificarDevolucionAsync(scope, commissionId, CancellationToken.None);
+
+        await sut.SetEstadoAsync(scope, commissionId, RevisionService.TipoComision, RevisionService.EstadoPendiente, CancellationToken.None);
+
+        var estado = await db.RevisionExtractoEstados.AsNoTracking().SingleAsync(x => x.ExtractoId == commissionId);
+        estado.Estado.Should().Be(RevisionService.EstadoPendiente);
+        estado.ExtractoDevolucionId.Should().BeNull();
+
+        // El abono queda libre y vuelve a sugerirse para la comision.
+        var result = await sut.GetComisionesAsync(scope, new RevisionQueryRequest(), CancellationToken.None);
+        result.Data.Should().ContainSingle();
+        result.Data[0].DevolucionExtractoId.Should().Be(refundId);
+        result.Data[0].EstadoDevolucion.Should().Be(RevisionService.EstadoPendiente);
+    }
+
+    [Fact]
+    public async Task VerificarDevolucionAsync_Should_Deny_ReadOnly_User()
+    {
+        await using var db = BuildDbContext();
+        var cuentaId = await SeedBaseAsync(db);
+        var userId = Guid.NewGuid();
+        var commissionId = Guid.NewGuid();
+        var titularId = await db.Cuentas.Where(x => x.Id == cuentaId).Select(x => x.TitularId).SingleAsync();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "lector-dev@test.local",
+            PasswordHash = "hash",
+            NombreCompleto = "Lector Devoluciones",
+            Rol = RolUsuario.GERENTE,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            TitularId = titularId,
+            PuedeVerCuentas = true,
+            PuedeAgregarLineas = false,
+            PuedeEditarLineas = false,
+            PuedeEliminarLineas = false,
+            PuedeImportar = false
+        });
+        db.Extractos.Add(new Extracto
+        {
+            Id = commissionId,
+            CuentaId = cuentaId,
+            Fecha = new DateOnly(2026, 6, 24),
+            Concepto = "INTERESES Y/O COMISIONES CUENTA",
+            Monto = -60m,
+            Saldo = 940m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+        var scope = new UserAccessScope
+        {
+            UserId = userId,
+            HasPermissions = true,
+            TitularIds = [titularId]
+        };
+
+        var act = () => sut.VerificarDevolucionAsync(scope, commissionId, CancellationToken.None);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
     }
 
     [Fact]
@@ -517,6 +887,27 @@ public class RevisionServiceTests
 
         sql.Should().Contain("\"EXTRACTOS\"");
         sql.Should().Contain("monto");
+    }
+
+    [Fact]
+    public void AbonoCandidates_Query_Should_Be_Translatable_By_Npgsql()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=atlas_balance;Username=test;Password=test")
+            .UseSnakeCaseNamingConvention()
+            .Options;
+
+        using var db = new AppDbContext(options);
+        var sut = new RevisionService(db, new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())));
+        var method = typeof(RevisionService).GetMethod("BuildAbonoCandidatesBatchQuery", BindingFlags.NonPublic | BindingFlags.Instance);
+        method.Should().NotBeNull();
+        var value = method!.Invoke(sut, [new List<Guid> { Guid.NewGuid() }, new List<decimal> { 60m }, new DateOnly(2026, 1, 1)]);
+        value.Should().BeAssignableTo<IQueryable>();
+
+        var sql = ((IQueryable)value!).ToQueryString();
+
+        sql.Should().Contain("\"EXTRACTOS\"");
+        sql.Should().Contain("extracto_devolucion_id");
     }
 
     [Fact]

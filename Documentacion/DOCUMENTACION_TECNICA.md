@@ -1,5 +1,185 @@
 # Documentacion tecnica
 
+## Vigencia documental: V-02.09
+
+La version activa de la aplicacion es `V-02.09` (runtime `2.9.0`). Este
+documento conserva debajo el historial tecnico de V-02.08 y versiones
+anteriores; esos rotulos no deben sustituirse porque identifican el origen de
+cada cambio.
+
+## 2026-08-07 - V-02.09 - Chat IA: composer, mensajes y modo de pensamiento
+
+### Que
+
+- Reescritura visual del chat IA (la ventana flotante del `TopBar` y la
+  pagina `/ia`, que ya comparten `AiChatPanel` desde la Fase 1.6) para
+  alinear el layout con el Design System.
+- Cabecera: titulo `Analisis IA` + chip del provider activo + boton
+  `Nueva conversacion` (`RotateCcw`) + boton cerrar.
+- Lista de mensajes: divisor `Hoy / Ayer / DD MMM` cuando el dia cambia;
+  asistente en texto plano a la izquierda con pie `HH:mm · modelo · modo`;
+  usuario en burbuja a la derecha con radio asimetrico y fondo
+  `bg-surface-soft`. El bloque tecnico plegable (`<details>`) sigue
+  bajo cada mensaje del asistente con origen, tokens, coste, periodo y
+  divisa.
+- Composer: tarjeta `.ai-chat-composer` con textarea y footer
+  (selector de modo de pensamiento a la izquierda, chip de modelo
+  activo + boton enviar `ArrowUp` a la derecha). Icono de microfono
+  fuera del composer.
+- Nuevo parametro `thinking_mode` en `POST /api/ia/chat`. Mapeo por
+  provider: OpenAI -> `reasoning_effort`, MiniMax -> `thinking.type`,
+  OpenRouter -> `reasoning.effort` (solo en modelos concretos).
+
+### Por que
+
+La composicion anterior densa (cabecera con provider + selector de
+modelo + boton enviar; mensajes como tarjetas con cabecera `Tu / IA /
+Sistema`; textarea plana + reset + enviar) cargaba ruido visual sobre
+un chat. La version nueva separa las responsabilidades: el header
+identifica, los mensajes cuentan, el composer pregunta y configura. El
+modo de pensamiento sustituye al selector de modelo dentro del chat
+porque el modelo activo sigue siendo el de Configuracion; el chat
+solo necesita decidir la profundidad de razonamiento.
+
+### Como
+
+- Frontend (`Atlas Balance/frontend/src/`):
+  - `utils/aiModels.ts`: tipo `ThinkingMode`
+    (`auto | low | medium | high | on | off`), `ThinkingModeOption`,
+    `getThinkingModeOptions(provider)` con arrays por provider y
+    `normalizeThinkingMode(provider, value)` que degrada a `auto` si
+    el valor no encaja.
+  - `types/index.ts`: `IaConfig.thinking_modes?: IaThinkingModeOption[]`,
+    `IaChatResponse.thinking_mode_aplicado?: string`.
+  - `stores/aiChatStore.ts`: estado `thinkingMode` (default `auto`),
+    accion `setThinkingMode`, envio del campo en `POST /ia/chat`,
+    lectura de `thinking_mode_aplicado` en la meta del mensaje.
+    `reset()` ya no toca `thinkingMode`. El override de modelo en el
+    chat se retira; el modelo activo es siempre `config.model`.
+  - `components/ia/AiChatPanel.tsx`: nueva composicion; helpers
+    `formatMessageTime`, `isSameLocalDay`, `humanizeThinkingMode`,
+    `formatDayLabel`. `renderMessage` factorizado para mostrar los
+    tres roles (`user`, `assistant`, `system`) con la marca visual
+    que toca en cada caso.
+  - `styles/layout/revision-ai.css`: clases reescritas para los
+    nuevos elementos y eliminadas las del antiguo `ai-chat-toolbar`
+    con `AppSelect` de modelo.
+- Backend (`Atlas Balance/backend/src/AtlasBalance.API/`):
+  - `Constants/AiConfiguration.cs`: constantes
+    `ThinkingModeAuto/Low/Medium/High/On/Off`, arrays por provider
+    y helpers `GetThinkingModesForProvider`,
+    `IsAllowedThinkingMode`, `NormalizeThinkingMode`.
+  - `DTOs/IaDtos.cs`: `IaChatRequest.ThinkingMode`,
+    `IaConfigResponse.ThinkingModes`, `IaChatResponse.ThinkingModeAplicado`.
+  - `Controllers/ConfiguracionController.cs` +
+    `Services/AtlasAiService.cs`: `IaConfigResponse` publica la
+    lista de modos del provider activo.
+  - `Controllers/IaController.cs`: reenvia el parametro al servicio.
+  - `Services/AtlasAiService.AskAsync`: nuevo parametro
+    `requestedThinkingMode`. Si el valor no encaja con el provider,
+    emite auditoria `rejected_thinking_mode` (nuevo campo en
+    `IaAuditSchema.CamposBloqueadaPermitidos`) y degrada a `auto`.
+  - `Services/AtlasAiService.BuildProviderRequest`: nuevo parametro
+    `thinkingMode`. Mapeo: OpenAI `reasoning_effort`, MiniMax
+    `thinking.type` (omitido para MiniMax-M2.7), OpenRouter
+    `reasoning.effort` o `reasoning.exclude=true` por defecto.
+  - `Services/IaPlanner/IaAuditSchema.cs`: nuevo campo
+    `requested_thinking_mode` en `CamposBloqueadaPermitidos`.
+  - `Services/AtlasAiService.LogBlockedAsync`: propaga `extra`
+    (propiedades del objeto anonimo) al payload de auditoria para
+    que `requested_model` y `requested_thinking_mode` lleguen a la
+    tabla.
+
+### Verificacion
+
+- Frontend: `npx.cmd tsc --noEmit` **OK**, `npm.cmd run lint`
+  **OK** (`--max-warnings 0`), `npm.cmd run test:unit` **57/57
+  PASS**. `npm.cmd run build` (Vite) sigue **BLOQUEADO** por el
+  `EPERM` al copiar `public/fonts/*.ttf` a `dist/fonts/`,
+  documentado en AGENTS.md seccion 8.
+- Backend: `dotnet build src/AtlasBalance.API -c Release
+  -p:UseAppHost=false -p:GenerateDepsFile=false
+  -p:BaseOutputPath=...` **OK** (0 errores; 7 warnings preexistentes
+  sobre `UseXminAsConcurrencyToken`, `PostgreSqlStorage` y
+  `LimpiezaAuditoriaJob`). Mismas flags necesarias para
+  `AtlasBalance.Watchdog` y `AtlasBalance.API.Tests` por el bloqueo
+  de `bin/Release/` y `bin/Debug/`.
+- Tests: `AtlasAiServiceThinkingModeTests` (11 tests) compila
+  limpio. `dotnet test` queda **BLOQUEADO** en este host por el
+  sandbox: el runner intenta escribir
+  `bin\Debug\net8.0\TestResults\*.log` y la ruta tiene `Access
+  to the path ... is denied`. La bateria completa queda pendiente
+  de CI o de un host sin bloqueo.
+
+### Pendientes
+
+- Bateria xUnit completa (`AtlasAiServiceThinkingModeTests` + resto)
+  en host sin bloqueo de `bin/Debug/`.
+- Build de Vite en host con acceso a `dist/fonts/`.
+- Smoke visual en `/ia` y en el flotante con los tres providers y
+  en ambos temas (claro/oscuro).
+
+## 2026-08-05 - V-02.08 - Auditoria automatica durante MFA
+
+La verificacion inicial MFA ejecuta un `SaveChanges` para persistir el secreto
+protegido, el estado del usuario y el nuevo refresh token. El interceptor de
+auditoria incluia una fila `AUDITORIAS` en ese mismo batch. Aunque los eventos
+explicitos del flujo auth ya usaban el INSERT sin `RETURNING`, esta segunda fila
+seguia siendo generada por EF con `RETURNING secuencia` y provocaba el mismo
+`42501` bajo la policy RLS sin SELECT.
+
+`AuditSaveChangesInterceptor` retorna sin generar diffs genericos cuando
+`AuditService.IsUnauthenticatedAuthFlow` identifica una peticion anonima bajo
+`/api/auth`. No se pierde el rastro de seguridad del MFA: `AuthService` registra
+eventos explicitos `MFA_ENABLED`, `MFA_VERIFIED` y `LOGIN`, ademas de fallos y
+bloqueos, mediante el camino firmado y sin `RETURNING`. Las operaciones
+autenticadas y los jobs conservan la auditoria automatica normal.
+
+Verificacion: tests del interceptor 4/4 y build Release con 0 errores. El DLL se
+desplego en `C:\AtlasBalance` con hash
+`09D194A9AB2FE9AEF241E402E79E1A2229342CBEBFB5970AA79AE2DCA0EF8932`;
+servicios activos y 8443 disponible. La prueba end-to-end requiere un challenge
+nuevo tras el reinicio del servicio.
+
+---
+
+## 2026-08-05 - V-02.08 - Auditoria de login compatible con RLS
+
+El HTTP 500 de V-02.07 no provenia de una password invalida ni de un secreto
+RLS desalineado. `AuditService` insertaba la auditoria mediante EF Core, que
+anade `RETURNING secuencia`. PostgreSQL trata los valores de `RETURNING` como
+lectura: ademas de `auditorias_insert`, exige la policy `SELECT`. El contexto
+anonimo de `/api/auth` puede insertar eventos firmados, pero deliberadamente no
+puede leer la tabla; el resultado correcto era `42501` para ese SQL concreto.
+
+`AuditService` emite ahora un INSERT parametrizado sin `RETURNING` unicamente
+cuando la peticion es anonima y su ruta esta bajo `/api/auth`. La secuencia
+`bigserial` sigue asignandose en PostgreSQL y la fila sigue pasando por
+`auditorias_insert`, `FORCE ROW LEVEL SECURITY` y el trigger append-only. No se
+abre `auditorias_select` al flujo de autenticacion ni se relajan UPDATE/DELETE.
+Los usuarios ya autenticados y los jobs conservan el camino EF existente.
+
+La regresion `Auth_Audit_Should_Insert_Without_Requiring_Select_Policy` reproduce
+el contrato con rol runtime y PostgreSQL real. En este host queda bloqueada por
+Docker/Testcontainers; la compilacion Release y los 10 tests unitarios del
+contexto RLS pasan. El hotfix se desplego sobre `C:\AtlasBalance` con backup y
+hash coincidente. El login real respondio HTTP 200 y avanzo al desafio MFA;
+API, PostgreSQL y Watchdog permanecieron activos.
+
+---
+
+## 2026-08-05 - V-02.08 - Reset de administrador compatible con PowerShell 5.1
+
+`Reset-AdminPassword.ps1` deja de cargar `BCrypt-Net-Next.dll` mediante
+`Add-Type`. El ensamblado de la release usa .NET 8 y no puede cargarse en
+Windows PowerShell 5.1, basado en .NET Framework 4. El reset genera ahora el
+hash bcrypt con coste 12 dentro de PostgreSQL mediante `pgcrypto`, ya presente
+desde la migracion inicial. La password temporal se interpola como literal SQL
+escapado en el contenido enviado por stdin a `psql`; no se pasa en la linea de
+comandos ni se registra en logs.
+
+---
+
 ## 2026-08-04 - V-02.07 - Higiene del paquete de release
 
 `Build-Release.ps1` limpia ahora, despues de publicar API y Watchdog y antes de
@@ -5908,3 +6088,78 @@ Nota sobre la pagina de estado: no se ha construido una dentro de la aplicacion 
 proposito. Una pagina de estado servida por el propio servicio que se cae no
 informa de nada cuando mas falta hace; tiene que vivir fuera, y eso es
 exactamente lo que hace Uptime Kuma.
+
+
+## 2026-08-23 - V-02.08 - Devolucion automatica de comisiones en Revision
+
+### Que se modifico
+
+La seccion `Revision > Comisiones` empareja ahora cada cargo con su
+bonificacion y permite verificar la devolucion en un clic.
+
+**Modelo de datos.** Nueva migracion
+`20260823120000_AddExtractoDevolucionToRevisionEstados`: columna
+`extracto_devolucion_id uuid NULL` en `REVISION_EXTRACTO_ESTADOS`, FK a
+`EXTRACTOS` (`ON DELETE RESTRICT`, mismo criterio que `extracto_id`) e indice
+unico parcial sobre la columna filtrando filas activas y no nulas. Ese indice
+unico es la garantia a nivel PostgreSQL contra la carrera de dos usuarios
+verificando el mismo abono: el segundo `SaveChanges` recibe una violacion de
+unicidad que el controller traduce a HTTP 409. La fecha de devolucion que se
+muestra sale del `fecha` del extracto emparejado (join), sin columnas nuevas.
+Snapshot actualizado a mano; el drift preexistente del bloque (falta
+`deleted_at/deleted_by_id` desde la migracion manual V-02-05) se deja tal
+cual para no mezclar cambios.
+
+**Deteccion y listado.** `RevisionService.GetComisionesAsync` pasa de umbral
+por valor absoluto (`monto > u OR monto < -u`) a solo cargos
+(`monto < -umbral`). Tras paginar, `ResolveDevolucionesAsync` resuelve la
+columna `Devolucion` de toda la pagina con dos consultas batch (fechas de
+referencias persistidas + candidatos elegibles), sin N+1. Asignacion greedy:
+comisiones pendientes ordenadas por `fecha ASC, fila_numero ASC`; cada una
+toma el abono libre mas antiguo posterior a su fecha. Un abono solo se
+sugiere una vez por pagina; el estado persistido es lo que libera o reserva.
+
+**Verificacion.** Nuevo endpoint
+`POST /api/revision/comision/{id}/verificar-devolucion`
+(`RevisionController.VerificarDevolucion`). Busca el mejor candidato con las
+mismas reglas (`ApplyAbonoEligibility`: concepto tipo comision via
+`BuildConceptPredicate`, no referenciado por otra revision activa, no
+DESCARTADA previamente), comprueba que no exista otra comision pendiente mas
+antigua que reclame el mismo abono y persiste en una sola unidad de trabajo:
+estado `DEVUELTA` + `extracto_devolucion_id`. Respuestas: 200 con
+`{encontrada, message, devolucionExtractoId, devolucionFecha}`; 409 si no hay
+candidata, si el abono pertenece a una comision anterior o por carrera
+(`DbUpdateException`); 403 sin permiso (`CanReviewCuentaAsync`);
+400 extracto inexistente. Permisos identicos al PATCH existente.
+
+**Ciclo de vida.** `SetEstadoAsync` limpia `extracto_devolucion_id`
+automaticamente cuando el nuevo estado no es `DEVUELTA` (toggle a PENDIENTE o
+descarte), liberando el abono. Las entidades siguen auditadas via
+`AuditSaveChangesInterceptor`; las politicas RLS existentes de la tabla no
+cambian (una columna nueva no altera `can_read_extracto/can_write_extracto`).
+
+**Frontend.** `RevisionPage.tsx`: columna `Devolucion` entre Concepto y
+Revision, boton verde `.revision-verify-button` (icono Check) visible cuando
+hay candidata y `canEditCuenta`; update optimista, invalidacion
+`['revision']` y re-sincronizacion de la fila/lista ante 409 o sin candidata
+(el servidor puede haber reasignado sugerencias). Tipos nuevos en
+`types/index.ts`. Responsive movil reutiliza las tarjetas data-label ya
+existentes; sin cambios de layout para Seguros.
+
+### Por que
+
+Las bonificaciones ("BONIFIC. COMISION MANT. CUENTA") aparecian como filas
+mas de la lista y marcar la devolucion era manual fila a fila sin trazabilidad
+del movimiento que cubria cada comision. Con el emparejamiento automatico la
+revision queda en un clic y la referencia comision-abono queda persistida,
+auditada e imposibilitada de duplicarse.
+
+### Verificacion
+
+- Suite completa: 870 tests, 851 verdes, 19 fallos exclusivamente por
+  Testcontainers sin Docker en sandbox (`PostgresCollection`).
+- `RevisionServiceTests` completo: 19/19 verdes (incluye los 9 nuevos/actualizados).
+- Frontend: eslint limpio, `tsc` limpio, `test:unit` 57/57.
+- Build de produccion vite bloqueado en sandbox por EPERM copiando fuentes a
+  `dist/` (caso documentado); `dotnet build` normal bloqueado por ACL de
+  sandbox sobre `src/*/obj`; ambos validados via workaround documentado abajo.

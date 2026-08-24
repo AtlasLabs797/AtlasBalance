@@ -190,6 +190,7 @@ export default function ImportacionPage() {
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const plazoFijoSubmittingRef = useRef(false);
   const createIdempotencyKeyRef = useRef(crypto.randomUUID());
   const confirmIdempotencyKeyRef = useRef(crypto.randomUUID());
   const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
@@ -282,22 +283,35 @@ export default function ImportacionPage() {
     };
   }, [preselectedCuentaId, selectedPaisId]);
 
+  // V-02.08: guard anti-carrera; sin el, alternar cuentas rapido podia dejar
+  // lotes de la cuenta anterior en el historial.
+  const lotesRequestIdRef = useRef(0);
+
   const loadLotes = useCallback(async (targetCuentaId = cuentaId) => {
     if (!targetCuentaId) {
       setLotes([]);
       return;
     }
 
+    const requestId = ++lotesRequestIdRef.current;
     setLoadingLotes(true);
     try {
       const { data } = await api.get<PaginatedResponse<ImportacionLote>>('/importacion/lotes', {
         params: { cuentaId: targetCuentaId, page: 1, pageSize: 20 },
       });
+      if (requestId !== lotesRequestIdRef.current) return;
       setLotes(data.data ?? []);
     } catch (err: unknown) {
+      if (requestId !== lotesRequestIdRef.current) return;
       setError(getApiErrorMessage(err, 'No se pudo cargar el historial de lotes'));
+      // Sin esto, si falla la carga del historico al cambiar de cuenta, los
+      // lotes de la cuenta anterior siguen visibles y se pueden abrir bajo el
+      // cuentaId ya actualizado.
+      setLotes([]);
     } finally {
-      setLoadingLotes(false);
+      if (requestId === lotesRequestIdRef.current) {
+        setLoadingLotes(false);
+      }
     }
   }, [cuentaId]);
 
@@ -307,6 +321,10 @@ export default function ImportacionPage() {
       return;
     }
 
+    // Vacia los lotes de la cuenta anterior al iniciar la carga de la nueva:
+    // si la peticion falla, el catch de loadLotes ya limpia, pero mientras
+    // esta en vuelo no deben verse ni poder abrirse lotes de otra cuenta.
+    setLotes([]);
     void loadLotes(cuentaId);
   }, [cuentaId, loadLotes]);
 
@@ -600,9 +618,18 @@ export default function ImportacionPage() {
       return;
     }
 
+    // V-02.08: guard sincrono anti doble-click. Era el unico flujo de escritura
+    // de la pagina sin idempotency key ni ref; dos clics rapidos creaban dos
+    // movimientos.
+    if (plazoFijoSubmittingRef.current) {
+      return;
+    }
+    plazoFijoSubmittingRef.current = true;
+
     const monto = plazoMontoNumber;
     if (monto === null || monto <= 0) {
       setError('Introduce un monto mayor que cero.');
+      plazoFijoSubmittingRef.current = false;
       return;
     }
 
@@ -644,6 +671,7 @@ export default function ImportacionPage() {
       setError(getApiErrorMessage(err, 'No se pudo registrar el movimiento del plazo fijo'));
     } finally {
       setSubmitting(false);
+      plazoFijoSubmittingRef.current = false;
     }
   };
 
@@ -790,6 +818,15 @@ export default function ImportacionPage() {
                             setError(null);
                             try {
                               const { data } = await api.get<ImportacionLoteDetalle>(`/importacion/lotes/${lote.id}`);
+                              // V-02.08: un lote cerrado (confirmado/revertido)
+                              // o fallido no es reconfirmable; antes se abria
+                              // editable y solo el backend lo rechazaba con un
+                              // error generico.
+                              const estadoLote = (data.lote?.estado ?? lote.estado ?? '').toLowerCase();
+                              if (estadoLote === 'confirmado' || estadoLote === 'revertido' || estadoLote === 'error') {
+                                setError(`El lote esta ${estadoLote} y no se puede confirmar de nuevo.`);
+                                return;
+                              }
                               setCurrentLote(data.lote);
                               setValidacion(data.validacion);
                               setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));

@@ -1,9 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import api from '@/services/api';
-import { useAlertasStore } from '@/stores/alertasStore';
-import { useAuthStore } from '@/stores/authStore';
-import { usePermisosStore } from '@/stores/permisosStore';
+import api, { clearSessionState } from '@/services/api';
 
 const TIMEOUT_MINUTES = 20;
 const WARNING_MINUTES = 1;
@@ -20,9 +17,6 @@ export interface SessionTimeoutState {
 
 export const useSessionTimeout = (): SessionTimeoutState => {
   const navigate = useNavigate();
-  const { logout } = useAuthStore();
-  const clearPermisos = usePermisosStore((state) => state.clear);
-  const clearAlertas = useAlertasStore((state) => state.clear);
 
   const [remainingSeconds, setRemainingSeconds] = useState(TIMEOUT_MINUTES * 60);
   const [isToastVisible, setIsToastVisible] = useState(false);
@@ -45,12 +39,13 @@ export const useSessionTimeout = (): SessionTimeoutState => {
     } catch {
       // La API puede estar reiniciando o la cookie ya puede haber expirado.
     } finally {
-      logout();
-      clearPermisos();
-      clearAlertas();
+      // V-02.08: clearSessionState() tambien vacia el chat IA y el pais-scope,
+      // evitando que el siguiente usuario en la misma pestana vea datos del
+      // usuario anterior tras un logout por inactividad.
+      clearSessionState();
       navigate('/login', { replace: true });
     }
-  }, [clearAlertas, clearPermisos, logout, navigate]);
+  }, [navigate]);
 
   const resetTimeout = useCallback(() => {
     lastActivityRef.current = Date.now();

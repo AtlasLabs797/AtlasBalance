@@ -89,3 +89,48 @@ export function isValidOpenRouterModelId(model: string | null | undefined) {
 
   return /^[A-Za-z0-9/_:.\-+]+$/.test(trimmed);
 }
+
+// V-02.09 (Fase UI): modo de razonamiento por provider. No todos los
+// proveedores exponen el mismo control: OpenAI usa reasoning_effort
+// (low/medium/high), MiniMax usa thinking.type (on/off), OpenRouter lo
+// acepta via reasoning.effort en modelos concretos. El frontend publica
+// solo las opciones que el backend declara por provider; aqui las
+// definimos como fallback cuando el backend no las envia.
+export type ThinkingMode = 'auto' | 'low' | 'medium' | 'high' | 'on' | 'off';
+
+export interface ThinkingModeOption {
+  value: ThinkingMode;
+  label: string;
+}
+
+const THINKING_MODES_OPENAI: ThinkingModeOption[] = [
+  { value: 'auto', label: 'Esfuerzo automatico' },
+  { value: 'low', label: 'Esfuerzo bajo' },
+  { value: 'medium', label: 'Esfuerzo medio' },
+  { value: 'high', label: 'Esfuerzo alto' },
+];
+
+const THINKING_MODES_MINIMAX: ThinkingModeOption[] = [
+  { value: 'auto', label: 'Esfuerzo automatico' },
+  { value: 'on', label: 'Pensamiento activado' },
+  { value: 'off', label: 'Pensamiento desactivado' },
+];
+
+const THINKING_MODES_OPENROUTER: ThinkingModeOption[] = [
+  { value: 'auto', label: 'Esfuerzo automatico' },
+];
+
+export function getThinkingModeOptions(provider: string | null | undefined): ThinkingModeOption[] {
+  const normalizedProvider = normalizeAiProvider(provider);
+  if (normalizedProvider === 'OPENAI') {
+    return THINKING_MODES_OPENAI;
+  }
+
+  return normalizedProvider === 'MINIMAX' ? THINKING_MODES_MINIMAX : THINKING_MODES_OPENROUTER;
+}
+
+export function normalizeThinkingMode(provider: string | null | undefined, value: string | null | undefined): ThinkingMode {
+  const allowed = getThinkingModeOptions(provider).map((option) => option.value);
+  const trimmed = (value ?? '').trim();
+  return (allowed as string[]).includes(trimmed) ? (trimmed as ThinkingMode) : 'auto';
+}

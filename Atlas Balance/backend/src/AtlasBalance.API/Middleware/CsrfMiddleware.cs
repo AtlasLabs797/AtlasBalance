@@ -101,6 +101,17 @@ public sealed class CsrfMiddleware
             return false;
         }
 
+        // V-02.08: la integracion OpenClaw se autentica con Bearer token propio
+        // (IntegrationAuthMiddleware), no con cookies de sesion, asi que CSRF no
+        // aplica. Exigir cookie csrf_token + header a un cliente Bearer-only
+        // rompia el contrato (fail-closed, pero obligaba a fabricar una pareja
+        // arbitraria). El middleware de integracion ya valida token, scopes y
+        // rate limit por su cuenta.
+        if (request.Path.StartsWithSegments("/api/integration", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         return !ExcludedPaths.Contains(request.Path.Value ?? string.Empty);
     }
 

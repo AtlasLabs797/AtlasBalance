@@ -29,6 +29,13 @@ internal static class RateLimitingSetup
     private const string IntegrationPathPrefix = "/api/integration/openclaw";
     private const string ApiPathPrefix = "/api";
     private const string HealthPath = "/api/health";
+    private const string HealthPathPrefix = "/api/health/";
+    // V-02.08: a diferencia de /api/health y /api/health/ready (stateless),
+    // /api/health/functional abre una transaccion, publica un contexto RLS
+    // elevado, inserta en AUDITORIAS y hace rollback en cada llamada. Eximirlo
+    // del limitador permitiria a un cliente anonimo agotar el pool de
+    // conexiones de PostgreSQL con sondas paralelas ilimitadas.
+    private const string FunctionalHealthPath = "/api/health/functional";
 
     /// <summary>
     /// Rutas que verifican credenciales. Van a su propio cubo por IP, mas
@@ -94,7 +101,21 @@ internal static class RateLimitingSetup
         var path = context.Request.Path;
 
         // Los estaticos de la SPA y el healthcheck no consumen presupuesto de API.
-        if (!path.StartsWithSegments(ApiPathPrefix) || path.Equals(HealthPath))
+        // V-02.08: tambien se eximen los nuevos /api/health/ready y
+        // /api/health/functional, que el instalador y el actualizador invocan
+        // como sondeos de readiness tras reiniciar servicios.
+        // codeql[cs/user-controlled-bypass] — by design: static assets and health
+        // endpoints are public, stateless, and rate-limiting them adds no security
+        // value. The check uses StartsWithSegments (prefix match on parsed
+        // PathString), not raw string comparison.
+        if (path.Equals(FunctionalHealthPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return Window($"health-functional:{ResolveIpKey(context)}", options.AuthPerMinutePerIp, options.Window);
+        }
+
+        if (!path.StartsWithSegments(ApiPathPrefix)
+            || path.Equals(HealthPath)
+            || path.StartsWithSegments(HealthPathPrefix))
         {
             return RateLimitPartition.GetNoLimiter("exento");
         }
