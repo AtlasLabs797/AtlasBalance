@@ -956,6 +956,11 @@ public sealed class AtlasAiService : IAtlasAiService
 
         if (resolution.Origen is PlanResolutionSource.Rejected)
         {
+            // V-02.08: el proveedor semantico ya fue llamado (SemanticCallAttempted)
+            // aunque su respuesta fue rechazada; sin este registro, el camino normal
+            // solo contabiliza la llamada legacy posterior y el presupuesto ve un
+            // proveedor en vez de los dos que realmente se facturaron.
+            await RegisterSemanticUsageIfAttemptedAsync();
             return null;
         }
 
@@ -1264,12 +1269,33 @@ public sealed class AtlasAiService : IAtlasAiService
         return builder.ToString().Trim();
     }
 
+    // V-02.08: "como"/"cómo" tambien encabeza preguntas financieras legitimas
+    // ("¿Cómo evolucionan los gastos?"), que deben llegar al planificador en
+    // vez de a la ayuda de documentacion. Solo se trata como pregunta de ayuda
+    // si, ademas del prefijo, no menciona ninguno de estos terminos de datos.
+    private static readonly string[] FinancialQueryTermsForHelpCarveOut =
+    [
+        "gasto", "gastos", "ingreso", "ingresos", "saldo", "saldos", "movimiento", "movimientos",
+        "extracto", "extractos", "cuenta", "cuentas", "comision", "comisión", "comisiones",
+        "evoluc", "tendencia", "tendencias", "ranking", "titular", "titulares", "importe", "importes",
+        "monto", "montos", "total", "totales", "conciliacion", "conciliación", "conciliaciones",
+        "anomalia", "anomalía", "anomalias", "anomalías"
+    ];
+
     private static bool EsPreguntaDeAyuda(string prompt)
     {
         var normalized = prompt.Trim().ToLowerInvariant();
-        return normalized.StartsWith("como ", StringComparison.Ordinal)
-            || normalized.StartsWith("cómo ", StringComparison.Ordinal)
-            || normalized.StartsWith("que significa", StringComparison.Ordinal)
+        var empiezaConComo = normalized.StartsWith("como ", StringComparison.Ordinal)
+            || normalized.StartsWith("cómo ", StringComparison.Ordinal);
+        if (empiezaConComo)
+        {
+            var normalizedSinAcentos = RemoveDiacritics(normalized);
+            var esPreguntaFinanciera = FinancialQueryTermsForHelpCarveOut.Any(term =>
+                normalizedSinAcentos.Contains(RemoveDiacritics(term), StringComparison.OrdinalIgnoreCase));
+            return !esPreguntaFinanciera;
+        }
+
+        return normalized.StartsWith("que significa", StringComparison.Ordinal)
             || normalized.StartsWith("qué significa", StringComparison.Ordinal)
             || normalized.StartsWith("por que no puedo", StringComparison.Ordinal)
             || normalized.StartsWith("por qué no puedo", StringComparison.Ordinal);
@@ -3311,6 +3337,7 @@ public sealed class AtlasAiService : IAtlasAiService
         "retencion", "retención", "retenciones", "tributo", "tributos", "tasa", "tasas", "autonomo", "autónomo", "autonomos", "autónomos",
         "nomina", "nómina", "salario", "salarios", "sueldo", "sueldos", "divisa", "divisas", "tipo de cambio", "plazo fijo", "vencimiento",
         "revision", "revisión", "importacion", "importación", "exportacion", "exportación",
+        "conciliacion", "conciliación", "conciliaciones",
         "dashboard", "configuracion", "configuración", "permiso", "permisos", "usuario",
         "usuarios", "alerta", "alertas", "backup", "auditoria", "auditoría", "excel",
         "xlsx", "csv", "proveedor", "modelo", "api key", "openrouter", "openai", "minimax", "ia financiera"

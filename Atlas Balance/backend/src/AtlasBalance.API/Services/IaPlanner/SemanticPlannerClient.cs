@@ -26,7 +26,7 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         _secretProtector = secretProtector;
     }
 
-    public async Task<string?> PlanToJsonAsync(
+    public async Task<SemanticPlanResponse> PlanToJsonAsync(
         string pregunta,
         IReadOnlyList<string> allowedOperations,
         CancellationToken cancellationToken,
@@ -41,7 +41,7 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         var model = AiConfiguration.NormalizeStoredModel(provider, Get(config, "ai_model"));
         if (!AiConfiguration.IsSupportedProvider(provider) || !AiConfiguration.IsAllowedModel(provider, model))
         {
-            return null;
+            return new SemanticPlanResponse(null, false);
         }
 
         var protectedKey = provider switch
@@ -50,7 +50,7 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
             "MINIMAX" => Get(config, "minimax_api_key"),
             _ => Get(config, "openrouter_api_key")
         };
-        if (string.IsNullOrWhiteSpace(protectedKey)) return null;
+        if (string.IsNullOrWhiteSpace(protectedKey)) return new SemanticPlanResponse(null, false);
 
         string apiKey;
         try
@@ -59,9 +59,9 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         }
         catch (InvalidOperationException)
         {
-            return null;
+            return new SemanticPlanResponse(null, false);
         }
-        if (string.IsNullOrWhiteSpace(apiKey)) return null;
+        if (string.IsNullOrWhiteSpace(apiKey)) return new SemanticPlanResponse(null, false);
 
         // V-02.08: el mapa de seudonimos lo construye el caller (mismas
         // entidades que ve el resto del flujo de IA, dentro del scope del
@@ -71,7 +71,7 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         // el comportamiento anterior con un mapa vacio.
         var safeQuestion = new DlpScrubber(pseudonyms ?? new AiPseudonymMap(Array.Empty<(string Nombre, string Tipo)>()))
             .Escanear(pregunta, "planificador");
-        if (safeQuestion.FalloCerrado) return null;
+        if (safeQuestion.FalloCerrado) return new SemanticPlanResponse(null, false);
 
         var client = _httpClientFactory.CreateClient(provider.ToLowerInvariant());
         using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
@@ -94,16 +94,22 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
             }
         });
 
+        // V-02.08: a partir de aqui la llamada de red se dispatcha de verdad
+        // (es facturable), asi que Dispatched=true incluso si la respuesta
+        // HTTP falla o el contenido no se puede extraer.
         using var response = await client.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode) return null;
+        if (!response.IsSuccessStatusCode) return new SemanticPlanResponse(null, true);
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);
-        return ExtractContent(payload);
+        return new SemanticPlanResponse(ExtractContent(payload), true);
     }
 
     private static string BuildSystemInstruction(IReadOnlyList<string> operations) =>
         "Devuelve exclusivamente un objeto JSON sin markdown con operacion, metrica y filtros. " +
         "No uses SQL, tablas, expresiones ni campos no listados. Operaciones permitidas: " +
-        string.Join(", ", operations) + ".";
+        string.Join(", ", operations) + ". " +
+        "filtros solo puede tener divisas (array de strings), concepto (texto libre) y periodo. " +
+        "periodo es {\"tipo\": \"mes_actual|mes_anterior|trimestre_actual|ano_actual|ultimos_30_dias\"} " +
+        "o, para un rango explicito, {\"desde\": \"YYYY-MM-DD\", \"hasta\": \"YYYY-MM-DD\"}.";
 
     private static string? ExtractContent(string payload)
     {

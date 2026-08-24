@@ -395,24 +395,24 @@ public sealed class FinancialToolsService : IFinancialToolsService
         UserAccessScope scope, FinancialQueryPlan plan, CancellationToken cancellationToken)
     {
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
-        var earliest = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddYears(-3);
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         // El periodo por defecto (mes en curso, ver IntentPlanner "saldo_actual"
         // e IaPlanValidator.PeriodoPorDefecto) no debe acotar que extracto se
-        // considera "el saldo actual": una cuenta sin movimientos este mes
-        // sigue teniendo un ultimo saldo valido. Solo un periodo pedido de
-        // forma explicita acota la ventana de busqueda del ultimo extracto.
+        // considera "el saldo actual": una cuenta sin movimientos este mes (o
+        // en los ultimos 3 anos) sigue teniendo un ultimo saldo valido, que es
+        // su extracto mas reciente sin ninguna cota inferior. Solo un periodo
+        // pedido de forma explicita acota la ventana de busqueda.
         var periodoEsPorDefecto = plan.Filtros.Periodo is null
             || plan.Filtros.Periodo.Tipo == FinancialPeriodKind.MesActual;
-        var desde = periodoEsPorDefecto ? earliest : (plan.Filtros.Periodo?.From ?? earliest);
-        var hasta = periodoEsPorDefecto ? hoy : (plan.Filtros.Periodo?.To ?? hoy);
+        DateOnly? desde = periodoEsPorDefecto ? null : plan.Filtros.Periodo?.From;
+        DateOnly? hasta = periodoEsPorDefecto ? null : (plan.Filtros.Periodo?.To ?? hoy);
         var cuentaIds = plan.Filtros.CuentaIds;
         var divisas = plan.Filtros.Divisas;
 
         var latestKeys =
             from e in _dbContext.Extractos.AsNoTracking()
             join c in cuentas on e.CuentaId equals c.Id
-            where (e.Fecha >= desde) && (e.Fecha <= hasta)
+            where (!desde.HasValue || e.Fecha >= desde.Value) && (!hasta.HasValue || e.Fecha <= hasta.Value)
             group e by e.CuentaId
             into g
             select new
@@ -902,8 +902,15 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         var inicio = hoy.AddMonths(-AnomalyHistoryMonths);
+        // V-02.08: filtros de entidad validados (cuenta/titular/divisa) deben
+        // acotar la deteccion igual que el resto de herramientas; sin esto,
+        // una solicitud de anomalias en una cuenta especifica devolvia
+        // anomalias de todas las cuentas accesibles del pais.
+        var cuentaIds = plan.Filtros.CuentaIds;
+        var titularIds = plan.Filtros.TitularIds;
+        var divisas = plan.Filtros.Divisas;
 
-        var extractos = await (
+        var extractosQuery =
             from e in _dbContext.Extractos.AsNoTracking()
             join c in cuentas on e.CuentaId equals c.Id
             join t in _dbContext.Titulares.AsNoTracking() on c.TitularId equals t.Id
@@ -913,11 +920,18 @@ public sealed class FinancialToolsService : IFinancialToolsService
                 e.Id,
                 e.CuentaId,
                 Cuenta = c.Nombre,
+                CuentaDivisa = c.Divisa,
+                TitularId = t.Id,
                 Titular = t.Nombre,
                 e.Fecha,
                 e.Monto,
                 e.Concepto
-            }).ToListAsync(cancellationToken);
+            };
+        if (cuentaIds is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => cuentaIds.Contains(x.CuentaId));
+        if (titularIds is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => titularIds.Contains(x.TitularId));
+        if (divisas is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => divisas.Contains(x.CuentaDivisa));
+
+        var extractos = await extractosQuery.ToListAsync(cancellationToken);
 
         var anomalias = new List<Anomaly>();
 
@@ -965,20 +979,25 @@ public sealed class FinancialToolsService : IFinancialToolsService
         // compara el saldo (campo Saldo del extracto) del tercer mes
         // contra el saldo del primer mes: si cae mas de un 25%, se
         // marca. Constante documentada para que los tests la pinzen.
-        var saldosReales = await (
+        var saldosRealesQuery =
             from e in _dbContext.Extractos.AsNoTracking()
             join c in cuentas on e.CuentaId equals c.Id
             join t in _dbContext.Titulares.AsNoTracking() on c.TitularId equals t.Id
             where e.Fecha >= inicio && e.Fecha <= hoy
-            group new { e.Saldo, e.Fecha, e.CuentaId } by new
+            select new { e.Saldo, e.Fecha, e.CuentaId, Cuenta = c.Nombre, CuentaDivisa = c.Divisa, TitularId = t.Id, Titular = t.Nombre };
+        if (cuentaIds is { Count: > 0 }) saldosRealesQuery = saldosRealesQuery.Where(x => cuentaIds.Contains(x.CuentaId));
+        if (titularIds is { Count: > 0 }) saldosRealesQuery = saldosRealesQuery.Where(x => titularIds.Contains(x.TitularId));
+        if (divisas is { Count: > 0 }) saldosRealesQuery = saldosRealesQuery.Where(x => divisas.Contains(x.CuentaDivisa));
+
+        var saldosReales = await saldosRealesQuery
+            .GroupBy(x => new
             {
-                e.CuentaId,
-                Cuenta = c.Nombre,
-                Titular = t.Nombre,
-                Mes = new DateOnly(e.Fecha.Year, e.Fecha.Month, 1)
-            }
-            into g
-            select new
+                x.CuentaId,
+                x.Cuenta,
+                x.Titular,
+                Mes = new DateOnly(x.Fecha.Year, x.Fecha.Month, 1)
+            })
+            .Select(g => new
             {
                 g.Key.CuentaId,
                 g.Key.Cuenta,

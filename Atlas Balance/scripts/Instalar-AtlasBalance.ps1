@@ -750,7 +750,15 @@ function Test-PostgresPreflight {
             # Extrae solo el hex (certutil imprime lineas adicionales).
             $hexSignature = ($signature -replace '[^a-fA-F0-9]', '').ToLower()
             if ($hexSignature.Length -gt 0) {
+                # V-02.08 (revision PR #33): la version anterior de esta sonda solo
+                # ejecutaba set_config(), que siempre tiene exito sin importar si
+                # context_is_valid() acepta la firma o si la policy auditorias_insert
+                # realmente permite el INSERT. Ahora valida ambas cosas de verdad:
+                # RAISE EXCEPTION si la firma no es valida, e INSERT+ROLLBACK contra
+                # AUDITORIAS bajo ON_ERROR_STOP=1 para que un 42501 (permission
+                # denied) aborte el instalador igual que antes de tocar la API.
                 $smokeSql = @"
+BEGIN;
 SELECT set_config('atlas.auth_mode', 'auth', false),
        set_config('atlas.user_id', '', false),
        set_config('atlas.integration_token_id', '', false),
@@ -758,9 +766,19 @@ SELECT set_config('atlas.auth_mode', 'auth', false),
        set_config('atlas.system', 'false', false),
        set_config('atlas.request_scope', 'auth', false),
        set_config('atlas.context_signature', '$hexSignature', false);
+DO `$`$
+BEGIN
+    IF NOT atlas_security.context_is_valid() THEN
+        RAISE EXCEPTION 'atlas_security.context_is_valid() devolvio false: el secreto RLS no esta alineado o la policy no esta desplegada.';
+    END IF;
+END
+`$`$;
+INSERT INTO "AUDITORIAS" (id, tipo_accion, entidad_tipo, origen, "timestamp", detalles_json)
+VALUES (gen_random_uuid(), 'INSTALLER_SMOKE', 'SISTEMA', 'INSTALADOR', now(), '{}'::json);
+ROLLBACK;
 "@
                 Invoke-Psql -PsqlExe $psql -Database $DbName -Sql $smokeSql | Out-Null
-                Write-Host "  [OK] Contexto RLS firmable con el secreto desplegado." -ForegroundColor Green
+                Write-Host "  [OK] Contexto RLS firmable: context_is_valid() y el INSERT firmado en AUDITORIAS funcionan." -ForegroundColor Green
             }
         }
     }
@@ -1510,23 +1528,28 @@ foreach ($shortcutRoot in $shortcutTargets) {
 }
 
 # V-02-05 (CONFIG-020): usar -SkipCertificateCheck en lugar de tocar el callback global.
+# V-02.08 (revision PR #33): /api/health/functional (no /api/health) es el
+# unico endpoint que de verdad ejercita el contexto RLS y la policy de
+# AUDITORIAS; /api/health solo confirma que el proceso responde, y con eso el
+# instalador podia reportar exito aunque el incidente V-02.07 (INSERT
+# rechazado por RLS) se hubiera reproducido en produccion.
 Start-Sleep -Seconds 5
 try {
     $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
     if ($curl) {
-        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl/api/health" 2>$null)
+        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl/api/health/functional" 2>$null)
         if ($LASTEXITCODE -eq 0 -and $statusCode -eq "200") {
             Write-Host "Health check curl.exe HTTP $statusCode" -ForegroundColor Green
         } else {
-            Write-Host "curl.exe no confirmo health OK (codigo $statusCode). Prueba manual: curl.exe -k -v $appUrl/api/health" -ForegroundColor Yellow
+            Write-Host "curl.exe no confirmo health OK (codigo $statusCode). Prueba manual: curl.exe -k -v $appUrl/api/health/functional" -ForegroundColor Yellow
         }
     } else {
-        $health = Invoke-WebRequest -Uri "$appUrl/api/health" -UseBasicParsing -TimeoutSec 20
+        $health = Invoke-WebRequest -Uri "$appUrl/api/health/functional" -UseBasicParsing -TimeoutSec 20
         Write-Host "Health check HTTP $($health.StatusCode)" -ForegroundColor Green
     }
 } catch {
     Write-Host "La instalacion termino, pero el health check automatico no confirmo la API: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "En Windows Server 2019 usa como prueba primaria: curl.exe -k -v $appUrl/api/health" -ForegroundColor Yellow
+    Write-Host "En Windows Server 2019 usa como prueba primaria: curl.exe -k -v $appUrl/api/health/functional" -ForegroundColor Yellow
 }
 
 Write-Host ""

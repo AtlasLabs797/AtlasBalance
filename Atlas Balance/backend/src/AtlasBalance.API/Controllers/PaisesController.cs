@@ -29,6 +29,7 @@ public sealed class PaisesController : ControllerBase
         [FromQuery] bool incluirInactivos = false,
         [FromQuery] bool incluirEliminados = false,
         [FromQuery] bool? activos = null,
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 500,
         CancellationToken cancellationToken = default)
@@ -52,6 +53,17 @@ public sealed class PaisesController : ControllerBase
         else if (!incluirInactivos)
         {
             query = query.Where(x => x.Activo);
+        }
+
+        // V-02.08: el campo de busqueda de la UI (PaisesPage) mandaba "search"
+        // sin que el backend lo aceptara, asi que el servidor lo ignoraba y
+        // devolvia siempre la misma pagina sin filtrar.
+        var searchTerm = search?.Trim();
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Nombre, $"%{searchTerm}%") ||
+                (x.CodigoIso2 != null && EF.Functions.ILike(x.CodigoIso2, $"%{searchTerm}%")));
         }
 
         page = Math.Max(1, page);

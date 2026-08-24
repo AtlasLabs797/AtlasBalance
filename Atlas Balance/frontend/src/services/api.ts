@@ -32,7 +32,7 @@ const syncSessionState = (usuario: Usuario | null | undefined, csrfToken: string
   usePermisosStore.getState().setPermisos(permisos ?? []);
 };
 
-const clearSessionState = () => {
+export const clearSessionState = () => {
   useAuthStore.getState().logout();
   usePermisosStore.getState().clear();
   useAlertasStore.getState().clear();

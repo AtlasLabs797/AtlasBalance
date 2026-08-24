@@ -782,7 +782,10 @@ app.MapGet("/api/health/functional", async (
         catch (Exception ex)
         {
             logger.LogWarning(ex, "No se pudo ejecutar el INSERT firmado de smoke en AUDITORIAS");
-            detalleInsert = "El INSERT firmado de smoke en AUDITORIAS fallo: " + ex.Message;
+            // V-02.08: ex.Message puede exponer host/puerto/esquema/nombres de
+            // politica RLS a un llamador anonimo no autenticado. El detalle
+            // completo queda solo en el log del servidor (linea de arriba).
+            detalleInsert = "El INSERT firmado de smoke en AUDITORIAS fallo. Revisa el log del servidor.";
         }
     }
 

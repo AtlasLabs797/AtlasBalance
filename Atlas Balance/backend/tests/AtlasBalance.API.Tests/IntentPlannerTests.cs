@@ -163,13 +163,13 @@ public class IntentPlannerTests
     {
         private readonly string? _json;
         public StubSemanticPlannerClient(string? json) { _json = json; }
-        public Task<string?> PlanToJsonAsync(
+        public Task<SemanticPlanResponse> PlanToJsonAsync(
             string pregunta,
             IReadOnlyList<string> allowedOperations,
             CancellationToken cancellationToken,
             AiPseudonymMap? pseudonyms = null)
         {
-            return Task.FromResult(_json);
+            return Task.FromResult(new SemanticPlanResponse(_json, true));
         }
     }
 }

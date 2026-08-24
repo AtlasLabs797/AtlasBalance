@@ -246,13 +246,21 @@ public class AtlasAiServiceStabilizationTests
 
         var result = await sut.AskAsync(AdminScope(userId), prompt, "127.0.0.1", CancellationToken.None);
 
-        var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsulta);
-        // Solo el tamano de la pregunta, no el contenido.
-        audit.DetallesJson.Should().Contain("\"pregunta_caracteres\":");
-        audit.DetallesJson.Should().NotContain("juan.perez@empresa.com");
-        audit.DetallesJson.Should().NotContain("ES91 2100 0418 4502 0005 1332");
-        audit.DetallesJson.Should().NotContain("12345678Z");
-        audit.DetallesJson.Should().NotContain("4111 1111 1111 1111");
+        // V-02.08: si el planificador semantico intenta y rechaza un plan,
+        // AskAsync sigue hacia el camino normal y queda mas de una fila de
+        // auditoria IaConsulta (una por cada llamada a proveedor realmente
+        // facturada). Ninguna de ellas debe llevar PII del prompt.
+        var audits = await db.Auditorias.Where(x => x.TipoAccion == AuditActions.IaConsulta).ToListAsync();
+        audits.Should().NotBeEmpty();
+        foreach (var audit in audits)
+        {
+            // Solo el tamano de la pregunta, no el contenido.
+            audit.DetallesJson.Should().Contain("\"pregunta_caracteres\":");
+            audit.DetallesJson.Should().NotContain("juan.perez@empresa.com");
+            audit.DetallesJson.Should().NotContain("ES91 2100 0418 4502 0005 1332");
+            audit.DetallesJson.Should().NotContain("12345678Z");
+            audit.DetallesJson.Should().NotContain("4111 1111 1111 1111");
+        }
     }
 
     // V-02.09 (Fase 1.5): el catalogo de OpenRouter solo expone los

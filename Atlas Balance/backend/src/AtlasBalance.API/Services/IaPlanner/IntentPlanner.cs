@@ -76,9 +76,16 @@ public interface IIntentPlanner
 // proveedor; en tests inyectamos un stub que devuelve un plan
 // concreto. La interfaz permite implementar el nivel 2 sin tocar
 // el flujo del nivel 1/3.
+// V-02.08: Dispatched distingue "se hizo una llamada de red real y
+// facturable al proveedor" de "PlanToJsonAsync no llego a llamar a la red"
+// (proveedor no soportado, sin API key, DLP en fail-closed). Sin esta
+// distincion, IntentPlanner no puede saber si debe registrar coste/uso: un
+// Json nulo significa lo mismo en ambos casos.
+public sealed record SemanticPlanResponse(string? Json, bool Dispatched);
+
 public interface ISemanticPlannerClient
 {
-    Task<string?> PlanToJsonAsync(
+    Task<SemanticPlanResponse> PlanToJsonAsync(
         string pregunta,
         IReadOnlyList<string> allowedOperations,
         CancellationToken cancellationToken,
@@ -87,13 +94,13 @@ public interface ISemanticPlannerClient
 
 public sealed class NullSemanticPlannerClient : ISemanticPlannerClient
 {
-    public Task<string?> PlanToJsonAsync(
+    public Task<SemanticPlanResponse> PlanToJsonAsync(
         string pregunta,
         IReadOnlyList<string> allowedOperations,
         CancellationToken cancellationToken,
         AiPseudonymMap? pseudonyms = null)
     {
-        return Task.FromResult<string?>(null);
+        return Task.FromResult(new SemanticPlanResponse(null, false));
     }
 }
 
@@ -231,7 +238,8 @@ public sealed class IntentPlanner : IIntentPlanner
             var pseudonyms = pseudonymsFactory is not null
                 ? await pseudonymsFactory(cancellationToken)
                 : null;
-            var raw = await _semantic.PlanToJsonAsync(texto, OperacionesPermitidas, cancellationToken, pseudonyms);
+            var semanticResponse = await _semantic.PlanToJsonAsync(texto, OperacionesPermitidas, cancellationToken, pseudonyms);
+            var raw = semanticResponse.Json;
             if (string.IsNullOrWhiteSpace(raw))
             {
                 return new PlanResolution
@@ -244,11 +252,11 @@ public sealed class IntentPlanner : IIntentPlanner
                     Origen = PlanResolutionSource.Rejected,
                     TextoOriginal = pregunta,
                     TextoNormalizado = normalizado,
-                    SemanticCallAttempted = true
+                    SemanticCallAttempted = semanticResponse.Dispatched
                 };
             }
 
-            var plan = ParsePlanFromJson(raw);
+            var plan = ParsePlanFromJson(raw, anchor);
             if (plan is null)
             {
                 _logger.LogWarning("Planificador semantico devolvio JSON no parseable: {Raw}", LogScrubber.Scrub(raw));
@@ -263,7 +271,7 @@ public sealed class IntentPlanner : IIntentPlanner
                     TextoOriginal = pregunta,
                     TextoNormalizado = normalizado,
                     ModelRaw = raw,
-                    SemanticCallAttempted = true
+                    SemanticCallAttempted = semanticResponse.Dispatched
                 };
             }
 
@@ -394,6 +402,9 @@ public sealed class IntentPlanner : IIntentPlanner
             }),
 
         // "ultimo gasto" / "cual fue el ultimo gasto"
+        // V-02.08: sin Periodo (no acotar al mes actual): si el ultimo gasto
+        // real es de un mes anterior, GetLatestTransactionAsync debe seguir
+        // encontrandolo en vez de reportar que no hay resultados.
         new LocalPattern(
             @"^[\s\?\!¡¿]*(?:cual\s+es|cual\s+fue|que\s+fue)\s+el\s+ultimo\s+gasto\s*\?*\s*$",
             "ultimo_gasto",
@@ -401,10 +412,7 @@ public sealed class IntentPlanner : IIntentPlanner
             {
                 Operacion = FinancialOperation.GetLatest,
                 Metrica = FinancialMetric.Gastos,
-                Filtros = new FinancialFilters
-                {
-                    Periodo = IaPlanValidator.PeriodoPorDefecto(anchor)
-                },
+                Filtros = new FinancialFilters(),
                 Limite = 1
             }),
 
@@ -416,10 +424,7 @@ public sealed class IntentPlanner : IIntentPlanner
             {
                 Operacion = FinancialOperation.GetLatest,
                 Metrica = FinancialMetric.Ingresos,
-                Filtros = new FinancialFilters
-                {
-                    Periodo = IaPlanValidator.PeriodoPorDefecto(anchor)
-                },
+                Filtros = new FinancialFilters(),
                 Limite = 1
             }),
 
@@ -523,13 +528,12 @@ public sealed class IntentPlanner : IIntentPlanner
         return null;
     }
 
-    private static FinancialQueryPlan? ParsePlanFromJson(string raw)
+    private static FinancialQueryPlan? ParsePlanFromJson(string raw, DateOnly anchor)
     {
         try
         {
             // Solo operaciones + metrica + filtros basicos llegan del
-            // modelo. El resto (periodo, agrupacion) lo completa el
-            // validador.
+            // modelo. El resto (agrupacion) lo completa el validador.
             using var document = JsonDocument.Parse(raw);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
@@ -539,7 +543,7 @@ public sealed class IntentPlanner : IIntentPlanner
             if (!Enum.TryParse<FinancialOperation>(op.GetString(), ignoreCase: true, out var opVal)) return null;
             if (!Enum.TryParse<FinancialMetric>(met.GetString(), ignoreCase: true, out var metVal)) return null;
 
-            var filtros = ParseFiltros(root);
+            var filtros = ParseFiltros(root, anchor);
             if (filtros is null) return null;
             return new FinancialQueryPlan
             {
@@ -554,14 +558,14 @@ public sealed class IntentPlanner : IIntentPlanner
         }
     }
 
-    private static FinancialFilters? ParseFiltros(JsonElement root)
+    private static FinancialFilters? ParseFiltros(JsonElement root, DateOnly anchor)
     {
         if (!root.TryGetProperty("filtros", out var f) || f.ValueKind != JsonValueKind.Object)
         {
             return new FinancialFilters();
         }
 
-        if (f.EnumerateObject().Any(x => x.Name is not ("divisas" or "concepto")))
+        if (f.EnumerateObject().Any(x => x.Name is not ("divisas" or "concepto" or "periodo")))
         {
             return null;
         }
@@ -583,11 +587,53 @@ public sealed class IntentPlanner : IIntentPlanner
             concepto = c.GetString();
         }
 
+        FinancialPeriod? periodo = null;
+        if (f.TryGetProperty("periodo", out var p) && p.ValueKind == JsonValueKind.Object)
+        {
+            periodo = ParsePeriodo(p, anchor);
+            if (periodo is null) return null;
+        }
+
         return new FinancialFilters
         {
             Divisas = divisas,
-            Concepto = concepto
+            Concepto = concepto,
+            Periodo = periodo
         };
+    }
+
+    // V-02.08: traduce el periodo devuelto por el planificador semantico
+    // (tipo natural o rango explicito) a FinancialPeriod. Un periodo con
+    // forma reconocible pero valores invalidos rechaza el plan entero en
+    // vez de normalizarlo silenciosamente al mes actual.
+    private static FinancialPeriod? ParsePeriodo(JsonElement p, DateOnly anchor)
+    {
+        if (p.TryGetProperty("tipo", out var tipoEl) && tipoEl.ValueKind == JsonValueKind.String)
+        {
+            var tipo = tipoEl.GetString()?.Trim().ToLowerInvariant();
+            var kind = tipo switch
+            {
+                "mes_actual" => FinancialPeriodKind.MesActual,
+                "mes_anterior" => FinancialPeriodKind.MesAnterior,
+                "trimestre_actual" => FinancialPeriodKind.TrimestreActual,
+                "ano_actual" or "año_actual" => FinancialPeriodKind.AnoActual,
+                "ultimos_30_dias" => FinancialPeriodKind.Ultimos30Dias,
+                _ => (FinancialPeriodKind?)null
+            };
+            if (kind is null) return null;
+            return new FinancialPeriod { Tipo = kind.Value, Anchor = anchor };
+        }
+
+        if (p.TryGetProperty("desde", out var desdeEl) && desdeEl.ValueKind == JsonValueKind.String &&
+            p.TryGetProperty("hasta", out var hastaEl) && hastaEl.ValueKind == JsonValueKind.String)
+        {
+            if (!DateOnly.TryParse(desdeEl.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var desde)) return null;
+            if (!DateOnly.TryParse(hastaEl.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var hasta)) return null;
+            if (hasta < desde) return null;
+            return new FinancialPeriod { Tipo = FinancialPeriodKind.Explicito, From = desde, To = hasta, Anchor = anchor };
+        }
+
+        return null;
     }
 
     private static bool ContainsAny(string texto, params string[] needles)

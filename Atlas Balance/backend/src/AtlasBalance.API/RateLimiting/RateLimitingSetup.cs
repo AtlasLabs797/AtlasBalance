@@ -30,6 +30,12 @@ internal static class RateLimitingSetup
     private const string ApiPathPrefix = "/api";
     private const string HealthPath = "/api/health";
     private const string HealthPathPrefix = "/api/health/";
+    // V-02.08: a diferencia de /api/health y /api/health/ready (stateless),
+    // /api/health/functional abre una transaccion, publica un contexto RLS
+    // elevado, inserta en AUDITORIAS y hace rollback en cada llamada. Eximirlo
+    // del limitador permitiria a un cliente anonimo agotar el pool de
+    // conexiones de PostgreSQL con sondas paralelas ilimitadas.
+    private const string FunctionalHealthPath = "/api/health/functional";
 
     /// <summary>
     /// Rutas que verifican credenciales. Van a su propio cubo por IP, mas
@@ -102,6 +108,11 @@ internal static class RateLimitingSetup
         // endpoints are public, stateless, and rate-limiting them adds no security
         // value. The check uses StartsWithSegments (prefix match on parsed
         // PathString), not raw string comparison.
+        if (path.Equals(FunctionalHealthPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return Window($"health-functional:{ResolveIpKey(context)}", options.AuthPerMinutePerIp, options.Window);
+        }
+
         if (!path.StartsWithSegments(ApiPathPrefix)
             || path.Equals(HealthPath)
             || path.StartsWithSegments(HealthPathPrefix))
