@@ -44,17 +44,17 @@
   --border-soft: var(--border-subtle);
   --border-strong: var(--gray-300); /* colisiona de nombre con el token nuevo: ver override dark abajo */
   --border-medium: var(--border-default);
-  --border-focus: var(--accent-600);
+  --border-focus: var(--accent-text);
 
   --text-primary: var(--gray-900); /* colisiona de nombre con el token nuevo: ver override dark abajo */
   --text-secondary: var(--gray-600); /* idem */
-  --text-muted: var(--gray-500);
+  --text-muted: var(--text-tertiary);
   --text-inverse: var(--white); /* idem */
-  --text-link: var(--accent-600); /* idem */
+  --text-link: var(--accent-text); /* idem */
 
-  --accent-primary: var(--accent-600);
-  --accent-primary-hover: var(--accent-500);
-  --accent-primary-soft: var(--accent-50);
+  --accent-primary: var(--accent-solid);
+  --accent-primary-hover: var(--accent-solid-hover);
+  --accent-primary-soft: var(--accent-soft);
 
   --success-bg: var(--status-success-bg);
   --success-text: var(--status-success-text);
@@ -68,9 +68,9 @@
   --amount-positive: var(--green-600); /* colisiona de nombre con el token nuevo: ver override dark abajo */
   --amount-negative: var(--crimson-600); /* idem */
 
-  --chart-ingresos: var(--green-500);
-  --chart-egresos: var(--crimson-500);
-  --chart-saldo: var(--accent-600);
+  --chart-ingresos: var(--chart-5);
+  --chart-egresos: var(--chart-7);
+  --chart-saldo: var(--accent-solid);
   --chart-grid: var(--border-subtle);
   --chart-series-1: var(--chart-1);
   --chart-series-2: var(--chart-2);
@@ -89,9 +89,9 @@
   --chart-series-13: #a85734;
   --chart-series-14: #744c8a;
   --chart-series-15: #806218;
-  --chart-series-other: var(--gray-600);
-  --entry-color: var(--accent-600);
-  --series-color: var(--accent-600);
+  --chart-series-other: var(--text-secondary);
+  --entry-color: var(--accent-solid);
+  --series-color: var(--accent-solid);
 
   --row-flagged-bg: var(--status-warning-bg);
   --row-flagged-border: var(--status-warning-border);

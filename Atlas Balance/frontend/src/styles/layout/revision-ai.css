@@ -441,7 +441,7 @@
   text-align: left;
   min-height: 2.25rem;
   padding: var(--space-2) var(--space-3);
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-sm);
   background: var(--bg-surface-soft);
   border: 1px solid var(--border-soft);
   color: var(--text-primary);
@@ -662,7 +662,7 @@
   justify-content: flex-start;
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-sm);
   background: var(--bg-surface);
   border: 1px solid var(--border-soft);
   color: var(--text-primary);

@@ -1,7 +1,7 @@
 .auth-page {
   --auth-bg: var(--surface-page);
   --auth-brand-bg: var(--surface-muted);
-  --auth-main-bg: var(--surface-card);
+  --auth-main-bg: var(--surface-page);
   --auth-text: var(--text-primary);
   --auth-heading: var(--text-primary);
   --auth-muted: var(--text-secondary);
@@ -9,8 +9,8 @@
   --auth-separator: var(--border-subtle);
   --auth-card-bg: var(--surface-card);
   --auth-card-border: var(--border-default);
-  --auth-card-shadow: var(--shadow-xl);
-  --auth-control-bg: var(--surface-card);
+  --auth-card-shadow: var(--shadow-lg);
+  --auth-control-bg: var(--surface-muted);
   --auth-control-border: var(--border-default);
   --auth-control-text: var(--text-primary);
   --auth-placeholder: var(--text-tertiary);
