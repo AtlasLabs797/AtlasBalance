@@ -21,9 +21,14 @@ function Get-SmtpConfiguracion {
     # Lee CONFIGURACIONES directamente con un select parametrizado. Evita
     # DbConnectionStringBuilder de .NET Framework (mismo problema que
     # Repair-RlsContext.ps1 y Reset-AdminPassword.ps1).
+    # V-02.08 (revision PR #33): la firma original declaraba -Connection y
+    # -PsqlExe como obligatorios, pero el unico llamador pasa -InstallPath (el
+    # unico dato que la funcion realmente necesita desde fuera: la cadena de
+    # conexion la construye ella misma leyendo appsettings.Production.json, y
+    # psql.exe lo toma de $script:PsqlExe, ya inicializado por el bloque
+    # principal antes de esta llamada). El binding fallaba siempre.
     param(
-        [Parameter(Mandatory = $true)]$Connection,
-        [Parameter(Mandatory = $true)][string]$Script:PsqlExe
+        [Parameter(Mandatory = $true)][string]$InstallPath
     )
 
     $configPath = Join-Path $InstallPath "api\appsettings.Production.json"

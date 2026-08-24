@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using AtlasBalance.API.Services;
 using AtlasBalance.API.Services.IaPlanner;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -162,7 +163,11 @@ public class IntentPlannerTests
     {
         private readonly string? _json;
         public StubSemanticPlannerClient(string? json) { _json = json; }
-        public Task<string?> PlanToJsonAsync(string pregunta, IReadOnlyList<string> allowedOperations, CancellationToken cancellationToken)
+        public Task<string?> PlanToJsonAsync(
+            string pregunta,
+            IReadOnlyList<string> allowedOperations,
+            CancellationToken cancellationToken,
+            AiPseudonymMap? pseudonyms = null)
         {
             return Task.FromResult(_json);
         }

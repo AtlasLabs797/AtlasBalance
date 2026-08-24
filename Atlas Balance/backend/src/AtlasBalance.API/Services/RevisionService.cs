@@ -311,6 +311,26 @@ public sealed class RevisionService : IRevisionService
             throw new UnauthorizedAccessException();
         }
 
+        // V-02.08: el extracto objetivo debe ser el mismo tipo de movimiento que
+        // lista GetComisionesAsync (cargo negativo con concepto de comision).
+        // Sin esto, un cliente podia pasar cualquier extracto permitido y colar
+        // un emparejamiento con un abono no relacionado.
+        var settings = await GetSettingsAsync(cancellationToken);
+        var esComisionElegible = await _dbContext.Extractos.AsNoTracking()
+            .Where(x => x.Id == extractoId)
+            .Where(BuildConceptPredicate(ComisionSearchTerms, ComisionExcludedSearchTerms))
+            .Where(x => x.Monto < -settings.ComisionesImporteMinimo)
+            .AnyAsync(cancellationToken);
+
+        if (!esComisionElegible)
+        {
+            return new VerificarDevolucionResponse
+            {
+                Encontrada = false,
+                Message = "El extracto no es una comision elegible para devolucion."
+            };
+        }
+
         var montoAbono = -extracto.Monto;
         var candidato = await BuildAbonoCandidatesQuery(extracto.CuentaId, montoAbono, extracto.Fecha)
             .OrderBy(e => e.Fecha)
@@ -509,7 +529,11 @@ public sealed class RevisionService : IRevisionService
                 continue;
             }
 
-            var candidato = lista.FirstOrDefault(x => !usados.Contains(x.Id));
+            // La consulta por lotes arranca en la fecha minima de toda la pagina,
+            // asi que aqui hay que exigir tambien candidato.Fecha >= pendiente.Fecha
+            // (igual que hace la consulta individual de VerificarDevolucionAsync)
+            // para no sugerir un abono anterior a la propia comision.
+            var candidato = lista.FirstOrDefault(x => !usados.Contains(x.Id) && x.Fecha >= pendiente.Fecha);
             if (candidato is null)
             {
                 continue;

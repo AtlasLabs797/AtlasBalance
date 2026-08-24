@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AtlasBalance.API.Logging;
+using AtlasBalance.API.Services;
 
 namespace AtlasBalance.API.Services.IaPlanner;
 
@@ -40,11 +41,35 @@ public sealed record PlanResolution
     public string? TextoNormalizado { get; init; }
     public string? PatronLocal { get; init; }
     public string? ModelRaw { get; init; }
+    // V-02.08: true cuando ResolverAsync llego a despachar (o intento
+    // despachar) la llamada facturable al planificador semantico. El
+    // caller usa esta senal para registrar el uso en los contadores de
+    // limite/presupuesto, que de otro modo no verian esta peticion.
+    public bool SemanticCallAttempted { get; init; }
 }
 
 public interface IIntentPlanner
 {
-    Task<PlanResolution> ResolverAsync(string pregunta, DateOnly anchor, CancellationToken cancellationToken);
+    // V-02.08: parametros opcionales anadidos al final para no romper a
+    // los callers existentes (tests incluidos) que solo pasan pregunta,
+    // anchor y cancellationToken.
+    //   - pseudonymsFactory: construye el mapa de seudonimizacion justo
+    //     antes de despachar al planificador semantico (nivel 2), para no
+    //     pagar esa consulta en preguntas que el nivel 1 ya resuelve gratis.
+    //   - previousContext: memoria conversacional del usuario, para
+    //     resolver seguimientos ("¿y el mes anterior?") sin repetir toda
+    //     la intencion.
+    //   - beforeSemanticDispatchAsync: hook que el caller usa para aplicar
+    //     limites de tasa y presupuesto de IA ANTES de la llamada
+    //     facturable al planificador semantico. Si lanza, la excepcion se
+    //     propaga sin ser absorbida por el catch-all del nivel 2.
+    Task<PlanResolution> ResolverAsync(
+        string pregunta,
+        DateOnly anchor,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<AiPseudonymMap>>? pseudonymsFactory = null,
+        ConversationContext? previousContext = null,
+        Func<CancellationToken, Task>? beforeSemanticDispatchAsync = null);
 }
 
 // Stub del nivel 2: en produccion sera una clase que llame al
@@ -53,12 +78,20 @@ public interface IIntentPlanner
 // el flujo del nivel 1/3.
 public interface ISemanticPlannerClient
 {
-    Task<string?> PlanToJsonAsync(string pregunta, IReadOnlyList<string> allowedOperations, CancellationToken cancellationToken);
+    Task<string?> PlanToJsonAsync(
+        string pregunta,
+        IReadOnlyList<string> allowedOperations,
+        CancellationToken cancellationToken,
+        AiPseudonymMap? pseudonyms = null);
 }
 
 public sealed class NullSemanticPlannerClient : ISemanticPlannerClient
 {
-    public Task<string?> PlanToJsonAsync(string pregunta, IReadOnlyList<string> allowedOperations, CancellationToken cancellationToken)
+    public Task<string?> PlanToJsonAsync(
+        string pregunta,
+        IReadOnlyList<string> allowedOperations,
+        CancellationToken cancellationToken,
+        AiPseudonymMap? pseudonyms = null)
     {
         return Task.FromResult<string?>(null);
     }
@@ -90,7 +123,13 @@ public sealed class IntentPlanner : IIntentPlanner
         _logger = logger;
     }
 
-    public async Task<PlanResolution> ResolverAsync(string pregunta, DateOnly anchor, CancellationToken cancellationToken)
+    public async Task<PlanResolution> ResolverAsync(
+        string pregunta,
+        DateOnly anchor,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<AiPseudonymMap>>? pseudonymsFactory = null,
+        ConversationContext? previousContext = null,
+        Func<CancellationToken, Task>? beforeSemanticDispatchAsync = null)
     {
         var texto = pregunta?.Trim() ?? string.Empty;
         if (texto.Length == 0)
@@ -139,6 +178,30 @@ public sealed class IntentPlanner : IIntentPlanner
             };
         }
 
+        // V-02.08: seguimiento de memoria conversacional. Preguntas cortas
+        // como "¿y el mes anterior?" no encajan en ningun patron de nivel 1
+        // (no llevan metrica), pero heredan operacion/metrica/divisas de la
+        // ultima intencion resuelta para este usuario si hay una sesion viva.
+        if (previousContext is not null)
+        {
+            var seguimiento = TryFollowUpMatch(normalizado, anchor, previousContext);
+            if (seguimiento is not null)
+            {
+                var validadoSeguimiento = IaPlanValidator.ValidarCompleto(seguimiento, anchor, OperacionesPermitidas);
+                if (validadoSeguimiento.Estado is FinancialPlanStatus.Ok)
+                {
+                    return new PlanResolution
+                    {
+                        Evaluacion = validadoSeguimiento,
+                        Origen = PlanResolutionSource.Local,
+                        TextoOriginal = pregunta,
+                        TextoNormalizado = normalizado,
+                        PatronLocal = "seguimiento_memoria"
+                    };
+                }
+            }
+        }
+
         // Nivel 3: antes de gastar cuota del proveedor, vemos si la
         // pregunta es ambigua y podemos pedir aclaracion local.
         var aclaracionLocal = TryLocalClarification(normalizado);
@@ -153,10 +216,22 @@ public sealed class IntentPlanner : IIntentPlanner
             };
         }
 
-        // Nivel 2: semantico.
+        // Nivel 2: semantico. El chequeo de limites/presupuesto se hace
+        // FUERA del try/catch de abajo a proposito: si el caller decide
+        // bloquear la peticion (limite de tasa o presupuesto agotado), esa
+        // excepcion debe propagarse tal cual, no ser absorbida por el
+        // catch-all y convertida en un "Rechazado" silencioso.
+        if (beforeSemanticDispatchAsync is not null)
+        {
+            await beforeSemanticDispatchAsync(cancellationToken);
+        }
+
         try
         {
-            var raw = await _semantic.PlanToJsonAsync(texto, OperacionesPermitidas, cancellationToken);
+            var pseudonyms = pseudonymsFactory is not null
+                ? await pseudonymsFactory(cancellationToken)
+                : null;
+            var raw = await _semantic.PlanToJsonAsync(texto, OperacionesPermitidas, cancellationToken, pseudonyms);
             if (string.IsNullOrWhiteSpace(raw))
             {
                 return new PlanResolution
@@ -168,7 +243,8 @@ public sealed class IntentPlanner : IIntentPlanner
                     },
                     Origen = PlanResolutionSource.Rejected,
                     TextoOriginal = pregunta,
-                    TextoNormalizado = normalizado
+                    TextoNormalizado = normalizado,
+                    SemanticCallAttempted = true
                 };
             }
 
@@ -186,7 +262,8 @@ public sealed class IntentPlanner : IIntentPlanner
                     Origen = PlanResolutionSource.Rejected,
                     TextoOriginal = pregunta,
                     TextoNormalizado = normalizado,
-                    ModelRaw = raw
+                    ModelRaw = raw,
+                    SemanticCallAttempted = true
                 };
             }
 
@@ -201,7 +278,8 @@ public sealed class IntentPlanner : IIntentPlanner
                         : PlanResolutionSource.Rejected),
                 TextoOriginal = pregunta,
                 TextoNormalizado = normalizado,
-                ModelRaw = raw
+                ModelRaw = raw,
+                SemanticCallAttempted = true
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -216,10 +294,73 @@ public sealed class IntentPlanner : IIntentPlanner
                 },
                 Origen = PlanResolutionSource.Rejected,
                 TextoOriginal = pregunta,
-                TextoNormalizado = normalizado
+                TextoNormalizado = normalizado,
+                SemanticCallAttempted = true
             };
         }
     }
+
+    // V-02.08: reconstruye un plan a partir de una pregunta de seguimiento
+    // corta ("¿y el mes anterior?") combinando la operacion/metrica/divisas
+    // de la ultima intencion resuelta con el periodo que pide la pregunta.
+    // Solo cubre seguimientos de periodo (el caso descrito en la auditoria);
+    // si el usuario cambia de metrica o de dimension, esto no matchea y el
+    // flujo sigue por nivel 2/3 como una pregunta nueva.
+    private static FinancialQueryPlan? TryFollowUpMatch(string normalizado, DateOnly anchor, ConversationContext previous)
+    {
+        if (string.IsNullOrWhiteSpace(previous.UltimaOperacion) || string.IsNullOrWhiteSpace(previous.UltimaMetrica))
+        {
+            return null;
+        }
+
+        if (!Enum.TryParse<FinancialOperation>(previous.UltimaOperacion, out var operacion) ||
+            !Enum.TryParse<FinancialMetric>(previous.UltimaMetrica, out var metrica))
+        {
+            return null;
+        }
+
+        FinancialPeriodKind? periodo = null;
+        if (RegexMatchFollowUp(normalizado, @"y\s+(?:el\s+|la\s+|del\s+)?mes\s+(?:anterior|pasado)"))
+        {
+            periodo = FinancialPeriodKind.MesAnterior;
+        }
+        else if (RegexMatchFollowUp(normalizado, @"y\s+(?:el\s+|este\s+|del\s+)?mes\s+(?:actual|en\s+curso)"))
+        {
+            periodo = FinancialPeriodKind.MesActual;
+        }
+        else if (RegexMatchFollowUp(normalizado, @"y\s+(?:el\s+|este\s+)?trimestre(?:\s+actual)?"))
+        {
+            periodo = FinancialPeriodKind.TrimestreActual;
+        }
+        else if (RegexMatchFollowUp(normalizado, @"y\s+(?:el\s+|este\s+)?ano(?:\s+actual)?"))
+        {
+            periodo = FinancialPeriodKind.AnoActual;
+        }
+
+        if (periodo is null)
+        {
+            return null;
+        }
+
+        return new FinancialQueryPlan
+        {
+            Operacion = operacion,
+            Metrica = metrica,
+            Filtros = new FinancialFilters
+            {
+                Periodo = new FinancialPeriod { Tipo = periodo.Value, Anchor = anchor },
+                Divisas = previous.UltimasDivisas is { Count: > 0 } ? previous.UltimasDivisas : null
+            },
+            Limite = 50
+        };
+    }
+
+    private static bool RegexMatchFollowUp(string normalizado, string nucleo) =>
+        Regex.IsMatch(
+            normalizado,
+            $@"^[\s\?\!¡¿]*{nucleo}\s*\?*\s*$",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(50));
 
     private static string Normalizar(string texto)
     {

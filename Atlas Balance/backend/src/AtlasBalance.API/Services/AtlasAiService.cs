@@ -246,7 +246,7 @@ public sealed class AtlasAiService : IAtlasAiService
             normalizedThinkingMode = AiConfiguration.ThinkingModeAuto;
         }
 
-        var plannedAnswer = await TryAnswerPlannedAsync(scope, prompt, paisId, cancellationToken);
+        var plannedAnswer = await TryAnswerPlannedAsync(scope, prompt, paisId, state, now, ipAddress, cancellationToken);
         if (plannedAnswer is not null)
         {
             return plannedAnswer;
@@ -886,6 +886,9 @@ public sealed class AtlasAiService : IAtlasAiService
         UserAccessScope scope,
         string prompt,
         Guid? paisId,
+        IaGovernanceState state,
+        DateTime now,
+        string? ipAddress,
         CancellationToken cancellationToken)
     {
         if (EsPreguntaDeAyuda(prompt))
@@ -902,9 +905,43 @@ public sealed class AtlasAiService : IAtlasAiService
             };
         }
 
-        var resolution = await _intentPlanner.ResolverAsync(prompt, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        // V-02.08: memoria conversacional para heredar metrica/operacion/
+        // divisas en seguimientos ("¿y el mes anterior?").
+        var previousContext = _conversationMemory.Obtener(scope.UserId, paisId);
+
+        // V-02.08: el planificador semantico (nivel 2 dentro de ResolverAsync)
+        // hace una llamada facturable al proveedor. EnsureSemanticDispatchAllowedAsync
+        // se invoca justo antes de esa llamada (no antes, para no penalizar las
+        // preguntas que el nivel 1 ya resuelve gratis) y aplica los mismos
+        // limites de tasa y presupuesto que el resto de llamadas a IA.
+        var resolution = await _intentPlanner.ResolverAsync(
+            prompt,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            cancellationToken,
+            pseudonymsFactory: ct => BuildPseudonymMapAsync(scope, paisId, ct),
+            previousContext: previousContext,
+            beforeSemanticDispatchAsync: ct => EnsureSemanticPlannerBudgetAsync(scope.UserId, prompt, state, now, ipAddress, ct));
+
+        // V-02.08: el registro de uso del planificador semantico se hace UNA
+        // sola vez por peticion, y solo en las ramas donde TryAnswerPlannedAsync
+        // devuelve una respuesta y por tanto el camino normal (deterministico o
+        // proveedor) NUNCA se alcanza y nunca audita esta peticion por su cuenta.
+        // Cuando el planificador semantico es rechazado (SemanticCallAttempted
+        // pero Origen = Rejected), esta funcion devuelve null y el flujo sigue
+        // hacia el camino normal, que aplica sus propios limites/presupuesto y
+        // audita la peticion al terminar: registrar aqui ademas duplicaria la
+        // fila de auditoria y el contador mensual para la misma peticion.
+        async Task RegisterSemanticUsageIfAttemptedAsync()
+        {
+            if (resolution.SemanticCallAttempted)
+            {
+                await RegisterSemanticPlannerUsageAsync(scope.UserId, prompt, paisId, state, now, ipAddress, cancellationToken);
+            }
+        }
+
         if (resolution.Origen is PlanResolutionSource.Clarification)
         {
+            await RegisterSemanticUsageIfAttemptedAsync();
             return new IaChatResponse
             {
                 Respuesta = resolution.Evaluacion.Motivo ?? "Necesito una aclaracion para continuar.",
@@ -927,16 +964,27 @@ public sealed class AtlasAiService : IAtlasAiService
             return null;
         }
 
+        // V-02.08: el pais activo en la UI se inyecta en el plan antes de
+        // ejecutarlo. Ni los patrones locales ni el planificador semantico
+        // conocen el pais seleccionado; sin esto, la consulta ignoraba el
+        // scope de pais y devolvia todos los paises accesibles al usuario.
+        var plan = resolution.Evaluacion.Plan;
+        if (paisId.HasValue && (plan.Filtros.PaisIds is null || plan.Filtros.PaisIds.Count == 0))
+        {
+            plan = plan with { Filtros = plan.Filtros with { PaisIds = new[] { paisId.Value } } };
+        }
+
         var execution = await _planExecutor.EjecutarAsync(
             scope,
             new CompoundPlan
             {
-                Pasos = new[] { new PlanStep(0, resolution.PatronLocal ?? "consulta", resolution.Evaluacion.Plan, Array.Empty<int>()) }
+                Pasos = new[] { new PlanStep(0, resolution.PatronLocal ?? "consulta", plan, Array.Empty<int>()) }
             },
             _financialTools,
             cancellationToken);
         if (!execution.Exito)
         {
+            await RegisterSemanticUsageIfAttemptedAsync();
             return new IaChatResponse
             {
                 Respuesta = execution.Advertencia ?? "No se pudo completar la consulta local.",
@@ -946,7 +994,6 @@ public sealed class AtlasAiService : IAtlasAiService
             };
         }
 
-        var plan = resolution.Evaluacion.Plan;
         _conversationMemory.Actualizar(scope.UserId, paisId, context => context with
         {
             UltimaIntencion = resolution.PatronLocal,
@@ -956,15 +1003,265 @@ public sealed class AtlasAiService : IAtlasAiService
             UltimasDivisas = plan.Filtros.Divisas
         });
 
+        await RegisterSemanticUsageIfAttemptedAsync();
         return new IaChatResponse
         {
-            Respuesta = execution.Resumen ?? "Sin resultados.",
+            // V-02.08: se formatean los datos estructurados devueltos por
+            // las herramientas (saldos, importes, rankings...) en vez del
+            // recuento generico de filas que traia execution.Resumen.
+            Respuesta = BuildPlannedAnswerText(execution),
             Provider = "LOCAL",
             Model = resolution.Origen is PlanResolutionSource.Semantic ? "planificador-semantico" : "planificador",
             Origen = "local",
             MovimientosAnalizados = execution.Pasos.Sum(x => x.FilasAnalizadas),
             Aviso = execution.Advertencia
         };
+    }
+
+    // V-02.08: cost/limit gate para la llamada facturable del planificador
+    // semantico (max_tokens=500 en SemanticPlannerClient). Reusa el mismo
+    // par de chequeos que protege la llamada al proveedor principal.
+    private const int SemanticPlannerEstimatedOutputTokens = 500;
+
+    private async Task EnsureSemanticPlannerBudgetAsync(
+        Guid userId,
+        string prompt,
+        IaGovernanceState state,
+        DateTime now,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRequestLimitsAsync(userId, state, now, ipAddress, cancellationToken);
+        var preflightCost = EstimateCost(EstimateTokens(prompt), SemanticPlannerEstimatedOutputTokens, state);
+        await EnsureBudgetAsync(userId, state, now, preflightCost, ipAddress, cancellationToken);
+    }
+
+    private async Task RegisterSemanticPlannerUsageAsync(
+        Guid userId,
+        string prompt,
+        Guid? paisId,
+        IaGovernanceState state,
+        DateTime now,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var inputTokens = EstimateTokens(prompt);
+        var cost = EstimateCost(inputTokens, SemanticPlannerEstimatedOutputTokens, state);
+        var userUsageAfter = await UpdateUsageCountersAsync(userId, now, inputTokens, 0, cost, cancellationToken);
+
+        await _auditService.LogAsync(
+            userId,
+            AuditActions.IaConsulta,
+            "IA",
+            null,
+            ipAddress,
+            JsonSerializer.Serialize(new
+            {
+                schema_version = IaAuditSchema.Version,
+                origen = "planificador-semantico",
+                provider = state.Provider,
+                model = state.Model,
+                pais_id = paisId,
+                pregunta_caracteres = prompt.Length,
+                tokens_entrada_estimados = inputTokens,
+                coste_estimado_eur = Math.Round(cost, 8),
+                coste_mes_usuario_estimado_eur = Math.Round(userUsageAfter.CosteEstimadoEur, 8),
+                requests_mes_usuario = userUsageAfter.Requests
+            }),
+            cancellationToken);
+    }
+
+    // V-02.08: formatea los Datos estructurados de cada paso del plan en
+    // vez del recuento generico ("N fila(s) devueltas") que traia
+    // PlanExecutor.BuildResumen. Cae al Resumen generico solo si el tipo de
+    // Datos no tiene formato especifico.
+    private const int MaxPlannedAnswerRows = 20;
+
+    private static string BuildPlannedAnswerText(CompoundPlanResult execution)
+    {
+        if (execution.Pasos.Count == 0)
+        {
+            return execution.Resumen ?? "Sin resultados.";
+        }
+
+        if (execution.Pasos.Count == 1)
+        {
+            return FormatStepDatos(execution.Pasos[0].Datos) ?? execution.Pasos[0].Resumen ?? "Sin resultados.";
+        }
+
+        var builder = new StringBuilder();
+        foreach (var paso in execution.Pasos)
+        {
+            builder.AppendLine(FormatStepDatos(paso.Datos) ?? paso.Resumen ?? "Sin resultados.");
+        }
+        return builder.ToString().Trim();
+    }
+
+    private static string? FormatStepDatos(object? datos) => datos switch
+    {
+        LatestTransaction lt => FormatLatestTransaction(lt),
+        IReadOnlyList<BalanceRow> rows => FormatBalanceRows(rows),
+        IReadOnlyList<PeriodTotalsRow> rows => FormatPeriodTotalsRows(rows),
+        IReadOnlyList<RevisionItem> rows => FormatRevisionItems(rows),
+        IReadOnlyList<TrendPoint> rows => FormatTrendPoints(rows),
+        IReadOnlyList<RankingRow> rows => FormatRankingDataRows(rows),
+        IReadOnlyList<SearchHit> rows => FormatSearchHits(rows),
+        IReadOnlyList<Anomaly> rows => FormatAnomalies(rows),
+        ComparisonResult cmp => FormatComparisonResult(cmp),
+        _ => null
+    };
+
+    private static void AppendMoreNote(StringBuilder builder, int totalCount)
+    {
+        if (totalCount > MaxPlannedAnswerRows)
+        {
+            builder.Append("... y ").Append(totalCount - MaxPlannedAnswerRows).AppendLine(" fila(s) mas.");
+        }
+    }
+
+    private static string FormatLatestTransaction(LatestTransaction lt)
+    {
+        var text = $"{lt.Fecha:dd/MM/yyyy} | {SanitizeContextText(lt.TitularNombre)} | {SanitizeContextText(lt.CuentaNombre)} | {FormatMoney(lt.Monto)} {lt.Divisa} | saldo {FormatMoney(lt.Saldo)}";
+        return string.IsNullOrWhiteSpace(lt.Concepto) ? text : $"{text} | {SanitizeContextText(lt.Concepto)}";
+    }
+
+    private static string FormatBalanceRows(IReadOnlyList<BalanceRow> rows)
+    {
+        if (rows.Count == 0) return "Sin saldos.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(SanitizeContextText(row.TitularNombre)).Append(" | ").Append(SanitizeContextText(row.CuentaNombre))
+                .Append(" | ").Append(row.Divisa).Append(": ").Append(FormatMoney(row.Saldo))
+                .Append(" (").Append(row.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).AppendLine(")");
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatPeriodTotalsRows(IReadOnlyList<PeriodTotalsRow> rows)
+    {
+        if (rows.Count == 0) return "Sin resultados.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(SanitizeContextText(row.Titular)).Append(" | ").Append(SanitizeContextText(row.Cuenta))
+                .Append(" | ").Append(row.Divisa).Append(": ingresos ").Append(FormatMoney(row.Ingresos))
+                .Append(", gastos ").Append(FormatMoney(row.Gastos)).Append(", neto ").Append(FormatMoney(row.Neto))
+                .Append(" (").Append(row.MovimientosTotal.ToString(CultureInfo.InvariantCulture))
+                .AppendLine(row.MovimientosTotal == 1 ? " movimiento)" : " movimientos)");
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatRevisionItems(IReadOnlyList<RevisionItem> rows)
+    {
+        if (rows.Count == 0) return "Sin items.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(row.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append(" | ")
+                .Append(SanitizeContextText(row.TitularNombre)).Append(" | ").Append(SanitizeContextText(row.CuentaNombre))
+                .Append(" | ").Append(FormatMoney(row.Monto)).Append(' ').Append(row.Divisa)
+                .Append(" | estado ").Append(row.Estado).Append(" | ").AppendLine(SanitizeContextText(row.Concepto));
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatTrendPoints(IReadOnlyList<TrendPoint> rows)
+    {
+        if (rows.Count == 0) return "Sin datos para la tendencia.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(row.Month.ToString("00", CultureInfo.InvariantCulture)).Append('/').Append(row.Year)
+                .Append(' ').Append(row.Divisa).Append(": ingresos ").Append(FormatMoney(row.Ingresos))
+                .Append(", gastos ").Append(FormatMoney(row.Gastos)).Append(", neto ").AppendLine(FormatMoney(row.Neto));
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatRankingDataRows(IReadOnlyList<RankingRow> rows)
+    {
+        if (rows.Count == 0) return "Sin resultados.";
+        var builder = new StringBuilder();
+        var index = 1;
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append(index.ToString(CultureInfo.InvariantCulture)).Append(". ").Append(SanitizeContextText(row.Titular));
+            if (!string.IsNullOrWhiteSpace(row.Cuenta))
+            {
+                builder.Append(" | ").Append(SanitizeContextText(row.Cuenta));
+            }
+            builder.Append(" | ").Append(row.Divisa).Append(": gastos ").Append(FormatMoney(row.Gastos))
+                .Append(", ingresos ").Append(FormatMoney(row.Ingresos)).Append(", neto ").Append(FormatMoney(row.Neto))
+                .Append(" (").Append(row.Movimientos.ToString(CultureInfo.InvariantCulture))
+                .AppendLine(row.Movimientos == 1 ? " movimiento)" : " movimientos)");
+            index++;
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatSearchHits(IReadOnlyList<SearchHit> rows)
+    {
+        if (rows.Count == 0) return "Sin resultados.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- ").Append(row.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append(" | ")
+                .Append(SanitizeContextText(row.TitularNombre)).Append(" | ").Append(SanitizeContextText(row.CuentaNombre))
+                .Append(" | ").Append(FormatMoney(row.Monto)).Append(' ').Append(row.Divisa)
+                .Append(" | saldo ").Append(FormatMoney(row.Saldo)).Append(" | ").AppendLine(SanitizeContextText(row.Concepto));
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatAnomalies(IReadOnlyList<Anomaly> rows)
+    {
+        if (rows.Count == 0) return "Sin anomalias.";
+        var builder = new StringBuilder();
+        foreach (var row in rows.Take(MaxPlannedAnswerRows))
+        {
+            builder.Append("- [").Append(row.Severidad).Append("] ").Append(row.Tipo).Append(": ").Append(SanitizeContextText(row.Descripcion));
+            if (row.Importe is { } importe)
+            {
+                builder.Append(" | ").Append(FormatMoney(importe));
+            }
+            if (row.Fecha is { } fecha)
+            {
+                builder.Append(" | ").Append(fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture));
+            }
+            if (!string.IsNullOrWhiteSpace(row.CuentaNombre))
+            {
+                builder.Append(" | ").Append(SanitizeContextText(row.CuentaNombre));
+            }
+            builder.AppendLine();
+        }
+        AppendMoreNote(builder, rows.Count);
+        return builder.ToString().Trim();
+    }
+
+    private static string FormatComparisonResult(ComparisonResult cmp)
+    {
+        var builder = new StringBuilder();
+        builder.Append(cmp.Base.Etiqueta).Append(" (").Append(cmp.Base.From.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))
+            .Append(" a ").Append(cmp.Base.To.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append("): ingresos ")
+            .Append(FormatMoney(cmp.Base.Ingresos)).Append(", gastos ").Append(FormatMoney(cmp.Base.Gastos))
+            .Append(", neto ").AppendLine(FormatMoney(cmp.Base.Neto));
+        builder.Append(cmp.Referencia.Etiqueta).Append(" (").Append(cmp.Referencia.From.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))
+            .Append(" a ").Append(cmp.Referencia.To.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)).Append("): ingresos ")
+            .Append(FormatMoney(cmp.Referencia.Ingresos)).Append(", gastos ").Append(FormatMoney(cmp.Referencia.Gastos))
+            .Append(", neto ").AppendLine(FormatMoney(cmp.Referencia.Neto));
+        builder.Append("Variacion: ingresos ").Append(FormatMoney(cmp.VariacionIngresos))
+            .Append(" (").Append(cmp.VariacionIngresosPct.ToString("0.00", CultureInfo.InvariantCulture)).Append("%), gastos ")
+            .Append(FormatMoney(cmp.VariacionGastos)).Append(" (").Append(cmp.VariacionGastosPct.ToString("0.00", CultureInfo.InvariantCulture)).Append("%), neto ")
+            .Append(FormatMoney(cmp.VariacionNeto)).Append(" (").Append(cmp.VariacionNetoPct.ToString("0.00", CultureInfo.InvariantCulture)).AppendLine("%)");
+        return builder.ToString().Trim();
     }
 
     private static bool EsPreguntaDeAyuda(string prompt)

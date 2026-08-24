@@ -63,6 +63,11 @@ function Sync-DirectoryPreserveConfig {
     New-Item -ItemType Directory -Path $Target -Force | Out-Null
     New-Item -ItemType Directory -Path $staging -Force | Out-Null
 
+    # Se inicializa antes del try (y no solo dentro) para que el catch pueda
+    # comprobarlo bajo Set-StrictMode aunque el fallo ocurra antes de que el
+    # paso 2 lo calcule.
+    $newRelative = @()
+
     try {
         # 1. Copia source -> staging.
         $sourceFiles = Get-ChildItem -LiteralPath $Source -Recurse -File
@@ -87,11 +92,20 @@ function Sync-DirectoryPreserveConfig {
             [void]$targetRelativeFiles.Add($relative)
         }
 
-        # Archivos que YA estan en target y hay que sobrescribir desde staging.
+        # Archivos que YA estan en target y hay que sobrescribir desde staging,
+        # y archivos nuevos que no existian en target. Los nuevos no tienen
+        # backup posible (no habia nada que respaldar), pero hay que
+        # registrarlos para poder borrarlos en el rollback si algo falla mas
+        # adelante: si no, quedarian ya movidos en target aunque el backup
+        # solo restaure lo que SI existia antes.
         $overwriteRelative = @()
+        $newRelative = @()
         foreach ($relative in $stagingRelativeFiles) {
             if ($targetRelativeFiles.Contains($relative)) {
                 $overwriteRelative += $relative
+            }
+            else {
+                $newRelative += $relative
             }
         }
 
@@ -160,6 +174,18 @@ function Sync-DirectoryPreserveConfig {
                         New-Item -ItemType Directory -Path (Split-Path -Parent $targetDestination) -Force | Out-Null
                     }
                     Copy-Item -LiteralPath $bf.FullName -Destination $targetDestination -Force
+                }
+            }
+            # Archivos que no existian en target antes de esta llamada (no
+            # tienen backup porque no habia nada que respaldar): si ya se
+            # movieron a target, hay que borrarlos para dejar target
+            # exactamente como estaba.
+            if ($newRelative) {
+                foreach ($relative in $newRelative) {
+                    $targetDestination = Join-Path $Target $relative
+                    if (Test-Path -LiteralPath $targetDestination) {
+                        Remove-Item -LiteralPath $targetDestination -Force -ErrorAction SilentlyContinue
+                    }
                 }
             }
         }

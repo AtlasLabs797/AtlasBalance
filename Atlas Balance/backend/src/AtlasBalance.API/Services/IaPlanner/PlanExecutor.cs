@@ -248,6 +248,21 @@ public sealed class PlanExecutor : IPlanExecutor
                         Advertencia: r.Advertencia,
                         Datos: r.Data);
                 }
+                if (plan.Filtros.Estados is { Count: > 0 })
+                {
+                    // Un plan List con filtro de Estados (p.ej. "comisiones
+                    // pendientes") pide registros individuales por estado,
+                    // no totales agregados: enruta a la herramienta que
+                    // produce listas de items en vez de GetPeriodTotalsAsync.
+                    var r = await tools.GetRevisionItemsAsync(scope, plan, cancellationToken);
+                    return new PlanStepResult(paso.Indice, paso.Nombre,
+                        Resumen: r.Data.Count == 0 ? "Sin items." : $"{r.Data.Count} item(s) devueltos.",
+                        FilasDevueltas: r.FilasDevueltas,
+                        FilasAnalizadas: r.FilasAnalizadas,
+                        Duracion: TimeSpan.Zero,
+                        Advertencia: r.Advertencia,
+                        Datos: r.Data);
+                }
                 goto case FinancialOperation.Sum;
             case FinancialOperation.Sum:
             case FinancialOperation.Count:

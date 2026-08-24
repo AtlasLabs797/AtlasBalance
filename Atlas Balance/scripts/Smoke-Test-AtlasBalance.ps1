@@ -7,7 +7,15 @@ param(
     [string]$PostgresBinPath = "",
     [string]$AuditEventTypes = "LOGIN_MFA_REQUIRED,MFA_VERIFIED,LOGIN",
     [int]$HttpTimeoutSeconds = 30,
-    [switch]$SkipCertificateCheck
+    [switch]$SkipCertificateCheck,
+    # V-02.08 (revision PR #33): AuthService solo devuelve mfaSecret en la
+    # respuesta de login cuando MfaSetupRequired es true (enrolamiento
+    # inicial); para un admin ya enrolado lo omite a proposito, y el smoke no
+    # puede calcular el TOTP sin el secreto. El operador debe pasar aqui el
+    # secreto TOTP ya enrolado del admin (el mismo con el que su
+    # autenticador genera codigos) para poder ejecutar el smoke contra una
+    # cuenta existente.
+    [string]$AdminTotpSecret = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -113,6 +121,11 @@ function Invoke-ApiJson {
 }
 
 function Get-CookieValue {
+    # V-02.08 (revision PR #33): en produccion la API emite cookies con
+    # prefijo __Host-atlas-<nombre> (ver AuthController.CookieName en el
+    # backend); solo en Development usa el nombre corto (access_token,
+    # refresh_token). Acepta ambos juegos de nombres para que el smoke
+    # funcione contra una instalacion real (produccion).
     param(
         [Parameter(Mandatory = $true)]$Headers,
         [Parameter(Mandatory = $true)][string]$CookieName
@@ -121,12 +134,15 @@ function Get-CookieValue {
     if ($null -eq $Headers) {
         return $null
     }
+    $candidateNames = @($CookieName, "__Host-atlas-$($CookieName.Replace('_', '-'))")
     foreach ($h in $Headers.Keys) {
         if ($h -ieq "Set-Cookie") {
             foreach ($value in $Headers[$h]) {
                 $head = ($value -split ';')[0]
-                if ($head -match "^$([regex]::Escape($CookieName))=") {
-                    return ($head -split '=', 2)[1]
+                foreach ($candidate in $candidateNames) {
+                    if ($head -match "^$([regex]::Escape($candidate))=") {
+                        return ($head -split '=', 2)[1]
+                    }
                 }
             }
         }
@@ -293,11 +309,16 @@ try {
         throw "Login con MFA pendiente de enrolar no devolvio mfaSecret."
     }
 
-    # 3. Generar TOTP desde el secreto que la API entrego (enrolamiento
-    #    inicial o reutilizacion del secreto persistido del usuario).
+    # 3. Generar TOTP. La API solo devuelve mfaSecret cuando MfaSetupRequired
+    #    es true (enrolamiento inicial); para un admin ya enrolado el
+    #    servidor lo omite a proposito y hay que usar el secreto TOTP que el
+    #    operador ya tiene enrolado (-AdminTotpSecret).
     $secret = [string]$login.Body.mfaSecret
     if ([string]::IsNullOrEmpty($secret)) {
-        throw "No se pudo obtener el secreto TOTP para calcular el codigo."
+        $secret = $AdminTotpSecret
+    }
+    if ([string]::IsNullOrEmpty($secret)) {
+        throw "No se pudo obtener el secreto TOTP para calcular el codigo. La cuenta ya esta enrolada en MFA (la API no devuelve el secreto en ese caso): pasa -AdminTotpSecret con el secreto TOTP ya enrolado de $AdminEmail."
     }
     $code = Get-MfaTotpCode -Secret $secret
     $results['TotpCode'] = @{

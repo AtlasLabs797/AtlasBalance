@@ -64,6 +64,11 @@ export default function ConciliacionPage() {
     } catch (err: unknown) {
       if (requestId !== loadDataRequestIdRef.current) return;
       setError(extractErrorMessage(err, 'No se pudo actualizar la conciliacion.'));
+      // Sin esto, si falla la carga de la cuenta nueva, movimientos y
+      // conciliaciones de la cuenta anterior quedan visibles con botones de
+      // accion usables bajo el cuentaId ya actualizado.
+      setMovimientos([]);
+      setConciliaciones([]);
       throw err;
     }
   }, []);
@@ -208,6 +213,11 @@ export default function ConciliacionPage() {
             }))}
             onChange={(next) => {
               setCuentaId(next);
+              // Vacia las filas de la cuenta anterior al iniciar la carga de la
+              // nueva: si la peticion falla, el catch de loadData ya limpia,
+              // pero mientras esta en vuelo no deben verse filas de otra cuenta.
+              setMovimientos([]);
+              setConciliaciones([]);
               void loadData(next).catch(() => undefined);
             }}
           />

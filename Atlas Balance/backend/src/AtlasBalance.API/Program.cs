@@ -752,14 +752,31 @@ app.MapGet("/api/health/functional", async (
     {
         try
         {
-            await dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $@"BEGIN;
-                    INSERT INTO ""AUDITORIAS""
+            // La policy auditorias_insert (20260501120000_EnableRowLevelSecurity)
+            // solo admite INSERT bajo contexto admin/system, auth-flow o usuario
+            // autenticado. `/api/health/functional` es anonimo (lo golpean el
+            // instalador y el actualizador antes de haber iniciado sesion), asi
+            // que RlsDbCommandInterceptor publicaba el contexto "anonymous" y el
+            // INSERT lanzaba 42501 siempre, dejando el endpoint en 503
+            // permanente y revirtiendo actualizaciones de produccion validas.
+            //
+            // La sonda es trabajo que el servidor hace en su propio nombre, no
+            // en nombre del llamante, asi que se ejecuta bajo SystemContextScope
+            // y es el interceptor quien firma el contexto: aqui no se duplica la
+            // criptografia de firma. El SQL es fijo, no lleva entrada externa y
+            // la transaccion se revierte siempre, asi que no persiste nada.
+            using (AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter())
+            {
+                await using var probeTx = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+                await dbContext.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""AUDITORIAS""
                         (id, tipo_accion, entidad_tipo, origen, ""timestamp"", detalles_json)
-                    VALUES
-                        (gen_random_uuid(), 'HEALTH_PROBE', 'SISTEMA', 'HEALTH', now(), '{{}}'::json);
-                    ROLLBACK;",
-                cancellationToken);
+                      VALUES
+                        (gen_random_uuid(), 'HEALTH_PROBE', 'SISTEMA', 'HEALTH', now(), '{}'::json)",
+                    cancellationToken);
+                await probeTx.RollbackAsync(cancellationToken);
+            }
+
             insertOk = true;
         }
         catch (Exception ex)

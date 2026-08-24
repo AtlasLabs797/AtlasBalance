@@ -509,6 +509,20 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = roleValidation.Error });
         }
 
+        // V-02.08: mismo chequeo de redundancia que PUT /usuarios/{id}/permisos.
+        // El alta real de usuario pasa los permisos por este endpoint, no por
+        // aquel, asi que sin esto la deteccion nunca se ejecutaba en el flujo
+        // de UsuarioModal.save.
+        var redundanciasCrear = DetectPermisosRedundantes(request.Permisos);
+        if (redundanciasCrear.Count > 0)
+        {
+            return Conflict(new
+            {
+                error = "Hay permisos redundantes. Quita los más restrictivos o amplía los más generales antes de guardar.",
+                redundantes = redundanciasCrear
+            });
+        }
+
         var usuario = new Usuario
         {
             Id = Guid.NewGuid(),
@@ -592,6 +606,20 @@ public sealed class UsuariosController : ControllerBase
         if (!roleValidation.Ok)
         {
             return BadRequest(new { error = roleValidation.Error });
+        }
+
+        // V-02.08: mismo chequeo de redundancia que PUT /usuarios/{id}/permisos.
+        // La edicion real de usuario pasa los permisos por este endpoint, no por
+        // aquel, asi que sin esto la deteccion nunca se ejecutaba en el flujo
+        // de UsuarioModal.save.
+        var redundanciasActualizar = DetectPermisosRedundantes(request.Permisos);
+        if (redundanciasActualizar.Count > 0)
+        {
+            return Conflict(new
+            {
+                error = "Hay permisos redundantes. Quita los más restrictivos o amplía los más generales antes de guardar.",
+                redundantes = redundanciasActualizar
+            });
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
@@ -953,25 +981,23 @@ public sealed class UsuariosController : ControllerBase
                 {
                     continue;
                 }
-                if (!ScopeCubiertoPor(outer, inner))
+                // V-02.08: probar ambas direcciones. Si la fila restrictiva va
+                // primera (i) y la mas amplia despues (j), outer no cubre a inner
+                // pero inner si cubre a outer, y el par tambien es redundante.
+                if (ScopeCubiertoPor(outer, inner))
                 {
-                    continue;
-                }
-                if (ScopesIguales(outer, inner))
-                {
-                    // Duplicado literal: j coincide con i, reporta i como cubre a j.
                     redundantes.Add(new
                     {
                         scope = ScopeDto(inner),
                         cubierta_por = ScopeDto(outer)
                     });
                 }
-                else
+                else if (ScopeCubiertoPor(inner, outer))
                 {
                     redundantes.Add(new
                     {
-                        scope = ScopeDto(inner),
-                        cubierta_por = ScopeDto(outer)
+                        scope = ScopeDto(outer),
+                        cubierta_por = ScopeDto(inner)
                     });
                 }
             }
@@ -994,9 +1020,6 @@ public sealed class UsuariosController : ControllerBase
         (outer.PaisId == null || outer.PaisId == inner.PaisId) &&
         (outer.TitularId == null || outer.TitularId == inner.TitularId) &&
         (outer.CuentaId == null || outer.CuentaId == inner.CuentaId);
-
-    private static bool ScopesIguales(SavePermisoUsuarioRequest a, SavePermisoUsuarioRequest b) =>
-        a.PaisId == b.PaisId && a.TitularId == b.TitularId && a.CuentaId == b.CuentaId;
 
     private static object ScopeDto(SavePermisoUsuarioRequest permiso) => new
     {

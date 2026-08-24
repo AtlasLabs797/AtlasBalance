@@ -21,6 +21,41 @@ if (-not (Test-Path -LiteralPath $targetDll -PathType Leaf)) {
     throw "No se encontro la API instalada en $targetDll."
 }
 
+# V-02.08 (revision PR #33): el instalador usa HTTPS 443 por defecto (o el
+# endpoint Http interno tras reverse proxy) segun -ApiPort/-InternalApiPort
+# en la instalacion; nada garantiza el 8443 fijo que este script asumia.
+# Derivamos el endpoint real desde el Kestrel de appsettings.Production.json
+# de la instalacion, con 127.0.0.1:8443/https como fallback si no se puede leer.
+$healthScheme = "https"
+$healthHost = "127.0.0.1"
+$healthPort = 8443
+$apiConfigPath = Join-Path $InstallPath "api\appsettings.Production.json"
+if (Test-Path -LiteralPath $apiConfigPath -PathType Leaf) {
+    try {
+        $installedConfig = Get-Content -LiteralPath $apiConfigPath -Raw | ConvertFrom-Json
+        $kestrelEndpoint = $null
+        if ($installedConfig.Kestrel -and $installedConfig.Kestrel.Endpoints) {
+            if ($installedConfig.Kestrel.Endpoints.Https) {
+                $kestrelEndpoint = $installedConfig.Kestrel.Endpoints.Https
+            } elseif ($installedConfig.Kestrel.Endpoints.Http) {
+                $kestrelEndpoint = $installedConfig.Kestrel.Endpoints.Http
+            }
+        }
+        if ($kestrelEndpoint -and ([string]$kestrelEndpoint.Url) -match '^(https?)://([^:/]+):(\d+)') {
+            $healthScheme = $Matches[1]
+            $healthHost = if ($Matches[2] -eq '0.0.0.0') { '127.0.0.1' } else { $Matches[2] }
+            $healthPort = [int]$Matches[3]
+        } else {
+            Write-Warning "No se pudo derivar el endpoint Kestrel de $apiConfigPath; se usara https://127.0.0.1:8443 por defecto."
+        }
+    } catch {
+        Write-Warning "No se pudo leer $apiConfigPath para derivar el puerto de health ($($_.Exception.Message)); se usara https://127.0.0.1:8443 por defecto."
+    }
+} else {
+    Write-Warning "No se encontro $apiConfigPath; se usara https://127.0.0.1:8443 por defecto para el health check."
+}
+Write-Host "Health check contra ${healthScheme}://${healthHost}:${healthPort}"
+
 $backupDirectory = Join-Path $InstallPath "backups\rls-hotfix"
 New-Item -ItemType Directory -Path $backupDirectory -Force | Out-Null
 $backupDll = Join-Path $backupDirectory ("AtlasBalance.API.{0}.dll" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
@@ -53,7 +88,7 @@ try {
     for ($attempt = 1; $attempt -le 30; $attempt++) {
         $client = [Net.Sockets.TcpClient]::new()
         try {
-            $connect = $client.BeginConnect("127.0.0.1", 8443, $null, $null)
+            $connect = $client.BeginConnect($healthHost, $healthPort, $null, $null)
             if ($connect.AsyncWaitHandle.WaitOne(1000)) {
                 $client.EndConnect($connect)
                 $apiReady = $client.Connected
@@ -73,7 +108,7 @@ try {
     }
 
     if (-not $apiReady) {
-        throw "La API corregida no abrio el puerto HTTPS 8443."
+        throw "La API corregida no abrio el puerto $healthPort ($healthHost)."
     }
 
     # V-02.08: el incidente V-02.07 demostro que tener el puerto 8443 abierto
@@ -84,7 +119,7 @@ try {
     $functionalReady = $false
     for ($attempt = 1; $attempt -le 30; $attempt++) {
         try {
-            $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://127.0.0.1:8443/api/health/functional" 2>$null)
+            $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "${healthScheme}://${healthHost}:${healthPort}/api/health/functional" 2>$null)
             if ($LASTEXITCODE -eq 0 -and $statusCode -eq "200") {
                 $functionalReady = $true
                 break
@@ -97,7 +132,7 @@ try {
     }
 
     if (-not $functionalReady) {
-        throw "La API corrigio el puerto 8443 pero /api/health/functional no devolvio HTTP 200. El contexto RLS puede estar desalineado."
+        throw "La API abrio el puerto $healthPort pero /api/health/functional no devolvio HTTP 200. El contexto RLS puede estar desalineado."
     }
 }
 catch {
@@ -115,6 +150,6 @@ catch {
 }
 
 Write-Host "Parche RLS instalado."
-Write-Host "Puerto HTTPS 8443 disponible."
+Write-Host "Puerto $healthPort ($healthScheme) disponible."
 Write-Host "Health check funcional OK: /api/health/functional"
 Write-Host "Copia de seguridad: $backupDll"

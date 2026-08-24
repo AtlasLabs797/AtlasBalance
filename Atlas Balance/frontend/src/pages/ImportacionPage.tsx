@@ -304,6 +304,10 @@ export default function ImportacionPage() {
     } catch (err: unknown) {
       if (requestId !== lotesRequestIdRef.current) return;
       setError(getApiErrorMessage(err, 'No se pudo cargar el historial de lotes'));
+      // Sin esto, si falla la carga del historico al cambiar de cuenta, los
+      // lotes de la cuenta anterior siguen visibles y se pueden abrir bajo el
+      // cuentaId ya actualizado.
+      setLotes([]);
     } finally {
       if (requestId === lotesRequestIdRef.current) {
         setLoadingLotes(false);
@@ -317,6 +321,10 @@ export default function ImportacionPage() {
       return;
     }
 
+    // Vacia los lotes de la cuenta anterior al iniciar la carga de la nueva:
+    // si la peticion falla, el catch de loadLotes ya limpia, pero mientras
+    // esta en vuelo no deben verse ni poder abrirse lotes de otra cuenta.
+    setLotes([]);
     void loadLotes(cuentaId);
   }, [cuentaId, loadLotes]);
 

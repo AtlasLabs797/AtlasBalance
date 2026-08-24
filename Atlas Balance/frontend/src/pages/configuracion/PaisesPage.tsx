@@ -72,6 +72,11 @@ export default function PaisesPage() {
           pageSize,
           search: debouncedSearch || undefined,
           incluirEliminados,
+          // PaisesController.Listar filtra por x.Activo salvo que incluirInactivos
+          // sea true, y Eliminar pone Activo=false. Sin esto, "Ver eliminados"
+          // pide las filas con IgnoreQueryFilters() pero el filtro de Activo las
+          // vuelve a excluir: la lista sale vacia y no se puede restaurar nada.
+          incluirInactivos: incluirEliminados,
           sortBy: 'nombre',
           sortDir: 'asc',
         },

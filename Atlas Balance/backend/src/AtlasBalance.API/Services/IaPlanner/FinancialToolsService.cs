@@ -330,7 +330,10 @@ public sealed class FinancialToolsService : IFinancialToolsService
 
         IReadOnlyList<PeriodTotalsRow> data = grupo is FinancialGroupBy.Titular
             ? raw
-                .GroupBy(x => new { x.TitularNombre, x.Divisa })
+                // TITULARES.nombre no es unico: se agrupa tambien por
+                // TitularId para no fusionar titulares distintos que
+                // comparten nombre y divisa.
+                .GroupBy(x => new { x.TitularId, x.TitularNombre, x.Divisa })
                 .Select(g => new PeriodTotalsRow(
                     g.Key.TitularNombre,
                     g.Key.TitularNombre,
@@ -393,8 +396,16 @@ public sealed class FinancialToolsService : IFinancialToolsService
     {
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
         var earliest = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddYears(-3);
-        var desde = plan.Filtros.Periodo?.From ?? earliest;
-        var hasta = plan.Filtros.Periodo?.To ?? DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        // El periodo por defecto (mes en curso, ver IntentPlanner "saldo_actual"
+        // e IaPlanValidator.PeriodoPorDefecto) no debe acotar que extracto se
+        // considera "el saldo actual": una cuenta sin movimientos este mes
+        // sigue teniendo un ultimo saldo valido. Solo un periodo pedido de
+        // forma explicita acota la ventana de busqueda del ultimo extracto.
+        var periodoEsPorDefecto = plan.Filtros.Periodo is null
+            || plan.Filtros.Periodo.Tipo == FinancialPeriodKind.MesActual;
+        var desde = periodoEsPorDefecto ? earliest : (plan.Filtros.Periodo?.From ?? earliest);
+        var hasta = periodoEsPorDefecto ? hoy : (plan.Filtros.Periodo?.To ?? hoy);
         var cuentaIds = plan.Filtros.CuentaIds;
         var divisas = plan.Filtros.Divisas;
 
@@ -497,7 +508,10 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var raw = await query.ToListAsync(cancellationToken);
 
         IEnumerable<RankingRow> rows = grupo is FinancialGroupBy.Titular
-            ? raw.GroupBy(x => new { x.TitularNombre, x.Divisa })
+            // TITULARES.nombre no es unico: se agrupa tambien por
+            // TitularId para no fusionar titulares distintos que
+            // comparten nombre y divisa.
+            ? raw.GroupBy(x => new { x.TitularId, x.TitularNombre, x.Divisa })
                 .Select(g => new RankingRow(
                     g.Key.TitularNombre, g.Key.TitularNombre, string.Empty, g.First().Banco, g.Key.Divisa,
                     -g.Where(x => x.Monto < 0).Sum(x => x.Monto),
@@ -773,7 +787,6 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var divisas = plan.Filtros.Divisas;
         var importeMin = plan.Filtros.ImporteMinimo;
         var importeMax = plan.Filtros.ImporteMaximo;
-        var like = $"%{termino}%";
 
         IQueryable<SearchProjection> query =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -801,24 +814,24 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (importeMin.HasValue) query = query.Where(x => x.Monto >= importeMin.Value);
         if (importeMax.HasValue) query = query.Where(x => x.Monto <= importeMax.Value);
 
-        // Filtro de texto: para Postgres usamos ILike (case
-        // insensitive). Para InMemory, comparamos con Contains.
-        // Materializamos los resultados sin texto y aplicamos el
-        // filtro en memoria. El InMemory no implementa ILike.
-        var totalSinTexto = await query.CountAsync(cancellationToken);
+        // Filtro de texto: se aplica en la propia consulta (case
+        // insensitive via ToLower().Contains(), traducible tanto a
+        // Postgres como al proveedor InMemory de los tests) ANTES del
+        // Take, para que una coincidencia fuera de la ultima "rodaja"
+        // de filas no se pierda.
+        var terminoNormalizado = termino.ToLowerInvariant();
+        query = query.Where(x =>
+            x.Concepto.ToLower().Contains(terminoNormalizado)
+            || x.CuentaNombre.ToLower().Contains(terminoNormalizado)
+            || x.TitularNombre.ToLower().Contains(terminoNormalizado));
+
+        var totalFiltrado = await query.CountAsync(cancellationToken);
         var raw = await query
             .OrderByDescending(x => x.Fecha)
-            .Take(plan.Limite * 4) // pedimos algo mas para compensar el filtro
+            .Take(plan.Limite)
             .ToListAsync(cancellationToken);
 
-        var filtrado = raw
-            .Where(x => CoincideTermino(x.Concepto, termino)
-                        || CoincideTermino(x.CuentaNombre, termino)
-                        || CoincideTermino(x.TitularNombre, termino))
-            .Take(plan.Limite)
-            .ToList();
-
-        var data = filtrado
+        var data = raw
             .Select(x => new SearchHit(
                 x.ExtractoId, x.CuentaId, x.CuentaNombre, x.TitularNombre, x.Divisa,
                 x.Fecha, x.Monto, x.Saldo, x.Concepto))
@@ -828,14 +841,8 @@ public sealed class FinancialToolsService : IFinancialToolsService
         {
             Data = data,
             FilasDevueltas = data.Count,
-            FilasAnalizadas = totalSinTexto
+            FilasAnalizadas = totalFiltrado
         };
-    }
-
-    private static bool CoincideTermino(string? texto, string termino)
-    {
-        if (string.IsNullOrEmpty(texto)) return false;
-        return texto.Contains(termino, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class SearchProjection

@@ -29,7 +29,8 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
     public async Task<string?> PlanToJsonAsync(
         string pregunta,
         IReadOnlyList<string> allowedOperations,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AiPseudonymMap? pseudonyms = null)
     {
         var config = await _dbContext.Configuraciones.AsNoTracking()
             .Where(x => x.Clave == "ai_provider" || x.Clave == "ai_model" ||
@@ -62,9 +63,13 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         }
         if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-        // DLP operates even when no entity map exists, protecting PII supplied
-        // directly in the question before it can leave the process.
-        var safeQuestion = new DlpScrubber(new AiPseudonymMap(Array.Empty<(string Nombre, string Tipo)>()))
+        // V-02.08: el mapa de seudonimos lo construye el caller (mismas
+        // entidades que ve el resto del flujo de IA, dentro del scope del
+        // usuario) y se pasa aqui para redactar tambien nombres de cuenta y
+        // de titular, no solo los patrones regex (IBAN, email) que ya
+        // cubria DlpScrubber. Si no llega mapa (p.ej. tests), se mantiene
+        // el comportamiento anterior con un mapa vacio.
+        var safeQuestion = new DlpScrubber(pseudonyms ?? new AiPseudonymMap(Array.Empty<(string Nombre, string Tipo)>()))
             .Escanear(pregunta, "planificador");
         if (safeQuestion.FalloCerrado) return null;
 

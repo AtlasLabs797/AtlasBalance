@@ -265,7 +265,12 @@ function Test-AtlasPreflight {
         [int]$InternalApiPort,
         [int]$WatchdogPort,
         [int]$DbPort,
-        [int]$PublicPort
+        [int]$PublicPort,
+        # V-02.08 (revision PR #33): solo cuando el instalador va a montar una
+        # instancia PostgreSQL gestionada nueva exigimos que DbPort este libre.
+        # Si se usa PostgreSQL externo/preexistente, postgres.exe YA esta
+        # escuchando en DbPort a proposito y eso no es un conflicto.
+        [bool]$WillInstallManagedDb = $false
     )
 
     $errores = @()
@@ -304,8 +309,8 @@ function Test-AtlasPreflight {
     }
 
     # 3. Puertos no ocupados por otra aplicacion.
-    $puertos = @($ApiPort, $InternalApiPort, $WatchdogPort, $DbPort, $PublicPort) | Where-Object { $_ -gt 0 } | Select-Object -Unique
-    foreach ($puerto in $puertos) {
+    $puertosAplicacion = @($ApiPort, $InternalApiPort, $WatchdogPort, $PublicPort) | Where-Object { $_ -gt 0 } | Select-Object -Unique
+    foreach ($puerto in $puertosAplicacion) {
         $escuchador = Get-NetTCPConnection -LocalPort $puerto -State Listen -ErrorAction SilentlyContinue
         if ($escuchador) {
             $owningPid = ($escuchador | Select-Object -First 1).OwningProcess
@@ -317,6 +322,30 @@ function Test-AtlasPreflight {
             else {
                 $errores += "Puerto $puerto ocupado por $processName (PID $owningPid). Librelo o cambia el puerto."
             }
+        }
+    }
+
+    # 3b. Puerto de BD: solo se exige libre si vamos a instalar una instancia
+    #     PostgreSQL gestionada nueva. Con PostgreSQL externo/preexistente
+    #     postgres.exe escucha ahi a proposito (ese es el camino soportado).
+    if ($DbPort -gt 0) {
+        $escuchadorDb = Get-NetTCPConnection -LocalPort $DbPort -State Listen -ErrorAction SilentlyContinue
+        if ($escuchadorDb) {
+            $owningPid = ($escuchadorDb | Select-Object -First 1).OwningProcess
+            $owningProcess = Get-Process -Id $owningPid -ErrorAction SilentlyContinue
+            $processName = if ($owningProcess) { $owningProcess.ProcessName } else { "?" }
+            if ($processName -like "AtlasBalance.*" -or $processName -like "postgres*") {
+                Write-Host "  [OK] Puerto $DbPort (BD) en uso por $processName." -ForegroundColor DarkGray
+            }
+            elseif ($WillInstallManagedDb) {
+                $errores += "Puerto $DbPort ocupado por $processName (PID $owningPid). Librelo o cambia -DbPort antes de instalar la instancia PostgreSQL gestionada."
+            }
+            else {
+                Write-Host "  [AVISO] Puerto $DbPort en uso por $processName (PID $owningPid); se asume la instancia PostgreSQL externa configurada con -DbHost/-DbPort." -ForegroundColor Yellow
+            }
+        }
+        elseif ($WillInstallManagedDb) {
+            Write-Host "  [OK] Puerto $DbPort libre para la instancia PostgreSQL gestionada." -ForegroundColor DarkGray
         }
     }
 
@@ -667,11 +696,18 @@ function Test-PostgresPreflight {
 
     # 2. Extension pgcrypto. V-02.07 lo necesita para Reset-AdminPassword
     #    (bcrypt con pgcrypto) y para la huella del importador.
-    $pgcrypto = Invoke-Psql -PsqlExe $psql -Database $DbName -Scalar -Sql "SELECT extname FROM pg_extension WHERE extname = 'pgcrypto';"
-    if ($pgcrypto -ne "pgcrypto") {
-        throw "La base de datos $DbName no tiene la extension pgcrypto instalada. Ejecuta: CREATE EXTENSION IF NOT EXISTS pgcrypto; con un superusuario."
+    # V-02.08 (revision PR #33): este preflight corre ANTES de Ensure-Database,
+    # asi que en fresh-install $DbName todavia no existe (psql -d $DbName
+    # fallaria con "database does not exist"). pgcrypto tampoco se habilita
+    # aqui: la migracion inicial la crea con CREATE EXTENSION IF NOT EXISTS al
+    # arrancar la API. Lo que este preflight puede y debe comprobar ahora es
+    # que el servidor la tiene DISPONIBLE, consultando contra "postgres"
+    # (que siempre existe) en vez de contra $DbName.
+    $pgcryptoDisponible = Invoke-Psql -PsqlExe $psql -Database "postgres" -Scalar -Sql "SELECT extname FROM pg_available_extensions WHERE extname = 'pgcrypto';"
+    if ($pgcryptoDisponible -ne "pgcrypto") {
+        throw "Esta instancia de PostgreSQL no tiene disponible la extension pgcrypto (paquete contrib). Instala el paquete que la incluye antes de continuar."
     }
-    Write-Host "  [OK] Extension pgcrypto instalada en $DbName." -ForegroundColor Green
+    Write-Host "  [OK] Extension pgcrypto disponible en el servidor PostgreSQL (se habilitara en $DbName al arrancar la API)." -ForegroundColor Green
 
     # 3. El rol owner debe ser NOSUPERUSER. El instalador ya lo crea con
     #    NOSUPERUSER pero un operador que apunte a una instancia existente
@@ -944,6 +980,14 @@ function Write-AppSettings {
             # V-02.07: sube de 28 a 365 dias. El suelo real (90) lo impone el
             # trigger append-only de la base de datos.
             RetentionDays = 365
+        }
+        Documentation = [ordered]@{
+            # V-02.08: sin esto, DocumentationHelpService cae en el fallback de
+            # Program.cs (subir 4 niveles desde ContentRootPath), que solo
+            # resuelve en el checkout de desarrollo. En produccion la API corre
+            # desde <InstallPath>\api, donde Build-Release.ps1 empaqueta el
+            # manual en api\Documentacion\DOCUMENTACION_USUARIO.md.
+            UserPath = Join-Path $apiTarget "Documentacion\DOCUMENTACION_USUARIO.md"
         }
         ForwardedHeaders = [ordered]@{
             KnownProxies = $forwardedKnownProxies
@@ -1277,7 +1321,11 @@ if ($UseReverseProxy -and $InternalApiPort -eq $PublicPort) {
 # o si la carpeta de instalacion no es escribible. Esto es lo que evita
 # el "lo dejo a medias pero no rollback" que fue el peor sintoma del
 # incidente.
-Test-AtlasPreflight -InstallPath $InstallPath -ApiPort $ApiPort -InternalApiPort $InternalApiPort -WatchdogPort $WatchdogPort -DbPort $DbPort -PublicPort $PublicPort
+# V-02.08 (revision PR #33): misma condicion que mas abajo decide si se monta
+# PostgreSQL gestionado (linea ~1316): -InstallDependencies sin
+# -PostgresAdminPassword. Solo en ese caso el preflight debe exigir DbPort libre.
+$willInstallManagedDb = (-not $SkipDatabaseSetup) -and $InstallDependencies -and [string]::IsNullOrWhiteSpace($PostgresAdminPassword)
+Test-AtlasPreflight -InstallPath $InstallPath -ApiPort $ApiPort -InternalApiPort $InternalApiPort -WatchdogPort $WatchdogPort -DbPort $DbPort -PublicPort $PublicPort -WillInstallManagedDb $willInstallManagedDb
 $internalApiUrl = if ($UseReverseProxy) { "http://127.0.0.1:$InternalApiPort" } else { "https://0.0.0.0:$ApiPort" }
 $healthUrl = if ($UseReverseProxy) { "http://localhost:$InternalApiPort/api/health" } elseif ($ApiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$ApiPort/api/health" }
 $appUrl = if ($UseReverseProxy) {
