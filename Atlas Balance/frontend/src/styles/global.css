@@ -27,6 +27,7 @@ body {
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
+  letter-spacing: var(--tracking-body);
   color: var(--color-text-primary);
   background: var(--bg-app);
   min-width: 0;
@@ -78,7 +79,7 @@ input, textarea, select, button {
 input, textarea, select {
   background: var(--control-bg);
   border: 1px solid var(--control-border);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-field);
   padding: var(--space-2) var(--control-padding-x);
   color: var(--color-text-primary);
   min-height: var(--control-height);
@@ -187,7 +188,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   min-height: var(--control-height);
   padding: var(--space-2) var(--control-padding-x);
   border: 1px solid var(--control-border);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-field);
   background: var(--control-bg);
   color: var(--color-text-primary);
   text-align: left;
@@ -958,7 +959,7 @@ th {
   overflow: auto;
   padding: var(--space-1);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   box-shadow: var(--shadow-overlay);
   transform-origin: top left;
@@ -977,7 +978,7 @@ th {
   min-height: 2.45rem;
   justify-content: space-between;
   border: 0;
-  border-radius: calc(var(--radius-control) - 4px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-primary);
   padding: var(--space-2) var(--space-3);

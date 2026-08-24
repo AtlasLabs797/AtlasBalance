@@ -74,7 +74,7 @@
 
 .alertas-destinatarios {
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface-soft);
   padding: var(--space-3);
   display: grid;
@@ -86,7 +86,7 @@
 
 .alertas-destinatarios .users-check-row-item {
   padding: var(--space-2);
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-sm);
 }
 
 .alertas-destinatarios .users-check-row-item:has(input:checked) {
@@ -143,7 +143,7 @@
 .config-feedback {
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--success-text) 24%, transparent);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   padding: var(--space-3);
   background: var(--success-bg);
   color: var(--success-text);
@@ -304,7 +304,7 @@
 
 .config-note {
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   padding: var(--space-3);
   background: var(--bg-surface-soft);
 }
@@ -328,7 +328,7 @@
 
 .config-status-grid article {
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--bg-surface-soft);
   padding: var(--space-3);
 }
@@ -438,7 +438,7 @@
 
 .config-divisa-card {
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--bg-surface-soft);
   padding: var(--space-3);
   display: grid;
@@ -700,7 +700,7 @@
 
 .auditoria-expanded {
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface-soft);
   padding: var(--space-3);
   display: grid;
@@ -795,7 +795,7 @@
 .backup-link-box,
 .backup-drive-file {
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface-soft);
   padding: var(--space-3);
 }

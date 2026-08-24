@@ -259,7 +259,7 @@
 .formatos-page .extra-col-row {
   padding: var(--space-2);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-sm);
   background: var(--bg-surface);
 }
 
@@ -314,7 +314,7 @@
   min-width: 0;
   padding: var(--space-2) var(--control-padding-x, var(--space-3));
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-field);
   background: var(--bg-surface-soft);
   color: var(--text-primary);
   font-family: inherit;
@@ -345,14 +345,14 @@
   padding: var(--space-1);
   list-style: none;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 
 .app-combobox-option {
   padding: var(--space-2);
-  border-radius: calc(var(--radius-control) - 4px);
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   cursor: pointer;
   user-select: none;
@@ -632,7 +632,7 @@
   align-self: start;
   padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface));
 }
 
@@ -1018,7 +1018,7 @@
   display: grid;
   gap: var(--space-1);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   padding: var(--space-3);
 }

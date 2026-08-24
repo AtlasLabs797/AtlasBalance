@@ -73,7 +73,7 @@
   flex-wrap: wrap;
   padding: 0.25rem;
   border: 1px solid var(--border-soft);
-  border-radius: 0.875rem;
+  border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--bg-surface-soft) 78%, var(--bg-surface) 22%);
   box-shadow: none;
 }
@@ -198,7 +198,7 @@
   align-content: start;
   padding: var(--space-3);
   border: 1px solid var(--border-soft);
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
 }
 
@@ -287,7 +287,7 @@
 .dashboard-periodo-tabs .ab-tab {
   min-height: 2.25rem;
   min-width: 3rem;
-  border-radius: 0.65rem;
+  border-radius: var(--radius-full);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
   color: var(--text-secondary);
@@ -296,7 +296,7 @@
 .dashboard-periodo-tabs .ab-tab[aria-checked="true"] {
   background: var(--bg-surface);
   color: var(--text-primary);
-  box-shadow: 0 0.35rem 1rem color-mix(in srgb, var(--text-primary) 7%, transparent);
+  box-shadow: none;
 }
 
 .dashboard-select-control .app-select-label {
@@ -583,8 +583,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .dashboard-kpi:hover {
-    box-shadow: var(--shadow-card-hover);
-    transform: translateY(-2px);
+    border-color: var(--border-strong);
   }
 }
 
@@ -791,7 +790,7 @@
 .dashboard-divisa-item {
   container-type: inline-size;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
   padding: 0.8rem 0.9rem;
   display: grid;
@@ -900,7 +899,7 @@
   display: grid;
   gap: var(--space-1);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   padding: var(--space-3);
   color: var(--color-text-primary);
   text-decoration: none;
@@ -938,7 +937,7 @@
   min-height: 5.75rem;
   place-items: center;
   border: 1px dashed var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   color: var(--color-text-secondary);
   background: var(--bg-surface-soft);
   font-size: var(--font-size-sm);
@@ -981,7 +980,7 @@
   min-width: 13rem;
   padding: var(--space-3);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-sm);
   background: var(--bg-surface);
   color: var(--text-primary);
   box-shadow: var(--shadow-overlay);
@@ -1026,7 +1025,7 @@
   gap: 1px;
   margin-bottom: var(--space-2);
   border: 1px solid var(--border-soft);
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--border-soft);
 }
@@ -1322,7 +1321,7 @@
   margin-bottom: var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface-soft);
 }
 
@@ -1428,7 +1427,7 @@
   gap: var(--space-3);
   padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--accent-primary) 22%, var(--border-soft));
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
 }
 

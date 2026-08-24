@@ -256,7 +256,7 @@
   height: min(70dvh, 620px);
   max-height: calc(100dvh - var(--space-6));
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   box-shadow: var(--shadow-overlay);
   padding: var(--space-3);
@@ -348,7 +348,7 @@
   gap: var(--space-1);
   padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--warning-text) 24%, var(--border-soft));
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--warning-bg);
   color: var(--warning-text);
 }
@@ -489,7 +489,7 @@
   max-width: 78%;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-pill);
-  border-bottom-right-radius: calc(var(--radius-control) - 2px);
+  border-bottom-right-radius: var(--radius-xs);
   background: var(--bg-surface-soft);
   border: 1px solid var(--border-soft);
   color: var(--text-primary);
@@ -503,7 +503,7 @@
 .ai-chat-message--system {
   max-width: 100%;
   padding: var(--space-3);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--warning-bg);
   color: var(--warning-text);
   border: 1px solid color-mix(in srgb, var(--warning-text) 24%, transparent);
@@ -559,7 +559,7 @@
   overflow-x: auto;
   margin: 0;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-surface-muted) 84%, transparent);
   padding: var(--space-3);
   font-size: var(--font-size-xs);
@@ -637,7 +637,7 @@
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface-soft);
   border: 1px solid var(--border-soft);
 }
@@ -821,7 +821,7 @@
   display: grid;
   gap: var(--space-2);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--bg-surface);
   padding: var(--space-3);
   margin-top: auto;

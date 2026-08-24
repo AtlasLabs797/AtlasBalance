@@ -360,7 +360,7 @@ tbody tr:hover {
 
 .pill,
 .config-badge {
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-full);
 }
 
 .dashboard-row-delete,
