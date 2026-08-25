@@ -343,8 +343,6 @@ tbody tr:hover {
   border-color: color-mix(in srgb, var(--danger-text) 28%, transparent);
 }
 
-.modal-backdrop,
-.config-modal-backdrop,
 @media (max-width: 767.98px) {
   .dashboard-page,
   .users-page,

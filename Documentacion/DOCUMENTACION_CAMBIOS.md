@@ -10,6 +10,40 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-25 - V-02.09 - Verificacion pre-push: CI roja por CSS invalido, fix y suite completa en verde
+
+- **Motivacion:** peticion de push de la rama `V-02.09` garantizando que
+  todo sale en verde. La rama tenia 2 commits sin publicar (`70085b1`,
+  `73b3bb9`) y sin upstream configurado; la ultima run de CI en remoto
+  (`32891893773`, commit `2698600`) estaba en `failure`.
+- **Diagnostico:** la run fallaba SOLO en el step `Build frontend`; causa:
+  lista de selectores huerfana en `system-coherence.css` (detalle completo
+  en `LOG_ERRORES_INCIDENCIAS.md`). Los commits pendientes no tocaban
+  frontend: el bug ya estaba publicado.
+- **Trabajo realizado:**
+  - `frontend/src/styles/layout/system-coherence.css`: eliminadas las dos
+    lineas de selectores sin cuerpo (`.modal-backdrop,`
+    `.config-modal-backdrop,`) que colgaban antes del primer `@media`.
+  - Documentacion: entrada nueva en `LOG_ERRORES_INCIDENCIAS.md` y seccion
+    de cierre en `Versiones/v-02.09.md`.
+- **Archivos tocados:** los tres anteriores.
+- **Comandos ejecutados:**
+  - `dotnet test tests\AtlasBalance.API.Tests`: 896/896 OK (Debug,
+    incluye trait Postgres contra Testcontainers).
+  - `dotnet test tests\AtlasBalance.Caching.Tests`: 15/15 OK.
+  - `npm run lint`, `npm run test:unit`: OK (57/57).
+  - `npx vite build --outDir dist-agt`: OK tras el fix; directorio
+    temporal eliminado (el `dist` real sigue bloqueado por ACL sandbox,
+    bloqueo cronico ya documentado; no arreglable sin elevacion).
+  - `gh run view 32891893773`: aislamiento del step en rojo.
+- **Verificacion:** suite local verde en backend y frontend; pendiente la
+  confirmacion de la run de CI posterior al push.
+- **Pendientes:** limpieza con elevacion de los artefactos con propiedad
+  sandbox (`obj/bin` backend, `frontend/dist`) para que los builds locales
+  normales vuelvan a funcionar sin workarounds de redireccion.
+
+---
+
 ## 2026-08-25 - V-02.09 - Cierre de los dos hallazgos residuales del PR #33 (ultimo gasto acotado al mes + instalador sin verificacion RLS bloqueante)
 
 - **Motivacion:** la revision de los comentarios de Codex en el PR #33

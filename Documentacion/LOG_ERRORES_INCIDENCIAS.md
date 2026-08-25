@@ -1,5 +1,33 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-25 - V-02.09 - Selector CSS vacio dejaba la CI en rojo ("Build frontend") desde hacia varios pushes (CERRADO / VALIDACION PENDIENTE)
+
+- **Contexto:** al preparar el push de la rama se comprobo el estado de CI
+  y la run `32891893773` (push de `2698600`) fallaba unicamente en el step
+  `Build frontend`; el resto (tests backend con/sin Postgres, audits,
+  gates de politicas, lint y test:unit) estaba en verde.
+- **Causa raiz:** en `frontend/src/styles/layout/system-coherence.css`
+  quedo una lista de selectores huerfana antes de un `@media`
+  (`.modal-backdrop,` + `.config-modal-backdrop,` sin bloque de
+  declaraciones). Es el residuo de una limpieza antigua que elimino el
+  cuerpo `backdrop-filter: none` (y otros dos selectores de esa lista),
+  pero dejo estos dos colgando. LightningCSS en minify aborta con
+  `SyntaxError: [lightningcss minify] Invalid empty selector`.
+- **Solucion:** borrar las dos lineas huerfanas. Los selectores ya cubren
+  su aspecto en otros ficheros: `.modal-backdrop` en
+  `layout/extractos.css:717` (`backdrop-filter: var(--blur-overlay)`) y
+  `.config-modal-backdrop` en `layout/admin.css:639`; la regla completa de
+  animacion de backdrops sigue en `system-coherence.css` (bloque
+  `@keyframes modal-backdrop-in`).
+- **Leccion:** al eliminar una regla con lista multi-selector hay que
+  eliminar TAMBIEN los selectores; `eslint` no procesa CSS, asi que el
+  unico gate que captura esta clase de error es `npm run build` (CI y
+  local). Un selector vacio no rompe `lint` ni `test:unit`.
+- **Nota operativa:** el build local solo pudo validarse compilando a un
+  `--outDir` alternativo porque `frontend/dist` sigue con propiedad de
+  sandbox (`CodexSandboxOffline`), mismo bloqueo cronico de ACL documentado
+  en entradas anteriores; requiere limpieza con elevacion una vez.
+
 ## 2026-08-25 - V-02.09 - "Ultimo gasto" ignoraba gastos de meses anteriores y el instalador podia declarar exito sin RLS verificado (CERRADO / VALIDACION PENDIENTE)
 
 - **Contexto:** al verificar los ~29 hallazgos de Codex en el PR #33 contra
