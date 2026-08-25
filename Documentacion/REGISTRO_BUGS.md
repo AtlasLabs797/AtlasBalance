@@ -2,6 +2,28 @@
 
 ## Abiertos
 
+### 2026-08-26 - V-02.09 - Abierto - `backend\Directory.Build.props` ensombrece al raiz y deja muerta la metadata de version del backend
+
+- **Contexto:** MSBuild importa solo el primer `Directory.Build.props` que
+  encuentra subiendo desde el proyecto. Existe
+  `Atlas Balance\Directory.Build.props` (version 2.9.0, FileVersion 2.9.0.0,
+  InformationalVersion V-02.09, `IncludeSourceRevisionInInformationalVersion=false`)
+  y otro en `Atlas Balance\backend\` (solo `RestorePackagesWithLockFile`).
+  Los proyectos de `backend\src` resuelven el de `backend\`, por lo que los
+  valores del raiz no aplican a nada (el frontend no usa MSBuild).
+- **Efecto observable:** los DLL publicados salen con `FileVersion 1.0.0.0`
+  y `ProductVersion V-02.0X+<hash>`; la version util solo entra porque
+  `Build-Release.ps1` pasa `-p:InformationalVersion` por linea de comandos,
+  y el hash se sigue anexando porque el flag anti-hash del raiz es letra
+  muerta. Patron identico en el release oficial V-02.07: sin impacto en el
+  actualizador (usa version.json/VERSION), pero la configuracion declarada
+  no hace lo que dice.
+- **Propuesta de correccion:** fusionar ambos props en uno (raiz) con la
+  logica condicional del lockfile por carpeta, o hacer que el de `backend`
+  importe explicitamente el raiz; verificar con
+  `dotnet msbuild -getProperty:FileVersion` y regenerar paquete.
+- **Estado:** ABIERTO (decision de enfoque pendiente; no bloquea releases).
+
 ### 2026-08-23 - V-02.08 - Cerrado parcial - Auditoria integral de seguridad y bugs: 4 altos, 6 medios y cola de menores
 
 - **Contexto:** revision completa del codigo (backend C#, frontend React,

@@ -25585,3 +25585,73 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
   actualizar `.env` y las connection strings de dev-secrets a la vez.
 
 ---
+
+## 2026-08-26 - V-02.09 - Paquete release local V-02.09 y publicacion via release.yml
+
+**Fecha:** 2026-08-26 · **Version:** V-02.09 · **Rama:** V-02.09
+
+### Trabajo realizado
+
+Generacion y verificacion del paquete release `AtlasBalance-V-02.09-win-x64`
+y publicacion del release oficial firmado via GitHub Actions:
+
+- Alineacion de versiones verificada con `Check-VersionAlignment.ps1`: OK
+  (`V-02.09` / `2.9.0` en VERSION, Directory.Build.props y package.json).
+- `Build-Release.ps1 -Version V-02.09 -AllowUnsignedLocal`: fallo en el
+  publish del Watchdog con MSB3021 (bin bloqueado por un handle huerfano
+  invisible; detalle y workaround en `LOG_ERRORES_INCIDENCIAS.md`). La API,
+  el build de frontend y la limpieza de `.map` si completaron.
+- Workaround aplicado: publish del Watchdog con `-p:OutputPath` alterno
+  (`win-x64-alt`) y resto de pasos del script replicados a mano en el mismo
+  orden (limpieza pdb/lockfiles con asercion, scripts, cmd, VERSION, README,
+  .gitignore, DOCUMENTACION_USUARIO en `api\Documentacion`, version.json,
+  Compress-Archive). Sin firma local (equivalente a `-AllowUnsignedLocal`;
+  ese ZIP es evidencia, no publicable).
+- Hallazgo estructural (no corregido en esta sesion):
+  `backend\Directory.Build.props` ensombrece al raiz
+  `Atlas Balance\Directory.Build.props`, asi que su metadata de version
+  (`FileVersion 2.9.0.0`, `InformationalVersion`, flag anti-hash) no aplica a
+  ningun proyecto backend. Los DLL publicados salen con FileVersion 1.0.0.0
+  y `ProductVersion V-02.0X+<commit>` (la version llega solo por el
+  `-p:InformationalVersion` del script). Patron identico al release oficial
+  V-02.07, por lo que el paquete es consistente; registrado en
+  `REGISTRO_BUGS.md`.
+- Push de la rama `V-02.09` y disparo de `release.yml` (workflow_dispatch,
+  input `V-02.09`) para el paquete firmado oficial y el GitHub Release.
+
+Archivos tocados: ninguno de codigo; solo esta bitacora,
+`LOG_ERRORES_INCIDENCIAS.md` y `REGISTRO_BUGS.md`. Paquete generado en
+`Atlas Balance/Atlas Balance Release/` (fuera de Git).
+
+Comandos ejecutados:
+
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Check-VersionAlignment.ps1"`
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\Build-Release.ps1" -Version V-02.09 -AllowUnsignedLocal`
+- `dotnet build-server shutdown` (no libero el bloqueo)
+- `dotnet publish Watchdog ... -p:OutputPath=bin\Release\net8.0\win-x64-alt\` + pasos manuales restantes
+- `git push -u origin V-02.09`; `gh workflow run release.yml --ref V-02.09 -f version=V-02.09`
+
+### Verificacion
+
+- Scanner de secretos del script: sin hallazgos (664 ficheros).
+- tsc --noEmit y vite build OK (48 `.map` excluidos del wwwroot).
+- Paquete: 102.418.585 bytes; binarios API y Watchdog presentes; VERSION =
+  `V-02.09`; version.json correcto; 0 pdb / 0 lockfiles / 0 map tras
+  limpieza con asercion; solo `appsettings.json` (sin Development ni
+  plantillas); metadata de DLL identica en patron al release V-02.07.
+- Diff de inventario vs paquete V-02.07: diferencias explicadas por hashes
+  nuevos de assets, cambio de fuentes del rediseno (Geist), reubicacion de
+  la documentacion de usuario dentro de `api\Documentacion` (intencional
+  desde V-02.08) y scripts operativos nuevos de la lista del script.
+
+### Pendientes
+
+- Confirmar run verde de `release.yml` y GitHub Release `V-02.09-win-x64`
+  con `zip` + `zip.sig` como latest (resultado anotado abajo si cierra).
+- Decidir arreglo del ensombrecimiento de Directory.Build.props (bug
+  registrado; tocarlo exige decidir si se unifican o elimina uno).
+- Limpieza con elevacion de `backend\src\AtlasBalance.Watchdog\bin\Release`
+  (handle huerfano cronico de sandbox en esta maquina) y del OutputPath
+  alterno `win-x64-alt` una vez recompilado limpio.
+
+---

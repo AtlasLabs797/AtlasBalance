@@ -1,5 +1,31 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-26 - V-02.09 - MSB3021 en publish del Watchdog: handle huerfano bloquea `bin\Release\net8.0\win-x64` (CERRADO CON WORKAROUND)
+
+- **Contexto:** al ejecutar `Build-Release.ps1 -Version V-02.09
+  -AllowUnsignedLocal`, el publish de la API completo pero el del Watchdog
+  aborto con dos MSB3021 al copiar a `bin\Release\net8.0\win-x64\`
+  (`packages.lock.json` y `AtlasBalance.Watchdog.exe` desde apphost):
+  "Access to the path is denied".
+- **Diagnostico:** los servicios Atlas estaban parados y ningun proceso
+  tenia la imagen cargada (Win32_Process sin coincidencias), pero ambos
+  ficheros fallaban al abrirse con acceso ReadWrite y a renombrar, incluso
+  el directorio padre `net8.0`. `dotnet build-server shutdown` mato un nodo
+  residual de MSBuild (PID 10488) pero no libero el bloqueo: handle huerfano
+  retenido por un proceso no inspeccionable sin elevacion (cronico de
+  sandbox en esta maquina, mismo familia que los bloqueos ACL previos).
+- **Workaround:** publicar el Watchdog con `-p:OutputPath=bin\Release\net8.0\win-x64-alt\`
+  para que la copia intermedia no pise los ficheros bloqueados, destino
+  final `-o` sin cambios; el resto de pasos del script se replicaron a mano
+  en su orden exacto. Paquete resultante verificado equivalente.
+- **Solucion definitiva (pendiente):** con elevacion, cerrar el handle o
+  borrar `backend\src\AtlasBalance.Watchdog\bin\Release` y recompilar;
+  mientras tanto, cualquier release local debe usar el OutputPath alterno.
+- **Leccion:** ante MSB3021 sobre bin ya existente, comprobar primero
+  procesos/servicios y `dotnet build-server shutdown`; si renombrar el
+  directorio padre tambien falla, el holder es invisible y toca desviar el
+  OutputPath en vez de insistir (max 2 intentos por via).
+
 ## 2026-08-25 - V-02.09 - Selector CSS vacio dejaba la CI en rojo ("Build frontend") desde hacia varios pushes (CERRADO / VALIDACION PENDIENTE)
 
 - **Contexto:** al preparar el push de la rama se comprobo el estado de CI
