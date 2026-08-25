@@ -122,6 +122,22 @@ export default function DashboardTitularPage() {
     );
   }, [evolucion, titular?.egresos_mes, titular?.ingresos_mes]);
 
+  const variacionPct = useMemo(() => {
+    if (!evolucion?.puntos?.length || !evolucion.saldo_inicio_periodo) return null;
+    const saldoFinal = evolucion.puntos[evolucion.puntos.length - 1].saldo;
+    return ((saldoFinal - evolucion.saldo_inicio_periodo) / Math.abs(evolucion.saldo_inicio_periodo)) * 100;
+  }, [evolucion]);
+
+  const variacionIngPct = useMemo(() => {
+    if (!evolucion?.ingresos_anterior) return null;
+    return ((periodTotals.ingresos - evolucion.ingresos_anterior) / evolucion.ingresos_anterior) * 100;
+  }, [evolucion?.ingresos_anterior, periodTotals.ingresos]);
+
+  const variacionEgrPct = useMemo(() => {
+    if (!evolucion?.egresos_anterior) return null;
+    return ((periodTotals.egresos - evolucion.egresos_anterior) / evolucion.egresos_anterior) * 100;
+  }, [evolucion?.egresos_anterior, periodTotals.egresos]);
+
   useEffect(() => {
     const next = new URLSearchParams();
     next.set('periodo', periodo);
@@ -180,6 +196,11 @@ export default function DashboardTitularPage() {
               {formatCurrency(titular.total_convertido, titular.divisa_principal)}
             </SignedAmount>
           }
+          helper={variacionPct !== null ? (
+            <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+              {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}% vs. inicio del período
+            </span>
+          ) : undefined}
         />
         <KpiCard
           title="Ingresos período"
@@ -188,6 +209,11 @@ export default function DashboardTitularPage() {
               {formatCurrency(periodTotals.ingresos, titular.divisa_principal)}
             </SignedAmount>
           }
+          helper={variacionIngPct !== null ? (
+            <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+              {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}% vs. anterior
+            </span>
+          ) : undefined}
         />
         <KpiCard
           title="Egresos período"
@@ -196,6 +222,11 @@ export default function DashboardTitularPage() {
               {formatCurrency(periodTotals.egresos, titular.divisa_principal)}
             </SignedAmount>
           }
+          helper={variacionEgrPct !== null ? (
+            <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+              {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}% vs. anterior
+            </span>
+          ) : undefined}
         />
       </div>
 

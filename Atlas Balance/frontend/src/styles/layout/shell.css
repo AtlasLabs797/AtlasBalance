@@ -524,11 +524,19 @@
   min-height: 100dvh;
 }
 
+/* DESIGN.md §5.1: dos variantes, --info y --danger, con punto de pulso. Los
+   colores salen del triplete de estado; la variante la decide AlertBanner.tsx
+   segun haya o no cuentas en negativo. */
 .alert-banner {
+  --alert-banner-text: var(--status-info-text);
+  --alert-banner-bg: var(--status-info-bg);
+  --alert-banner-border: var(--status-info-border);
+  --alert-banner-solid: var(--status-info-solid);
+
   margin: var(--space-2) var(--space-4) 0;
-  border: 1px solid color-mix(in srgb, var(--warning-text) 28%, transparent);
+  border: 1px solid var(--alert-banner-border);
   border-radius: var(--radius-card);
-  background: var(--color-bg-warning);
+  background: var(--alert-banner-bg);
   padding: var(--space-2) var(--space-3);
   display: flex;
   align-self: start;
@@ -538,11 +546,27 @@
   animation: alert-banner-in var(--duration-base) var(--ease-premium) both;
 }
 
+.alert-banner--danger {
+  --alert-banner-text: var(--status-danger-text);
+  --alert-banner-bg: var(--status-danger-bg);
+  --alert-banner-border: var(--status-danger-border);
+  --alert-banner-solid: var(--status-danger-solid);
+}
+
 .alert-banner-content {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.alert-banner-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--alert-banner-solid);
+  animation: alert-banner-pulse 2.4s var(--ease-premium) infinite;
 }
 
 .alert-banner-pill {
@@ -551,12 +575,28 @@
   min-height: 1.75rem;
   padding: 0 var(--space-2);
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--warning-text) 13%, var(--warning-bg));
-  color: var(--warning-text);
+  background: color-mix(in srgb, var(--alert-banner-solid) 16%, transparent);
+  color: var(--alert-banner-text);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
+}
+
+@keyframes alert-banner-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--alert-banner-solid) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-banner-dot {
+    animation: none;
+  }
 }
 
 .sidebar-alert-badge {
@@ -650,16 +690,20 @@
   gap: var(--space-2);
 }
 
+/* DESIGN.md §5.4: la marca del estado vacio mide 20px. No es una pastilla con
+   fondo y borde, sino un glifo suelto sobre la superficie. */
 .empty-state-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3rem;
-  height: 3rem;
-  border-radius: var(--radius-control);
-  background: var(--bg-surface);
-  color: var(--text-link);
-  border: 1px solid var(--border-soft);
+  width: 20px;
+  height: 20px;
+  color: var(--text-tertiary);
+}
+
+.empty-state-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .empty-state-actions {

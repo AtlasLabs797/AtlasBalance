@@ -6232,3 +6232,74 @@ seccion 9 de DESIGN.md. Por eso el trabajo es un reestilado del CSS existente
 conservando los nombres de clase actuales, no la adopcion de la libreria de
 componentes de referencia. Si esos archivos llegan al repo, el camino de
 migracion de la seccion 5 sigue abierto.
+
+## 2026-08-25 - V-02.08 - Cierre de los pendientes de diseno: comparaciones de KPI, severidad de alertas y limpieza
+
+**Que se modifico.** Tres pantallas (`DashboardPage`, `DashboardTitularPage`,
+`AlertasPage`), el componente `AlertBanner`, dos iconos nuevos en `Icons.tsx` y
+cuatro hojas de estilo.
+
+**Por que.** La pasada anterior del redisenio dejo abiertos varios puntos de
+`Documentacion/Diseno/DESIGN.md` por parecer decisiones de producto. Al
+revisarlos uno a uno resulto que el dato necesario ya estaba disponible en el
+frontend en todos los casos, asi que se podian cerrar sin tocar el backend.
+
+**Como.**
+
+1. *Comparaciones de KPI (seccion 6 de la spec: "una metrica sin comparacion no
+   se publica").* `DashboardTitularPage` ya consultaba `/dashboard/evolucion`
+   con `titularId`; el DTO `DashboardEvolucion` trae `saldo_inicio_periodo`,
+   `ingresos_anterior` y `egresos_anterior`, que es exactamente lo que
+   `DashboardPage` usa para sus helpers. Se replico el patron sin variarlo:
+   mismos `useMemo`, mismas guardas de division por cero y la misma regla de
+   **color por significado** (en egresos, subir es negativo).
+
+   Punto de cuidado: `saldo_inicio_periodo` es la apertura del periodo, no el
+   periodo anterior. Etiquetar esa variacion como "vs. anterior" seria decir
+   algo falso, asi que ese helper dice "vs. inicio del periodo" y solo
+   ingresos y egresos, que si comparan contra `*_anterior`, dicen "vs.
+   anterior".
+
+   En `DashboardPage`, el helper de "Inmovilizado" mostraba el recuento de
+   plazos fijos, que es contexto y no una comparacion, y ademas desaparecia
+   cuando la variacion bajaba del 0,1%. Ahora publica la variacion y, por
+   debajo del umbral, "Sin cambios en el periodo".
+
+2. *Severidad de alertas.* La spec pide variantes `--info`/`--danger` en
+   `AlertBanner` (seccion 5.1) y un `NotificationList` con iconos
+   `--danger/--warning` en `AlertasPage` (seccion 5.4). En ambos casos la
+   severidad se deriva de `AlertaActiva.saldo_actual`, que ya viaja en el
+   store: por debajo de cero es peligro, por debajo del minimo pero en
+   positivo es aviso. No se introdujo ninguna regla de negocio nueva ni se
+   anadio campo al DTO. El banner cambia ademas su `role` de `status` a
+   `alert` en la variante de peligro, que es lo que corresponde por
+   accesibilidad cuando el aviso escala.
+
+3. *Alcance del mapeo de `AlertasPage`.* La seccion 5.4 mapea la pagina entera
+   a `NotificationList`, pero la pantalla es un panel de configuracion de
+   reglas con una unica seccion que es realmente una bandeja ("Alertas
+   Activas"). Se convirtio solo esa. Aplicar el mapeo literal habria exigido
+   rehacer tres formularios de configuracion como si fueran notificaciones,
+   que es un cambio funcional sin sentido para el usuario.
+
+4. *Colores de grafica configurables: revisado y cerrado sin cambio.* El
+   pendiente sospechaba que `EvolucionChart` dejaba pasar colores crudos del
+   backend sin re-tintar en tema oscuro. Es cierto en el caso de un color
+   personalizado, pero los tres valores por defecto
+   (`ConfiguracionController`, `ConfiguracionDtos`, `SeedData`) ya se traducen
+   a token en `LEGACY_CHART_COLOR_TOKENS`, asi que toda instalacion que no
+   haya personalizado los colores renderiza con la paleta nueva. Un hex
+   distinto solo llega ahi si un administrador lo escogio en Configuracion.
+   Cambiar los defaults del backend no tendria efecto visual, obligaria a
+   tocar C#, DTOs y semilla, y no afectaria a instalaciones ya desplegadas
+   (que tienen el valor en base de datos). Queda como decision de producto:
+   retirar el selector de colores si se quiere una paleta inamovible.
+
+5. *Limpieza.* Se retiraron dos reglas de CSS muerto detectadas durante la
+   auditoria: las tres variantes de `.app-select-trigger[aria-expanded="true"]`
+   en `global.css` (un `<select>` nativo no refleja ese atributo en el DOM) y
+   el `accent-color` de `.auth-checkbox` (el checkbox base usa
+   `appearance: none` con su propio check via `::before`). El resto del codigo
+   muerto detectado en `global.css` (`.app-select-option*`) es anterior a este
+   ciclo y se deja registrado sin tocar, conforme a la regla de cambios
+   quirurgicos de AGENTS.md 2.3.

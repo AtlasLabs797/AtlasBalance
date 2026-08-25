@@ -195,3 +195,24 @@ export function IconAiFace() {
     </svg>
   );
 }
+
+// Severidad de alerta de saldo (DESIGN.md §5.4: NotificationList).
+export function IconAlertaDanger() {
+  return (
+    <svg {...PROPS}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v6" />
+      <circle cx="12" cy="16.5" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconAlertaWarning() {
+  return (
+    <svg {...PROPS}>
+      <path d="M12 3.5 21.5 20h-19Z" />
+      <path d="M12 9.5v4.5" />
+      <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

@@ -859,18 +859,9 @@ th {
   touch-action: manipulation;
 }
 
-.app-select-trigger:hover:not(:disabled),
-.app-select-trigger[aria-expanded="true"] {
+.app-select-trigger:hover:not(:disabled) {
   border-color: var(--border-strong);
   background: var(--bg-surface);
-}
-
-.app-select-trigger[aria-expanded="true"] {
-  box-shadow: var(--ring-focus);
-}
-
-.app-select-trigger[aria-expanded="true"] .app-select-chevron {
-  transform: translateY(0.12rem) rotate(225deg);
 }
 
 .app-select-trigger > span:first-child {

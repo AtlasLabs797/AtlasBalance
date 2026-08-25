@@ -25107,3 +25107,76 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
   heredado, no tocado aqui.
 
 ---
+
+## 2026-08-25 - V-02.08 - Cierre de los pendientes de diseno del redisenio
+
+- **Motivacion:** el operador pidio aplicar todo lo que quedaba abierto de la
+  entrada anterior para dar el redisenio por terminado y funcional.
+- **Trabajo realizado:** los tres pendientes que se habian dejado por implicar
+  decisiones de producto (KPIs sin comparacion, `AlertasPage` como
+  `NotificationList`, variantes de `AlertBanner`) mas la marca del estado vacio
+  y la retirada del CSS muerto detectado. En los tres primeros el dato
+  necesario ya estaba en el frontend, asi que no se toco backend, endpoints ni
+  queries. Detalle completo en `Versiones/v-02.08.md`, seccion "Cierre de los
+  pendientes de diseno del redisenio (2026-08-25, segunda pasada)".
+- **Metodo:** dos subagentes en paralelo (KPIs y lista de alertas), con
+  revision y correccion de sus diffs por el orquestador; el resto lo aplico el
+  orquestador.
+- **Archivos tocados:**
+  - Paginas: `DashboardPage.tsx`, `DashboardTitularPage.tsx`, `AlertasPage.tsx`.
+  - Componentes: `layout/AlertBanner.tsx`, `Icons.tsx`.
+  - Estilos: `styles/layout/shell.css`, `styles/layout/admin.css`,
+    `styles/global.css`, `styles/auth.css`.
+  - Documentacion: `Versiones/v-02.08.md`, `DOCUMENTACION_TECNICA.md` y esta
+    bitacora.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio (`--max-warnings 0`).
+- `npm run test:unit` -> 57/57.
+- `npm run build` -> "2653 modules transformed" correcto, luego el EPERM de
+  sandbox conocido al copiar `public/logos/` a `dist/`.
+
+### Resultado de verificacion
+
+- Tipos, lint y tests unitarios en verde.
+- Barrido sobre las lineas CSS anadidas en esta pasada: cero hex literales,
+  cero `rem` fuera de escala, cero radios literales, cero `outline` de foco y
+  cero `translateY` en hover.
+- **Sigue sin haber validacion visual en navegador.**
+
+### Decisiones visuales frontend
+
+- El texto de cada comparacion dice contra que compara: "vs. anterior" cuando
+  la base es el periodo anterior, "vs. inicio del periodo" cuando es el saldo
+  de apertura. El KPI "Inmovilizado" publica su variacion en vez del recuento
+  de plazos fijos, que era contexto y no comparacion.
+- La severidad de alerta se deriva del dato existente en los dos sitios que la
+  muestran (banner y lista): cuenta en negativo es peligro, por debajo del
+  minimo pero en positivo es aviso. No se invento ninguna regla de negocio.
+- De `AlertasPage` solo se convierte a lista la tarjeta "Alertas Activas", que
+  es la unica bandeja real; los tres bloques de configuracion de reglas siguen
+  siendo formularios y tablas.
+- La accion "Abrir cuenta" de la lista se dibuja con la pildora fantasma de
+  borde cobalto, que es la unica gramatica de boton secundario del sistema.
+
+### Pendientes de diseno abiertos
+
+- **QA visual**, que es el unico pendiente real que queda del redisenio.
+- Si se quiere que la paleta de graficas sea inamovible habria que retirar el
+  selector de colores de Configuracion y que el backend mandase el rol en vez
+  del color. Es decision de producto: hoy el selector es una funcion viva y el
+  frontend ya traduce los tres valores por defecto a tokens.
+
+### Bloqueos y pendientes
+
+- Build vite de produccion bloqueado por el EPERM de sandbox ya conocido.
+- Codigo muerto preexistente no tocado en `global.css` (`.app-select-option*`
+  y `.app-select-trigger > span:first-child`, sin consumidor porque
+  `AppSelect` es un `<select>` nativo). Es anterior a este ciclo.
+- Dos carpetas vacias sin trazar en la raiz del repo (`frontend/public/fonts`),
+  no borrables desde esta sesion por permisos.
+- Runtime en V-02.09 / 2.9.0 frente a `version_actual.md` en V-02.08.
+
+---

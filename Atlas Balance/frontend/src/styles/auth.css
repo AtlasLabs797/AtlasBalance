@@ -398,7 +398,6 @@
   width: 0.96rem;
   height: 0.96rem;
   flex: 0 0 auto;
-  accent-color: var(--auth-accent);
 }
 
 .auth-button {

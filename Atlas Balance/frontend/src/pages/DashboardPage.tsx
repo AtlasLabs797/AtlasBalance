@@ -317,10 +317,14 @@ export default function DashboardPage() {
             <KpiCard
               title="Inmovilizado"
               value={formatCurrency(liquidezConsolidada.inmovilizado, principal.divisa_principal)}
-              helper={variacionInmovPct !== null && Math.abs(variacionInmovPct) >= 0.1 ? (
-                <span className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
-                  {principal.plazos_fijos.total_cuentas} plazo{principal.plazos_fijos.total_cuentas === 1 ? '' : 's'} fijo{principal.plazos_fijos.total_cuentas === 1 ? '' : 's'}
-                </span>
+              helper={variacionInmovPct !== null ? (
+                Math.abs(variacionInmovPct) >= 0.1 ? (
+                  <span className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
+                    {variacionInmovPct >= 0 ? '+' : ''}{variacionInmovPct.toFixed(1)}% vs. inicio del período
+                  </span>
+                ) : (
+                  <span className="dashboard-variacion--neutral">Sin cambios en el período</span>
+                )
               ) : undefined}
             />
           </>

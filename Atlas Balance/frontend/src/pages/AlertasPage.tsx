@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { IconAlertaDanger, IconAlertaWarning } from '@/components/Icons';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -353,38 +354,50 @@ export default function AlertasPage() {
         ) : null}
 
         {alertasActivas.length > 0 ? (
-          <div className="config-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Titular</th>
-                  <th>Cuenta</th>
-                  <th>Divisa</th>
-                  <th>Saldo actual</th>
-                  <th>Saldo mínimo</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {alertasActivas.map((item) => (
-                  <tr key={`${item.alerta_id}-${item.cuenta_id}`}>
-                    <td>{item.titular_nombre}</td>
-                    <td>{item.cuenta_nombre}</td>
-                    <td>{item.divisa}</td>
-                    <td>
-                      <SignedAmount value={item.saldo_actual}>{formatCurrency(item.saldo_actual, item.divisa ?? 'EUR')}</SignedAmount>
-                    </td>
-                    <td>
-                      <SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount>
-                    </td>
-                    <td>
-                      <Link to={`/cuentas/${item.cuenta_id}`}>Abrir cuenta</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="alertas-notif-list">
+            {alertasActivas.map((item) => {
+              const severity: 'danger' | 'warning' = item.saldo_actual < 0 ? 'danger' : 'warning';
+              const severityLabel = severity === 'danger' ? 'Cuenta en negativo' : 'Por debajo del mínimo';
+
+              return (
+                <li
+                  key={`${item.alerta_id}-${item.cuenta_id}`}
+                  className={`alertas-notif-item alertas-notif-item--${severity}`}
+                >
+                  <span className={`alertas-notif-icon alertas-notif-icon--${severity}`} aria-hidden="true">
+                    {severity === 'danger' ? <IconAlertaDanger /> : <IconAlertaWarning />}
+                  </span>
+                  <div className="alertas-notif-body">
+                    <p className="alertas-notif-title">
+                      {item.cuenta_nombre} <span className="alertas-notif-title-sep">·</span> {item.titular_nombre}
+                    </p>
+                    <p className="alertas-notif-severity-label">{severityLabel}</p>
+                    <dl className="alertas-notif-amounts">
+                      <div className="alertas-notif-amount">
+                        <dt>Saldo actual</dt>
+                        <dd>
+                          <SignedAmount value={item.saldo_actual}>
+                            {formatCurrency(item.saldo_actual, item.divisa ?? 'EUR')}
+                          </SignedAmount>
+                        </dd>
+                      </div>
+                      <div className="alertas-notif-amount">
+                        <dt>Saldo mínimo</dt>
+                        <dd>
+                          <SignedAmount value={item.saldo_minimo}>
+                            {formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}
+                          </SignedAmount>
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <Link className="alertas-notif-action" to={`/cuentas/${item.cuenta_id}`}>
+                    Abrir cuenta
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         ) : null}
       </article>
 
