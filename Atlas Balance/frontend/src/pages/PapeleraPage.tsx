@@ -201,7 +201,12 @@ export default function PapeleraPage() {
 
       <div className="users-table-card">
         {loading ? <p className="import-muted">Cargando {title.toLowerCase()} eliminados...</p> : null}
-        {!loading && rows.length === 0 ? <EmptyState title={`No hay registros eliminados en ${title.toLowerCase()}.`} /> : null}
+        {!loading && rows.length === 0 ? (
+          <EmptyState
+            title={`No hay registros eliminados en ${title.toLowerCase()}.`}
+            subtitle="Cuando elimines una entidad de este tipo aparecerá aquí para restaurarla o purgarla."
+          />
+        ) : null}
         {!loading && rows.length > 0 ? (
           <div className="users-table-scroll">
             <table>

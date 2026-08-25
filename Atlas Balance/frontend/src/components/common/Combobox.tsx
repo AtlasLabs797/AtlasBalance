@@ -136,12 +136,14 @@ export function Combobox({
       <input
         id={inputId}
         type="text"
+        role="combobox"
         className="app-combobox-input"
         value={value}
         disabled={disabled}
         placeholder={placeholder}
         aria-label={ariaLabel}
         aria-autocomplete="list"
+        aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
         aria-activedescendant={activeDescendant}

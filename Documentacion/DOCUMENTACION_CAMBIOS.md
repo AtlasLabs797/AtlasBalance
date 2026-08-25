@@ -10,6 +10,159 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-25 - V-02.09 - Verificacion pre-push: CI roja por CSS invalido, fix y suite completa en verde
+
+- **Motivacion:** peticion de push de la rama `V-02.09` garantizando que
+  todo sale en verde. La rama tenia 2 commits sin publicar (`70085b1`,
+  `73b3bb9`) y sin upstream configurado; la ultima run de CI en remoto
+  (`32891893773`, commit `2698600`) estaba en `failure`.
+- **Diagnostico:** la run fallaba SOLO en el step `Build frontend`; causa:
+  lista de selectores huerfana en `system-coherence.css` (detalle completo
+  en `LOG_ERRORES_INCIDENCIAS.md`). Los commits pendientes no tocaban
+  frontend: el bug ya estaba publicado.
+- **Trabajo realizado:**
+  - `frontend/src/styles/layout/system-coherence.css`: eliminadas las dos
+    lineas de selectores sin cuerpo (`.modal-backdrop,`
+    `.config-modal-backdrop,`) que colgaban antes del primer `@media`.
+  - Documentacion: entrada nueva en `LOG_ERRORES_INCIDENCIAS.md` y seccion
+    de cierre en `Versiones/v-02.09.md`.
+- **Archivos tocados:** los tres anteriores.
+- **Comandos ejecutados:**
+  - `dotnet test tests\AtlasBalance.API.Tests`: 896/896 OK (Debug,
+    incluye trait Postgres contra Testcontainers).
+  - `dotnet test tests\AtlasBalance.Caching.Tests`: 15/15 OK.
+  - `npm run lint`, `npm run test:unit`: OK (57/57).
+  - `npx vite build --outDir dist-agt`: OK tras el fix; directorio
+    temporal eliminado (el `dist` real sigue bloqueado por ACL sandbox,
+    bloqueo cronico ya documentado; no arreglable sin elevacion).
+  - `gh run view 32891893773`: aislamiento del step en rojo.
+- **Verificacion:** suite local verde en backend y frontend; pendiente la
+  confirmacion de la run de CI posterior al push.
+- **Pendientes:** limpieza con elevacion de los artefactos con propiedad
+  sandbox (`obj/bin` backend, `frontend/dist`) para que los builds locales
+  normales vuelvan a funcionar sin workarounds de redireccion.
+
+---
+
+## 2026-08-25 - V-02.09 - Cierre de los dos hallazgos residuales del PR #33 (ultimo gasto acotado al mes + instalador sin verificacion RLS bloqueante)
+
+- **Motivacion:** la revision de los comentarios de Codex en el PR #33
+  (3 rondas, ~29 hallazgos) confirmo 26 resueltos y 2 parciales: el P2 de
+  "ultimo gasto/ingreso" (la revalidacion del executor reinyectaba el mes
+  actual y `GetLatestTransactionAsync` no tenia la exencion que si tiene
+  `GetBalancesAsync`) y el P1 del instalador en fresh-install (sonda SQL de
+  RLS se salta porque `appsettings.Production.json` aun no existe, y el
+  health funcional posterior no era bloqueante).
+- **Trabajo realizado:**
+  - `Services/IaPlanner/FinancialToolsService.cs`:
+    `GetLatestTransactionAsync` replica el criterio `periodoEsPorDefecto`
+    (`Periodo is null || Tipo == MesActual` -> sin cotas) ya revisado en
+    `GetBalancesAsync`. Tradeoff documentado en codigo: "¿y este mes?" como
+    seguimiento tras ultimo gasto pasa a devolver el ultimo global.
+  - `tests/AtlasBalance.API.Tests/PlanExecutorTests.cs`: test nuevo de
+    cadena completa planner local ("cual fue el ultimo gasto") ->
+    `PlanExecutor` -> herramienta contra InMemory con el unico extracto en
+    el ultimo dia del mes anterior; pinza el bug end-to-end.
+  - `scripts/Instalar-AtlasBalance.ps1`: health funcional BLOQUEANTE
+    (24 intentos x 5s contra `$functionalUrl` derivado de `$healthUrl`
+    interno; throw accionable si no hay HTTP 200). Corrige ademas que antes
+    se sondeaba `$appUrl`, inalcanzable en fresh-install con reverse proxy.
+- **Archivos tocados:** los tres anteriores mas `Documentacion/
+  LOG_ERRORES_INCIDENCIAS.md`, `Documentacion/DOCUMENTACION_CAMBIOS.md`,
+  `Documentacion/Versiones/v-02.09.md`.
+- **Comandos ejecutados:** parser de PowerShell sobre el instalador
+  (PARSE OK tras corregir `$var:` -> `${var}:`); `dotnet build` de
+  AtlasBalance.API en Release y LocalCheck (0 errores, 6 warnings CS0618
+  preexistentes); varios intentos de `dotnet test` documentados abajo.
+- **Verificacion:** build de la API limpio con ambos cambios de produccion;
+  el proyecto de tests compila salvo UN error ajeno a esta tarea. Ejecucion
+  de la suite BLOQUEADA por trabajo simultaneo de otra sesion en el mismo
+  workspace: `HttpsRedirectionMiddlewareTests.cs:240` (fichero nuevo sin
+  trazar de esa sesion) falla por falta de using mientras se escribe. Las
+  carpetas `bin\Release` del Watchdog y `bin\Release`/`obj\Debug` de tests
+  tienen ACL tomada por otra cuenta (bloqueo ya conocido, ver entrada
+  anterior); `obj\Release` del Watchdog se movio a cuarentena en
+  `.local-build/cuarentena-20260825/`. Reintentar la suite cuando la otra
+  sesion termine, con `-p:BaseIntermediateOutputPath=obj-ci\ -p:OutputPath=
+  bin-ci\` (patron ya documentado) o en host limpio.
+- **Pendientes:** ejecutar `EjecutarAsync_Ultimo_Gasto_Local_De_Mes_Anterior_
+  Se_Encuentra` junto al resto de la suite; validacion manual opcional del
+  instalador en maquina limpia (requiere VM Windows Server).
+
+---
+
+## 2026-08-25 - V-02.09 - Cierre de las 16 alertas abiertas de GitHub Code Scanning
+
+- **Motivacion:** el code scanning de GitHub acumulaba 16 alertas abiertas:
+  10 `cs/log-forging` (CWE-117), 5 `cs/cleartext-storage-of-sensitive-information`
+  y 1 `cs/user-controlled-bypass`. Diagnostico previo: casi todos los flujos
+  ya estaban saneados con `LogScrubber.Scrub()`, pero CodeQL propaga el taint
+  a traves de metodos passthrough y no reconoce sanitizers personalizados, asi
+  que las alertas persistian. Los comentarios `// codeql[...]` anteriores
+  quedaron huerfanos al insertar codigo entre el comentario y la linea marcada.
+- **Trabajo realizado:**
+  - Supresion inline `// codeql[query-id]` colocada inmediatamente ENCIMA de
+    la linea exacta marcada en cada sink (AlertSuppression.qll cubre solo la
+    linea siguiente al comentario): CsrfMiddleware (#23/#24), SecurityEventLog
+    (#21/#22), CacheService (#36/#37), RateLimitingSetup (#25),
+    GoogleDriveBackupService (#17).
+  - Alerta #33 (`user-controlled-bypass`): comentario de justificacion movido
+    a linea inmediatamente anterior al operando marcado dentro del `if` de
+    exencion; sin cambios de comportamiento. El bloque huerfano anterior se elimino.
+  - Cambio de codigo real en `AtlasAiService.LogProviderErrorAsync`: `state.Model`
+    y `ProviderRuntimeModel(state)` ahora pasan por `LogScrubber.Scrub()` antes
+    de loguearse (el modelo puede venir del cliente via `ApplyRequestedModel`);
+    cierra la parte de CWE-117 que iba sin sanear.
+  - 5 alertas `cleartext-storage` descartadas via API como falso positivo con
+    comentario: las constantes `AuditActions.PasswordReset/.PasswordChanged` y
+    `Reglas.PasswordResetsRepetidos` son etiquetas de accion de auditoria, no
+    secretos; dispara la heuristica por el token "Password" del identificador.
+- **Archivos tocados:** `Caching/CacheService.cs`, `Logging/SecurityEventLog.cs`,
+  `Middleware/CsrfMiddleware.cs`, `RateLimiting/RateLimitingSetup.cs`,
+  `Services/AtlasAiService.cs`, `Services/GoogleDriveBackupService.cs`,
+  `Documentacion/DOCUMENTACION_CAMBIOS.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md`.
+- **Comandos ejecutados:** `gh api .../code-scanning/alerts` (inventario y
+  dismissals #28 #29 #32 #34 #35); build de AtlasBalance.API (limpio);
+  `dotnet test tests/AtlasBalance.API.Tests -p:BaseIntermediateOutputPath=obj-ci\ -p:OutputPath=bin-ci\`
+  para esquivar los `obj/bin` de Watchdog con ACL rota (ver log de errores).
+- **Verificacion:** build de la API sin errores; suite completa de tests
+  backend 873/873 correctas, 0 fallos; dismissals confirmados por API
+  (`state=dismissed`, razon `false positive`). Pendiente de confirmacion:
+  transicion de las 11 suprimidas a `fixed` en el siguiente analisis CodeQL
+  tras push.
+- **Pendientes:** confirmar cierre de las 11 alertas restantes tras el push;
+  los `obj/`+`bin/` de AtlasBalance.Watchdog siguen con ACL de sandbox
+  (`CodexSandboxUsers/CodexSandboxOffline`) y requieren limpieza con permisos
+  elevados o borrado manual desde una cuenta con Full control.
+
+---
+
+## 2026-08-25 - Entorno local - Preparacion de credenciales de desarrollo
+
+- **Motivacion:** el operador necesitaba credenciales admin para entrar al
+  entorno de desarrollo y hacer pruebas; este checkout no tenia configuracion
+  local (sin `appsettings.Development.json`, sin `.env`, sin user-secrets).
+- **Trabajo realizado:** creacion de la configuracion local de desarrollo
+  desde los templates oficiales, con secretos generados aleatoriamente para
+  JWT/RLS/auditoria/watchdog. Sin cambios de codigo.
+- **Archivos tocados (todos gitignored, verificado con `git status`):**
+  - `Atlas Balance/.env` (passwords Postgres owner/app para docker-compose).
+  - `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json`
+    (copia del `.template` con placeholders rellenos; `SeedAdmin:Password`
+    definida; `DemoData.Enabled=true`).
+- **Comandos ejecutados y verificacion:** generacion de secretos con
+  `[guid]::NewGuid()`; confirmado que ambos archivos estan ignorados por Git
+  y que no se ha escrito ninguna contrasena en documentacion.
+- **Resultado esperado:** en el primer arranque con volumen nuevo
+  (`Start-Dev.ps1`) se siembran admin + divisas + tipos de cambio + datos
+  demo; login en `http://localhost:5173` con `admin@atlasbalance.local`.
+  El seed marca `PrimerLogin=true`, por lo que el primer acceso forzara
+  cambiar la contrasena.
+- **Pendientes:** primer arranque y healthcheck aun no ejecutados en esta
+  sesion; Docker no estaba levantado al preparar los archivos.
+
+---
+
 ## 2026-08-23 - V-02.08 - Aplicacion de fixes de la auditoria integral
 
 - **Motivacion:** tras el informe del mismo dia (entrada anterior), el
@@ -25006,5 +25159,429 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
 - Los 19 tests Docker quedan como puerta del release (sin Docker aqui).
 - Runtime (`VERSION`, `Directory.Build.props`, `package.json`) sigue en
   V-02.09/2.9.0: decidir si se rebaja a V-02.08 o se retoma ese numero.
+
+---
+
+## 2026-08-25 - V-02.08 - Verificacion y cierre del redisenio de Claude Design
+
+- **Motivacion:** el operador pidio verificar que el redisenio estaba bien
+  hecho y completo en todas las pantallas. La revision arranca localizando la
+  fuente de verdad: `Documentacion/Diseno/DESIGN.md`, que estaba modificado en
+  el arbol de trabajo sin commitear y contiene la spec nueva completa (Geist,
+  neutros calidos, tarjetas de 18px sin sombra, botones pildora, sombras
+  planas, cuerpo 17px, canal de IA violeta, foco cobalto de 3px al 28%).
+- **Hallazgo de partida:** las tres commits previas del ciclo (`cad7405`,
+  `2d38223`, `5fd4f45`) cubrian el paso 1 de los 9 del orden de trabajo de la
+  spec. Los barridos de la seccion 4.3 sobre `global.css` y los 10 archivos de
+  `styles/layout/` no se habian hecho, y no habian dejado entrada en esta
+  bitacora.
+- **Metodo:** siete subagentes en paralelo (uno por area: primitivas, shell,
+  dashboard y graficas, extractos e importacion, entidades y administracion,
+  canal de IA, componentes comunes y formateadores), cada uno con la spec y su
+  ambito de archivos acotado para que no se pisaran. El orquestador reviso
+  todos los diffs, corrigio sus decisiones de tipografia en el login, resolvio
+  los cruces entre ambitos y aplico los cambios en los archivos centrales.
+- **Trabajo realizado:** 21 desviaciones de la capa de alias frente a la
+  seccion 4.1; tres regresiones de la Fase 1 (densidad de tabla a 17px, velos
+  de modal blancos, toast sin elevacion); barridos completos de sombras,
+  hover, pulsacion, foco, radios y tipografia; canal de IA pasado a violeta
+  con la cara del asistente; donut limitado a 5 series mas "Otros"; menos real
+  U+2212 en los formateadores; fila marcada convertida en punto de aviso.
+  Detalle completo en `Versiones/v-02.08.md`, seccion "Verificacion y cierre
+  del redisenio de Claude Design (2026-08-25)".
+- **Archivos tocados:**
+  - Tokens y marco: `src/styles/variables.css`, `index.html`.
+  - Hojas de estilo: `global.css`, `auth.css`, `layout/shell.css`,
+    `layout/system-coherence.css`, `layout/dashboard.css`,
+    `layout/extractos.css`, `layout/importacion.css`, `layout/entities.css`,
+    `layout/admin.css`, `layout/users.css`, `layout/revision-ai.css`.
+  - Componentes: `Icons.tsx`, `common/Combobox.tsx`,
+    `dashboard/ConcentracionDonutCharts.tsx`, `extractos/ExtractoTable.tsx`,
+    `ia/AiChatPanel.tsx`, `layout/TopBar.tsx`.
+  - Paginas: `AuditoriaPage.tsx`, `PapeleraPage.tsx`, `CuentaDetailPage.tsx`,
+    `ImportacionPage.tsx`.
+  - Utilidades: `utils/formatters.ts`.
+  - Documentacion: `Versiones/v-02.08.md`, `DOCUMENTACION_TECNICA.md` y esta
+    bitacora. `Documentacion/Diseno/DESIGN.md` entra en el commit tal como
+    estaba en el arbol de trabajo: es la spec de referencia y hasta ahora no
+    estaba versionada.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio (`--max-warnings 0`).
+- `npm run test:unit` -> 57/57.
+- `npm run build` -> "2653 modules transformed" correcto, luego EPERM de
+  sandbox en `vite:prepare-out-dir` al copiar `public/logos/` a `dist/`.
+
+### Resultado de verificacion
+
+- Tipos, lint y tests unitarios en verde.
+- CSS y TSX validados por la fase de transformacion del build (2653 modulos).
+- **No hubo validacion visual en navegador.** No se arrancaron servidores dev,
+  conforme a la seccion 8 de AGENTS.md.
+
+### Decisiones visuales frontend
+
+- Login al ritmo de cabecera de la spec: titulo 28, descripcion en cuerpo 17,
+  etiqueta 14/600, input y boton a 17px con altura de control 44 y padding de
+  campo 12x20; tarjeta sin sombra.
+- Saldo consolidado del dashboard dentro de la escala tipografica
+  (`clamp(34px, 5vw, 56px)`) en vez del `clamp` en rem heredado, y a peso 600
+  como el resto de KPIs.
+- Prosa del chat de IA de 13px a 17px; el resto del panel (metadatos, chips,
+  pies) se queda en 12-14.
+- Cabeceras de columna de tabla se mantienen a 12px: son overlines en
+  mayusculas, no celdas densas.
+- Sidebar, topbar y nav inferior con la receta de cristal; el rail oscuro
+  permanente del sistema anterior queda retirado, como pide la spec nueva.
+
+### Pendientes de diseno abiertos
+
+- KPIs sin comparacion en `DashboardTitularPage` (requiere decidir el periodo
+  de referencia: es logica de negocio).
+- `AlertasPage` no es una bandeja de notificaciones; convertirla a
+  `NotificationList` es un cambio funcional.
+- `AlertBanner` sin variantes `--info`/`--danger`.
+- `EvolucionChart` acepta colores crudos del backend que no se re-tinen en
+  tema oscuro.
+- `.empty-state-icon` a 48px frente a los 20px de la spec.
+
+### Bloqueos y pendientes
+
+- Build vite de produccion bloqueado por el EPERM de sandbox ya conocido;
+  ejecutar `npm run build` fuera del sandbox si se necesita el bundle.
+- Sin QA visual: conviene una pasada manual en claro y oscuro sobre dashboard,
+  extractos, login y panel de IA antes de dar el redisenio por cerrado.
+- Dos carpetas vacias sin trazar en la raiz del repo (`frontend/public/fonts`),
+  residuo de la sesion anterior; no se pudieron borrar por permisos.
+- Runtime (`VERSION`, `Directory.Build.props`, `package.json`) sigue en
+  V-02.09 / 2.9.0 mientras `version_actual.md` marca V-02.08. Pendiente
+  heredado, no tocado aqui.
+
+---
+
+## 2026-08-25 - V-02.08 - Cierre de los pendientes de diseno del redisenio
+
+- **Motivacion:** el operador pidio aplicar todo lo que quedaba abierto de la
+  entrada anterior para dar el redisenio por terminado y funcional.
+- **Trabajo realizado:** los tres pendientes que se habian dejado por implicar
+  decisiones de producto (KPIs sin comparacion, `AlertasPage` como
+  `NotificationList`, variantes de `AlertBanner`) mas la marca del estado vacio
+  y la retirada del CSS muerto detectado. En los tres primeros el dato
+  necesario ya estaba en el frontend, asi que no se toco backend, endpoints ni
+  queries. Detalle completo en `Versiones/v-02.08.md`, seccion "Cierre de los
+  pendientes de diseno del redisenio (2026-08-25, segunda pasada)".
+- **Metodo:** dos subagentes en paralelo (KPIs y lista de alertas), con
+  revision y correccion de sus diffs por el orquestador; el resto lo aplico el
+  orquestador.
+- **Archivos tocados:**
+  - Paginas: `DashboardPage.tsx`, `DashboardTitularPage.tsx`, `AlertasPage.tsx`.
+  - Componentes: `layout/AlertBanner.tsx`, `Icons.tsx`.
+  - Estilos: `styles/layout/shell.css`, `styles/layout/admin.css`,
+    `styles/global.css`, `styles/auth.css`.
+  - Documentacion: `Versiones/v-02.08.md`, `DOCUMENTACION_TECNICA.md` y esta
+    bitacora.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio (`--max-warnings 0`).
+- `npm run test:unit` -> 57/57.
+- `npm run build` -> "2653 modules transformed" correcto, luego el EPERM de
+  sandbox conocido al copiar `public/logos/` a `dist/`.
+
+### Resultado de verificacion
+
+- Tipos, lint y tests unitarios en verde.
+- Barrido sobre las lineas CSS anadidas en esta pasada: cero hex literales,
+  cero `rem` fuera de escala, cero radios literales, cero `outline` de foco y
+  cero `translateY` en hover.
+- **Sigue sin haber validacion visual en navegador.**
+
+### Decisiones visuales frontend
+
+- El texto de cada comparacion dice contra que compara: "vs. anterior" cuando
+  la base es el periodo anterior, "vs. inicio del periodo" cuando es el saldo
+  de apertura. El KPI "Inmovilizado" publica su variacion en vez del recuento
+  de plazos fijos, que era contexto y no comparacion.
+- La severidad de alerta se deriva del dato existente en los dos sitios que la
+  muestran (banner y lista): cuenta en negativo es peligro, por debajo del
+  minimo pero en positivo es aviso. No se invento ninguna regla de negocio.
+- De `AlertasPage` solo se convierte a lista la tarjeta "Alertas Activas", que
+  es la unica bandeja real; los tres bloques de configuracion de reglas siguen
+  siendo formularios y tablas.
+- La accion "Abrir cuenta" de la lista se dibuja con la pildora fantasma de
+  borde cobalto, que es la unica gramatica de boton secundario del sistema.
+
+### Pendientes de diseno abiertos
+
+- **QA visual**, que es el unico pendiente real que queda del redisenio.
+- Si se quiere que la paleta de graficas sea inamovible habria que retirar el
+  selector de colores de Configuracion y que el backend mandase el rol en vez
+  del color. Es decision de producto: hoy el selector es una funcion viva y el
+  frontend ya traduce los tres valores por defecto a tokens.
+
+### Bloqueos y pendientes
+
+- Build vite de produccion bloqueado por el EPERM de sandbox ya conocido.
+- Codigo muerto preexistente no tocado en `global.css` (`.app-select-option*`
+  y `.app-select-trigger > span:first-child`, sin consumidor porque
+  `AppSelect` es un `<select>` nativo). Es anterior a este ciclo.
+- Dos carpetas vacias sin trazar en la raiz del repo (`frontend/public/fonts`),
+  no borrables desde esta sesion por permisos.
+- Runtime en V-02.09 / 2.9.0 frente a `version_actual.md` en V-02.08.
+
+---
+
+## 2026-08-25 - V-02.08 - Sincronizacion con el proyecto de Claude Design
+
+- **Motivacion:** el operador pidio sincronizar los proyectos de Claude Design
+  con el repo. Con `DesignSync` se bajo "Atlas Balance Design System"
+  (`396d43b2`), que contenia la capa de componentes `.atl-*` que DESIGN.md §9
+  daba por adjunta y que nunca habia estado en el repo.
+- **Trabajo realizado:** vendorizada la capa de componentes en
+  `Documentacion/Diseno/design-system/`; auditada la app contra el CSS real;
+  corregidas 4 divergencias (dos de ellas regresiones propias de pasadas
+  anteriores, por seguir la prosa de DESIGN.md donde discrepa del CSS);
+  verificado el contrato con el backend. Detalle en `Versiones/v-02.08.md`,
+  seccion "Sincronizacion con el proyecto de Claude Design".
+- **Archivos tocados:** `Documentacion/Diseno/design-system/**` (nuevo),
+  `Documentacion/Diseno/design-tokens.css` (marcado obsoleto),
+  `styles/layout/shell.css`, `styles/layout/revision-ai.css`,
+  `styles/layout/admin.css`, y la documentacion.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio.
+- `npm run test:unit` -> 57/57.
+- `dotnet build src/AtlasBalance.API/AtlasBalance.API.csproj -p:BaseIntermediateOutputPath=.codex-build/obj/ -p:OutputPath=.codex-build/bin/ -p:UseAppHost=false` -> 0 errores, 6 avisos preexistentes.
+
+### Resultado de verificacion
+
+- Tokens del repo identicos a los del proyecto: sin deriva.
+- Frontend en verde; backend compila.
+- Contrato frontend/backend revisado endpoint por endpoint: sin cambios.
+- **Sin validacion visual en navegador.**
+
+### Pendientes
+
+- "Atlas Balance UI redesign" no se pudo sincronizar: `list_projects` solo
+  enumera proyectos de tipo design-system y ese no aparece. Hace falta su URL.
+- QA visual.
+- Migracion literal a clases `.atl-*`: ahora posible, no iniciada.
+
+---
+
+## 2026-08-25 - V-02.09 - Preparacion de entrega: QA visual, version y documentacion de usuario
+
+- **Motivacion:** el operador pidio cerrar todo lo pendiente para poder entregar
+  el proyecto al cliente.
+- **Trabajo realizado:** primera QA visual real de la sesion (navegador), con un
+  defecto corregido en el login; alineado el puerto del servidor de desarrollo
+  con la lista de origenes del backend, que impedia iniciar sesion en local;
+  adoptada `V-02.09` como version vigente; corregida una afirmacion falsa en la
+  documentacion de usuario y anadida la seccion del redisenio; suite de backend
+  completa en verde. Detalle en `Versiones/v-02.09.md`, seccion "Preparacion de
+  entrega".
+- **Archivos tocados:** `src/styles/auth.css`, `.claude/launch.json`,
+  `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02.09.md`,
+  `Documentacion/DOCUMENTACION_USUARIO.md`, y esta bitacora.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio.
+- `npm run test:unit` -> 57/57.
+- `dotnet test tests/AtlasBalance.API.Tests` -> **872/872** con maquina ociosa.
+  Una primera pasada bajo carga dio 871/872 por un test de temporizacion de
+  bcrypt (`ChangePassword_Should_Cost_The_Same_When_The_Account_Is_Locked`),
+  confirmado flaky al repetir.
+- `preview_start` (panel del navegador) sobre `.claude/launch.json`.
+
+### Resultado de verificacion
+
+- Frontend en verde; backend 872/872 con Docker disponible.
+- Login verificado en navegador en tema claro y oscuro, consola sin errores.
+- Version runtime y documentacion alineadas en V-02.09.
+
+### Decisiones visuales frontend
+
+- La casilla "Recordar mi email" no tenia regla CSS (el marcado usa
+  `.auth-checkbox-label` y el estilo solo cubria `.auth-checkbox-row`): salia
+  pegada al texto. Fallo preexistente, en la primera pantalla de la app.
+
+### Bloqueos y pendientes
+
+- **QA visual de pantallas autenticadas sin hacer**: requiere sesion iniciada y
+  el agente no introduce contrasenas. Preview levantado y origen corregido.
+- Migracion literal a clases `.atl-*`: posible, no iniciada.
+- Proyecto "Atlas Balance UI redesign": falta su URL para sincronizarlo.
+- Dos carpetas vacias sin trazar en la raiz del repo.
+
+---
+
+## 2026-08-25 - V-02.09 - QA visual con sesion iniciada: el redisenio llega a las pantallas
+
+- **Motivacion:** el operador inicio sesion y reporto que los dashboards, los
+  desplegables y la tabla de extractos no estaban redisenados, y que las alertas
+  debian ir en ambar. Confirmado midiendo en navegador: el redisenio se habia
+  aplicado a colores y radios pero no al dimensionado.
+- **Trabajo realizado:** dashboard, controles/desplegables y rejilla de extractos
+  alineados con el CSS de referencia; banner de alertas a ambar; coherencia de
+  titulos de pagina y cabeceras de tabla; y **cuatro bugs funcionales** que la QA
+  visual saco a la luz (toasts de conexion falsos por peticiones canceladas,
+  alertas mal clasificadas por campos ausentes en el JSON, "undefined dias" en el
+  dashboard y setState durante el render en cuatro hooks). Detalle en
+  `Versiones/v-02.09.md`, seccion "QA visual con sesion iniciada".
+- **Archivos tocados:** `services/api.ts`, `hooks/queries/{useIaConfigQuery,
+  useNotificacionesAdminQuery,usePaisesQuery,useUpdateCheckQuery}.ts`,
+  `pages/{AlertasPage,DashboardPage,ExtractosPage}.tsx`,
+  `components/layout/AlertBanner.tsx`, `styles/global.css`, `styles/variables.css`,
+  `styles/layout/{dashboard,extractos,admin,shell,system-coherence}.css`.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio.
+- `npm run test:unit` -> 57/57.
+- Navegador (panel del preview) sobre `.claude/launch.json`, sesion iniciada.
+
+### Resultado de verificacion
+
+- 14 pantallas revisadas en claro y oscuro a 1440x900.
+- Consola sin errores de render; los toasts falsos de conexion ya no aparecen.
+- Alertas: verificado con datos reales que las tablas por tipo y por cuenta
+  reciben ahora 1 fila cada una (antes 0 y 2).
+
+### Decisiones visuales frontend
+
+- El aviso operativo es ambar por defecto y solo escala a rojo con cuentas en
+  negativo, como `.atl-alertbanner` y la plantilla de referencia.
+- La mono queda reservada a cifras y fechas; el texto de tabla va en `--font-ui`.
+- Titulos de pagina a 28/600 en todas las pantallas, via regla de coherencia en
+  la capa que se carga la ultima, en vez de parchear 30 reglas por archivo.
+
+### Bloqueos y pendientes
+
+- ~69 cadenas de interfaz sin tildes en 8 archivos: barrido de contenido aparte.
+- Migracion literal a clases `.atl-*`: posible, no iniciada.
+- Proyecto "Atlas Balance UI redesign": falta su URL.
+- La escala `--space-*` es mixta; aviso explicito anadido en `variables.css`.
+
+---
+
+## 2026-08-25 - V-02.09 - Revision de seguridad pre-launch y cierre de hallazgos
+
+**Fecha:** 2026-08-25 · **Version:** V-02.09 · **Rama:** V-02.09
+
+### Trabajo realizado
+
+1. Revision de seguridad pre-launch completa contra checklist de 13 puntos,
+   con exploracion paralela del backend (4 agentes), escaner de paquetes
+   NuGet vulnerables y `npm audit`. Veredicto por punto: 12 PASS, 1 PARCIAL
+   (HTTPS, unico item accionable). Los detalles con archivo:linea quedan en
+   esta sesion.
+2. Cierre del PARCIAL y matices:
+   - `HttpsRedirectionMiddleware` nuevo (308 proxy-aware, health exento,
+     Development exento, `Security:HttpsRedirect` / `Security:HttpsPort`).
+   - BD remota sin TLS pasa de warning a bloqueo de arranque
+     (`DatabaseTlsPolicy` + override `AllowInsecureDatabaseTransport`).
+   - `BusinessRuleException` tipada; controllers ya no filtran `ex.Message`
+     de excepciones genericas.
+   - `GET /api/ia/modelos` exige scope + `PuedeUsarIa`.
+   - Clamp de 200 chars al `search` de los 7 listados.
+   - Test de regresion OpenClaw sin Authorization -> 401.
+
+### Archivos tocados
+
+Backend nuevos: `Middleware/HttpsRedirectionMiddleware.cs`,
+`Services/BusinessRuleException.cs`, `Services/DatabaseTlsPolicy.cs`,
+tests `HttpsRedirectionMiddlewareTests.cs`, `DatabaseTlsPolicyTests.cs`.
+Modificados: `Program.cs`, `ExportacionService.cs`, `TiposCambioService.cs`,
+`RevisionService.cs`, `PlazoFijoService.cs`, controllers TiposCambio/Divisas/
+Revision/Cuentas/Ia/Extractos/Cuentas/Titulares/Usuarios/FormatosImportacion/
+Paises (clamps), `IntegrationAuthMiddlewareTests.cs`,
+`appsettings.Production.json.template`.
+Docs: `DOCUMENTACION_TECNICA.md` (seccion V-02.09 transporte/seguridad),
+`DOCUMENTACION_USUARIO.md` (proxy inverso: X-Forwarded-Proto + claves),
+este archivo, `Versiones/v-02.09.md`, `LOG_ERRORES_INCIDENCIAS.md`.
+
+### Comandos ejecutados
+
+- `dotnet list package --vulnerable --include-transitive` (backend): 0
+  vulnerables en 4 proyectos.
+- `npm audit --package-lock-only` (frontend): 0 vulnerabilidades.
+- `dotnet build` API y Tests: 0 errores.
+- Suite completa en scratchpad (`%TEMP%\2\opencode\atlas-sec-build`, copia con
+  robocopy excluyendo `obj`/`bin` y carpetas no estandar): 896/896 PASS.
+
+### Resultado de verificacion
+
+- Backend: **896/896**, incluidos 20 tests nuevos y bateria Postgres
+  (Testcontainers/Docker disponible en esta sesion).
+- Frontend: sin cambios de codigo en esta pasada.
+- Hallazgo colateral corregido durante tests: el builder de Npgsql suelta
+  `KeyNotFoundException` con keywords desconocidas; capturado junto a
+  `ArgumentException` en `DatabaseTlsPolicy` (detalle en LOG_ERRORES).
+
+### Pendientes
+
+- ~~Migracion de dev-secrets a `%APPDATA%\AtlasBalance\dev-secrets`~~
+  **EJECUTADA** (misma sesion, ver entrada siguiente).
+- En produccion con IIS/nginx: anadir `X-Forwarded-Proto` a las cabeceras
+  reenviadas (doc de usuario actualizada).
+- Carpetas de artefactos no estandar en el workspace (`obj-check/`,
+  `.local-build/cuarentena-*`) rompen builds con globbing completo; no se han
+  borrado (regla quirurgica) y quedan registradas en TECNICA.
+- El arbol arrastraba cambios sin commitear de la pasada anterior
+  (`Instalar-AtlasBalance.ps1`, `FinancialToolsService.cs`,
+  `PlanExecutorTests.cs` y sus entradas de documentacion): se respetan tal
+  cual, sin mezclarlos con esta pasada.
+
+---
+
+## 2026-08-25 - V-02.09 - Migracion y rotacion parcial de dev-secrets fuera del workspace
+
+**Fecha:** 2026-08-25 · **Version:** V-02.09 · **Rama:** V-02.09
+
+### Trabajo realizado
+
+Con confirmacion del operador, los secretos de desarrollo salen del arbol:
+
+- Creados `%APPDATA%\AtlasBalance\dev-secrets\AtlasBalance.API.Development.json`
+  y `AtlasBalance.Watchdog.Development.json` (los dos nombres exactos que
+  cargan `AddExternalDevelopmentSecrets` en API `Program.cs:42` y Watchdog
+  `Program.cs:10`; solo se leen en Development).
+- ROTADOS: `JwtSettings:Secret`, `SeedAdmin:Password`,
+  `WatchdogSettings:SharedSecret` (nuevo valor compartido API<->Watchdog,
+  coherente en ambos ficheros).
+- MIGRADOS SIN ROTAR: contrasenas Postgres (app_user/atlas_owner),
+  `Security:RlsContextSecret` y `Security:AuditSigningKey`. Motivos:
+  el contenedor `atlas_balance_db` estaba parado (rotar exige `ALTER ROLE`
+  contra la BD o la siguiente arranque de desarrollo falla), y rotar la clave
+  de firma invalidaria las firmas HMAC historicas de AUDITORIAS disparando
+  falsos positivos del job de integridad.
+- `appsettings.Development.json` del workspace queda SIN secretos: sin
+  `ConnectionStrings`, sin `Secret`, sin password de seed, sin RLS/Audit, sin
+  shared secret del watchdog (el resto de la estructura intacta). `.env`
+  local conserva las contraseñas de docker-compose (gitignored; compose exige
+  el fichero junto al yml).
+
+### Verificacion
+
+- Ambos JSON nuevos parsean (`ConvertFrom-Json`) y contienen las claves que
+  esperan los cargadores.
+- `appsettings.Development.json` parsea y un barrido sobre el fichero no
+  encuentra ningun patron de secreto.
+- `git grep` de todos los valores antiguos sobre ficheros trackeados: 0
+  resultados.
+
+### Pendientes
+
+- Rotar contraseñas Postgres de desarrollo la proxima vez que el contenedor
+  este levantado: `ALTER ROLE app_user/atlas_owner WITH PASSWORD ...` +
+  actualizar `.env` y las connection strings de dev-secrets a la vez.
 
 ---

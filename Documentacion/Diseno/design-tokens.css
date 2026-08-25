@@ -1,5 +1,12 @@
 :root {
   /*
+   * OBSOLETO (2026-08-25). Este snapshot es del sistema ANTERIOR al redisenio
+   * de Claude Design: paleta fria, Hind Madurai / National Park, sombras en
+   * escalera. No lo uses como referencia. La fuente viva es
+   * `Atlas Balance/frontend/src/styles/design-system/tokens/*.css` (identicos a
+   * los del proyecto de Claude Design) y la capa de componentes esta en
+   * `Documentacion/Diseno/design-system/`.
+   *
    * Snapshot documental V-01.07.
    * Fuente runtime: Atlas Balance/frontend/src/styles/variables.css.
    * Si este archivo y variables.css difieren, manda variables.css.

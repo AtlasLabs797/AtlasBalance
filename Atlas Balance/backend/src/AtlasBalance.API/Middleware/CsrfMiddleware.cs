@@ -49,6 +49,9 @@ public sealed class CsrfMiddleware
             _logger.LogWarning(
                 "Origen rechazado: path={PathSafe} method={MethodSafe} origin={OriginSafe} ip={IpSafe}",
                 LogScrubber.Scrub(context.Request.Path.Value),
+                // V-02.09 (CodeQL #23): HttpRequest.Method es tainted para CodeQL aunque
+                // Kestrel normalice el verbo; Scrub elimina CR/LF/TAB y trunca a 256.
+                // codeql[cs/log-forging] OK
                 LogScrubber.Scrub(context.Request.Method),
                 LogScrubber.Scrub(context.Request.Headers.Origin.FirstOrDefault()),
                 LogScrubber.Scrub(context.Connection.RemoteIpAddress?.ToString()));

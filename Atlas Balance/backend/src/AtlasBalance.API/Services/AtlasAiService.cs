@@ -2221,8 +2221,12 @@ public sealed class AtlasAiService : IAtlasAiService
             "Error de proveedor IA: motivo={Reason} provider={Provider} model={Model} runtime_model={RuntimeModel} status={StatusCode} detalle={Extra}",
             reason,
             state.Provider,
-            state.Model,
-            ProviderRuntimeModel(state),
+            // V-02.09 (CodeQL #38/#39): Model puede venir del modelo pedido por el cliente
+            // (ApplyRequestedModel); se sanea antes de loguear.
+            // codeql[cs/log-forging] OK: LogScrubber elimina CR/LF/TAB y trunca a 256.
+            LogScrubber.Scrub(state.Model),
+            // codeql[cs/log-forging] OK: LogScrubber elimina CR/LF/TAB y trunca a 256.
+            LogScrubber.Scrub(ProviderRuntimeModel(state)),
             statusCode,
             extra is null ? "-" : JsonSerializer.Serialize(extra));
 

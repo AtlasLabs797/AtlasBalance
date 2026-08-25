@@ -1533,24 +1533,38 @@ foreach ($shortcutRoot in $shortcutTargets) {
 # AUDITORIAS; /api/health solo confirma que el proceso responde, y con eso el
 # instalador podia reportar exito aunque el incidente V-02.07 (INSERT
 # rechazado por RLS) se hubiera reproducido en produccion.
+# V-02.09 (revision PR #33): en instalacion limpia la sonda SQL de
+# Test-PostgresPreflight se salta (appsettings.Production.json aun no existe),
+# asi que este endpoint es LA verificacion real de RLS: su fallo ahora es
+# BLOQUEANTE en vez de un aviso que permite declarar exito falso. Se sondea
+# $healthUrl (endpoint interno directo) y no $appUrl, porque en modo reverse
+# proxy el proxy externo puede no existir todavia durante la instalacion.
+# Se reintenta ~2 minutos: el primer arranque ejecuta las migraciones de EF.
 Start-Sleep -Seconds 5
-try {
-    $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
-    if ($curl) {
-        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl/api/health/functional" 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $statusCode -eq "200") {
-            Write-Host "Health check curl.exe HTTP $statusCode" -ForegroundColor Green
+$functionalUrl = $healthUrl -replace '/api/health$', '/api/health/functional'
+$functionalOk = $false
+$intentosHealth = 24
+for ($intentoHealth = 1; $intentoHealth -le $intentosHealth; $intentoHealth++) {
+    try {
+        $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
+        if ($curl) {
+            $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$functionalUrl" 2>$null)
+            $functionalOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
         } else {
-            Write-Host "curl.exe no confirmo health OK (codigo $statusCode). Prueba manual: curl.exe -k -v $appUrl/api/health/functional" -ForegroundColor Yellow
+            $health = Invoke-WebRequest -Uri "$functionalUrl" -UseBasicParsing -TimeoutSec 20
+            $functionalOk = ($health.StatusCode -eq 200)
         }
-    } else {
-        $health = Invoke-WebRequest -Uri "$appUrl/api/health/functional" -UseBasicParsing -TimeoutSec 20
-        Write-Host "Health check HTTP $($health.StatusCode)" -ForegroundColor Green
+    } catch {
+        $functionalOk = $false
     }
-} catch {
-    Write-Host "La instalacion termino, pero el health check automatico no confirmo la API: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "En Windows Server 2019 usa como prueba primaria: curl.exe -k -v $appUrl/api/health/functional" -ForegroundColor Yellow
+    if ($functionalOk) { break }
+    Write-Host "Intento $intentoHealth de ${intentosHealth}: $functionalUrl todavia no responde HTTP 200 (la primera arranque ejecuta migraciones). Esperando 5 segundos..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 5
 }
+if (-not $functionalOk) {
+    throw "La API arranco pero $functionalUrl no devolvio HTTP 200 tras $intentosHealth intentos (~2 min). El contexto RLS o la policy de AUDITORIAS pueden estar mal desplegados y la instalacion NO se puede dar por buena. Diagnostico: curl.exe -k -v $functionalUrl, revisa el log de la API y repara antes de reinstalar."
+}
+Write-Host "Health check funcional HTTP 200 en ${functionalUrl}: contexto RLS y policy de AUDITORIAS verificados." -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Comprobando cifrado en reposo de los volumenes con datos personales..." -ForegroundColor Cyan

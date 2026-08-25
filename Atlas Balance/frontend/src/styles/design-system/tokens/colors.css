@@ -1,0 +1,24 @@
+:root{
+--white:#FFFFFF;--black:#000000;
+/* Neutrals — Apple's warm-neutral grey family. Cool blue-grey retired. */
+--gray-25:#FDFDFD;--gray-50:#F5F5F7;--gray-100:#EDEDEF;--gray-200:#E0E0E2;--gray-300:#D2D2D7;--gray-400:#A1A1A6;--gray-500:#86868B;--gray-600:#6E6E73;--gray-700:#48484A;--gray-800:#333336;--gray-900:#1D1D1F;--gray-950:#0B0B0C;
+/* Action Blue — the single interactive colour of the parent brand. */
+--action-50:#EAF2FD;--action-100:#D6E6FB;--action-200:#AECCF7;--action-300:#7FB0F2;--action-400:#3E92EC;--action-500:#0071E3;--action-600:#0066CC;--action-700:#0055AB;--action-900:#003366;
+--sky-400:#2997FF;
+/* Canvas & tiles — the alternating band system. */
+--parchment:#F5F5F7;--pearl:#FAFAFC;--tile-1:#272729;--tile-2:#2A2A2C;--tile-3:#252527;
+--ink:#1D1D1F;--ink-80:#333333;--ink-48:#7A7A7A;--on-dark-muted:#CCCCCC;--chip-translucent:rgba(210,210,215,.64);
+--hairline:#E0E0E0;--divider-soft:#F0F0F0;
+/* Per-app accent ramps (data-app) */
+--indigo-50:#EFF0FE;--indigo-100:#E0E2FD;--indigo-200:#C4C8FB;--indigo-300:#A3A9F7;--indigo-400:#8087F0;--indigo-500:#5A61E8;--indigo-600:#4046D6;--indigo-700:#3237AA;--indigo-900:#1F2270;
+--cobalt-50:#E6EEFC;--cobalt-100:#D2E0FA;--cobalt-200:#AFC6F5;--cobalt-300:#8AABEF;--cobalt-400:#5C8CEB;--cobalt-500:#3A72E6;--cobalt-600:#285BD9;--cobalt-700:#214CAD;--cobalt-900:#152F6B;
+--ember-50:#FFECE6;--ember-100:#FFDBD1;--ember-200:#FFB9A5;--ember-300:#FF9678;--ember-400:#FF6E45;--ember-500:#FF4D24;--ember-600:#E63A12;--ember-700:#B32C0C;--ember-900:#6B1A07;
+--violet-50:#F3F0FE;--violet-100:#E8E2FD;--violet-200:#D2C6FB;--violet-300:#B9A7F7;--violet-400:#A184F9;--violet-500:#8B5CF6;--violet-600:#7340E0;--violet-700:#5A2FB4;--violet-900:#361C6E;
+--teal-50:#E4F5F5;--teal-100:#C8EBEB;--teal-200:#95D8D9;--teal-300:#5FC2C4;--teal-500:#0F8B8D;--teal-600:#0B6E70;--teal-700:#085254;--teal-900:#04302F;
+--green-50:#E7F5EC;--green-100:#CDEBD9;--green-200:#A3D9B8;--green-300:#78C79A;--green-500:#1C8A4B;--green-600:#176A3A;--green-700:#11512C;--green-900:#092E19;
+--amber-50:#FDF3E1;--amber-100:#FAE6C2;--amber-200:#F5D294;--amber-300:#F0BE6B;--amber-500:#B87400;--amber-600:#8A5200;--amber-700:#6A3F00;--amber-900:#3D2400;
+--crimson-50:#FDECEE;--crimson-100:#FBD9DD;--crimson-200:#F5B4BC;--crimson-300:#EE909B;--crimson-500:#C92B3F;--crimson-600:#A82234;--crimson-700:#821A28;--crimson-900:#4C0F17;
+--chart-1:#0066CC;--chart-2:#0F8B8D;--chart-3:#E0761A;--chart-4:#8B5CF6;--chart-5:#1C8A4B;--chart-6:#4046D6;--chart-7:#C92B3F;--chart-8:#6E6E73;--chart-9:#B8478F;--chart-10:#6B8F1E;
+--alpha-ink-04:rgba(29,29,31,.04);--alpha-ink-06:rgba(29,29,31,.06);--alpha-ink-08:rgba(29,29,31,.08);--alpha-ink-12:rgba(29,29,31,.12);--alpha-ink-40:rgba(29,29,31,.40);--alpha-ink-64:rgba(29,29,31,.64);
+--alpha-white-08:rgba(255,255,255,.08);--alpha-white-12:rgba(255,255,255,.12);--alpha-white-64:rgba(255,255,255,.64);
+}

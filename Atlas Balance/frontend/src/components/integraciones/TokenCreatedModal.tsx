@@ -62,7 +62,7 @@ export function TokenCreatedModal({ tokenPlano, onClose }: TokenCreatedModalProp
           Guarda este token en un gestor de secretos. No se mostrara de nuevo.
         </p>
         <div className="config-token-plain-box">
-          <code aria-label="Token de integracion">{revealed ? tokenPlano : masked}</code>
+          <code aria-label="Token de integración">{revealed ? tokenPlano : masked}</code>
         </div>
         <div className="import-actions">
           <button

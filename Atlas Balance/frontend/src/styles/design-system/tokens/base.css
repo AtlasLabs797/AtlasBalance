@@ -1,0 +1,10 @@
+*,*::before,*::after{box-sizing:border-box}
+a{color:var(--text-link);text-decoration:none;transition:color var(--duration-fast) var(--ease-standard)}
+a:hover{color:var(--accent-solid-hover);text-decoration:underline;text-underline-offset:3px}
+[data-on-dark] a,.atl-on-dark a{color:var(--accent-on-dark)}
+::selection{background:var(--accent-soft-strong);color:var(--accent-text)}
+:focus-visible{outline:none;box-shadow:var(--ring-focus)}
+code,kbd,.atl-num{font:var(--type-mono);font-variant-numeric:tabular-nums}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}

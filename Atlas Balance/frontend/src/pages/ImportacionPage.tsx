@@ -727,7 +727,7 @@ export default function ImportacionPage() {
         )}
       </header>
 
-      <div className="import-tabs" role="tablist" aria-label="Secciones de importacion">
+      <div className="import-tabs" role="tablist" aria-label="Secciones de importación">
         <button
           type="button"
           role="tab"
@@ -797,7 +797,7 @@ export default function ImportacionPage() {
                     <th>Estado</th>
                     <th>Filas</th>
                     <th>SHA-256</th>
-                    <th>Accion</th>
+                    <th>Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1148,12 +1148,12 @@ export default function ImportacionPage() {
 
             {currentLote?.divisa_mismatch === true && !importAlreadyConfirmed && (
               <div className="import-warning-accept" role="alert">
-                <p className="auth-error" style={{ margin: '0 0 0.5rem 0' }}>
+                <p className="auth-error" style={{ margin: '0 0 var(--space-2) 0' }}>
                   Aviso de divisa: la cuenta destino opera en{' '}
                   <strong>{currentLote.divisa_cuenta}</strong> pero declaraste pegar datos en{' '}
                   <strong>{currentLote.divisa_esperada ?? '?'}</strong>. Si confirmas, los importes quedaran registrados con tu declaracion.
                 </p>
-                <label style={{ display: 'block', marginTop: '0.25rem' }}>
+                <label style={{ display: 'block', marginTop: 'var(--space-1)' }}>
                   <input
                     type="checkbox"
                     checked={forceConfirmDivisaMismatch}

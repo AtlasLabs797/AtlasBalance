@@ -1,0 +1,21 @@
+/* Orden de carga canonico del Atlas Balance Design System.
+   Sincronizado desde el proyecto de Claude Design "Atlas Balance Design System"
+   (396d43b2-95b5-4a95-866f-728b22c54396) el 2026-08-25.
+
+   Los archivos tokens/ NO se duplican aqui: la app los consume directamente en
+   `Atlas Balance/frontend/src/styles/design-system/tokens/` y se verifico que
+   coinciden byte a byte con los del proyecto. Esta carpeta guarda la capa de
+   componentes (.atl-*), que hasta ahora no existia en el repo. */
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/typography.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/colors.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/spacing.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/radius.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/elevation.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/motion.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/semantic.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/themes.css");
+@import url("../../../Atlas Balance/frontend/src/styles/design-system/tokens/base.css");
+@import url("components/components.css");
+@import url("components/shell.css");
+@import url("components/advanced.css");
+@import url("components/balance.css");

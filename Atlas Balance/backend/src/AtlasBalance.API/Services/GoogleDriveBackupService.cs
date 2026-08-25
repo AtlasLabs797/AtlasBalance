@@ -465,6 +465,8 @@ public sealed class GoogleDriveBackupService : IGoogleDriveBackupService
         {
             _logger.LogWarning(
                 "Import desde Google Drive sin BackupCloudCopy original para {FileIdSafe} (o sin ChecksumSha256 registrado). Se acepta el archivo sin verificacion de integridad.",
+                // V-02.09 (CodeQL #17): fileId viene del payload de Drive; Scrub elimina CR/LF/TAB y trunca a 256.
+                // codeql[cs/log-forging] OK
                 LogScrubber.Scrub(fileId));
         }
 

@@ -180,7 +180,7 @@ export default function PaisesPage() {
       await loadPaises();
       await invalidate('pais');
     } catch (err) {
-      setFormError(extractErrorMessage(err, 'No se pudo guardar pais'));
+      setFormError(extractErrorMessage(err, 'No se pudo guardar país'));
     } finally {
       setSaving(false);
     }
@@ -209,7 +209,7 @@ export default function PaisesPage() {
       await loadPaises();
       await invalidate('pais');
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo restaurar pais'));
+      setError(extractErrorMessage(err, 'No se pudo restaurar país'));
     }
   };
 
@@ -230,7 +230,7 @@ export default function PaisesPage() {
       <header className="phase2-header">
         <div>
           <p className="dashboard-subtitle"><Link to="/configuracion">Configuracion</Link> {' / '} Paises</p>
-          <h1>Paises</h1>
+          <h1>Países</h1>
           <p className="dashboard-subtitle">
             Catalogo de paises disponibles para asignar a cuentas y permisos por pais.
           </p>
@@ -245,8 +245,8 @@ export default function PaisesPage() {
       <div className="phase2-filters">
         <input
           type="search"
-          aria-label="Buscar pais"
-          placeholder="Buscar por nombre o codigo ISO2"
+          aria-label="Buscar país"
+          placeholder="Buscar por nombre o código ISO2"
           value={search}
           onChange={(e) => {
             setPage(1);
@@ -352,7 +352,7 @@ export default function PaisesPage() {
             >
               Anterior
             </button>
-            <span>Pagina {page} / {totalPages}</span>
+            <span>Página {page} / {totalPages}</span>
             <button
               type="button"
               onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
@@ -377,14 +377,14 @@ export default function PaisesPage() {
           >
             <div className="users-modal-header">
               <div>
-                <h2 id="paises-modal-title">{editingId ? 'Editar pais' : 'Nuevo pais'}</h2>
-                <p>Alta y edicion del catalogo de paises. Solo accesible para administradores.</p>
+                <h2 id="paises-modal-title">{editingId ? 'Editar país' : 'Nuevo país'}</h2>
+                <p>Alta y edición del catálogo de países. Solo accesible para administradores.</p>
               </div>
               <CloseIconButton
                 className="users-modal-close"
                 onClick={() => void closeFormModal()}
                 disabled={saving}
-                ariaLabel="Cerrar modal de pais"
+                ariaLabel="Cerrar modal de país"
               />
             </div>
 
@@ -398,7 +398,7 @@ export default function PaisesPage() {
               {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
 
               <section className="users-modal-section">
-                <h3>Datos del pais</h3>
+                <h3>Datos del país</h3>
                 <div className="users-form-grid">
                   <label>
                     <span>Nombre</span>
@@ -411,7 +411,7 @@ export default function PaisesPage() {
                   </label>
 
                   <label>
-                    <span>Codigo ISO2</span>
+                    <span>Código ISO2</span>
                     <input
                       value={form.codigoIso2}
                       onChange={(e) => setForm((f) => ({ ...f, codigoIso2: e.target.value.toUpperCase().slice(0, 2) }))}

@@ -37,7 +37,9 @@ public sealed class TiposCambioController : ControllerBase
             var result = await _tiposCambioService.GuardarTipoCambioManualAsync(origen, destino, request.Tasa, cancellationToken);
             return Ok(result);
         }
-        catch (InvalidOperationException ex)
+        // SEC V-02.09: solo las reglas de negocio tipadas llegan al cliente con
+        // su mensaje; cualquier otro fallo cae en el handler global (500 generico).
+        catch (BusinessRuleException ex)
         {
             return BadRequest(new { error = ex.Message });
         }

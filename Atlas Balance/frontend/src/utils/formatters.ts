@@ -94,6 +94,18 @@ export function getAmountTone(value: unknown): AmountTone {
   return 'neutral';
 }
 
+// DESIGN.md §6: el signo menos debe ser el real "−" (U+2212), no el guion ASCII
+// "-" (U+002D) que usa Intl.NumberFormat con locale es-ES. Solo se sustituye el
+// caracter de salida (presentacion): el "-" de entrada del usuario lo sigue
+// aceptando parseEuropeanNumber sin cambios, porque estas funciones son de solo
+// formateo y ningun consumidor vuelve a parsear su resultado (ver EditableCell,
+// que edita sobre el valor crudo, no sobre el formateado).
+const REAL_MINUS = '−';
+
+function withRealMinusSign(formatted: string): string {
+  return formatted.replace('-', REAL_MINUS);
+}
+
 export function formatCurrency(amount: number | string | null | undefined, divisa: string = 'EUR'): string {
   const safeAmount = toSafeNumber(amount);
   if (!currencyFormatters[divisa]) {
@@ -106,11 +118,11 @@ export function formatCurrency(amount: number | string | null | undefined, divis
         maximumFractionDigits: 2,
       });
     } catch {
-      // Fallback for unknown currency codes
+      // Fallback for unknown currency codes (formatNumber ya aplica el menos real)
       return `${formatNumber(safeAmount)} ${divisa}`;
     }
   }
-  return currencyFormatters[divisa].format(safeAmount);
+  return withRealMinusSign(currencyFormatters[divisa].format(safeAmount));
 }
 
 export function formatCompactCurrency(amount: number | string | null | undefined, divisa: string = 'EUR'): string {
@@ -123,18 +135,21 @@ export function formatCompactCurrency(amount: number | string | null | undefined
         maximumFractionDigits: 1,
     });
   } catch {
+      // formatNumber ya aplica el menos real
       return `${formatNumber(safeAmount, 0)} ${divisa}`;
     }
   }
-  return `${compactCurrencyFormatters[divisa].format(safeAmount)} ${divisa}`;
+  return withRealMinusSign(`${compactCurrencyFormatters[divisa].format(safeAmount)} ${divisa}`);
 }
 
 export function formatNumber(value: number, decimals: number = 2): string {
-  return new Intl.NumberFormat('es-ES', {
-    useGrouping: true,
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
+  return withRealMinusSign(
+    new Intl.NumberFormat('es-ES', {
+      useGrouping: true,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(value),
+  );
 }
 
 export function formatBytes(value: number | null | undefined): string {

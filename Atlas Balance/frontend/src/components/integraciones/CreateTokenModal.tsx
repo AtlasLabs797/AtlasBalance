@@ -183,7 +183,7 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
               />
               Sin expiracion
             </label>
-            <p className="import-muted">Si no eliges fecha, la API usa 90 dias.</p>
+            <p className="import-muted">Si no eliges fecha, la API usa 90 días.</p>
           </div>
           <fieldset className="config-token-scopes">
             <legend>Scopes OpenClaw</legend>

@@ -1,0 +1,65 @@
+/* Componentes propios de Atlas Balance: celda editable, aviso operativo, saldos por divisa,
+   matriz de permisos y mapeo de importación. Misma gramática que components.css:
+   plano, borde capilar, píldoras, mono tabular para cifras. */
+
+/* Celda editable de la rejilla de extractos */
+.atl-cell{display:inline-flex;align-items:center;gap:var(--space-4);min-height:var(--row-height-compact);width:100%}
+.atl-cell--right{justify-content:flex-end;text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.atl-cell--locked{color:var(--text-secondary);padding:0 var(--space-4)}
+.atl-cell__button{appearance:none;background:transparent;border:1px solid transparent;border-radius:var(--radius-xs);color:inherit;font:inherit;text-align:inherit;padding:var(--space-2) var(--space-4);width:100%;cursor:text;transition:var(--transition-control)}
+.atl-cell__button:hover{background:var(--surface-hover);border-color:var(--border-default)}
+.atl-cell__button:focus-visible{outline:none;border-color:var(--accent-500);box-shadow:var(--ring-focus)}
+.atl-cell__input{appearance:none;width:100%;font:inherit;color:var(--text-primary);background:var(--surface-card);border:1px solid var(--accent-500);border-radius:var(--radius-xs);box-shadow:var(--ring-focus);padding:var(--space-2) var(--space-4);outline:none}
+.atl-cell__state{display:inline-flex;align-items:center;gap:var(--space-2);font:var(--type-fine);color:var(--text-tertiary);white-space:nowrap}
+.atl-cell__state--ok{color:var(--status-success-text)}
+.atl-cell__state--error{color:var(--status-danger-text)}
+
+/* Aviso operativo a lo ancho */
+.atl-alertbanner{display:flex;align-items:center;gap:var(--space-6);padding:var(--space-6) var(--space-8);border:1px solid var(--status-warning-border);background:var(--status-warning-bg);color:var(--status-warning-text);border-radius:var(--radius-card);font:var(--type-body-sm)}
+.atl-alertbanner--danger{border-color:var(--status-danger-border);background:var(--status-danger-bg);color:var(--status-danger-text)}
+.atl-alertbanner--info{border-color:var(--status-info-border);background:var(--status-info-bg);color:var(--status-info-text)}
+.atl-alertbanner__icon{flex:none}
+.atl-alertbanner__pill{flex:none;font:var(--type-overline);letter-spacing:var(--tracking-caps);text-transform:uppercase;padding:var(--space-1) var(--space-5);border-radius:var(--radius-full);background:color-mix(in srgb,currentColor 14%,transparent)}
+.atl-alertbanner__title{font:var(--type-label);color:inherit}
+.atl-alertbanner__message{color:color-mix(in srgb,currentColor 82%,var(--text-secondary));font-variant-numeric:tabular-nums}
+.atl-alertbanner__spacer{flex:1}
+.atl-alertbanner__dismiss{appearance:none;background:transparent;border:0;color:inherit;padding:var(--space-2);border-radius:var(--radius-full);cursor:pointer;display:inline-flex;transition:var(--transition-control)}
+.atl-alertbanner__dismiss:hover{background:color-mix(in srgb,currentColor 12%,transparent)}
+.atl-alertbanner__dismiss:active{transform:scale(var(--press-scale))}
+
+/* Saldos por divisa */
+.atl-divisas{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-6)}
+.atl-divisas__item{border:1px solid var(--border-default);border-radius:var(--radius-card);padding:var(--pad-card-compact);background:var(--surface-card)}
+.atl-divisas__head{display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-4)}
+.atl-divisas__code{font:var(--type-overline);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--text-tertiary)}
+.atl-divisas__base{font:var(--type-fine);color:var(--accent-text);border:1px solid var(--accent-soft-border);background:var(--accent-soft);border-radius:var(--radius-full);padding:0 var(--space-4)}
+.atl-divisas__total{font:var(--type-mono-lg);font-variant-numeric:tabular-nums;margin-bottom:var(--space-6)}
+.atl-divisas__grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin:0}
+.atl-divisas__grid dt{font:var(--type-fine);color:var(--text-tertiary);margin-bottom:var(--space-1)}
+.atl-divisas__grid dd{margin:0;font:var(--type-mono);font-variant-numeric:tabular-nums}
+.atl-divisas__conv{margin:var(--space-6) 0 0;font:var(--type-body-sm);color:var(--text-secondary);border-top:1px solid var(--border-subtle);padding-top:var(--space-4)}
+
+/* Matriz de permisos */
+.atl-permgrid{width:100%;border-collapse:collapse;font:var(--type-body-sm)}
+.atl-permgrid th,.atl-permgrid td{border-bottom:1px solid var(--border-subtle);padding:var(--space-4) var(--space-6);text-align:left;vertical-align:middle}
+.atl-permgrid thead th{font:var(--type-overline);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--text-tertiary);border-bottom:1px solid var(--border-default)}
+.atl-permgrid thead th:not(:first-child),.atl-permgrid tbody td{text-align:center;width:104px}
+.atl-permgrid__group th{font:var(--type-overline);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--text-secondary);background:var(--surface-muted)}
+.atl-permgrid tbody th{font:var(--type-body-sm);color:var(--text-primary);font-weight:var(--weight-regular)}
+.atl-permgrid__help{display:block;font:var(--type-fine);color:var(--text-tertiary);margin-top:var(--space-1)}
+.atl-permgrid__cell{appearance:none;width:28px;height:28px;border-radius:var(--radius-full);border:1px solid var(--border-strong);background:var(--surface-card);color:var(--text-tertiary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:var(--transition-control)}
+.atl-permgrid__cell:hover:not(:disabled){background:var(--surface-hover)}
+.atl-permgrid__cell:active:not(:disabled){transform:scale(var(--press-scale))}
+.atl-permgrid__cell:focus-visible{outline:none;box-shadow:var(--ring-focus);border-color:var(--accent-500)}
+.atl-permgrid__cell.is-on{background:var(--accent-solid);border-color:transparent;color:var(--accent-on-solid)}
+.atl-permgrid__cell:disabled{opacity:.45;cursor:not-allowed}
+
+/* Mapeo de importación */
+.atl-mapper__rows{display:flex;flex-direction:column;gap:var(--space-4)}
+.atl-mapper__row{display:grid;grid-template-columns:1fr 20px 240px;align-items:center;gap:var(--space-6);padding:var(--space-4) var(--space-6);border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-card)}
+.atl-mapper__row.is-mapped{background:var(--accent-soft);border-color:var(--accent-soft-border)}
+.atl-mapper__source{min-width:0}
+.atl-mapper__name{display:block;font:var(--type-label)}
+.atl-mapper__sample{display:block;font:var(--type-mono);font-size:var(--text-12);color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atl-mapper__arrow{color:var(--text-tertiary)}
+.atl-mapper__status{margin:var(--space-6) 0 0;font:var(--type-body-sm);color:var(--text-secondary);font-variant-numeric:tabular-nums}

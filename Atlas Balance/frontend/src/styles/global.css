@@ -19,14 +19,15 @@ html[data-theme="dark"] {
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 
 body {
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
+  letter-spacing: var(--tracking-body);
   color: var(--color-text-primary);
   background: var(--bg-app);
   min-width: 0;
@@ -67,7 +68,7 @@ a:hover {
 }
 
 a:focus-visible {
-  border-radius: 0.25rem;
+  border-radius: var(--radius-xs);
 }
 
 input, textarea, select, button {
@@ -77,9 +78,10 @@ input, textarea, select, button {
 
 input, textarea, select {
   background: var(--control-bg);
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-control);
-  padding: var(--space-2) var(--control-padding-x);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-field);
+  padding: var(--pad-field-y) var(--pad-field-x);
+  font: var(--type-body);
   color: var(--color-text-primary);
   min-height: var(--control-height);
   transition:
@@ -96,7 +98,7 @@ select:hover:not(:disabled) {
 
 select {
   appearance: none;
-  padding-right: 2.65rem;
+  padding-right: calc(var(--pad-field-x) + 20px);
   background-image:
     linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%),
     linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
@@ -136,7 +138,7 @@ input[type='date']::-webkit-calendar-picker-indicator {
   height: 1.2rem;
   margin-right: -0.35rem;
   padding: 0.42rem;
-  border-radius: calc(var(--radius-control) - 5px);
+  border-radius: var(--radius-full);
   background-color: var(--accent-primary-soft);
   cursor: pointer;
   opacity: 0.78;
@@ -153,7 +155,7 @@ input[type='date']:focus::-webkit-calendar-picker-indicator {
 }
 
 input[type='date']::-webkit-calendar-picker-indicator:active {
-  transform: scale(0.94);
+  transform: scale(var(--press-scale));
 }
 
 html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
@@ -174,8 +176,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-field > span {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font: var(--type-label);
 }
 
 .date-picker-trigger {
@@ -187,7 +188,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   min-height: var(--control-height);
   padding: var(--space-2) var(--control-padding-x);
   border: 1px solid var(--control-border);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-field);
   background: var(--control-bg);
   color: var(--color-text-primary);
   text-align: left;
@@ -213,7 +214,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   width: 2.1rem;
   height: 2.1rem;
   padding: 0.42rem;
-  border-radius: calc(var(--radius-control) - 5px);
+  border-radius: var(--radius-full);
   background: var(--accent-primary-soft);
   color: var(--color-text-primary);
 }
@@ -305,13 +306,6 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   background: var(--accent-primary-soft);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .date-picker-header button:hover,
-  .date-picker-footer button:hover {
-    transform: translateY(-1px);
-  }
-}
-
 .date-picker-weekdays,
 .date-picker-grid {
   display: grid;
@@ -337,7 +331,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   display: inline-grid;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: calc(var(--radius-control) - 4px);
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--color-text-primary);
   padding: 0;
@@ -366,7 +360,6 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   border-color: var(--accent-primary) !important;
   background: var(--accent-primary) !important;
   color: var(--color-text-inverse) !important;
-  box-shadow: 0 8px 16px color-mix(in srgb, var(--accent-primary) 24%, transparent);
 }
 
 .date-picker-footer {
@@ -403,8 +396,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 input:focus, textarea:focus, select:focus {
   outline: none;
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-500);
+  box-shadow: var(--ring-focus);
 }
 
 input[type='checkbox'] {
@@ -418,7 +411,7 @@ input[type='checkbox'] {
   flex: 0 0 auto;
   padding: 0;
   border: 1.5px solid var(--border-strong);
-  border-radius: 0.28rem;
+  border-radius: var(--radius-xs);
   background: var(--bg-surface);
   color: var(--text-inverse);
   vertical-align: middle;
@@ -461,13 +454,12 @@ input[type='checkbox']:checked::before {
 }
 
 input[type='checkbox']:focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-border-focus) 18%, transparent);
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 
 input[type='checkbox']:active:not(:disabled) {
-  transform: scale(0.94);
+  transform: scale(var(--press-scale));
 }
 
 input[type='checkbox']:disabled {
@@ -499,15 +491,14 @@ button:not([class]):hover:not(:disabled) {
 }
 
 button:focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-border-focus) 18%, transparent);
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 
 button:active:not(:disabled),
 .button:active:not([aria-disabled="true"]),
 a[class*="button"]:active {
-  transform: scale(0.98);
+  transform: scale(var(--press-scale));
 }
 
 button:disabled {
@@ -527,6 +518,9 @@ th, td {
 }
 
 td {
+  /* DESIGN.md §8: el cuerpo va a 17px, pero las celdas densas de tabla se
+     quedan en 14. Sin esta linea toda la app heredaba 17px en cada celda. */
+  font-size: var(--text-14);
   transition: background-color var(--duration-instant) var(--ease-premium);
 }
 
@@ -555,8 +549,8 @@ th {
   min-height: var(--control-height);
   border-radius: var(--radius-control);
   border: 1px solid transparent;
-  padding: var(--space-2) var(--space-4);
-  font-weight: var(--font-weight-semibold);
+  padding: 0 var(--space-9);
+  font: var(--type-body);
   text-decoration: none;
   transition:
     background-color var(--transition-fast),
@@ -571,35 +565,30 @@ th {
   background: var(--accent-primary);
   color: var(--text-inverse);
   border-color: color-mix(in srgb, var(--accent-primary-hover) 36%, var(--accent-primary));
-  box-shadow: var(--shadow-sm);
 }
 
 .button-primary:hover {
   background: var(--accent-primary-hover);
-  box-shadow: var(--shadow-card-hover);
   text-decoration: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .button-primary:hover {
-    transform: translateY(-1px);
-  }
 }
 
 .button-primary:active {
-  transform: translateY(0) scale(0.98);
-  box-shadow: var(--shadow-sm);
+  transform: scale(var(--press-scale));
 }
 
 .button-secondary {
-  background: var(--bg-surface-soft);
-  border-color: var(--control-border);
-  color: var(--text-primary);
+  background: transparent;
+  border-color: var(--accent-solid);
+  color: var(--accent-text);
 }
 
 .button-secondary:hover {
-  background: var(--bg-surface-muted);
+  background: color-mix(in srgb, var(--accent-500) 8%, transparent);
   text-decoration: none;
+}
+
+.button-secondary:active {
+  background: color-mix(in srgb, var(--accent-500) 12%, transparent);
 }
 
 .button-tertiary {
@@ -648,7 +637,6 @@ th {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-card);
 }
 
 .ab-card--flush {
@@ -690,7 +678,6 @@ th {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-card);
   container-type: inline-size;
 }
 
@@ -779,7 +766,6 @@ th {
   border-color: var(--border-soft);
   background: var(--bg-surface);
   color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
 }
 
 .ab-field {
@@ -791,8 +777,7 @@ th {
 .ab-field > span,
 .ab-label {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font: var(--type-label);
 }
 
 .ab-input {
@@ -817,9 +802,9 @@ th {
 }
 
 .ab-button--sm {
-  min-height: var(--control-height-compact);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--font-size-sm);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-7);
+  font: var(--type-caption);
 }
 
 .close-icon-button {
@@ -857,8 +842,7 @@ th {
 
 .app-select-label {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  font: var(--type-label);
 }
 
 .app-select-trigger {
@@ -866,35 +850,28 @@ th {
   align-items: center;
   width: 100%;
   min-width: 0;
+  min-height: var(--control-height);
   justify-content: space-between;
   gap: var(--space-3);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-default);
   background: var(--bg-surface);
   color: var(--text-primary);
-  padding: 0 var(--space-3);
+  font: var(--type-body);
+  padding: var(--pad-field-y) var(--pad-field-x);
   text-align: left;
   box-shadow: none;
   touch-action: manipulation;
 }
 
-.app-select-trigger:hover:not(:disabled),
-.app-select-trigger[aria-expanded="true"] {
-  border-color: color-mix(in srgb, var(--accent-primary) 36%, var(--border-soft));
+.app-select-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
   background: var(--bg-surface);
 }
 
-.app-select-trigger[aria-expanded="true"] {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 15%, transparent);
-}
-
-.app-select-trigger[aria-expanded="true"] .app-select-chevron {
-  transform: translateY(0.12rem) rotate(225deg);
-}
-
-.app-select-trigger > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.app-select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent-500);
+  box-shadow: var(--ring-focus);
 }
 
 .app-select-chevron {
@@ -919,7 +896,7 @@ th {
   display: block;
   appearance: none;
   background-image: none;
-  padding-right: calc(var(--space-3) * 2 + 0.9rem);
+  padding-right: calc(var(--pad-field-x) + 20px);
 }
 
 .app-select-native-wrap > .app-select-chevron {
@@ -958,7 +935,7 @@ th {
   overflow: auto;
   padding: var(--space-1);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   box-shadow: var(--shadow-overlay);
   transform-origin: top left;
@@ -967,54 +944,6 @@ th {
 
 .app-select-popover[data-open-source='keyboard'] {
   animation: none;
-}
-
-.app-select-option {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  min-height: 2.45rem;
-  justify-content: space-between;
-  border: 0;
-  border-radius: calc(var(--radius-control) - 4px);
-  background: transparent;
-  color: var(--text-primary);
-  padding: var(--space-2) var(--space-3);
-  text-align: left;
-  box-shadow: none;
-  transition:
-    background-color var(--transition-fast),
-    color var(--transition-fast),
-    transform var(--duration-instant) var(--ease-premium);
-}
-
-.app-select-option-label {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.app-select-option:hover:not(:disabled),
-.app-select-option:focus-visible {
-  background: var(--bg-hover);
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--color-border-focus);
-}
-
-.app-select-option--selected {
-  background: var(--accent-primary-soft);
-  color: var(--text-link);
-  font-weight: var(--font-weight-semibold);
-}
-
-.app-select-option--selected::after {
-  content: "";
-  width: 0.42rem;
-  height: 0.72rem;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: rotate(40deg);
-  margin-left: var(--space-2);
 }
 
 ::-webkit-scrollbar {
@@ -1026,7 +955,7 @@ th {
 }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-primary) 22%, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius-full);
   border: 2px solid var(--color-bg-secondary);
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -1134,7 +1063,6 @@ th {
     min-height: var(--control-height);
   }
 
-  .app-select-option,
   .date-picker-header button,
   .date-picker-footer button,
   .date-picker-grid button,

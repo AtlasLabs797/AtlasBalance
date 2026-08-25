@@ -1,0 +1,37 @@
+:root{
+/* Accent channel — the only thing an app is allowed to change. En Atlas Balance es el cobalto de tesorería (--cobalt-600 #285BD9), el único color heredado del sistema anterior. */
+--accent-50:var(--cobalt-50);--accent-100:var(--cobalt-100);--accent-200:var(--cobalt-200);--accent-300:var(--cobalt-300);--accent-400:var(--cobalt-400);--accent-500:var(--cobalt-500);--accent-600:var(--cobalt-600);--accent-700:var(--cobalt-700);--accent-900:var(--cobalt-900);
+--accent-solid:var(--accent-600);--accent-solid-hover:var(--accent-500);--accent-solid-active:var(--accent-700);--accent-on-solid:var(--white);
+--accent-text:var(--accent-600);--accent-on-dark:var(--sky-400);
+--accent-soft:color-mix(in srgb,var(--accent-500) 8%,var(--surface-card));
+--accent-soft-strong:color-mix(in srgb,var(--accent-500) 14%,var(--surface-card));
+--accent-soft-border:color-mix(in srgb,var(--accent-500) 22%,var(--surface-card));
+--accent-ring:color-mix(in srgb,var(--accent-500) 28%,transparent);
+/* Text */
+--text-primary:var(--gray-900);--text-secondary:var(--gray-600);--text-tertiary:var(--gray-500);--text-disabled:var(--gray-400);--text-inverse:var(--white);--text-link:var(--accent-text);
+/* Surfaces */
+--surface-page:var(--parchment);--surface-card:var(--white);--surface-raised:var(--white);--surface-sunken:var(--gray-100);--surface-muted:var(--pearl);--surface-hover:var(--alpha-ink-04);--surface-active:var(--alpha-ink-08);--surface-inverse:var(--tile-1);--surface-tile:var(--tile-1);--surface-tile-2:var(--tile-2);--surface-tile-3:var(--tile-3);--surface-void:var(--black);--surface-overlay:color-mix(in srgb,var(--white) 86%,transparent);
+/* Borders */
+--border-subtle:var(--divider-soft);--border-default:var(--hairline);--border-strong:var(--gray-300);--border-inverse:var(--alpha-white-12);
+/* Status */
+--status-success-text:var(--green-600);--status-success-bg:var(--green-50);--status-success-border:var(--green-100);--status-success-solid:var(--green-500);
+--status-warning-text:var(--amber-600);--status-warning-bg:var(--amber-50);--status-warning-border:var(--amber-100);--status-warning-solid:var(--amber-500);
+--status-danger-text:var(--crimson-600);--status-danger-bg:var(--crimson-50);--status-danger-border:var(--crimson-100);--status-danger-solid:var(--crimson-500);
+--status-info-text:var(--action-700);--status-info-bg:var(--action-50);--status-info-border:var(--action-100);--status-info-solid:var(--action-600);
+--status-neutral-text:var(--gray-600);--status-neutral-bg:var(--gray-100);--status-neutral-border:var(--gray-200);--status-neutral-solid:var(--gray-500);
+/* Money & deltas — always mono, always signed */
+--amount-positive:var(--green-600);--amount-negative:var(--crimson-600);--amount-neutral:var(--text-primary);--amount-muted:var(--text-tertiary);
+/* AI channel — violet, never the app accent, so AI surfaces read the same in every Atlas app */
+--ai-solid:var(--violet-600);--ai-text:var(--violet-700);--ai-soft:color-mix(in srgb,var(--violet-500) 8%,var(--surface-card));--ai-border:color-mix(in srgb,var(--violet-500) 24%,var(--surface-card));
+/* Charts */
+--chart-grid:var(--border-subtle);--chart-axis:var(--text-tertiary);--chart-track:var(--gray-100);
+--chart-muted:color-mix(in srgb,var(--text-primary) 16%,var(--surface-card));--chart-muted-strong:color-mix(in srgb,var(--text-primary) 32%,var(--surface-card));
+--chart-area-from:color-mix(in srgb,var(--accent-500) 22%,transparent);--chart-area-to:color-mix(in srgb,var(--accent-500) 0%,transparent);
+/* Z-index */
+--z-nav:20;
+--z-sticky:30;
+--z-drawer:50;
+--z-modal:60;
+--z-toast:70;
+--z-tooltip:80;
+}

@@ -132,10 +132,12 @@ public sealed class SecurityEventLog : ISecurityEventLog
 
         if (critico)
         {
+            // codeql[cs/log-forging] OK: campos saneados con LogScrubber (sin CR/LF/TAB, max 256).
             _logger.LogError(plantilla, args);
         }
         else
         {
+            // codeql[cs/log-forging] OK: campos saneados con LogScrubber (sin CR/LF/TAB, max 256).
             _logger.LogWarning(plantilla, args);
         }
 #pragma warning restore CA2254

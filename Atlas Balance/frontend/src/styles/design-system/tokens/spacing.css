@@ -1,0 +1,8 @@
+:root{
+--space-0:0px;--space-1:2px;--space-2:4px;--space-3:6px;--space-4:8px;--space-5:10px;--space-6:12px;--space-7:17px;--space-8:20px;--space-9:24px;--space-10:32px;--space-11:40px;--space-12:48px;--space-13:64px;--space-14:80px;--space-15:120px;
+--gutter-page:32px;--gutter-page-wide:48px;--section-y:80px;
+--pad-card:24px;--pad-card-compact:20px;--pad-field-x:20px;--pad-field-y:12px;--pad-modal:32px;--pad-tile:80px;
+--row-height:56px;--row-height-compact:44px;--control-height:44px;--control-height-lg:52px;--control-height-sm:32px;
+--sidebar-width:264px;--sidebar-width-collapsed:72px;--topbar-height:64px;--nav-global-height:44px;--subnav-height:52px;
+--content-max:1440px;--content-max-narrow:980px;--drawer-width:560px;--chat-width:420px;
+}

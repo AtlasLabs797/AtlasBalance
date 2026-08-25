@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { IconAlertaDanger, IconAlertaWarning } from '@/components/Icons';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -88,9 +89,15 @@ export default function AlertasPage() {
   const [deleteTarget, setDeleteTarget] = useState<AlertaItem | null>(null);
   const invalidate = useInvalidateAfterMutation();
 
-  const cuentaAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id !== null), [alertas]);
-  const tipoAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id === null && item.tipo_titular !== null), [alertas]);
-  const onlyGlobalAlert = useMemo(() => alertas.find((item) => item.cuenta_id === null && item.tipo_titular === null) ?? null, [alertas]);
+  // Clasificar por `alcance` y no por si `cuenta_id`/`tipo_titular` son null: el
+  // backend serializa con DefaultIgnoreCondition=WhenWritingNull, asi que los
+  // campos nulos NO llegan como null, llegan ausentes. Con `=== null` la alerta
+  // global no se encontraba nunca (y "Crear global" habria creado una segunda),
+  // y con `!== null` todas las alertas contaban como alertas de cuenta.
+  // `alcance` es un enum que siempre viaja.
+  const cuentaAlerts = useMemo(() => alertas.filter((item) => item.alcance === 'CUENTA'), [alertas]);
+  const tipoAlerts = useMemo(() => alertas.filter((item) => item.alcance === 'TIPO_TITULAR'), [alertas]);
+  const onlyGlobalAlert = useMemo(() => alertas.find((item) => item.alcance === 'GLOBAL') ?? null, [alertas]);
   const tipoTitularOptions: Array<{ value: TipoTitular; label: string }> = [
     { value: 'EMPRESA', label: 'Empresa' },
     { value: 'AUTONOMO', label: 'Autónomo' },
@@ -107,7 +114,7 @@ export default function AlertasPage() {
   }, [cuentaAlerts, cuentas, cuentaForm.cuenta_id, editingCuentaAlertId]);
 
   const hydrateForms = (items: AlertaItem[]) => {
-    const global = items.find((item) => item.cuenta_id === null && item.tipo_titular === null) ?? null;
+    const global = items.find((item) => item.alcance === 'GLOBAL') ?? null;
     if (global) {
       setGlobalForm({
         cuenta_id: null,
@@ -353,38 +360,50 @@ export default function AlertasPage() {
         ) : null}
 
         {alertasActivas.length > 0 ? (
-          <div className="config-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Titular</th>
-                  <th>Cuenta</th>
-                  <th>Divisa</th>
-                  <th>Saldo actual</th>
-                  <th>Saldo mínimo</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {alertasActivas.map((item) => (
-                  <tr key={`${item.alerta_id}-${item.cuenta_id}`}>
-                    <td>{item.titular_nombre}</td>
-                    <td>{item.cuenta_nombre}</td>
-                    <td>{item.divisa}</td>
-                    <td>
-                      <SignedAmount value={item.saldo_actual}>{formatCurrency(item.saldo_actual, item.divisa ?? 'EUR')}</SignedAmount>
-                    </td>
-                    <td>
-                      <SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount>
-                    </td>
-                    <td>
-                      <Link to={`/cuentas/${item.cuenta_id}`}>Abrir cuenta</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="alertas-notif-list">
+            {alertasActivas.map((item) => {
+              const severity: 'danger' | 'warning' = item.saldo_actual < 0 ? 'danger' : 'warning';
+              const severityLabel = severity === 'danger' ? 'Cuenta en negativo' : 'Por debajo del mínimo';
+
+              return (
+                <li
+                  key={`${item.alerta_id}-${item.cuenta_id}`}
+                  className={`alertas-notif-item alertas-notif-item--${severity}`}
+                >
+                  <span className={`alertas-notif-icon alertas-notif-icon--${severity}`} aria-hidden="true">
+                    {severity === 'danger' ? <IconAlertaDanger /> : <IconAlertaWarning />}
+                  </span>
+                  <div className="alertas-notif-body">
+                    <p className="alertas-notif-title">
+                      {item.cuenta_nombre} <span className="alertas-notif-title-sep">·</span> {item.titular_nombre}
+                    </p>
+                    <p className="alertas-notif-severity-label">{severityLabel}</p>
+                    <dl className="alertas-notif-amounts">
+                      <div className="alertas-notif-amount">
+                        <dt>Saldo actual</dt>
+                        <dd>
+                          <SignedAmount value={item.saldo_actual}>
+                            {formatCurrency(item.saldo_actual, item.divisa ?? 'EUR')}
+                          </SignedAmount>
+                        </dd>
+                      </div>
+                      <div className="alertas-notif-amount">
+                        <dt>Saldo mínimo</dt>
+                        <dd>
+                          <SignedAmount value={item.saldo_minimo}>
+                            {formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}
+                          </SignedAmount>
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <Link className="alertas-notif-action" to={`/cuentas/${item.cuenta_id}`}>
+                    Abrir cuenta
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         ) : null}
       </article>
 

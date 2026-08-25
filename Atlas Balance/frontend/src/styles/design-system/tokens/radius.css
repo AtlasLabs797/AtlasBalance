@@ -1,0 +1,5 @@
+:root{
+/* Apple radii grammar: 5 / 8 / 11 / 18 / pill. Nothing in between. */
+--radius-xs:5px;--radius-sm:8px;--radius-md:11px;--radius-lg:18px;--radius-xl:18px;--radius-2xl:22px;--radius-full:999px;
+--radius-control:999px;--radius-field:11px;--radius-card:18px;--radius-panel:18px;--radius-modal:18px;--radius-chip:999px;--radius-tile:0px;
+}

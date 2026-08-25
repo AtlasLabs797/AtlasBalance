@@ -1,8 +1,12 @@
 .app-shell {
-  min-height: 100dvh;
+  /* Altura de ventana, no minimo: el scroll vive en .app-content (igual que
+     .atl-shell__scroll). Con min-height el shell crecia con el contenido y el
+     menu lateral, que es 100dvh, dejaba de llegar abajo al hacer scroll. */
+  height: 100dvh;
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   background: var(--bg-app);
+  overflow: hidden;
 }
 
 .skip-link {
@@ -34,7 +38,12 @@
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-sidebar);
+  /* DESIGN.md §3.5: el cristal es una receta compartida por topbar, sidenav,
+     nav inferior y popover de IA. Sin sombra lateral (--color-sidebar-shadow
+     ya resuelve a none). */
+  background: var(--glass-surface);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   color: var(--color-sidebar-text);
   padding: var(--space-4) var(--space-3);
   border-right: 1px solid var(--color-sidebar-border);
@@ -62,7 +71,7 @@
   margin-bottom: var(--space-4);
   min-height: 2.75rem;
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -125,7 +134,7 @@
   margin-bottom: var(--space-4);
   padding: var(--space-2);
   border: 1px solid var(--color-sidebar-border);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--color-sidebar-scope-bg);
 }
 
@@ -252,7 +261,7 @@
   color: var(--color-sidebar-text);
   padding: var(--space-2) var(--space-3);
   min-height: 2.75rem;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -274,7 +283,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: var(--text-17);
   line-height: 1;
   transform: translateZ(0);
   transition: transform var(--transition-normal);
@@ -306,16 +315,13 @@
   text-decoration: none;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .app-nav-link:hover .app-nav-icon {
-    transform: translateY(-2px) scale(1.12);
-  }
+.app-nav-link:active {
+  transform: scale(var(--press-scale));
 }
 
 .app-nav-link--active {
   background: var(--color-sidebar-active-bg);
   color: var(--color-sidebar-active-text);
-  box-shadow: inset 0 0 0 1px var(--color-sidebar-active-ring);
 }
 
 .app-nav-link--active::before {
@@ -331,6 +337,10 @@
 
 .app-main {
   min-width: 0;
+  /* Imprescindible con .app-shell a altura de ventana: sin min-height:0 el
+     item del grid conserva min-height:auto, crece con el contenido y el
+     overflow:hidden del shell recorta lo que queda por debajo. */
+  min-height: 0;
   display: grid;
   grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
 }
@@ -361,10 +371,10 @@
   gap: var(--space-4);
   min-height: var(--topbar-height);
   padding: 0 var(--space-5);
-  background: color-mix(in srgb, var(--bg-app) 84%, transparent);
-  border-bottom: 1px solid var(--border-soft);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: var(--glass-surface);
+  border-bottom: 1px solid var(--border-default);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .app-topbar-title {
@@ -420,7 +430,6 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-pill);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .app-topbar-avatar {
@@ -523,11 +532,19 @@
   min-height: 100dvh;
 }
 
+/* DESIGN.md §5.1: dos variantes, --info y --danger, con punto de pulso. Los
+   colores salen del triplete de estado; la variante la decide AlertBanner.tsx
+   segun haya o no cuentas en negativo. */
 .alert-banner {
+  --alert-banner-text: var(--status-warning-text);
+  --alert-banner-bg: var(--status-warning-bg);
+  --alert-banner-border: var(--status-warning-border);
+  --alert-banner-solid: var(--status-warning-solid);
+
   margin: var(--space-2) var(--space-4) 0;
-  border: 1px solid color-mix(in srgb, var(--warning-text) 28%, transparent);
-  border-radius: var(--radius-control);
-  background: var(--color-bg-warning);
+  border: 1px solid var(--alert-banner-border);
+  border-radius: var(--radius-card);
+  background: var(--alert-banner-bg);
   padding: var(--space-2) var(--space-3);
   display: flex;
   align-self: start;
@@ -537,11 +554,43 @@
   animation: alert-banner-in var(--duration-base) var(--ease-premium) both;
 }
 
+.alert-banner--danger {
+  --alert-banner-text: var(--status-danger-text);
+  --alert-banner-bg: var(--status-danger-bg);
+  --alert-banner-border: var(--status-danger-border);
+  --alert-banner-solid: var(--status-danger-solid);
+}
+
+.alert-banner--warning {
+  /* Es el valor por defecto; se declara para que la clase exista y el
+     componente pueda nombrarla explicitamente. */
+  --alert-banner-text: var(--status-warning-text);
+  --alert-banner-bg: var(--status-warning-bg);
+  --alert-banner-border: var(--status-warning-border);
+  --alert-banner-solid: var(--status-warning-solid);
+}
+
+.alert-banner--info {
+  --alert-banner-text: var(--status-info-text);
+  --alert-banner-bg: var(--status-info-bg);
+  --alert-banner-border: var(--status-info-border);
+  --alert-banner-solid: var(--status-info-solid);
+}
+
 .alert-banner-content {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.alert-banner-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--alert-banner-solid);
+  animation: alert-banner-pulse 2.4s var(--ease-premium) infinite;
 }
 
 .alert-banner-pill {
@@ -550,12 +599,28 @@
   min-height: 1.75rem;
   padding: 0 var(--space-2);
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--warning-text) 13%, var(--warning-bg));
-  color: var(--warning-text);
+  background: color-mix(in srgb, var(--alert-banner-solid) 16%, transparent);
+  color: var(--alert-banner-text);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
+}
+
+@keyframes alert-banner-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--alert-banner-solid) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-banner-dot {
+    animation: none;
+  }
 }
 
 .sidebar-alert-badge {
@@ -610,7 +675,7 @@
   padding: 0 0.25rem;
   pointer-events: none;
   transform: none;
-  font-size: 0.625rem;
+  font-size: var(--text-10);
   line-height: 1;
 }
 
@@ -619,7 +684,6 @@
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-card);
   padding: var(--space-5);
-  box-shadow: var(--shadow-card);
 }
 
 .page-placeholder h1 {
@@ -650,17 +714,18 @@
   gap: var(--space-2);
 }
 
+/* Espejo de .atl-empty__mark (design-system/components/components.css):
+   pastilla de 48px, redonda, sobre superficie hundida y con borde capilar. */
 .empty-state-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3rem;
-  height: 3rem;
-  border-radius: var(--radius-control);
-  background: var(--bg-surface);
-  color: var(--text-link);
-  border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-sm);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
 }
 
 .empty-state-actions {
@@ -721,10 +786,10 @@
   justify-content: space-between;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--color-border-primary);
   background: var(--color-bg-primary);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   opacity: 1;
   transform: translateY(0) scale(1);
   transition:
@@ -784,7 +849,7 @@
 .session-timeout-count {
   color: var(--color-danger);
   font-family: var(--font-family-mono);
-  font-size: 3rem;
+  font-size: var(--text-48);
   font-weight: var(--font-weight-bold);
   line-height: 1;
 }
@@ -955,8 +1020,12 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3) calc(var(--space-2) + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border-soft);
-    background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-    box-shadow: 0 -12px 24px color-mix(in srgb, var(--color-bg-sidebar) 10%, transparent);
+    /* DESIGN.md §3.5: misma receta de cristal que topbar y sidenav. La nav
+       inferior es cromo pegado, no una capa desprendida, por eso no lleva
+       box-shadow (solo menu/toast/modal/drawer/popover lo conservan). */
+    background: var(--glass-surface);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
   }
 
   .bottom-nav-link {
@@ -969,7 +1038,7 @@
     justify-content: center;
     gap: var(--space-1);
     padding: var(--space-2);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     border: 1px solid transparent;
     background: var(--bg-surface-soft);
     color: var(--color-text-secondary);
@@ -996,6 +1065,10 @@
     border-color: var(--color-border-primary);
   }
 
+  .bottom-nav-link:active {
+    transform: scale(var(--press-scale));
+  }
+
   .bottom-nav-link--active {
     background: var(--accent-primary-soft);
     color: var(--color-sidebar-active-text);
@@ -1020,7 +1093,11 @@
     z-index: calc(var(--z-modal-backdrop) + 1);
     display: grid;
     align-items: end;
-    background: color-mix(in srgb, var(--color-bg-sidebar) 56%, transparent);
+    /* Velo de overlay (§3.5): --scrim + blur(4px). Antes usaba
+       --color-bg-sidebar, que tras la Fase 1 pasó a ser blanco en tema claro. */
+    background: var(--scrim);
+    backdrop-filter: var(--blur-overlay);
+    -webkit-backdrop-filter: var(--blur-overlay);
     animation: bottom-sheet-backdrop-in 180ms var(--ease-premium);
   }
 
@@ -1028,6 +1105,8 @@
     border-radius: var(--radius-panel) var(--radius-panel) 0 0;
     background: var(--bg-surface);
     border-top: 1px solid var(--border-soft);
+    /* Drawer: capa desprendida, conserva sombra (§3.5/§4.3.1). */
+    box-shadow: var(--shadow-xl);
     padding: var(--space-4) var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom));
     display: grid;
     gap: var(--space-3);
@@ -1086,7 +1165,7 @@
     gap: var(--space-2);
     padding: var(--space-3);
     border: 1px solid var(--border-soft);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-md);
     background: var(--bg-surface-soft);
     color: var(--color-text-primary);
     text-decoration: none;
@@ -1116,6 +1195,10 @@
     border-color: var(--color-border-focus);
   }
 
+  .bottom-nav-sheet-link:active {
+    transform: scale(var(--press-scale));
+  }
+
   .bottom-nav-sheet-link--active {
     background: var(--accent-primary-soft);
     color: var(--color-sidebar-active-text);
@@ -1133,5 +1216,268 @@
   .bottom-nav-link {
     padding-inline: var(--space-1);
     font-size: var(--font-size-xs);
+  }
+}
+
+/* ---------- Buscador global (.atl-search) + atajo (.atl-kbd) ---------- */
+.app-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 360px;
+  max-width: 34vw;
+  height: 42px;
+  margin: 0 auto;
+  padding: 0 var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-tertiary);
+  font: var(--type-body);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition: var(--transition-control);
+}
+
+.app-search > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Por debajo del breakpoint del shell manda la navegacion inferior y no hay
+   teclado fisico para el atajo, asi que el buscador no aporta y quitarlo evita
+   que compita por el ancho de la barra. */
+@media (max-width: 767.98px) {
+  .app-search {
+    display: none;
+  }
+}
+
+.app-search:hover {
+  background: var(--surface-card);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.app-search:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+.app-search:active {
+  transform: scale(var(--press-scale-surface));
+}
+
+.app-search-hint {
+  margin-left: auto;
+}
+
+.app-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-default);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-card);
+  color: var(--text-tertiary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-11);
+}
+
+/* ---------- Paleta de comandos (.atl-palette) ---------- */
+.app-palette-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh var(--space-4) var(--space-4);
+  background: var(--scrim);
+  backdrop-filter: var(--blur-overlay);
+  -webkit-backdrop-filter: var(--blur-overlay);
+}
+
+.app-palette {
+  width: 100%;
+  max-width: 560px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  animation: alert-banner-in var(--duration-slow) var(--ease-premium);
+}
+
+.app-palette-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-9);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.app-palette-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-subhead);
+  padding: 0;
+  min-height: 0;
+}
+
+.app-palette-input:focus {
+  box-shadow: none;
+}
+
+.app-palette-body {
+  max-height: 340px;
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.app-palette-group {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.app-palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row-height-compact);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-palette-item--active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.app-palette-item-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.app-palette-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.app-palette-item-meta {
+  margin-left: auto;
+  font-family: var(--font-family-mono);
+  font-size: var(--text-12);
+  color: var(--text-tertiary);
+}
+
+.app-palette-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+  text-align: center;
+}
+
+.app-palette-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-9);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+.app-palette-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* ---------- Usuario en el menu lateral (.atl-userchip--nav) ---------- */
+.app-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  margin-top: auto;
+  padding: var(--space-2) var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.app-sidebar-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-border);
+  color: var(--accent-text);
+  font-size: var(--text-12);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-sidebar-user-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-sidebar-user-name {
+  font: var(--type-label);
+  color: var(--text-primary);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar-user-role {
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.app-sidebar--collapsed .app-sidebar-user {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.app-sidebar--collapsed .app-sidebar-user-copy {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-palette {
+    animation: none;
   }
 }

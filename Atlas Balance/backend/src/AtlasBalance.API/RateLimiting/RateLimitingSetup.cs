@@ -104,16 +104,16 @@ internal static class RateLimitingSetup
         // V-02.08: tambien se eximen los nuevos /api/health/ready y
         // /api/health/functional, que el instalador y el actualizador invocan
         // como sondeos de readiness tras reiniciar servicios.
-        // codeql[cs/user-controlled-bypass] — by design: static assets and health
-        // endpoints are public, stateless, and rate-limiting them adds no security
-        // value. The check uses StartsWithSegments (prefix match on parsed
-        // PathString), not raw string comparison.
         if (path.Equals(FunctionalHealthPath, StringComparison.OrdinalIgnoreCase))
         {
             return Window($"health-functional:{ResolveIpKey(context)}", options.AuthPerMinutePerIp, options.Window);
         }
 
         if (!path.StartsWithSegments(ApiPathPrefix)
+            // V-02.09 (CodeQL #33): exencion intencional por diseno. Estaticos y healthchecks
+            // son publicos y sin estado; limitarlos no aporta valor de seguridad. La decision
+            // usa StartsWithSegments sobre el PathString ya parseado, no cadena cruda.
+            // codeql[cs/user-controlled-bypass]
             || path.Equals(HealthPath)
             || path.StartsWithSegments(HealthPathPrefix))
         {
@@ -236,6 +236,7 @@ internal static class RateLimitingSetup
         // CWE-117). Mismo patron que CsrfMiddleware tras el alert #16.
         logger.LogWarning(
             "Rate limit alcanzado: metodo={MethodSafe} path={PathSafe} ip={IpSafe} usuario={UsuarioSafe} retryAfter={RetryAfter}s",
+            // codeql[cs/log-forging] OK: valores saneados con LogScrubber (sin CR/LF/TAB, max 256).
             LogScrubber.Scrub(httpContext.Request.Method),
             LogScrubber.Scrub(httpContext.Request.Path.Value),
             LogScrubber.Scrub(ResolveIpKey(httpContext)),

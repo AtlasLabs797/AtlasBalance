@@ -125,7 +125,7 @@ export default function BackupsPage() {
   const [doubleConfirmOpen, setDoubleConfirmOpen] = useState(false);
 
   const [overlayVisible, setOverlayVisible] = useState(false);
-  const [overlayMessage, setOverlayMessage] = useState('No cierres esta ventana; al terminar volveras al inicio de sesion.');
+  const [overlayMessage, setOverlayMessage] = useState('No cierres esta ventana; al terminar volverás al inicio de sesión.');
   const restoreOverlayRef = useRef<HTMLDivElement | null>(null);
   useBlockingOverlay(overlayVisible);
 
@@ -181,7 +181,7 @@ export default function BackupsPage() {
       setConfig(data);
       setDraft(createDraft(data));
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo cargar la configuracion de copias.'));
+      setError(extractErrorMessage(err, 'No se pudo cargar la configuración de copias.'));
     } finally {
       setConfigLoading(false);
     }
@@ -224,7 +224,7 @@ export default function BackupsPage() {
       await api.put('/backups/config', draft);
       await fetchConfig();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar la configuracion de copias.'));
+      setError(extractErrorMessage(err, 'No se pudo guardar la configuración de copias.'));
     } finally {
       setSavingConfig(false);
     }
@@ -320,7 +320,7 @@ export default function BackupsPage() {
 
   const pollBackupOperation = async (operationId: string, restore = false) => {
     setOverlayVisible(true);
-    setOverlayMessage('No cierres esta ventana; al terminar volveras al inicio de sesion.');
+    setOverlayMessage('No cierres esta ventana; al terminar volverás al inicio de sesión.');
     const timeoutAt = Date.now() + 10 * 60 * 1000;
 
     while (Date.now() < timeoutAt) {
@@ -328,10 +328,10 @@ export default function BackupsPage() {
         const { data } = await api.get<{ status: string; error?: string }>(`/backups/operations/${operationId}`);
         const state = (data.status ?? '').toUpperCase();
         if (state === 'RUNNING') {
-          setOverlayMessage(restore ? 'Restauracion en curso; no cierres esta ventana.' : 'Operacion de backup en curso.');
+          setOverlayMessage(restore ? 'Restauración en curso; no cierres esta ventana.' : 'Operación de backup en curso.');
         } else if (state === 'SUCCESS') {
           if (restore) {
-            setOverlayMessage('Restauracion completada. Volveras al inicio de sesion.');
+            setOverlayMessage('Restauración completada. Volverás al inicio de sesión.');
             await new Promise((resolve) => setTimeout(resolve, 1200));
             logout();
             window.location.href = '/login';
@@ -341,7 +341,7 @@ export default function BackupsPage() {
           return;
         } else if (state === 'FAILED') {
           setOverlayVisible(false);
-          setError(data.error || 'La operacion fallo. Revisa el estado del sistema antes de intentarlo de nuevo.');
+          setError(data.error || 'La operación falló. Revisa el estado del sistema antes de intentarlo de nuevo.');
           return;
         }
       } catch {
@@ -352,7 +352,7 @@ export default function BackupsPage() {
     }
 
     setOverlayVisible(false);
-    setError('La restauracion esta tardando mas de lo esperado. Comprueba el estado antes de iniciar otra restauracion.');
+    setError('La restauración está tardando más de lo esperado. Comprueba el estado antes de iniciar otra restauración.');
   };
 
   const triggerRestore = async () => {
@@ -365,7 +365,7 @@ export default function BackupsPage() {
       setDoubleConfirmOpen(false);
       await pollBackupOperation(data.operation_id, true);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo iniciar la restauracion.'));
+      setError(extractErrorMessage(err, 'No se pudo iniciar la restauración.'));
     } finally {
       setRestoring(false);
     }
@@ -444,7 +444,7 @@ export default function BackupsPage() {
 
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-      <section className="backup-admin-grid" aria-label="Configuracion de copias">
+      <section className="backup-admin-grid" aria-label="Configuración de copias">
         <article className="backup-config-panel">
           <div className="backup-panel-heading">
             <h2>Programacion</h2>
@@ -528,7 +528,7 @@ export default function BackupsPage() {
 
               <dl className="backup-config-facts">
                 <div>
-                  <dt>Ultima ejecucion</dt>
+                  <dt>Última ejecución</dt>
                   <dd>{config?.last_started_utc ? formatDateTime(config.last_started_utc) : 'Sin registro'}</dd>
                 </div>
                 <div>
@@ -538,7 +538,7 @@ export default function BackupsPage() {
               </dl>
             </div>
           ) : (
-            <p className="import-muted">Cargando configuracion...</p>
+            <p className="import-muted">Cargando configuración...</p>
           )}
         </article>
 
@@ -575,7 +575,7 @@ export default function BackupsPage() {
                 <span>Carpeta Drive ID</span>
                 <input
                   value={draft.google_drive_folder_id}
-                  placeholder="Se creara una carpeta si esta vacio"
+                  placeholder="Se creará una carpeta si está vacío"
                   onChange={(event) => setDraft((prev) => prev ? { ...prev, google_drive_folder_id: event.target.value } : prev)}
                   autoComplete="off"
                 />
@@ -604,7 +604,7 @@ export default function BackupsPage() {
 
               {linkStart ? (
                 <div className="backup-link-box" role="status">
-                  <span>Codigo</span>
+                  <span>Código</span>
                   <strong>{linkStart.user_code}</strong>
                   <a href={linkStart.verification_url} target="_blank" rel="noreferrer">{linkStart.verification_url}</a>
                   <small>{linkStatus?.message ?? 'Esperando autorizacion de Google...'}</small>
@@ -628,9 +628,9 @@ export default function BackupsPage() {
       </section>
 
       {!loading && page === 1 && latestSuccessfulBackup ? (
-        <section className="backup-summary-grid" aria-label="Resumen de la ultima copia correcta en esta pagina">
+        <section className="backup-summary-grid" aria-label="Resumen de la última copia correcta en esta página">
           <article className="backup-summary-card backup-summary-card--primary">
-            <span>Ultima copia correcta en esta pagina</span>
+            <span>Última copia correcta en esta página</span>
             <strong>{formatDateTime(latestSuccessfulBackup.fecha_creacion)}</strong>
           </article>
           <article className="backup-summary-card">
@@ -649,7 +649,7 @@ export default function BackupsPage() {
       ) : null}
 
       {!loading && page === 1 && rows.length > 0 && !latestSuccessfulBackup ? (
-        <p className="config-note config-note--warning" role="status">No hay ninguna copia correcta en esta pagina.</p>
+        <p className="config-note config-note--warning" role="status">No hay ninguna copia correcta en esta página.</p>
       ) : null}
 
       {driveConnected ? (
@@ -784,7 +784,7 @@ export default function BackupsPage() {
         open={confirmOpen}
         title="Restaurar copia"
         message={confirmTarget ? `Vas a restaurar la copia del ${formatDateTime(confirmTarget.fecha_creacion)}.` : 'Confirma que copia quieres restaurar.'}
-        confirmLabel="Revisar restauracion"
+        confirmLabel="Revisar restauración"
         onCancel={() => {
           setConfirmOpen(false);
           setConfirmTarget(null);
@@ -797,8 +797,8 @@ export default function BackupsPage() {
 
       <ConfirmDialog
         open={doubleConfirmOpen}
-        title="Ultima confirmacion"
-        message="Esto reemplazara toda la base de datos y cerrara tu sesion. No sigas si no tienes claro que esta copia es la correcta."
+        title="Última confirmación"
+        message="Esto reemplazará toda la base de datos y cerrará tu sesión. No sigas si no tienes claro que esta copia es la correcta."
         confirmLabel="Restaurar base de datos"
         loadingLabel="Restaurando..."
         loading={restoring}
@@ -822,7 +822,7 @@ export default function BackupsPage() {
             tabIndex={-1}
           >
             <h2 id="backup-restore-overlay-title">Restaurando copia de seguridad</h2>
-            <p id="backup-restore-overlay-message">{overlayMessage || 'No cierres esta ventana; al terminar volveras al inicio de sesion.'}</p>
+            <p id="backup-restore-overlay-message">{overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}</p>
           </div>
         </div>
       ) : null}

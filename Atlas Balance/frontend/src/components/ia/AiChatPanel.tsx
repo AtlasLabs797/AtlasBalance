@@ -3,6 +3,7 @@ import { ArrowUp, Link as LinkIcon, RotateCcw, SendHorizontal } from 'lucide-rea
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
+import { IconAiFace } from '@/components/Icons';
 import { AiMessageContent } from '@/components/ia/AiMessageContent';
 import { useAiChatStore, type ChatMessage } from '@/stores/aiChatStore';
 import {
@@ -26,29 +27,29 @@ const SUGGESTED_PROMPTS: { categoria: string; ejemplos: string[] }[] = [
   {
     categoria: 'Movimientos',
     ejemplos: [
-      'Cual fue el ultimo gasto?',
-      'Cual es el saldo actual de mis cuentas?'
+      '¿Cuál fue el último gasto?',
+      '¿Cuál es el saldo actual de mis cuentas?'
     ]
   },
   {
     categoria: 'Tendencias',
     ejemplos: [
-      'Cuanto hemos gastado este trimestre?',
-      'Tendencia de gastos del ultimo ano'
+      '¿Cuánto hemos gastado este trimestre?',
+      'Tendencia de gastos del último año'
     ]
   },
   {
-    categoria: 'Revision',
+    categoria: 'Revisión',
     ejemplos: [
-      'Cuales son las comisiones pendientes?',
-      'Que movimientos tienen importe atipico?'
+      '¿Cuáles son las comisiones pendientes?',
+      '¿Qué movimientos tienen importe atípico?'
     ]
   },
   {
     categoria: 'Pendientes',
     ejemplos: [
-      'Que cobros o pagos tengo esperados?',
-      'Hay conciliaciones abiertas?'
+      '¿Qué cobros o pagos tengo esperados?',
+      '¿Hay conciliaciones abiertas?'
     ]
   }
 ];
@@ -84,9 +85,9 @@ function humanizeThinkingMode(value: string | null | undefined) {
     case 'off':
       return 'Pensamiento desactivado';
     case 'auto':
-      return 'Esfuerzo automatico';
+      return 'Esfuerzo automático';
     default:
-      return 'Esfuerzo automatico';
+      return 'Esfuerzo automático';
   }
 }
 
@@ -205,6 +206,12 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     >
       <header className="ai-chat-header">
         <div className="ai-chat-heading">
+          <span
+            className={`ai-chat-face${loading ? ' ai-chat-face--thinking' : ''}`}
+            aria-hidden="true"
+          >
+            <IconAiFace />
+          </span>
           <h2>Análisis IA</h2>
           <span className="ai-chat-provider" aria-label={`Proveedor activo: ${providerLabel}`}>
             {providerLabel}

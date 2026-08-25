@@ -100,7 +100,7 @@ export function TokenPermissionsEditor({ permisos, onChange, catalogos }: TokenP
         );
       })}
       <div className="import-actions">
-        <button type="button" onClick={addPermiso}>Anadir permiso</button>
+        <button type="button" onClick={addPermiso}>Añadir permiso</button>
       </div>
     </div>
   );

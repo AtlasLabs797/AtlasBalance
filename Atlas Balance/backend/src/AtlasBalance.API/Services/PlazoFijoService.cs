@@ -127,12 +127,12 @@ public sealed class PlazoFijoService : IPlazoFijoService
     {
         if (request.NuevaFechaVencimiento < request.NuevaFechaInicio)
         {
-            throw new InvalidOperationException("La fecha de vencimiento no puede ser anterior a la fecha de inicio");
+            throw new BusinessRuleException("La fecha de vencimiento no puede ser anterior a la fecha de inicio");
         }
 
         if (request.InteresPrevisto.HasValue && request.InteresPrevisto.Value < 0)
         {
-            throw new InvalidOperationException("El interes previsto no puede ser negativo");
+            throw new BusinessRuleException("El interes previsto no puede ser negativo");
         }
 
         var plazo = await _dbContext.PlazosFijos
@@ -146,7 +146,7 @@ public sealed class PlazoFijoService : IPlazoFijoService
 
         if (plazo.Estado == EstadoPlazoFijo.CANCELADO)
         {
-            throw new InvalidOperationException("No se puede renovar un plazo fijo cancelado");
+            throw new BusinessRuleException("No se puede renovar un plazo fijo cancelado");
         }
 
         var before = new

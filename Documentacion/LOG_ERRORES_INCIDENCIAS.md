@@ -1,5 +1,99 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-25 - V-02.09 - Selector CSS vacio dejaba la CI en rojo ("Build frontend") desde hacia varios pushes (CERRADO / VALIDACION PENDIENTE)
+
+- **Contexto:** al preparar el push de la rama se comprobo el estado de CI
+  y la run `32891893773` (push de `2698600`) fallaba unicamente en el step
+  `Build frontend`; el resto (tests backend con/sin Postgres, audits,
+  gates de politicas, lint y test:unit) estaba en verde.
+- **Causa raiz:** en `frontend/src/styles/layout/system-coherence.css`
+  quedo una lista de selectores huerfana antes de un `@media`
+  (`.modal-backdrop,` + `.config-modal-backdrop,` sin bloque de
+  declaraciones). Es el residuo de una limpieza antigua que elimino el
+  cuerpo `backdrop-filter: none` (y otros dos selectores de esa lista),
+  pero dejo estos dos colgando. LightningCSS en minify aborta con
+  `SyntaxError: [lightningcss minify] Invalid empty selector`.
+- **Solucion:** borrar las dos lineas huerfanas. Los selectores ya cubren
+  su aspecto en otros ficheros: `.modal-backdrop` en
+  `layout/extractos.css:717` (`backdrop-filter: var(--blur-overlay)`) y
+  `.config-modal-backdrop` en `layout/admin.css:639`; la regla completa de
+  animacion de backdrops sigue en `system-coherence.css` (bloque
+  `@keyframes modal-backdrop-in`).
+- **Leccion:** al eliminar una regla con lista multi-selector hay que
+  eliminar TAMBIEN los selectores; `eslint` no procesa CSS, asi que el
+  unico gate que captura esta clase de error es `npm run build` (CI y
+  local). Un selector vacio no rompe `lint` ni `test:unit`.
+- **Nota operativa:** el build local solo pudo validarse compilando a un
+  `--outDir` alternativo porque `frontend/dist` sigue con propiedad de
+  sandbox (`CodexSandboxOffline`), mismo bloqueo cronico de ACL documentado
+  en entradas anteriores; requiere limpieza con elevacion una vez.
+
+## 2026-08-25 - V-02.09 - "Ultimo gasto" ignoraba gastos de meses anteriores y el instalador podia declarar exito sin RLS verificado (CERRADO / VALIDACION PENDIENTE)
+
+- **Contexto:** al verificar los ~29 hallazgos de Codex en el PR #33 contra
+  el working tree quedaban dos parciales: (a) la pregunta "¿cual fue el
+  ultimo gasto?" no encontraba nada si el ultimo gasto real era de un mes
+  anterior; (b) en instalacion limpia, la sonda SQL de RLS del instalador se
+  saltaba (appsettings.Production.json se escribe despues del preflight) y
+  el health funcional posterior solo avisaba sin abortar, permitiendo declarar
+  buena una instalacion con el contexto RLS roto.
+- **Causa raiz (a):** los patrones locales de ultimo gasto/ingreso ya no
+  fijaban periodo, pero `IaPlanValidator` inyecta el marcador
+  `PeriodoPorDefecto` (MesActual) cuando no lo hay, y la revalidacion de
+  `PlanExecutor.EjecutarPasoAsync` resuelve ese marcador a fechas concretas.
+  `GetLatestTransactionAsync` aplicaba From/To sin exencion alguna, a
+  diferencia de `GetBalancesAsync`, que si exime `Tipo == MesActual`.
+- **Causa raiz (b):** el chequeo post-instalacion usaba un try/catch que
+  degradaba cualquier fallo a aviso, y sondeaba `$appUrl` (URL externa), que
+  en modo reverse proxy puede no existir todavia durante la instalacion.
+- **Solucion (a):** `GetLatestTransactionAsync` aplica el mismo criterio
+  `periodoEsPorDefecto` de `GetBalancesAsync`: periodo nulo o MesActual no
+  acota; periodos explicitos (Explicito, MesAnterior, etc.) si. Tradeoff
+  aceptado y documentado: el seguimiento conversacional "¿y este mes?"
+  tras un ultimo gasto devuelve el ultimo global (en la practica casi siempre
+  coincide); a cambio la pregunta principal nunca da falsos vacios.
+  Test nuevo de cadena completa planner local -> executor -> herramienta
+  con el unico extracto en el mes anterior (`PlanExecutorTests.
+  EjecutarAsync_Ultimo_Gasto_Local_De_Mes_Anterior_Se_Encuentra`).
+- **Solucion (b):** `Instalar-AtlasBalance.ps1` convierte el health
+  funcional en BLOQUEANTE: bucle de 24 intentos x 5s (~2 min, el primer
+  arranque ejecuta migraciones EF) contra `$functionalUrl` derivado de
+  `$healthUrl` (endpoint interno directo), y `throw` con diagnostico si no
+  hay HTTP 200. Sondear el interno evita falsos negativos con reverse proxy.
+- **Leccion:** cuando un validador reinyecta defaults en cada pasada, el
+  tool final no puede distinguir "explicito" de "por defecto": la exencion
+  debe basarse en el tipo de marcador (como ya hacia GetBalancesAsync), y el
+  test que pinza el bug tiene que recorrer la cadena completa, no llamar al
+  tool directamente. En instaladores, toda verificacion de seguridad
+  post-arranque debe ser bloqueante o no verifica nada.
+
+## 2026-08-25 - V-02.09 - Las alertas de log-forging de CodeQL persistian pese al saneo con LogScrubber (CERRADO / VALIDACION PENDIENTE)
+
+- **Contexto:** 10 alertas `cs/log-forging` abiertas sobre llamadas de log que
+  YA envolvian cada argumento con `LogScrubber.Scrub()` (CsrfMiddleware,
+  SecurityEventLog, CacheService, RateLimitingSetup, GoogleDriveBackupService,
+  AtlasAiService). Intentos anteriores cerraron alertas con comentarios
+  `// codeql[...]`, pero al insertar codigo nuevo entre el comentario y la
+  linea marcada, la alerta reaparecia desplazada (p. ej. #27->#33,
+  #19/#20->#36/#37) y la vieja se marcaba `fixed`.
+- **Causa raiz:** CodeQL propaga el taint a traves de metodos passthrough
+  heuristicos como `Scrub` (su salida deriva del parametro), asi que sanear
+  NO suprime la alerta. Y la supresion por comentario cubre EXACTAMENTE la
+  linea siguiente a donde termina el comentario (verificado contra
+  `AlertSuppression.qll` de github/codeql): un comentario "de zona" varias
+  lineas arriba no suprime nada.
+- **Solucion:** colocar `// codeql[cs/log-forging] OK ...` inmediatamente
+  encima de la linea exacta que marca la alerta (que suele ser la linea del
+  ARGUMENTO tainted, no la de la llamada `_logger.Log...`). Para los falsos
+  positivos por nombre (5 alertas `cleartext-storage` disparadas porque las
+  constantes `AuditActions.PasswordReset/.PasswordChanged` y
+  `Reglas.PasswordResetsRepetidos` contienen "Password" siendo etiquetas de
+  evento), dismissal via API con razon `false positive` y comentario.
+- **Leccion:** al cerrar alertas CodeQL con comentarios, anclarlos al sink
+  concreto y revisar su posicion al insertar codigo adyacente. Si una
+  mitigacion real existe pero el analyzer no puede verla, preferir supresion
+  documentada junto al codigo antes que reestructurar logs.
+
 ## 2026-08-23 - V-02.08 - Fixes de la auditoria integral de seguridad y bugs (CERRADO PARCIAL)
 
 - **Sintoma/contexto:** la auditoria integral del 2026-08-23 (ver
@@ -603,6 +697,11 @@
   proyecto de tests y no lo son. Ese falso positivo hizo creer en un
   primer momento que el proyecto de tests seguia roto de versiones
   anteriores, cuando en realidad compila y pasa 446/446.
+- **Actualizacion 2026-08-25:** la trampa solo aplica a rutas ABSOLUTAS.
+  Con redireccion RELATIVA por proyecto (`-p:BaseIntermediateOutputPath=obj-ci\`
+  `-p:OutputPath=bin-ci\`) la cadena API -> Watchdog -> Tests compila y pasa
+  873/873 en este host, siempre que se redirijan obj Y bin (el bin de
+  Watchdog tambien tiene la ACL rota).
 - **Solucion:** copiar el arbol `backend/` (con `robocopy /E /XD obj bin`,
   nunca `/MIR`) mas `Directory.Build.props` a una carpeta del scratchpad
   con permisos de escritura, y compilar y ejecutar los tests alli. Es
@@ -4922,3 +5021,35 @@
   `Maximum Pool Size=20` y `WorkerCount=2` es provisional hasta
   tener metricas; ambas son configurables sin recompilar
   (`Database:HangfireWorkerCount` y los parametros de la cadena).
+
+## 2026-08-25 - V-02.09 - `NpgsqlConnectionStringBuilder` suelta `KeyNotFoundException`, no solo `ArgumentException`, con cadenas rotas (CERRADO)
+
+- **Contexto:** al extraer la validacion TLS de la connection string a
+  `Services/DatabaseTlsPolicy.cs` (endurecimiento pre-launch que convierte el
+  warning de BD remota sin cifrar en bloqueo de arranque) se anadio el primer
+  test con una cadena deliberadamente no parseable.
+- **Sintoma:** `Connection_String_No_Parseable_Debe_Ser_Ok_Aqui` fallaba con
+  `KeyNotFoundException: The given key was not present in the dictionary`
+  dentro de `NpgsqlConnectionStringBuilder..ctor`.
+- **Causa:** el codigo heredado de `Program.cs` (ex
+  `WarnIfConnectionStringSslModeUnsafe`) capturaba solo `ArgumentException`.
+  Con keywords desconocidas, el builder generado de Npgsql lanza
+  `KeyNotFoundException`. En produccion el efecto era que una connection string
+  corrupta mataba el arranque con un stack raro en vez del fallo de conexion
+  claro que llegaria despues; en la nueva via fail-closed habria sido peor.
+- **Solucion aplicada:** capturar ambas
+  (`catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException)`)
+  y tratar la cadena como "no evaluable aqui": la politica devuelve OK y la
+  conexion real fallara con su error propio.
+- **Verificacion:** test corregido en verde; suite completa 896/896 en
+  scratchpad con Docker/Testcontainers disponibles.
+
+### Nota operativa asociada (mismo dia): builds rotos por carpetas de artefactos fuera del estandar
+
+- El arbol `backend/` arrastra carpetas generadas con nombres que el globbing
+  de C# no excluye (`obj-check/` en API y Watchdog,
+  `.local-build/cuarentena-20260825/obj.Release/` en Watchdog). Cualquier build
+  completo sobre el workspace puede petar con CS0579 (atributos duplicados)
+  porque esos `*.AssemblyInfo.cs` entran como fuente. La copia a scratchpad ya
+  documentada debe excluir tambien esas carpetas. No se han borrado del
+  workspace por la regla de cambios quirurgicos; quedan registradas aqui.

@@ -34,6 +34,13 @@ public sealed class PaisesController : ControllerBase
         [FromQuery] int pageSize = 500,
         CancellationToken cancellationToken = default)
     {
+        // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
+        // busquedas kilometricas gastando CPU en cada listado.
+        if (search is { Length: > 200 })
+        {
+            search = search[..200];
+        }
+
         var isAdmin = User.IsInRole(nameof(RolUsuario.ADMIN));
         if (!isAdmin)
         {

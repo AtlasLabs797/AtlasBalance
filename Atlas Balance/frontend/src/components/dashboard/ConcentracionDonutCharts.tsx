@@ -7,25 +7,18 @@ import type { NameType, ValueType } from 'recharts/types/component/DefaultToolti
 import type { DashboardConcentracionBanco, DashboardSaldoTitular } from '@/types';
 import { formatCompactCurrency, formatCurrency } from '@/utils/formatters';
 
+// DESIGN.md §3.1: maximo cinco series por grafico; el resto se agrupa en
+// "Otros", que va siempre en --chart-8 (via --chart-series-other).
 const DONUT_COLORS = [
   'var(--chart-series-1)',
   'var(--chart-series-2)',
   'var(--chart-series-3)',
   'var(--chart-series-4)',
   'var(--chart-series-5)',
-  'var(--chart-series-6)',
-  'var(--chart-series-7)',
-  'var(--chart-series-8)',
-  'var(--chart-series-9)',
-  'var(--chart-series-10)',
-  'var(--chart-series-11)',
-  'var(--chart-series-12)',
-  'var(--chart-series-13)',
-  'var(--chart-series-14)',
-  'var(--chart-series-15)',
 ];
 const OTROS_COLOR = 'var(--chart-series-other)';
 const SMALL_SLICE_THRESHOLD = 1.5;
+const MAX_SLICES = 5;
 
 const DONUT_INNER_RADIUS = '55%';
 const DONUT_OUTER_RADIUS = '80%';
@@ -45,9 +38,14 @@ interface DonutEntry {
 }
 
 function groupSmallSlices(entries: DonutEntry[]): DonutEntry[] {
-  const large = entries.filter((e) => e.porcentaje >= SMALL_SLICE_THRESHOLD);
-  const small = entries.filter((e) => e.porcentaje < SMALL_SLICE_THRESHOLD);
-  if (small.length === 0) return entries;
+  const ordenadas = [...entries].sort((a, b) => b.value - a.value);
+  const candidatas = ordenadas.filter((e) => e.porcentaje >= SMALL_SLICE_THRESHOLD);
+  const large = candidatas.slice(0, MAX_SLICES);
+  const small = [
+    ...candidatas.slice(MAX_SLICES),
+    ...ordenadas.filter((e) => e.porcentaje < SMALL_SLICE_THRESHOLD),
+  ];
+  if (small.length === 0) return large;
   const otrosValue = small.reduce((s, e) => s + e.value, 0);
   const otrosPct = small.reduce((s, e) => s + e.porcentaje, 0);
   return [

@@ -63,7 +63,7 @@ export default function ConciliacionPage() {
       setConciliaciones(conciliacionesResponse.data);
     } catch (err: unknown) {
       if (requestId !== loadDataRequestIdRef.current) return;
-      setError(extractErrorMessage(err, 'No se pudo actualizar la conciliacion.'));
+      setError(extractErrorMessage(err, 'No se pudo actualizar la conciliación.'));
       // Sin esto, si falla la carga de la cuenta nueva, movimientos y
       // conciliaciones de la cuenta anterior quedan visibles con botones de
       // accion usables bajo el cuentaId ya actualizado.
@@ -89,7 +89,7 @@ export default function ConciliacionPage() {
         setCuentaId(initialCuenta);
         await loadData(initialCuenta);
       } catch (err: unknown) {
-        if (mounted) setError(extractErrorMessage(err, 'No se pudo cargar conciliacion.'));
+        if (mounted) setError(extractErrorMessage(err, 'No se pudo cargar conciliación.'));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -173,7 +173,7 @@ export default function ConciliacionPage() {
       await loadData(cuentaId);
       await invalidate('conciliacion');
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'No se pudo actualizar la conciliacion.'));
+      setError(extractErrorMessage(err, 'No se pudo actualizar la conciliación.'));
       // V-02.08: tras un 409 otro usuario gano el match; resincroniza para no
       // seguir mostrando la fila como pendiente (patron de ExtractosPage).
       if (err instanceof AxiosError && err.response?.status === 409) {
@@ -185,13 +185,13 @@ export default function ConciliacionPage() {
   };
 
   if (loading) {
-    return <section className="conciliacion-page"><p>Cargando conciliacion...</p></section>;
+    return <section className="conciliacion-page"><p>Cargando conciliación...</p></section>;
   }
 
   if (error && cuentas.length === 0) {
     return (
       <section className="conciliacion-page">
-        <EmptyState variant="error" title="No se pudo cargar conciliacion." subtitle={error} />
+        <EmptyState variant="error" title="No se pudo cargar conciliación." subtitle={error} />
       </section>
     );
   }
@@ -200,7 +200,7 @@ export default function ConciliacionPage() {
     <section className="conciliacion-page">
       <header className="conciliacion-header">
         <div>
-          <h1>Conciliacion</h1>
+          <h1>Conciliación</h1>
           <p>Libro esperado interno contra extractos reales, con score y cierre auditado.</p>
         </div>
         <div className="conciliacion-actions">
@@ -286,7 +286,7 @@ export default function ConciliacionPage() {
                 <th>Score</th>
                 <th>Esperado</th>
                 <th>Extracto</th>
-                <th>Dias</th>
+                <th>Días</th>
                 <th>Acciones</th>
               </tr>
             </thead>

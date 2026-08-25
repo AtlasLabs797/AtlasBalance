@@ -25,7 +25,6 @@
   color: var(--color-text-inverse);
   border: 1px solid color-mix(in srgb, var(--color-accent-hover) 30%, var(--color-accent));
   font-weight: var(--font-weight-semibold);
-  box-shadow: 0 2px 0 color-mix(in srgb, var(--color-accent-hover) 35%, transparent);
 }
 
 .users-primary-button:hover {
@@ -33,9 +32,8 @@
 }
 
 .users-primary-button:focus-visible {
-  outline: 2px solid var(--color-accent-hover);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 24%, transparent);
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 
 .users-summary-grid {
@@ -46,9 +44,8 @@
 
 .users-summary-card {
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--radius-card);
   background: var(--color-bg-primary);
-  box-shadow: var(--shadow-sm);
   padding: var(--space-3);
   display: grid;
   gap: var(--space-1);
@@ -112,11 +109,17 @@
 }
 
 .users-table-card,
-.users-form-card,
+.users-form-card {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-primary);
+  padding: var(--space-4);
+}
+
 .users-modal,
 .users-confirm-modal {
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--radius-modal);
   background: var(--color-bg-primary);
   box-shadow: var(--shadow-overlay);
   padding: var(--space-4);
@@ -166,7 +169,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-bg-secondary);
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
@@ -217,7 +220,6 @@
   background: var(--color-bg-primary);
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-primary);
-  box-shadow: var(--shadow-md);
 }
 
 .users-modal {
@@ -360,9 +362,9 @@
 
 .users-check-row label:has(input:checked),
 .users-check-grid label:has(input:checked) {
-  border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--border-soft));
-  background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface));
-  color: var(--text-primary);
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .users-check-grid label.users-check-danger:has(input:checked) {

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
 import { queryKeys } from '@/queries/queryKeys';
@@ -18,34 +19,37 @@ export function useUpdateCheckQuery(force = false) {
     refetchOnMount: force ? 'always' : false,
   });
 
-  const data = query.data;
-  if (data) {
-    useUpdateStore.setState({
-      checking: query.isFetching,
-      available: Boolean(query.data.actualizacion_disponible),
-      installable: Boolean(query.data.instalable),
-      blockers: query.data.bloqueos ?? [],
-      preflight: {
-        assetZipDetected: Boolean(query.data.asset_zip_detectado),
-        signatureDetected: Boolean(query.data.firma_detectada),
-        digestPresent: Boolean(query.data.digest_presente),
-        publicKeyConfigured: Boolean(query.data.clave_publica_configurada),
-        watchdogAvailable: Boolean(query.data.watchdog_disponible),
-        assetZipName: query.data.asset_zip_nombre ?? null,
-      },
-      currentVersion: query.data.version_actual ?? null,
-      availableVersion: query.data.version_disponible ?? null,
-      message: query.data.mensaje ?? null,
-    });
-  } else if (query.error) {
-    useUpdateStore.setState({
-      checking: false,
-      available: false,
-      installable: false,
-      blockers: [],
-      message: 'No se pudo verificar actualización.',
-    });
-  }
+  // En efecto, no en el render: ver nota en useIaConfigQuery.
+  const { data, isFetching, error } = query;
+  useEffect(() => {
+    if (data) {
+      useUpdateStore.setState({
+        checking: isFetching,
+        available: Boolean(data.actualizacion_disponible),
+        installable: Boolean(data.instalable),
+        blockers: data.bloqueos ?? [],
+        preflight: {
+          assetZipDetected: Boolean(data.asset_zip_detectado),
+          signatureDetected: Boolean(data.firma_detectada),
+          digestPresent: Boolean(data.digest_presente),
+          publicKeyConfigured: Boolean(data.clave_publica_configurada),
+          watchdogAvailable: Boolean(data.watchdog_disponible),
+          assetZipName: data.asset_zip_nombre ?? null,
+        },
+        currentVersion: data.version_actual ?? null,
+        availableVersion: data.version_disponible ?? null,
+        message: data.mensaje ?? null,
+      });
+    } else if (error) {
+      useUpdateStore.setState({
+        checking: false,
+        available: false,
+        installable: false,
+        blockers: [],
+        message: 'No se pudo verificar actualización.',
+      });
+    }
+  }, [data, isFetching, error]);
 
   return query;
 }

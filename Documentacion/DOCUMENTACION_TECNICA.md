@@ -6163,3 +6163,237 @@ auditada e imposibilitada de duplicarse.
 - Build de produccion vite bloqueado en sandbox por EPERM copiando fuentes a
   `dist/` (caso documentado); `dotnet build` normal bloqueado por ACL de
   sandbox sobre `src/*/obj`; ambos validados via workaround documentado abajo.
+
+## 2026-08-25 - V-02.08 - Cierre del redisenio: barridos de DESIGN.md y correccion de la capa de alias
+
+**Que se modifico.** El frontend completo a nivel visual: la capa de alias de
+`variables.css`, `global.css`, `auth.css` y los 10 archivos de
+`styles/layout/`, mas seis componentes, cuatro paginas y `utils/formatters.ts`.
+
+**Por que.** El ciclo anterior habia importado los tokens del sistema de diseno
+nuevo (`design-system/tokens/*.css`) y escrito una capa de alias que remapea
+los nombres legacy a los valores nuevos, pero no habia ejecutado los barridos
+que la propia spec (`Documentacion/Diseno/DESIGN.md`, seccion 4.3) marca como
+obligatorios. El resultado era un arbol que heredaba los colores y la
+tipografia nuevos mientras conservaba las decisiones estructurales del sistema
+anterior: sombras en tarjetas, hover que levanta, cuatro anillos de foco
+distintos, radios fuera de la gramatica y tamanos en rem fuera de la escala.
+
+**Como.**
+
+1. *Capa de alias.* Se corrigieron 21 mapeos que no coincidian con la tabla de
+   la seccion 4.1 de la spec. Los dos mas relevantes por su alcance:
+   `--border-soft`/`--border-medium` estaban desplazados un escalon (el borde
+   "de tarjeta" se dibujaba con el token de "separador interior") y
+   `--font-size-lg/xl/2xl` mapeaban un peldano por debajo de la escala nueva.
+   Se adoptan ademas las duraciones de movimiento nuevas, dejando solo
+   `--duration-base` como alias porque el sistema nuevo no define ese nombre.
+
+2. *Regresiones de la subida del cuerpo a 17px.* La regla base `td` de
+   `global.css` y `.cell` de `extractos.css` no declaraban tamano propio, asi
+   que toda celda de tabla de la aplicacion habia pasado de 14px a 17px. Se
+   fija `--text-14` en ambas. En extractos se corrigieron ademas las alturas de
+   fila a las de la spec (56 normal / 44 compacta) y se sincronizaron los
+   tamanos estimados del virtualizador `@tanstack/react-virtual` en
+   `ExtractoTable.tsx`; sin esa sincronizacion la lista virtual calcula
+   posiciones con la altura antigua y deja huecos al hacer scroll.
+
+3. *Regresion de polaridad de color.* `--color-bg-sidebar` era el rail oscuro
+   del sistema anterior. Tras la Fase 1 apunta a `--bg-surface`, que es blanco
+   en tema claro. Dos velos de modal (`.config-modal-backdrop` y
+   `.bottom-nav-sheet-backdrop`) estaban construidos como `color-mix` sobre ese
+   token, de modo que se habian vuelto velos blancos. Ambos pasan al velo
+   canonico `--scrim` + `--blur-overlay`. Es el patron a vigilar cuando un
+   remapeo de tokens invierte la luminosidad de un valor: los `color-mix` que
+   asumian un fondo oscuro dejan de funcionar en silencio.
+
+4. *Barridos.* Sombras fuera de tarjetas, botones, campos, KPIs, filas, tabs y
+   stepper (solo menu, toast, modal, drawer y popover conservan elevacion);
+   sin movimiento en hover; `scale(var(--press-scale))` al pulsar; un unico
+   anillo de foco `var(--ring-focus)`; radios reducidos a la gramatica
+   0/5/8/11/18/999; 22 tamanos en rem pasados a token; animaciones de entrada
+   en cascada eliminadas.
+
+5. *Canal de IA.* Las superficies del asistente pasan del acento cobalto al
+   canal violeta `--ai-*`, que la spec define como invariante entre apps y
+   temas. Se anade `IconAiFace` con estados `idle`/`thinking` enganchados al
+   `loading` existente en el store y sustituye al icono `Bot` de Lucide.
+
+6. *Formateo de cifras.* `Intl.NumberFormat('es-ES')` emite el guion ASCII
+   (U+002D) como signo negativo; la spec exige el menos tipografico U+2212. Se
+   introduce `withRealMinusSign()` en `utils/formatters.ts`, aplicada a las
+   tres funciones de salida. El cambio es seguro porque solo afecta a la
+   presentacion: `parseEuropeanNumber` recibe siempre texto tecleado por el
+   usuario en un `input`, nunca la cadena ya formateada.
+
+**Limitacion conocida.** Los archivos `components/*.css` del sistema de diseno
+(las clases `.atl-*`) no existen en este repositorio; solo se mencionan en la
+seccion 9 de DESIGN.md. Por eso el trabajo es un reestilado del CSS existente
+conservando los nombres de clase actuales, no la adopcion de la libreria de
+componentes de referencia. Si esos archivos llegan al repo, el camino de
+migracion de la seccion 5 sigue abierto.
+
+## 2026-08-25 - V-02.08 - Cierre de los pendientes de diseno: comparaciones de KPI, severidad de alertas y limpieza
+
+**Que se modifico.** Tres pantallas (`DashboardPage`, `DashboardTitularPage`,
+`AlertasPage`), el componente `AlertBanner`, dos iconos nuevos en `Icons.tsx` y
+cuatro hojas de estilo.
+
+**Por que.** La pasada anterior del redisenio dejo abiertos varios puntos de
+`Documentacion/Diseno/DESIGN.md` por parecer decisiones de producto. Al
+revisarlos uno a uno resulto que el dato necesario ya estaba disponible en el
+frontend en todos los casos, asi que se podian cerrar sin tocar el backend.
+
+**Como.**
+
+1. *Comparaciones de KPI (seccion 6 de la spec: "una metrica sin comparacion no
+   se publica").* `DashboardTitularPage` ya consultaba `/dashboard/evolucion`
+   con `titularId`; el DTO `DashboardEvolucion` trae `saldo_inicio_periodo`,
+   `ingresos_anterior` y `egresos_anterior`, que es exactamente lo que
+   `DashboardPage` usa para sus helpers. Se replico el patron sin variarlo:
+   mismos `useMemo`, mismas guardas de division por cero y la misma regla de
+   **color por significado** (en egresos, subir es negativo).
+
+   Punto de cuidado: `saldo_inicio_periodo` es la apertura del periodo, no el
+   periodo anterior. Etiquetar esa variacion como "vs. anterior" seria decir
+   algo falso, asi que ese helper dice "vs. inicio del periodo" y solo
+   ingresos y egresos, que si comparan contra `*_anterior`, dicen "vs.
+   anterior".
+
+   En `DashboardPage`, el helper de "Inmovilizado" mostraba el recuento de
+   plazos fijos, que es contexto y no una comparacion, y ademas desaparecia
+   cuando la variacion bajaba del 0,1%. Ahora publica la variacion y, por
+   debajo del umbral, "Sin cambios en el periodo".
+
+2. *Severidad de alertas.* La spec pide variantes `--info`/`--danger` en
+   `AlertBanner` (seccion 5.1) y un `NotificationList` con iconos
+   `--danger/--warning` en `AlertasPage` (seccion 5.4). En ambos casos la
+   severidad se deriva de `AlertaActiva.saldo_actual`, que ya viaja en el
+   store: por debajo de cero es peligro, por debajo del minimo pero en
+   positivo es aviso. No se introdujo ninguna regla de negocio nueva ni se
+   anadio campo al DTO. El banner cambia ademas su `role` de `status` a
+   `alert` en la variante de peligro, que es lo que corresponde por
+   accesibilidad cuando el aviso escala.
+
+3. *Alcance del mapeo de `AlertasPage`.* La seccion 5.4 mapea la pagina entera
+   a `NotificationList`, pero la pantalla es un panel de configuracion de
+   reglas con una unica seccion que es realmente una bandeja ("Alertas
+   Activas"). Se convirtio solo esa. Aplicar el mapeo literal habria exigido
+   rehacer tres formularios de configuracion como si fueran notificaciones,
+   que es un cambio funcional sin sentido para el usuario.
+
+4. *Colores de grafica configurables: revisado y cerrado sin cambio.* El
+   pendiente sospechaba que `EvolucionChart` dejaba pasar colores crudos del
+   backend sin re-tintar en tema oscuro. Es cierto en el caso de un color
+   personalizado, pero los tres valores por defecto
+   (`ConfiguracionController`, `ConfiguracionDtos`, `SeedData`) ya se traducen
+   a token en `LEGACY_CHART_COLOR_TOKENS`, asi que toda instalacion que no
+   haya personalizado los colores renderiza con la paleta nueva. Un hex
+   distinto solo llega ahi si un administrador lo escogio en Configuracion.
+   Cambiar los defaults del backend no tendria efecto visual, obligaria a
+   tocar C#, DTOs y semilla, y no afectaria a instalaciones ya desplegadas
+   (que tienen el valor en base de datos). Queda como decision de producto:
+   retirar el selector de colores si se quiere una paleta inamovible.
+
+5. *Limpieza.* Se retiraron dos reglas de CSS muerto detectadas durante la
+   auditoria: las tres variantes de `.app-select-trigger[aria-expanded="true"]`
+   en `global.css` (un `<select>` nativo no refleja ese atributo en el DOM) y
+   el `accent-color` de `.auth-checkbox` (el checkbox base usa
+   `appearance: none` con su propio check via `::before`). El resto del codigo
+   muerto detectado en `global.css` (`.app-select-option*`) es anterior a este
+   ciclo y se deja registrado sin tocar, conforme a la regla de cambios
+   quirurgicos de AGENTS.md 2.3.
+
+---
+
+## 2026-08-25 - V-02.09 - Endurecimiento pre-produccion: redireccion HTTPS proxy-aware, TLS de BD fail-closed, excepciones de negocio tipadas
+
+Cierre de los unicos hallazgos accionables de la revision de seguridad
+pre-launch (13 puntos; el veredicto punto a punto vive en la entrada del
+2026-08-25 en `DOCUMENTACION_CAMBIOS.md`). Los 12 restantes pasaron sin
+cambios.
+
+### 1. Redireccion HTTP->HTTPS consciente de proxy (`HttpsRedirectionMiddleware`)
+
+**Que.** Nuevo middleware `Middleware/HttpsRedirectionMiddleware.cs`,
+registrado en `Program.cs` detras de `UseForwardedHeaders` y de
+`RequestMetricsMiddleware`. Emite **308** (conserva metodo, path, query y
+PathBase) cuando la peticion llega por HTTP en produccion, cubriendo el hueco
+que dejaba `UseHttpsRedirection()` (no-op en modo reverse-proxy sin endpoint
+HTTPS ni `ASPNETCORE_HTTPS_PORT`; ver la seccion V-02.07 de transporte mas
+arriba).
+
+**Como decide.** Redirige si scheme=http Y (`X-Forwarded-Proto` presente — el
+proxy conocido declaro que el cliente externo vino por HTTP — O la conexion no
+es loopback — exposicion directa por HTTP mal configurada). Loopback sin
+cabecera (proxy sin XFP, curl local, sondas) pasa de largo: redirigir a
+ciegas provocaria bucle 308 con proxies que no envian la cabecera.
+`/api/health*` queda exento siempre (Watchdog, instalador y sondas
+post-actualizacion lo consultan por HTTP local). En Development nunca se
+activa.
+
+**Configuracion nueva** (`appsettings.Production.json.template`, bloque
+`Security`): `Security:HttpsRedirect` (default true) y `Security:HttpsPort`
+(null = 443; ponerlo si el HTTPS publico vive en otro puerto, p.ej. 8443).
+
+### 2. BD remota sin TLS: warning -> bloqueo de arranque
+
+**Que.** La logica de `WarnIfConnectionStringSslModeUnsafe` se extrae a
+`Services/DatabaseTlsPolicy.cs` (evaluacion pura, testeable) y sube de apunte
+en el log a fallo de arranque: host remoto con `SslMode=Disable/Prefer` impide
+arrancar la API. Escape explicito para topologias justificadas:
+`Security:AllowInsecureDatabaseTransport=true` degrada el bloqueo al warning
+original. Localhost/loopback sigue exento; cadena vacia o no parseable tambien
+(la conexion fallara sola). Correccion adicional sobre el codigo antiguo: el
+constructor de `NpgsqlConnectionStringBuilder` suelta `KeyNotFoundException`
+con keywords desconocidas, no solo `ArgumentException`; se capturan ambas.
+
+### 3. Excepciones de negocio tipadas: adios al `ex.Message` generico al cliente
+
+**Que.** Los controllers de TiposCambio, Divisas, Revision y Cuentas
+(RenovarPlazoFijo) devolvian `ex.Message` de `InvalidOperationException` /
+`KeyNotFoundException`. Hoy esos mensajes son validacion controlada, pero
+cualquier IOE tecnico futuro de un servicio habria acabado en la respuesta
+HTTP. Nuevo tipo `Services/BusinessRuleException.cs`: los ~17 lanzamientos de
+validacion de `TiposCambioService`, `RevisionService` y `PlazoFijoService`
+pasan a ese tipo; los controllers lo capturan y devuelven su mensaje, y ya NO
+capturan la excepcion generica (cae en el handler global, 500 generico).
+`KeyNotFoundException` de PlazoFijo se queda como esta (mensaje fijo, mapea a
+404). `ExportacionService.cs` deja de interpolar `ex.Message` interno en el
+mensaje de su IOE (queda como InnerException para el log).
+
+### 4. Endurecimiento menor
+
+- `GET /api/ia/modelos` exige ahora scope valido + `PuedeUsarIa` (era el unico
+  endpoint autenticado de `/api/ia` sin ese check; exponia el catalogo del
+  proveedor a usuarios sin permiso IA).
+- Cota de 200 caracteres para el parametro `search` de los 7 listados que lo
+  aceptan (Extractos, Cuentas, Titulares, Usuarios, FormatosImportacion,
+  Paises, Ia): viaja a LIKE/ILike y un filtro kilometrico era CPU regalada.
+
+### Tests nuevos (20)
+
+- `HttpsRedirectionMiddlewareTests.cs` (11): https pasa; http remota -> 308 con
+  path/query/metodo conservados; loopback sin XFP pasa; loopback IPv4-mapeada
+  pasa; loopback con XFP=http redirige; health exento; Development nunca
+  redirige; kill-switch `HttpsRedirect=false`; `HttpsPort=8443`/443; PathBase.
+- `DatabaseTlsPolicyTests.cs` (8): vacia/no parseable OK; localhost exento
+  (Disable/Prefer/default); remota Disable/Prefer bloquea con host+modo;
+  remota Require/VerifyFull OK.
+- `IntegrationAuthMiddlewareTests.Missing_Authorization_Header_Should_Be_Unauthorized_Without_Calling_Next`
+  (1): blindaje del contrato 401 del middleware de integracion (el controller
+  OpenClaw no lleva `[Authorize]`; toda su proteccion vive en el middleware).
+
+### Verificacion
+
+- Suite completa en scratchpad (misma tecnica documentada de copiar
+  `backend/` excluyendo `obj`/`bin`): **896/896 PASS**, Docker/Testcontainers
+  incluidos. Incluye los 20 tests nuevos y toda la regresion de servicios
+  tocados.
+- `dotnet build` de API y Tests: 0 errores.
+- Nota operativa: el arbol fuente arrastra carpetas de artefactos con nombres
+  fuera del estandar (`obj-check/` en API y Watchdog, `.local-build/cuarentena-*`
+  en Watchdog) que rompen cualquier build con globbing completo (CS0579,
+  atributos duplicados). No se han borrado del workspace (regla quirurgica);
+  excluidas en el scratchpad compila limpio. Quedan registradas aqui para
+  quien las persiga.

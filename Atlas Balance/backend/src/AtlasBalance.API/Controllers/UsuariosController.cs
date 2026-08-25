@@ -72,6 +72,13 @@ public sealed class UsuariosController : ControllerBase
         [FromQuery] bool incluirEliminados = false,
         CancellationToken cancellationToken = default)
     {
+        // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
+        // busquedas kilometricas gastando CPU en cada listado.
+        if (search is { Length: > 200 })
+        {
+            search = search[..200];
+        }
+
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);

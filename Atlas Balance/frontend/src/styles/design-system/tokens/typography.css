@@ -1,0 +1,42 @@
+/* Geist autoalojado (no Google Fonts CDN): esta app corre on-premise en red
+   local con CSP `default-src 'self'` y sin dependencias externas garantizadas. */
+@font-face{font-family:"Geist";src:url("/fonts/Geist-Light.ttf") format("truetype");font-weight:300;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist";src:url("/fonts/Geist-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist";src:url("/fonts/Geist-SemiBold.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist";src:url("/fonts/Geist-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url("/fonts/GeistMono-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url("/fonts/GeistMono-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+:root{
+--font-ui:"Geist","SF Pro Text",system-ui,-apple-system,"Helvetica Neue",sans-serif;
+--font-display:"Geist","SF Pro Display",system-ui,-apple-system,"Helvetica Neue",sans-serif;
+--font-mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+--text-10:10px;--text-11:11px;--text-12:12px;--text-13:13px;--text-14:14px;--text-17:17px;--text-18:18px;--text-21:21px;--text-24:24px;--text-28:28px;--text-34:34px;--text-40:40px;--text-48:48px;--text-56:56px;
+--text-kpi:clamp(22px,3.2vw,44px);
+/* legacy aliases kept so nothing breaks; both resolve into the new ladder */
+--text-16:var(--text-17);--text-20:var(--text-21);--text-32:var(--text-34);
+--leading-tight:1.07;--leading-snug:1.19;--leading-normal:1.47;--leading-relaxed:1.6;--leading-dense-link:2.41;
+/* Ladder is 300 / 400 / 600 / 700. Weight 500 is deliberately absent — mid-weight reads at 600. */
+--weight-light:300;--weight-regular:400;--weight-medium:600;--weight-semibold:600;--weight-bold:700;
+--tracking-display:-0.005em;--tracking-heading:-0.011em;--tracking-body:-0.022em;--tracking-label:-0.016em;--tracking-caps:0.08em;
+--type-hero:var(--weight-semibold) var(--text-56)/1.07 var(--font-display);
+--type-display:var(--weight-semibold) var(--text-56)/1.07 var(--font-display);
+--type-title-1:var(--weight-semibold) var(--text-40)/1.1 var(--font-display);
+--type-title-2:var(--weight-semibold) var(--text-28)/1.14 var(--font-display);
+--type-title-3:var(--weight-semibold) var(--text-21)/1.19 var(--font-display);
+--type-lead:var(--weight-regular) var(--text-28)/1.14 var(--font-display);
+--type-lead-airy:var(--weight-light) var(--text-24)/1.5 var(--font-ui);
+--type-subhead:var(--weight-semibold) var(--text-17)/1.24 var(--font-ui);
+--type-body:var(--weight-regular) var(--text-17)/1.47 var(--font-ui);
+--type-body-sm:var(--weight-regular) var(--text-14)/1.43 var(--font-ui);
+--type-label:var(--weight-semibold) var(--text-14)/1.29 var(--font-ui);
+--type-caption:var(--weight-regular) var(--text-14)/1.43 var(--font-ui);
+--type-overline:var(--weight-semibold) var(--text-12)/1.3 var(--font-ui);
+--type-fine:var(--weight-regular) var(--text-12)/1.3 var(--font-ui);
+--type-micro:var(--weight-regular) var(--text-10)/1.3 var(--font-ui);
+--type-nav:var(--weight-regular) var(--text-12)/1 var(--font-ui);
+--type-mono:var(--weight-regular) var(--text-14)/1.43 var(--font-mono);
+--type-mono-lg:var(--weight-regular) var(--text-21)/1.19 var(--font-mono);
+--type-kpi:var(--weight-semibold) var(--text-kpi)/1.05 var(--font-mono);
+--type-editorial:var(--weight-light) var(--text-24)/1.5 var(--font-ui);
+--type-dense-link:var(--weight-regular) var(--text-17)/2.41 var(--font-ui);
+}

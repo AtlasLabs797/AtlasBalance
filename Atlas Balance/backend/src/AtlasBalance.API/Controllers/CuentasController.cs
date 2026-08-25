@@ -60,6 +60,13 @@ public sealed class CuentasController : ControllerBase
         [FromQuery] bool incluirEliminados = false,
         CancellationToken cancellationToken = default)
     {
+        // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
+        // busquedas kilometricas gastando CPU en cada listado.
+        if (search is { Length: > 200 })
+        {
+            search = search[..200];
+        }
+
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
         if (!scope.IsAdmin)
         {
@@ -496,11 +503,14 @@ public sealed class CuentasController : ControllerBase
             var result = await _plazoFijoService.RenovarAsync(id, request, GetCurrentUserId(), HttpContext, cancellationToken);
             return Ok(result);
         }
+        // SEC V-02.09: KeyNotFoundException aqui es un mensaje fijo del servicio
+        // (404); las reglas de negocio viajan tipadas y cualquier otra excepcion
+        // cae en el handler global (500 generico) sin filtrar ex.Message.
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
         }
-        catch (InvalidOperationException ex)
+        catch (BusinessRuleException ex)
         {
             return BadRequest(new { error = ex.Message });
         }

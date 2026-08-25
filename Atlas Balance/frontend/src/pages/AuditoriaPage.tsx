@@ -281,7 +281,12 @@ export default function AuditoriaPage() {
 
           <div className="users-table-card auditoria-table-card">
             {loading ? <p className="import-muted">Cargando auditoría...</p> : null}
-            {!loading && rows.length === 0 ? <EmptyState title="Sin registros para los filtros seleccionados." /> : null}
+            {!loading && rows.length === 0 ? (
+              <EmptyState
+                title="Sin registros para los filtros seleccionados."
+                subtitle="Amplía el rango de fechas o quita algún filtro para ver más resultados."
+              />
+            ) : null}
             {!loading && rows.length > 0 ? (
               <>
                 <div className="users-table-scroll">
@@ -291,7 +296,7 @@ export default function AuditoriaPage() {
                         <th />
                         <th>Fecha</th>
                         <th>Usuario</th>
-                        <th>Accion</th>
+                        <th>Acción</th>
                         <th>Cuenta</th>
                         <th>Celda</th>
                         <th>Columna</th>

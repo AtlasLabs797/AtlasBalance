@@ -87,7 +87,9 @@ public sealed class RevisionController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        // SEC V-02.09: solo las reglas de negocio tipadas llegan al cliente con
+        // su mensaje; cualquier otro fallo cae en el handler global (500 generico).
+        catch (BusinessRuleException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -126,7 +128,9 @@ public sealed class RevisionController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        // SEC V-02.09: solo las reglas de negocio tipadas llegan al cliente con
+        // su mensaje; cualquier otro fallo cae en el handler global (500 generico).
+        catch (BusinessRuleException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
