@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
 import { queryKeys } from '@/queries/queryKeys';
@@ -22,13 +23,18 @@ export function useNotificacionesAdminQuery() {
     staleTime: QUERY_STALE_TIMES.NOTIFICACIONES_MS,
   });
 
-  if (query.data) {
+  // En efecto, no en el render: ver nota en useIaConfigQuery.
+  const { data, isFetching } = query;
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
     useNotificacionesAdminStore.setState({
-      exportacionesPendientes: query.data.exportaciones_pendientes ?? 0,
-      totalPendientes: query.data.total_pendientes ?? 0,
-      loading: query.isFetching,
+      exportacionesPendientes: data.exportaciones_pendientes ?? 0,
+      totalPendientes: data.total_pendientes ?? 0,
+      loading: isFetching,
     });
-  }
+  }, [data, isFetching]);
 
   return query;
 }

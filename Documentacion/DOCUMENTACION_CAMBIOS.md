@@ -10,6 +10,32 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-25 - Entorno local - Preparacion de credenciales de desarrollo
+
+- **Motivacion:** el operador necesitaba credenciales admin para entrar al
+  entorno de desarrollo y hacer pruebas; este checkout no tenia configuracion
+  local (sin `appsettings.Development.json`, sin `.env`, sin user-secrets).
+- **Trabajo realizado:** creacion de la configuracion local de desarrollo
+  desde los templates oficiales, con secretos generados aleatoriamente para
+  JWT/RLS/auditoria/watchdog. Sin cambios de codigo.
+- **Archivos tocados (todos gitignored, verificado con `git status`):**
+  - `Atlas Balance/.env` (passwords Postgres owner/app para docker-compose).
+  - `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json`
+    (copia del `.template` con placeholders rellenos; `SeedAdmin:Password`
+    definida; `DemoData.Enabled=true`).
+- **Comandos ejecutados y verificacion:** generacion de secretos con
+  `[guid]::NewGuid()`; confirmado que ambos archivos estan ignorados por Git
+  y que no se ha escrito ninguna contrasena en documentacion.
+- **Resultado esperado:** en el primer arranque con volumen nuevo
+  (`Start-Dev.ps1`) se siembran admin + divisas + tipos de cambio + datos
+  demo; login en `http://localhost:5173` con `admin@atlasbalance.local`.
+  El seed marca `PrimerLogin=true`, por lo que el primer acceso forzara
+  cambiar la contrasena.
+- **Pendientes:** primer arranque y healthcheck aun no ejecutados en esta
+  sesion; Docker no estaba levantado al preparar los archivos.
+
+---
+
 ## 2026-08-23 - V-02.08 - Aplicacion de fixes de la auditoria integral
 
 - **Motivacion:** tras el informe del mismo dia (entrada anterior), el
@@ -25266,5 +25292,55 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
 - Migracion literal a clases `.atl-*`: posible, no iniciada.
 - Proyecto "Atlas Balance UI redesign": falta su URL para sincronizarlo.
 - Dos carpetas vacias sin trazar en la raiz del repo.
+
+---
+
+## 2026-08-25 - V-02.09 - QA visual con sesion iniciada: el redisenio llega a las pantallas
+
+- **Motivacion:** el operador inicio sesion y reporto que los dashboards, los
+  desplegables y la tabla de extractos no estaban redisenados, y que las alertas
+  debian ir en ambar. Confirmado midiendo en navegador: el redisenio se habia
+  aplicado a colores y radios pero no al dimensionado.
+- **Trabajo realizado:** dashboard, controles/desplegables y rejilla de extractos
+  alineados con el CSS de referencia; banner de alertas a ambar; coherencia de
+  titulos de pagina y cabeceras de tabla; y **cuatro bugs funcionales** que la QA
+  visual saco a la luz (toasts de conexion falsos por peticiones canceladas,
+  alertas mal clasificadas por campos ausentes en el JSON, "undefined dias" en el
+  dashboard y setState durante el render en cuatro hooks). Detalle en
+  `Versiones/v-02.09.md`, seccion "QA visual con sesion iniciada".
+- **Archivos tocados:** `services/api.ts`, `hooks/queries/{useIaConfigQuery,
+  useNotificacionesAdminQuery,usePaisesQuery,useUpdateCheckQuery}.ts`,
+  `pages/{AlertasPage,DashboardPage,ExtractosPage}.tsx`,
+  `components/layout/AlertBanner.tsx`, `styles/global.css`, `styles/variables.css`,
+  `styles/layout/{dashboard,extractos,admin,shell,system-coherence}.css`.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio.
+- `npm run test:unit` -> 57/57.
+- Navegador (panel del preview) sobre `.claude/launch.json`, sesion iniciada.
+
+### Resultado de verificacion
+
+- 14 pantallas revisadas en claro y oscuro a 1440x900.
+- Consola sin errores de render; los toasts falsos de conexion ya no aparecen.
+- Alertas: verificado con datos reales que las tablas por tipo y por cuenta
+  reciben ahora 1 fila cada una (antes 0 y 2).
+
+### Decisiones visuales frontend
+
+- El aviso operativo es ambar por defecto y solo escala a rojo con cuentas en
+  negativo, como `.atl-alertbanner` y la plantilla de referencia.
+- La mono queda reservada a cifras y fechas; el texto de tabla va en `--font-ui`.
+- Titulos de pagina a 28/600 en todas las pantallas, via regla de coherencia en
+  la capa que se carga la ultima, en vez de parchear 30 reglas por archivo.
+
+### Bloqueos y pendientes
+
+- ~69 cadenas de interfaz sin tildes en 8 archivos: barrido de contenido aparte.
+- Migracion literal a clases `.atl-*`: posible, no iniciada.
+- Proyecto "Atlas Balance UI redesign": falta su URL.
+- La escala `--space-*` es mixta; aviso explicito anadido en `variables.css`.
 
 ---

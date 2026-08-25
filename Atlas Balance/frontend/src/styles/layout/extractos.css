@@ -34,24 +34,31 @@
 
 .extractos-mode-toggle {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  /* Sin wrap: la columna del grid es `auto` y crece con el contenido. Con wrap
+     los dos botones se apilaban dentro de la pildora. */
+  flex-wrap: nowrap;
+  width: fit-content;
+  gap: var(--space-1);
   justify-content: center;
+  background: var(--surface-sunken);
+  padding: 3px;
+  border-radius: var(--radius-full);
 }
 
 .extractos-mode-toggle button {
-  min-height: 2.35rem;
-  border: 1px solid var(--border-soft);
+  min-height: var(--control-height-sm);
+  white-space: nowrap;
+  border: 0;
   border-radius: var(--radius-control);
-  background: var(--bg-surface);
+  background: transparent;
   color: var(--text-secondary);
   padding: 0 var(--space-3);
+  font: var(--type-label);
 }
 
 .extractos-mode-toggle button.active {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  background: var(--accent-soft);
+  color: var(--text-primary);
+  background: var(--surface-card);
 }
 
 .extractos-filters {
@@ -153,8 +160,16 @@
 }
 
 .extracto-table-actions > button {
-  min-height: 2.25rem;
-  border-radius: var(--radius-control);
+  min-height: var(--control-height-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  font: var(--type-caption);
+}
+
+.extracto-table-actions > button[aria-expanded="true"] {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .extracto-density-control {
@@ -162,8 +177,10 @@
 }
 
 .extracto-density-control .app-select-trigger {
-  min-height: 2.25rem;
-  border-radius: var(--radius-control);
+  min-height: var(--control-height-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  font: var(--type-caption);
 }
 
 .column-visibility-panel {
@@ -335,7 +352,7 @@
   box-sizing: border-box;
   height: var(--sheet-row-height);
   min-height: var(--sheet-row-height);
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-3);
   border-right: 1px solid var(--sheet-grid);
   border-bottom: 1px solid var(--sheet-grid);
   display: flex;
@@ -345,9 +362,8 @@
   position: relative;
   background: inherit;
   color: var(--text-primary);
-  font-size: var(--text-14);
+  font: var(--type-body-sm);
   font-variant-numeric: tabular-nums;
-  line-height: 1.25;
 }
 
 .cell:focus,
@@ -364,10 +380,10 @@
   justify-content: center;
   height: auto;
   min-height: var(--sheet-head-height);
-  background: color-mix(in srgb, var(--bg-surface-soft) 86%, var(--bg-surface));
+  background: var(--surface-muted);
   border-right-color: var(--sheet-grid-strong);
   border-bottom: 0;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
 }
 
 .cell.head button {
@@ -382,9 +398,8 @@
   min-height: 1.8rem;
   border: 0;
   border-radius: 0;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.015em;
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
@@ -402,10 +417,9 @@
   display: flex;
   align-items: center;
   min-height: 1.8rem;
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.015em;
+  color: var(--text-tertiary);
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
@@ -498,6 +512,10 @@
 .cell--saldo {
   justify-content: flex-end;
   text-align: right;
+  font-family: var(--font-family-mono);
+}
+
+.cell--fecha {
   font-family: var(--font-family-mono);
 }
 

@@ -163,7 +163,16 @@
   --line-height-tight: var(--leading-snug);
   --line-height-normal: var(--leading-normal);
 
-  /* Escala de espaciado: SIN CAMBIOS. Ver nota al inicio del archivo. */
+  /* Escala de espaciado: SIN CAMBIOS. Ver nota al inicio del archivo.
+
+     CUIDADO AL ESCRIBIR CSS NUEVO. Esto crea una escala MIXTA: los indices que
+     se redeclaran aqui (1..6, 8, 10) valen lo del sistema viejo, y los que no
+     (0, 7, 9, 11..15) heredan el sistema nuevo de tokens/spacing.css. Asi que
+     --space-6 vale 32px, no los 12px que vale en el design system, mientras que
+     --space-7 si vale 17px y --space-9 si vale 24px.
+     Si copias una medida del CSS de referencia en
+     Documentacion/Diseno/design-system/, comprueba el valor real antes de
+     pegar el nombre del token: puede no significar lo mismo aqui. */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;

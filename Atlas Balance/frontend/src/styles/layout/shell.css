@@ -553,6 +553,15 @@
   --alert-banner-solid: var(--status-danger-solid);
 }
 
+.alert-banner--warning {
+  /* Es el valor por defecto; se declara para que la clase exista y el
+     componente pueda nombrarla explicitamente. */
+  --alert-banner-text: var(--status-warning-text);
+  --alert-banner-bg: var(--status-warning-bg);
+  --alert-banner-border: var(--status-warning-border);
+  --alert-banner-solid: var(--status-warning-solid);
+}
+
 .alert-banner--info {
   --alert-banner-text: var(--status-info-text);
   --alert-banner-bg: var(--status-info-bg);

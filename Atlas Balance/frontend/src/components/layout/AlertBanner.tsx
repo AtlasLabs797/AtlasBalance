@@ -14,7 +14,9 @@ export function AlertBanner() {
   // que ya hay, sin regla de negocio nueva: una cuenta en negativo es peor que
   // una por debajo del minimo, y escala el aviso a peligro.
   const enNegativo = alertasActivas.filter((alerta) => alerta.saldo_actual < 0).length;
-  const variante = enNegativo > 0 ? 'danger' : 'info';
+  // El aviso operativo es ambar por defecto, como .atl-alertbanner del design
+  // system; solo escala a rojo si alguna cuenta esta en negativo.
+  const variante = enNegativo > 0 ? 'danger' : 'warning';
 
   return (
     <section

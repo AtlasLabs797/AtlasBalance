@@ -153,7 +153,14 @@ api.interceptors.response.use(
     ) {
       if (status !== 401) {
         if (!status) {
-          // Sin respuesta del servidor: backend caído, red cortada
+          // Sin `status` hay dos casos muy distintos y solo uno es un fallo:
+          // el servidor no responde (red cortada, backend caido) o la peticion
+          // se cancelo a proposito. TanStack Query pasa un AbortSignal y aborta
+          // consultas al desmontar y al navegar, asi que sin este filtro cada
+          // cancelacion normal pintaba al usuario un error de conexion falso.
+          if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+            return Promise.reject(error);
+          }
           pushErrorToast('No se puede conectar con el servidor. Espera un momento e inténtalo de nuevo.');
         } else {
           pushErrorToast(extractErrorMessage(error, 'La operación no pudo completarse. Revisa los datos e inténtalo de nuevo.'));

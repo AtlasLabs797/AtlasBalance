@@ -729,9 +729,9 @@
 .auditoria-page .users-table-scroll th,
 .exportaciones-page .users-table-scroll th,
 .trash-page .users-table-scroll th {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.07em;
+  /* Mismo overline que el resto de tablas: 12/600 y el tracking del sistema. */
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 

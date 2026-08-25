@@ -78,9 +78,10 @@ input, textarea, select, button {
 
 input, textarea, select {
   background: var(--control-bg);
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-field);
-  padding: var(--space-2) var(--control-padding-x);
+  padding: var(--pad-field-y) var(--pad-field-x);
+  font: var(--type-body);
   color: var(--color-text-primary);
   min-height: var(--control-height);
   transition:
@@ -97,7 +98,7 @@ select:hover:not(:disabled) {
 
 select {
   appearance: none;
-  padding-right: 2.65rem;
+  padding-right: calc(var(--pad-field-x) + 20px);
   background-image:
     linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%),
     linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
@@ -175,8 +176,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-field > span {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font: var(--type-label);
 }
 
 .date-picker-trigger {
@@ -396,8 +396,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 input:focus, textarea:focus, select:focus {
   outline: none;
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-500);
+  box-shadow: var(--ring-focus);
 }
 
 input[type='checkbox'] {
@@ -549,8 +549,8 @@ th {
   min-height: var(--control-height);
   border-radius: var(--radius-control);
   border: 1px solid transparent;
-  padding: var(--space-2) var(--space-4);
-  font-weight: var(--font-weight-semibold);
+  padding: 0 var(--space-9);
+  font: var(--type-body);
   text-decoration: none;
   transition:
     background-color var(--transition-fast),
@@ -577,14 +577,18 @@ th {
 }
 
 .button-secondary {
-  background: var(--bg-surface-soft);
-  border-color: var(--control-border);
-  color: var(--text-primary);
+  background: transparent;
+  border-color: var(--accent-solid);
+  color: var(--accent-text);
 }
 
 .button-secondary:hover {
-  background: var(--bg-surface-muted);
+  background: color-mix(in srgb, var(--accent-500) 8%, transparent);
   text-decoration: none;
+}
+
+.button-secondary:active {
+  background: color-mix(in srgb, var(--accent-500) 12%, transparent);
 }
 
 .button-tertiary {
@@ -773,8 +777,7 @@ th {
 .ab-field > span,
 .ab-label {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font: var(--type-label);
 }
 
 .ab-input {
@@ -799,9 +802,9 @@ th {
 }
 
 .ab-button--sm {
-  min-height: var(--control-height-compact);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--font-size-sm);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-7);
+  font: var(--type-caption);
 }
 
 .close-icon-button {
@@ -839,8 +842,7 @@ th {
 
 .app-select-label {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  font: var(--type-label);
 }
 
 .app-select-trigger {
@@ -848,12 +850,14 @@ th {
   align-items: center;
   width: 100%;
   min-width: 0;
+  min-height: var(--control-height);
   justify-content: space-between;
   gap: var(--space-3);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-default);
   background: var(--bg-surface);
   color: var(--text-primary);
-  padding: 0 var(--space-3);
+  font: var(--type-body);
+  padding: var(--pad-field-y) var(--pad-field-x);
   text-align: left;
   box-shadow: none;
   touch-action: manipulation;
@@ -862,6 +866,12 @@ th {
 .app-select-trigger:hover:not(:disabled) {
   border-color: var(--border-strong);
   background: var(--bg-surface);
+}
+
+.app-select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent-500);
+  box-shadow: var(--ring-focus);
 }
 
 .app-select-trigger > span:first-child {
@@ -892,7 +902,7 @@ th {
   display: block;
   appearance: none;
   background-image: none;
-  padding-right: calc(var(--space-3) * 2 + 0.9rem);
+  padding-right: calc(var(--pad-field-x) + 20px);
 }
 
 .app-select-native-wrap > .app-select-chevron {

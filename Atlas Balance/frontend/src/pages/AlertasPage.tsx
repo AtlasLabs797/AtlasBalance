@@ -89,9 +89,15 @@ export default function AlertasPage() {
   const [deleteTarget, setDeleteTarget] = useState<AlertaItem | null>(null);
   const invalidate = useInvalidateAfterMutation();
 
-  const cuentaAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id !== null), [alertas]);
-  const tipoAlerts = useMemo(() => alertas.filter((item) => item.cuenta_id === null && item.tipo_titular !== null), [alertas]);
-  const onlyGlobalAlert = useMemo(() => alertas.find((item) => item.cuenta_id === null && item.tipo_titular === null) ?? null, [alertas]);
+  // Clasificar por `alcance` y no por si `cuenta_id`/`tipo_titular` son null: el
+  // backend serializa con DefaultIgnoreCondition=WhenWritingNull, asi que los
+  // campos nulos NO llegan como null, llegan ausentes. Con `=== null` la alerta
+  // global no se encontraba nunca (y "Crear global" habria creado una segunda),
+  // y con `!== null` todas las alertas contaban como alertas de cuenta.
+  // `alcance` es un enum que siempre viaja.
+  const cuentaAlerts = useMemo(() => alertas.filter((item) => item.alcance === 'CUENTA'), [alertas]);
+  const tipoAlerts = useMemo(() => alertas.filter((item) => item.alcance === 'TIPO_TITULAR'), [alertas]);
+  const onlyGlobalAlert = useMemo(() => alertas.find((item) => item.alcance === 'GLOBAL') ?? null, [alertas]);
   const tipoTitularOptions: Array<{ value: TipoTitular; label: string }> = [
     { value: 'EMPRESA', label: 'Empresa' },
     { value: 'AUTONOMO', label: 'Autónomo' },
@@ -108,7 +114,7 @@ export default function AlertasPage() {
   }, [cuentaAlerts, cuentas, cuentaForm.cuenta_id, editingCuentaAlertId]);
 
   const hydrateForms = (items: AlertaItem[]) => {
-    const global = items.find((item) => item.cuenta_id === null && item.tipo_titular === null) ?? null;
+    const global = items.find((item) => item.alcance === 'GLOBAL') ?? null;
     if (global) {
       setGlobalForm({
         cuenta_id: null,

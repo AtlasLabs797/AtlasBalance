@@ -571,14 +571,14 @@ export default function ExtractosPage() {
             className={modo === 'revision' ? 'active' : ''}
             onClick={() => setModo('revision')}
           >
-            Revision
+            Revisión
           </button>
           <button
             type="button"
             className={modo === 'edicion' ? 'active' : ''}
             onClick={() => setModo('edicion')}
           >
-            Edicion avanzada
+            Edición avanzada
           </button>
         </div>
         <div className="extractos-filters">

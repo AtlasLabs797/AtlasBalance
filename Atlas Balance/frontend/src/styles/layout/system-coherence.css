@@ -550,3 +550,23 @@ tbody tr:hover {
     animation-delay: 0ms !important;
   }
 }
+
+/* Coherencia de cabecera de pagina. El barrido en navegador encontro titulos a
+   28/700 en casi todas las pantallas y a 40/600 en Conciliacion, que hereda la
+   regla base de `h1`. El sistema compone los titulos con --type-title-2
+   (28/600); el 700 venia del alias legacy --font-weight-heavy. Esta capa se
+   carga la ultima, asi que normaliza sin tocar 30 reglas por archivo. */
+.app-content h1 {
+  font-size: var(--text-28);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Cabeceras de tabla: overline de 12/600 en mayusculas, como .atl-table th y
+   .atl-datagrid__table th. Antes convivian 13/600 sin mayusculas (Titulares) y
+   12/700 con mayusculas (Usuarios, Auditoria, Conciliacion). */
+.app-content th {
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
