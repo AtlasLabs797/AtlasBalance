@@ -51,7 +51,7 @@
 .extractos-mode-toggle button.active {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  background: var(--accent-soft);
 }
 
 .extractos-filters {
@@ -66,7 +66,6 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
-  box-shadow: var(--shadow-sm);
 }
 
 .extractos-date-field {
@@ -106,15 +105,14 @@
   --sheet-grid: color-mix(in srgb, var(--border-soft) 78%, var(--text-secondary) 22%);
   --sheet-grid-strong: color-mix(in srgb, var(--border-soft) 55%, var(--text-secondary) 45%);
   --sheet-head-bg: color-mix(in srgb, var(--surface-bg-sunken) 88%, var(--bg-surface) 12%);
-  --sheet-row-hover: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface) 94%);
-  --sheet-selected: color-mix(in srgb, var(--accent-primary) 72%, var(--bg-surface) 28%);
-  --sheet-row-height: 42px;
-  --sheet-head-height: 46px;
+  --sheet-row-hover: var(--bg-hover);
+  --sheet-selected: var(--accent-solid);
+  --sheet-row-height: 56px;
+  --sheet-head-height: 48px;
   --extracto-sheet-width: 100%;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-card);
   min-width: 0;
   overflow: hidden;
 }
@@ -156,7 +154,7 @@
 
 .extracto-table-actions > button {
   min-height: 2.25rem;
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-control);
 }
 
 .extracto-density-control {
@@ -165,7 +163,7 @@
 
 .extracto-density-control .app-select-trigger {
   min-height: 2.25rem;
-  border-radius: calc(var(--radius-control) - 3px);
+  border-radius: var(--radius-control);
 }
 
 .column-visibility-panel {
@@ -188,7 +186,7 @@
 
 .column-visibility-panel-actions button {
   min-height: 2.25rem;
-  border-radius: calc(var(--radius-control) - 4px);
+  border-radius: var(--radius-control);
   font-size: var(--font-size-xs);
 }
 
@@ -204,7 +202,7 @@
   font-weight: var(--font-weight-semibold);
   text-transform: none;
   cursor: pointer;
-  border-radius: calc(var(--radius-control) - 4px);
+  border-radius: var(--radius-control);
   transition: background-color var(--transition-fast);
 }
 
@@ -321,15 +319,16 @@
   background: var(--sheet-row-hover);
 }
 
-.extracto-row.flagged {
-  background: var(--color-row-flagged);
-  box-shadow:
-    inset 0 1px 0 var(--color-row-flagged-border),
-    inset 0 -1px 0 var(--color-row-flagged-border);
-}
-
-.extracto-row.flagged .cell {
-  background-color: var(--color-row-flagged);
+.extracto-row.flagged .cell--flagged::before {
+  content: "";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--status-warning-solid);
+  transform: translateY(-50%);
 }
 
 .cell {
@@ -346,6 +345,7 @@
   position: relative;
   background: inherit;
   color: var(--text-primary);
+  font-size: var(--text-14);
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
 }
@@ -394,7 +394,7 @@
 
 .cell.head button small {
   color: var(--text-link);
-  font-size: 0.65rem;
+  font-size: var(--text-10);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -477,7 +477,7 @@
   min-height: 1.55rem;
   padding: 0 var(--space-1);
   border: 1px solid var(--sheet-grid-strong);
-  border-radius: calc(var(--radius-control) - 5px);
+  border-radius: var(--radius-control);
   background: var(--surface-bg-raised);
   color: var(--text-link);
   font-size: var(--font-size-xs);
@@ -555,7 +555,6 @@
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent-primary) 8%);
   color: var(--text-link);
-  box-shadow: 0 0.45rem 1rem color-mix(in srgb, var(--text-primary) 12%, transparent);
   opacity: 0.38;
   pointer-events: auto;
   transform: translateY(-50%) scale(0.96);
@@ -630,7 +629,7 @@
   gap: var(--space-1);
   padding: 0 var(--space-2);
   border: 1px solid var(--sheet-grid-strong);
-  border-radius: calc(var(--radius-control) - 4px);
+  border-radius: var(--radius-control);
   background: var(--bg-surface-soft);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
@@ -654,7 +653,7 @@
 }
 
 .extracto-table-section--compact {
-  --sheet-row-height: 34px;
+  --sheet-row-height: 44px;
   --sheet-head-height: 40px;
 }
 
@@ -700,7 +699,9 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--color-bg-sidebar) 55%, transparent);
+  background: var(--scrim);
+  backdrop-filter: var(--blur-overlay);
+  -webkit-backdrop-filter: var(--blur-overlay);
   z-index: var(--z-modal-backdrop);
   display: grid;
   place-items: center;
@@ -711,8 +712,8 @@
   max-height: 80vh;
   overflow: auto;
   background: var(--color-bg-primary);
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow-overlay);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-xl);
   padding: var(--space-3);
 }
 
@@ -737,8 +738,8 @@
   max-height: 86vh;
   overflow: auto;
   background: var(--color-bg-primary);
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow-overlay);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-xl);
   padding: var(--space-3);
 }
 
@@ -908,12 +909,10 @@
 
 @media (hover: none), (pointer: coarse) {
   .extracto-table-section {
-    --sheet-row-height: 48px;
     --sheet-head-height: 54px;
   }
 
   .extracto-table-section--compact {
-    --sheet-row-height: 44px;
     --sheet-head-height: 48px;
   }
 

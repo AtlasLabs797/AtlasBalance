@@ -7,7 +7,6 @@
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-card);
   background: var(--color-bg-primary);
-  box-shadow: var(--shadow-sm);
   padding: var(--space-5);
   display: grid;
   gap: var(--space-3);
@@ -16,7 +15,6 @@
 .alertas-page .alertas-card {
   border-color: var(--border-soft);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .alertas-card h2,
@@ -62,14 +60,12 @@
   background: var(--accent-primary);
   color: var(--text-inverse);
   font-weight: var(--font-weight-semibold);
-  box-shadow: var(--shadow-sm);
 }
 
 .alertas-form > button:hover:not(:disabled),
 .exportaciones-toolbar > button:hover:not(:disabled),
 .auditoria-page .auditoria-header > button:hover:not(:disabled) {
   background: var(--accent-primary-hover);
-  box-shadow: var(--shadow-card-hover);
 }
 
 .alertas-destinatarios {
@@ -86,12 +82,12 @@
 
 .alertas-destinatarios .users-check-row-item {
   padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-field);
 }
 
 .alertas-destinatarios .users-check-row-item:has(input:checked) {
   background: var(--accent-primary-soft);
-  color: var(--text-primary);
+  color: var(--accent-text);
 }
 
 @media (max-width: 1023.98px) {
@@ -154,7 +150,6 @@
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-card);
   background: var(--color-bg-primary);
-  box-shadow: var(--shadow-sm);
   padding: var(--space-5);
   display: grid;
   gap: var(--space-3);
@@ -163,7 +158,6 @@
 .config-page .config-card {
   border-color: var(--border-soft);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .config-card > h2 {
@@ -215,7 +209,6 @@
   border-radius: var(--radius-card);
   padding: var(--space-4);
   background: color-mix(in srgb, var(--bg-surface-soft) 82%, var(--bg-surface) 18%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg-surface) 70%, transparent);
 }
 
 .config-section-panel h3 {
@@ -346,7 +339,7 @@
 .config-badge {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 0.25rem 0.6rem;
   font-size: var(--font-size-sm);
 }
@@ -488,7 +481,7 @@
   display: block;
   font-family: var(--font-family-mono);
   padding: var(--space-2);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-xs);
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
   word-break: break-all;
@@ -497,7 +490,9 @@
 .config-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--color-bg-sidebar) 55%, transparent);
+  background: var(--scrim);
+  backdrop-filter: var(--blur-overlay);
+  -webkit-backdrop-filter: var(--blur-overlay);
   display: grid;
   place-items: center;
   z-index: var(--z-modal-backdrop);
@@ -510,9 +505,9 @@
   overflow: auto;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--radius-modal);
   padding: var(--space-4);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-xl);
 }
 
 .config-modal-header {
@@ -547,12 +542,10 @@
   border-color: color-mix(in srgb, var(--accent-primary-hover) 36%, var(--accent-primary));
   background: var(--accent-primary);
   color: var(--text-inverse);
-  box-shadow: var(--shadow-sm);
 }
 
 .users-page .users-primary-button:hover:not(:disabled) {
   background: var(--accent-primary-hover);
-  box-shadow: var(--shadow-card-hover);
 }
 
 .users-page .users-filters,
@@ -562,7 +555,6 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bg-surface-soft) 84%, var(--bg-surface) 16%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg-surface) 72%, transparent);
 }
 
 .users-page .users-summary-card,
@@ -573,7 +565,6 @@
   border-color: var(--border-soft);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .users-page .users-summary-card strong,
@@ -754,7 +745,6 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
   padding: var(--space-4);
   display: grid;
   gap: var(--space-3);
@@ -942,7 +932,6 @@
   border-radius: var(--radius-card);
   padding: var(--space-3);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .backup-summary-card--primary {
@@ -1001,7 +990,7 @@
 .loading-overlay {
   width: min(480px, 92vw);
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-lg);
+  border-radius: var(--radius-modal);
   background: var(--color-bg-primary);
   box-shadow: var(--shadow-overlay);
   padding: var(--space-4);

@@ -30,7 +30,7 @@
 .import-tabs button.active {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  background: var(--accent-soft);
 }
 
 .import-steps {
@@ -60,15 +60,13 @@
 .import-steps li.active {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  background: var(--accent-soft);
 }
 
 .import-card {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
   padding: var(--space-5);
   display: grid;
   gap: var(--space-3);
@@ -271,6 +269,7 @@
   display: block;
   color: var(--text-primary);
   font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-heavy);
   line-height: 1;
@@ -304,8 +303,8 @@
   height: min(92vh, 940px);
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-overlay);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-xl);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   animation: modal-surface-in var(--duration-base) var(--ease-premium) both;

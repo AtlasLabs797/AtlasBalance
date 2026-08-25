@@ -56,7 +56,7 @@
 
 .dashboard-toolbar h1 {
   margin-bottom: 0.35rem;
-  font-size: 1.55rem;
+  font-size: var(--text-28);
   font-weight: var(--font-weight-heavy);
   line-height: 1.05;
 }
@@ -111,7 +111,7 @@
 .dashboard-hero-balance > p {
   margin: 0;
   color: var(--text-link);
-  font-size: 0.68rem;
+  font-size: var(--text-12);
   font-weight: var(--font-weight-heavy);
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -121,9 +121,11 @@
   min-width: 0;
   color: var(--text-primary);
   font-family: var(--font-family-mono);
-  font-size: clamp(2.25rem, 5vw, 3.65rem);
-  font-weight: var(--font-weight-heavy);
-  line-height: 0.98;
+  /* Heroe absoluto del dashboard: se queda dentro de la escala (34 -> 56)
+     en vez del clamp en rem del sistema viejo. Peso 600, como todo KPI. */
+  font-size: clamp(var(--text-34), 5vw, var(--text-56));
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
   overflow-wrap: anywhere;
 }
 
@@ -187,7 +189,6 @@
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--surface-bg-sunken) 74%, var(--bg-surface) 26%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg-surface) 74%, transparent);
 }
 
 .account-identity-strip > div {
@@ -510,7 +511,7 @@
 .concentracion-donut-legend-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--entry-color, var(--accent-primary));
   flex-shrink: 0;
 }
@@ -576,9 +577,7 @@
   box-shadow: none;
   container-type: inline-size;
   min-width: 0;
-  transition:
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast);
+  transition: border-color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -587,14 +586,8 @@
   }
 }
 
-.dashboard-kpi:focus-visible,
-.dashboard-titular-item:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
-}
-
 .dashboard-kpi h3 {
-  font-size: 0.68rem;
+  font-size: var(--text-12);
   color: var(--color-text-secondary);
   margin-bottom: 0.45rem;
   text-transform: uppercase;
@@ -605,7 +598,7 @@
 .dashboard-kpi p {
   font-family: var(--font-family-mono);
   font-size: clamp(1.05rem, 8cqw, 1.45rem);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.15;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -614,7 +607,6 @@
 .dashboard-kpi--featured {
   border-color: color-mix(in srgb, var(--accent-primary) 36%, var(--border-soft));
   background: color-mix(in srgb, var(--accent-primary) 7%, var(--bg-surface));
-  box-shadow: var(--shadow-card), inset 0 1px 0 color-mix(in srgb, var(--accent-primary) 14%, transparent);
 }
 
 .dashboard-kpi--featured h3 {
@@ -623,11 +615,11 @@
 
 .dashboard-kpi--featured p {
   font-size: clamp(1.35rem, 6cqw, var(--font-size-kpi));
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--font-weight-semibold);
 }
 
 .dashboard-kpi-grid--overview .dashboard-kpi--featured p {
-  font-size: clamp(1.35rem, 1.5vw, 1.75rem);
+  font-size: clamp(var(--text-21), 1.5vw, var(--text-28));
 }
 
 .dashboard-kpi-helper {
@@ -684,7 +676,7 @@
 .dashboard-card-header h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 1rem;
+  font-size: var(--text-17);
   font-weight: var(--font-weight-heavy);
   line-height: 1.15;
   letter-spacing: 0;
@@ -763,7 +755,7 @@
 
 .dashboard-plazo-metrics strong {
   font-family: var(--font-family-mono);
-  font-size: 1.05rem;
+  font-size: var(--text-17);
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -817,7 +809,7 @@
 }
 
 .dashboard-divisa-item-header span {
-  border-radius: 0.45rem;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-link);
   padding: 0;
@@ -903,7 +895,6 @@
   padding: var(--space-3);
   color: var(--color-text-primary);
   text-decoration: none;
-  animation: card-entrance var(--duration-base) var(--ease-premium) both;
 }
 
 .dashboard-detail-grid {
@@ -918,15 +909,9 @@
 }
 
 .dashboard-titular-item:active {
-  transform: scale(0.98) !important;
+  transform: scale(var(--press-scale-surface)) !important;
   box-shadow: none !important;
 }
-
-.dashboard-titular-list > .dashboard-titular-item:nth-child(1) { animation-delay: 30ms; }
-.dashboard-titular-list > .dashboard-titular-item:nth-child(2) { animation-delay: 65ms; }
-.dashboard-titular-list > .dashboard-titular-item:nth-child(3) { animation-delay: 100ms; }
-.dashboard-titular-list > .dashboard-titular-item:nth-child(4) { animation-delay: 135ms; }
-.dashboard-titular-list > .dashboard-titular-item:nth-child(n+5) { animation-delay: 165ms; }
 
 .dashboard-titular-item small {
   color: var(--color-text-secondary);
@@ -1254,13 +1239,10 @@
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent-primary) 8%);
   color: var(--text-link);
-  box-shadow: 0 0.45rem 1rem color-mix(in srgb, var(--text-primary) 12%, transparent);
   opacity: 0;
   pointer-events: none;
-  transform: translateY(0.1rem) scale(0.96);
   transition:
     opacity 140ms var(--ease-premium),
-    transform 140ms var(--ease-premium),
     border-color var(--transition-fast),
     background-color var(--transition-fast);
 }
@@ -1271,10 +1253,13 @@
   color: var(--text-inverse);
 }
 
+.account-row-insert-trigger:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
 .account-row-insert-trigger:focus-visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0) scale(1);
 }
 
 @media (hover: none), (pointer: coarse) {
@@ -1299,7 +1284,6 @@
     min-height: var(--control-height);
     opacity: 1;
     pointer-events: auto;
-    transform: translateY(0) scale(1);
   }
 }
 
@@ -1308,7 +1292,6 @@
   .account-excel-row:focus-within .account-row-insert-trigger {
     opacity: 1;
     pointer-events: auto;
-    transform: translateY(0) scale(1);
   }
 }
 
@@ -1339,22 +1322,25 @@
   flex-wrap: wrap;
 }
 
-.dashboard-table-wrap tbody tr.dashboard-row-flagged,
-.dashboard-table-wrap tbody tr[data-flagged="true"] {
-  background: var(--color-row-flagged);
-}
-
-.dashboard-table-wrap tbody tr.dashboard-row-flagged > td,
-.dashboard-table-wrap tbody tr[data-flagged="true"] > td {
-  background-color: var(--color-row-flagged) !important;
-  box-shadow: inset 0 1px 0 var(--color-row-flagged-border), inset 0 -1px 0 var(--color-row-flagged-border);
-}
-
+/* DESIGN.md §6: una fila marcada se senala con un punto de aviso en la primera
+   celda, nunca tinendo la fila entera. */
 .dashboard-table-wrap tbody tr.dashboard-row-flagged > td:first-child,
 .dashboard-table-wrap tbody tr[data-flagged="true"] > td:first-child {
-  box-shadow:
-    inset 0 1px 0 var(--color-row-flagged-border),
-    inset 0 -1px 0 var(--color-row-flagged-border);
+  position: relative;
+  padding-left: var(--space-4);
+}
+
+.dashboard-table-wrap tbody tr.dashboard-row-flagged > td:first-child::before,
+.dashboard-table-wrap tbody tr[data-flagged="true"] > td:first-child::before {
+  content: "";
+  position: absolute;
+  left: var(--space-1);
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: var(--radius-full);
+  background: var(--status-warning-solid);
 }
 
 .dashboard-row-delete {

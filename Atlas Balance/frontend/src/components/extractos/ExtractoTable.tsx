@@ -140,12 +140,12 @@ export default function ExtractoTable({
     });
   }, [rows, debouncedFilters, activeColumns]);
 
-  const headerOffset = density === 'compact' ? 40 : 46;
+  const headerOffset = density === 'compact' ? 40 : 48;
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
-      const baseSize = density === 'compact' ? 34 : 42;
+      const baseSize = density === 'compact' ? 44 : 56;
       return insertDraft?.afterRowId === filteredRows[index]?.id ? baseSize + 214 : baseSize;
     },
     overscan: 15,
@@ -287,7 +287,7 @@ export default function ExtractoTable({
 
     const pageSize = Math.max(
       1,
-      Math.floor((parentRef.current?.clientHeight ?? 420) / (density === 'compact' ? 34 : 42)),
+      Math.floor((parentRef.current?.clientHeight ?? 420) / (density === 'compact' ? 44 : 56)),
     );
 
     switch (event.key) {

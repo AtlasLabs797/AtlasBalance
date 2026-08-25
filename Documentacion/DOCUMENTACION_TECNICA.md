@@ -6163,3 +6163,72 @@ auditada e imposibilitada de duplicarse.
 - Build de produccion vite bloqueado en sandbox por EPERM copiando fuentes a
   `dist/` (caso documentado); `dotnet build` normal bloqueado por ACL de
   sandbox sobre `src/*/obj`; ambos validados via workaround documentado abajo.
+
+## 2026-08-25 - V-02.08 - Cierre del redisenio: barridos de DESIGN.md y correccion de la capa de alias
+
+**Que se modifico.** El frontend completo a nivel visual: la capa de alias de
+`variables.css`, `global.css`, `auth.css` y los 10 archivos de
+`styles/layout/`, mas seis componentes, cuatro paginas y `utils/formatters.ts`.
+
+**Por que.** El ciclo anterior habia importado los tokens del sistema de diseno
+nuevo (`design-system/tokens/*.css`) y escrito una capa de alias que remapea
+los nombres legacy a los valores nuevos, pero no habia ejecutado los barridos
+que la propia spec (`Documentacion/Diseno/DESIGN.md`, seccion 4.3) marca como
+obligatorios. El resultado era un arbol que heredaba los colores y la
+tipografia nuevos mientras conservaba las decisiones estructurales del sistema
+anterior: sombras en tarjetas, hover que levanta, cuatro anillos de foco
+distintos, radios fuera de la gramatica y tamanos en rem fuera de la escala.
+
+**Como.**
+
+1. *Capa de alias.* Se corrigieron 21 mapeos que no coincidian con la tabla de
+   la seccion 4.1 de la spec. Los dos mas relevantes por su alcance:
+   `--border-soft`/`--border-medium` estaban desplazados un escalon (el borde
+   "de tarjeta" se dibujaba con el token de "separador interior") y
+   `--font-size-lg/xl/2xl` mapeaban un peldano por debajo de la escala nueva.
+   Se adoptan ademas las duraciones de movimiento nuevas, dejando solo
+   `--duration-base` como alias porque el sistema nuevo no define ese nombre.
+
+2. *Regresiones de la subida del cuerpo a 17px.* La regla base `td` de
+   `global.css` y `.cell` de `extractos.css` no declaraban tamano propio, asi
+   que toda celda de tabla de la aplicacion habia pasado de 14px a 17px. Se
+   fija `--text-14` en ambas. En extractos se corrigieron ademas las alturas de
+   fila a las de la spec (56 normal / 44 compacta) y se sincronizaron los
+   tamanos estimados del virtualizador `@tanstack/react-virtual` en
+   `ExtractoTable.tsx`; sin esa sincronizacion la lista virtual calcula
+   posiciones con la altura antigua y deja huecos al hacer scroll.
+
+3. *Regresion de polaridad de color.* `--color-bg-sidebar` era el rail oscuro
+   del sistema anterior. Tras la Fase 1 apunta a `--bg-surface`, que es blanco
+   en tema claro. Dos velos de modal (`.config-modal-backdrop` y
+   `.bottom-nav-sheet-backdrop`) estaban construidos como `color-mix` sobre ese
+   token, de modo que se habian vuelto velos blancos. Ambos pasan al velo
+   canonico `--scrim` + `--blur-overlay`. Es el patron a vigilar cuando un
+   remapeo de tokens invierte la luminosidad de un valor: los `color-mix` que
+   asumian un fondo oscuro dejan de funcionar en silencio.
+
+4. *Barridos.* Sombras fuera de tarjetas, botones, campos, KPIs, filas, tabs y
+   stepper (solo menu, toast, modal, drawer y popover conservan elevacion);
+   sin movimiento en hover; `scale(var(--press-scale))` al pulsar; un unico
+   anillo de foco `var(--ring-focus)`; radios reducidos a la gramatica
+   0/5/8/11/18/999; 22 tamanos en rem pasados a token; animaciones de entrada
+   en cascada eliminadas.
+
+5. *Canal de IA.* Las superficies del asistente pasan del acento cobalto al
+   canal violeta `--ai-*`, que la spec define como invariante entre apps y
+   temas. Se anade `IconAiFace` con estados `idle`/`thinking` enganchados al
+   `loading` existente en el store y sustituye al icono `Bot` de Lucide.
+
+6. *Formateo de cifras.* `Intl.NumberFormat('es-ES')` emite el guion ASCII
+   (U+002D) como signo negativo; la spec exige el menos tipografico U+2212. Se
+   introduce `withRealMinusSign()` en `utils/formatters.ts`, aplicada a las
+   tres funciones de salida. El cambio es seguro porque solo afecta a la
+   presentacion: `parseEuropeanNumber` recibe siempre texto tecleado por el
+   usuario en un `input`, nunca la cadena ya formateada.
+
+**Limitacion conocida.** Los archivos `components/*.css` del sistema de diseno
+(las clases `.atl-*`) no existen en este repositorio; solo se mencionan en la
+seccion 9 de DESIGN.md. Por eso el trabajo es un reestilado del CSS existente
+conservando los nombres de clase actuales, no la adopcion de la libreria de
+componentes de referencia. Si esos archivos llegan al repo, el camino de
+migracion de la seccion 5 sigue abierto.

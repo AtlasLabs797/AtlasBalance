@@ -1113,7 +1113,6 @@ export default function CuentaDetailPage() {
                     <tr
                       className={`account-excel-row ${row.flagged ? 'dashboard-row-flagged' : ''}`.trim()}
                       data-flagged={row.flagged ? 'true' : 'false'}
-                      style={row.flagged ? { backgroundColor: 'var(--color-row-flagged)' } : undefined}
                     >
                       {canSelectRows ? (
                         <td className="account-selection-cell">

@@ -25008,3 +25008,102 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
   V-02.09/2.9.0: decidir si se rebaja a V-02.08 o se retoma ese numero.
 
 ---
+
+## 2026-08-25 - V-02.08 - Verificacion y cierre del redisenio de Claude Design
+
+- **Motivacion:** el operador pidio verificar que el redisenio estaba bien
+  hecho y completo en todas las pantallas. La revision arranca localizando la
+  fuente de verdad: `Documentacion/Diseno/DESIGN.md`, que estaba modificado en
+  el arbol de trabajo sin commitear y contiene la spec nueva completa (Geist,
+  neutros calidos, tarjetas de 18px sin sombra, botones pildora, sombras
+  planas, cuerpo 17px, canal de IA violeta, foco cobalto de 3px al 28%).
+- **Hallazgo de partida:** las tres commits previas del ciclo (`cad7405`,
+  `2d38223`, `5fd4f45`) cubrian el paso 1 de los 9 del orden de trabajo de la
+  spec. Los barridos de la seccion 4.3 sobre `global.css` y los 10 archivos de
+  `styles/layout/` no se habian hecho, y no habian dejado entrada en esta
+  bitacora.
+- **Metodo:** siete subagentes en paralelo (uno por area: primitivas, shell,
+  dashboard y graficas, extractos e importacion, entidades y administracion,
+  canal de IA, componentes comunes y formateadores), cada uno con la spec y su
+  ambito de archivos acotado para que no se pisaran. El orquestador reviso
+  todos los diffs, corrigio sus decisiones de tipografia en el login, resolvio
+  los cruces entre ambitos y aplico los cambios en los archivos centrales.
+- **Trabajo realizado:** 21 desviaciones de la capa de alias frente a la
+  seccion 4.1; tres regresiones de la Fase 1 (densidad de tabla a 17px, velos
+  de modal blancos, toast sin elevacion); barridos completos de sombras,
+  hover, pulsacion, foco, radios y tipografia; canal de IA pasado a violeta
+  con la cara del asistente; donut limitado a 5 series mas "Otros"; menos real
+  U+2212 en los formateadores; fila marcada convertida en punto de aviso.
+  Detalle completo en `Versiones/v-02.08.md`, seccion "Verificacion y cierre
+  del redisenio de Claude Design (2026-08-25)".
+- **Archivos tocados:**
+  - Tokens y marco: `src/styles/variables.css`, `index.html`.
+  - Hojas de estilo: `global.css`, `auth.css`, `layout/shell.css`,
+    `layout/system-coherence.css`, `layout/dashboard.css`,
+    `layout/extractos.css`, `layout/importacion.css`, `layout/entities.css`,
+    `layout/admin.css`, `layout/users.css`, `layout/revision-ai.css`.
+  - Componentes: `Icons.tsx`, `common/Combobox.tsx`,
+    `dashboard/ConcentracionDonutCharts.tsx`, `extractos/ExtractoTable.tsx`,
+    `ia/AiChatPanel.tsx`, `layout/TopBar.tsx`.
+  - Paginas: `AuditoriaPage.tsx`, `PapeleraPage.tsx`, `CuentaDetailPage.tsx`,
+    `ImportacionPage.tsx`.
+  - Utilidades: `utils/formatters.ts`.
+  - Documentacion: `Versiones/v-02.08.md`, `DOCUMENTACION_TECNICA.md` y esta
+    bitacora. `Documentacion/Diseno/DESIGN.md` entra en el commit tal como
+    estaba en el arbol de trabajo: es la spec de referencia y hasta ahora no
+    estaba versionada.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio (`--max-warnings 0`).
+- `npm run test:unit` -> 57/57.
+- `npm run build` -> "2653 modules transformed" correcto, luego EPERM de
+  sandbox en `vite:prepare-out-dir` al copiar `public/logos/` a `dist/`.
+
+### Resultado de verificacion
+
+- Tipos, lint y tests unitarios en verde.
+- CSS y TSX validados por la fase de transformacion del build (2653 modulos).
+- **No hubo validacion visual en navegador.** No se arrancaron servidores dev,
+  conforme a la seccion 8 de AGENTS.md.
+
+### Decisiones visuales frontend
+
+- Login al ritmo de cabecera de la spec: titulo 28, descripcion en cuerpo 17,
+  etiqueta 14/600, input y boton a 17px con altura de control 44 y padding de
+  campo 12x20; tarjeta sin sombra.
+- Saldo consolidado del dashboard dentro de la escala tipografica
+  (`clamp(34px, 5vw, 56px)`) en vez del `clamp` en rem heredado, y a peso 600
+  como el resto de KPIs.
+- Prosa del chat de IA de 13px a 17px; el resto del panel (metadatos, chips,
+  pies) se queda en 12-14.
+- Cabeceras de columna de tabla se mantienen a 12px: son overlines en
+  mayusculas, no celdas densas.
+- Sidebar, topbar y nav inferior con la receta de cristal; el rail oscuro
+  permanente del sistema anterior queda retirado, como pide la spec nueva.
+
+### Pendientes de diseno abiertos
+
+- KPIs sin comparacion en `DashboardTitularPage` (requiere decidir el periodo
+  de referencia: es logica de negocio).
+- `AlertasPage` no es una bandeja de notificaciones; convertirla a
+  `NotificationList` es un cambio funcional.
+- `AlertBanner` sin variantes `--info`/`--danger`.
+- `EvolucionChart` acepta colores crudos del backend que no se re-tinen en
+  tema oscuro.
+- `.empty-state-icon` a 48px frente a los 20px de la spec.
+
+### Bloqueos y pendientes
+
+- Build vite de produccion bloqueado por el EPERM de sandbox ya conocido;
+  ejecutar `npm run build` fuera del sandbox si se necesita el bundle.
+- Sin QA visual: conviene una pasada manual en claro y oscuro sobre dashboard,
+  extractos, login y panel de IA antes de dar el redisenio por cerrado.
+- Dos carpetas vacias sin trazar en la raiz del repo (`frontend/public/fonts`),
+  residuo de la sesion anterior; no se pudieron borrar por permisos.
+- Runtime (`VERSION`, `Directory.Build.props`, `package.json`) sigue en
+  V-02.09 / 2.9.0 mientras `version_actual.md` marca V-02.08. Pendiente
+  heredado, no tocado aqui.
+
+---

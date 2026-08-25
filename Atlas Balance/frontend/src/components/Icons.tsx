@@ -182,3 +182,16 @@ export function IconMenu() {
     </svg>
   );
 }
+
+// Marca del asistente (AiFace, DESIGN.md §5.5). Sustituye al icono generico
+// "bot" en las superficies del canal de IA que este equipo tiene en ambito.
+export function IconAiFace() {
+  return (
+    <svg {...PROPS}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="9" cy="11" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="11" r="1" fill="currentColor" stroke="none" />
+      <path d="M9 15.5c1 1 5 1 6 0" />
+    </svg>
+  );
+}

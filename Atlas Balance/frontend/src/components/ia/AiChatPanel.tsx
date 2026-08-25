@@ -3,6 +3,7 @@ import { ArrowUp, Link as LinkIcon, RotateCcw, SendHorizontal } from 'lucide-rea
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
+import { IconAiFace } from '@/components/Icons';
 import { AiMessageContent } from '@/components/ia/AiMessageContent';
 import { useAiChatStore, type ChatMessage } from '@/stores/aiChatStore';
 import {
@@ -205,6 +206,12 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     >
       <header className="ai-chat-header">
         <div className="ai-chat-heading">
+          <span
+            className={`ai-chat-face${loading ? ' ai-chat-face--thinking' : ''}`}
+            aria-hidden="true"
+          >
+            <IconAiFace />
+          </span>
           <h2>Análisis IA</h2>
           <span className="ai-chat-provider" aria-label={`Proveedor activo: ${providerLabel}`}>
             {providerLabel}

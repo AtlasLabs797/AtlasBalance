@@ -41,10 +41,10 @@
   --bg-hover: var(--surface-hover);
   --bg-selected: var(--accent-soft);
 
-  --border-soft: var(--border-subtle);
+  --border-soft: var(--border-default);
   --border-strong: var(--gray-300); /* colisiona de nombre con el token nuevo: ver override dark abajo */
-  --border-medium: var(--border-default);
-  --border-focus: var(--accent-text);
+  --border-medium: var(--border-strong);
+  --border-focus: var(--accent-solid);
 
   --text-primary: var(--gray-900); /* colisiona de nombre con el token nuevo: ver override dark abajo */
   --text-secondary: var(--gray-600); /* idem */
@@ -70,7 +70,7 @@
 
   --chart-ingresos: var(--chart-5);
   --chart-egresos: var(--chart-7);
-  --chart-saldo: var(--accent-solid);
+  --chart-saldo: var(--chart-1);
   --chart-grid: var(--border-subtle);
   --chart-series-1: var(--chart-1);
   --chart-series-2: var(--chart-2);
@@ -82,19 +82,13 @@
   --chart-series-8: var(--chart-8);
   --chart-series-9: var(--chart-9);
   --chart-series-10: var(--chart-10);
-  /* El design system solo define 10 colores categoricos; series 11-15 conservan
-     su valor original (fuera de la paleta nueva, sin equivalente que mapear). */
-  --chart-series-11: #316ba7;
-  --chart-series-12: #267e5a;
-  --chart-series-13: #a85734;
-  --chart-series-14: #744c8a;
-  --chart-series-15: #806218;
-  --chart-series-other: var(--text-secondary);
+  /* El design system solo define 10 colores categoricos y la spec limita cada
+     grafico a 5 series + "Otros" (--chart-8), asi que las series 11-15 del
+     sistema viejo (hex literales sin equivalente ni variante oscura) ya no
+     existen: el donut es su unico consumidor y ahora usa 5. */
+  --chart-series-other: var(--chart-8);
   --entry-color: var(--accent-solid);
   --series-color: var(--accent-solid);
-
-  --row-flagged-bg: var(--status-warning-bg);
-  --row-flagged-border: var(--status-warning-border);
 
   --color-bg-primary: var(--bg-surface);
   --color-bg-secondary: var(--bg-app);
@@ -119,7 +113,7 @@
   --color-sidebar-scope-bg: var(--bg-surface-soft);
   --color-sidebar-active-bg: var(--accent-primary-soft);
   --color-sidebar-active-text: var(--text-link);
-  --color-sidebar-active-ring: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  --color-sidebar-active-ring: var(--accent-soft-border);
   --color-sidebar-shadow: none; /* elevacion plana: el redisenio no usa sombra en el shell */
 
   --color-text-primary: var(--text-primary);
@@ -147,9 +141,6 @@
   --chart-color-egresos: var(--chart-egresos);
   --chart-color-saldo: var(--chart-saldo);
 
-  --color-row-flagged: var(--row-flagged-bg);
-  --color-row-flagged-border: var(--row-flagged-border);
-
   --font-family-heading: var(--font-display);
   --font-family: var(--font-ui);
   --font-family-mono: var(--font-mono);
@@ -158,9 +149,9 @@
   --font-size-sm: var(--text-13);
   --font-size-base: var(--text-17);
   --font-size-md: var(--text-17);
-  --font-size-lg: var(--text-18);
-  --font-size-xl: var(--text-24);
-  --font-size-2xl: var(--text-34);
+  --font-size-lg: var(--text-21);
+  --font-size-xl: var(--text-28);
+  --font-size-2xl: var(--text-40);
   --font-size-kpi: var(--text-kpi);
 
   --font-weight-normal: var(--weight-regular);
@@ -169,7 +160,7 @@
   --font-weight-bold: var(--weight-bold);
   --font-weight-heavy: 700; /* la escala nueva no pasa de 700 */
 
-  --line-height-tight: var(--leading-tight);
+  --line-height-tight: var(--leading-snug);
   --line-height-normal: var(--leading-normal);
 
   /* Escala de espaciado: SIN CAMBIOS. Ver nota al inicio del archivo. */
@@ -191,33 +182,33 @@
   --space-3xl: var(--space-10);
 
   --sidebar-collapsed-width: var(--sidebar-width-collapsed);
-  --mobile-bottom-nav-height: 78px;
+  --mobile-bottom-nav-height: 72px;
   /* --sidebar-width y --topbar-height ya no se redeclaran: heredan 264px / 64px
      directamente del import de design-system/tokens/spacing.css. */
 
-  --border-radius-sm: var(--radius-sm);
-  --border-radius-md: var(--radius-md);
-  --border-radius-lg: var(--radius-lg);
+  --border-radius-sm: var(--radius-xs);
+  --border-radius-md: var(--radius-field);
+  --border-radius-lg: var(--radius-card);
   --border-radius-full: var(--radius-full);
-  --radius-shell: var(--radius-2xl);
+  --radius-shell: var(--radius-card);
   --radius-pill: var(--radius-full);
   /* --radius-control, --radius-card y --radius-panel ya no se redeclaran:
      heredan 999px / 18px / 18px directamente del import (pildora + tarjeta
      de 18px son la firma visual del redisenio). */
 
-  --control-height-compact: 2.45rem;
-  --control-padding-x: var(--space-3);
+  --control-height-compact: 36px;
+  --control-padding-x: var(--space-7);
   --control-border: var(--border-strong);
   --control-bg: var(--bg-input);
   --control-bg-hover: var(--bg-hover);
-  --control-ring: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
+  --control-ring: var(--ring-focus);
   /* --control-height ya no se redeclara: 44px en ambos sistemas. */
 
-  --surface-border: var(--border-soft);
-  --surface-border-hover: color-mix(in srgb, var(--accent-primary) 24%, var(--border-soft));
+  --surface-border: var(--border-default);
+  --surface-border-hover: var(--border-strong);
   --surface-bg-raised: var(--surface-raised);
   --surface-bg-sunken: var(--surface-sunken);
-  --surface-highlight: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-surface));
+  --surface-highlight: var(--accent-soft);
 
   --shadow-overlay: var(--shadow-xl);
   --shadow-card-hover: none;
@@ -226,16 +217,14 @@
   /* --shadow-sm, --shadow-md, --shadow-card y --shadow-lg ya no se redeclaran:
      heredan del import (none / none / none / la sombra de capa flotante). */
 
-  /* Easing, duraciones y z-index: SIN CAMBIOS. No forman parte del lenguaje
-     visual del redisenio y remapearlos arriesga timings y apilamiento ya
-     afinados en el resto de la app. */
-  --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
-  --duration-instant: 120ms;
-  --duration-fast: 180ms;
-  --duration-base: 240ms;
-  --duration-slow: 420ms;
+  /* Movimiento: se adoptan las duraciones nuevas (100/120/180/240/420) del
+     import de tokens/motion.css. Solo se anade el alias --duration-base, que
+     el sistema nuevo no define y el CSS de paginas si consume. Los z-index se
+     conservan SIN CAMBIOS: la escala nueva (20..80) no cubre --z-dropdown,
+     --z-floating ni --z-modal-backdrop y remapearla romperia el apilamiento. */
+  --duration-base: var(--duration-slow);
   --transition-fast: var(--duration-fast) var(--ease-premium);
-  --transition-normal: var(--duration-base) var(--ease-premium);
+  --transition-normal: var(--duration-normal) var(--ease-premium);
 
   --z-dropdown: 100;
   --z-sticky: 200;

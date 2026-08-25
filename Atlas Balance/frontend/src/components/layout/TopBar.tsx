@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Bot } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router';
-import { IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
+import { IconAiFace, IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
 import { navigationItems } from '@/utils/navigation';
 import api, { clearSessionState } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -120,7 +119,7 @@ export function TopBar() {
             aria-label={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
             title={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
           >
-            <Bot size={20} aria-hidden="true" />
+            <IconAiFace />
           </button>
           {chatOpen ? (
             <div className="ai-floating-chat" role="dialog" aria-modal="false" aria-label="Chat flotante IA">
