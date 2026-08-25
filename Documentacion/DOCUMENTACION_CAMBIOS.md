@@ -10,6 +10,52 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-08-25 - V-02.09 - Cierre de las 16 alertas abiertas de GitHub Code Scanning
+
+- **Motivacion:** el code scanning de GitHub acumulaba 16 alertas abiertas:
+  10 `cs/log-forging` (CWE-117), 5 `cs/cleartext-storage-of-sensitive-information`
+  y 1 `cs/user-controlled-bypass`. Diagnostico previo: casi todos los flujos
+  ya estaban saneados con `LogScrubber.Scrub()`, pero CodeQL propaga el taint
+  a traves de metodos passthrough y no reconoce sanitizers personalizados, asi
+  que las alertas persistian. Los comentarios `// codeql[...]` anteriores
+  quedaron huerfanos al insertar codigo entre el comentario y la linea marcada.
+- **Trabajo realizado:**
+  - Supresion inline `// codeql[query-id]` colocada inmediatamente ENCIMA de
+    la linea exacta marcada en cada sink (AlertSuppression.qll cubre solo la
+    linea siguiente al comentario): CsrfMiddleware (#23/#24), SecurityEventLog
+    (#21/#22), CacheService (#36/#37), RateLimitingSetup (#25),
+    GoogleDriveBackupService (#17).
+  - Alerta #33 (`user-controlled-bypass`): comentario de justificacion movido
+    a linea inmediatamente anterior al operando marcado dentro del `if` de
+    exencion; sin cambios de comportamiento. El bloque huerfano anterior se elimino.
+  - Cambio de codigo real en `AtlasAiService.LogProviderErrorAsync`: `state.Model`
+    y `ProviderRuntimeModel(state)` ahora pasan por `LogScrubber.Scrub()` antes
+    de loguearse (el modelo puede venir del cliente via `ApplyRequestedModel`);
+    cierra la parte de CWE-117 que iba sin sanear.
+  - 5 alertas `cleartext-storage` descartadas via API como falso positivo con
+    comentario: las constantes `AuditActions.PasswordReset/.PasswordChanged` y
+    `Reglas.PasswordResetsRepetidos` son etiquetas de accion de auditoria, no
+    secretos; dispara la heuristica por el token "Password" del identificador.
+- **Archivos tocados:** `Caching/CacheService.cs`, `Logging/SecurityEventLog.cs`,
+  `Middleware/CsrfMiddleware.cs`, `RateLimiting/RateLimitingSetup.cs`,
+  `Services/AtlasAiService.cs`, `Services/GoogleDriveBackupService.cs`,
+  `Documentacion/DOCUMENTACION_CAMBIOS.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md`.
+- **Comandos ejecutados:** `gh api .../code-scanning/alerts` (inventario y
+  dismissals #28 #29 #32 #34 #35); build de AtlasBalance.API (limpio);
+  `dotnet test tests/AtlasBalance.API.Tests -p:BaseIntermediateOutputPath=obj-ci\ -p:OutputPath=bin-ci\`
+  para esquivar los `obj/bin` de Watchdog con ACL rota (ver log de errores).
+- **Verificacion:** build de la API sin errores; suite completa de tests
+  backend 873/873 correctas, 0 fallos; dismissals confirmados por API
+  (`state=dismissed`, razon `false positive`). Pendiente de confirmacion:
+  transicion de las 11 suprimidas a `fixed` en el siguiente analisis CodeQL
+  tras push.
+- **Pendientes:** confirmar cierre de las 11 alertas restantes tras el push;
+  los `obj/`+`bin/` de AtlasBalance.Watchdog siguen con ACL de sandbox
+  (`CodexSandboxUsers/CodexSandboxOffline`) y requieren limpieza con permisos
+  elevados o borrado manual desde una cuenta con Full control.
+
+---
+
 ## 2026-08-25 - Entorno local - Preparacion de credenciales de desarrollo
 
 - **Motivacion:** el operador necesitaba credenciales admin para entrar al

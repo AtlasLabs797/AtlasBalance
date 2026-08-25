@@ -114,12 +114,14 @@ public sealed class CacheService : ICacheService
                 }
                 else
                 {
+                    // codeql[cs/log-forging] OK: clave saneada con LogScrubber (sin CR/LF/TAB, max 256).
                     _logger.LogDebug("Cache miss load returned null for {Namespace} {Key}", ns.Name, LogScrubber.Scrub(key));
                 }
 
                 _logger.LogDebug(
                     "Cache load {Namespace} {Key} elapsed_ms={ElapsedMs}",
                     ns.Name,
+                    // codeql[cs/log-forging] OK: clave saneada con LogScrubber (sin CR/LF/TAB, max 256).
                     LogScrubber.Scrub(key),
                     stopwatch.ElapsedMilliseconds);
 

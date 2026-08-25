@@ -1,5 +1,32 @@
 ﻿# Log de errores e incidencias
 
+## 2026-08-25 - V-02.09 - Las alertas de log-forging de CodeQL persistian pese al saneo con LogScrubber (CERRADO / VALIDACION PENDIENTE)
+
+- **Contexto:** 10 alertas `cs/log-forging` abiertas sobre llamadas de log que
+  YA envolvian cada argumento con `LogScrubber.Scrub()` (CsrfMiddleware,
+  SecurityEventLog, CacheService, RateLimitingSetup, GoogleDriveBackupService,
+  AtlasAiService). Intentos anteriores cerraron alertas con comentarios
+  `// codeql[...]`, pero al insertar codigo nuevo entre el comentario y la
+  linea marcada, la alerta reaparecia desplazada (p. ej. #27->#33,
+  #19/#20->#36/#37) y la vieja se marcaba `fixed`.
+- **Causa raiz:** CodeQL propaga el taint a traves de metodos passthrough
+  heuristicos como `Scrub` (su salida deriva del parametro), asi que sanear
+  NO suprime la alerta. Y la supresion por comentario cubre EXACTAMENTE la
+  linea siguiente a donde termina el comentario (verificado contra
+  `AlertSuppression.qll` de github/codeql): un comentario "de zona" varias
+  lineas arriba no suprime nada.
+- **Solucion:** colocar `// codeql[cs/log-forging] OK ...` inmediatamente
+  encima de la linea exacta que marca la alerta (que suele ser la linea del
+  ARGUMENTO tainted, no la de la llamada `_logger.Log...`). Para los falsos
+  positivos por nombre (5 alertas `cleartext-storage` disparadas porque las
+  constantes `AuditActions.PasswordReset/.PasswordChanged` y
+  `Reglas.PasswordResetsRepetidos` contienen "Password" siendo etiquetas de
+  evento), dismissal via API con razon `false positive` y comentario.
+- **Leccion:** al cerrar alertas CodeQL con comentarios, anclarlos al sink
+  concreto y revisar su posicion al insertar codigo adyacente. Si una
+  mitigacion real existe pero el analyzer no puede verla, preferir supresion
+  documentada junto al codigo antes que reestructurar logs.
+
 ## 2026-08-23 - V-02.08 - Fixes de la auditoria integral de seguridad y bugs (CERRADO PARCIAL)
 
 - **Sintoma/contexto:** la auditoria integral del 2026-08-23 (ver
@@ -603,6 +630,11 @@
   proyecto de tests y no lo son. Ese falso positivo hizo creer en un
   primer momento que el proyecto de tests seguia roto de versiones
   anteriores, cuando en realidad compila y pasa 446/446.
+- **Actualizacion 2026-08-25:** la trampa solo aplica a rutas ABSOLUTAS.
+  Con redireccion RELATIVA por proyecto (`-p:BaseIntermediateOutputPath=obj-ci\`
+  `-p:OutputPath=bin-ci\`) la cadena API -> Watchdog -> Tests compila y pasa
+  873/873 en este host, siempre que se redirijan obj Y bin (el bin de
+  Watchdog tambien tiene la ACL rota).
 - **Solucion:** copiar el arbol `backend/` (con `robocopy /E /XD obj bin`,
   nunca `/MIR`) mas `Directory.Build.props` a una carpeta del scratchpad
   con permisos de escritura, y compilar y ejecutar los tests alli. Es
