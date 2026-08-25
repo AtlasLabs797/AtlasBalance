@@ -727,7 +727,7 @@ export default function ImportacionPage() {
         )}
       </header>
 
-      <div className="import-tabs" role="tablist" aria-label="Secciones de importacion">
+      <div className="import-tabs" role="tablist" aria-label="Secciones de importación">
         <button
           type="button"
           role="tab"
@@ -797,7 +797,7 @@ export default function ImportacionPage() {
                     <th>Estado</th>
                     <th>Filas</th>
                     <th>SHA-256</th>
-                    <th>Accion</th>
+                    <th>Acción</th>
                   </tr>
                 </thead>
                 <tbody>

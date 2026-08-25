@@ -189,7 +189,7 @@ export default function DesgloseModal({
                 <span role="columnheader">Persona</span>
                 <span role="columnheader">Importe</span>
                 <span role="columnheader">Notas</span>
-                <span role="columnheader">Accion</span>
+                <span role="columnheader">Acción</span>
               </div>
               {draft.length === 0 ? (
                 <p className="desglose-empty">Sin lineas de desglose.</p>
@@ -247,7 +247,7 @@ export default function DesgloseModal({
         <footer className="desglose-modal-actions">
           <button type="button" onClick={addLine} disabled={!canEdit || saving || loading}>
             <Plus size={16} aria-hidden="true" />
-            Anadir linea
+            Añadir línea
           </button>
           <button type="button" onClick={() => void requestClose()} disabled={saving}>Cancelar</button>
           <button type="button" className="primary" onClick={() => void save()} disabled={!canEdit || saving || loading}>

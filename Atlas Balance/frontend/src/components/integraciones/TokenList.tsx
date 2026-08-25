@@ -83,7 +83,7 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
             <th>Nombre</th>
             <th>Estado</th>
             <th>Expira</th>
-            <th>Ultimo uso</th>
+            <th>Último uso</th>
             <th>Scopes</th>
             <th>Peticiones</th>
             <th>Exito</th>

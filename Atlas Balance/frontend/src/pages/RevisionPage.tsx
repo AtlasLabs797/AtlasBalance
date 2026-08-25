@@ -305,7 +305,7 @@ function ComisionesTable({
               <td data-label="Devolución" className="revision-cell-fixed" title={item.devolucion_fecha ? `Bonificación del ${formatDate(item.devolucion_fecha)}` : undefined}>
                 {item.devolucion_fecha ? formatDate(item.devolucion_fecha) : '—'}
               </td>
-              <td data-label="Revision">
+              <td data-label="Revisión">
                 <RevisionComisionActions
                   item={item}
                   busy={busyId === item.extracto_id}

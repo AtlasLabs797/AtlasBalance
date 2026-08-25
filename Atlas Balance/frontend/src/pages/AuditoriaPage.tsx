@@ -296,7 +296,7 @@ export default function AuditoriaPage() {
                         <th />
                         <th>Fecha</th>
                         <th>Usuario</th>
-                        <th>Accion</th>
+                        <th>Acción</th>
                         <th>Cuenta</th>
                         <th>Celda</th>
                         <th>Columna</th>

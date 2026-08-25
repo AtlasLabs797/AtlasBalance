@@ -104,20 +104,20 @@ export interface ThinkingModeOption {
 }
 
 const THINKING_MODES_OPENAI: ThinkingModeOption[] = [
-  { value: 'auto', label: 'Esfuerzo automatico' },
+  { value: 'auto', label: 'Esfuerzo automático' },
   { value: 'low', label: 'Esfuerzo bajo' },
   { value: 'medium', label: 'Esfuerzo medio' },
   { value: 'high', label: 'Esfuerzo alto' },
 ];
 
 const THINKING_MODES_MINIMAX: ThinkingModeOption[] = [
-  { value: 'auto', label: 'Esfuerzo automatico' },
+  { value: 'auto', label: 'Esfuerzo automático' },
   { value: 'on', label: 'Pensamiento activado' },
   { value: 'off', label: 'Pensamiento desactivado' },
 ];
 
 const THINKING_MODES_OPENROUTER: ThinkingModeOption[] = [
-  { value: 'auto', label: 'Esfuerzo automatico' },
+  { value: 'auto', label: 'Esfuerzo automático' },
 ];
 
 export function getThinkingModeOptions(provider: string | null | undefined): ThinkingModeOption[] {

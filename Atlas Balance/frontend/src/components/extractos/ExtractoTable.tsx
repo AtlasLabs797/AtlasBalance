@@ -403,7 +403,7 @@ export default function ExtractoTable({
               <label
                 key={column}
                 className={isRequiredColumn ? 'column-visibility-panel-fixed' : undefined}
-                title={isRequiredColumn ? 'Columna fija para auditoria y alta inline.' : isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}
+                title={isRequiredColumn ? 'Columna fija para auditoría y alta inline.' : isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}
               >
                 <input
                   type="checkbox"
@@ -429,7 +429,7 @@ export default function ExtractoTable({
         className="extracto-table-viewport"
         style={sheetRootStyle}
         role="grid"
-        aria-label="Extractos de la pagina actual en formato hoja editable"
+        aria-label="Extractos de la página actual en formato hoja editable"
         aria-rowcount={filteredRows.length + 1}
         aria-colcount={activeColumns.length}
       >

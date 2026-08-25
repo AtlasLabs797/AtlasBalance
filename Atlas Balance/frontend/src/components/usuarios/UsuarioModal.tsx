@@ -199,7 +199,7 @@ function redundanciasToHumanMessage(redundancias: RedundanciaDto[]): string {
 
 function scopeToTexto(scope: PermisoScopeDto): string {
   const parts: string[] = [];
-  parts.push(scope.pais_id ? `pais=${scope.pais_id.slice(0, 6)}…` : 'todos los paises');
+  parts.push(scope.pais_id ? `pais=${scope.pais_id.slice(0, 6)}…` : 'todos los países');
   parts.push(scope.titular_id ? `titular=${scope.titular_id.slice(0, 6)}…` : 'todos los titulares');
   parts.push(scope.cuenta_id ? `cuenta=${scope.cuenta_id.slice(0, 6)}…` : 'todas las cuentas');
   return parts.join(' / ');

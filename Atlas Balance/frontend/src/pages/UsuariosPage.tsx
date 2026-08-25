@@ -436,9 +436,9 @@ export default function UsuariosPage() {
               Vas a quitar el Authenticator de <strong>{mfaCandidate.email}</strong>.
             </p>
             {mfaCandidate && mfaRequiredForCandidate(rows, mfaCandidate.id) ? (
-              <p>Este usuario es administrador o la politica actual le obliga a usar Authenticator. Tras la revocacion debera configurarlo de nuevo al iniciar sesion.</p>
+              <p>Este usuario es administrador o la política actual le obliga a usar Authenticator. Tras la revocación deberá configurarlo de nuevo al iniciar sesión.</p>
             ) : (
-              <p>El usuario no esta obligado a usar Authenticator por la politica actual. La revocacion solo borra el Authenticator configurado.</p>
+              <p>El usuario no esta obligado a usar Authenticator por la política actual. La revocación solo borra el Authenticator configurado.</p>
             )}
             <p>Se cerraran sus sesiones activas en cualquier caso.</p>
             <div className="users-form-actions">

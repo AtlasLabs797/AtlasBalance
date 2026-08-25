@@ -27,29 +27,29 @@ const SUGGESTED_PROMPTS: { categoria: string; ejemplos: string[] }[] = [
   {
     categoria: 'Movimientos',
     ejemplos: [
-      'Cual fue el ultimo gasto?',
-      'Cual es el saldo actual de mis cuentas?'
+      '¿Cuál fue el último gasto?',
+      '¿Cuál es el saldo actual de mis cuentas?'
     ]
   },
   {
     categoria: 'Tendencias',
     ejemplos: [
-      'Cuanto hemos gastado este trimestre?',
-      'Tendencia de gastos del ultimo ano'
+      '¿Cuánto hemos gastado este trimestre?',
+      'Tendencia de gastos del último año'
     ]
   },
   {
-    categoria: 'Revision',
+    categoria: 'Revisión',
     ejemplos: [
-      'Cuales son las comisiones pendientes?',
-      'Que movimientos tienen importe atipico?'
+      '¿Cuáles son las comisiones pendientes?',
+      '¿Qué movimientos tienen importe atípico?'
     ]
   },
   {
     categoria: 'Pendientes',
     ejemplos: [
-      'Que cobros o pagos tengo esperados?',
-      'Hay conciliaciones abiertas?'
+      '¿Qué cobros o pagos tengo esperados?',
+      '¿Hay conciliaciones abiertas?'
     ]
   }
 ];
@@ -85,9 +85,9 @@ function humanizeThinkingMode(value: string | null | undefined) {
     case 'off':
       return 'Pensamiento desactivado';
     case 'auto':
-      return 'Esfuerzo automatico';
+      return 'Esfuerzo automático';
     default:
-      return 'Esfuerzo automatico';
+      return 'Esfuerzo automático';
   }
 }
 

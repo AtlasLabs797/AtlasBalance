@@ -50,7 +50,7 @@ export const navigationItems: NavigationItem[] = [
   { to: '/cuentas',              label: 'Cuentas',       short: 'Cuentas',   icon: createElement(WalletCards, iconProps), group: 'operacion' },
   { to: '/extractos',            label: 'Extractos',     short: 'Extractos', icon: createElement(TableProperties, iconProps), group: 'operacion' },
   { to: '/importacion',          label: 'Importación',   short: 'Importar',  icon: createElement(Upload, iconProps), group: 'operacion' },
-  { to: '/conciliacion',         label: 'Conciliacion',   short: 'Conciliar', icon: createElement(Scale, iconProps), group: 'control' },
+  { to: '/conciliacion',         label: 'Conciliación',   short: 'Conciliar', icon: createElement(Scale, iconProps), group: 'control' },
   { to: '/revision',             label: 'Revisión',      short: 'Revisión',  icon: createElement(SearchCheck, iconProps), group: 'control' },
   { to: '/ia',                   label: 'IA',            short: 'IA',        icon: createElement(Bot, iconProps), group: 'control', aiOnly: true },
   { to: '/alertas',              label: 'Alertas',       short: 'Alertas',   icon: createElement(BellRing, iconProps), group: 'control' },
