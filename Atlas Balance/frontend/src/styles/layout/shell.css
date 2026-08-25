@@ -1,8 +1,12 @@
 .app-shell {
-  min-height: 100dvh;
+  /* Altura de ventana, no minimo: el scroll vive en .app-content (igual que
+     .atl-shell__scroll). Con min-height el shell crecia con el contenido y el
+     menu lateral, que es 100dvh, dejaba de llegar abajo al hacer scroll. */
+  height: 100dvh;
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   background: var(--bg-app);
+  overflow: hidden;
 }
 
 .skip-link {
@@ -333,6 +337,10 @@
 
 .app-main {
   min-width: 0;
+  /* Imprescindible con .app-shell a altura de ventana: sin min-height:0 el
+     item del grid conserva min-height:auto, crece con el contenido y el
+     overflow:hidden del shell recorta lo que queda por debajo. */
+  min-height: 0;
   display: grid;
   grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
 }
@@ -1208,5 +1216,268 @@
   .bottom-nav-link {
     padding-inline: var(--space-1);
     font-size: var(--font-size-xs);
+  }
+}
+
+/* ---------- Buscador global (.atl-search) + atajo (.atl-kbd) ---------- */
+.app-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 360px;
+  max-width: 34vw;
+  height: 42px;
+  margin: 0 auto;
+  padding: 0 var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-tertiary);
+  font: var(--type-body);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition: var(--transition-control);
+}
+
+.app-search > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Por debajo del breakpoint del shell manda la navegacion inferior y no hay
+   teclado fisico para el atajo, asi que el buscador no aporta y quitarlo evita
+   que compita por el ancho de la barra. */
+@media (max-width: 767.98px) {
+  .app-search {
+    display: none;
+  }
+}
+
+.app-search:hover {
+  background: var(--surface-card);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.app-search:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+.app-search:active {
+  transform: scale(var(--press-scale-surface));
+}
+
+.app-search-hint {
+  margin-left: auto;
+}
+
+.app-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-default);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-card);
+  color: var(--text-tertiary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-11);
+}
+
+/* ---------- Paleta de comandos (.atl-palette) ---------- */
+.app-palette-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh var(--space-4) var(--space-4);
+  background: var(--scrim);
+  backdrop-filter: var(--blur-overlay);
+  -webkit-backdrop-filter: var(--blur-overlay);
+}
+
+.app-palette {
+  width: 100%;
+  max-width: 560px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  animation: alert-banner-in var(--duration-slow) var(--ease-premium);
+}
+
+.app-palette-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-9);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.app-palette-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-subhead);
+  padding: 0;
+  min-height: 0;
+}
+
+.app-palette-input:focus {
+  box-shadow: none;
+}
+
+.app-palette-body {
+  max-height: 340px;
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.app-palette-group {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.app-palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row-height-compact);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-palette-item--active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.app-palette-item-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.app-palette-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.app-palette-item-meta {
+  margin-left: auto;
+  font-family: var(--font-family-mono);
+  font-size: var(--text-12);
+  color: var(--text-tertiary);
+}
+
+.app-palette-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+  text-align: center;
+}
+
+.app-palette-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-9);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+.app-palette-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* ---------- Usuario en el menu lateral (.atl-userchip--nav) ---------- */
+.app-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  margin-top: auto;
+  padding: var(--space-2) var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.app-sidebar-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-border);
+  color: var(--accent-text);
+  font-size: var(--text-12);
+  font-weight: var(--font-weight-semibold);
+}
+
+.app-sidebar-user-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-sidebar-user-name {
+  font: var(--type-label);
+  color: var(--text-primary);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar-user-role {
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.app-sidebar--collapsed .app-sidebar-user {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.app-sidebar--collapsed .app-sidebar-user-copy {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-palette {
+    animation: none;
   }
 }

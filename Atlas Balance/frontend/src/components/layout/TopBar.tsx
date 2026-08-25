@@ -1,21 +1,15 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { IconAiFace, IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
+import { CommandPalette } from '@/components/layout/CommandPalette';
 import { navigationItems } from '@/utils/navigation';
 import api, { clearSessionState } from '@/services/api';
-import { useAuthStore } from '@/stores/authStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
 import { useUiStore } from '@/stores/uiStore';
 
 const AiChatPanel = lazy(() =>
   import('@/components/ia/AiChatPanel').then((module) => ({ default: module.AiChatPanel }))
 );
-
-function getUserInitials(name?: string | null) {
-  const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
-  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
-  return initials || 'AB';
-}
 
 export function TopBar() {
   const navigate = useNavigate();
@@ -25,10 +19,12 @@ export function TopBar() {
   const blockingOverlayCount = useUiStore((state) => state.blockingOverlayCount);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
-  const usuario = useAuthStore((state) => state.usuario);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
   const [chatOpen, setChatOpen] = useState(false);
-  const userName = usuario?.nombre_completo ?? 'Sin sesión';
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const shortcutLabel = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+    ? '⌘K'
+    : 'Ctrl K';
 
   const pageContext = useMemo(() => {
     const exact = navigationItems.find((item) => item.to === location.pathname);
@@ -67,6 +63,18 @@ export function TopBar() {
     }
   }, [aiAvailable, blockingOverlayCount]);
 
+  // Atajo global del buscador. Cmd+K en Mac, Ctrl+K en el resto.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <>
       <header className="app-topbar">
@@ -86,14 +94,17 @@ export function TopBar() {
             <span className="app-topbar-breadcrumb">{pageContext.breadcrumb}</span>
           </div>
         </div>
+        <button
+          type="button"
+          className="app-search"
+          onClick={() => setPaletteOpen(true)}
+          aria-label="Buscar pantalla"
+          title="Buscar pantalla"
+        >
+          <span>Buscar pantalla...</span>
+          <kbd className="app-kbd app-search-hint">{shortcutLabel}</kbd>
+        </button>
         <div className="app-topbar-actions">
-          <span className="app-topbar-user" title={userName}>
-            <span className="app-topbar-avatar" aria-hidden="true">{getUserInitials(usuario?.nombre_completo)}</span>
-            <span className="app-topbar-user-copy">
-              <span>{userName}</span>
-              <small>{usuario?.rol ?? 'Invitado'}</small>
-            </span>
-          </span>
           <button
             type="button"
             className="theme-toggle"
@@ -109,6 +120,7 @@ export function TopBar() {
           </button>
         </div>
       </header>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {aiAvailable && blockingOverlayCount === 0 ? (
         <div className="ai-floating-widget">
           <button

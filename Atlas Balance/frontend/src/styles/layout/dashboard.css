@@ -470,15 +470,21 @@
 
 .concentracion-donut-center-value {
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-primary);
-  line-height: 1.1;
+  /* .atl-donut__value: mono 14/600 tabular. A 21px y peso 700 los glifos
+     median mas que el agujero del donut y pisaban el anillo. */
+  font-size: var(--text-14);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .concentracion-donut-center-label {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .concentracion-donut-legend {
@@ -824,6 +830,10 @@
 
 .dashboard-divisa-total {
   font: var(--type-mono-lg);
+  /* Nunca parte el importe: se encoge dentro de su tarjeta. Sin esto,
+     "1.203.500,00 MXN" saltaba de linea y rompia la tira de divisas. */
+  font-size: clamp(var(--text-14), 8cqi, var(--text-21));
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }

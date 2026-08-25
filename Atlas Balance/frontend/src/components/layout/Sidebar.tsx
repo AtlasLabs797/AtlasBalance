@@ -22,6 +22,12 @@ const APP_VERSION_LABEL = (
   ?? 'desarrollo'
 );
 
+function getUserInitials(name?: string | null) {
+  const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+  return initials || 'AB';
+}
+
 function formatSidebarClock(value: Date) {
   return new Intl.DateTimeFormat('es-ES', {
     hour: '2-digit',
@@ -133,6 +139,15 @@ export function Sidebar() {
           );
         })}
       </nav>
+      <div className="app-sidebar-user" title={usuario?.nombre_completo ?? 'Sin sesión'}>
+        <span className="app-sidebar-user-avatar" aria-hidden="true">
+          {getUserInitials(usuario?.nombre_completo)}
+        </span>
+        <span className="app-sidebar-user-copy" aria-hidden={sidebarCollapsed}>
+          <span className="app-sidebar-user-name">{usuario?.nombre_completo ?? 'Sin sesión'}</span>
+          <span className="app-sidebar-user-role">{usuario?.rol ?? 'Invitado'}</span>
+        </span>
+      </div>
       <div className="app-sidebar-footer" aria-hidden={sidebarCollapsed}>
         <span>{APP_VERSION_LABEL}</span>
         <time dateTime={now.toISOString()}>{formatSidebarClock(now)}</time>

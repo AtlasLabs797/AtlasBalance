@@ -219,6 +219,11 @@ button.revision-status:active:not(:disabled) {
     transform var(--duration-instant) var(--ease-premium);
 }
 
+.ai-floating-button svg {
+  width: 1.9rem;
+  height: 1.9rem;
+}
+
 .ai-floating-button:hover {
   background: var(--ai-soft);
 }
@@ -300,26 +305,56 @@ button.revision-status:active:not(:disabled) {
    enganchados al `loading` que ya maneja el store del chat. No hay estado de
    "escuchando" en este componente (no hay entrada de voz ni borrador
    rastreado), asi que ese estado no se implementa. */
+/* Marca del asistente. Es la unica superficie de la app que esta viva en
+   reposo: un halo violeta que respira despacio (--idle) y se acelera mientras
+   la IA piensa (--thinking). El violeta no cambia nunca de canal. */
 .ai-chat-face {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: var(--radius-full);
   background: var(--ai-soft);
   border: 1px solid var(--ai-border);
   color: var(--ai-solid);
 }
 
+.ai-chat-face::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--radius-full);
+  animation: ai-face-halo 3.2s var(--ease-premium) infinite;
+}
+
 .ai-chat-face svg {
-  width: 1rem;
-  height: 1rem;
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .ai-chat-face--thinking {
-  animation: ai-face-pulse 1.4s var(--ease-premium) infinite;
+  background: var(--ai-soft);
+}
+
+.ai-chat-face--thinking::after {
+  animation-duration: 1.2s;
+}
+
+.ai-chat-face--thinking svg {
+  animation: ai-face-pulse 1.2s var(--ease-premium) infinite;
+}
+
+@keyframes ai-face-halo {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ai-solid) 34%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 6px transparent;
+  }
 }
 
 @keyframes ai-face-pulse {
@@ -863,7 +898,8 @@ button.revision-status:active:not(:disabled) {
 @media (prefers-reduced-motion: reduce) {
   .ai-floating-chat,
   .ai-chat-loading-dots span,
-  .ai-chat-face--thinking {
+  .ai-chat-face::after,
+  .ai-chat-face--thinking svg {
     animation: none !important;
   }
 
