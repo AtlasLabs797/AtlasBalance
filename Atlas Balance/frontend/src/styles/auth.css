@@ -384,7 +384,12 @@
   padding: var(--space-2);
 }
 
-.auth-checkbox-row {
+/* Dos casillas en esta pantalla: "recordar email" (.auth-checkbox-label, en el
+   paso de credenciales) y "recordar dispositivo" (.auth-checkbox-row, en el
+   paso MFA). Comparten regla: sin ella la etiqueta cae a display:block y la
+   casilla se pega al texto. */
+.auth-checkbox-row,
+.auth-checkbox-label {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -394,7 +399,8 @@
   line-height: 1.45;
 }
 
-.auth-checkbox {
+.auth-checkbox,
+.auth-checkbox-label > input[type="checkbox"] {
   width: 0.96rem;
   height: 0.96rem;
   flex: 0 0 auto;

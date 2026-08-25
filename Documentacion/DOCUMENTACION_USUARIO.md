@@ -528,7 +528,7 @@ En el dashboard de una cuenta, la tabla de movimientos permite seleccionar filas
 
 La interfaz mantiene el mismo funcionamiento, pero ahora los botones, campos, pestanas, tarjetas, tablas y estados de foco usan un sistema visual comun. No cambia el flujo de trabajo: solo debe sentirse mas consistente al pasar de dashboard a cuentas, extractos, importacion, configuracion o administracion.
 
-El menu lateral queda oscuro aunque uses tema claro. Agrupa operacion, control y sistema, mantiene el selector global de pais/organizacion y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
+El menu lateral sigue el tema que tengas puesto: claro con tema claro, oscuro con tema oscuro. Agrupa operacion, control y sistema, mantiene el selector global de pais/organizacion y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
 
 La barra superior queda fija al desplazarte. Desde ahi puedes contraer el menu, cambiar tema, abrir/cerrar el chat IA si tienes permiso y cerrar sesion.
 
@@ -731,3 +731,73 @@ seguridad.
 Si el disco baja del 15% libre aparece un aviso, y por debajo del 5% se considera
 critico: a partir de ahi los backups y los informes pueden empezar a fallar.
 
+
+## Nueva imagen de Atlas Balance
+
+La aplicacion tiene un aspecto nuevo. **No cambia como se trabaja**: los mismos
+menus, las mismas pantallas, los mismos botones en los mismos sitios. Lo que
+cambia es como se ve y como se lee.
+
+### Que vas a notar
+
+- **Se lee mejor.** El texto general es mas grande. Las tablas de extractos y de
+  administracion se quedan en un tamano compacto a proposito, para que sigan
+  cabiendo muchas lineas en pantalla sin tener que hacer scroll continuamente.
+- **Todas las cifras van en la misma tipografia de numeros**, alineadas a la
+  derecha y con las columnas cuadradas, para poder compararlas de un vistazo.
+  El euro va detras del numero: `1.284.560,12 €`. Los negativos usan el signo
+  menos tipografico: `−84.120,50 €`.
+- **Los colores dicen lo que significan, no lo que marca el signo.** Un gasto
+  que sube se ve en rojo aunque el numero sea positivo.
+- **Menos sombras, mas orden.** Las tarjetas ya no "flotan": se separan por su
+  borde y por el color del fondo. Solo tienen sombra las cosas que de verdad se
+  superponen a la pantalla: menus, avisos emergentes, ventanas y paneles
+  laterales.
+- **Nada se mueve al pasar el raton por encima.** Antes algunos elementos se
+  levantaban ligeramente; ahora solo cambian de color. Al pulsar, el boton se
+  hunde un poco, que es lo que confirma que has hecho clic.
+- **Los botones son ovalados.** El azul relleno es la accion principal de cada
+  pantalla; el que solo tiene el borde azul es la accion secundaria.
+- **El asistente de IA es violeta**, en las dos modalidades de tema. Es un
+  codigo de color deliberado: todo lo que veas en violeta lo ha generado la IA,
+  no la aplicacion.
+
+### Tema claro y tema oscuro
+
+Los dos temas estan revisados por igual. El interruptor sigue donde estaba, en
+la barra superior, y tu eleccion se recuerda en ese navegador. El menu lateral,
+la barra superior y la navegacion inferior en movil tienen un acabado
+translucido que deja intuir el contenido que hay debajo.
+
+### Alertas
+
+El aviso de saldo bajo de la parte superior ahora **distingue la gravedad**: si
+solo hay cuentas por debajo de su minimo, sale en ambar; si alguna cuenta esta
+directamente en negativo, sale en rojo y lo dice en el texto.
+
+En la pantalla de Alertas, el listado de alertas activas ha dejado de ser una
+tabla y es una lista con un icono de gravedad por linea. La configuracion de las
+reglas de alerta (global, por tipo de titular y por cuenta) no ha cambiado.
+
+### Movimientos marcados
+
+Un movimiento marcado ya **no pinta la fila entera de color**. Ahora lleva un
+punto de aviso al principio de la linea. La razon es practica: tenir la fila
+tapaba el color de los importes, que es la informacion que de verdad importa en
+un extracto.
+
+### Indicadores del dashboard
+
+Cada indicador lleva ahora su comparacion debajo ("+3,4% vs. anterior"). Cuando
+la aplicacion no tiene con que comparar todavia (un titular recien creado, un
+periodo sin historico), no muestra un cero enganoso: simplemente no muestra la
+comparacion.
+
+En los graficos de concentracion se representan como maximo cinco entidades; el
+resto se agrupa en "Otros", con el numero de entidades agrupadas.
+
+### Si algo se ve mal
+
+Reporta la **pantalla exacta, el tema (claro u oscuro) y el tamano de ventana**,
+con captura si puedes. Un aviso de "se ve raro" sin esos tres datos no se puede
+reproducir ni corregir.

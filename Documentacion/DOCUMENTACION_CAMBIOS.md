@@ -25220,3 +25220,51 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
 - Migracion literal a clases `.atl-*`: ahora posible, no iniciada.
 
 ---
+
+## 2026-08-25 - V-02.09 - Preparacion de entrega: QA visual, version y documentacion de usuario
+
+- **Motivacion:** el operador pidio cerrar todo lo pendiente para poder entregar
+  el proyecto al cliente.
+- **Trabajo realizado:** primera QA visual real de la sesion (navegador), con un
+  defecto corregido en el login; alineado el puerto del servidor de desarrollo
+  con la lista de origenes del backend, que impedia iniciar sesion en local;
+  adoptada `V-02.09` como version vigente; corregida una afirmacion falsa en la
+  documentacion de usuario y anadida la seccion del redisenio; suite de backend
+  completa en verde. Detalle en `Versiones/v-02.09.md`, seccion "Preparacion de
+  entrega".
+- **Archivos tocados:** `src/styles/auth.css`, `.claude/launch.json`,
+  `Documentacion/Versiones/version_actual.md`, `Documentacion/Versiones/v-02.09.md`,
+  `Documentacion/DOCUMENTACION_USUARIO.md`, y esta bitacora.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio.
+- `npm run test:unit` -> 57/57.
+- `dotnet test tests/AtlasBalance.API.Tests` -> **872/872** con maquina ociosa.
+  Una primera pasada bajo carga dio 871/872 por un test de temporizacion de
+  bcrypt (`ChangePassword_Should_Cost_The_Same_When_The_Account_Is_Locked`),
+  confirmado flaky al repetir.
+- `preview_start` (panel del navegador) sobre `.claude/launch.json`.
+
+### Resultado de verificacion
+
+- Frontend en verde; backend 872/872 con Docker disponible.
+- Login verificado en navegador en tema claro y oscuro, consola sin errores.
+- Version runtime y documentacion alineadas en V-02.09.
+
+### Decisiones visuales frontend
+
+- La casilla "Recordar mi email" no tenia regla CSS (el marcado usa
+  `.auth-checkbox-label` y el estilo solo cubria `.auth-checkbox-row`): salia
+  pegada al texto. Fallo preexistente, en la primera pantalla de la app.
+
+### Bloqueos y pendientes
+
+- **QA visual de pantallas autenticadas sin hacer**: requiere sesion iniciada y
+  el agente no introduce contrasenas. Preview levantado y origen corregido.
+- Migracion literal a clases `.atl-*`: posible, no iniciada.
+- Proyecto "Atlas Balance UI redesign": falta su URL para sincronizarlo.
+- Dos carpetas vacias sin trazar en la raiz del repo.
+
+---
