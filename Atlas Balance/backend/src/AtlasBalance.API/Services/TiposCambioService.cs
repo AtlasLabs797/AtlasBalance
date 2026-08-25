@@ -194,7 +194,7 @@ public sealed class TiposCambioService : ITiposCambioService
     {
         if (tasa <= 0m)
         {
-            throw new InvalidOperationException("La tasa debe ser mayor que cero.");
+            throw new BusinessRuleException("La tasa debe ser mayor que cero.");
         }
 
         // V-02.07: antes solo se comprobaba `tasa <= 0`. El techo real
@@ -204,7 +204,7 @@ public sealed class TiposCambioService : ITiposCambioService
         // tasa en la tabla pero las cifras no la usaban. Mejor rechazarla aqui.
         if (tasa < MinRateValue || tasa > MaxRateValue)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleException(
                 $"La tasa debe estar entre {MinRateValue} y {MaxRateValue}.");
         }
 
@@ -213,7 +213,7 @@ public sealed class TiposCambioService : ITiposCambioService
 
         if (origen == destino)
         {
-            throw new InvalidOperationException("La divisa origen y destino no pueden ser iguales.");
+            throw new BusinessRuleException("La divisa origen y destino no pueden ser iguales.");
         }
 
         // V-02.07: ninguna de las dos divisas se contrastaba con el catalogo, asi
@@ -226,12 +226,12 @@ public sealed class TiposCambioService : ITiposCambioService
 
         if (!codigosValidos.Contains(origen))
         {
-            throw new InvalidOperationException($"La divisa origen '{origen}' no existe o no esta activa.");
+            throw new BusinessRuleException($"La divisa origen '{origen}' no existe o no esta activa.");
         }
 
         if (!codigosValidos.Contains(destino))
         {
-            throw new InvalidOperationException($"La divisa destino '{destino}' no existe o no esta activa.");
+            throw new BusinessRuleException($"La divisa destino '{destino}' no existe o no esta activa.");
         }
 
         var now = DateTime.UtcNow;
@@ -270,19 +270,19 @@ public sealed class TiposCambioService : ITiposCambioService
         var normalizedCodigo = Normalize(codigo);
         if (normalizedCodigo.Length is < 3 or > 10)
         {
-            throw new InvalidOperationException("El código de divisa debe tener entre 3 y 10 caracteres.");
+            throw new BusinessRuleException("El código de divisa debe tener entre 3 y 10 caracteres.");
         }
 
         var exists = await _dbContext.DivisasActivas
             .AnyAsync(x => x.Codigo == normalizedCodigo, cancellationToken);
         if (exists)
         {
-            throw new InvalidOperationException("Ya existe una divisa con ese código.");
+            throw new BusinessRuleException("Ya existe una divisa con ese código.");
         }
 
         if (esBase && !activa)
         {
-            throw new InvalidOperationException("La divisa base debe estar activa.");
+            throw new BusinessRuleException("La divisa base debe estar activa.");
         }
 
         if (esBase)
@@ -322,12 +322,12 @@ public sealed class TiposCambioService : ITiposCambioService
             .FirstOrDefaultAsync(x => x.Codigo == normalizedCodigo, cancellationToken);
         if (divisa is null)
         {
-            throw new InvalidOperationException("Divisa no encontrada.");
+            throw new BusinessRuleException("Divisa no encontrada.");
         }
 
         if (esBase && !activa)
         {
-            throw new InvalidOperationException("La divisa base debe estar activa.");
+            throw new BusinessRuleException("La divisa base debe estar activa.");
         }
 
         if (esBase)
@@ -354,7 +354,7 @@ public sealed class TiposCambioService : ITiposCambioService
                     .FirstOrDefaultAsync(cancellationToken);
                 if (replacement is null)
                 {
-                    throw new InvalidOperationException("Debe existir al menos una divisa base activa.");
+                    throw new BusinessRuleException("Debe existir al menos una divisa base activa.");
                 }
 
                 replacement.EsBase = true;

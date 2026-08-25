@@ -1,4 +1,4 @@
-# Log de errores e incidencias
+﻿# Log de errores e incidencias
 
 ## 2026-08-25 - V-02.09 - "Ultimo gasto" ignoraba gastos de meses anteriores y el instalador podia declarar exito sin RLS verificado (CERRADO / VALIDACION PENDIENTE)
 
@@ -4993,3 +4993,35 @@
   `Maximum Pool Size=20` y `WorkerCount=2` es provisional hasta
   tener metricas; ambas son configurables sin recompilar
   (`Database:HangfireWorkerCount` y los parametros de la cadena).
+
+## 2026-08-25 - V-02.09 - `NpgsqlConnectionStringBuilder` suelta `KeyNotFoundException`, no solo `ArgumentException`, con cadenas rotas (CERRADO)
+
+- **Contexto:** al extraer la validacion TLS de la connection string a
+  `Services/DatabaseTlsPolicy.cs` (endurecimiento pre-launch que convierte el
+  warning de BD remota sin cifrar en bloqueo de arranque) se anadio el primer
+  test con una cadena deliberadamente no parseable.
+- **Sintoma:** `Connection_String_No_Parseable_Debe_Ser_Ok_Aqui` fallaba con
+  `KeyNotFoundException: The given key was not present in the dictionary`
+  dentro de `NpgsqlConnectionStringBuilder..ctor`.
+- **Causa:** el codigo heredado de `Program.cs` (ex
+  `WarnIfConnectionStringSslModeUnsafe`) capturaba solo `ArgumentException`.
+  Con keywords desconocidas, el builder generado de Npgsql lanza
+  `KeyNotFoundException`. En produccion el efecto era que una connection string
+  corrupta mataba el arranque con un stack raro en vez del fallo de conexion
+  claro que llegaria despues; en la nueva via fail-closed habria sido peor.
+- **Solucion aplicada:** capturar ambas
+  (`catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException)`)
+  y tratar la cadena como "no evaluable aqui": la politica devuelve OK y la
+  conexion real fallara con su error propio.
+- **Verificacion:** test corregido en verde; suite completa 896/896 en
+  scratchpad con Docker/Testcontainers disponibles.
+
+### Nota operativa asociada (mismo dia): builds rotos por carpetas de artefactos fuera del estandar
+
+- El arbol `backend/` arrastra carpetas generadas con nombres que el globbing
+  de C# no excluye (`obj-check/` en API y Watchdog,
+  `.local-build/cuarentena-20260825/obj.Release/` en Watchdog). Cualquier build
+  completo sobre el workspace puede petar con CS0579 (atributos duplicados)
+  porque esos `*.AssemblyInfo.cs` entran como fuente. La copia a scratchpad ya
+  documentada debe excluir tambien esas carpetas. No se han borrado del
+  workspace por la regla de cambios quirurgicos; quedan registradas aqui.

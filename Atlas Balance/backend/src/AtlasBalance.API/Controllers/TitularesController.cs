@@ -38,6 +38,13 @@ public sealed class TitularesController : ControllerBase
         [FromQuery] bool incluirEliminados = false,
         CancellationToken cancellationToken = default)
     {
+        // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
+        // busquedas kilometricas gastando CPU en cada listado.
+        if (search is { Length: > 200 })
+        {
+            search = search[..200];
+        }
+
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
         if (!scope.IsAdmin)
         {

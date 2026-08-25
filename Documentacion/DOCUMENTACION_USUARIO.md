@@ -52,6 +52,17 @@ Si Atlas Balance se publica detras de IIS, Nginx, HAProxy u otro proxy inverso, 
 
 Usa `KnownProxies` para IPs concretas y `KnownNetworks` para rangos CIDR, por ejemplo `10.0.0.0/24`. No confies `X-Forwarded-For` desde cualquier cliente: eso es dejar que cualquiera escriba su propia matricula.
 
+Desde V-02.09, el proxy tambien debe enviar `X-Forwarded-Proto` (con el esquema real del visitante, normalmente `https`). Con esa cabecera, si alguien entra por HTTP la API responde una redireccion 308 a HTTPS; sin ella, exigir HTTPS externo sigue siendo responsabilidad del proxy (Caddy e IIS con la regla de redireccion bien configurada ya lo hacen). Dos claves nuevas en `Security` completan el comportamiento:
+
+```json
+"Security": {
+  "HttpsRedirect": true,
+  "HttpsPort": null
+}
+```
+
+`HttpsPort` solo hace falta si el HTTPS publico no esta en el puerto 443 (por ejemplo 8443): pon ahi ese numero para que la redireccion apunte al sitio correcto. La base de datos remota sin cifrar (`SslMode=Disable`) ahora impide el arranque; si tu topologia lo exige expresamente, `Security.AllowInsecureDatabaseTransport = true` lo acepta dejando aviso en el log.
+
 ## Navegacion y dashboard
 
 Desde `V-01.05`, el menu se organiza en tres bloques:

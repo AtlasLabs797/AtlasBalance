@@ -208,7 +208,11 @@ public sealed class ExportacionService : IExportacionService
             exportacion.Estado = EstadoProceso.FAILED;
             exportacion.TamanioBytes = null;
             await _dbContext.SaveChangesAsync(cancellationToken);
-            throw new InvalidOperationException($"No se pudo generar la exportacion: {ex.Message}", ex);
+            // SEC V-02.09: el mensaje interno de la excepcion original ya no se
+            // interpola en el mensaje exterior (podria acabar en una respuesta
+            // HTTP si alguien lo devuelve). El detalle sigue disponible para el
+            // log via InnerException, que este mismo metodo encadena.
+            throw new InvalidOperationException("No se pudo generar la exportacion.", ex);
         }
     }
 

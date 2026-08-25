@@ -256,7 +256,7 @@ public sealed class RevisionService : IRevisionService
 
         if (extracto is null)
         {
-            throw new InvalidOperationException("Extracto no encontrado.");
+            throw new BusinessRuleException("Extracto no encontrado.");
         }
 
         if (!await _userAccessService.CanReviewCuentaAsync(extracto.CuentaId, scope, cancellationToken))
@@ -303,7 +303,7 @@ public sealed class RevisionService : IRevisionService
 
         if (extracto is null)
         {
-            throw new InvalidOperationException("Extracto no encontrado.");
+            throw new BusinessRuleException("Extracto no encontrado.");
         }
 
         if (!await _userAccessService.CanReviewCuentaAsync(extracto.CuentaId, scope, cancellationToken))
@@ -635,7 +635,7 @@ public sealed class RevisionService : IRevisionService
         {
             TipoComision or "COMISIONES" => TipoComision,
             TipoSeguro or "SEGUROS" => TipoSeguro,
-            _ => throw new InvalidOperationException("Tipo de revision invalido.")
+            _ => throw new BusinessRuleException("Tipo de revision invalido.")
         };
     }
 
@@ -652,7 +652,7 @@ public sealed class RevisionService : IRevisionService
             return normalized;
         }
 
-        throw new InvalidOperationException("Estado de revision invalido.");
+        throw new BusinessRuleException("Estado de revision invalido.");
     }
 
     private static string? NormalizeEstadoFilter(string? value)

@@ -20,6 +20,8 @@
     "RlsContextSecret": "GENERAR-CLAVE-RLS-DISTINTA-DE-JWT-MINIMO-32-CARACTERES-AQUI",
     "AuditSigningKey": "GENERAR-CLAVE-FIRMA-AUDITORIA-DISTINTA-DE-JWT-Y-RLS-MINIMO-32-CARACTERES-AQUI",
     "MirrorToWindowsEventLog": true,
+    "HttpsRedirect": true,
+    "AllowInsecureDatabaseTransport": false,
     "Auditoria": {
       "UmbralAccesoBulk": 100,
       "VentanaDeduplicacionSegundos": 60

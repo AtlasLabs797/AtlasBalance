@@ -1,4 +1,4 @@
-# DOCUMENTACION DE CAMBIOS
+﻿# DOCUMENTACION DE CAMBIOS
 
 ## Objetivo
 
@@ -25435,3 +25435,119 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
 - Migracion literal a clases `.atl-*`: posible, no iniciada.
 - Proyecto "Atlas Balance UI redesign": falta su URL.
 - La escala `--space-*` es mixta; aviso explicito anadido en `variables.css`.
+
+---
+
+## 2026-08-25 - V-02.09 - Revision de seguridad pre-launch y cierre de hallazgos
+
+**Fecha:** 2026-08-25 · **Version:** V-02.09 · **Rama:** V-02.09
+
+### Trabajo realizado
+
+1. Revision de seguridad pre-launch completa contra checklist de 13 puntos,
+   con exploracion paralela del backend (4 agentes), escaner de paquetes
+   NuGet vulnerables y `npm audit`. Veredicto por punto: 12 PASS, 1 PARCIAL
+   (HTTPS, unico item accionable). Los detalles con archivo:linea quedan en
+   esta sesion.
+2. Cierre del PARCIAL y matices:
+   - `HttpsRedirectionMiddleware` nuevo (308 proxy-aware, health exento,
+     Development exento, `Security:HttpsRedirect` / `Security:HttpsPort`).
+   - BD remota sin TLS pasa de warning a bloqueo de arranque
+     (`DatabaseTlsPolicy` + override `AllowInsecureDatabaseTransport`).
+   - `BusinessRuleException` tipada; controllers ya no filtran `ex.Message`
+     de excepciones genericas.
+   - `GET /api/ia/modelos` exige scope + `PuedeUsarIa`.
+   - Clamp de 200 chars al `search` de los 7 listados.
+   - Test de regresion OpenClaw sin Authorization -> 401.
+
+### Archivos tocados
+
+Backend nuevos: `Middleware/HttpsRedirectionMiddleware.cs`,
+`Services/BusinessRuleException.cs`, `Services/DatabaseTlsPolicy.cs`,
+tests `HttpsRedirectionMiddlewareTests.cs`, `DatabaseTlsPolicyTests.cs`.
+Modificados: `Program.cs`, `ExportacionService.cs`, `TiposCambioService.cs`,
+`RevisionService.cs`, `PlazoFijoService.cs`, controllers TiposCambio/Divisas/
+Revision/Cuentas/Ia/Extractos/Cuentas/Titulares/Usuarios/FormatosImportacion/
+Paises (clamps), `IntegrationAuthMiddlewareTests.cs`,
+`appsettings.Production.json.template`.
+Docs: `DOCUMENTACION_TECNICA.md` (seccion V-02.09 transporte/seguridad),
+`DOCUMENTACION_USUARIO.md` (proxy inverso: X-Forwarded-Proto + claves),
+este archivo, `Versiones/v-02.09.md`, `LOG_ERRORES_INCIDENCIAS.md`.
+
+### Comandos ejecutados
+
+- `dotnet list package --vulnerable --include-transitive` (backend): 0
+  vulnerables en 4 proyectos.
+- `npm audit --package-lock-only` (frontend): 0 vulnerabilidades.
+- `dotnet build` API y Tests: 0 errores.
+- Suite completa en scratchpad (`%TEMP%\2\opencode\atlas-sec-build`, copia con
+  robocopy excluyendo `obj`/`bin` y carpetas no estandar): 896/896 PASS.
+
+### Resultado de verificacion
+
+- Backend: **896/896**, incluidos 20 tests nuevos y bateria Postgres
+  (Testcontainers/Docker disponible en esta sesion).
+- Frontend: sin cambios de codigo en esta pasada.
+- Hallazgo colateral corregido durante tests: el builder de Npgsql suelta
+  `KeyNotFoundException` con keywords desconocidas; capturado junto a
+  `ArgumentException` en `DatabaseTlsPolicy` (detalle en LOG_ERRORES).
+
+### Pendientes
+
+- ~~Migracion de dev-secrets a `%APPDATA%\AtlasBalance\dev-secrets`~~
+  **EJECUTADA** (misma sesion, ver entrada siguiente).
+- En produccion con IIS/nginx: anadir `X-Forwarded-Proto` a las cabeceras
+  reenviadas (doc de usuario actualizada).
+- Carpetas de artefactos no estandar en el workspace (`obj-check/`,
+  `.local-build/cuarentena-*`) rompen builds con globbing completo; no se han
+  borrado (regla quirurgica) y quedan registradas en TECNICA.
+- El arbol arrastraba cambios sin commitear de la pasada anterior
+  (`Instalar-AtlasBalance.ps1`, `FinancialToolsService.cs`,
+  `PlanExecutorTests.cs` y sus entradas de documentacion): se respetan tal
+  cual, sin mezclarlos con esta pasada.
+
+---
+
+## 2026-08-25 - V-02.09 - Migracion y rotacion parcial de dev-secrets fuera del workspace
+
+**Fecha:** 2026-08-25 · **Version:** V-02.09 · **Rama:** V-02.09
+
+### Trabajo realizado
+
+Con confirmacion del operador, los secretos de desarrollo salen del arbol:
+
+- Creados `%APPDATA%\AtlasBalance\dev-secrets\AtlasBalance.API.Development.json`
+  y `AtlasBalance.Watchdog.Development.json` (los dos nombres exactos que
+  cargan `AddExternalDevelopmentSecrets` en API `Program.cs:42` y Watchdog
+  `Program.cs:10`; solo se leen en Development).
+- ROTADOS: `JwtSettings:Secret`, `SeedAdmin:Password`,
+  `WatchdogSettings:SharedSecret` (nuevo valor compartido API<->Watchdog,
+  coherente en ambos ficheros).
+- MIGRADOS SIN ROTAR: contrasenas Postgres (app_user/atlas_owner),
+  `Security:RlsContextSecret` y `Security:AuditSigningKey`. Motivos:
+  el contenedor `atlas_balance_db` estaba parado (rotar exige `ALTER ROLE`
+  contra la BD o la siguiente arranque de desarrollo falla), y rotar la clave
+  de firma invalidaria las firmas HMAC historicas de AUDITORIAS disparando
+  falsos positivos del job de integridad.
+- `appsettings.Development.json` del workspace queda SIN secretos: sin
+  `ConnectionStrings`, sin `Secret`, sin password de seed, sin RLS/Audit, sin
+  shared secret del watchdog (el resto de la estructura intacta). `.env`
+  local conserva las contraseñas de docker-compose (gitignored; compose exige
+  el fichero junto al yml).
+
+### Verificacion
+
+- Ambos JSON nuevos parsean (`ConvertFrom-Json`) y contienen las claves que
+  esperan los cargadores.
+- `appsettings.Development.json` parsea y un barrido sobre el fichero no
+  encuentra ningun patron de secreto.
+- `git grep` de todos los valores antiguos sobre ficheros trackeados: 0
+  resultados.
+
+### Pendientes
+
+- Rotar contraseñas Postgres de desarrollo la proxima vez que el contenedor
+  este levantado: `ALTER ROLE app_user/atlas_owner WITH PASSWORD ...` +
+  actualizar `.env` y las connection strings de dev-secrets a la vez.
+
+---

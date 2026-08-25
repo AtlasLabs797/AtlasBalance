@@ -43,7 +43,9 @@ public sealed class DivisasController : ControllerBase
 
             return CreatedAtAction(nameof(Listar), new { codigo = divisa.Codigo }, divisa);
         }
-        catch (InvalidOperationException ex)
+        // SEC V-02.09: solo las reglas de negocio tipadas llegan al cliente con
+        // su mensaje; cualquier otro fallo cae en el handler global (500 generico).
+        catch (BusinessRuleException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -64,7 +66,9 @@ public sealed class DivisasController : ControllerBase
 
             return Ok(divisa);
         }
-        catch (InvalidOperationException ex)
+        // SEC V-02.09: solo las reglas de negocio tipadas llegan al cliente con
+        // su mensaje; cualquier otro fallo cae en el handler global (500 generico).
+        catch (BusinessRuleException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -85,7 +89,9 @@ public sealed class DivisasController : ControllerBase
 
             return Ok(new { mensaje = $"Divisa {divisa.Codigo} establecida como base", divisa });
         }
-        catch (InvalidOperationException ex)
+        // SEC V-02.09: solo las reglas de negocio tipadas llegan al cliente con
+        // su mensaje; cualquier otro fallo cae en el handler global (500 generico).
+        catch (BusinessRuleException ex)
         {
             return BadRequest(new { error = ex.Message });
         }

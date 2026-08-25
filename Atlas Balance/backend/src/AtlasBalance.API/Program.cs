@@ -139,13 +139,35 @@ if (!builder.Environment.IsDevelopment())
         builder.Configuration.GetConnectionString("DefaultConnection"),
         1);
     RejectUnsafeAllowedHosts(builder.Configuration["AllowedHosts"]);
-    // V-02-07: SslMode=Disable o Prefer contra un host remoto deja el trafico
-    // con PostgreSQL (PII financiera incluida) sin cifrar y sin nada que lo
-    // detecte. No abortamos el arranque (romperia instalaciones existentes
-    // con la BD en la misma maquina), pero avisamos claro en el log.
-    WarnIfConnectionStringSslModeUnsafe(
-        "ConnectionStrings:DefaultConnection",
+    // SEC V-02.09 (antes V-02-07, solo warning): SslMode=Disable o Prefer contra
+    // un host remoto deja el trafico con PostgreSQL (PII financiera incluida)
+    // viajando sin cifrar y sin nada que lo detecte. Ahora es fail-closed: se
+    // bloquea el arranque salvo que el operador active explicitamente
+    // Security:AllowInsecureDatabaseTransport. Localhost/loopback sigue exento
+    // para no romper las instalaciones con BD en la misma maquina.
+    var tlsVerdict = DatabaseTlsPolicy.Evaluate(
         builder.Configuration.GetConnectionString("DefaultConnection"));
+    if (tlsVerdict.Decision == DatabaseTlsDecision.InsecureRemote)
+    {
+        if (builder.Configuration.GetValue<bool>("Security:AllowInsecureDatabaseTransport"))
+        {
+            Log.Warning(
+                "SECURITY OVERRIDE activo: {Key} apunta a un host remoto ({Host}) con SslMode={SslMode}: " +
+                "el trafico con PostgreSQL (incluida PII financiera) viaja sin cifrar. Usa SslMode=Require " +
+                "cuanto antes; este override existe solo para topologias justificadas y revisadas.",
+                "ConnectionStrings:DefaultConnection",
+                tlsVerdict.Host,
+                tlsVerdict.Mode);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"{nameof(DatabaseTlsPolicy)}: ConnectionStrings:DefaultConnection apunta a un host remoto " +
+                $"({tlsVerdict.Host}) con SslMode={tlsVerdict.Mode}: el trafico con PostgreSQL (incluida PII " +
+                $"financiera) viajaria sin cifrar. Configura SslMode=Require o superior, o, si la topologia lo " +
+                $"justifica expresamente, pon Security:AllowInsecureDatabaseTransport=true para aceptar el riesgo.");
+        }
+    }
 }
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -525,6 +547,11 @@ app.UseForwardedHeaders();
 // el cliente y para que los 500 que produce UseExceptionHandler cuenten como
 // errores en la tasa.
 app.UseMiddleware<RequestMetricsMiddleware>();
+
+// SEC V-02.09: redireccion 308 a HTTPS consciente de proxy. Va detras de
+// UseForwardedHeaders (necesita el Scheme ya resuelto desde X-Forwarded-Proto)
+// y delante de todo lo demas, para que ni estaticos ni API se sirvan por HTTP.
+app.UseMiddleware<HttpsRedirectionMiddleware>();
 
 app.UseExceptionHandler(errorApp =>
 {
@@ -1276,44 +1303,6 @@ static void RejectUnsafeAllowedHosts(string? allowedHosts)
     {
         throw new InvalidOperationException("AllowedHosts must list explicit host names outside Development.");
     }
-}
-
-static void WarnIfConnectionStringSslModeUnsafe(string key, string? connectionString)
-{
-    if (string.IsNullOrWhiteSpace(connectionString))
-    {
-        return;
-    }
-
-    NpgsqlConnectionStringBuilder parsed;
-    try
-    {
-        parsed = new NpgsqlConnectionStringBuilder(connectionString);
-    }
-    catch (ArgumentException)
-    {
-        // Cadena no parseable: no es este el sitio para validar su formato.
-        return;
-    }
-
-    var host = parsed.Host?.Trim();
-    var isLoopbackHost = string.IsNullOrEmpty(host) ||
-        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-        host == "127.0.0.1" ||
-        host == "::1";
-
-    if (isLoopbackHost || (parsed.SslMode != SslMode.Disable && parsed.SslMode != SslMode.Prefer))
-    {
-        return;
-    }
-
-    Log.Warning(
-        "{Key} apunta a un host remoto ({Host}) con SslMode={SslMode}: el trafico con PostgreSQL " +
-        "(incluida PII financiera) viaja sin cifrar y nada lo detecta. Usa SslMode=Require como minimo " +
-        "cuando la base de datos no corre en la misma maquina que la API.",
-        key,
-        host,
-        parsed.SslMode);
 }
 
 static void AddExternalDevelopmentSecrets(IConfigurationBuilder configuration, IWebHostEnvironment environment, string fileName)

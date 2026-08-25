@@ -46,6 +46,13 @@ public sealed class ExtractosController : ControllerBase
         [FromQuery] bool incluirEliminados = false,
         CancellationToken ct = default)
     {
+        // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
+        // busquedas kilometricas gastando CPU en cada listado.
+        if (search is { Length: > 200 })
+        {
+            search = search[..200];
+        }
+
         if (!TryGetUser(out var actor))
         {
             return Unauthorized(new { error = "Usuario no autenticado" });

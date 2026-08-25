@@ -226,6 +226,37 @@ public sealed class IntegrationAuthMiddlewareTests
         nextCalled.Should().BeFalse();
     }
 
+    // SEC V-02.09: el controller de integracion no lleva [Authorize]; toda su
+    // proteccion depende de este middleware. Este test blinda el contrato
+    // minimo (sin cabecera -> 401 sin tocar pipeline) contra refactors futuros.
+    [Fact]
+    public async Task Missing_Authorization_Header_Should_Be_Unauthorized_Without_Calling_Next()
+    {
+        await using var db = BuildDbContext();
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var clock = new FakeClock(DateTime.UtcNow);
+        var tokenService = new CountingInvalidTokenService();
+
+        var nextCalled = false;
+        var middleware = new IntegrationAuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            cache,
+            clock);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/integration/openclaw/saldos";
+        context.Request.Method = HttpMethods.Get;
+
+        await middleware.InvokeAsync(context, db, tokenService);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        nextCalled.Should().BeFalse();
+    }
+
     private static async Task<int> InvokeWithTokenAsync(
         IntegrationAuthMiddleware middleware,
         AppDbContext db,

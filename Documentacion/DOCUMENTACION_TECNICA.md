@@ -6303,3 +6303,97 @@ frontend en todos los casos, asi que se podian cerrar sin tocar el backend.
    muerto detectado en `global.css` (`.app-select-option*`) es anterior a este
    ciclo y se deja registrado sin tocar, conforme a la regla de cambios
    quirurgicos de AGENTS.md 2.3.
+
+---
+
+## 2026-08-25 - V-02.09 - Endurecimiento pre-produccion: redireccion HTTPS proxy-aware, TLS de BD fail-closed, excepciones de negocio tipadas
+
+Cierre de los unicos hallazgos accionables de la revision de seguridad
+pre-launch (13 puntos; el veredicto punto a punto vive en la entrada del
+2026-08-25 en `DOCUMENTACION_CAMBIOS.md`). Los 12 restantes pasaron sin
+cambios.
+
+### 1. Redireccion HTTP->HTTPS consciente de proxy (`HttpsRedirectionMiddleware`)
+
+**Que.** Nuevo middleware `Middleware/HttpsRedirectionMiddleware.cs`,
+registrado en `Program.cs` detras de `UseForwardedHeaders` y de
+`RequestMetricsMiddleware`. Emite **308** (conserva metodo, path, query y
+PathBase) cuando la peticion llega por HTTP en produccion, cubriendo el hueco
+que dejaba `UseHttpsRedirection()` (no-op en modo reverse-proxy sin endpoint
+HTTPS ni `ASPNETCORE_HTTPS_PORT`; ver la seccion V-02.07 de transporte mas
+arriba).
+
+**Como decide.** Redirige si scheme=http Y (`X-Forwarded-Proto` presente — el
+proxy conocido declaro que el cliente externo vino por HTTP — O la conexion no
+es loopback — exposicion directa por HTTP mal configurada). Loopback sin
+cabecera (proxy sin XFP, curl local, sondas) pasa de largo: redirigir a
+ciegas provocaria bucle 308 con proxies que no envian la cabecera.
+`/api/health*` queda exento siempre (Watchdog, instalador y sondas
+post-actualizacion lo consultan por HTTP local). En Development nunca se
+activa.
+
+**Configuracion nueva** (`appsettings.Production.json.template`, bloque
+`Security`): `Security:HttpsRedirect` (default true) y `Security:HttpsPort`
+(null = 443; ponerlo si el HTTPS publico vive en otro puerto, p.ej. 8443).
+
+### 2. BD remota sin TLS: warning -> bloqueo de arranque
+
+**Que.** La logica de `WarnIfConnectionStringSslModeUnsafe` se extrae a
+`Services/DatabaseTlsPolicy.cs` (evaluacion pura, testeable) y sube de apunte
+en el log a fallo de arranque: host remoto con `SslMode=Disable/Prefer` impide
+arrancar la API. Escape explicito para topologias justificadas:
+`Security:AllowInsecureDatabaseTransport=true` degrada el bloqueo al warning
+original. Localhost/loopback sigue exento; cadena vacia o no parseable tambien
+(la conexion fallara sola). Correccion adicional sobre el codigo antiguo: el
+constructor de `NpgsqlConnectionStringBuilder` suelta `KeyNotFoundException`
+con keywords desconocidas, no solo `ArgumentException`; se capturan ambas.
+
+### 3. Excepciones de negocio tipadas: adios al `ex.Message` generico al cliente
+
+**Que.** Los controllers de TiposCambio, Divisas, Revision y Cuentas
+(RenovarPlazoFijo) devolvian `ex.Message` de `InvalidOperationException` /
+`KeyNotFoundException`. Hoy esos mensajes son validacion controlada, pero
+cualquier IOE tecnico futuro de un servicio habria acabado en la respuesta
+HTTP. Nuevo tipo `Services/BusinessRuleException.cs`: los ~17 lanzamientos de
+validacion de `TiposCambioService`, `RevisionService` y `PlazoFijoService`
+pasan a ese tipo; los controllers lo capturan y devuelven su mensaje, y ya NO
+capturan la excepcion generica (cae en el handler global, 500 generico).
+`KeyNotFoundException` de PlazoFijo se queda como esta (mensaje fijo, mapea a
+404). `ExportacionService.cs` deja de interpolar `ex.Message` interno en el
+mensaje de su IOE (queda como InnerException para el log).
+
+### 4. Endurecimiento menor
+
+- `GET /api/ia/modelos` exige ahora scope valido + `PuedeUsarIa` (era el unico
+  endpoint autenticado de `/api/ia` sin ese check; exponia el catalogo del
+  proveedor a usuarios sin permiso IA).
+- Cota de 200 caracteres para el parametro `search` de los 7 listados que lo
+  aceptan (Extractos, Cuentas, Titulares, Usuarios, FormatosImportacion,
+  Paises, Ia): viaja a LIKE/ILike y un filtro kilometrico era CPU regalada.
+
+### Tests nuevos (20)
+
+- `HttpsRedirectionMiddlewareTests.cs` (11): https pasa; http remota -> 308 con
+  path/query/metodo conservados; loopback sin XFP pasa; loopback IPv4-mapeada
+  pasa; loopback con XFP=http redirige; health exento; Development nunca
+  redirige; kill-switch `HttpsRedirect=false`; `HttpsPort=8443`/443; PathBase.
+- `DatabaseTlsPolicyTests.cs` (8): vacia/no parseable OK; localhost exento
+  (Disable/Prefer/default); remota Disable/Prefer bloquea con host+modo;
+  remota Require/VerifyFull OK.
+- `IntegrationAuthMiddlewareTests.Missing_Authorization_Header_Should_Be_Unauthorized_Without_Calling_Next`
+  (1): blindaje del contrato 401 del middleware de integracion (el controller
+  OpenClaw no lleva `[Authorize]`; toda su proteccion vive en el middleware).
+
+### Verificacion
+
+- Suite completa en scratchpad (misma tecnica documentada de copiar
+  `backend/` excluyendo `obj`/`bin`): **896/896 PASS**, Docker/Testcontainers
+  incluidos. Incluye los 20 tests nuevos y toda la regresion de servicios
+  tocados.
+- `dotnet build` de API y Tests: 0 errores.
+- Nota operativa: el arbol fuente arrastra carpetas de artefactos con nombres
+  fuera del estandar (`obj-check/` en API y Watchdog, `.local-build/cuarentena-*`
+  en Watchdog) que rompen cualquier build con globbing completo (CS0579,
+  atributos duplicados). No se han borrado del workspace (regla quirurgica);
+  excluidas en el scratchpad compila limpio. Quedan registradas aqui para
+  quien las persiga.
