@@ -210,8 +210,8 @@ button.revision-status:active:not(:disabled) {
   padding: 0;
   border: none;
   border-radius: var(--radius-full);
-  background: var(--ai-solid);
-  color: var(--text-inverse);
+  background: transparent;
+  color: var(--ai-solid);
   cursor: pointer;
   will-change: transform;
   transition:
@@ -220,7 +220,7 @@ button.revision-status:active:not(:disabled) {
 }
 
 .ai-floating-button:hover {
-  background: color-mix(in srgb, var(--ai-solid) 88%, var(--gray-950));
+  background: var(--ai-soft);
 }
 
 .ai-floating-button:active {
@@ -228,7 +228,8 @@ button.revision-status:active:not(:disabled) {
 }
 
 .ai-floating-button--active {
-  background: color-mix(in srgb, var(--ai-solid) 88%, var(--gray-950));
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
 }
 
 .ai-floating-chat {

@@ -1,0 +1,101 @@
+/* Atlas app shell — the strongest carrier of "same brand". Identical in every product; only the accent changes. */
+.atl-shell{display:flex;min-height:100vh;background:var(--surface-page);color:var(--text-primary)}
+.atl-shell__main{flex:1;min-width:0;display:flex;flex-direction:column}
+.atl-shell__scroll{flex:1;min-height:0;overflow:auto}
+
+/* Topbar */
+.atl-topbar{position:sticky;top:0;z-index:var(--z-sticky);display:flex;align-items:center;gap:var(--space-7);height:74px;padding:0 var(--gutter-page);background:var(--glass-surface);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-bottom:1px solid var(--border-default)}
+.atl-topbar .atl-search{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin:0}
+.atl-topbar__titles{display:flex;flex-direction:column;gap:1px;min-width:0}
+.atl-topbar__eyebrow{font:var(--type-overline);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--accent-text)}
+.atl-topbar__title{font:var(--type-title-3);letter-spacing:var(--tracking-heading);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atl-topbar__subtitle{font:var(--type-caption);color:var(--text-tertiary)}
+.atl-topbar__menu{display:flex;align-items:center;justify-content:center;width:var(--control-height);height:var(--control-height);flex:none;border:1px solid var(--border-default);border-radius:var(--radius-control);background:var(--surface-card);color:var(--text-secondary);cursor:pointer;transition:var(--transition-control)}
+.atl-topbar__menu:hover{color:var(--text-primary);border-color:var(--border-strong);box-shadow:var(--shadow-xs)}
+.atl-topbar__spacer{flex:1}
+.atl-userchip{display:flex;align-items:center;gap:var(--space-4);height:var(--control-height);padding:0 var(--space-5) 0 var(--space-3);border:1px solid var(--border-default);border-radius:var(--radius-control);background:var(--surface-card);transition:var(--transition-control)}
+.atl-userchip:hover{border-color:var(--border-strong);box-shadow:var(--shadow-xs)}
+.atl-userchip__name{font:var(--type-label);color:var(--text-primary);line-height:1.2}
+.atl-userchip--nav{width:100%;border:0;background:transparent;height:auto;padding:var(--space-4) var(--space-3);gap:var(--space-5)}
+.atl-userchip--nav:hover{box-shadow:none;background:var(--surface-hover);border-radius:var(--radius-sm)}
+.atl-userchip__role{font:var(--type-overline);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--text-tertiary)}
+.atl-topbar__actions{display:flex;align-items:center;gap:var(--space-4)}
+.atl-topbar__divider{width:1px;height:24px;background:var(--border-default)}
+
+/* Global search trigger — same control in every app, ⌘K everywhere */
+.atl-search{display:flex;align-items:center;justify-content:center;text-align:center;gap:var(--space-5);width:360px;height:42px;padding:0 var(--space-6);margin:0 auto;background:var(--surface-sunken);border:1px solid transparent;border-radius:var(--radius-control);color:var(--text-tertiary);font:var(--type-body);cursor:pointer;transition:var(--transition-control)}
+.atl-search:hover{background:var(--surface-card);border-color:var(--border-default);box-shadow:var(--shadow-xs)}
+.atl-search__hint{margin-left:auto}
+.atl-kbd{display:inline-flex;align-items:center;gap:2px;height:20px;padding:0 var(--space-3);border:1px solid var(--border-default);border-bottom-width:2px;border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-tertiary);font:var(--type-mono);font-size:var(--text-11)}
+
+/* Page scaffolding: eyebrow → title → one-line description */
+.atl-content{padding:var(--gutter-page);min-width:0}
+.atl-content--narrow{max-width:var(--content-max-narrow);margin:0 auto;width:100%}
+.atl-content--wide{max-width:var(--content-max);margin:0 auto;width:100%}
+.atl-page{display:flex;flex-direction:column;gap:var(--space-9)}
+.atl-page__head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:var(--space-7) var(--space-9)}
+.atl-page__head>*{min-width:0}
+.atl-page__eyebrow{font:var(--type-overline);letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--accent-text)}
+.atl-page__title{font:var(--type-title-1);letter-spacing:var(--tracking-display);margin-top:var(--space-3)}
+.atl-page__desc{font:var(--type-body);color:var(--text-secondary);margin-top:var(--space-3);max-width:72ch;text-wrap:pretty}
+.atl-page__actions{display:flex;align-items:center;gap:var(--space-4);flex:none}
+.atl-section{display:flex;flex-direction:column;gap:var(--space-7)}
+.atl-section__head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-7)}
+.atl-section__title{font:var(--type-title-2);letter-spacing:var(--tracking-heading)}
+
+/* Layout grids — four sanctioned arrangements */
+.atl-grid{display:grid;gap:var(--space-7)}
+.atl-grid--kpi{grid-template-columns:2fr 1fr 1fr}
+.atl-grid--2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.atl-grid--3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.atl-grid--4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.atl-grid--split{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+.atl-grid--detail{grid-template-columns:minmax(0,1fr) 320px}
+@media (max-width:1180px){.atl-grid--kpi,.atl-grid--4{grid-template-columns:repeat(2,minmax(0,1fr))}.atl-grid--3,.atl-grid--split,.atl-grid--detail{grid-template-columns:minmax(0,1fr)}}
+
+/* Sidebar extras: collapsed rail, footer, app switcher */
+.atl-sidenav__foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-1);padding-top:var(--space-6);border-top:1px solid var(--border-subtle)}
+.atl-sidenav__meta{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);font:var(--type-mono);font-size:var(--text-11);color:var(--text-tertiary);padding:0 var(--space-3)}
+.atl-sidenav--collapsed{width:var(--sidebar-width-collapsed);padding-left:var(--space-4);padding-right:var(--space-4);align-items:center;height:100%}
+.atl-sidenav--collapsed .atl-sidenav__groups,.atl-sidenav--collapsed .atl-sidenav__group{align-items:center;width:100%}
+.atl-sidenav--collapsed .atl-navitem{justify-content:center;padding:0;width:44px;height:44px}
+.atl-sidenav--collapsed .atl-sidenav__foot{width:100%;align-items:center}
+.atl-sidenav--collapsed .atl-navitem__label,.atl-sidenav--collapsed .atl-navitem__trail,.atl-sidenav--collapsed .atl-sidenav__grouplabel,.atl-sidenav--collapsed .atl-sidenav__names,.atl-sidenav--collapsed .atl-sidenav__head,.atl-sidenav--collapsed .atl-sidenav__meta,.atl-sidenav--collapsed .atl-userchip--nav>span{display:none}
+.atl-sidenav--collapsed .atl-userchip--nav{justify-content:center;padding:var(--space-4) 0}
+.atl-sidenav--collapsed .atl-sidenav__brand{justify-content:center;padding:0}
+.atl-sidenav__names{display:flex;flex-direction:column;gap:0;min-width:0}
+.atl-appswitcher{display:flex;align-items:center;gap:var(--space-5);width:100%;padding:var(--space-4) var(--space-4);border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-card);color:var(--text-primary);font:var(--type-label);cursor:pointer;transition:var(--transition-control)}
+.atl-appswitcher:hover{border-color:var(--border-strong);box-shadow:var(--shadow-xs)}
+.atl-appswitcher__mark{width:22px;height:22px;flex:none;border-radius:var(--radius-sm);background:var(--accent-solid);color:var(--accent-on-solid);display:flex;align-items:center;justify-content:center;font:var(--type-overline);letter-spacing:0}
+.atl-appswitcher__chev{margin-left:auto;color:var(--text-tertiary)}
+
+/* Floating assistant launcher — el asistente vive aquí cuando no hay rail acoplado */
+.atl-fab{position:fixed;right:28px;bottom:28px;width:56px;height:56px;flex:none;border:0;border-radius:var(--radius-full);background:transparent;color:var(--text-primary);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:var(--z-drawer);transition:transform var(--duration-fast) var(--ease-standard)}
+.atl-fab:hover{filter:brightness(1.04)}
+.atl-fab:active{transform:scale(var(--press-scale))}
+.atl-fab--open{background:var(--surface-card);box-shadow:var(--shadow-lg);color:var(--text-primary)}
+.atl-aipop{position:fixed;right:28px;bottom:96px;width:380px;height:520px;max-height:calc(100vh - 140px);border-radius:var(--radius-card);overflow:hidden;background:var(--glass-surface);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid var(--border-default);box-shadow:var(--shadow-xl);z-index:var(--z-drawer);transform-origin:bottom right;transition:var(--transition-surface)}
+.atl-aipop--closed{opacity:0;transform:scale(.94) translateY(8px);pointer-events:none}
+
+/* Mobile bottom nav — the sidebar's third state */
+.atl-bottomnav{position:sticky;bottom:0;display:none;align-items:stretch;gap:var(--space-1);padding:var(--space-3);background:var(--glass-surface);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-top:1px solid var(--border-default)}
+.atl-bottomnav .atl-navitem{flex-direction:column;height:auto;gap:var(--space-2);padding:var(--space-3) 0;font:var(--type-caption);flex:1;justify-content:center}
+@media (max-width:720px){.atl-sidenav{display:none}.atl-bottomnav{display:flex}.atl-content{padding:var(--space-7)}}
+
+/* Split view: list + detail, the CRM/statement pattern */
+.atl-split{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);gap:0;border:1px solid var(--border-default);border-radius:var(--radius-card);background:var(--surface-card);box-shadow:var(--shadow-card);overflow:hidden;min-height:520px}
+.atl-split__list{border-right:1px solid var(--border-default);display:flex;flex-direction:column;min-width:0}
+.atl-split__pane{padding:var(--pad-card);min-width:0;display:flex;flex-direction:column;gap:var(--space-8)}
+.atl-listrow{display:flex;align-items:center;gap:var(--space-5);padding:var(--space-6) var(--space-7);border-bottom:1px solid var(--border-subtle);cursor:pointer;transition:var(--transition-control);text-align:left;border-left:2px solid transparent;background:transparent}
+.atl-listrow:hover{background:var(--surface-hover)}
+.atl-listrow--active{background:var(--accent-soft);border-left-color:var(--accent-solid)}
+.atl-listrow__body{min-width:0;display:flex;flex-direction:column;gap:1px}
+.atl-listrow__title{font:var(--type-label);color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atl-listrow__meta{font:var(--type-caption);color:var(--text-tertiary)}
+.atl-listrow__trail{margin-left:auto;text-align:right;font:var(--type-mono);font-size:var(--text-12);color:var(--text-secondary)}
+
+/* Definition rows for record detail */
+.atl-deflist{display:grid;grid-template-columns:160px minmax(0,1fr);gap:var(--space-5) var(--space-7)}
+.atl-deflist__k{font:var(--type-caption);color:var(--text-tertiary)}
+.atl-deflist__v{font:var(--type-body-sm);color:var(--text-primary)}
+.atl-deflist__v--mono{font:var(--type-mono);font-variant-numeric:tabular-nums}

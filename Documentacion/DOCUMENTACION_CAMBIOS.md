@@ -25180,3 +25180,43 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
 - Runtime en V-02.09 / 2.9.0 frente a `version_actual.md` en V-02.08.
 
 ---
+
+## 2026-08-25 - V-02.08 - Sincronizacion con el proyecto de Claude Design
+
+- **Motivacion:** el operador pidio sincronizar los proyectos de Claude Design
+  con el repo. Con `DesignSync` se bajo "Atlas Balance Design System"
+  (`396d43b2`), que contenia la capa de componentes `.atl-*` que DESIGN.md §9
+  daba por adjunta y que nunca habia estado en el repo.
+- **Trabajo realizado:** vendorizada la capa de componentes en
+  `Documentacion/Diseno/design-system/`; auditada la app contra el CSS real;
+  corregidas 4 divergencias (dos de ellas regresiones propias de pasadas
+  anteriores, por seguir la prosa de DESIGN.md donde discrepa del CSS);
+  verificado el contrato con el backend. Detalle en `Versiones/v-02.08.md`,
+  seccion "Sincronizacion con el proyecto de Claude Design".
+- **Archivos tocados:** `Documentacion/Diseno/design-system/**` (nuevo),
+  `Documentacion/Diseno/design-tokens.css` (marcado obsoleto),
+  `styles/layout/shell.css`, `styles/layout/revision-ai.css`,
+  `styles/layout/admin.css`, y la documentacion.
+
+### Comandos ejecutados
+
+- `npx tsc --noEmit` -> limpio.
+- `npm run lint` -> limpio.
+- `npm run test:unit` -> 57/57.
+- `dotnet build src/AtlasBalance.API/AtlasBalance.API.csproj -p:BaseIntermediateOutputPath=.codex-build/obj/ -p:OutputPath=.codex-build/bin/ -p:UseAppHost=false` -> 0 errores, 6 avisos preexistentes.
+
+### Resultado de verificacion
+
+- Tokens del repo identicos a los del proyecto: sin deriva.
+- Frontend en verde; backend compila.
+- Contrato frontend/backend revisado endpoint por endpoint: sin cambios.
+- **Sin validacion visual en navegador.**
+
+### Pendientes
+
+- "Atlas Balance UI redesign" no se pudo sincronizar: `list_projects` solo
+  enumera proyectos de tipo design-system y ese no aparece. Hace falta su URL.
+- QA visual.
+- Migracion literal a clases `.atl-*`: ahora posible, no iniciada.
+
+---

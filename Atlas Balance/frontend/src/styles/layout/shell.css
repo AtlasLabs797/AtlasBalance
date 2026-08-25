@@ -528,10 +528,10 @@
    colores salen del triplete de estado; la variante la decide AlertBanner.tsx
    segun haya o no cuentas en negativo. */
 .alert-banner {
-  --alert-banner-text: var(--status-info-text);
-  --alert-banner-bg: var(--status-info-bg);
-  --alert-banner-border: var(--status-info-border);
-  --alert-banner-solid: var(--status-info-solid);
+  --alert-banner-text: var(--status-warning-text);
+  --alert-banner-bg: var(--status-warning-bg);
+  --alert-banner-border: var(--status-warning-border);
+  --alert-banner-solid: var(--status-warning-solid);
 
   margin: var(--space-2) var(--space-4) 0;
   border: 1px solid var(--alert-banner-border);
@@ -551,6 +551,13 @@
   --alert-banner-bg: var(--status-danger-bg);
   --alert-banner-border: var(--status-danger-border);
   --alert-banner-solid: var(--status-danger-solid);
+}
+
+.alert-banner--info {
+  --alert-banner-text: var(--status-info-text);
+  --alert-banner-bg: var(--status-info-bg);
+  --alert-banner-border: var(--status-info-border);
+  --alert-banner-solid: var(--status-info-solid);
 }
 
 .alert-banner-content {
@@ -690,20 +697,18 @@
   gap: var(--space-2);
 }
 
-/* DESIGN.md §5.4: la marca del estado vacio mide 20px. No es una pastilla con
-   fondo y borde, sino un glifo suelto sobre la superficie. */
+/* Espejo de .atl-empty__mark (design-system/components/components.css):
+   pastilla de 48px, redonda, sobre superficie hundida y con borde capilar. */
 .empty-state-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
   color: var(--text-tertiary);
-}
-
-.empty-state-icon svg {
-  width: 20px;
-  height: 20px;
+  border: 1px solid var(--border-subtle);
 }
 
 .empty-state-actions {

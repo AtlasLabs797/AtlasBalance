@@ -58,15 +58,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
 .alertas-notif-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .alertas-notif-icon--danger {
@@ -87,7 +87,7 @@
 
 .alertas-notif-title {
   margin: 0;
-  font-size: var(--text-17);
+  font-size: var(--text-14);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   overflow: hidden;
