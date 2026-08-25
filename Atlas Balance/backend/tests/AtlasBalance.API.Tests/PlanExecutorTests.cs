@@ -235,4 +235,75 @@ public class PlanExecutorTests
         result.Exito.Should().BeFalse();
         result.Advertencia.Should().Contain("posterior");
     }
+
+    [Fact]
+    public async Task EjecutarAsync_Ultimo_Gasto_Local_De_Mes_Anterior_Se_Encuentra()
+    {
+        // V-02.09: cadena completa planner local -> executor -> herramienta.
+        // El plan de "cual fue el ultimo gasto" llega al ejecutor con el
+        // marcador MesActual del periodo por defecto; la herramienta no debe
+        // acotar por el, o un ultimo gasto real del mes anterior se
+        // reportaria como inexistente (hallazgo del PR #33).
+        await using var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = "latest@atlasbalance.local",
+            NombreCompleto = "Latest User",
+            PasswordHash = "hash",
+            Rol = RolUsuario.ADMIN,
+            Activo = true,
+            PuedeUsarIa = true
+        });
+        var titularId = Guid.NewGuid();
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Atlas Labs", Tipo = TipoTitular.EMPRESA });
+        var cuentaId = Guid.NewGuid();
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Operativa",
+            Divisa = "EUR",
+            Activa = true,
+            BancoNombre = "Atlas Bank"
+        });
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        // Ultimo dia del mes anterior: cae siempre en el mes anterior,
+        // independientemente del dia en que corra el test.
+        var finMesAnterior = new DateOnly(hoy.Year, hoy.Month, 1).AddDays(-1);
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = finMesAnterior,
+            Concepto = "gasto mes anterior",
+            Monto = -75m,
+            Saldo = 925m,
+            FilaNumero = 1
+        });
+        await db.SaveChangesAsync();
+
+        var planner = new IntentPlanner(new NullSemanticPlannerClient(), NullLogger<IntentPlanner>.Instance);
+        var resolucion = await planner.ResolverAsync("cual fue el ultimo gasto", hoy, CancellationToken.None);
+
+        resolucion.Origen.Should().Be(PlanResolutionSource.Local);
+        resolucion.Evaluacion.Plan.Should().NotBeNull();
+
+        var planCompuesto = new CompoundPlan
+        {
+            Pasos = new[]
+            {
+                new PlanStep(0, "ultimo_gasto", resolucion.Evaluacion.Plan!, Array.Empty<int>())
+            }
+        };
+        var result = await new PlanExecutor().EjecutarAsync(AdminScope(userId), planCompuesto, BuildTools(db), CancellationToken.None);
+
+        result.Exito.Should().BeTrue();
+        result.Pasos.Should().HaveCount(1);
+        result.Pasos[0].FilasDevueltas.Should().Be(1);
+        var ultimo = result.Pasos[0].Datos.Should().BeOfType<LatestTransaction>().Subject;
+        ultimo.Fecha.Should().Be(finMesAnterior);
+        ultimo.Monto.Should().Be(-75m);
+    }
 }

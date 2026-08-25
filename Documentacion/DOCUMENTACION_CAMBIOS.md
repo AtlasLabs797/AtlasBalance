@@ -1,4 +1,4 @@
-﻿# DOCUMENTACION DE CAMBIOS
+# DOCUMENTACION DE CAMBIOS
 
 ## Objetivo
 
@@ -7,6 +7,53 @@ Bitacora tecnica acumulativa para registrar cambios implementados, comandos ejec
 Regla de trabajo desde ahora:
 - Cada bloque de trabajo debe anadirse aqui.
 - No cerrar una tarea sin dejar evidencia de verificacion.
+
+---
+
+## 2026-08-25 - V-02.09 - Cierre de los dos hallazgos residuales del PR #33 (ultimo gasto acotado al mes + instalador sin verificacion RLS bloqueante)
+
+- **Motivacion:** la revision de los comentarios de Codex en el PR #33
+  (3 rondas, ~29 hallazgos) confirmo 26 resueltos y 2 parciales: el P2 de
+  "ultimo gasto/ingreso" (la revalidacion del executor reinyectaba el mes
+  actual y `GetLatestTransactionAsync` no tenia la exencion que si tiene
+  `GetBalancesAsync`) y el P1 del instalador en fresh-install (sonda SQL de
+  RLS se salta porque `appsettings.Production.json` aun no existe, y el
+  health funcional posterior no era bloqueante).
+- **Trabajo realizado:**
+  - `Services/IaPlanner/FinancialToolsService.cs`:
+    `GetLatestTransactionAsync` replica el criterio `periodoEsPorDefecto`
+    (`Periodo is null || Tipo == MesActual` -> sin cotas) ya revisado en
+    `GetBalancesAsync`. Tradeoff documentado en codigo: "¿y este mes?" como
+    seguimiento tras ultimo gasto pasa a devolver el ultimo global.
+  - `tests/AtlasBalance.API.Tests/PlanExecutorTests.cs`: test nuevo de
+    cadena completa planner local ("cual fue el ultimo gasto") ->
+    `PlanExecutor` -> herramienta contra InMemory con el unico extracto en
+    el ultimo dia del mes anterior; pinza el bug end-to-end.
+  - `scripts/Instalar-AtlasBalance.ps1`: health funcional BLOQUEANTE
+    (24 intentos x 5s contra `$functionalUrl` derivado de `$healthUrl`
+    interno; throw accionable si no hay HTTP 200). Corrige ademas que antes
+    se sondeaba `$appUrl`, inalcanzable en fresh-install con reverse proxy.
+- **Archivos tocados:** los tres anteriores mas `Documentacion/
+  LOG_ERRORES_INCIDENCIAS.md`, `Documentacion/DOCUMENTACION_CAMBIOS.md`,
+  `Documentacion/Versiones/v-02.09.md`.
+- **Comandos ejecutados:** parser de PowerShell sobre el instalador
+  (PARSE OK tras corregir `$var:` -> `${var}:`); `dotnet build` de
+  AtlasBalance.API en Release y LocalCheck (0 errores, 6 warnings CS0618
+  preexistentes); varios intentos de `dotnet test` documentados abajo.
+- **Verificacion:** build de la API limpio con ambos cambios de produccion;
+  el proyecto de tests compila salvo UN error ajeno a esta tarea. Ejecucion
+  de la suite BLOQUEADA por trabajo simultaneo de otra sesion en el mismo
+  workspace: `HttpsRedirectionMiddlewareTests.cs:240` (fichero nuevo sin
+  trazar de esa sesion) falla por falta de using mientras se escribe. Las
+  carpetas `bin\Release` del Watchdog y `bin\Release`/`obj\Debug` de tests
+  tienen ACL tomada por otra cuenta (bloqueo ya conocido, ver entrada
+  anterior); `obj\Release` del Watchdog se movio a cuarentena en
+  `.local-build/cuarentena-20260825/`. Reintentar la suite cuando la otra
+  sesion termine, con `-p:BaseIntermediateOutputPath=obj-ci\ -p:OutputPath=
+  bin-ci\` (patron ya documentado) o en host limpio.
+- **Pendientes:** ejecutar `EjecutarAsync_Ultimo_Gasto_Local_De_Mes_Anterior_
+  Se_Encuentra` junto al resto de la suite; validacion manual opcional del
+  instalador en maquina limpia (requiere VM Windows Server).
 
 ---
 
@@ -25388,5 +25435,3 @@ Documentacion: usuario (seccion Revision bancaria), tecnica (entrada del dia),
 - Migracion literal a clases `.atl-*`: posible, no iniciada.
 - Proyecto "Atlas Balance UI redesign": falta su URL.
 - La escala `--space-*` es mixta; aviso explicito anadido en `variables.css`.
-
----

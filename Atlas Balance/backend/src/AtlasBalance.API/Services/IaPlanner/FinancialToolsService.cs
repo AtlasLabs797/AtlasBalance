@@ -224,8 +224,16 @@ public sealed class FinancialToolsService : IFinancialToolsService
         // inactivas).
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
         var direction = ResolveDirection(plan.Metrica, FinancialDirection.Todos);
-        var desde = plan.Filtros.Periodo?.From;
-        var hasta = plan.Filtros.Periodo?.To;
+        // V-02.09: el periodo por defecto (mes en curso, ver
+        // IaPlanValidator.PeriodoPorDefecto) no debe acotar que movimiento es
+        // "el ultimo": mismo criterio que GetBalancesAsync. Si acotaramos,
+        // "¿cual fue el ultimo gasto?" no encontraria nada cuando el ultimo
+        // gasto real es de un mes anterior. Solo un periodo pedido de forma
+        // explicita (Explicito, MesAnterior, etc.) acota la ventana.
+        var periodoEsPorDefecto = plan.Filtros.Periodo is null
+            || plan.Filtros.Periodo.Tipo == FinancialPeriodKind.MesActual;
+        var desde = periodoEsPorDefecto ? null : plan.Filtros.Periodo?.From;
+        var hasta = periodoEsPorDefecto ? null : plan.Filtros.Periodo?.To;
         var cuentaIds = plan.Filtros.CuentaIds;
         var titularIds = plan.Filtros.TitularIds;
         var divisas = plan.Filtros.Divisas;

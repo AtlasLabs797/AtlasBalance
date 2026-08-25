@@ -1,4 +1,43 @@
-﻿# Log de errores e incidencias
+# Log de errores e incidencias
+
+## 2026-08-25 - V-02.09 - "Ultimo gasto" ignoraba gastos de meses anteriores y el instalador podia declarar exito sin RLS verificado (CERRADO / VALIDACION PENDIENTE)
+
+- **Contexto:** al verificar los ~29 hallazgos de Codex en el PR #33 contra
+  el working tree quedaban dos parciales: (a) la pregunta "¿cual fue el
+  ultimo gasto?" no encontraba nada si el ultimo gasto real era de un mes
+  anterior; (b) en instalacion limpia, la sonda SQL de RLS del instalador se
+  saltaba (appsettings.Production.json se escribe despues del preflight) y
+  el health funcional posterior solo avisaba sin abortar, permitiendo declarar
+  buena una instalacion con el contexto RLS roto.
+- **Causa raiz (a):** los patrones locales de ultimo gasto/ingreso ya no
+  fijaban periodo, pero `IaPlanValidator` inyecta el marcador
+  `PeriodoPorDefecto` (MesActual) cuando no lo hay, y la revalidacion de
+  `PlanExecutor.EjecutarPasoAsync` resuelve ese marcador a fechas concretas.
+  `GetLatestTransactionAsync` aplicaba From/To sin exencion alguna, a
+  diferencia de `GetBalancesAsync`, que si exime `Tipo == MesActual`.
+- **Causa raiz (b):** el chequeo post-instalacion usaba un try/catch que
+  degradaba cualquier fallo a aviso, y sondeaba `$appUrl` (URL externa), que
+  en modo reverse proxy puede no existir todavia durante la instalacion.
+- **Solucion (a):** `GetLatestTransactionAsync` aplica el mismo criterio
+  `periodoEsPorDefecto` de `GetBalancesAsync`: periodo nulo o MesActual no
+  acota; periodos explicitos (Explicito, MesAnterior, etc.) si. Tradeoff
+  aceptado y documentado: el seguimiento conversacional "¿y este mes?"
+  tras un ultimo gasto devuelve el ultimo global (en la practica casi siempre
+  coincide); a cambio la pregunta principal nunca da falsos vacios.
+  Test nuevo de cadena completa planner local -> executor -> herramienta
+  con el unico extracto en el mes anterior (`PlanExecutorTests.
+  EjecutarAsync_Ultimo_Gasto_Local_De_Mes_Anterior_Se_Encuentra`).
+- **Solucion (b):** `Instalar-AtlasBalance.ps1` convierte el health
+  funcional en BLOQUEANTE: bucle de 24 intentos x 5s (~2 min, el primer
+  arranque ejecuta migraciones EF) contra `$functionalUrl` derivado de
+  `$healthUrl` (endpoint interno directo), y `throw` con diagnostico si no
+  hay HTTP 200. Sondear el interno evita falsos negativos con reverse proxy.
+- **Leccion:** cuando un validador reinyecta defaults en cada pasada, el
+  tool final no puede distinguir "explicito" de "por defecto": la exencion
+  debe basarse en el tipo de marcador (como ya hacia GetBalancesAsync), y el
+  test que pinza el bug tiene que recorrer la cadena completa, no llamar al
+  tool directamente. En instaladores, toda verificacion de seguridad
+  post-arranque debe ser bloqueante o no verifica nada.
 
 ## 2026-08-25 - V-02.09 - Las alertas de log-forging de CodeQL persistian pese al saneo con LogScrubber (CERRADO / VALIDACION PENDIENTE)
 
