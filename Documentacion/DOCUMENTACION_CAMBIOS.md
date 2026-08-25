@@ -25646,8 +25646,11 @@ Comandos ejecutados:
 
 ### Pendientes
 
-- Confirmar run verde de `release.yml` y GitHub Release `V-02.09-win-x64`
-  con `zip` + `zip.sig` como latest (resultado anotado abajo si cierra).
+- ~~Confirmar run verde de `release.yml`~~ CERRADO 2026-08-26: run
+  `32905019952` verde en ~7 min (Build/test/audit + Package/publish);
+  GitHub Release `V-02.09-win-x64` publicado como **Latest** sobre
+  `bd3a2ab` con assets `AtlasBalance-V-02.09-win-x64.zip` (100,8 MB) y
+  `.zip.sig`: https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-02.09-win-x64
 - Decidir arreglo del ensombrecimiento de Directory.Build.props (bug
   registrado; tocarlo exige decidir si se unifican o elimina uno).
 - Limpieza con elevacion de `backend\src\AtlasBalance.Watchdog\bin\Release`
