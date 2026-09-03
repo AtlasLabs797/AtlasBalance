@@ -905,7 +905,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         var healthUrl = _configuration["WatchdogSettings:ApiHealthUrl"];
         if (string.IsNullOrWhiteSpace(healthUrl))
         {
-            // V-03.00: endpoint funcional, no liveness. Con /api/health una
+            // V-02.09: endpoint funcional, no liveness. Con /api/health una
             // actualizacion que dejara el login roto con el proceso vivo daba
             // SUCCESS (incidente V-02.07); con la sonda RLS eso provoca rollback.
             healthUrl = "https://localhost/api/health/functional";

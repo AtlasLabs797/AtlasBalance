@@ -384,7 +384,7 @@ function Resolve-MigrationConnectionForConfig {
         return ""
     }
 
-    # V-03.00 (fix): $host es una variable automatica readonly de PowerShell;
+    # V-02.09 (fix): $host es una variable automatica readonly de PowerShell;
     # asignarla lanza un error terminante y mataba la actualizacion en
     # instalaciones legacy sin MigrationConnection configurada.
     $pgHost = [string]$ownerConn.Host
@@ -590,7 +590,7 @@ function Set-JsonDefault {
     return $false
 }
 
-# V-03.00: migra WatchdogSettings:ApiHealthUrl de /api/health (liveness) a
+# V-02.09: migra WatchdogSettings:ApiHealthUrl de /api/health (liveness) a
 # /api/health/functional. Set-JsonDefault no sobreescribe valores presentes y
 # las instalaciones existentes ya traen la URL antigua escrita por el
 # instalador: sin esta migracion seguirian verificando solo liveness, con lo
@@ -666,7 +666,7 @@ function Update-ProductionConfigDefaults {
     $apiPort = if ($Runtime -and $Runtime.ApiPort) { [int]$Runtime.ApiPort } else { 443 }
     $internalApiPort = if ($Runtime -and $Runtime.InternalApiPort) { [int]$Runtime.InternalApiPort } else { 5000 }
     $apiHealthUrl = if ($useReverseProxy) { "http://localhost:$internalApiPort/api/health" } elseif ($apiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$apiPort/api/health" }
-    # V-03.00: el Watchdog debe golpear la sonda funcional, no liveness.
+    # V-02.09: el Watchdog debe golpear la sonda funcional, no liveness.
     $apiFunctionalHealthUrl = $apiHealthUrl -replace '/api/health$', '/api/health/functional'
     $appBaseUrl = if ($Runtime -and $Runtime.AppUrl) { [string]$Runtime.AppUrl } else { "" }
     $publicKey = Get-PackagedReleasePublicKey -ApiSource $ApiSource
@@ -989,12 +989,16 @@ $healthOk = $false
 # y que un INSERT firmado en AUDITORIAS funciona con el rol runtime. Si
 # falla, el actualizador hace rollback del DLL.
 $healthPath = "/api/health/functional"
-# V-03.00 (fix): sondeo con reintentos (~90 s) en lugar de un intento unico.
-# El primer arranque post-actualizacion aplica migraciones EF y puede superar
-# los 5 s originales; un falso negativo aqui revierte una actualizacion buena,
-# que es exactamente lo que paso con la sonda rota de V-02.08/V-02.09. Se
-# prueba tambien la URL interna directa (http://localhost:$internalApiPort),
-# util cuando la publicacion externa o el certificado aun no responden.
+# V-02.09 (fix): sondeo con reintentos acotado a un presupuesto global de
+# ~90 s en lugar de un intento unico. El primer arranque post-actualizacion
+# aplica migraciones EF y puede superar los 5 s originales; un falso negativo
+# aqui revierte una actualizacion buena. Se prueba tambien la URL interna
+# directa (http://localhost:$internalApiPort), util cuando la publicacion
+# externa o el certificado aun no responden. Cada intento individual lleva
+# timeout corto (5 s): con 3 candidatas a 20 s por intento el bucle podia
+# sumar ~19 min antes del rollback en vez de los ~90 s anunciados; el
+# deadline global lo impide y el caso rapido (puerto cerrado) sigue
+# reintentando cada 5 s como antes (18 pasadas en 90 s).
 $internalApiPort = if ($runtime -and $runtime.InternalApiPort) { [int]$runtime.InternalApiPort } else { 5000 }
 $healthCandidates = @(
     "$appUrl$healthPath",
@@ -1010,14 +1014,14 @@ function Test-FunctionalHealthUrl {
         # el script. La asignacion dentro de la funcion es local y no toca la
         # preferencia global del script.
         $ErrorActionPreference = "Continue"
-        $statusCode = (& curl.exe -k -s -m 20 --connect-timeout 8 -o NUL -w "%{http_code}" "$Url" 2>$null)
+        $statusCode = (& curl.exe -k -s -m 5 --connect-timeout 3 -o NUL -w "%{http_code}" "$Url" 2>$null)
         return ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
     }
     try {
         if ($PSVersionTable.PSVersion.Major -ge 6) {
             # V-02-05 (CONFIG-020): evitar tocar el callback global. Usar -SkipCertificateCheck
             # en este request especifico (es un health check self-signed durante instalacion).
-            $health = Invoke-WebRequest -Uri "$Url" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
+            $health = Invoke-WebRequest -Uri "$Url" -UseBasicParsing -TimeoutSec 5 -SkipCertificateCheck
             return ($health.StatusCode -eq 200)
         }
         # V-02.08 (fix): -SkipCertificateCheck no existe en PS 5.1 (Windows
@@ -1027,7 +1031,7 @@ function Test-FunctionalHealthUrl {
         $previousCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
         try {
             [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-            $health = Invoke-WebRequest -Uri "$Url" -UseBasicParsing -TimeoutSec 20
+            $health = Invoke-WebRequest -Uri "$Url" -UseBasicParsing -TimeoutSec 5
             return ($health.StatusCode -eq 200)
         } finally {
             [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCallback
@@ -1037,8 +1041,11 @@ function Test-FunctionalHealthUrl {
     }
 }
 
-$intentosHealth = 18
-for ($intentoHealth = 1; $intentoHealth -le $intentosHealth; $intentoHealth++) {
+$healthBudgetSec = 90
+$healthDeadline = (Get-Date).AddSeconds($healthBudgetSec)
+$intentoHealth = 0
+while ((Get-Date) -lt $healthDeadline) {
+    $intentoHealth++
     foreach ($candidateUrl in $healthCandidates) {
         if (Test-FunctionalHealthUrl -Url $candidateUrl) {
             $healthOk = $true
@@ -1046,9 +1053,12 @@ for ($intentoHealth = 1; $intentoHealth -le $intentosHealth; $intentoHealth++) {
             break
         }
     }
-    if ($healthOk -or $intentoHealth -eq $intentosHealth) { break }
-    Write-Host "Health check funcional pendiente (intento $intentoHealth de ${intentosHealth}). Esperando 5 segundos..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 5
+    if ($healthOk) { break }
+    $remainingSec = [int](($healthDeadline - (Get-Date)).TotalSeconds)
+    if ($remainingSec -le 0) { break }
+    $waitSec = [Math]::Min(5, $remainingSec)
+    Write-Host "Health check funcional pendiente (intento $intentoHealth, quedan ~$remainingSec s de $healthBudgetSec s). Esperando $waitSec segundos..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds $waitSec
 }
 
 if (-not $healthOk) {

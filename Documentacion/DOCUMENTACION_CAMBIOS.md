@@ -25580,8 +25580,59 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 
 ### Pendientes
 
-- Rotar contraseñas Postgres de desarrollo la proxima vez que el contenedor
+- Rotar contrase�as Postgres de desarrollo la proxima vez que el contenedor
   este levantado: `ALTER ROLE app_user/atlas_owner WITH PASSWORD ...` +
   actualizar `.env` y las connection strings de dev-secrets a la vez.
+
+---
+
+## 2026-09-03 - V-02.09 - PR #35: correccion de los 2 hallazgos de revision (etiquetado + deadline del sondeo)
+
+**Fecha:** 2026-09-03 — **Version:** V-02.09 — **Rama:** `hotfix/V-02.09-actualizador-sonda-funcional` — **PR:** #35 contra `main`
+
+### Trabajo realizado
+
+- P1 (etiquetado): `V-03.00` -> `V-02.09` en los 8 comentarios del port
+  (`Actualizar-AtlasBalance.ps1` x4, `WatchdogOperationsService.cs`,
+  `Instalar-AtlasBalance.ps1`, `Smoke-Test-AtlasBalance.ps1`,
+  `Test-AtlasSmtp.ps1`). Documentado el hotfix en `v-02.09.md`, tecnica, log
+  de errores y esta bitacora.
+- P2 (sondeo): `Actualizar-AtlasBalance.ps1` — timeouts por intento a 5 s
+  (curl `-m 5 --connect-timeout 3`, IWR `-TimeoutSec 5`) + deadline global de
+  90 s (`$healthBudgetSec`/`$healthDeadline`); espera entre pasadas recortada
+  al remanente; comentario reescrito.
+- No tocado a proposito: bucle del instalador (mismo patron, preexistente en
+  `main`); queda como pendiente en `v-02.09.md` y en tecnica.
+
+### Archivos tocados
+
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Smoke-Test-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Test-AtlasSmtp.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/WatchdogOperationsService.cs`
+- `Documentacion/Versiones/v-02.09.md`, `DOCUMENTACION_TECNICA.md`,
+  `LOG_ERRORES_INCIDENCIAS.md`, `DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- Parser PS de los 4 scripts (script temporal en TEMP): OK 4/4.
+- `git diff --check`: OK.
+- `dotnet build src/AtlasBalance.API -p:UseAppHost=false`: 0 errores
+  (6 warnings CS0618 preexistentes).
+- `git stash push` previo en `V-03.00` (WIP diseno) antes de cambiar de rama;
+  pendiente `stash pop` al volver.
+
+### Verificacion
+
+- Sin `V-03.00` restantes en `Atlas Balance/` (grep: 0).
+- Sin referencias al bucle antiguo (`$intentosHealth` solo queda en el
+  instalador, preexistente).
+
+### Pendientes
+
+- Push de la rama hotfix y merge del PR #35.
+- `stash pop` en `V-03.00` para recuperar el WIP de diseno.
+- Unificar el bucle del instalador con deadline global.
 
 ---

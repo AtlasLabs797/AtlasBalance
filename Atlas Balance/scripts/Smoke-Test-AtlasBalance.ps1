@@ -168,7 +168,7 @@ function Parse-ConnectionString {
         }
     }
 
-    # V-03.00 (fix): $host es una variable automatica readonly de PowerShell;
+    # V-02.09 (fix): $host es una variable automatica readonly de PowerShell;
     # asignarla lanza un error terminante. Se renombra a $pgHost.
     $pgHost = if ($parts.Contains("Host")) { $parts["Host"] } elseif ($parts.Contains("Server")) { $parts["Server"] } else { "" }
     $port = if ($parts.Contains("Port")) { [int]$parts["Port"] } else { 5432 }

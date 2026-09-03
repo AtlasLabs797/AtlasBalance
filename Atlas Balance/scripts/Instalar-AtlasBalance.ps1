@@ -1027,7 +1027,7 @@ function Write-AppSettings {
             UpdateTargetPath = $apiTarget
             RequireDatabaseBackupBeforeUpdate = $true
             RequireHealthCheckAfterUpdate = $true
-            # V-03.00: sonda funcional, no liveness; con /api/health una
+            # V-02.09: sonda funcional, no liveness; con /api/health una
             # actualizacion con login roto y proceso vivo daria por buena la
             # actualizacion (incidente V-02.07).
             ApiHealthUrl = ($healthUrl -replace '/api/health$', '/api/health/functional')
