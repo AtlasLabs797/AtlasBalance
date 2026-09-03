@@ -384,7 +384,10 @@ function Resolve-MigrationConnectionForConfig {
         return ""
     }
 
-    $host = [string]$ownerConn.Host
+    # V-02.09 (fix): $host es una variable automatica readonly de PowerShell;
+    # asignarla lanza un error terminante y mataba la actualizacion en
+    # instalaciones legacy sin MigrationConnection configurada.
+    $pgHost = [string]$ownerConn.Host
     $port = if ([int]$ownerConn.Port -gt 0) { [int]$ownerConn.Port } else { 5432 }
     $database = [string]$ownerConn.Database
     $user = [string]$ownerConn.Username
@@ -396,11 +399,11 @@ function Resolve-MigrationConnectionForConfig {
     # sslmode=require si el host no es localhost/127.0.0.1, igual que el
     # instalador. Mantener consistencia para que la API y el actualizador
     # usen el mismo modo SSL.
-    $sslMode = if ($host -eq "localhost" -or $host -eq "127.0.0.1") { "" } else { ";sslmode=require" }
+    $sslMode = if ($pgHost -eq "localhost" -or $pgHost -eq "127.0.0.1") { "" } else { ";sslmode=require" }
     $applicationName = if ([string]::IsNullOrWhiteSpace($ownerConn.ApplicationName)) { "AtlasBalance.Migrate" } else { $ownerConn.ApplicationName }
     $maximumPoolSize = if ([string]::IsNullOrWhiteSpace($ownerConn.MaximumPoolSize)) { "4" } else { $ownerConn.MaximumPoolSize }
     $minimumPoolSize = if ([string]::IsNullOrWhiteSpace($ownerConn.MinimumPoolSize)) { "0" } else { $ownerConn.MinimumPoolSize }
-    return "Host=$host;Port=$port;Database=$database;Username=$user;Password=$password$sslMode;Application Name=$applicationName;Maximum Pool Size=$maximumPoolSize;Minimum Pool Size=$minimumPoolSize"
+    return "Host=$pgHost;Port=$port;Database=$database;Username=$user;Password=$password$sslMode;Application Name=$applicationName;Maximum Pool Size=$maximumPoolSize;Minimum Pool Size=$minimumPoolSize"
 }
 
 function Find-PostgresDump {
@@ -587,6 +590,26 @@ function Set-JsonDefault {
     return $false
 }
 
+# V-02.09: migra WatchdogSettings:ApiHealthUrl de /api/health (liveness) a
+# /api/health/functional. Set-JsonDefault no sobreescribe valores presentes y
+# las instalaciones existentes ya traen la URL antigua escrita por el
+# instalador: sin esta migracion seguirian verificando solo liveness, con lo
+# que una actualizacion que dejara el login roto con proceso vivo daria SUCCESS.
+function Update-JsonHealthUrlToFunctional {
+    param([object]$Object)
+
+    $hasProperty = $Object.PSObject.Properties.Name -contains "ApiHealthUrl"
+    if (-not $hasProperty) {
+        return $false
+    }
+    $current = [string]$Object.ApiHealthUrl
+    if ([string]::IsNullOrWhiteSpace($current) -or $current -notmatch '/api/health$') {
+        return $false
+    }
+    $Object.ApiHealthUrl = ($current -replace '/api/health$', '/api/health/functional')
+    return $true
+}
+
 function Get-PackagedReleasePublicKey {
     param([string]$ApiSource)
 
@@ -643,6 +666,8 @@ function Update-ProductionConfigDefaults {
     $apiPort = if ($Runtime -and $Runtime.ApiPort) { [int]$Runtime.ApiPort } else { 443 }
     $internalApiPort = if ($Runtime -and $Runtime.InternalApiPort) { [int]$Runtime.InternalApiPort } else { 5000 }
     $apiHealthUrl = if ($useReverseProxy) { "http://localhost:$internalApiPort/api/health" } elseif ($apiPort -eq 443) { "https://localhost/api/health" } else { "https://localhost`:$apiPort/api/health" }
+    # V-02.09: el Watchdog debe golpear la sonda funcional, no liveness.
+    $apiFunctionalHealthUrl = $apiHealthUrl -replace '/api/health$', '/api/health/functional'
     $appBaseUrl = if ($Runtime -and $Runtime.AppUrl) { [string]$Runtime.AppUrl } else { "" }
     $publicKey = Get-PackagedReleasePublicKey -ApiSource $ApiSource
 
@@ -716,7 +741,8 @@ function Update-ProductionConfigDefaults {
     $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "UpdateTargetPath" -Value (Join-Path $InstallPath "api")) -or $changed
     $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "RequireDatabaseBackupBeforeUpdate" -Value $true) -or $changed
     $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "RequireHealthCheckAfterUpdate" -Value $true) -or $changed
-    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiHealthUrl) -or $changed
+    $changed = (Set-JsonDefault -Object $apiConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiFunctionalHealthUrl) -or $changed
+    $changed = (Update-JsonHealthUrlToFunctional -Object $apiConfig.WatchdogSettings) -or $changed
     $changed = (Set-JsonDefault -Object $apiConfig.GitHubSettings -Name "UpdateToken" -Value "") -or $changed
     if (-not [string]::IsNullOrWhiteSpace($publicKey)) {
         $changed = (Set-JsonDefault -Object $apiConfig.UpdateSecurity -Name "ReleaseSigningPublicKeyPem" -Value $publicKey -ReplaceBlank) -or $changed
@@ -737,7 +763,8 @@ function Update-ProductionConfigDefaults {
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "UpdateTargetPath" -Value (Join-Path $InstallPath "api")) -or $watchdogChanged
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "RequireDatabaseBackupBeforeUpdate" -Value $true) -or $watchdogChanged
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "RequireHealthCheckAfterUpdate" -Value $true) -or $watchdogChanged
-        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiHealthUrl) -or $watchdogChanged
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiFunctionalHealthUrl) -or $watchdogChanged
+        $watchdogChanged = (Update-JsonHealthUrlToFunctional -Object $watchdogConfig.WatchdogSettings) -or $watchdogChanged
         if ($watchdogChanged) {
             Write-JsonFile -Value $watchdogConfig -Path $WatchdogConfigPath
             Write-Host "Config Watchdog actualizada con claves no secretas faltantes." -ForegroundColor Cyan
@@ -962,48 +989,76 @@ $healthOk = $false
 # y que un INSERT firmado en AUDITORIAS funciona con el rol runtime. Si
 # falla, el actualizador hace rollback del DLL.
 $healthPath = "/api/health/functional"
-# V-02.08 (fix): redirigir stderr de un nativo bajo EAP=Stop convierte cada
-# linea en ErrorRecord terminating; un warning de TLS/proxy mataba el script
-# fuera de todo try/catch. Se baja EAP solo para la llamada nativa, como ya
-# hace Test-BackupRestore.ps1.
-$curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
-if ($curl) {
-    $previousEap = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try {
-        $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "$appUrl$healthPath" 2>$null)
-        $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
-        if (-not $healthOk -and -not $appUrl.Equals("https://localhost", [StringComparison]::OrdinalIgnoreCase)) {
-            $statusCode = (& curl.exe -k -s -o NUL -w "%{http_code}" "https://localhost$healthPath" 2>$null)
-            $healthOk = ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
-        }
-    } finally {
-        $ErrorActionPreference = $previousEap
+# V-02.09 (fix): sondeo con reintentos acotado a un presupuesto global de
+# ~90 s en lugar de un intento unico. El primer arranque post-actualizacion
+# aplica migraciones EF y puede superar los 5 s originales; un falso negativo
+# aqui revierte una actualizacion buena. Se prueba tambien la URL interna
+# directa (http://localhost:$internalApiPort), util cuando la publicacion
+# externa o el certificado aun no responden. Cada intento individual lleva
+# timeout corto (5 s): con 3 candidatas a 20 s por intento el bucle podia
+# sumar ~19 min antes del rollback en vez de los ~90 s anunciados; el
+# deadline global lo impide y el caso rapido (puerto cerrado) sigue
+# reintentando cada 5 s como antes (18 pasadas en 90 s).
+$internalApiPort = if ($runtime -and $runtime.InternalApiPort) { [int]$runtime.InternalApiPort } else { 5000 }
+$healthCandidates = @(
+    "$appUrl$healthPath",
+    "https://localhost$healthPath",
+    "http://localhost:$internalApiPort$healthPath"
+) | Select-Object -Unique
+
+function Test-FunctionalHealthUrl {
+    param([string]$Url)
+    if (Get-Command "curl.exe" -ErrorAction SilentlyContinue) {
+        # V-02.08 (fix): redirigir stderr de un nativo bajo EAP=Stop convierte
+        # cada linea en ErrorRecord terminating; un warning de TLS/proxy mataba
+        # el script. La asignacion dentro de la funcion es local y no toca la
+        # preferencia global del script.
+        $ErrorActionPreference = "Continue"
+        $statusCode = (& curl.exe -k -s -m 5 --connect-timeout 3 -o NUL -w "%{http_code}" "$Url" 2>$null)
+        return ($LASTEXITCODE -eq 0 -and $statusCode -eq "200")
     }
-} else {
     try {
         if ($PSVersionTable.PSVersion.Major -ge 6) {
             # V-02-05 (CONFIG-020): evitar tocar el callback global. Usar -SkipCertificateCheck
             # en este request especifico (es un health check self-signed durante instalacion).
-            $health = Invoke-WebRequest -Uri "$appUrl$healthPath" -UseBasicParsing -TimeoutSec 20 -SkipCertificateCheck
-            $healthOk = ($health.StatusCode -eq 200)
-        } else {
-            # V-02.08 (fix): -SkipCertificateCheck no existe en PS 5.1 (Windows
-            # Server 2016 sin curl.exe): el binding error se tragaba el catch,
-            # healthOk quedaba false y el actualizador hacia rollback SIEMPRE.
-            # Callback TLS acotado a esta peticion, con restauracion garantizada.
-            $previousCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
-            try {
-                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-                $health = Invoke-WebRequest -Uri "$appUrl$healthPath" -UseBasicParsing -TimeoutSec 20
-                $healthOk = ($health.StatusCode -eq 200)
-            } finally {
-                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCallback
-            }
+            $health = Invoke-WebRequest -Uri "$Url" -UseBasicParsing -TimeoutSec 5 -SkipCertificateCheck
+            return ($health.StatusCode -eq 200)
+        }
+        # V-02.08 (fix): -SkipCertificateCheck no existe en PS 5.1 (Windows
+        # Server 2016 sin curl.exe): el binding error se tragaba el catch,
+        # healthOk quedaba false y el actualizador hacia rollback SIEMPRE.
+        # Callback TLS acotado a esta peticion, con restauracion garantizada.
+        $previousCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+        try {
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+            $health = Invoke-WebRequest -Uri "$Url" -UseBasicParsing -TimeoutSec 5
+            return ($health.StatusCode -eq 200)
+        } finally {
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousCallback
         }
     } catch {
-        $healthOk = $false
+        return $false
     }
+}
+
+$healthBudgetSec = 90
+$healthDeadline = (Get-Date).AddSeconds($healthBudgetSec)
+$intentoHealth = 0
+while ((Get-Date) -lt $healthDeadline) {
+    $intentoHealth++
+    foreach ($candidateUrl in $healthCandidates) {
+        if (Test-FunctionalHealthUrl -Url $candidateUrl) {
+            $healthOk = $true
+            $appUrl = $candidateUrl.Substring(0, $candidateUrl.Length - $healthPath.Length)
+            break
+        }
+    }
+    if ($healthOk) { break }
+    $remainingSec = [int](($healthDeadline - (Get-Date)).TotalSeconds)
+    if ($remainingSec -le 0) { break }
+    $waitSec = [Math]::Min(5, $remainingSec)
+    Write-Host "Health check funcional pendiente (intento $intentoHealth, quedan ~$remainingSec s de $healthBudgetSec s). Esperando $waitSec segundos..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds $waitSec
 }
 
 if (-not $healthOk) {

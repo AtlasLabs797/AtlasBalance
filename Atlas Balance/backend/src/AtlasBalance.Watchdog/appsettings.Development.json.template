@@ -16,7 +16,7 @@
     "UpdateTargetPath": "C:\\<ruta-local>\\api",
     "RequireDatabaseBackupBeforeUpdate": true,
     "RequireHealthCheckAfterUpdate": true,
-    "ApiHealthUrl": "https://localhost:5000/api/health"
+    "ApiHealthUrl": "https://localhost:5000/api/health/functional"
   },
   "Serilog": {
     "MinimumLevel": {

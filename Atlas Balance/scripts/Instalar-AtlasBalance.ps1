@@ -1027,7 +1027,10 @@ function Write-AppSettings {
             UpdateTargetPath = $apiTarget
             RequireDatabaseBackupBeforeUpdate = $true
             RequireHealthCheckAfterUpdate = $true
-            ApiHealthUrl = $healthUrl
+            # V-02.09: sonda funcional, no liveness; con /api/health una
+            # actualizacion con login roto y proceso vivo daria por buena la
+            # actualizacion (incidente V-02.07).
+            ApiHealthUrl = ($healthUrl -replace '/api/health$', '/api/health/functional')
         }
         GitHubSettings = [ordered]@{
             UpdateToken = ""

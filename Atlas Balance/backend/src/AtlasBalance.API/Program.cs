@@ -799,7 +799,7 @@ app.MapGet("/api/health/functional", async (
                     @"INSERT INTO ""AUDITORIAS""
                         (id, tipo_accion, entidad_tipo, origen, ""timestamp"", detalles_json)
                       VALUES
-                        (gen_random_uuid(), 'HEALTH_PROBE', 'SISTEMA', 'HEALTH', now(), '{}'::json)",
+                        (gen_random_uuid(), 'HEALTH_PROBE', 'SISTEMA', 'HEALTH', now(), NULL::json)",
                     cancellationToken);
                 await probeTx.RollbackAsync(cancellationToken);
             }

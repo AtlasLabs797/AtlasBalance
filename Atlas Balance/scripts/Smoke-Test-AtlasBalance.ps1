@@ -168,7 +168,9 @@ function Parse-ConnectionString {
         }
     }
 
-    $host = if ($parts.Contains("Host")) { $parts["Host"] } elseif ($parts.Contains("Server")) { $parts["Server"] } else { "" }
+    # V-02.09 (fix): $host es una variable automatica readonly de PowerShell;
+    # asignarla lanza un error terminante. Se renombra a $pgHost.
+    $pgHost = if ($parts.Contains("Host")) { $parts["Host"] } elseif ($parts.Contains("Server")) { $parts["Server"] } else { "" }
     $port = if ($parts.Contains("Port")) { [int]$parts["Port"] } else { 5432 }
     $database = if ($parts.Contains("Database")) { $parts["Database"] } elseif ($parts.Contains("Initial Catalog")) { $parts["Initial Catalog"] } else { "" }
     $username = if ($parts.Contains("Username")) { $parts["Username"] }
@@ -177,14 +179,14 @@ function Parse-ConnectionString {
         else { $parts["User"] }
     $password = $parts["Password"]
 
-    if ([string]::IsNullOrWhiteSpace($host) -or
+    if ([string]::IsNullOrWhiteSpace($pgHost) -or
         [string]::IsNullOrWhiteSpace($database) -or
         [string]::IsNullOrWhiteSpace($username)) {
         throw "La cadena de conexion no contiene Host, Database y Username."
     }
 
     return [pscustomobject]@{
-        Host = $host
+        Host = $pgHost
         Port = $port
         Database = $database
         Username = $username

@@ -6397,3 +6397,34 @@ mensaje de su IOE (queda como InnerException para el log).
   atributos duplicados). No se han borrado del workspace (regla quirurgica);
   excluidas en el scratchpad compila limpio. Quedan registradas aqui para
   quien las persiga.
+
+## 2026-09-03 - V-02.09 - Hotfix actualizador + watchdog con sonda funcional (PR #35)
+
+### Que se modifico
+
+- `backend/src/AtlasBalance.API/Program.cs`: sonda `NULL::json`.
+- `scripts/Actualizar-AtlasBalance.ps1`, `Smoke-Test-AtlasBalance.ps1`,
+  `Test-AtlasSmtp.ps1`: `$host` -> `$pgHost`.
+- `scripts/Actualizar-AtlasBalance.ps1`: sondeo post-update contra
+  `/api/health/functional` con 3 candidatas y fallback al puerto interno;
+  `Update-JsonHealthUrlToFunctional` migra la URL liveness ya instalada.
+- `WatchdogOperationsService.cs` (default), 2 plantillas,
+  `appsettings.json` e instalador: `ApiHealthUrl` funcional.
+- Revision del PR: comentarios `V-03.00` -> `V-02.09` (5 archivos);
+  timeouts por intento a 5 s y deadline global de 90 s en el sondeo del
+  actualizador (`$healthBudgetSec`/`$healthDeadline`).
+
+### Por que
+
+- Sin este port, V-02.09 publicada no puede actualizarse (sonda rota +
+  `$host` readonly + verificacion solo-liveness que daba SUCCESS con login
+  roto, incidente V-02.07).
+- El bucle original (3 x 20 s x 18 + sleeps) sumaba ~19 min antes del
+  rollback; el deadline global lo deja en ~90 s reales.
+
+### Verificacion
+
+- Parser PS OK (4 scripts); `git diff --check` OK; `dotnet build` API
+  0 errores (6 warnings CS0618 preexistentes).
+- Pendiente: unificar el bucle del instalador (24 x 5 s, `-TimeoutSec 20`,
+  sin deadline) con el mismo patron; preexistente en `main`, fuera del PR.

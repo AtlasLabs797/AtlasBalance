@@ -5053,3 +5053,22 @@
   porque esos `*.AssemblyInfo.cs` entran como fuente. La copia a scratchpad ya
   documentada debe excluir tambien esas carpetas. No se han borrado del
   workspace por la regla de cambios quirurgicos; quedan registradas aqui.
+
+## 2026-09-03 - V-02.09 - Sondeo post-update del actualizador sin presupuesto global: ~19 min antes del rollback en vez de ~90 s (CERRADO)
+
+- **Contexto:** revision del PR #35
+  (`hotfix/V-02.09-actualizador-sonda-funcional`). El sondeo probaba 3 URLs
+  candidatas con timeout de 20 s por intento, 18 pasadas y sleep de 5 s.
+- **Sintoma:** si la API aceptaba conexiones sin responder, `--max-time` y
+  `--connect-timeout` aplican por invocacion, no al bucle: 3 x 20 s x 18 +
+  sleeps sumaban ~19 min antes del rollback, no los ~90 s del comentario.
+- **Causa:** sin deadline global, el presupuesto real era
+  `candidatas x timeout x pasadas + sleeps`.
+- **Solucion aplicada:** timeout corto por intento (curl `-m 5
+  --connect-timeout 3`, `Invoke-WebRequest -TimeoutSec 5`) + deadline global
+  de 90 s (`$healthBudgetSec`/`$healthDeadline` en
+  `Actualizar-AtlasBalance.ps1`); la espera entre pasadas se recorta al
+  remanente. Comentario reescrito con el presupuesto real.
+- **Verificacion:** parser PS OK; `dotnet build` API 0 errores;
+  `git diff --check` OK. El bucle analogo del instalador queda como pendiente
+  conocido (mismo patron, preexistente en `main`).
