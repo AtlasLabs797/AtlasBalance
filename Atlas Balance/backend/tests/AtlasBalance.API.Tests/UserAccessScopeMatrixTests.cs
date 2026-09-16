@@ -79,6 +79,13 @@ public class UserAccessScopeMatrixTests
         };
     }
 
+    private static System.Security.Claims.ClaimsPrincipal PrincipalFor(Guid userId) =>
+        new(new System.Security.Claims.ClaimsIdentity(
+        [
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, userId.ToString()),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, nameof(RolUsuario.GERENTE))
+        ], "TestAuth"));
+
     [Fact]
     public async Task PermisoGlobal_ConVerCuentas_DeberiaOcultarLasCuentasDeOtroTitular()
     {
@@ -175,6 +182,34 @@ public class UserAccessScopeMatrixTests
     }
 
     [Fact]
+    public async Task PermisoGlobal_DeberiaPermitirTodasLasCuentasSinPermisosPorCuenta()
+    {
+        await using var db = BuildDbContext();
+        var f = await SeedAsync(db);
+        var userId = Guid.NewGuid();
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var svc = BuildService(db);
+        var scope = await svc.GetScopeAsync(PrincipalFor(userId), CancellationToken.None);
+        var visibles = await svc.ApplyCuentaScope(db.Cuentas, scope).Select(c => c.Id).ToListAsync();
+
+        scope.HasGlobalAccess.Should().BeTrue();
+        visibles.Should().BeEquivalentTo(new[]
+        {
+            f.CuentaTitularCompartidoEnA.Id,
+            f.CuentaTitularCompartidoEnB.Id,
+            f.CuentaTitularSoloAEnA.Id,
+            f.CuentaTitularSoloBEnB.Id
+        });
+    }
+
+    [Fact]
     public async Task PermisoPorCuentaEspecifica_NoConcederaAccesoAOtraCuentaDelMismoTitular()
     {
         // Cuenta explicita => solo esa cuenta, no las demas del titular.
@@ -194,6 +229,38 @@ public class UserAccessScopeMatrixTests
 
         (await svc.CanAccessCuentaAsync(f.CuentaTitularCompartidoEnA.Id, scope, CancellationToken.None)).Should().BeTrue();
         (await svc.CanAccessCuentaAsync(f.CuentaTitularCompartidoEnB.Id, scope, CancellationToken.None)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PermisoPorPais_DeberiaIncluirUnaCuentaCreadaDespuesDelPermiso()
+    {
+        await using var db = BuildDbContext();
+        var f = await SeedAsync(db);
+        var userId = Guid.NewGuid();
+        db.PermisosUsuario.Add(new PermisoUsuario
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            PaisId = f.PaisA.Id,
+            PuedeVerCuentas = true
+        });
+        await db.SaveChangesAsync();
+
+        var svc = BuildService(db);
+        var scope = await svc.GetScopeAsync(PrincipalFor(userId), CancellationToken.None);
+        var nuevaCuenta = new Cuenta
+        {
+            Id = Guid.NewGuid(),
+            TitularId = f.TitularSoloB.Id,
+            PaisId = f.PaisA.Id,
+            Nombre = "Nueva cuenta Pais A",
+            Divisa = "EUR"
+        };
+        db.Cuentas.Add(nuevaCuenta);
+        await db.SaveChangesAsync();
+
+        (await svc.CanAccessCuentaAsync(nuevaCuenta.Id, scope, CancellationToken.None)).Should().BeTrue();
+        (await svc.ApplyCuentaScope(db.Cuentas, scope).AnyAsync(c => c.Id == nuevaCuenta.Id)).Should().BeTrue();
     }
 
     [Fact]

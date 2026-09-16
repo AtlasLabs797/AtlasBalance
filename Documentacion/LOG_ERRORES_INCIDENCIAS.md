@@ -1,5 +1,25 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-17 - V-03.01 - `/api/paises` mostraba países fuera del alcance del usuario (CERRADO EN CODIGO / POSTGRES PENDIENTE)
+
+- **Síntoma:** un usuario no administrador con permiso limitado a un país podía
+  recibir todos los países activos en el selector, aunque no tuviera ninguna
+  cuenta accesible en los demás.
+- **Causa raíz:** `PaisesController.Listar` solo forzaba filtros de actividad
+  para no administradores. No inyectaba `IUserAccessService` ni relacionaba el
+  catálogo con el scope efectivo de cuentas. `scope.PaisIds` tampoco habría
+  sido suficiente para permisos por titular con `pais_id = NULL`.
+- **Solución:** el controlador filtra países con una subconsulta de
+  `ApplyCuentaScope`. La migración
+  `20260917090000_AlignPaisRlsWithAccountScope` actualiza también la policy RLS
+  de `PAISES`, dejando el mismo criterio en backend y base de datos.
+- **No afectado:** la jerarquía `País > Titular > Cuenta`, la serialización de
+  `null` del modal y los controladores de titulares/cuentas ya eran correctos.
+  No se han generado permisos individuales ni se ha cambiado el modelo.
+- **Verificación:** suite no-Postgres `883/883`, frontend lint OK, unitarias
+  `57/57` y build OK. La suite Postgres queda pendiente porque Docker no está
+  disponible en el entorno local.
+
 ## 2026-08-25 - V-02.09 - Selector CSS vacio dejaba la CI en rojo ("Build frontend") desde hacia varios pushes (CERRADO / VALIDACION PENDIENTE)
 
 - **Contexto:** al preparar el push de la rama se comprobo el estado de CI

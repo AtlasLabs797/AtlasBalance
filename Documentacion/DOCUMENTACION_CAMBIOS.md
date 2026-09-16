@@ -10,6 +10,113 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-09-17 - V-03.01 - Scope efectivo en `/api/paises` y backstop RLS
+
+- **Motivacion:** reproducir y corregir que un usuario no administrador viera
+  países activos sin cuentas accesibles. La causa estaba en
+  `PaisesController`, no en `UserAccessService`.
+- **Trabajo realizado:**
+  - `PaisesController` inyecta `IUserAccessService` y deriva los países desde
+    `ApplyCuentaScope`, manteniendo el bypass completo de ADMIN.
+  - Nueva migración
+    `20260917090000_AlignPaisRlsWithAccountScope.cs`: RLS de `PAISES` exige una
+    cuenta activa y autorizada; países sin cuentas accesibles quedan fuera.
+  - `Atlas Balance/scripts/Diagnose-PermissionConsistency.sql` permite detectar
+    filas históricas incompatibles o duplicadas sin modificar datos.
+  - `PaisesControllerTests` cubre país, titular sin país y ADMIN.
+  - `UserAccessScopeMatrixTests` cubre global y cuenta creada después del
+    permiso sin crear filas nuevas de permiso.
+  - `RowLevelSecurityTests` cubre país completo, global, país sin cuentas y
+    compara IDs de PostgreSQL con `UserAccessService`.
+  - No se cambia el esquema de permisos ni se convierten scopes jerárquicos en
+    permisos cuenta por cuenta. No hubo cambios de frontend: la UI existente ya
+    representa correctamente los valores nulos y mantiene la coherencia de una
+    cuenta seleccionada.
+- **Archivos tocados:**
+  - `Atlas Balance/backend/src/AtlasBalance.API/Controllers/PaisesController.cs`
+  - `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260917090000_AlignPaisRlsWithAccountScope.cs`
+  - `Atlas Balance/scripts/Diagnose-PermissionConsistency.sql`
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PaisesControllerTests.cs`
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UserAccessScopeMatrixTests.cs`
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+  - Documentación técnica, de usuario, versión, log de incidencias y esta
+    bitácora.
+- **Comandos ejecutados:**
+  - `dotnet restore tests\AtlasBalance.API.Tests`: OK.
+  - `dotnet test tests\AtlasBalance.API.Tests --no-restore -- --filter-not-trait "Category=Postgres"`: **883/883 OK**.
+  - `dotnet test tests\AtlasBalance.API.Tests --no-restore -- --filter-trait "Category=Postgres"`: **19 fallos**, todos por Docker no disponible (`npipe://./pipe/docker_engine`).
+  - `npm.cmd ci`: OK, 0 vulnerabilidades.
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd run test:unit`: **57/57 OK**.
+  - `npm.cmd run build`: OK; solo dejó el warning conocido de `__dirname` en Vite.
+  - `git diff --check`: OK, con warnings de conversión LF/CRLF de Git.
+- **Verificación:** compilación backend correcta, suite no-Postgres verde
+  (`883/883`) y `AtlasBalance.Caching.Tests` verde (`15/15`).
+  La validación PostgreSQL/Testcontainers no se puede declarar verde hasta
+  disponer de Docker.
+- **Pendientes:** ejecutar `Category=Postgres` y validar la migración en
+  staging PostgreSQL. No se realizó validación visual con navegador.
+
+---
+
+## 2026-09-16 - V-03.01 - Apertura de la rama V-03.01 y bump de version V-02.09 -> V-03.01 / 3.1.0
+
+- **Motivacion:** peticion del operador de abrir una nueva version
+  partiendo del HEAD de `main` (`e670749`, `V-02.09`). `V-02.09` queda
+  cerrada como base historica y `V-03.01` arranca como nueva version
+  vigente.
+- **Trabajo realizado (solo bump, sin contenido funcional):**
+  - `Atlas Balance/VERSION`: `V-02.09` -> `V-03.01`.
+  - `Atlas Balance/Directory.Build.props`: `Version 2.9.0`,
+    `AssemblyVersion 2.9.0.0`, `FileVersion 2.9.0.0`,
+    `InformationalVersion V-02.09` -> `Version 3.1.0`,
+    `AssemblyVersion 3.1.0.0`, `FileVersion 3.1.0.0`,
+    `InformationalVersion V-03.01`.
+  - `Atlas Balance/frontend/package.json` y `package-lock.json`:
+    `version 2.9.0` / `appVersion V-02.09` ->
+    `version 3.1.0` / `appVersion V-03.01` (raiz + paquete raiz).
+  - `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`:
+    `["app_version"] = ("V-02.09", ...)` -> `("V-03.01", ...)`.
+  - `.github/workflows/release.yml`: `default: "V-02-09"` ->
+    `default: "V-03-01"` (el input de la CI exige guion; el script de
+    alineacion convierte `V-03.01` a `V-03-01` para el tag).
+  - `Atlas Balance/scripts/Build-Release.ps1`:
+    `[string]$Version = "V-02.09"` -> `[string]$Version = "V-03.01"`.
+  - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`:
+    `$AppVersion = "V-02.09"` -> `$AppVersion = "V-03.01"`.
+  - `Atlas Balance/scripts/install.ps1`: comprobacion del nombre del zip
+    `AtlasBalance-V-02.09-win-x64.zip` ->
+    `AtlasBalance-V-03.01-win-x64.zip`.
+  - `Documentacion/DOCUMENTACION_TECNICA.md` y
+    `Documentacion/DOCUMENTACION_USUARIO.md`: cabecera de vigencia
+    documental actualizada a `V-03.01`. El cuerpo conserva los marcadores
+    historicos `V-XX.YY` sin tocar.
+  - `Documentacion/Versiones/version_actual.md` reescrito: apunta a
+    `v-03.01.md` y deja constancia del cierre de `V-02.09` y de la base
+    desde la que se parte (`e670749`).
+  - `Documentacion/Versiones/v-03.01.md` creado: cubre el bump y los
+    criterios de verificacion.
+- **Rama:** `V-03.01` (creada desde `main`, HEAD `e670749`).
+- **Archivos tocados:** los listados arriba (VERSION, props, package,
+  package-lock, SeedData, release.yml, 3 scripts, 3 docs + cabecera de 2
+  docs).
+- **Comandos ejecutados:**
+  - `git checkout -b V-03.01` desde `main`.
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+    "C:\Proyectos\Atlas Balance Dev\Atlas Balance\scripts\Check-VersionAlignment.ps1"
+    -ExpectedVersion "V-03.01"`: **OK** (`V-03.01` / `3.1.0` alineado en
+    VERSION, Directory.Build.props, package.json, package-lock.json,
+    SeedData.app_version, release.default, Build-Release.default,
+    Instalar.default, install.default).
+- **Verificacion:** `Check-VersionAlignment.ps1` en verde. No se ha
+  ejecutado build de backend, lint ni suite porque este bloque es solo
+  bump de version; las suites se ejecutan en el primer bloque funcional
+  de V-03.01.
+- **Pendientes:** contenido funcional de V-03.01 (a definir por el
+  operador).
+
+---
+
 ## 2026-08-25 - V-02.09 - Verificacion pre-push: CI roja por CSS invalido, fix y suite completa en verde
 
 - **Motivacion:** peticion de push de la rama `V-02.09` garantizando que

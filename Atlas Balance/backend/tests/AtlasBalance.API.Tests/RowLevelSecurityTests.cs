@@ -1,8 +1,14 @@
 using FluentAssertions;
+using AtlasBalance.API.Caching;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
+using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
+using System.Security.Claims;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -36,10 +42,12 @@ public sealed class RowLevelSecurityTests
         var readerId = Guid.NewGuid();
         var writerId = Guid.NewGuid();
         var countryScopedUserId = Guid.NewGuid();
+        var globalScopedUserId = Guid.NewGuid();
         var employeeNoDashboardId = Guid.NewGuid();
         var employeeDashboardId = Guid.NewGuid();
         var paisPermitidoId = Guid.NewGuid();
         var paisBloqueadoId = Guid.NewGuid();
+        var paisSinCuentasId = Guid.NewGuid();
         var titularPermitidoId = Guid.NewGuid();
         var titularBloqueadoId = Guid.NewGuid();
         var cuentaPermitidaId = Guid.NewGuid();
@@ -122,6 +130,15 @@ public sealed class RowLevelSecurityTests
                 },
                 new Usuario
                 {
+                    Id = globalScopedUserId,
+                    Email = $"global-{Guid.NewGuid():N}@atlas.local",
+                    NombreCompleto = "Global RLS",
+                    PasswordHash = "test",
+                    Rol = RolUsuario.GERENTE,
+                    Activo = true
+                },
+                new Usuario
+                {
                     Id = employeeNoDashboardId,
                     Email = $"employee-no-dashboard-{Guid.NewGuid():N}@atlas.local",
                     NombreCompleto = "Employee No Dashboard RLS",
@@ -141,7 +158,8 @@ public sealed class RowLevelSecurityTests
 
             db.Paises.AddRange(
                 new Pais { Id = paisPermitidoId, Nombre = "Pais permitido", CodigoIso2 = "AA", Activo = true },
-                new Pais { Id = paisBloqueadoId, Nombre = "Pais bloqueado", CodigoIso2 = "BB", Activo = true });
+                new Pais { Id = paisBloqueadoId, Nombre = "Pais bloqueado", CodigoIso2 = "BB", Activo = true },
+                new Pais { Id = paisSinCuentasId, Nombre = "Pais sin cuentas", CodigoIso2 = "CC", Activo = true });
 
             db.Titulares.AddRange(
                 new Titular { Id = titularPermitidoId, Nombre = "Titular permitido", Tipo = TipoTitular.EMPRESA },
@@ -301,7 +319,13 @@ public sealed class RowLevelSecurityTests
                     Id = countryPermissionId,
                     UsuarioId = countryScopedUserId,
                     PaisId = paisPermitidoId,
-                    TitularId = titularPermitidoId,
+                    TitularId = null,
+                    PuedeVerCuentas = true
+                },
+                new PermisoUsuario
+                {
+                    Id = Guid.NewGuid(),
+                    UsuarioId = globalScopedUserId,
                     PuedeVerCuentas = true
                 });
 
@@ -520,10 +544,77 @@ public sealed class RowLevelSecurityTests
         await deniedWriterExport.Should().ThrowAsync<PostgresException>()
             .Where(ex => ex.SqlState == PostgresErrorCodes.InsufficientPrivilege);
 
+        await SetRlsContextAsync(connection, "user", globalScopedUserId, null, isAdmin: false, isSystem: false, "data");
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaMismaPaisOtroTitularId, cuentaMismoTitularOtroPaisId, cuentaEliminadaId)).Should().Be(4);
+        (await CountByIdsAsync(connection, "PAISES", paisPermitidoId, paisBloqueadoId, paisSinCuentasId)).Should().Be(2);
+
+        var postgresGlobalAccountIds = await SelectAllIdsAsync(connection, "CUENTAS");
+        await using (var appDb = new AppDbContext(options))
+        {
+            await appDb.Database.OpenConnectionAsync();
+            await SetRlsContextAsync(
+                (NpgsqlConnection)appDb.Database.GetDbConnection(),
+                "user",
+                globalScopedUserId,
+                null,
+                isAdmin: false,
+                isSystem: false,
+                "data");
+            var accessService = new UserAccessService(
+                appDb,
+                new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance),
+                Options.Create(new CachingOptions()));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, globalScopedUserId.ToString()),
+                new Claim(ClaimTypes.Role, nameof(RolUsuario.GERENTE))
+            ], "TestAuth"));
+            var scope = await accessService.GetScopeAsync(principal, CancellationToken.None);
+            scope.HasGlobalAccess.Should().BeTrue();
+            var applicationAccountIds = await accessService
+                .ApplyCuentaScope(appDb.Cuentas.AsNoTracking(), scope)
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            applicationAccountIds.Should().BeEquivalentTo(postgresGlobalAccountIds);
+        }
+
         await SetRlsContextAsync(connection, "user", countryScopedUserId, null, isAdmin: false, isSystem: false, "data");
-        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaMismaPaisOtroTitularId, cuentaMismoTitularOtroPaisId, cuentaBloqueadaId)).Should().Be(1);
-        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoMismaPaisOtroTitularId, extractoMismoTitularOtroPaisId, extractoBloqueadoId)).Should().Be(1);
+        (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaMismaPaisOtroTitularId, cuentaMismoTitularOtroPaisId, cuentaBloqueadaId)).Should().Be(2);
+        (await CountByIdsAsync(connection, "TITULARES", titularPermitidoId, titularBloqueadoId)).Should().Be(2);
+        (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoMismaPaisOtroTitularId, extractoMismoTitularOtroPaisId, extractoBloqueadoId)).Should().Be(2);
+        (await CountByIdsAsync(connection, "PAISES", paisPermitidoId, paisBloqueadoId, paisSinCuentasId)).Should().Be(1);
         (await CountByIdsAsync(connection, "PERMISOS_USUARIO", readerPermissionId, countryPermissionId)).Should().Be(1);
+
+        var postgresCountryAccountIds = await SelectAllIdsAsync(connection, "CUENTAS");
+        await using (var appDb = new AppDbContext(options))
+        {
+            await appDb.Database.OpenConnectionAsync();
+            await SetRlsContextAsync(
+                (NpgsqlConnection)appDb.Database.GetDbConnection(),
+                "user",
+                countryScopedUserId,
+                null,
+                isAdmin: false,
+                isSystem: false,
+                "data");
+            var accessService = new UserAccessService(
+                appDb,
+                new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance),
+                Options.Create(new CachingOptions()));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, countryScopedUserId.ToString()),
+                new Claim(ClaimTypes.Role, nameof(RolUsuario.GERENTE))
+            ], "TestAuth"));
+            var scope = await accessService.GetScopeAsync(principal, CancellationToken.None);
+            var applicationAccountIds = await accessService
+                .ApplyCuentaScope(appDb.Cuentas.AsNoTracking(), scope)
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            applicationAccountIds.Should().BeEquivalentTo(postgresCountryAccountIds);
+        }
 
         await SetRlsContextAsync(connection, "system", null, null, isAdmin: true, isSystem: true, "system");
         await InsertExportacionAsync(connection, cuentaPermitidaId);
@@ -555,6 +646,7 @@ public sealed class RowLevelSecurityTests
         await SetRlsContextAsync(connection, "user", adminId, null, isAdmin: true, isSystem: false, "data");
         (await CountByIdsAsync(connection, "CUENTAS", cuentaPermitidaId, cuentaBloqueadaId, cuentaEliminadaId)).Should().Be(3);
         (await CountByIdsAsync(connection, "EXTRACTOS", extractoPermitidoId, extractoBloqueadoId, extractoEliminadoId, extractoCuentaEliminadaId)).Should().Be(4);
+        (await CountByIdsAsync(connection, "PAISES", paisPermitidoId, paisBloqueadoId, paisSinCuentasId)).Should().Be(3);
     }
 
     private async Task<(string MigrationConnectionString, string RuntimeConnectionString)> CreateRoleConnectionStringsAsync()
@@ -741,6 +833,20 @@ public sealed class RowLevelSecurityTests
         command.CommandText = $"""SELECT count(*) FROM "{table}" WHERE id = ANY(@ids)""";
         command.Parameters.AddWithValue("ids", ids);
         return (long)(await command.ExecuteScalarAsync() ?? 0L);
+    }
+
+    private static async Task<HashSet<Guid>> SelectAllIdsAsync(NpgsqlConnection connection, string table)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT id FROM \"{table}\" ORDER BY id";
+        await using var reader = await command.ExecuteReaderAsync();
+        var ids = new HashSet<Guid>();
+        while (await reader.ReadAsync())
+        {
+            ids.Add(reader.GetGuid(0));
+        }
+
+        return ids;
     }
 
     private static async Task<T> ExecuteScalarAsync<T>(NpgsqlConnection connection, string sql)

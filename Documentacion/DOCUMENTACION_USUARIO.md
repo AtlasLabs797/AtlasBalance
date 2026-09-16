@@ -1,6 +1,6 @@
 # Documentacion de usuario
 
-Documento vigente para `V-02.08`. Las menciones `Desde V-02.07` conservan la
+Documento vigente para `V-03.01`. Las menciones `Desde V-XX.YY` conservan la
 version en la que se introdujo cada comportamiento; no son una referencia a una
 version anterior instalada.
 
@@ -168,6 +168,12 @@ El campo `Pais` en alta/edicion de cuenta solo asigna esa etiqueta a la cuenta. 
 El dashboard muestra `Saldos por pais`, para que no tengas que adivinar si el scope esta haciendo algo.
 
 Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
+
+Para usuarios no administradores, el selector solo muestra países donde existe
+alguna cuenta a la que tienen acceso efectivo. Esto incluye cuentas concedidas
+por un permiso global, por país, por titular repartido entre varios países o
+por una cuenta concreta. Un país nuevo queda visible automáticamente cuando
+una cuenta accesible se crea allí.
 
 Importante: el pais ya no es solo un filtro visual. En permisos de usuario y tokens de integracion, un administrador puede limitar el acceso a un pais concreto. Si ademas se elige titular o cuenta, Atlas Balance exige que todas esas condiciones coincidan a la vez.
 

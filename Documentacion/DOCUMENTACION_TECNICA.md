@@ -1,11 +1,40 @@
 # Documentacion tecnica
 
-## Vigencia documental: V-02.09
+## Vigencia documental: V-03.01
 
-La version activa de la aplicacion es `V-02.09` (runtime `2.9.0`). Este
-documento conserva debajo el historial tecnico de V-02.08 y versiones
+La version activa de la aplicacion es `V-03.01` (runtime `3.1.0`). Este
+documento conserva debajo el historial tecnico de V-02.09 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de
 cada cambio.
+
+## 2026-09-17 - V-03.01 - Paises visibles derivados del scope efectivo
+
+### Que
+
+- `PaisesController.Listar` aplica `IUserAccessService.ApplyCuentaScope` y
+  devuelve solo países activos que tienen alguna cuenta accesible para el
+  usuario no administrador.
+- La migración `20260917090000_AlignPaisRlsWithAccountScope` alinea la policy
+  RLS de `PAISES` con esa misma condición. ADMIN y SYSTEM conservan el bypass.
+
+### Por que
+
+El endpoint devolvía todos los países activos a cualquier usuario autenticado,
+aunque sus cuentas estuvieran limitadas por país, titular o cuenta. El selector
+podía mostrar países sin datos accesibles. Derivar los países desde las cuentas
+es la única forma correcta de cubrir también permisos con `pais_id = NULL` y
+`titular_id` concreto.
+
+### Alcance
+
+No se modifica `PERMISOS_USUARIO`, no se generan permisos por cuenta y no se
+tocan `UserAccessService`, `TitularesController` ni `CuentasController`: ya
+aplicaban la intersección jerárquica existente. `UsuarioModal` ya serializaba
+los selectores vacíos como `null` y corregía país/titular al elegir una cuenta.
+`Atlas Balance/scripts/Diagnose-PermissionConsistency.sql` ofrece un diagnóstico
+de solo lectura para filas históricas con cuenta inexistente, país/titular
+incompatibles o duplicados exactos. No se ejecuta ni modifica datos
+automáticamente.
 
 ## 2026-08-07 - V-02.09 - Chat IA: composer, mensajes y modo de pensamiento
 
