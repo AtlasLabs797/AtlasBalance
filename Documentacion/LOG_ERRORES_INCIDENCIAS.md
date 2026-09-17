@@ -1,5 +1,17 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-17 - V-03.01 - Alertas globales y por tipo no podían coexistir (CORREGIDO)
+
+- **Síntoma:** la prueba PostgreSQL de RLS fallaba al insertar una alerta
+  global y otra por tipo de titular con `23505` en
+  `ix_alertas_saldo_global_unica`.
+- **Causa:** el índice histórico filtraba solo `cuenta_id IS NULL`, por lo que
+  trataba las alertas por tipo como otra alerta global.
+- **Solución:** la migración `20260917210000_RepairAlertasSaldoGlobalIndex`
+  recrea el índice filtrando también `tipo_titular IS NULL`.
+- **Verificación:** suite PostgreSQL `19/19` y suite backend completa
+  `924/924` contra Testcontainers.
+
 ## 2026-09-17 - V-03.01 - Tarea de actualización Windows ejecutable por Watchdog (CERRADO EN CODIGO)
 
 - **Síntoma:** `AtlasBalance.Update` se registraba con la cuenta Watchdog y

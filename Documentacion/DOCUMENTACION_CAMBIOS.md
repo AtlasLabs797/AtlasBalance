@@ -10,6 +10,21 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-09-17 - V-03.01 - Corrección de índice único de alertas
+
+La migración histórica `20260414200917_AlertasSaldoConstraints` filtraba
+`ix_alertas_saldo_global_unica` solo por `cuenta_id IS NULL`. Eso impedía
+combinar una alerta global con una alerta por tipo de titular. Se añadió
+`20260917210000_RepairAlertasSaldoGlobalIndex`, que recrea el índice con
+`cuenta_id IS NULL AND tipo_titular IS NULL`.
+
+La regresión queda cubierta por
+`RowLevelSecurityTests.CoreFinancialTables_Should_Enforce_Rls_By_User_And_IntegrationScope`.
+Verificación final contra Docker/Testcontainers: suite PostgreSQL `19/19` y
+suite backend completa `924/924`.
+
+---
+
 ## 2026-09-17 - V-03.01 - Revisión: actualización elevada y carrera de refresh
 
 ### Hallazgos corregidos

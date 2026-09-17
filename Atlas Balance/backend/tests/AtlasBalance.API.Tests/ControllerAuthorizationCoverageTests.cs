@@ -34,10 +34,7 @@ public sealed class ControllerAuthorizationCoverageTests
     [Fact]
     public void Hangfire_Dashboard_No_Debe_Declarar_AllowAnonymous()
     {
-        var programPath = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..",
-            "src", "AtlasBalance.API", "Program.cs"));
+        var programPath = TestSourceLocator.Find("AtlasBalance.API", "Program.cs");
         var program = File.ReadAllText(programPath);
         var dashboardDeclaration = program
             .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)

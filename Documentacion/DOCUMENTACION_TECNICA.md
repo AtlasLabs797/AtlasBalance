@@ -23,6 +23,14 @@ mismo `usuarioId` que existían al iniciar la renovación. El instalador princip
 usa la misma construcción de argumentos y no concatena el primer SID a
 `/remove:g` o `/remove:d`.
 
+## 2026-09-17 - V-03.01 - Índice único de alertas
+
+La migración `20260917210000_RepairAlertasSaldoGlobalIndex` corrige el índice
+histórico `ix_alertas_saldo_global_unica`: su filtro debe exigir tanto
+`cuenta_id IS NULL` como `tipo_titular IS NULL`. Así se permite una alerta
+global y, simultáneamente, alertas globales específicas por tipo de titular,
+sin relajar la unicidad por cuenta ni la política RLS.
+
 ## 2026-09-17 - V-03.01 - Bloque 8: logs del Watchdog
 
 El Watchdog no usa rutas relativas para logs ni para su fichero de estado.

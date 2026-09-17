@@ -79,9 +79,8 @@ public sealed class WatchdogLogConfigurationTests
     [Fact]
     public void ExistingAclVerification_Should_Validate_The_Owner_Before_Continuing()
     {
-        var source = File.ReadAllText(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "src", "AtlasBalance.Watchdog", "Logging", "WatchdogLogConfiguration.cs"));
+        var source = File.ReadAllText(TestSourceLocator.Find(
+            "AtlasBalance.Watchdog", "Logging", "WatchdogLogConfiguration.cs"));
 
         source.Should().Contain("security.GetOwner(typeof(SecurityIdentifier))");
         source.Should().Contain("El propietario de '{path}' no pertenece a la allowlist protegida.");
