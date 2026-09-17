@@ -36,6 +36,7 @@ $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ManagedPostgres = $false
 $GeneratedPostgresAdminPassword = ""
 $ExistingUsersDetected = $false
+$ExistingConfigurationDetected = $false
 
 # V-02.08: dot-source de la copia atomica con rollback. Mantener
 # Sync-DirectoryPreserveConfig en un archivo separado permite
@@ -909,6 +910,141 @@ function Write-JsonFile {
     Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
 }
 
+function Get-JsonPathValue {
+    param(
+        [object]$Object,
+        [string[]]$Path
+    )
+
+    $current = $Object
+    foreach ($part in $Path) {
+        if ($null -eq $current -or -not ($current.PSObject.Properties.Name -contains $part)) {
+            return $null
+        }
+        $current = $current.$part
+    }
+
+    return $current
+}
+
+function Get-ConnectionStringValue {
+    param(
+        [string]$ConnectionString,
+        [string]$Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return ""
+    }
+
+    $parts = New-Object System.Collections.Generic.List[string]
+    $partStart = 0
+    $quote = [char]0
+    for ($index = 0; $index -lt $ConnectionString.Length; $index++) {
+        $character = $ConnectionString[$index]
+        if ($quote -ne [char]0) {
+            if ($character -eq $quote) {
+                if ($index + 1 -lt $ConnectionString.Length -and $ConnectionString[$index + 1] -eq $quote) {
+                    $index++
+                }
+                else {
+                    $quote = [char]0
+                }
+            }
+            continue
+        }
+
+        if ($character -eq [char]39 -or $character -eq [char]34) {
+            $quote = $character
+        }
+        elseif ($character -eq ';') {
+            $parts.Add($ConnectionString.Substring($partStart, $index - $partStart))
+            $partStart = $index + 1
+        }
+    }
+    $parts.Add($ConnectionString.Substring($partStart))
+
+    foreach ($part in $parts) {
+        $separator = $part.IndexOf('=')
+        if ($separator -lt 0) { continue }
+
+        $key = $part.Substring(0, $separator).Trim()
+        if (-not [string]::Equals($key, $Name, [StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        $value = $part.Substring($separator + 1).Trim()
+        if ($value.Length -ge 2 -and (($value[0] -eq [char]39 -and $value[$value.Length - 1] -eq [char]39) -or ($value[0] -eq [char]34 -and $value[$value.Length - 1] -eq [char]34))) {
+            $quoteCharacter = $value[0]
+            $value = $value.Substring(1, $value.Length - 2).Replace([string]$quoteCharacter + [string]$quoteCharacter, [string]$quoteCharacter)
+        }
+        return $value
+    }
+
+    return ""
+}
+
+function Read-ExistingInstallConfiguration {
+    param([string]$InstallPath)
+
+    $apiConfigPath = Join-Path $InstallPath "api\appsettings.Production.json"
+    if (-not (Test-Path -LiteralPath $apiConfigPath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $apiConfig = Get-Content -LiteralPath $apiConfigPath -Raw | ConvertFrom-Json
+    } catch {
+        throw "No se pudo leer la configuracion existente de Atlas Balance en ${apiConfigPath}: $($_.Exception.Message)"
+    }
+
+    $watchdogConfigPath = Join-Path $InstallPath "watchdog\appsettings.Production.json"
+    $watchdogConfig = $null
+    if (Test-Path -LiteralPath $watchdogConfigPath -PathType Leaf) {
+        try {
+            $watchdogConfig = Get-Content -LiteralPath $watchdogConfigPath -Raw | ConvertFrom-Json
+        } catch {
+            throw "No se pudo leer la configuracion existente del Watchdog en ${watchdogConfigPath}: $($_.Exception.Message)"
+        }
+    }
+
+    $defaultConnection = [string](Get-JsonPathValue -Object $apiConfig -Path @("ConnectionStrings", "DefaultConnection"))
+    $migrationConnection = [string](Get-JsonPathValue -Object $apiConfig -Path @("ConnectionStrings", "MigrationConnection"))
+    $watchdogSettings = Get-JsonPathValue -Object $watchdogConfig -Path @("WatchdogSettings")
+    $apiWatchdogSettings = Get-JsonPathValue -Object $apiConfig -Path @("WatchdogSettings")
+    $certificate = Get-JsonPathValue -Object $apiConfig -Path @("Kestrel", "Endpoints", "Https", "Certificate")
+
+    $watchdogSecret = [string](Get-JsonPathValue -Object $watchdogSettings -Path @("SharedSecret"))
+    if ([string]::IsNullOrWhiteSpace($watchdogSecret)) {
+        $watchdogSecret = [string](Get-JsonPathValue -Object $apiWatchdogSettings -Path @("SharedSecret"))
+    }
+
+    $ownerUser = Get-ConnectionStringValue -ConnectionString $migrationConnection -Name "Username"
+    $ownerPassword = Get-ConnectionStringValue -ConnectionString $migrationConnection -Name "Password"
+    if ([string]::IsNullOrWhiteSpace($ownerUser)) {
+        $ownerUser = [string](Get-JsonPathValue -Object $watchdogSettings -Path @("DbOwnerUser"))
+    }
+    if ([string]::IsNullOrWhiteSpace($ownerPassword)) {
+        $ownerPassword = [string](Get-JsonPathValue -Object $watchdogSettings -Path @("DbOwnerPassword"))
+    }
+
+    return [pscustomobject]@{
+        JwtSecret = [string](Get-JsonPathValue -Object $apiConfig -Path @("JwtSettings", "Secret"))
+        RlsContextSecret = [string](Get-JsonPathValue -Object $apiConfig -Path @("Security", "RlsContextSecret"))
+        AuditSigningKey = [string](Get-JsonPathValue -Object $apiConfig -Path @("Security", "AuditSigningKey"))
+        WatchdogSecret = $watchdogSecret
+        DbHost = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Host"
+        DbPort = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Port"
+        DbName = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Database"
+        DbUser = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Username"
+        DbPassword = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Password"
+        DbOwnerUser = $ownerUser
+        DbOwnerPassword = $ownerPassword
+        CertificatePath = [string](Get-JsonPathValue -Object $certificate -Path @("Path"))
+        CertificatePassword = [string](Get-JsonPathValue -Object $certificate -Path @("Password"))
+    }
+}
+
 function Write-AppSettings {
     param(
         [string]$ApiPath,
@@ -1089,8 +1225,24 @@ function Write-AppSettings {
 
     $apiSettingsPath = Join-Path $ApiPath "appsettings.Production.json"
     $watchdogSettingsPath = Join-Path $WatchdogPath "appsettings.Production.json"
-    Write-JsonFile -Value $apiConfig -Path $apiSettingsPath
-    Write-JsonFile -Value $watchdogConfig -Path $watchdogSettingsPath
+
+    # La configuracion productiva contiene secretos y decisiones del operador.
+    # En una reinstalacion no se debe regenerar ni siquiera si el resto del
+    # paquete se vuelve a copiar. Exigimos ambos ficheros para no crear un
+    # Watchdog con un secreto distinto al de una API ya existente.
+    $apiExists = Test-Path -LiteralPath $apiSettingsPath -PathType Leaf
+    $watchdogExists = Test-Path -LiteralPath $watchdogSettingsPath -PathType Leaf
+    if ($apiExists -or $watchdogExists) {
+        if (-not ($apiExists -and $watchdogExists)) {
+            throw "Instalacion existente incompleta: deben existir api\appsettings.Production.json y watchdog\appsettings.Production.json para preservar la configuracion sin desalinear secretos."
+        }
+
+        Write-Host "Configuracion productiva existente preservada; no se regeneran secretos ni se sobrescribe appsettings.Production.json." -ForegroundColor Yellow
+    }
+    else {
+        Write-JsonFile -Value $apiConfig -Path $apiSettingsPath
+        Write-JsonFile -Value $watchdogConfig -Path $watchdogSettingsPath
+    }
     Protect-SecretFile -Path $apiSettingsPath
     Protect-SecretFile -Path $watchdogSettingsPath
     Protect-RestrictedDirectory -Path $dataProtectionKeysPath
@@ -1237,6 +1389,11 @@ function Write-RuntimeAndCredentials {
     Write-JsonFile -Value $runtime -Path (Join-Path $InstallPath "atlas-balance.runtime.json")
     Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $AppVersion -Encoding UTF8
 
+    if ($ExistingConfigurationDetected) {
+        Write-Host "Instalacion existente: se conserva INSTALL_CREDENTIALS_ONCE.txt y no se vuelven a emitir credenciales." -ForegroundColor Yellow
+        return
+    }
+
     $credentialsPath = Join-Path (Join-Path $InstallPath "config") "INSTALL_CREDENTIALS_ONCE.txt"
     if ($ExistingUsersDetected) {
         $lines = @(
@@ -1345,6 +1502,65 @@ if ($UseReverseProxy -and $InternalApiPort -eq $PublicPort) {
 # V-02.08 (revision PR #33): misma condicion que mas abajo decide si se monta
 # PostgreSQL gestionado (linea ~1316): -InstallDependencies sin
 # -PostgresAdminPassword. Solo en ese caso el preflight debe exigir DbPort libre.
+$existingInstallConfiguration = Read-ExistingInstallConfiguration -InstallPath $InstallPath
+$ExistingConfigurationDetected = $null -ne $existingInstallConfiguration
+
+if ($ExistingConfigurationDetected) {
+    # En una reinstalacion la configuracion ya escrita por el operador es la
+    # autoridad. Reutilizar tambien las credenciales de BD evita que
+    # Ensure-Database cambie las contrasenas de los roles y deje el appsettings
+    # conservado apuntando a credenciales antiguas.
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbHost)) { $DbHost = $existingInstallConfiguration.DbHost }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbPort)) { $DbPort = [int]$existingInstallConfiguration.DbPort }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbName)) { $DbName = $existingInstallConfiguration.DbName }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbUser)) { $DbUser = $existingInstallConfiguration.DbUser }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbPassword)) { $DbPassword = $existingInstallConfiguration.DbPassword }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbOwnerUser)) { $DbOwnerUser = $existingInstallConfiguration.DbOwnerUser }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbOwnerPassword)) { $DbOwnerPassword = $existingInstallConfiguration.DbOwnerPassword }
+
+    $jwtSecret = $existingInstallConfiguration.JwtSecret
+    $rlsContextSecret = $existingInstallConfiguration.RlsContextSecret
+    $auditSigningKey = $existingInstallConfiguration.AuditSigningKey
+    $watchdogSecret = $existingInstallConfiguration.WatchdogSecret
+    # -InstallDependencies es una orden para preparar una instancia nueva.
+    # En una reinstalacion no puede sustituir el host/puerto de la configuracion
+    # conservada ni crear roles en otra base de datos.
+    if ($InstallDependencies) {
+        Write-Host "Instalacion existente detectada: se omite la preparacion automatica de PostgreSQL y se conserva su host/puerto." -ForegroundColor Yellow
+        $InstallDependencies = $false
+    }
+}
+else {
+    $jwtSecret = New-RandomSecret 64
+    $rlsContextSecret = New-RandomSecret 64
+    $auditSigningKey = New-RandomSecret 64
+    $watchdogSecret = New-RandomSecret 64
+}
+
+if ($ExistingConfigurationDetected) {
+    if (-not $SkipDatabaseSetup -and [string]::IsNullOrWhiteSpace($DbPassword)) {
+        throw "La configuracion existente no contiene una contraseña parseable para DbUser; se cancela para no cambiar la contraseña de la base de datos."
+    }
+    if (-not $SkipDatabaseSetup -and [string]::IsNullOrWhiteSpace($DbOwnerPassword)) {
+        throw "La configuracion existente no contiene una contraseña parseable para DbOwnerUser; se cancela para no cambiar la contraseña de la base de datos."
+    }
+}
+else {
+    if ([string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = New-RandomSecret 40 }
+    if ([string]::IsNullOrWhiteSpace($DbOwnerPassword)) { $DbOwnerPassword = New-RandomSecret 40 }
+}
+if ([string]::IsNullOrWhiteSpace($AdminPassword) -and -not $ExistingConfigurationDetected) { $AdminPassword = New-RandomSecret 24 }
+if ([string]::IsNullOrWhiteSpace($PostgresInstallPath)) { $PostgresInstallPath = Join-Path $InstallPath "postgresql\16" }
+if ([string]::IsNullOrWhiteSpace($PostgresDataPath)) { $PostgresDataPath = Join-Path $InstallPath "postgres-data" }
+$certPassword = if ($ExistingConfigurationDetected) { "" } else { New-RandomSecret 40 }
+
+if ($ExistingConfigurationDetected -and -not $UseReverseProxy) {
+    if ([string]::IsNullOrWhiteSpace($existingInstallConfiguration.CertificatePath)) {
+        throw "La instalacion existente no contiene Kestrel:Endpoints:Https:Certificate:Path; no se puede regenerar el certificado sin sobrescribir appsettings.Production.json."
+    }
+    $certPassword = $existingInstallConfiguration.CertificatePassword
+}
+
 $willInstallManagedDb = (-not $SkipDatabaseSetup) -and $InstallDependencies -and [string]::IsNullOrWhiteSpace($PostgresAdminPassword)
 Test-AtlasPreflight -InstallPath $InstallPath -ApiPort $ApiPort -InternalApiPort $InternalApiPort -WatchdogPort $WatchdogPort -DbPort $DbPort -PublicPort $PublicPort -WillInstallManagedDb $willInstallManagedDb
 $internalApiUrl = if ($UseReverseProxy) { "http://127.0.0.1:$InternalApiPort" } else { "https://0.0.0.0:$ApiPort" }
@@ -1354,22 +1570,6 @@ $appUrl = if ($UseReverseProxy) {
 } else {
     if ($ApiPort -eq 443) { "https://$ServerName" } else { "https://$ServerName`:$ApiPort" }
 }
-
-if ([string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = New-RandomSecret 40 }
-if ([string]::IsNullOrWhiteSpace($DbOwnerPassword)) { $DbOwnerPassword = New-RandomSecret 40 }
-if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = New-RandomSecret 24 }
-if ([string]::IsNullOrWhiteSpace($PostgresInstallPath)) { $PostgresInstallPath = Join-Path $InstallPath "postgresql\16" }
-if ([string]::IsNullOrWhiteSpace($PostgresDataPath)) { $PostgresDataPath = Join-Path $InstallPath "postgres-data" }
-$jwtSecret = New-RandomSecret 64
-# V-02-06 (RLS-SEC-01): el secreto RLS debe ser independiente del JWT. Se
-# genera aleatorio y se persiste en el appsettings efectivo durante la
-# generacion de configuracion mas abajo.
-$rlsContextSecret = New-RandomSecret 64
-# V-02.07: clave de firma de AUDITORIAS, independiente de JWT y de RLS por el
-# mismo motivo: comprometer una no puede permitir forjar el rastro de auditoria.
-$auditSigningKey = New-RandomSecret 64
-$watchdogSecret = New-RandomSecret 64
-$certPassword = New-RandomSecret 40
 
 New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
 foreach ($dir in @("api", "watchdog", "scripts", "backups", "exports", "logs", "certs", "updates", "config")) {
@@ -1475,11 +1675,18 @@ foreach ($supportScript in @(
 $certPath = ""
 $effectiveCertPassword = ""
 if (-not $UseReverseProxy) {
-    $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
-    Protect-RestrictedDirectory -Path (Join-Path $InstallPath "certs")
-    Protect-SecretFile -Path $cert.Path
-    $certPath = $cert.Path
-    $effectiveCertPassword = $cert.Password
+    if ($ExistingConfigurationDetected) {
+        $certPath = $existingInstallConfiguration.CertificatePath
+        $effectiveCertPassword = $existingInstallConfiguration.CertificatePassword
+        Write-Host "Certificado HTTPS existente preservado; no se vuelve a emitir." -ForegroundColor Yellow
+    }
+    else {
+        $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
+        Protect-RestrictedDirectory -Path (Join-Path $InstallPath "certs")
+        Protect-SecretFile -Path $cert.Path
+        $certPath = $cert.Path
+        $effectiveCertPassword = $cert.Password
+    }
 }
 Write-AppSettings `
     -ApiPath $apiPath `

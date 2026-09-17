@@ -10,6 +10,33 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-09-17 - V-03.01 - Coordinacion de auditoria de seguridad (estado de sesion)
+
+- **Commits aprobados en esta sesion:** `6610adb` (permiso de escritura en
+  exportacion manual), `6b6b959` y `d406ccf` (fallback autenticado y guardia
+  de Hangfire), `b171567` (health), `7454c3d` (RLS restante) y `4b37701`
+  (origen autorizado de release).
+- **Verificacion local:** `dotnet restore --locked-mode` y `dotnet build -c
+  Release` correctos; las pruebas focalizadas de autorizacion, health y
+  rate limiting fueron correctas; `MigrationDiscoveryTests` fue correcto.
+  PostgreSQL/Testcontainers sigue bloqueado porque Docker no esta disponible.
+  Frontend: `npm ci`, lint, `test:unit` (57/57) y build correctos.
+- **Bloque 4:** existe un parche no comprometido para preservar secretos del
+  instalador y una prueba PowerShell especifica. El parser conserva valores
+  quoted con `;` y barras inversas literales; el script pasa sintaxis y el
+  test especifico. La revision independiente lo aprobo tras corregir el
+  parseo y las rutas de reinstalacion contra otra BD. Commit posterior:
+  `fix(installer): preserve existing security secrets`.
+- **Bloques pendientes:** minimo privilegio Windows, refresh entre pestanas,
+  ruta absoluta de logs Watchdog, secretos de smoke test, auditoria transversal
+  con nuevas vulnerabilidades confirmadas, aislamiento de caches frontend y
+  auditoria final. El limite de subagentes impidio completar el ciclo exigido.
+- **Riesgos de infraestructura:** no existe `origin/V-03.01` en el remoto
+  consultado; `npm audit` y la auditoria NuGet no pudieron consultar sus
+  registros por bloqueo de red.
+
+---
+
 ## 2026-09-17 - V-03.01 - RLS para alertas, uso IA y operaciones de backup
 
 - **Motivacion:** `ALERTAS_SALDO`, `ALERTA_DESTINATARIOS`, `IA_USO_USUARIOS`
