@@ -31,6 +31,8 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         "Launch-AtlasBalance.ps1",
         "Reset-AdminPassword.ps1",
         "install-cert-client.ps1",
+        "ServiceSecurity.ps1",
+        "Run-AtlasElevatedUpdate.ps1",
         "install.ps1",
         "start.ps1",
         "uninstall-services.ps1",
@@ -218,7 +220,7 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 {
                     var updateResult = await RunPackageUpdateViaHelperAsync(fullSourcePath, fullTargetPath, CancellationToken.None);
                     finalState = updateResult.Success
-                        ? CreateState("SUCCESS", "UPDATE_APP", "Actualizacion completada")
+                        ? CreateState("RUNNING", "UPDATE_APP", "Actualizacion delegada al actualizador protegido")
                         : CreateState("FAILED", "UPDATE_APP", "Actualizacion externa fallo. Revise los logs protegidos del servidor.");
                     return;
                 }
@@ -789,42 +791,37 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         string installPath,
         CancellationToken cancellationToken)
     {
-        var updaterScript = Path.Combine(packageRoot, "scripts", "Actualizar-AtlasBalance.ps1");
-        if (!File.Exists(updaterScript))
+        var requestDirectory = Path.Combine(installPath, "updates", "requests");
+        var requestPath = Path.Combine(requestDirectory, "pending-update.json");
+        Directory.CreateDirectory(requestDirectory);
+        var request = new
         {
-            return (false, "El paquete no incluye scripts\\Actualizar-AtlasBalance.ps1.");
+            PackageRoot = packageRoot,
+            PackageZipPath = Path.Combine(Path.GetDirectoryName(packageRoot)!, Path.GetFileName(packageRoot) + ".zip"),
+            InstallPath = installPath,
+            StateFilePath = WatchdogLogConfiguration.ResolveStateFilePath(_configuration)
+        };
+        var temporaryPath = requestPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, JsonSerializer.Serialize(request), cancellationToken);
+            File.Move(temporaryPath, requestPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
         }
 
-        var sourceRoot = _configuration["WatchdogSettings:UpdateSourceRoot"] ?? Path.Combine(installPath, "updates");
-        if (!IsExplicitlyRooted(sourceRoot))
+        var schtasks = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe");
+        if (!File.Exists(schtasks))
         {
-            return (false, "WatchdogSettings:UpdateSourceRoot no es absoluto.");
+            return (false, "No se encontro schtasks.exe en System32.");
         }
 
-        var helperPath = Path.Combine(sourceRoot, $"run-online-update-{Guid.NewGuid():N}.ps1");
-        Directory.CreateDirectory(sourceRoot);
-        File.WriteAllText(helperPath, BuildOnlineUpdateHelperScript());
-
-        var stateFilePath = _configuration["WatchdogSettings:StateFilePath"] ??
-                            Path.Combine(installPath, "watchdog-state.json");
-
-        return await RunProcessAsync(
-            ResolvePowerShellExecutable(),
-            [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                helperPath,
-                "-UpdaterScript",
-                updaterScript,
-                "-InstallPath",
-                installPath,
-                "-StateFilePath",
-                stateFilePath
-            ],
-            null,
-            cancellationToken);
+        return await RunProcessAsync(schtasks, ["/Run", "/TN", "AtlasBalance.Update"], null, cancellationToken);
     }
 
     private static string ResolvePowerShellExecutable()
@@ -869,12 +866,25 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 New-Item -ItemType Directory -Path $directory -Force | Out-Null
             }
 
-            [ordered]@{
-                Estado = $Estado
-                Operacion = "UPDATE_APP"
-                Mensaje = $Mensaje
-                UpdatedAt = (Get-Date).ToUniversalTime().ToString("o")
-            } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $StateFilePath -Encoding UTF8
+            $temporaryPath = "$StateFilePath.$([Guid]::NewGuid().ToString('N')).tmp"
+            try {
+                [ordered]@{
+                    Estado = $Estado
+                    Operacion = "UPDATE_APP"
+                    Mensaje = $Mensaje
+                    UpdatedAt = (Get-Date).ToUniversalTime().ToString("o")
+                } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temporaryPath -Encoding UTF8
+
+                if ([System.IO.File]::Exists($StateFilePath)) {
+                    [System.IO.File]::Replace($temporaryPath, $StateFilePath, $null)
+                } else {
+                    [System.IO.File]::Move($temporaryPath, $StateFilePath)
+                }
+            } finally {
+                if (Test-Path -LiteralPath $temporaryPath) {
+                    Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+                }
+            }
         }
 
         try {

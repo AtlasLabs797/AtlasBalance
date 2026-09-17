@@ -10,6 +10,117 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-09-17 - V-03.01 - Revisión: actualización elevada y carrera de refresh
+
+### Hallazgos corregidos
+
+- La tarea `AtlasBalance.Update` se registraba como la cuenta Watchdog con
+  `RunLevel=Limited`; no podía actualizar una instalación protegida y, además,
+  el descriptor concedía control total a esa cuenta. Ahora se ejecuta como
+  `SYSTEM` mediante `ServiceAccount/HighestAvailable` y Watchdog solo conserva
+  lectura/ejecución de la tarea (`GRGX`), con escritura limitada al área de
+  solicitudes y actualizaciones firmadas.
+- La invocación compartida de `icacls` mezclaba `/grant:r` con `/setowner`, lo
+  que hacía fallar el endurecimiento de ACL. Se separaron ambas operaciones.
+- API y Watchdog ya no reciben `Modify` heredado sobre sus propios binarios;
+  las ACL de backups y exports quedan diferenciadas por el servicio que las
+  necesita.
+- Una respuesta de refresh iniciada antes de logout/cambio de usuario podía
+  reaparecer en la sesión nueva. Se valida generación e identidad antes de
+  aplicar el payload.
+- El instalador principal duplicaba la limpieza de ACL con una concatenación
+  incorrecta de los argumentos `/remove:g` y `/remove:d`; se corrigió la
+  construcción de argumentos y se separó también `/setowner`.
+
+### Archivos tocados
+
+- `Atlas Balance/scripts/ServiceSecurity.ps1`,
+  `ServiceSecurity.Tests.ps1`, `Instalar-AtlasBalance.ps1`.
+- `Atlas Balance/frontend/src/services/api.ts`,
+  `src/utils/sessionScope.ts`, `tests/sessionScope.test.ts`.
+
+### Verificación
+
+- `ServiceSecurity.Tests.ps1`: OK.
+- La regresión estática del instalador principal cubre la forma correcta de
+  construir los argumentos de `icacls`: OK.
+- Parser PowerShell de instalador, actualizador, instalación de servicios,
+  módulo de seguridad, smoke test y runner: OK.
+- Frontend: lint OK, build OK, `70/70` tests unitarios OK.
+- `git diff --check`: OK.
+- Docker/Testcontainers: bloqueado en este host por acceso denegado a
+  `npipe://./pipe/docker_engine`; no se declara validación PostgreSQL.
+
+---
+
+## 2026-09-17 - V-03.01 - Bloque 12: aislamiento de sesión frontend
+
+### Trabajo realizado
+
+- `authStore` limpia el estado por usuario al cerrar sesión o cambiar de
+  usuario, incluyendo la prevención de conservar un CSRF anterior cuando el
+  nuevo usuario todavía no aporta uno.
+- Se centralizó la limpieza de stores user-scoped: permisos, alertas, país,
+  chat/IA, notificaciones, actualización, UI transitoria y caché TanStack
+  Query. Tema y layout permanecen como preferencias neutras.
+- Se añadieron generaciones de sesión para descartar respuestas async antiguas
+  de IA, alertas, disponibilidad IA, notificaciones y actualización.
+- Se hicieron explícitas las claves user-scoped de storage y se añadieron
+  `usuarioId` a query keys sensibles que podían colisionar.
+
+### Archivos tocados
+
+- Frontend: `src/stores/{authStore,sessionState,aiChatStore,alertasStore,
+  iaAvailabilityStore,notificacionesAdminStore,paisScopeStore,uiStore,
+  updateStore}.ts`, `src/services/queryClient.ts`,
+  `src/queries/queryKeys.ts`, `src/utils/sessionScope.ts`.
+- Tests: `tests/sessionScope.test.ts`, `tests/queryClient.test.ts`,
+  `tests/queryKeys.test.ts`.
+- El bloque 12 no toca `services/api.ts`, `package.json` ni `tsconfig*`; esos
+  ficheros pertenecen al bloque 7 de coordinación de refresh, que se valida
+  por separado.
+
+### Verificación
+
+- Lint focalizado del Bloque 12: OK.
+- Regresiones de aislamiento: `3/3` OK. La suite frontend conjunta quedó en
+  `65/65` al incluir también las pruebas del bloque 7.
+- Regresiones `sessionScope`: `3/3` OK.
+- `git diff --check`: OK.
+
+### Estado
+
+- Sin pendientes funcionales derivados del bloque; queda la aprobación
+  independiente y el commit coordinado de la tanda completa.
+
+---
+
+## 2026-09-17 - V-03.01 - Bloque 8: ruta absoluta y segura de logs del Watchdog
+
+- **Trabajo realizado:** el Watchdog resuelve `WatchdogSettings:LogDirectory`
+  como ruta absoluta y usa `%ProgramData%\AtlasBalance\logs` por defecto.
+  Rechaza rutas relativas, crea el directorio con ACL limitada a `SYSTEM`,
+  Administradores y la identidad efectiva del servicio, y configura rotacion
+  diaria, limite de 50 MiB y 30 ficheros retenidos. El estado del Watchdog
+  tambien deja de caer a un fichero relativo.
+- **Configuracion para el instalador C:** crear `%ProgramData%\AtlasBalance\logs`
+  antes de registrar el servicio y conceder escritura/rotacion a la cuenta real
+  del servicio, ademas de `SYSTEM` y Administradores. Mantener
+  `WatchdogSettings:LogDirectory` y `StateFilePath` con rutas absolutas; nunca
+  depender del working directory del servicio.
+- **Tests:** `WatchdogLogConfigurationTests` cubre defaults absolutos,
+  configuracion absoluta, rutas relativas, working directory inesperado y fallo
+  cerrado cuando el destino no es escribible.
+- **Archivos de este bloque:** Watchdog logging/configuracion/estado,
+  `appsettings` del Watchdog, `packages.lock.json`, test focalizado y esta
+  documentacion. No se modifican instaladores ni frontend.
+- **Verificación:** build del proyecto de tests sin errores y pruebas
+  focalizadas `WatchdogLogConfiguration` `6/6`, `WatchdogStateStore` `2/2` y
+  helper de actualización `1/1` OK. La ACL existente se verifica de forma
+  fail-closed, incluida la propiedad del fichero/directorio.
+
+---
+
 ## 2026-09-17 - V-03.01 - Coordinacion de auditoria de seguridad (estado de sesion)
 
 - **Commits aprobados en esta sesion:** `6610adb` (permiso de escritura en

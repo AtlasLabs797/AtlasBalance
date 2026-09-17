@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getBrowserStorage } from '@/utils/sessionScope';
 
 const MAX_TOASTS = 5;
 
@@ -32,10 +33,13 @@ interface UiState {
   unregisterBlockingOverlay: () => void;
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
+  clearSessionTransientState: () => void;
 }
 
+const storage = () => getBrowserStorage('localStorage');
+
 export const useUiStore = create<UiState>((set) => ({
-  theme: normalizeTheme(localStorage.getItem('theme')),
+  theme: normalizeTheme(storage()?.getItem('theme') ?? null),
   sidebarCollapsed: false,
   activeModal: null,
   blockingOverlayCount: 0,
@@ -44,13 +48,13 @@ export const useUiStore = create<UiState>((set) => ({
   toggleTheme: () =>
     set((state) => {
       const newTheme = state.theme === 'light' ? 'dark' : 'light';
-      localStorage.setItem('theme', newTheme);
+      storage()?.setItem('theme', newTheme);
       document.documentElement.setAttribute('data-theme', newTheme);
       return { theme: newTheme };
     }),
 
   setTheme: (theme) => {
-    localStorage.setItem('theme', theme);
+    storage()?.setItem('theme', theme);
     document.documentElement.setAttribute('data-theme', theme);
     set({ theme });
   },
@@ -79,4 +83,7 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
+
+  clearSessionTransientState: () =>
+    set({ activeModal: null, blockingOverlayCount: 0, toasts: [] }),
 }));

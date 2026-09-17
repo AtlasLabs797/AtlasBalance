@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import api from '@/services/api';
 import type { Pais } from '@/types';
+import { getBrowserStorage, USER_SCOPED_STORAGE_KEYS } from '@/utils/sessionScope';
 
-const STORAGE_KEY = 'atlas_balance_selected_pais_id';
+const STORAGE_KEY = USER_SCOPED_STORAGE_KEYS.selectedPaisId;
 
 interface PaisScopeState {
   selectedPaisId: string;
@@ -15,7 +16,7 @@ interface PaisScopeState {
 }
 
 function readStoredPaisId() {
-  return localStorage.getItem(STORAGE_KEY) ?? '';
+  return getBrowserStorage('localStorage')?.getItem(STORAGE_KEY) ?? '';
 }
 
 export const usePaisScopeStore = create<PaisScopeState>((set, get) => ({
@@ -26,10 +27,11 @@ export const usePaisScopeStore = create<PaisScopeState>((set, get) => ({
 
   setSelectedPaisId: (paisId) => {
     const next = paisId.trim();
+    const storage = getBrowserStorage('localStorage');
     if (next) {
-      localStorage.setItem(STORAGE_KEY, next);
+      storage?.setItem(STORAGE_KEY, next);
     } else {
-      localStorage.removeItem(STORAGE_KEY);
+      storage?.removeItem(STORAGE_KEY);
     }
     set({ selectedPaisId: next });
   },
@@ -44,7 +46,7 @@ export const usePaisScopeStore = create<PaisScopeState>((set, get) => ({
       const selectedPaisId = get().selectedPaisId;
       const selectedStillActive = !selectedPaisId || paises.some((pais) => pais.id === selectedPaisId);
       if (!selectedStillActive) {
-        localStorage.removeItem(STORAGE_KEY);
+        getBrowserStorage('localStorage')?.removeItem(STORAGE_KEY);
       }
       set({
         paises,
@@ -61,7 +63,7 @@ export const usePaisScopeStore = create<PaisScopeState>((set, get) => ({
     // Debe borrar tambien el localStorage: si no, el pais seleccionado por el
     // usuario anterior queda persistido y se carga para el siguiente usuario
     // que inicie sesion en el mismo navegador (maquina compartida en LAN).
-    localStorage.removeItem(STORAGE_KEY);
+    getBrowserStorage('localStorage')?.removeItem(STORAGE_KEY);
     set({ selectedPaisId: '', paises: [], loading: false, lastError: null });
   },
 }));

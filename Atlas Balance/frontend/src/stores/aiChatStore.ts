@@ -4,6 +4,7 @@ import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { IaChatResponse, IaConfig } from '@/types';
 import { getAiModelLabel, normalizeAiModel, normalizeThinkingMode, type ThinkingMode } from '@/utils/aiModels';
 import { friendlyIaError } from '@/utils/iaErrors';
+import { getSessionGeneration, isSessionGenerationCurrent } from '@/utils/sessionScope';
 
 // V-02.09 (Fase 1.6): tipos del chat. Antes vivian dentro de AiChatPanel.tsx;
 // se mueven al store (y se reexportan desde @/types) para que el store pueda
@@ -75,6 +76,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
   thinkingMode: 'auto',
 
   ensureConfig: async () => {
+    const generation = getSessionGeneration();
     const { config, configCheckedAt, configLoading } = get();
     const now = Date.now();
     if (config && configCheckedAt !== null && now - configCheckedAt < CONFIG_TTL_MS) {
@@ -87,6 +89,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
     set({ configLoading: true });
     try {
       const { data } = await api.get<IaConfig>('/ia/config');
+      if (!isSessionGenerationCurrent(generation)) return;
       const currentThinkingMode = get().thinkingMode;
       set({
         config: data,
@@ -108,6 +111,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
             ],
       });
     } catch (err) {
+      if (!isSessionGenerationCurrent(generation)) return;
       const friendly = friendlyIaError(err, 'No se pudo cargar la configuración de IA.');
       set({
         configLoading: false,
@@ -119,6 +123,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
   setThinkingMode: (mode) => set({ thinkingMode: mode }),
 
   ask: async (rawPrompt) => {
+    const generation = getSessionGeneration();
     const prompt = rawPrompt.trim();
     if (!prompt || get().loading) {
       return;
@@ -168,6 +173,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
         // el timeout defensivo de 15s.
         timeout: 45_000,
       });
+      if (!isSessionGenerationCurrent(generation)) return;
       set({
         messages: [
           ...get().messages,
@@ -190,6 +196,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
         loading: false,
       });
     } catch (err) {
+      if (!isSessionGenerationCurrent(generation)) return;
       // V-02.09 (Fase 10): el backend lanza excepciones con tipos
       // especificos (IaAccessDeniedException, IaOutOfScopeException,
       // IaLimitExceededException, IaConfigurationException,
@@ -206,6 +213,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
   },
 
   reset: async () => {
+    const generation = getSessionGeneration();
     // Invalida el ConversationContext estructurado del backend para que la
     // siguiente pregunta arranque limpia en el servidor (memoria de intencion).
     // Si el endpoint falla, limpiamos la UI igualmente: el siguiente mensaje
@@ -217,6 +225,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
     } catch {
       // No bloqueamos el reset de UI por un error de red aqui.
     }
+    if (!isSessionGenerationCurrent(generation)) return;
     set({
       messages: [],
       error: null,

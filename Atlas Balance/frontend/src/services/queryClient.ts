@@ -50,5 +50,6 @@ export function createQueryClient(): QueryClient {
 export const queryClient = createQueryClient();
 
 export function clearQueryClient(): void {
+  void queryClient.cancelQueries();
   queryClient.clear();
 }

@@ -1,5 +1,38 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-17 - V-03.01 - Tarea de actualización Windows ejecutable por Watchdog (CERRADO EN CODIGO)
+
+- **Síntoma:** `AtlasBalance.Update` se registraba con la cuenta Watchdog y
+  `RunLevel=Limited`; la cuenta no podía modificar una instalación protegida.
+  Su descriptor también concedía `FA`, permitiendo modificar la tarea y
+  convertirla en una vía de ejecución privilegiada.
+- **Causa:** se confundió la identidad que solicita una actualización con la
+  identidad que debe ejecutar el helper privilegiado.
+- **Solución:** la tarea se ejecuta como `SYSTEM` con `ServiceAccount` y
+  `HighestAvailable`; la cuenta Watchdog solo tiene `GRGX` sobre la tarea y
+  puede escribir solicitudes en `updates\requests`. El runner valida rutas y
+  la firma RSA del paquete antes de invocar el actualizador.
+- **Corrección adicional:** se separó `/setowner` de `/grant:r` en `icacls` y
+  se eliminó el `Modify` heredado de Watchdog sobre los directorios de los
+  binarios.
+- **Corrección adicional:** el instalador principal tenía una copia de la
+  limpieza de ACL que concatenaba el primer SID al nombre de la opción; se
+  reconstruyeron los argumentos por separado y se añadió la fijación explícita
+  del propietario.
+- **Verificación:** `ServiceSecurity.Tests.ps1` y parser PowerShell OK. No se
+  ha probado una instalación real de Windows Server en este host.
+
+## 2026-09-17 - V-03.01 - Respuesta de refresh posterior a logout (CERRADO EN CODIGO)
+
+- **Síntoma:** una respuesta asíncrona de refresh podía aplicar el usuario y
+  permisos anteriores después de logout o cambio de usuario.
+- **Causa:** el coordinador evitaba el replay entre pestañas, pero `api.ts` no
+  comprobaba que la generación y el usuario siguieran siendo los mismos antes
+  de sincronizar el payload.
+- **Solución:** `api.ts` captura generación/usuario al iniciar refresh y rechaza
+  el resultado si cualquiera cambió. Se añadió regresión en `sessionScope.test.ts`.
+- **Verificación:** frontend `70/70`, lint y build OK.
+
 ## 2026-09-17 - V-03.01 - `/api/paises` mostraba países fuera del alcance del usuario (CERRADO EN CODIGO / POSTGRES PENDIENTE)
 
 - **Síntoma:** un usuario no administrador con permiso limitado a un país podía
@@ -5110,3 +5143,20 @@
 - **Verificación:** pruebas focalizadas de health/rate limiting `16/16` OK.
   La validación PostgreSQL real no aplica a este cambio de proyección, pero
   sigue pendiente en la suite global por Docker no disponible.
+
+## 2026-09-17 - V-03.01 - Estado frontend user-scoped sobrevivía a logout/cambio de usuario (CERRADO EN CÓDIGO)
+
+- **Síntoma:** `authStore.logout()` solo limpiaba el chat IA; país, alertas,
+  permisos, stores auxiliares y caché de TanStack Query podían conservar datos
+  de la sesión anterior. Algunas respuestas async podían repoblarlos después
+  del logout. Además, varias query keys sensibles no incluían `usuarioId`.
+- **Causa:** la limpieza estaba repartida entre rutas de UI y el interceptor,
+  y no existía una generación de sesión para invalidar respuestas antiguas.
+- **Solución:** `authStore` limpia el estado user-scoped tanto en logout como
+  ante cambio de `usuario.id`; `queryClient` cancela consultas y vacía la
+  caché; `sessionScope` elimina solo las claves de país/banner y marca vieja
+  la generación; los stores async comprueban esa generación antes de escribir.
+  Tema, layout y mensaje de actualización neutro no se borran.
+- **Verificación:** lint focalizado OK; suite frontend configurada `61/61`;
+  regresiones de storage/cambio de usuario/generación async `3/3`; no se
+  modificaron `services/api.ts`, `package.json` ni `tsconfig*`.

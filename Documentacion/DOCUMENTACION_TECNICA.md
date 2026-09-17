@@ -7,6 +7,37 @@ documento conserva debajo el historial tecnico de V-02.09 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de
 cada cambio.
 
+## 2026-09-17 - V-03.01 - Revisión de mínimo privilegio y refresh
+
+La tarea `AtlasBalance.Update` se registra como `SYSTEM` con `ServiceAccount`
+y `HighestAvailable`. La cuenta del Watchdog solo tiene `GRGX` sobre la tarea,
+`Modify` sobre `updates\requests` y las rutas operativas que necesita; no tiene
+`Modify` heredado sobre `api` ni `watchdog`, por lo que no puede reemplazar sus
+propios binarios. El runner comprueba que las rutas estén bajo la instalación y
+verifica la firma RSA del ZIP antes de delegar en el actualizador.
+
+La configuración de ACL separa `/setowner` de `/grant:r` en `icacls`. API y
+Watchdog reciben permisos diferentes sobre backups y exports. Una respuesta de
+refresh frontend solo se aplica si conserva la misma generación de sesión y el
+mismo `usuarioId` que existían al iniciar la renovación. El instalador principal
+usa la misma construcción de argumentos y no concatena el primer SID a
+`/remove:g` o `/remove:d`.
+
+## 2026-09-17 - V-03.01 - Bloque 8: logs del Watchdog
+
+El Watchdog no usa rutas relativas para logs ni para su fichero de estado.
+`WatchdogSettings:LogDirectory` admite una ruta absoluta configurable y, si se
+omite, resuelve `%ProgramData%\AtlasBalance\logs`. Tambien se expanden
+variables de entorno antes de validar que la ruta sea absoluta; una ruta como
+`logs\watchdog.log` se rechaza para evitar que un Windows Service escriba en
+`C:\Windows\System32` u otro working directory inesperado.
+
+Al arrancar, el Watchdog crea el directorio y en Windows aplica una DACL
+protegida para `SYSTEM`, Administradores y la identidad efectiva del servicio.
+El sink de Serilog rota diariamente, limita cada fichero a 50 MiB y conserva
+30 ficheros. El instalador debe precrear la carpeta con esa misma allowlist y
+mantener `WatchdogSettings:LogDirectory`/`StateFilePath` absolutos.
+
 ## 2026-09-17 - V-03.01 - Sondas de salud públicas con respuesta mínima
 
 - `GET /api/health` es liveness público y stateless: devuelve únicamente
@@ -6503,3 +6534,18 @@ mensaje de su IOE (queda como InnerException para el log).
   0 errores (6 warnings CS0618 preexistentes).
 - Pendiente: unificar el bucle del instalador (24 x 5 s, `-TimeoutSec 20`,
   sin deadline) con el mismo patron; preexistente en `main`, fuera del PR.
+
+## 2026-09-17 - V-03.01 - Frontera de sesión frontend
+
+El estado que puede contener datos financieros, permisos o contexto de una
+cuenta se considera user-scoped. `authStore` coordina su limpieza en logout y
+cuando cambia `usuario.id`: stores Zustand, storage de país/banner, UI
+transitoria y la caché de TanStack Query. El tema y el layout son preferencias
+neutras y se conservan.
+
+Las operaciones async de IA, alertas, disponibilidad, notificaciones y
+actualización capturan una generación de sesión. Si logout o cambio de usuario
+avanza la generación, una respuesta antigua no puede escribir sobre el estado
+de la sesión nueva. Las query keys de recursos sensibles incluyen también
+`usuarioId`; esto es defensa en profundidad y no sustituye la autorización del
+backend.

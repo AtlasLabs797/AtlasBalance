@@ -1,6 +1,7 @@
 ﻿import { create } from 'zustand';
 import api from '@/services/api';
 import type { VersionDisponibleResponse } from '@/types';
+import { getSessionGeneration, isSessionGenerationCurrent } from '@/utils/sessionScope';
 
 interface UpdateState {
   checking: boolean;
@@ -51,8 +52,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     }
 
     set({ checking: true });
+    const generation = getSessionGeneration();
     try {
       const { data } = await api.get<VersionDisponibleResponse>('/sistema/version-disponible');
+      if (!isSessionGenerationCurrent(generation)) return;
       set({
         checking: false,
         available: Boolean(data.actualizacion_disponible),
@@ -72,6 +75,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         checkedAt: now,
       });
     } catch {
+      if (!isSessionGenerationCurrent(generation)) return;
       set({
         checking: false,
         available: false,

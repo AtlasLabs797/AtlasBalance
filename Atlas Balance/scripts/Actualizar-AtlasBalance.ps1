@@ -1,11 +1,18 @@
 param(
     [string]$InstallPath = "C:\AtlasBalance",
+    [string]$PackageRoot = "",
+    [switch]$ElevatedUpdate,
     [switch]$SkipBackup,
     [switch]$PromptForDbOwnerCredentials,
     [string]$DbOwnerUser = ""
 )
 
 $ErrorActionPreference = "Stop"
+$serviceSecurityPath = Join-Path $PSScriptRoot "ServiceSecurity.ps1"
+if (-not (Test-Path -LiteralPath $serviceSecurityPath)) {
+    throw "No se encontro ServiceSecurity.ps1; se aborta para no actualizar una instalacion sin validar las identidades de sus servicios."
+}
+. $serviceSecurityPath
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 
@@ -758,6 +765,7 @@ function Update-ProductionConfigDefaults {
         $watchdogChanged = $false
         $watchdogConfig = Read-JsonFile -Path $WatchdogConfigPath
         Ensure-JsonObjectProperty -Object $watchdogConfig -Name "WatchdogSettings"
+        Ensure-JsonObjectProperty -Object $watchdogConfig -Name "UpdateSecurity"
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "UpdateSourceRoot" -Value (Join-Path $InstallPath "updates")) -or $watchdogChanged
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "UpdateInstallPath" -Value $InstallPath) -or $watchdogChanged
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "UpdateTargetPath" -Value (Join-Path $InstallPath "api")) -or $watchdogChanged
@@ -765,6 +773,9 @@ function Update-ProductionConfigDefaults {
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "RequireHealthCheckAfterUpdate" -Value $true) -or $watchdogChanged
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiFunctionalHealthUrl) -or $watchdogChanged
         $watchdogChanged = (Update-JsonHealthUrlToFunctional -Object $watchdogConfig.WatchdogSettings) -or $watchdogChanged
+        if (-not [string]::IsNullOrWhiteSpace($publicKey)) {
+            $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.UpdateSecurity -Name "ReleaseSigningPublicKeyPem" -Value $publicKey -ReplaceBlank) -or $watchdogChanged
+        }
         if ($watchdogChanged) {
             Write-JsonFile -Value $watchdogConfig -Path $WatchdogConfigPath
             Write-Host "Config Watchdog actualizada con claves no secretas faltantes." -ForegroundColor Cyan
@@ -843,7 +854,11 @@ function Copy-IfExists {
     }
 }
 
-$packageRoot = Split-Path -Parent $PSScriptRoot
+$packageRoot = if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
+    Split-Path -Parent $PSScriptRoot
+} else {
+    [IO.Path]::GetFullPath($PackageRoot)
+}
 $apiSource = Join-Path $packageRoot "api"
 $watchdogSource = Join-Path $packageRoot "watchdog"
 $apiTarget = Join-Path $InstallPath "api"
@@ -857,14 +872,33 @@ if (-not (Test-Path (Join-Path $apiTarget "appsettings.Production.json"))) {
     throw "No se encontro una instalacion existente en $InstallPath."
 }
 
-if (-not (Test-IsAdmin)) {
+if (-not (Test-IsAdmin) -and -not $ElevatedUpdate) {
     throw "Ejecuta este actualizador como Administrador."
+}
+
+$serviceIdentities = Assert-AtlasServiceIdentities `
+    -ApiServiceName $ApiServiceName `
+    -WatchdogServiceName $WatchdogServiceName `
+    -InstallPath $InstallPath
+$apiServiceUserName = ([string]$serviceIdentities.Api.StartName -split '\\')[-1]
+$watchdogServiceUserName = ([string]$serviceIdentities.Watchdog.StartName -split '\\')[-1]
+$apiServiceUser = Get-LocalUser -Name $apiServiceUserName -ErrorAction Stop
+$watchdogServiceUser = Get-LocalUser -Name $watchdogServiceUserName -ErrorAction Stop
+$apiServiceAccount = [pscustomobject]@{
+    ComputerPrincipal = "$env:COMPUTERNAME\$apiServiceUserName"
+    Sid = $apiServiceUser.SID.Value
+}
+$watchdogServiceAccount = [pscustomobject]@{
+    ComputerPrincipal = "$env:COMPUTERNAME\$watchdogServiceUserName"
+    Sid = $watchdogServiceUser.SID.Value
 }
 
 # Repara tambien instalaciones anteriores: backups y exportaciones contienen
 # datos financieros y PII, y no deben heredar lectura para usuarios locales.
-Protect-RestrictedDirectory -Path (Join-Path $InstallPath "backups")
-Protect-RestrictedDirectory -Path (Join-Path $InstallPath "exports")
+if (-not $ElevatedUpdate) {
+    Protect-RestrictedDirectory -Path (Join-Path $InstallPath "backups")
+    Protect-RestrictedDirectory -Path (Join-Path $InstallPath "exports")
+}
 
 $newVersion = Read-PackageVersion -PackageRoot $packageRoot
 $runtime = Read-RuntimeConfig -BasePath $InstallPath
@@ -927,6 +961,8 @@ foreach ($script in @(
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1",
+    "ServiceSecurity.ps1",
+    "Run-AtlasElevatedUpdate.ps1",
     "Sync-AtlasDirectory.ps1",
     "Sync-AtlasDirectory.Tests.ps1",
     "install-cert-client.ps1",

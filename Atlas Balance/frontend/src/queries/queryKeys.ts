@@ -1,5 +1,5 @@
 export const queryKeys = {
-  scope: () => ['scope'] as const,
+  scope: (usuarioId: string) => ['scope', { usuarioId }] as const,
 
   auth: {
     me: () => ['auth', 'me'] as const,
@@ -23,7 +23,8 @@ export const queryKeys = {
     }) => ['dashboard', 'saldos-divisa', params] as const,
     titular: (params: { usuarioId: string; titularId: string; divisaPrincipal: string; paisId: string | null }) =>
       ['dashboard', 'titular', params] as const,
-    saldosTitular: (titularId: string) => ['dashboard', 'titular-saldos', titularId] as const,
+    saldosTitular: (params: { usuarioId: string; titularId: string }) =>
+      ['dashboard', 'titular-saldos', params] as const,
   },
 
   extractos: {
@@ -51,9 +52,10 @@ export const queryKeys = {
       ['extractos', 'cuenta-resumen', params] as const,
     columnasVisibles: (params: { usuarioId: string; cuentaId?: string | null; titularId?: string | null; paisId?: string | null }) =>
       ['extractos', 'columnas-visibles', params] as const,
-    auditCelda: (extractoId: string, columna: string | null) =>
-      ['extractos', 'audit-celda', extractoId, columna] as const,
-    desglose: (extractoId: string) => ['extractos', 'desglose', extractoId] as const,
+    auditCelda: (params: { usuarioId: string; extractoId: string; columna: string | null }) =>
+      ['extractos', 'audit-celda', params] as const,
+    desglose: (params: { usuarioId: string; extractoId: string }) =>
+      ['extractos', 'desglose', params] as const,
   },
 
   cuentas: {
@@ -103,7 +105,8 @@ export const queryKeys = {
       ['catalogo', 'importacion-contexto', params] as const,
     importacionLotes: (params: { usuarioId: string; cuentaId: string; page: number; pageSize: number }) =>
       ['catalogo', 'importacion-lotes', params] as const,
-    importacionLote: (loteId: string) => ['catalogo', 'importacion-lote', loteId] as const,
+    importacionLote: (params: { usuarioId: string; loteId: string }) =>
+      ['catalogo', 'importacion-lote', params] as const,
     formatosColumnasSugeridas: (params: { usuarioId: string }) =>
       ['catalogo', 'formatos-columnas-sugeridas', params] as const,
   },

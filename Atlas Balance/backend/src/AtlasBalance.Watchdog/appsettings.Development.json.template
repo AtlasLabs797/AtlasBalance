@@ -11,12 +11,16 @@
     "DbUser": "app_user",
     "DbPassword": "<password-local-postgres>",
     "DockerPostgresContainer": "atlas_balance_db",
+    "LogDirectory": "%ProgramData%\\AtlasBalance\\logs",
     "UpdateSourceRoot": "C:\\<ruta-local>\\updates",
     "UpdateInstallPath": "C:\\<ruta-local>",
     "UpdateTargetPath": "C:\\<ruta-local>\\api",
     "RequireDatabaseBackupBeforeUpdate": true,
     "RequireHealthCheckAfterUpdate": true,
     "ApiHealthUrl": "https://localhost:5000/api/health/functional"
+  },
+  "UpdateSecurity": {
+    "ReleaseSigningPublicKeyPem": "<public-key-pem-release-local-o-vacio-si-no-usas-update-online>"
   },
   "Serilog": {
     "MinimumLevel": {
