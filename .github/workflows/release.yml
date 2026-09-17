@@ -41,6 +41,9 @@ jobs:
       - name: Validate release inputs
         shell: pwsh
         run: |
+          if ("${{ github.ref }}" -ne "refs/heads/V-03.01") {
+            throw "Release workflow must run from refs/heads/V-03.01, not '${{ github.ref }}'."
+          }
           if ("${{ inputs.version }}" -notmatch '^V-\d{2}[-.]\d{2}$') {
             throw "Invalid version '${{ inputs.version }}'."
           }
