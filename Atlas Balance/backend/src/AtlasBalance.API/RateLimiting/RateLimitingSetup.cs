@@ -29,12 +29,7 @@ internal static class RateLimitingSetup
     private const string IntegrationPathPrefix = "/api/integration/openclaw";
     private const string ApiPathPrefix = "/api";
     private const string HealthPath = "/api/health";
-    private const string HealthPathPrefix = "/api/health/";
-    // V-02.08: a diferencia de /api/health y /api/health/ready (stateless),
-    // /api/health/functional abre una transaccion, publica un contexto RLS
-    // elevado, inserta en AUDITORIAS y hace rollback en cada llamada. Eximirlo
-    // del limitador permitiria a un cliente anonimo agotar el pool de
-    // conexiones de PostgreSQL con sondas paralelas ilimitadas.
+    private const string ReadinessHealthPath = "/api/health/ready";
     private const string FunctionalHealthPath = "/api/health/functional";
 
     /// <summary>
@@ -100,22 +95,22 @@ internal static class RateLimitingSetup
 
         var path = context.Request.Path;
 
-        // Los estaticos de la SPA y el healthcheck no consumen presupuesto de API.
-        // V-02.08: tambien se eximen los nuevos /api/health/ready y
-        // /api/health/functional, que el instalador y el actualizador invocan
-        // como sondeos de readiness tras reiniciar servicios.
-        if (path.Equals(FunctionalHealthPath, StringComparison.OrdinalIgnoreCase))
+        // El liveness es stateless y minimo, por lo que queda exento. Las
+        // sondas de readiness/functional hacen trabajo de BD (la funcional
+        // abre una transaccion y hace rollback) y comparten un cubo por IP:
+        // asi alternar entre ambas rutas no duplica el presupuesto.
+        if (path.Equals(ReadinessHealthPath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(FunctionalHealthPath, StringComparison.OrdinalIgnoreCase))
         {
-            return Window($"health-functional:{ResolveIpKey(context)}", options.AuthPerMinutePerIp, options.Window);
+            return Window($"health:{ResolveIpKey(context)}", options.HealthPerMinutePerIp, options.Window);
         }
 
         if (!path.StartsWithSegments(ApiPathPrefix)
-            // V-02.09 (CodeQL #33): exencion intencional por diseno. Estaticos y healthchecks
-            // son publicos y sin estado; limitarlos no aporta valor de seguridad. La decision
-            // usa StartsWithSegments sobre el PathString ya parseado, no cadena cruda.
+            // V-02.09 (CodeQL #33): exencion intencional por diseno. Los
+            // estaticos y el liveness son publicos y sin estado; limitarlos no
+            // aporta valor de seguridad. La decision usa PathString ya parseado.
             // codeql[cs/user-controlled-bypass]
-            || path.Equals(HealthPath)
-            || path.StartsWithSegments(HealthPathPrefix))
+            || path.Equals(HealthPath))
         {
             return RateLimitPartition.GetNoLimiter("exento");
         }

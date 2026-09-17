@@ -52,6 +52,7 @@ public sealed class RateLimitingSetupTests
         var options = new RateLimitingOptions();
 
         options.AuthPerMinutePerIp.Should().Be(10);
+        options.HealthPerMinutePerIp.Should().Be(30);
         options.AnonymousPerMinutePerIp.Should().Be(60);
         options.ReadPerMinutePerUser.Should().Be(300);
         options.WritePerMinutePerUser.Should().Be(60);
@@ -118,6 +119,52 @@ public sealed class RateLimitingSetupTests
             using var lease = limiter.AttemptAcquire(context);
             lease.IsAcquired.Should().BeTrue();
         }
+    }
+
+    [Fact]
+    public void GlobalLimiter_Should_Share_Health_Budget_Between_Readiness_And_Functional()
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            [$"{RateLimitingOptions.SectionName}:HealthPerMinutePerIp"] = "2"
+        });
+        var limiter = ResolveGlobalLimiter(provider);
+
+        using (var readinessLease = limiter.AttemptAcquire(
+                   BuildContext(provider, "/api/health/ready", "GET", ip: "10.0.0.2")))
+        {
+            readinessLease.IsAcquired.Should().BeTrue();
+        }
+
+        using (var functionalLease = limiter.AttemptAcquire(
+                   BuildContext(provider, "/api/health/functional", "GET", ip: "10.0.0.2")))
+        {
+            functionalLease.IsAcquired.Should().BeTrue();
+        }
+
+        using var exhaustedLease = limiter.AttemptAcquire(
+            BuildContext(provider, "/api/health/ready", "GET", ip: "10.0.0.2"));
+        exhaustedLease.IsAcquired.Should().BeFalse(
+            "readiness y functional ejecutan trabajo de BD y no deben duplicar el presupuesto al alternar rutas");
+    }
+
+    [Fact]
+    public void GlobalLimiter_Should_Not_Exempt_Unknown_Health_Variants()
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            [$"{RateLimitingOptions.SectionName}:AnonymousPerMinutePerIp"] = "1"
+        });
+        var limiter = ResolveGlobalLimiter(provider);
+
+        using var firstLease = limiter.AttemptAcquire(
+            BuildContext(provider, "/api/health/ready/extra", "GET", ip: "10.0.0.3"));
+        firstLease.IsAcquired.Should().BeTrue();
+
+        using var secondLease = limiter.AttemptAcquire(
+            BuildContext(provider, "/api/health/ready/extra", "GET", ip: "10.0.0.3"));
+        secondLease.IsAcquired.Should().BeFalse(
+            "una variante que no corresponde a una ruta registrada no puede heredar la exencion del liveness");
     }
 
     [Fact]

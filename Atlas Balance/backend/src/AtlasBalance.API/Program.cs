@@ -716,7 +716,7 @@ if (app.Environment.IsDevelopment())
     app.MapHangfireDashboard("/hangfire");
 }
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+app.MapGet("/api/health", () => Results.Ok(HealthProbeResponses.Liveness())).AllowAnonymous();
 
 // V-02.08: dos niveles adicionales de health check para distinguir el
 // "el proceso responde" del "el sistema esta sano" y del "el RLS funciona".
@@ -740,8 +740,8 @@ app.MapGet("/api/health/ready", async (
 {
     var salud = await health.ComprobarAsync(cancellationToken);
     return salud.Estado == EstadoSalud.NoSano
-        ? Results.Json(salud, statusCode: StatusCodes.Status503ServiceUnavailable)
-        : Results.Ok(salud);
+        ? Results.Json(HealthProbeResponses.Readiness(salud), statusCode: StatusCodes.Status503ServiceUnavailable)
+        : Results.Ok(HealthProbeResponses.Readiness(salud));
 }).AllowAnonymous();
 
 app.MapGet("/api/health/functional", async (
@@ -755,8 +755,6 @@ app.MapGet("/api/health/functional", async (
     // RLS no permite el INSERT con el contexto actual, obtendremos un 42501.
     var configValido = false;
     var insertOk = false;
-    string? detalleConfig = null;
-    string? detalleInsert = null;
     try
     {
         var result = await dbContext.Database
@@ -766,13 +764,13 @@ app.MapGet("/api/health/functional", async (
         configValido = result.Count > 0 && result[0].Value;
         if (!configValido)
         {
-            detalleConfig = "atlas_security.context_is_valid() devolvio false: el secreto RLS no esta alineado o la policy no esta desplegada.";
+            logger.LogWarning(
+                "atlas_security.context_is_valid() devolvio false: el secreto RLS no esta alineado o la policy no esta desplegada");
         }
     }
     catch (Exception ex)
     {
         logger.LogWarning(ex, "No se pudo evaluar atlas_security.context_is_valid()");
-        detalleConfig = "No se pudo evaluar la funcion de validacion del contexto RLS. Revisa el log del servidor.";
     }
 
     if (configValido)
@@ -809,30 +807,14 @@ app.MapGet("/api/health/functional", async (
         catch (Exception ex)
         {
             logger.LogWarning(ex, "No se pudo ejecutar el INSERT firmado de smoke en AUDITORIAS");
-            // V-02.08: ex.Message puede exponer host/puerto/esquema/nombres de
-            // politica RLS a un llamador anonimo no autenticado. El detalle
-            // completo queda solo en el log del servidor (linea de arriba).
-            detalleInsert = "El INSERT firmado de smoke en AUDITORIAS fallo. Revisa el log del servidor.";
         }
     }
 
-    var respuesta = new
-    {
-        estado = configValido && insertOk ? "funcional" : "no_funcional",
-        contexto_rls = new
-        {
-            valido = configValido,
-            detalle = detalleConfig
-        },
-        auditoria_firmada = new
-        {
-            ok = insertOk,
-            detalle = detalleInsert
-        }
-    };
     return configValido && insertOk
-        ? Results.Ok(respuesta)
-        : Results.Json(respuesta, statusCode: StatusCodes.Status503ServiceUnavailable);
+        ? Results.Ok(HealthProbeResponses.Functional(configValido, insertOk))
+        : Results.Json(
+            HealthProbeResponses.Functional(configValido, insertOk),
+            statusCode: StatusCodes.Status503ServiceUnavailable);
 }).AllowAnonymous();
 
 app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" })).AllowAnonymous();

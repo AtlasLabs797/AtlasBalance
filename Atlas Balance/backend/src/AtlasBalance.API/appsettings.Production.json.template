@@ -69,6 +69,7 @@
       "Enabled": true,
       "WindowSeconds": 60,
       "AuthPerMinutePerIp": 10,
+      "HealthPerMinutePerIp": 30,
       "AnonymousPerMinutePerIp": 60,
       "ReadPerMinutePerUser": 300,
       "WritePerMinutePerUser": 60,
