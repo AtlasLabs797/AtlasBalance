@@ -206,7 +206,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(AtlasBalance.API.AuthorizationConfiguration.Configure);
 builder.Services.AddMemoryCache();
 builder.Services.Configure<CachingOptions>(builder.Configuration.GetSection(CachingOptions.SectionName));
 builder.Services.AddSingleton<ICacheService>(sp =>
@@ -835,8 +835,8 @@ app.MapGet("/api/health/functional", async (
         : Results.Json(respuesta, statusCode: StatusCodes.Status503ServiceUnavailable);
 }).AllowAnonymous();
 
-app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" }));
-app.MapFallbackToFile("index.html", staticFileOptions);
+app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" })).AllowAnonymous();
+app.MapFallbackToFile("index.html", staticFileOptions).AllowAnonymous();
 
 app.Run();
 

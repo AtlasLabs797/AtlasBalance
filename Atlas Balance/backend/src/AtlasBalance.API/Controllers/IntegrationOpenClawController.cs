@@ -4,12 +4,14 @@ using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Middleware;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Controllers;
 
 [ApiController]
+[AllowAnonymous]
 [Route("api/integration/openclaw")]
 public sealed class IntegrationOpenClawController : ControllerBase
 {
