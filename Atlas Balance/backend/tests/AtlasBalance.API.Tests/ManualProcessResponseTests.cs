@@ -170,7 +170,7 @@ public class ManualProcessResponseTests
         var controller = new ExportacionesController(
             db,
             new FakeExportacionService(),
-            new FakeUserAccessService());
+            new FakeUserAccessService(canAccessCuenta: true, canWriteCuenta: true));
         controller.ControllerContext = BuildControllerContext();
 
         var result = await controller.Manual(
@@ -185,13 +185,30 @@ public class ManualProcessResponseTests
     }
 
     [Fact]
-    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Write_Cuenta()
+    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Can_Access_But_Cannot_Write_Cuenta()
     {
         await using var db = BuildDbContext();
         var controller = new ExportacionesController(
             db,
             new FakeExportacionService(),
-            new FakeUserAccessService(canAccessCuenta: false));
+            new FakeUserAccessService(canAccessCuenta: true, canWriteCuenta: false));
+        controller.ControllerContext = BuildControllerContext();
+
+        var result = await controller.Manual(
+            new ExportacionManualRequest { CuentaId = Guid.NewGuid() },
+            CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Access_Cuenta()
+    {
+        await using var db = BuildDbContext();
+        var controller = new ExportacionesController(
+            db,
+            new FakeExportacionService(),
+            new FakeUserAccessService(canAccessCuenta: false, canWriteCuenta: true));
         controller.ControllerContext = BuildControllerContext();
 
         var result = await controller.Manual(
