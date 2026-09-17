@@ -35,7 +35,9 @@ public sealed class MigrationDiscoveryTests
             // V-02.07: correcciones de policies RLS de esta version.
             "20260731090000_FixExportacionesPurgaRlsWithCheck",
             "20260731091000_HardenSoftDeleteBackstopHijosExtracto",
-            "20260731092000_AcotarAuthFlowMfaTrustedDevices"
+            "20260731092000_AcotarAuthFlowMfaTrustedDevices",
+            // V-03.01: RLS de las tablas de alertas, uso IA y operaciones de backup.
+            "20260917100000_CompleteScopedRls"
         ]);
     }
 }

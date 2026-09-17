@@ -7,6 +7,23 @@ documento conserva debajo el historial tecnico de V-02.09 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de
 cada cambio.
 
+## 2026-09-17 - V-03.01 - Sondas de salud públicas con respuesta mínima
+
+- `GET /api/health` es liveness público y stateless: devuelve únicamente
+  `{"status":"healthy"}`.
+- `GET /api/health/ready` ejecuta la comprobación real de BD, disco y pool,
+  pero para anónimos proyecta únicamente `status=ready` o `status=not_ready`.
+- `GET /api/health/functional` conserva la verificación RLS/auditoría necesaria
+  para instalador y actualizador, pero para anónimos proyecta únicamente
+  `status=functional` o `status=not_functional`; los errores completos quedan
+  en el log del servidor.
+- Readiness y functional comparten el cubo `health:<ip>` del limitador global,
+  configurable como `AtlasBalance:RateLimiting:HealthPerMinutePerIp` (30/min
+  por defecto). Solo la ruta exacta de liveness queda exenta; una variante no
+  registrada cae en el límite anónimo normal.
+- `GET /api/sistema/salud` sigue siendo la superficie de detalle y permanece
+  restringido a `ADMIN` mediante `SistemaController`.
+
 ## 2026-09-17 - V-03.01 - Paises visibles derivados del scope efectivo
 
 ### Que
@@ -35,6 +52,35 @@ los selectores vacíos como `null` y corregía país/titular al elegir una cuent
 de solo lectura para filas históricas con cuenta inexistente, país/titular
 incompatibles o duplicados exactos. No se ejecuta ni modifica datos
 automáticamente.
+
+## 2026-09-17 - V-03.01 - RLS de alertas, uso IA y operaciones de backup
+
+### Que
+
+- La migración `20260917100000_CompleteScopedRls` activa y fuerza RLS en
+  `ALERTAS_SALDO`, `ALERTA_DESTINATARIOS`, `IA_USO_USUARIOS` y
+  `BACKUP_OPERATIONS`.
+- `ALERTAS_SALDO` permite lectura en modo usuario o integración solo cuando la
+  alerta corresponde a una cuenta activa accesible, o a un tipo/global que
+  tiene al menos una cuenta activa y un titular activo dentro de ese scope.
+  La escritura queda en `ADMIN/SYSTEM`.
+- `ALERTA_DESTINATARIOS` replica la visibilidad de la alerta para usuarios,
+  pero no expone destinatarios a integraciones; toda escritura queda en
+  `ADMIN/SYSTEM`.
+- `IA_USO_USUARIOS` permite al usuario autenticado leer y mantener únicamente
+  su fila; `WITH CHECK` impide cambiar `usuario_id`. El borrado queda en
+  `ADMIN/SYSTEM`.
+- `BACKUP_OPERATIONS` queda restringida a `ADMIN/SYSTEM`. Hangfire usa el
+  contexto `SYSTEM` porque sus consultas se ejecutan sin `HttpContext`; el
+  Watchdog no accede directamente a esta tabla.
+
+### Verificacion
+
+`RowLevelSecurityTests` ejercita PostgreSQL/Testcontainers, pero la ejecución
+en este host queda bloqueada antes de arrancar el contenedor porque Docker no
+está disponible en `npipe://./pipe/docker_engine`. La build Release de API y
+tests y el test de descubrimiento de migraciones pasan; el gate PostgreSQL
+queda pendiente en CI o en un host con Docker.
 
 ## 2026-08-07 - V-02.09 - Chat IA: composer, mensajes y modo de pensamiento
 

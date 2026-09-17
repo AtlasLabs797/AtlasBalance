@@ -5092,3 +5092,21 @@
 - **Verificacion:** parser PS OK; `dotnet build` API 0 errores;
   `git diff --check` OK. El bucle analogo del instalador queda como pendiente
   conocido (mismo patron, preexistente en `main`).
+## 2026-09-17 - V-03.01 - Health readiness exponía diagnóstico interno y no tenía límite dedicado (CERRADO EN CÓDIGO)
+
+- **Síntoma:** `/api/health/ready` devolvía anónimamente comprobaciones de BD,
+  disco, pool, rutas, espacio libre y métricas; `/api/health/functional`
+  devolvía además el estado del contexto RLS y de la auditoría. Readiness
+  también estaba exento del rate limiter global.
+- **Causa raíz:** las sondas se diseñaron para que instalador y actualizador
+  pudieran llamarlas sin sesión, pero se reutilizó directamente el DTO de
+  diagnóstico administrativo y se mantuvo una exención demasiado amplia para
+  `/api/health/*`.
+- **Solución:** las sondas anónimas proyectan solo `status` y conservan el
+  código 503 cuando no están listas/funcionales. `ready` y `functional`
+  comparten un cubo por IP configurable mediante `HealthPerMinutePerIp`;
+  `/api/health` exacto sigue siendo liveness mínimo y `/api/sistema/salud`
+  conserva el detalle solo para `ADMIN`.
+- **Verificación:** pruebas focalizadas de health/rate limiting `16/16` OK.
+  La validación PostgreSQL real no aplica a este cambio de proyección, pero
+  sigue pendiente en la suite global por Docker no disponible.

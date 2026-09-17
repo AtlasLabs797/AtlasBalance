@@ -10,6 +10,60 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-09-17 - V-03.01 - RLS para alertas, uso IA y operaciones de backup
+
+- **Motivacion:** `ALERTAS_SALDO`, `ALERTA_DESTINATARIOS`, `IA_USO_USUARIOS`
+  y `BACKUP_OPERATIONS` no tenian el mismo backstop RLS que el resto de las
+  tablas sensibles.
+- **Trabajo realizado:** nueva migracion
+  `20260917100000_CompleteScopedRls.cs` con `ENABLE ROW LEVEL SECURITY` y
+  `FORCE ROW LEVEL SECURITY`. Las alertas se resuelven por cuenta, tipo de
+  titular o alcance global usando solo cuentas activas y titulares activos
+  accesibles; sus destinatarios siguen esa visibilidad solo en modo usuario y
+  solo ADMIN/SYSTEM puede escribir ambas tablas. El uso IA queda aislado por
+  `usuario_id`, con `WITH CHECK` para impedir cambiar de propietario; el
+  borrado queda reservado a ADMIN/SYSTEM. Las operaciones de backup quedan
+  restringidas a ADMIN/SYSTEM, incluido el contexto SYSTEM usado por
+  Hangfire/Watchdog.
+- **Tests añadidos/modificados:** `RowLevelSecurityTests` usa PostgreSQL real
+  cuando Testcontainers está disponible y cubre lectura, INSERT, UPDATE,
+  DELETE, firma inválida, usuario no autorizado, integración, ADMIN y
+  SYSTEM. `MigrationDiscoveryTests` comprueba que EF descubre la migracion.
+- **Comandos ejecutados:** compilacion del proyecto de tests con
+  `dotnet test ... --no-restore --filter FullyQualifiedName~RowLevelSecurityTests`:
+  **compila correctamente**. Ejecucion focalizada del ensamblado xUnit:
+  **bloqueada antes del test** porque Testcontainers no pudo conectar con
+  `npipe://./pipe/docker_engine` (Docker no disponible en este host).
+- **Pendientes:** ejecutar `Category=Postgres` en Docker/CI y validar la
+  migracion en PostgreSQL de staging. No se hizo commit en esta implementacion;
+  queda para el coordinador tras revision independiente.
+
+---
+
+## 2026-09-17 - V-03.01 - Endurecimiento de health checks públicos
+
+- **Motivacion:** las sondas anónimas de readiness y functional exponían
+  diagnóstico operativo y readiness no tenía un límite dedicado.
+- **Trabajo realizado:** `/api/health` devuelve únicamente liveness mínimo;
+  `/api/health/ready` y `/api/health/functional` mantienen acceso anónimo
+  para instalador/actualizador, devuelven solo `status` y comparten un rate
+  limit por IP configurable (`HealthPerMinutePerIp`, 30/min por defecto).
+  `/api/sistema/salud` mantiene el detalle detrás de `ADMIN` y las variantes no
+  registradas no heredan la exención de health.
+- **Archivos tocados por este bloque:** `Program.cs`, `HealthProbeDtos.cs`,
+  `HealthCheckService.cs`, `RateLimitingOptions.cs`, `RateLimitingSetup.cs`,
+  los tres `appsettings`, `HealthEndpointSecurityTests.cs`,
+  `RateLimitingSetupTests.cs` y documentación técnica/versionada.
+- **Comandos ejecutados:** `dotnet test AtlasBalance.API.Tests.csproj
+  --no-restore -- --filter-class AtlasBalance.API.Tests.HealthEndpointSecurityTests
+  --filter-class AtlasBalance.API.Tests.RateLimitingSetupTests`: **16/16 OK**.
+  `dotnet build AtlasBalance.API.csproj -c Release --no-restore
+  -p:UseAppHost=false`: **OK, 0 advertencias, 0 errores**. `git diff --check`:
+  **OK** (solo avisos de normalización LF/CRLF de Git).
+- **Pendientes:** revisión independiente y commit del coordinador.
+
+---
+
 ## 2026-09-17 - V-03.01 - Scope efectivo en `/api/paises` y backstop RLS
 
 - **Motivacion:** reproducir y corregir que un usuario no administrador viera
