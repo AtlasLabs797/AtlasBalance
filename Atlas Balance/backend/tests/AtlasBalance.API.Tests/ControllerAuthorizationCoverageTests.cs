@@ -32,6 +32,21 @@ public sealed class ControllerAuthorizationCoverageTests
     }
 
     [Fact]
+    public void Hangfire_Dashboard_No_Debe_Declarar_AllowAnonymous()
+    {
+        var programPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "src", "AtlasBalance.API", "Program.cs"));
+        var program = File.ReadAllText(programPath);
+        var dashboardDeclaration = program
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Single(line => line.Contains("MapHangfireDashboard(\"/hangfire\")", StringComparison.Ordinal));
+
+        dashboardDeclaration.Should().NotContain("AllowAnonymous");
+    }
+
+    [Fact]
     public void Toda_Accion_De_Controller_Debe_Declarar_Autorizacion_Explicita()
     {
         var sinAutorizacion = new List<string>();
