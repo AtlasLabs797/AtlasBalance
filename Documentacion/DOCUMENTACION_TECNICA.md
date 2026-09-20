@@ -2,6 +2,27 @@
 
 ## Vigencia documental: V-03.01
 
+### 2026-09-21 - Rendimiento RLS de extractos para gerente y empleado
+
+La migracion `20260921090000_OptimizeExtractoRlsPermissionChecks` optimiza
+`USING` de las politicas de lectura y escritura de `EXTRACTOS` y
+`EXTRACTOS_COLUMNAS_EXTRA`. Las politicas `FOR ALL` tambien intervienen en
+SELECT. Se conservan los helpers de autorizacion, `WITH CHECK`, FORCE RLS,
+firmas y reglas de borrado existentes.
+
+Las subconsultas sin correlacion calculan el conjunto autorizado por sentencia.
+En columnas extra, el CTE `MATERIALIZED` impide que el optimizador vuelva a
+consultar cuentas y permisos por cada extracto mediante un nested loop.
+No se anaden caches entre peticiones ni se modifican permisos de usuarios.
+`Down` restaura las cuatro expresiones anteriores. No cambia el modelo EF.
+
+Regresion: `RowLevelSecurityPerformanceTests.cs`, 20.000 movimientos ficticios,
+gerente/empleado, scopes data/dashboard, cuenta permitida y denegada, columnas
+extra, saldo mas reciente y firma invalida. Cada consulta medida tiene timeout
+de 8 s, inferior a los 15 s del navegador. Antes, la lectura del gerente agotaba
+ese limite. En la prueba focalizada, las lecturas corregidas tardaron 86-249 ms;
+no son tiempos de produccion. Referencia: [politicas PostgreSQL 16](https://www.postgresql.org/docs/16/sql-createpolicy.html).
+
 La version activa de la aplicacion es `V-03.01` (runtime `3.1.0`). Este
 documento conserva debajo el historial tecnico de V-02.09 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de

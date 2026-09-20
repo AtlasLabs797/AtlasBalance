@@ -15,7 +15,7 @@ namespace AtlasBalance.API.Tests;
 
 [Trait("Category", "Postgres")]
 [Collection(PostgresCollection.Name)]
-public sealed class RowLevelSecurityTests
+public sealed partial class RowLevelSecurityTests
 {
     private static readonly string RlsContextSecret = string.Concat("test-rls-context-", "placeholder-value-32-chars");
     private readonly PostgresFixture _fixture;
@@ -853,6 +853,7 @@ public sealed class RowLevelSecurityTests
                         JOIN pg_namespace n ON n.oid = c.relnamespace
                         WHERE n.nspname = ns.nspname
                           AND c.relkind IN ('r','S','v','m','p')
+                        ORDER BY CASE WHEN c.relkind = 'S' THEN 1 ELSE 0 END
                     LOOP
                         EXECUTE format('ALTER %s %I.%I OWNER TO %I',
                             CASE obj.relkind

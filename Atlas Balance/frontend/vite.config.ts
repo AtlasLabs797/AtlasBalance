@@ -147,8 +147,13 @@ export default defineConfig({
     allowedHosts: ['localhost', '127.0.0.1'],
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:5002',
         changeOrigin: true,
+        headers: {
+          // El navegador sigue hablando con Vite en localhost:5173; el proxy
+          // reenvia la peticion a la API de prueba en localhost:5002.
+          Origin: 'http://localhost:5002',
+        },
       },
     },
   },

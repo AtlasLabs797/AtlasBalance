@@ -7,7 +7,8 @@
 param(
     [int]$TimeoutSeconds = 60,
     [switch]$SkipDocker,
-    [switch]$SkipFrontend
+    [switch]$SkipFrontend,
+    [int]$ApiPort = 5002
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,7 +47,7 @@ if (-not $SkipDocker) {
 }
 
 Write-Host "[dev] Starting backend with healthcheck..." -ForegroundColor Cyan
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $backendLauncher -TimeoutSeconds $TimeoutSeconds
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $backendLauncher -TimeoutSeconds $TimeoutSeconds -ApiPort $ApiPort
 if ($LASTEXITCODE -ne 0) {
     throw "Backend did not become healthy. Check logs under logs\dev."
 }
@@ -77,12 +78,12 @@ if (-not $SkipFrontend) {
     }
 }
 
-if (-not (Test-HttpOk "http://localhost:5000/api/health")) {
+if (-not (Test-HttpOk "http://localhost:$ApiPort/api/health")) {
     throw "Backend healthcheck failed after startup."
 }
 
 Write-Host "`n[dev] Atlas Balance development stack is ready." -ForegroundColor Green
 Write-Host "  Frontend : http://localhost:5173"
-Write-Host "  Backend  : http://localhost:5000"
-Write-Host "  Health   : http://localhost:5000/api/health"
+Write-Host "  Backend  : http://localhost:$ApiPort"
+Write-Host "  Health   : http://localhost:$ApiPort/api/health"
 Write-Host "  DB       : localhost:5433`n"

@@ -2,11 +2,207 @@
 
 ## Objetivo
 
+### 2026-09-21 - V-03.01 - Timeouts de gerente y empleado
+
+- Trabajo: lectura acotada de registros reales, reproduccion en PostgreSQL 16
+  desechable y optimizacion RLS de extractos/columnas extra. Se preservaron los
+  cambios locales previos y no se modifico la instalacion real.
+- Archivos: migracion `20260921090000_OptimizeExtractoRlsPermissionChecks.cs`,
+  nuevo `RowLevelSecurityPerformanceTests.cs`, `RowLevelSecurityTests.cs`,
+  documentacion tecnica, incidencias y version.
+- Comandos: `docker ps`, catalogo mediante `docker exec ... psql`, lectura de
+  logs, `EXPLAIN`, `dotnet build` Release con `UseArtifactsOutput` y
+  `ArtifactsPath` absoluto `tools/dotnet-build/api`; runner xUnit con
+  `-method '*FinancialReads_Should*' -showLiveOutput` y suite completa con limite
+  global de cuatro minutos.
+- Build: xUnit exige apphost; se retiro `UseAppHost=false`. Artefactos previos
+  anidados bajo `src/AtlasBalance.API/tools` causaban atributos duplicados;
+  se excluyeron para esta build con
+  `DefaultItemExcludesInProjectFolder=**/tools/**`, sin borrarlos. Docker requirio
+  ejecucion fuera del sandbox. No existe carpeta `Skills` local.
+- Fixture: la preparacion inicial paso a usar EF para los campos obligatorios.
+  La suite completa detecto `0A000` al cambiar el propietario de una secuencia
+  antes que el de su tabla; se ordenan primero tablas y despues secuencias.
+- Focalizadas: 2/2, ambos roles y 20.000 movimientos ficticios; lecturas
+  de 86-249 ms, cuenta ajena invisible y firma falsa rechazada. Antes, la lectura
+  del gerente agotaba el timeout. Compilacion correcta con avisos preexistentes.
+- Verificacion final: suite backend completa **926/926**, sin fallos ni omitidos,
+  con PostgreSQL real; las lecturas medidas quedaron entre 108 y 282 ms.
+  `git diff --check` correcto. No hubo cambios de frontend ni validacion visual.
+- Se genero el SQL con `IMigrator.GenerateScript` de EF, sin abrir conexiones,
+  y se aplico por `psql -v ON_ERROR_STOP=1` solo a `atlas_balance_db`, dentro de
+  transaccion, con control de migracion previa, lock timeout de 3 s y statement
+  timeout de 20 s. Historial confirmado en `20260921090000`; ambas tablas
+  mantienen RLS/FORCE RLS, los WITH CHECK previos y `app_user` sin superusuario
+  ni BYPASSRLS. No se cambiaron usuarios, credenciales ni datos financieros.
+- Pendiente: comprobacion manual en navegador con las cuentas afectadas.
+  El despliegue en la instalacion real queda fuera del alcance autorizado.
+
 Bitacora tecnica acumulativa para registrar cambios implementados, comandos ejecutados, resultados y pendientes.
 
 Regla de trabajo desde ahora:
 - Cada bloque de trabajo debe anadirse aqui.
 - No cerrar una tarea sin dejar evidencia de verificacion.
+
+---
+
+## 2026-09-20 - V-03.01 - Separacion del entorno de prueba frente a la instalacion real
+
+### Trabajo realizado
+
+- El frontend de `C:\Proyectos\Atlas Balance Dev` mantiene Vite en `5173` y
+  ahora proxifica `/api` exclusivamente hacia el backend de prueba en `5002`.
+- Los scripts de desarrollo dejan de intentar reutilizar el puerto `5000`, que
+  pertenece a la instalacion real en `C:\AtlasBalance`.
+- El backend de prueba usa PostgreSQL Docker en `5433` y su configuracion local
+  ignorada por Git (`appsettings.Development.json` y `.env`).
+- Se restablecio solo el administrador de la base de prueba porque el volumen
+  local ya existia con una contrasena antigua; no se modifico la instalacion real.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/vite.config.ts`
+- `Atlas Balance/scripts/Start-BackendDev.ps1`
+- `Atlas Balance/scripts/Start-Dev.ps1`
+- `Atlas Balance/scripts/Start-LocalDev.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/frontend/e2e/admin-smoke.spec.ts`
+- `Atlas Balance/frontend/e2e/README.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `docker compose up -d`: OK; contenedor de prueba `atlas_balance_db` en
+  `127.0.0.1:5433`.
+- `Start-BackendDev.ps1 -ApiPort 5002`: compilacion OK con 0 errores y API sana.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+
+### Verificacion
+
+- `http://localhost:5000/api/health`: HTTP 200, instancia real intacta.
+- `http://localhost:5002/api/health`: HTTP 200, instancia de prueba.
+- `http://localhost:5173/api/health`: HTTP 200 a traves del proxy de prueba.
+- Login de `admin@atlasbalance.local` por `http://localhost:5173/api`: HTTP 200
+  contra la base de prueba.
+- La base de prueba contiene 2 usuarios, 3 paises, 3 titulares y 5 cuentas.
+
+### Pendientes
+
+- Los registros demo creados anteriormente en la instalacion real siguen ahi;
+  no se eliminan sin autorizacion explicita.
+
+---
+
+## 2026-09-20 - V-03.01 - Selectores segmentados del dashboard
+
+### Trabajo realizado
+
+- El selector de divisa del dashboard deja de ser un desplegable nativo y pasa
+  a mostrar una opción segmentada por moneda.
+- El periodo visible queda reducido a `1m`, `3m`, `6m`, `12m` y `24m`, como en
+  la referencia visual.
+- Se elimina la cápsula exterior común para que periodo y divisa se perciban
+  como dos selectores independientes.
+- Ambos grupos mantienen navegación por teclado y estado accesible mediante
+  `role="radiogroup"` y `aria-checked`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/DivisaSelector.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/PeriodoSelector.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardTitularPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `git diff --check`: OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; Vite mantiene el warning preexistente sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+
+### Decisiones visuales y pendientes de diseño
+
+- Se mantienen los tokens y componentes visuales existentes; los dos filtros
+  usan el mismo patrón de pestañas segmentadas y se adaptan a cinco columnas
+  en móvil.
+- No quedan pendientes de diseño para este ajuste.
+
+---
+
+## 2026-09-20 - V-03.01 - Correccion de origen en proxy local de Vite
+
+### Trabajo realizado
+
+- La API instalada rechazaba el `Origin` del navegador `http://localhost:5173`
+  con `Origen no permitido`, aunque el frontend usaba el proxy local `/api`.
+- El proxy de Vite ahora reenvia `Origin: http://localhost:5000`, que es el
+  origen aceptado por la instancia local instalada.
+- No se modifico la politica CORS de produccion ni se tocaron datos.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/vite.config.ts`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- Pruebas de login por `http://localhost:5173/api/auth/login` con los tres
+  usuarios demo: HTTP 200 en los tres casos.
+- `npm.cmd run lint`: OK.
+
+### Verificacion
+
+- Admin: HTTP 200 y MFA requerido.
+- Gerente demo: HTTP 200 sin error de origen.
+- Empleado demo: HTTP 200 sin error de origen.
+
+### Pendientes
+
+- Recargar la pagina `/login` del navegador para tomar la configuracion nueva
+  del proxy.
+
+---
+
+## 2026-09-20 - V-03.01 - Refuerzo de marca en inicio de sesión
+
+### Trabajo realizado
+
+- Se aumentó la escala visual del logo y del nombre `Atlas Balance` en la
+  pantalla de inicio de sesión.
+- Se hizo más visible el logo y el nombre `Atlas Labs`.
+- El pie de marca `by Atlas Labs` permanece visible también en viewport móvil,
+  donde antes se ocultaba.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Decisiones visuales
+
+- Se mantuvieron los tokens de color, tipografía y el layout del formulario.
+- El ajuste se limita a jerarquía de marca, escala y visibilidad responsive;
+  no cambia autenticación ni comportamiento del formulario.
+
+### Verificación
+
+- Pantalla `/login` recargada en el navegador local: `Atlas Balance` y `Atlas
+  Labs` visibles; formulario intacto.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `npm.cmd run build`: OK. Vite mantiene un warning preexistente sobre
+  `__dirname` en `vite.config.ts`.
+
+### Pendientes de diseño
+
+- Ninguno para este ajuste.
 
 ---
 
@@ -25948,5 +26144,44 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 - Push de la rama hotfix y merge del PR #35.
 - `stash pop` en `V-03.00` para recuperar el WIP de diseno.
 - Unificar el bucle del instalador con deadline global.
+
+---
+
+## 2026-09-20 - V-03.01 - Rediseño visual de donuts de Concentración
+
+### Trabajo realizado
+
+- Se rediseñó cada donut del dashboard para seguir la referencia visual:
+  cabecera con etiqueta `Donut`, resumen del 100%, panel gris, leyenda lateral
+  y total centrado.
+- Se añadieron extremos redondeados y se limitaron las partes visibles a cuatro,
+  agrupando el resto como `Otros`.
+- La leyenda conserva el detalle monetario en el tooltip y muestra en reposo
+  solo nombre y porcentaje para evitar ruido visual.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/ConcentracionDonutCharts.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; advertencia preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Comprobación visual en el dashboard local: composición, leyenda y agrupación
+  de cuatro partes visibles confirmadas.
+- La sesión del dashboard expiró al final de la comprobación; no se reautenticó
+  ni se usaron credenciales. El último ajuste de formato/fondo queda verificado
+  por lint, build y tests, pero no por una segunda captura autenticada.
+
+### Pendientes
+
+- Ninguno funcional. Si se requiere una captura final tras el último ajuste,
+  hay que abrir de nuevo el dashboard con una sesión válida.
 
 ---

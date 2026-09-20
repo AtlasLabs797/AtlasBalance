@@ -2,7 +2,8 @@
 
 param(
     [int]$TimeoutSeconds = 60,
-    [switch]$SkipFrontend
+    [switch]$SkipFrontend,
+    [int]$ApiPort = 5002
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,7 +75,7 @@ function Stop-ExistingApi {
         }
     }
 
-    $candidatePids += Get-ListeningPids -Port 5000
+    $candidatePids += Get-ListeningPids -Port $ApiPort
     $candidatePids = @($candidatePids | Select-Object -Unique)
 
     foreach ($processId in $candidatePids) {
@@ -91,7 +92,7 @@ function Stop-ExistingApi {
             ($process.ProcessName -eq "dotnet" -and $commandLine.IndexOf("AtlasBalance.API.dll", [StringComparison]::OrdinalIgnoreCase) -ge 0)
 
         if (-not $isAtlasApi) {
-            throw "Port 5000 is already in use by PID $processId ($($process.ProcessName)). Refusing to stop an unrelated process."
+            throw "Port $ApiPort is already in use by PID $processId ($($process.ProcessName)). Refusing to stop an unrelated process."
         }
 
         Write-Host "[local-dev] Stopping old API PID $processId..." -ForegroundColor Yellow
@@ -109,6 +110,7 @@ Assert-PathExists $frontendPath "Frontend directory not found: $frontendPath."
 $env:PATH = "$dotnetDir;$pgBin;$env:PATH"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 $env:DOTNET_ENVIRONMENT = "Development"
+$env:ASPNETCORE_URLS = "http://127.0.0.1:$ApiPort"
 
 if (Test-PostgresReady) {
     Write-Host "[local-dev] PostgreSQL already responds at 127.0.0.1:5433" -ForegroundColor Green
@@ -173,15 +175,15 @@ while ((Get-Date) -lt $deadline) {
         exit 1
     }
 
-    if (Test-HttpOk "http://localhost:5000/api/health") {
-        Write-Host "[local-dev] API healthy at http://localhost:5000/api/health (PID $($apiProcess.Id))." -ForegroundColor Green
+    if (Test-HttpOk "http://localhost:$ApiPort/api/health") {
+        Write-Host "[local-dev] API healthy at http://localhost:$ApiPort/api/health (PID $($apiProcess.Id))." -ForegroundColor Green
         break
     }
 
     Start-Sleep -Seconds 1
 }
 
-if (-not (Test-HttpOk "http://localhost:5000/api/health")) {
+if (-not (Test-HttpOk "http://localhost:$ApiPort/api/health")) {
     throw "Backend did not become healthy. Check logs under $logsPath."
 }
 
@@ -211,12 +213,12 @@ if (-not $SkipFrontend) {
     }
 }
 
-if (-not (Test-HttpOk "http://localhost:5000/api/health")) {
+if (-not (Test-HttpOk "http://localhost:$ApiPort/api/health")) {
     throw "Backend healthcheck failed after startup."
 }
 
 Write-Host "`n[local-dev] Atlas Balance development stack is ready." -ForegroundColor Green
 Write-Host "  Frontend : http://localhost:5173"
-Write-Host "  Backend  : http://localhost:5000"
-Write-Host "  Health   : http://localhost:5000/api/health"
+Write-Host "  Backend  : http://localhost:$ApiPort"
+Write-Host "  Health   : http://localhost:$ApiPort/api/health"
 Write-Host "  DB       : 127.0.0.1:5433`n"

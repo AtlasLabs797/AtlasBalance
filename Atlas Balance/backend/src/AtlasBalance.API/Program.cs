@@ -631,7 +631,7 @@ app.Use(async (context, next) =>
         headers.Remove("Server");
 
         var connectSrc = app.Environment.IsDevelopment()
-            ? "'self' http://localhost:5173 https://localhost:5000 http://localhost:5000"
+            ? "'self' http://localhost:5173 http://localhost:5002 https://localhost:5000 http://localhost:5000"
             : "'self'";
 
         // V-02-05 (LOW-BE-2): upgrade-insecure-requests en produccion para forzar HTTPS.

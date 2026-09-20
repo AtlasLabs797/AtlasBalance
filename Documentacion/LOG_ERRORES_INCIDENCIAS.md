@@ -1,5 +1,24 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-21 - V-03.01 - Timeouts de gerente y empleado
+
+- Evidencia real, consultada sin modificar la instalacion: el 20 de septiembre
+  el login respondia en unos 0,4 s, pero consultas de extractos/columnas extra
+  agotaban los 30 s de Npgsql y el dashboard llegaba a 89,5 s. Axios interrumpe
+  a los 15 s y presenta el aviso generico de conexion.
+- Causa reproducida: funciones RLS repetian las comprobaciones de contexto,
+  cuentas y permisos por cada fila. El administrador evita esa ruta costosa.
+- Solucion: migracion `20260921090000_OptimizeExtractoRlsPermissionChecks`, con
+  conjuntos autorizados por sentencia y CTE materializado en columnas extra.
+  Se conservan las restricciones existentes y los controles de escritura.
+- Regresion: 20.000 movimientos ficticios en PostgreSQL 16. La lectura del
+  gerente falla antes por timeout de 8 s; con el cambio, ambos roles pasan
+  lectura, aislamiento y firma invalida. Lecturas focalizadas: 86-249 ms.
+- Correccion limitada al entorno de prueba. Pendiente comprobar tiempos en la
+  instalacion real cuando se autorice el despliegue; no se modifico produccion.
+- Cierre tecnico: backend 926/926, migracion aplicada en Docker de prueba y
+  catalogo verificado. No se realizo una comprobacion manual en navegador.
+
 ## 2026-09-17 - V-03.01 - Alertas globales y por tipo no podían coexistir (CORREGIDO)
 
 - **Síntoma:** la prueba PostgreSQL de RLS fallaba al insertar una alerta

@@ -71,11 +71,7 @@
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
-  padding: 0.25rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--bg-surface-soft) 78%, var(--bg-surface) 22%);
-  box-shadow: none;
+  padding: 0;
 }
 
 .dashboard-hero-card {
@@ -276,7 +272,8 @@
   white-space: nowrap;
 }
 
-.dashboard-periodo-tabs .ab-tabs {
+.dashboard-periodo-tabs .ab-tabs,
+.dashboard-divisa-tabs .ab-tabs {
   flex-wrap: wrap;
   gap: var(--space-1);
   padding: 3px;
@@ -286,7 +283,8 @@
   box-shadow: none;
 }
 
-.dashboard-periodo-tabs .ab-tab {
+.dashboard-periodo-tabs .ab-tab,
+.dashboard-divisa-tabs .ab-tab {
   min-height: 2.25rem;
   min-width: 3rem;
   border: 0;
@@ -295,7 +293,8 @@
   color: var(--text-secondary);
 }
 
-.dashboard-periodo-tabs .ab-tab[aria-checked="true"] {
+.dashboard-periodo-tabs .ab-tab[aria-checked="true"],
+.dashboard-divisa-tabs .ab-tab[aria-checked="true"] {
   border: 0;
   background: var(--surface-card);
   color: var(--text-primary);
@@ -316,6 +315,10 @@
 }
 
 .dashboard-select-control.dashboard-periodo-tabs {
+  width: auto;
+}
+
+.dashboard-select-control.dashboard-divisa-tabs {
   width: auto;
 }
 
@@ -404,7 +407,7 @@
   grid-column: 1;
   height: 0.45rem;
   border-radius: var(--radius-pill);
-  background: var(--bg-surface-soft);
+  background: var(--surface-sunken);
   border: 1px solid var(--border-soft);
   overflow: hidden;
 }
@@ -438,7 +441,15 @@
 
 .concentracion-donut-panel {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.concentracion-donut-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .concentracion-donut-title {
@@ -450,11 +461,56 @@
   margin: 0;
 }
 
+.concentracion-donut-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.4rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-soft);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.concentracion-donut-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.concentracion-donut-summary strong {
+  color: var(--text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-28);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.concentracion-donut-body {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--space-4);
+  align-items: center;
+  min-width: 0;
+  min-height: 11.5rem;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+
 .concentracion-donut-chart {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 0.85;
-  max-height: 260px;
+  aspect-ratio: 1;
+  min-width: 0;
+  max-height: 10.5rem;
 }
 
 .concentracion-donut-center {
@@ -470,9 +526,7 @@
 
 .concentracion-donut-center-value {
   font-family: var(--font-family-mono);
-  /* .atl-donut__value: mono 14/600 tabular. A 21px y peso 700 los glifos
-     median mas que el agujero del donut y pisaban el anillo. */
-  font-size: var(--text-14);
+  font-size: var(--text-17);
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -493,9 +547,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 14rem;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  min-width: 0;
 }
 
 .concentracion-donut-legend-item + .concentracion-donut-legend-item {
@@ -504,11 +556,11 @@
 
 .concentracion-donut-legend-item {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-1) var(--space-3);
   min-width: 0;
-  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  padding: var(--space-2) 0;
 }
 
 .concentracion-donut-legend-item--otros .concentracion-donut-legend-name {
@@ -533,26 +585,6 @@
   min-width: 0;
 }
 
-.concentracion-donut-legend-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.concentracion-donut-legend-amount {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
-}
-
-.concentracion-donut-legend-sep {
-  font-size: var(--font-size-xs);
-  color: var(--border-medium, var(--border-soft));
-  user-select: none;
-}
-
 .concentracion-donut-legend-pct {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-sm);
@@ -560,6 +592,14 @@
   color: var(--color-text-secondary);
   min-width: 3.5ch;
   text-align: right;
+}
+
+@container (max-width: 760px) {
+  .concentracion-donut-body {
+    grid-template-columns: minmax(8rem, 0.8fr) minmax(0, 1.2fr);
+    gap: var(--space-3);
+    padding-inline: var(--space-3);
+  }
 }
 
 @container (max-width: 560px) {
@@ -1635,13 +1675,16 @@
 
   .dashboard-periodo-tabs,
   .dashboard-periodo-tabs .ab-tabs,
+  .dashboard-divisa-tabs,
+  .dashboard-divisa-tabs .ab-tabs,
   .dashboard-toolbar-actions .dashboard-select-control {
     width: 100%;
   }
 
-  .dashboard-periodo-tabs .ab-tabs {
+  .dashboard-periodo-tabs .ab-tabs,
+  .dashboard-divisa-tabs .ab-tabs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .dashboard-periodo-tabs .ab-tab {
