@@ -2,6 +2,28 @@
 
 ## Objetivo
 
+## 2026-09-21 - V-03.01 - Correccion del error 500 en MFA de desarrollo
+
+- El backend de prueba estaba levantado y sano, pero la verificacion MFA
+  devolvia HTTP 500 porque Data Protection intentaba escribir en la carpeta de
+  perfil de usuario sin permisos.
+- En desarrollo las claves se guardan ahora en
+  `backend/src/AtlasBalance.API/.dataprotection-keys`, ruta local ignorada por
+  Git. La configuracion de produccion conserva su ruta y DPAPI.
+- `Start-BackendDev.ps1` compila en la salida aislada y arranca el DLL de esa
+  misma salida; antes compilaba alli pero ejecutaba el DLL antiguo de `bin`.
+- Verificacion: backend y frontend sanos; login HTTP 200 y MFA HTTP 200 desde
+  `http://localhost:5173`; build backend sin errores y `git diff --check` OK.
+
+## 2026-09-21 - V-03.01 - Reinicializacion del Authenticator de prueba
+
+- Se reinicializo el MFA de `admin@atlasbalance.local` solo en la base Docker
+  de prueba: secreto, dispositivos de confianza y sesiones activas.
+- No se cambio la contraseña, no se tocaron datos de negocio ni se modifico la
+  instalacion real.
+- Verificacion: login HTTP 200 con `mfa_setup_required=true`, nuevo desafio,
+  secreto y URI QR disponibles. No se documenta ningun secreto.
+
 ### 2026-09-21 - V-03.01 - Timeouts de gerente y empleado
 
 - Trabajo: lectura acotada de registros reales, reproduccion en PostgreSQL 16

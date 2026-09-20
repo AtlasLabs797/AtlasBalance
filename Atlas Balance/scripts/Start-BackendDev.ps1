@@ -171,7 +171,7 @@ Remove-Item -LiteralPath $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
 
 Write-Host "[backend] Starting API..." -ForegroundColor Cyan
 $process = Start-Process -FilePath "dotnet" `
-    -ArgumentList @("bin\Debug\net8.0\AtlasBalance.API.dll") `
+    -ArgumentList @("`"$dllPath`"") `
     -WorkingDirectory $backendPath `
     -WindowStyle Hidden `
     -RedirectStandardOutput $stdoutPath `

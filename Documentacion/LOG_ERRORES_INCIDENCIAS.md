@@ -1,5 +1,20 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-21 - V-03.01 - Error 500 al verificar MFA en desarrollo (CORREGIDO)
+
+- **Síntoma:** el backend respondía sano en `5002`, el login inicial devolvía
+  `200`, pero `/api/auth/mfa/verify` fallaba con `500`.
+- **Causa:** ASP.NET Core Data Protection usaba
+  `C:\Users\usuario\AppData\Local\ASP.NET\DataProtection-Keys`; el proceso de
+  desarrollo no podía escribir allí y tampoco podía descifrar claves antiguas
+  protegidas con el perfil de otra ejecución.
+- **Solución:** en desarrollo se configura una carpeta de claves local al
+  proyecto (`.dataprotection-keys`), ignorada por Git. Producción conserva la
+  ruta común y DPAPI. Además, el script de arranque ahora ejecuta el DLL de la
+  salida aislada que acaba de compilar.
+- **Verificación:** `5002`, `5173` y PostgreSQL `5433` sanos; login `200` y
+  verificación MFA `200`; se creó correctamente el fichero XML de clave local.
+
 ## 2026-09-21 - V-03.01 - Timeouts de gerente y empleado
 
 - Evidencia real, consultada sin modificar la instalacion: el 20 de septiembre

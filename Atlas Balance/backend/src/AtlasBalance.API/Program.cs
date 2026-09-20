@@ -235,23 +235,29 @@ builder.Services.AddHsts(options =>
 ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("AtlasBalance");
-if (!builder.Environment.IsDevelopment())
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(dataProtectionKeysPath))
 {
-    var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
-    if (string.IsNullOrWhiteSpace(dataProtectionKeysPath))
-    {
-        dataProtectionKeysPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "AtlasBalance",
-            "keys");
-    }
+    dataProtectionKeysPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "AtlasBalance",
+        "keys");
+}
 
+if (string.IsNullOrWhiteSpace(dataProtectionKeysPath) && builder.Environment.IsDevelopment())
+{
+    dataProtectionKeysPath = Path.Combine(builder.Environment.ContentRootPath, ".dataprotection-keys");
+}
+
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
     Directory.CreateDirectory(dataProtectionKeysPath);
     dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
-    if (OperatingSystem.IsWindows())
-    {
-        dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine: true);
-    }
+}
+
+if (!builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
+{
+    dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine: true);
 }
 builder.Services.AddHttpClient("exchange-rate-api", client =>
 {
