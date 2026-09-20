@@ -101,6 +101,33 @@ Regla de trabajo desde ahora:
 
 - No quedan pendientes funcionales. No se hizo una captura visual autenticada.
 
+## 2026-09-21 - V-03.01 - Simplificación visual del selector de país
+
+### Trabajo realizado
+
+- Se eliminó la tarjeta exterior del selector para evitar el doble borde y el
+  fondo anidado.
+- El campo conserva el label «PAÍS», el control estándar, el foco visible y
+  el comportamiento responsive del sidebar.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- Pendiente en el momento de registrar esta entrada.
+
+### Verificación
+
+- Pendiente: lint, build, tests unitarios y `git diff --check`.
+
+### Pendientes
+
+- No quedan pendientes funcionales; falta ejecutar la verificación automática.
+
 ## 2026-09-20 - V-03.01 - Separacion del entorno de prueba frente a la instalacion real
 
 ### Trabajo realizado

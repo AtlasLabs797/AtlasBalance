@@ -658,7 +658,6 @@ export default function ExtractosPage() {
 
       <ExtractoTable
         rows={rows}
-        totalRows={totalRows}
         loading={loading}
         sortBy={sortBy}
         sortDir={sortDir}

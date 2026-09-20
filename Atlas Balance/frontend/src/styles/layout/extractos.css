@@ -793,7 +793,7 @@
   min-height: var(--sheet-row-height);
 }
 
-  .extracto-table-section--compact .cell.head {
+.extracto-table-section--compact .cell.head {
     min-height: 40px;
   }
 
