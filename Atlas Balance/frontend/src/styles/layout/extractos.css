@@ -255,39 +255,6 @@
   cursor: not-allowed;
 }
 
-.extracto-formula-bar {
-  display: grid;
-  grid-template-columns: 5rem 8rem minmax(0, 1fr);
-  align-items: center;
-  gap: 1px;
-  border-bottom: 1px solid var(--sheet-grid-strong);
-  background: var(--sheet-grid-strong);
-}
-
-.extracto-formula-bar > * {
-  min-height: 2.35rem;
-  display: flex;
-  align-items: center;
-  padding: 0 var(--space-2);
-  background: var(--bg-surface);
-  min-width: 0;
-}
-
-.extracto-formula-ref,
-.extracto-formula-label {
-  color: var(--text-secondary);
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-}
-
-.extracto-formula-bar output {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .extracto-table-viewport {
   height: min(560px, calc(100dvh - var(--topbar-height) - 14rem));
   overflow: auto;
@@ -794,8 +761,8 @@
 }
 
 .extracto-table-section--compact .cell.head {
-    min-height: 40px;
-  }
+  min-height: 40px;
+}
 
 .extracto-table-section .cell input:not([type="checkbox"]) {
   width: 100%;

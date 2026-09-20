@@ -418,7 +418,7 @@ export default function ExtractoTable({
         style={sheetRootStyle}
         role="grid"
         aria-label="Extractos de la página actual en formato hoja editable"
-        aria-rowcount={filteredRows.length + 1}
+        aria-rowcount={filteredRows.length + 2}
         aria-colcount={activeColumns.length}
       >
         <div id={filtersId} className="extracto-table-head" role="rowgroup">
@@ -498,7 +498,7 @@ export default function ExtractoTable({
                       className={`extracto-row ${row.flagged ? 'flagged' : ''}`}
                       style={{ gridTemplateColumns }}
                       role="row"
-                      aria-rowindex={virtualRow.index + 2}
+                        aria-rowindex={virtualRow.index + 3}
                     >
                     {activeColumns.map((column, columnIndex) => {
                       const isFocusedCell =
