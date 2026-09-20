@@ -39,7 +39,6 @@ interface InsertRowDraft {
 
 interface ExtractoTableProps {
   rows: Extracto[];
-  totalRows: number;
   loading: boolean;
   sortBy: string;
   sortDir: 'asc' | 'desc';
@@ -63,14 +62,12 @@ interface ExtractoTableProps {
 
 const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'desglose', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo'] as const;
 const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
-const ACTION_COLUMNS = new Set(['checked', 'flagged', 'desglose']);
 const REQUIRED_COLUMNS = new Set<string>(['fila_numero']);
 const SORTABLE_COLUMNS = new Set<string>(['fila_numero', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo', 'fecha_creacion']);
 const DEFAULT_FOCUSED_CELL = { rowIndex: 0, colIndex: 0 };
 
 export default function ExtractoTable({
   rows,
-  totalRows,
   loading,
   sortBy,
   sortDir,
@@ -531,7 +528,6 @@ export default function ExtractoTable({
                         }}
                         onFocus={() => {
                           setFocusedCell({ rowIndex: virtualRow.index, colIndex: columnIndex });
-                          selectCell(row, column, columnIndex);
                         }}
                         onKeyDown={(event) => handleGridCellKeyDown(event, virtualRow.index, columnIndex)}
                         onContextMenu={(e) => {
@@ -955,14 +951,4 @@ function getColumnLabel(column: string): string {
     default:
       return column.replace(/_/g, ' ');
   }
-}
-
-function getSheetCellReference(filaNumero: number, columnIndex: number): string {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const index = Math.max(0, columnIndex);
-  const letter =
-    index < letters.length
-      ? letters[index]
-      : `${letters[Math.floor(index / letters.length) - 1] ?? 'Z'}${letters[index % letters.length]}`;
-  return `${letter}${filaNumero}`;
 }
