@@ -118,15 +118,54 @@ Regla de trabajo desde ahora:
 
 ### Comandos ejecutados
 
-- Pendiente en el momento de registrar esta entrada.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
 
 ### Verificación
 
-- Pendiente: lint, build, tests unitarios y `git diff --check`.
+- El estilo compactado reserva espacio para el texto y el chevron dentro del
+  ancho del sidebar colapsado, sin cambiar el comportamiento del selector.
 
 ### Pendientes
 
-- No quedan pendientes funcionales; falta ejecutar la verificación automática.
+- No quedan pendientes funcionales. No se hizo una captura visual autenticada.
+
+## 2026-09-21 - V-03.01 - Ajuste del selector de país en sidebar colapsado
+
+### Trabajo realizado
+
+- Se ajustó el control desplegable del país para usar el mismo radio y densidad
+  visual que el resto de controles.
+- En el sidebar colapsado se redujo la altura, se centró la abreviatura y se
+  recolocó el chevron para que `Gen` y los códigos ISO no queden cortados.
+- La lista abierta dejó de depender del `<select>` nativo y ahora usa un
+  listbox propio con estilos de Atlas Balance, selección visible y navegación
+  por teclado.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/components/layout/PaisScopeDropdown.tsx`
+- `Atlas Balance/frontend/src/components/layout/PaisScopeSelect.tsx`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Se comprobó la compilación y la suite frontend con el selector customizado.
+
+### Pendientes
+
+- No quedan pendientes funcionales. No se hizo una captura visual autenticada.
 
 ## 2026-09-20 - V-03.01 - Separacion del entorno de prueba frente a la instalacion real
 
