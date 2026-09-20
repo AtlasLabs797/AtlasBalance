@@ -25,9 +25,9 @@ export function PaisScopeSelect({ compact = false }: PaisScopeSelectProps) {
 
   return (
     <div className={`pais-scope${compact ? ' pais-scope--compact' : ''}`}>
-      {!compact ? <span className="pais-scope-label">Organización</span> : null}
+      {!compact ? <span className="pais-scope-label">País</span> : null}
       <AppSelect
-        ariaLabel="Scope global por país"
+        ariaLabel="Seleccionar país"
         value={selectedPaisId}
         options={options}
         onChange={setSelectedPaisId}

@@ -445,13 +445,6 @@
   min-width: 0;
 }
 
-.concentracion-donut-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
 .concentracion-donut-title {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
@@ -461,48 +454,14 @@
   margin: 0;
 }
 
-.concentracion-donut-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 1.4rem;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-soft);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.concentracion-donut-summary {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-1);
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-.concentracion-donut-summary strong {
-  color: var(--text-primary);
-  font-family: var(--font-family-mono);
-  font-size: var(--text-28);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-
 .concentracion-donut-body {
   display: grid;
-  grid-template-columns: minmax(8.5rem, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(11rem, 1.2fr) minmax(0, 0.95fr);
   gap: var(--space-4);
   align-items: center;
   min-width: 0;
-  min-height: 11.5rem;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-control);
-  background: var(--surface-sunken);
+  min-height: 13.5rem;
+  padding: var(--space-2) 0;
 }
 
 .concentracion-donut-chart {
@@ -510,7 +469,8 @@
   width: 100%;
   aspect-ratio: 1;
   min-width: 0;
-  max-height: 10.5rem;
+  max-height: 13rem;
+  container-type: inline-size;
 }
 
 .concentracion-donut-center {
@@ -526,12 +486,15 @@
 
 .concentracion-donut-center-value {
   font-family: var(--font-family-mono);
-  font-size: var(--text-17);
+  font-size: clamp(var(--text-12), 9.5cqw, var(--text-17));
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   color: var(--text-primary);
-  line-height: 1.2;
+  line-height: 1;
+  max-width: calc(100% - var(--space-2));
+  overflow: hidden;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -596,9 +559,9 @@
 
 @container (max-width: 760px) {
   .concentracion-donut-body {
-    grid-template-columns: minmax(8rem, 0.8fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(10rem, 1.1fr) minmax(0, 1fr);
     gap: var(--space-3);
-    padding-inline: var(--space-3);
+    padding-inline: 0;
   }
 }
 

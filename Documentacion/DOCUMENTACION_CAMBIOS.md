@@ -68,6 +68,39 @@ Regla de trabajo desde ahora:
 
 ---
 
+## 2026-09-21 - V-03.01 - Selector de país y saldos del dashboard
+
+### Trabajo realizado
+
+- Se cambió la etiqueta visible «Organización» por «País» y se ajustó el
+  nombre accesible del selector.
+- Se ocultó la tarjeta «Saldos por país» del dashboard cuando existe un país
+  seleccionado, porque sus datos ya están filtrados por ese país.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/layout/PaisScopeSelect.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Se confirmó que el selector muestra «País» y que el bloque «Saldos por
+  país» solo se renderiza sin filtro de país.
+
+### Pendientes
+
+- No quedan pendientes funcionales. No se hizo una captura visual autenticada.
+
 ## 2026-09-20 - V-03.01 - Separacion del entorno de prueba frente a la instalacion real
 
 ### Trabajo realizado
@@ -26205,5 +26238,64 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 
 - Ninguno funcional. Si se requiere una captura final tras el último ajuste,
   hay que abrir de nuevo el dashboard con una sesión válida.
+
+---
+
+## 2026-09-21 - V-03.01 - Ajuste final de Concentración
+
+### Trabajo realizado
+
+- Se eliminó de las tarjetas de Concentración el badge `Donut` y el resumen
+  `100% ... asignados`, dejando únicamente el título del reparto sobre la
+  burbuja.
+- El importe central del donut usa una escala relativa al tamaño del gráfico y
+  queda recortado dentro de su área para evitar desbordamientos.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/ConcentracionDonutCharts.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; advertencia preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- El código ya no contiene el badge ni el texto `100%` de la cabecera.
+- La sesión autenticada del dashboard no estaba disponible para una nueva
+  captura visual; no se usaron credenciales.
+
+---
+
+## 2026-09-21 - V-03.01 - Donut sin burbuja gris y con mayor área interior
+
+### Trabajo realizado
+
+- Se eliminaron el fondo gris, el radio y el relleno de las burbujas que
+  envolvían cada gráfico de Concentración.
+- Se amplió la columna del gráfico, la altura disponible y los radios del donut
+  para aumentar el espacio útil del texto central sin solaparlo.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/ConcentracionDonutCharts.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; advertencia preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- El bloque de fondo ya no aplica color, radio ni relleno tipo píldora.
+- La captura visual final no se realizó porque no había sesión autenticada
+  disponible en el dashboard; no se usaron credenciales.
 
 ---

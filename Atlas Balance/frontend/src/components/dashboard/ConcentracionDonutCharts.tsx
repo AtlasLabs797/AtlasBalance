@@ -20,8 +20,8 @@ const OTROS_COLOR = 'var(--chart-series-other)';
 const SMALL_SLICE_THRESHOLD = 1.5;
 const MAX_SLICES = 3;
 
-const DONUT_INNER_RADIUS = '58%';
-const DONUT_OUTER_RADIUS = '80%';
+const DONUT_INNER_RADIUS = '62%';
+const DONUT_OUTER_RADIUS = '84%';
 
 interface ConcentracionDonutChartsProps {
   bancos: DashboardConcentracionBanco[];
@@ -136,15 +136,7 @@ function DonutPanel({ title, data, total, divisa, ariaLabel }: DonutPanelProps) 
 
   return (
     <div className="concentracion-donut-panel">
-      <div className="concentracion-donut-heading">
-        <div className="concentracion-donut-title-row">
-          <h3 className="concentracion-donut-title">{title}</h3>
-          <span className="concentracion-donut-badge">Donut</span>
-        </div>
-        <p className="concentracion-donut-summary">
-          <strong>100%</strong> de {formattedTotal} asignados
-        </p>
-      </div>
+      <h3 className="concentracion-donut-title">{title}</h3>
       <div className="concentracion-donut-body">
         <div className="concentracion-donut-chart" role="img" aria-label={ariaLabel}>
           <ResponsiveContainer width="100%" height="100%">

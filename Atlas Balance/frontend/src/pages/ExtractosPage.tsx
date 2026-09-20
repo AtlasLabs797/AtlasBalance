@@ -676,6 +676,15 @@ export default function ExtractosPage() {
         canAddRow={(row) => modo === 'edicion' && canAddInCuenta(row.cuenta_id, row.titular_id, row.pais_id)}
         canEditCell={canEditCell}
         inlineInsertEnabled={sortBy === 'fila_numero' && sortDir === 'desc'}
+        hasExternalFilters={Boolean(titularFiltro || cuentaFiltro || fechaDesde || fechaHasta)}
+        onClearFilters={() => {
+          setTitularFiltro('');
+          setCuentaFiltro('');
+          setFechaDesde('');
+          setFechaHasta('');
+          setPage(1);
+          updateFilterParams({ titularId: '', cuentaId: '', fechaDesde: '', fechaHasta: '' });
+        }}
       />
 
       <div className="users-pagination">

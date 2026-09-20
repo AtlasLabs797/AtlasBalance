@@ -157,7 +157,7 @@ Desde V-02.07, al cerrar sesion se cierran TODAS las sesiones abiertas de ese us
 
 En `Cuentas`, cada cuenta puede tener un pais opcional. Las cuentas antiguas quedan sin pais para no romper datos existentes.
 
-El selector `Organizacion` de la barra lateral es ahora el scope global por pais:
+El selector `Pais` de la barra lateral define el scope global por pais:
 
 - `General` muestra todo, incluidas cuentas sin pais.
 - Un pais concreto muestra solo cuentas, saldos, movimientos, titulares y datos derivados de ese pais.
@@ -165,7 +165,9 @@ El selector `Organizacion` de la barra lateral es ahora el scope global por pais
 
 El campo `Pais` en alta/edicion de cuenta solo asigna esa etiqueta a la cuenta. No cambia el scope de la app.
 
-El dashboard muestra `Saldos por pais`, para que no tengas que adivinar si el scope esta haciendo algo.
+El dashboard muestra `Saldos por pais` cuando estas en `General`. Al elegir un
+pais concreto, ese bloque se oculta porque el resto del dashboard ya esta
+filtrado a ese unico pais.
 
 Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
 
@@ -525,7 +527,7 @@ El dashboard principal muestra:
 - Grafica de evolucion de saldo en la misma zona principal del dashboard, con ingresos y egresos visibles como lineas.
 - KPIs de ingresos, egresos, disponible e inmovilizado cuando hay datos suficientes.
 - Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento.
-- Saldos por pais, concentracion por banco/titular y saldos por titular.
+- Saldos por pais cuando el scope esta en `General`, concentracion por banco/titular y saldos por titular.
 - En `Cuentas > Saldos y evolucion`, la grafica de `Evolucion` se muestra antes del listado de cuentas.
 
 En desktop, los saldos por titular aparecen junto a `Plazos fijos`; en movil se apilan. Los titulares se agrupan en Empresa, Autonomo y Particular.
@@ -545,7 +547,7 @@ En el dashboard de una cuenta, la tabla de movimientos permite seleccionar filas
 
 La interfaz mantiene el mismo funcionamiento, pero ahora los botones, campos, pestanas, tarjetas, tablas y estados de foco usan un sistema visual comun. No cambia el flujo de trabajo: solo debe sentirse mas consistente al pasar de dashboard a cuentas, extractos, importacion, configuracion o administracion.
 
-El menu lateral sigue el tema que tengas puesto: claro con tema claro, oscuro con tema oscuro. Agrupa operacion, control y sistema, mantiene el selector global de pais/organizacion y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
+El menu lateral sigue el tema que tengas puesto: claro con tema claro, oscuro con tema oscuro. Agrupa operacion, control y sistema, mantiene el selector global de pais y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
 
 La barra superior queda fija al desplazarte. Desde ahi puedes contraer el menu, cambiar tema, abrir/cerrar el chat IA si tienes permiso y cerrar sesion.
 

@@ -413,7 +413,7 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      {principal.saldos_por_pais?.length ? (
+      {!selectedPaisId && principal.saldos_por_pais?.length ? (
         <section className="dashboard-card">
           <header className="dashboard-card-header">
             <h2>Saldos por país</h2>

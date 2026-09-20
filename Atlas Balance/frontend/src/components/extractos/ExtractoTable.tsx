@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useId } from 'react';
-import { Plus } from 'lucide-react';
+import { Columns3, FilterX, Plus, Search } from 'lucide-react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -57,6 +57,8 @@ interface ExtractoTableProps {
   canAddRow: (row: Extracto) => boolean;
   canEditCell: (row: Extracto, column: string) => boolean;
   inlineInsertEnabled: boolean;
+  onClearFilters: () => void;
+  hasExternalFilters: boolean;
 }
 
 const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'desglose', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo'] as const;
@@ -64,7 +66,6 @@ const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
 const ACTION_COLUMNS = new Set(['checked', 'flagged', 'desglose']);
 const REQUIRED_COLUMNS = new Set<string>(['fila_numero']);
 const SORTABLE_COLUMNS = new Set<string>(['fila_numero', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo', 'fecha_creacion']);
-const DEFAULT_SELECTED_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda' };
 const DEFAULT_FOCUSED_CELL = { rowIndex: 0, colIndex: 0 };
 
 export default function ExtractoTable({
@@ -86,7 +87,9 @@ export default function ExtractoTable({
   onOpenDesglose,
   canAddRow,
   canEditCell,
-  inlineInsertEnabled
+  inlineInsertEnabled,
+  onClearFilters,
+  hasExternalFilters
 }: ExtractoTableProps) {
   const [filters, setFilters] = useState<Record<string, string>>({});
   // F-NEW-11 (V-02-03): debounce del input para no re-virtualizar
@@ -95,9 +98,7 @@ export default function ExtractoTable({
   const debouncedFilters = useDebouncedValue(filters, 250);
   const [flagNotes, setFlagNotes] = useState<Record<string, string>>({});
   const [showColumns, setShowColumns] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
-  const [selectedCell, setSelectedCell] = useState(DEFAULT_SELECTED_CELL);
   const [focusedCell, setFocusedCell] = useState(DEFAULT_FOCUSED_CELL);
   const [insertDraft, setInsertDraft] = useState<InsertRowDraft | null>(null);
   const [insertSaving, setInsertSaving] = useState(false);
@@ -134,13 +135,16 @@ export default function ExtractoTable({
       return activeColumns.every((column) => {
         const term = (debouncedFilters[column] ?? '').trim().toLowerCase();
         if (!term) return true;
-        const value = getCellValue(row, column);
+        if (column === 'fecha') {
+          return row.fecha === term;
+        }
+        const value = getFilterValue(row, column);
         return value.toLowerCase().includes(term);
       });
     });
   }, [rows, debouncedFilters, activeColumns]);
 
-  const headerOffset = density === 'compact' ? 40 : 48;
+  const headerOffset = density === 'compact' ? 80 : 88;
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => parentRef.current,
@@ -180,18 +184,6 @@ export default function ExtractoTable({
   const sheetGridStyle = {
     gridTemplateColumns
   } as CSSProperties;
-
-  const selectCell = (row: Extracto, column: string, colIndex: number) => {
-    if (ACTION_COLUMNS.has(column)) {
-      return;
-    }
-
-    setSelectedCell({
-      ref: getSheetCellReference(row.fila_numero, colIndex),
-      label: getColumnLabel(column),
-      value: getDisplayCellValue(row, column),
-    });
-  };
 
   const focusGridCell = (rowIndex: number, colIndex: number) => {
     if (filteredRows.length === 0 || activeColumns.length === 0) {
@@ -350,24 +342,29 @@ export default function ExtractoTable({
     >
       <div className="extracto-table-toolbar">
         <div>
-          <strong>{filteredRows.length.toLocaleString('es-ES')} de {rows.length.toLocaleString('es-ES')} filas en esta página</strong>
-          <span>{totalRows.toLocaleString('es-ES')} movimientos totales · {activeColumns.length} columnas visibles</span>
+          <strong>Movimientos</strong>
         </div>
         <div className="extracto-table-actions">
           <button
             type="button"
-            onClick={() => setShowFilters((current) => !current)}
-            aria-expanded={showFilters}
-            aria-controls={filtersId}
+            className="extracto-clear-filters"
+            onClick={() => {
+              setFilters({});
+              onClearFilters();
+            }}
+            disabled={!hasExternalFilters && !Object.values(filters).some(Boolean)}
           >
-            Filtros
+            <FilterX aria-hidden="true" size={14} strokeWidth={1.8} />
+            Borrar filtros
           </button>
           <button
             type="button"
+            className="extracto-columns-button"
             onClick={() => setShowColumns((current) => !current)}
             aria-expanded={showColumns}
             aria-controls={columnsId}
           >
+            <Columns3 aria-hidden="true" size={14} strokeWidth={1.8} />
             Columnas
           </button>
           <AppSelect
@@ -418,12 +415,6 @@ export default function ExtractoTable({
         </div>
       ) : null}
 
-      <div className="extracto-formula-bar" aria-live="polite">
-        <span className="extracto-formula-ref">{selectedCell.ref}</span>
-        <span className="extracto-formula-label">{selectedCell.label}</span>
-        <output>{selectedCell.value || '-'}</output>
-      </div>
-
       <div
         ref={parentRef}
         className="extracto-table-viewport"
@@ -433,41 +424,44 @@ export default function ExtractoTable({
         aria-rowcount={filteredRows.length + 1}
         aria-colcount={activeColumns.length}
       >
-        <div id={filtersId} className="extracto-table-head" style={sheetGridStyle} role="row" aria-rowindex={1}>
-          {activeColumns.map((column, columnIndex) => {
-            const isSortable = SORTABLE_COLUMNS.has(column);
-            return (
-            <div
-              key={column}
-              className={`cell head ${getColumnClassName(column)}`}
-              role="columnheader"
-              aria-colindex={columnIndex + 1}
-              aria-sort={isSortable ? (sortBy === column ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
-            >
-              {isSortable ? (
-                <button
-                  type="button"
-                  onClick={() => onSort(column)}
+        <div id={filtersId} className="extracto-table-head" role="rowgroup">
+          <div className="extracto-table-head-row" style={sheetGridStyle} role="row" aria-rowindex={1}>
+            {activeColumns.map((column, columnIndex) => {
+              const isSortable = SORTABLE_COLUMNS.has(column);
+              return (
+                <div
+                  key={column}
+                  className={`cell head ${getColumnClassName(column)}`}
+                  role="columnheader"
+                  aria-colindex={columnIndex + 1}
+                  aria-sort={isSortable ? (sortBy === column ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
                 >
-                  <span>{getColumnLabel(column)}</span>
-                  {sortBy === column ? <small>{sortDir === 'asc' ? 'asc' : 'desc'}</small> : null}
-                </button>
-              ) : (
-                <span className="extracto-column-label" title="Esta columna no admite ordenacion global.">
-                  {getColumnLabel(column)}
-                </span>
-              )}
-              {showFilters ? (
-                <input
-                  aria-label={`Filtrar por ${getColumnLabel(column)}`}
-                  placeholder="filtrar página actual"
-                  value={filters[column] ?? ''}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, [column]: e.target.value }))}
-                />
-              ) : null}
-            </div>
-            );
-          })}
+                  {isSortable ? (
+                    <button type="button" onClick={() => onSort(column)}>
+                      <span>{getColumnLabel(column)}</span>
+                      {sortBy === column ? <small>{sortDir === 'asc' ? 'asc' : 'desc'}</small> : null}
+                    </button>
+                  ) : (
+                    <span className="extracto-column-label" title="Esta columna no admite ordenacion global.">
+                      {getColumnLabel(column)}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="extracto-table-filter-row" style={sheetGridStyle} role="row" aria-rowindex={2}>
+            {activeColumns.map((column, columnIndex) => (
+              <div
+                key={`filter-${column}`}
+                className={`cell filter ${getColumnClassName(column)}`}
+                role="columnheader"
+                aria-colindex={columnIndex + 1}
+              >
+                {renderFilterControl(column, filters[column] ?? '', (value) => setFilters((prev) => ({ ...prev, [column]: value })))}
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="extracto-table-body" role="rowgroup">
@@ -531,7 +525,6 @@ export default function ExtractoTable({
                         tabIndex={isFocusedCell ? 0 : -1}
                         onClick={(event) => {
                           setFocusedCell({ rowIndex: virtualRow.index, colIndex: columnIndex });
-                          selectCell(row, column, columnIndex);
                           if (event.target === event.currentTarget) {
                             event.currentTarget.focus();
                           }
@@ -680,6 +673,11 @@ export default function ExtractoTable({
           )}
         </div>
       </div>
+
+      <div className="extracto-table-footer">
+        <span>{filteredRows.length.toLocaleString('es-ES')} de {rows.length.toLocaleString('es-ES')} filas</span>
+        <span>{activeColumns.length.toLocaleString('es-ES')} de {allColumns.length.toLocaleString('es-ES')} columnas</span>
+      </div>
     </section>
   );
 }
@@ -827,6 +825,12 @@ function getDisplayCellValue(row: Extracto, column: string): string {
 
 function getCellValue(row: Extracto, column: string): string {
   switch (column) {
+    case 'fila_numero':
+      return String(row.fila_numero);
+    case 'checked':
+      return row.checked ? 'si revisada' : 'no pendiente';
+    case 'flagged':
+      return row.flagged ? `si alerta ${row.flagged_nota ?? ''}` : 'no';
     case 'fecha':
       return row.fecha ?? '';
     case 'concepto':
@@ -842,6 +846,56 @@ function getCellValue(row: Extracto, column: string): string {
     default:
       return row.columnas_extra?.[column] ?? '';
   }
+}
+
+function getFilterValue(row: Extracto, column: string): string {
+  if (column === 'checked' || column === 'flagged' || column === 'fila_numero') {
+    return getCellValue(row, column);
+  }
+
+  return `${getCellValue(row, column)} ${getDisplayCellValue(row, column)}`;
+}
+
+function renderFilterControl(column: string, value: string, onChange: (value: string) => void) {
+  if (column === 'fecha') {
+    return (
+      <DatePickerField
+        value={value}
+        ariaLabel={`Filtrar por ${getColumnLabel(column)}`}
+        placeholder="Todas"
+        allowClear
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (column === 'checked' || column === 'flagged') {
+    return (
+      <AppSelect
+        className="extracto-filter-select"
+        ariaLabel={`Filtrar por ${getColumnLabel(column)}`}
+        value={value}
+        options={[
+          { value: '', label: 'Todos' },
+          { value: 'si', label: 'Sí' },
+          { value: 'no', label: 'No' },
+        ]}
+        onChange={onChange}
+      />
+    );
+  }
+
+  return (
+    <label className="extracto-filter-search">
+      <Search aria-hidden="true" size={13} strokeWidth={1.8} />
+      <input
+        aria-label={`Filtrar por ${getColumnLabel(column)}`}
+        placeholder="Filtrar"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
 }
 
 function getAmountClassName(row: Extracto, column: string): string {
