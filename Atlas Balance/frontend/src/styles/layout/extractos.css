@@ -116,6 +116,7 @@
   --sheet-selected: var(--accent-solid);
   --sheet-row-height: 56px;
   --sheet-head-height: 48px;
+  --sheet-filter-height: 40px;
   --extracto-sheet-width: 100%;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
@@ -129,7 +130,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  min-height: 3.5rem;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--sheet-grid-strong);
   background: var(--bg-surface);
 }
@@ -142,7 +144,7 @@
 .extracto-table-toolbar strong {
   color: var(--text-primary);
   font-family: var(--font-family-heading);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-heavy);
 }
 
@@ -164,6 +166,22 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-full);
   font: var(--type-caption);
+}
+
+.extracto-table-actions > button svg {
+  flex: 0 0 auto;
+}
+
+.extracto-table-actions > button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.extracto-clear-filters,
+.extracto-columns-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .extracto-table-actions > button[aria-expanded="true"] {
@@ -279,8 +297,7 @@
 }
 
 .extracto-table-head {
-  display: grid;
-  grid-template-columns: repeat(7, 120px);
+  display: block;
   border-bottom: 1px solid var(--sheet-grid-strong);
   width: max(100%, var(--extracto-sheet-width));
   min-width: var(--extracto-sheet-width);
@@ -290,10 +307,106 @@
   box-shadow: 0 1px 0 var(--sheet-grid-strong);
 }
 
+.extracto-table-head-row,
+.extracto-table-filter-row {
+  display: grid;
+  width: 100%;
+  min-width: var(--extracto-sheet-width);
+}
+
+.extracto-table-filter-row {
+  min-height: var(--sheet-filter-height);
+  border-bottom: 1px solid var(--sheet-grid-strong);
+}
+
+.extracto-table-filter-row .cell.filter {
+  height: var(--sheet-filter-height);
+  min-height: var(--sheet-filter-height);
+  padding: 0 var(--space-2);
+  background: var(--bg-surface);
+}
+
+.extracto-filter-search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+  height: 1.8rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--control-bg);
+  color: var(--text-secondary);
+}
+
+.extracto-filter-search:focus-within {
+  border-color: var(--color-border-focus);
+  box-shadow: var(--shadow-focus);
+}
+
+.extracto-filter-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--font-size-xs);
+}
+
+.extracto-filter-search input:focus {
+  outline: 0;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.extracto-filter-search input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.95;
+}
+
+.extracto-table-filter-row .date-picker-field,
+.extracto-filter-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.extracto-table-filter-row .date-picker-trigger,
+.extracto-filter-select .app-select-trigger {
+  min-height: 1.8rem;
+  height: 1.8rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+}
+
+.extracto-table-filter-row .date-picker-trigger svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0.18rem;
+}
+
 .extracto-table-body {
   position: relative;
   width: max(100%, var(--extracto-sheet-width));
   min-width: var(--extracto-sheet-width);
+}
+
+.extracto-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 2.5rem;
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--sheet-grid-strong);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
 }
 
 .extracto-table-spacer {
@@ -673,15 +786,16 @@
 .extracto-table-section--compact {
   --sheet-row-height: 44px;
   --sheet-head-height: 40px;
+  --sheet-filter-height: 36px;
 }
 
 .extracto-table-section--compact .cell {
   min-height: var(--sheet-row-height);
 }
 
-.extracto-table-section--compact .cell.head {
-  min-height: 40px;
-}
+  .extracto-table-section--compact .cell.head {
+    min-height: 40px;
+  }
 
 .extracto-table-section .cell input:not([type="checkbox"]) {
   width: 100%;
