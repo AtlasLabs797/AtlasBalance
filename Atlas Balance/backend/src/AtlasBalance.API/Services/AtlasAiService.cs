@@ -438,7 +438,8 @@ public sealed class AtlasAiService : IAtlasAiService
                     runtime_model = selectedRuntimeModel,
                     http_client = providerCall.HttpClientName,
                     used_http_fallback = providerCall.UsedFallback,
-                    zero_data_retention = state.Provider == "OPENROUTER",
+                    zero_data_retention = state.Provider == "OPENROUTER" &&
+                                          !AiConfiguration.IsOpenRouterFreeModel(selectedRuntimeModel),
                     pais_id = paisId,
                     movimientos_analizados = context.MovimientosAnalizados,
                     pregunta_caracteres = prompt.Length,
@@ -683,16 +684,25 @@ public sealed class AtlasAiService : IAtlasAiService
                 AiConfiguration.ThinkingModeHigh => new { effort = "high" },
                 _ => new { exclude = true }
             };
-            request.Content = JsonContent.Create(new
+            // Los modelos gratuitos y `openrouter/free` no garantizan endpoints
+            // compatibles con ZDR/data_collection=deny. Si enviamos esas
+            // restricciones, OpenRouter puede responder 404 aunque la clave
+            // sea válida. La seudonimización DLP sigue activa antes de salir.
+            var payload = new Dictionary<string, object?>
             {
-                model = runtimeModel,
-                provider = OpenRouterPrivacyProvider(),
-                reasoning = reasoningPayload,
-                temperature = 0.1,
-                max_tokens = state.MaxOutputTokens,
-                stream = false,
-                messages
-            });
+                ["model"] = runtimeModel,
+                ["reasoning"] = reasoningPayload,
+                ["temperature"] = 0.1,
+                ["max_tokens"] = state.MaxOutputTokens,
+                ["stream"] = false,
+                ["messages"] = messages
+            };
+            if (!AiConfiguration.IsOpenRouterFreeModel(runtimeModel))
+            {
+                payload["provider"] = OpenRouterPrivacyProvider();
+            }
+
+            request.Content = JsonContent.Create(payload);
             return request;
         }
 
@@ -2680,6 +2690,11 @@ public sealed class AtlasAiService : IAtlasAiService
             {
                 Id = AiConfiguration.OpenRouterAutoModel,
                 Nombre = "OpenRouter Auto"
+            },
+            new()
+            {
+                Id = AiConfiguration.OpenRouterFreeModel,
+                Nombre = "Modelos gratis (OpenRouter)"
             }
         };
 
@@ -2699,6 +2714,7 @@ public sealed class AtlasAiService : IAtlasAiService
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
             seen.Add(AiConfiguration.OpenRouterAutoModel);
+            seen.Add(AiConfiguration.OpenRouterFreeModel);
             foreach (var item in data.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object ||

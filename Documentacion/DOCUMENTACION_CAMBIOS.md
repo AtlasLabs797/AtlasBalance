@@ -2,6 +2,142 @@
 
 ## Objetivo
 
+## 2026-09-21 - V-03.01 - IA OpenRouter gratuita y adaptación visual del chat
+
+### Trabajo realizado
+
+- Se cambió el modelo predeterminado de OpenRouter a `openrouter/free` y se
+  incorporaron sus opciones gratuitas en la allowlist y en la configuración.
+- Se eliminó del payload gratuito el bloque `provider` con restricciones ZDR
+  incompatibles con algunos endpoints gratuitos; la seudonimización DLP se
+  mantiene y el token continúa protegido en backend.
+- Se adaptó `/ia` y el widget flotante al design system entregado en
+  `C:\Users\usuario\Downloads\Atlas balance UI redesign`: panel, chips,
+  composer y cara `AiFace` con estados animados `idle`, `listening` y
+  `thinking`.
+- Se actualizaron los tests de configuración y del payload OpenRouter para
+  distinguir modelos gratuitos de `openrouter/auto`.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/frontend/src/utils/aiModels.ts`
+- `Atlas Balance/frontend/src/components/Icons.tsx`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/pages/IaPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- Documentación técnica, de usuario, de cambios, de versión y log de incidencias.
+
+### Verificación
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; queda el aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- Backend: compilación OK; suite ejecutada `905/926`. Los 21 fallos son
+  pruebas PostgreSQL/Testcontainers bloqueadas porque Docker no está
+  disponible en `npipe://./pipe/docker_engine`.
+- Navegador local: `/ia` renderiza las dos caras `AiFace` (48 px y 34 px),
+  ocho chips y el composer; el panel calcula radio de 18 px. La comprobación
+  visual completa sigue pendiente porque la sesión no tiene IA configurada.
+- `git diff --check`: OK; Git solo muestra avisos de normalización LF/CRLF en
+  los cuatro archivos backend modificados.
+
+### Decisiones visuales y pendientes de diseño
+
+- Se reutilizaron los tamaños y la composición del design system entregado,
+  sin introducir Tailwind ni dependencias nuevas.
+- La animación respeta `prefers-reduced-motion`.
+- Pendiente una captura autenticada con la IA realmente activada para validar
+  el flujo de mensajes y el estado `thinking`; el código y los tests no prueban
+  una llamada real a OpenRouter.
+
+## 2026-09-21 - V-03.01 - Cara animada y composición visual del chat IA
+
+### Trabajo realizado
+
+- Se sustituyó la cara circular por una pieza morada de esquinas redondeadas
+  con estados `idle`, `listening` y `thinking`, inspirados en el vídeo y las
+  capturas de `C:\Users\usuario\Downloads\IA`.
+- La cara aparece en la cabecera, junto a las respuestas, en el botón flotante
+  y junto al estado `Pensando`; la animación respeta `prefers-reduced-motion`.
+- La cabecera ahora muestra `Asistente` y `Solo ve lo que tú puedes ver`; la
+  página `/ia` usa el panel como superficie principal y el compositor adopta
+  el fondo y los controles redondeados de la referencia.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/Icons.tsx`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/pages/IaPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Cabecera de `/ia` comprobada en navegador local: cara morada, título y
+  subtítulo visibles, panel sin la cabecera redundante de la página.
+- La API local tenía la IA desactivada/no configurada, así que no fue posible
+  comprobar en navegador una conversación real ni el estado `Pensando`.
+
+### Pendientes
+
+- Repetir captura visual autenticada con IA configurada para revisar mensajes,
+  sugerencias, composer y widget flotante en estado activo.
+
+## 2026-09-21 - V-03.01 - Extractos alineados con filtros visibles
+
+### Trabajo realizado
+
+- La tabla de Extractos adopta una cabecera en dos filas: títulos y filtros,
+  usando la misma rejilla de columnas para evitar desalineaciones.
+- El toolbar muestra `Movimientos`, `Borrar filtros` y `Columnas`; el borrado
+  limpia tanto los filtros locales de columna como titular, cuenta y periodo.
+- Los filtros de fecha usan el selector de fecha, los estados usan selector y
+  los textos usan buscador; fecha, fila, revisada y alerta comparan valores
+  reales en lugar de quedarse sin coincidencias.
+- Se elimina la barra de fórmula visible para acercar la composición a la
+  referencia, conservando edición, revisión, auditoría, columnas y paginación.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; queda el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación y pendientes
+
+- Verificado por TypeScript, lint y tests unitarios.
+- No se hizo captura visual autenticada: no había servidor local ni sesión de
+  usuario disponible en este turno. La alineación final en navegador queda
+  pendiente de esa comprobación.
+
 ## 2026-09-21 - V-03.01 - Correccion del error 500 en MFA de desarrollo
 
 - El backend de prueba estaba levantado y sano, pero la verificacion MFA
@@ -26363,5 +26499,59 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 - El bloque de fondo ya no aplica color, radio ni relleno tipo píldora.
 - La captura visual final no se realizó porque no había sesión autenticada
   disponible en el dashboard; no se usaron credenciales.
+
+---
+
+## 2026-09-21 - V-03.01 - Rediseño completo de Extractos y tabla de movimientos
+
+### Trabajo realizado
+
+- Se reorganizó la página de Extractos con una jerarquía clara: cabecera de
+  tesorería, selector de modo, tarjeta de ámbito de consulta y tabla de
+  movimientos.
+- Se rediseñó la tabla como una tarjeta de datos densa: toolbar, control de
+  columnas, densidad compacta por defecto, cabeceras y filtros alineados,
+  estados de foco, hover, footer y scroll horizontal.
+- Se corrigió el filtrado de fechas y estados: las fechas aceptan el valor ISO
+  y su representación visible, mientras que `Sí`/`No` comparan el booleano real
+  sin contaminarse con el texto de notas de alerta.
+- `Borrar filtros` limpia filtros locales y de ámbito; `Restablecer` limpia
+  titular, cuenta y periodo desde la tarjeta superior.
+- Se añadieron ajustes responsive para tablet y móvil sin cambiar el contrato
+  de datos ni la lógica de edición/auditoría existente.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversión LF/CRLF en
+  archivos de IA fuera de este cambio.
+
+### Verificación
+
+- Captura visual autenticada de `http://localhost:5173/extractos` confirmada.
+- Filtro de concepto: `Pago impuestos` redujo la vista a 1 de 25 filas.
+- Filtro de alerta `No`: redujo la vista a 20 de 25 filas.
+- Filtro de cuenta: actualizó la URL y mostró 9 movimientos.
+- `Restablecer`: devolvió la vista a 25 de 25 filas y eliminó el parámetro de
+  cuenta de la URL.
+
+### Pendientes
+
+- No hay pendientes funcionales para el alcance solicitado. No se ejecutó la
+  suite E2E completa porque requiere una credencial externa; los filtros se
+  probaron manualmente con una sesión autenticada existente.
 
 ---

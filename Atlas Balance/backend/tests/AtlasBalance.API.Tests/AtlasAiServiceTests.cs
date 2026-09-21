@@ -1597,7 +1597,7 @@ public class AtlasAiServiceTests
     [InlineData("google/gemma-4-31b-it:free")]
     [InlineData("minimax/minimax-m2.5:free")]
     [InlineData(AiConfiguration.OpenRouterGptOss120BModel)]
-    public async Task AskAsync_Should_Send_Allowed_OpenRouter_Model_With_Privacy_Guard(string model)
+    public async Task AskAsync_Should_Send_Free_OpenRouter_Model_Without_Provider_Restrictions(string model)
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: model);
@@ -1617,8 +1617,9 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().NotContain("\"only\"");
         httpFactory.LastPayload.Should().NotContain("\"allow_fallbacks\"");
         httpFactory.LastPayload.Should().NotContain("\"models\"");
-        httpFactory.LastPayload.Should().Contain("\"zdr\":true");
-        httpFactory.LastPayload.Should().Contain("\"data_collection\":\"deny\"");
+        httpFactory.LastPayload.Should().NotContain("\"provider\"");
+        httpFactory.LastPayload.Should().NotContain("\"zdr\"");
+        httpFactory.LastPayload.Should().NotContain("\"data_collection\"");
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
     }
 
@@ -1626,7 +1627,7 @@ public class AtlasAiServiceTests
     [InlineData(AiConfiguration.OpenRouterDefaultModel)]
     [InlineData("z-ai/glm-4.5-air:free")]
     [InlineData("qwen/qwen3-coder:free")]
-    public async Task AskAsync_Should_Send_Unpinned_Free_OpenRouter_Model_With_Privacy_Guard(string model)
+    public async Task AskAsync_Should_Send_Unpinned_Free_OpenRouter_Model_Without_Provider_Restrictions(string model)
     {
         await using var db = BuildDbContext();
         var userId = await SeedAiUserAndConfigAsync(db, model: model);
@@ -1645,9 +1646,9 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().Contain($"\"model\":\"{model}\"");
         httpFactory.LastPayload.Should().NotContain("\"models\"");
         ExtractReasoningExcludeFromPayload(httpFactory.LastPayload).Should().BeTrue();
-        httpFactory.LastPayload.Should().Contain("\"provider\"");
-        httpFactory.LastPayload.Should().Contain("\"zdr\":true");
-        httpFactory.LastPayload.Should().Contain("\"data_collection\":\"deny\"");
+        httpFactory.LastPayload.Should().NotContain("\"provider\"");
+        httpFactory.LastPayload.Should().NotContain("\"zdr\"");
+        httpFactory.LastPayload.Should().NotContain("\"data_collection\"");
     }
 
     [Fact]

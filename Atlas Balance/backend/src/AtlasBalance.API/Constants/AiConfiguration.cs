@@ -4,7 +4,9 @@ public static class AiConfiguration
 {
     public const int MaxQuestionLength = 500;
     public const string OpenRouterAutoModel = "openrouter/auto";
-    public const string OpenRouterDefaultModel = "nvidia/nemotron-3-super-120b-a12b:free";
+    public const string OpenRouterFreeModel = "openrouter/free";
+    public const string OpenRouterDefaultModel = OpenRouterFreeModel;
+    public const string OpenRouterNemotronModel = "nvidia/nemotron-3-super-120b-a12b:free";
     public const string OpenRouterGptOss120BModel = "openai/gpt-oss-120b:free";
     public const string DefaultOpenAiModel = "gpt-4o-mini";
     public const string DefaultMiniMaxModel = "MiniMax-M3";
@@ -54,6 +56,7 @@ public static class AiConfiguration
     [
         OpenRouterAutoModel,
         OpenRouterDefaultModel,
+        OpenRouterNemotronModel,
         "google/gemma-4-31b-it:free",
         "minimax/minimax-m2.5:free",
         OpenRouterGptOss120BModel,
@@ -186,7 +189,7 @@ public static class AiConfiguration
         var normalizedModel = model?.Trim() ?? string.Empty;
         return normalizedProvider switch
         {
-            "OPENROUTER" => IsValidOpenRouterModelId(normalizedModel) ? normalizedModel : OpenRouterAutoModel,
+            "OPENROUTER" => IsValidOpenRouterModelId(normalizedModel) ? normalizedModel : OpenRouterDefaultModel,
             "OPENAI" => IsAllowedOpenAiModel(normalizedModel) ? normalizedModel : DefaultOpenAiModel,
             "MINIMAX" => IsAllowedMiniMaxModel(normalizedModel) ? normalizedModel : DefaultMiniMaxModel,
             _ => normalizedModel
@@ -199,7 +202,7 @@ public static class AiConfiguration
         var normalizedModel = model?.Trim() ?? string.Empty;
         return normalizedProvider switch
         {
-            "OPENROUTER" => IsSuggestedOpenRouterModel(normalizedModel) ? normalizedModel : OpenRouterAutoModel,
+            "OPENROUTER" => IsSuggestedOpenRouterModel(normalizedModel) ? normalizedModel : OpenRouterDefaultModel,
             _ => NormalizeModel(normalizedProvider, normalizedModel)
         };
     }
@@ -219,7 +222,14 @@ public static class AiConfiguration
     public static string ResolveOpenRouterRuntimeModel(string? model)
     {
         var normalized = model?.Trim() ?? string.Empty;
-        return IsValidOpenRouterModelId(normalized) ? normalized : OpenRouterAutoModel;
+        return IsValidOpenRouterModelId(normalized) ? normalized : OpenRouterDefaultModel;
+    }
+
+    public static bool IsOpenRouterFreeModel(string? model)
+    {
+        var normalized = model?.Trim() ?? string.Empty;
+        return string.Equals(normalized, OpenRouterFreeModel, StringComparison.Ordinal) ||
+               normalized.EndsWith(":free", StringComparison.OrdinalIgnoreCase);
     }
 
     public static string NormalizeProvider(string? provider)

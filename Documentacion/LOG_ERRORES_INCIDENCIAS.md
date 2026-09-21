@@ -1,5 +1,21 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-21 - OpenRouter gratuito rechazado por restricciones ZDR (CORREGIDO)
+
+- **Síntoma:** una API key válida podía devolver `404` al usar un modelo
+  gratuito de OpenRouter, aunque el modelo estuviera permitido.
+- **Causa:** Atlas Balance enviaba siempre `provider.zdr=true` y
+  `provider.data_collection=deny`. Esas restricciones de privacidad reducen
+  las rutas compatibles y no todos los endpoints gratuitos las soportan.
+- **Solución:** `openrouter/free` es ahora el modelo predeterminado y las
+  peticiones a `openrouter/free` o a modelos `:free` omiten ese bloque de
+  restricciones. El contexto financiero sigue seudonimizado por DLP antes de
+  salir del backend y los modelos no permitidos siguen bloqueados por allowlist.
+- **Verificación:** las pruebas afectadas de configuración y `AtlasAiService`
+  pasan dentro de la ejecución backend. La suite completa quedó en `905/926`
+  porque 21 pruebas PostgreSQL requieren Docker/Testcontainers no disponible en
+  `npipe://./pipe/docker_engine`.
+
 ## 2026-09-21 - V-03.01 - Error 500 al verificar MFA en desarrollo (CORREGIDO)
 
 - **Síntoma:** el backend respondía sano en `5002`, el login inicial devolvía

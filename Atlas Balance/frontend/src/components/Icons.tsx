@@ -185,14 +185,19 @@ export function IconMenu() {
 
 // Marca del asistente (AiFace, DESIGN.md §5.5). Sustituye al icono generico
 // "bot" en las superficies del canal de IA que este equipo tiene en ambito.
-export function IconAiFace() {
+export type AiFaceState = 'idle' | 'listening' | 'thinking';
+
+export function IconAiFace({ state = 'idle', size = 34 }: { state?: AiFaceState; size?: number }) {
   return (
-    <svg {...PROPS}>
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="9" cy="11" r="1" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="11" r="1" fill="currentColor" stroke="none" />
-      <path d="M9 15.5c1 1 5 1 6 0" />
-    </svg>
+    <span
+      className={`atl-face atl-face--${state}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <span className="atl-face__shape" />
+      <span className="atl-face__eye atl-face__eye--l" />
+      <span className="atl-face__eye atl-face__eye--r" />
+    </span>
   );
 }
 

@@ -2,6 +2,61 @@
 
 ## Vigencia documental: V-03.01
 
+### 2026-09-21 - OpenRouter gratuito y componente visual AiFace
+
+OpenRouter usa `openrouter/free` como modelo predeterminado. La allowlist del
+backend conserva `openrouter/auto`, incorpora el router gratuito y mantiene los
+modelos `:free` permitidos. Las peticiones a modelos gratuitos no incluyen el
+bloque `provider` con `zdr=true` y `data_collection=deny`, porque esas
+restricciones pueden dejar sin rutas compatibles a un endpoint gratuito.
+La seudonimización DLP del contexto financiero se mantiene antes de enviar la
+petición, y la auditoría distingue que una llamada gratuita no es una llamada
+con garantía ZDR del proveedor.
+
+La interfaz IA adopta los tamaños y la composición de `ChatPanel`/`AiFace` del
+design system entregado por el usuario: panel de 420 px en el widget flotante,
+cabecera de 64 px, chips de sugerencias, composer anidado y cara morada con
+estados `idle`, `listening` y `thinking`. En `prefers-reduced-motion` las
+animaciones se desactivan.
+
+Archivos principales: `backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`,
+`backend/src/AtlasBalance.API/Services/AtlasAiService.cs`,
+`frontend/src/utils/aiModels.ts`, `frontend/src/components/Icons.tsx`,
+`frontend/src/components/ia/AiChatPanel.tsx` y
+`frontend/src/styles/layout/revision-ai.css`.
+
+Verificación: lint frontend OK, build frontend OK con el aviso preexistente de
+Vite sobre `__dirname`, tests unitarios frontend `70/70`, compilación y tests
+afectados de backend sin fallos funcionales. La suite backend completa ejecutó
+`905/926`: los `21` restantes requieren Docker/Testcontainers y este host no
+tenía disponible `npipe://./pipe/docker_engine`.
+
+### 2026-09-21 - Canal IA: AiFace animada y composición de chat
+
+La marca del asistente deja de ser una cara circular estática y pasa a ser
+`IconAiFace`, una pieza morada con tres estados visuales: `idle` en reposo,
+`listening` mientras el usuario escribe y `thinking` mientras se procesa una
+respuesta. La animación se detiene cuando el usuario tiene activado
+`prefers-reduced-motion`.
+
+`AiChatPanel` usa la cabecera `Asistente / Solo ve lo que tú puedes ver`,
+coloca la cara junto a las respuestas y durante `Pensando`, y mantiene el
+mismo store, permisos, límites, enlaces y detalles técnicos del chat
+existente. La página `/ia` elimina la cabecera redundante para que el panel
+ocupe la superficie principal; el widget flotante conserva su apertura,
+cierre y carga diferida.
+
+Archivos: `frontend/src/components/Icons.tsx`,
+`frontend/src/components/ia/AiChatPanel.tsx`,
+`frontend/src/components/layout/TopBar.tsx`, `frontend/src/pages/IaPage.tsx` y
+`frontend/src/styles/layout/revision-ai.css`.
+
+Verificación: `npm.cmd run lint`, `npm.cmd run build`,
+`npm.cmd run test:unit` (70/70) y `git diff --check` OK. La comprobación
+visual autenticada solo pudo cubrir la cabecera y el estado de IA no
+disponible; la API local tenía la IA desactivada, por lo que el flujo con
+mensajes y el estado `Pensando` queda pendiente de una sesión configurada.
+
 ### 2026-09-21 - Rendimiento RLS de extractos para gerente y empleado
 
 La migracion `20260921090000_OptimizeExtractoRlsPermissionChecks` optimiza
@@ -27,6 +82,21 @@ La version activa de la aplicacion es `V-03.01` (runtime `3.1.0`). Este
 documento conserva debajo el historial tecnico de V-02.09 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de
 cada cambio.
+
+### 2026-09-21 - Extractos: cabecera alineada y filtros funcionales
+
+`ExtractoTable` renderiza la cabecera como dos filas con el mismo
+`gridTemplateColumns`: una para títulos/ordenación y otra para filtros. Así el
+campo de cada filtro queda alineado con sus celdas aunque existan columnas
+extra y scroll horizontal. Los filtros se mantienen locales a la página
+cargada, como antes, y el botón `Borrar filtros` además limpia los filtros de
+scope y periodo gestionados por `ExtractosPage`.
+
+Los filtros de fecha comparan ISO directamente; fila, revisada y alerta tienen
+valores filtrables explícitos; el resto combina valor almacenado y valor
+formateado para que importes y fechas legibles no fallen por su representación.
+La barra de fórmula visible se retiró de la composición, pero no se eliminaron
+las acciones de edición, revisión, auditoría, desglose, columnas ni paginación.
 
 ## 2026-09-17 - V-03.01 - Revisión de mínimo privilegio y refresh
 
@@ -6578,3 +6648,26 @@ avanza la generación, una respuesta antigua no puede escribir sobre el estado
 de la sesión nueva. Las query keys de recursos sensibles incluyen también
 `usuarioId`; esto es defensa en profundidad y no sustituye la autorización del
 backend.
+
+## 2026-09-21 - V-03.01 - Rediseño de Extractos y tabla de movimientos
+
+La página `Extractos` separa ahora la jerarquía de consulta de la rejilla de
+datos. La cabecera mantiene el modo `Revisión`/`Edición avanzada`; una tarjeta
+superior concentra titular, cuenta y rango (`Desde`/`Hasta`); la tabla conserva
+la edición, auditoría, desglose, columnas configurables, paginación y
+virtualización existentes.
+
+`ExtractoTable` arranca en densidad compacta y mantiene la estructura de dos
+filas de cabecera: nombres de columna y filtros. El helper
+`matchesColumnFilter` trata fecha, `checked` y `flagged` con comparación
+semántica; el resto de columnas conserva búsqueda textual. Esto evita que el
+filtro `Alerta = No` coincida accidentalmente con una nota de alerta.
+
+La hoja de estilos añade la composición visual alineada con el sistema de diseño
+actual: bordes planos, controles compactos, contraste de cabeceras, foco visible,
+footer de resultados, scroll horizontal y breakpoints para tablet/móvil. No se
+añadieron dependencias ni se modificó el contrato de la API.
+
+Verificación: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70`, `git diff --check` OK y prueba
+manual autenticada de filtros de concepto, alerta, cuenta y restablecimiento.

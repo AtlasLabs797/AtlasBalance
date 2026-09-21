@@ -282,7 +282,7 @@ public sealed class ConfiguracionControllerTests
         }, CancellationToken.None);
 
         result.Should().BeOfType<OkObjectResult>();
-        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.OpenRouterAutoModel);
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.OpenRouterDefaultModel);
         (await db.Configuraciones.SingleAsync(x => x.Clave == "openrouter_api_key")).Valor.Should().Be("openrouter-test-placeholder");
 
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.UpdateConfiguracion);
@@ -324,7 +324,7 @@ public sealed class ConfiguracionControllerTests
         }, CancellationToken.None);
 
         result.Should().BeOfType<OkObjectResult>();
-        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.OpenRouterAutoModel);
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.OpenRouterDefaultModel);
         (await db.Configuraciones.SingleAsync(x => x.Clave == "openrouter_api_key")).Valor.Should().Be("openrouter-test-placeholder");
     }
 

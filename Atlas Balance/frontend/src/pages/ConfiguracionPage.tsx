@@ -14,7 +14,7 @@ import { CreateTokenModal } from '@/components/integraciones/CreateTokenModal';
 import { TokenCreatedModal } from '@/components/integraciones/TokenCreatedModal';
 import { TokenList } from '@/components/integraciones/TokenList';
 import {
-  OPENROUTER_AUTO_MODEL,
+  OPENROUTER_DEFAULT_RUNTIME_MODEL,
   aiProviderOptions,
   getAiModelOptions,
   getDefaultAiModel,
@@ -97,7 +97,7 @@ export default function ConfiguracionPage() {
       openai_api_key_configurada: false,
       minimax_api_key: '',
       minimax_api_key_configurada: false,
-      model: OPENROUTER_AUTO_MODEL,
+      model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
       habilitada: false,
       usuario_puede_usar: false,
       configurada: false,
@@ -194,7 +194,7 @@ export default function ConfiguracionPage() {
         openai_api_key_configurada: false,
         minimax_api_key: '',
         minimax_api_key_configurada: false,
-        model: OPENROUTER_AUTO_MODEL,
+        model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
         habilitada: false,
         usuario_puede_usar: false,
         configurada: false,
@@ -992,9 +992,9 @@ export default function ConfiguracionPage() {
                 />
                 {aiUsesOpenRouter ? (
                   <p className="import-muted">
-                    Con OpenRouter, Atlas Balance solicita retención cero de datos (zdr) y deniega
-                    la recopilación en cada consulta. El contexto financiero se envía a la nube para
-                    responder, pero el proveedor no debe conservarlo.
+                    El modelo predeterminado es <code>openrouter/free</code> y no tiene coste por
+                    tokens. Atlas Balance seudonimiza el contexto antes de enviarlo; OpenRouter
+                    puede cambiar el modelo gratuito disponible según su capacidad.
                   </p>
                 ) : (
                   <p className="auth-error" role="status">

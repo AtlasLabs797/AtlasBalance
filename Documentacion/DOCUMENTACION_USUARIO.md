@@ -213,7 +213,16 @@ Aviso importante: las copias en Drive dependen de la clave local `backup_cloud_e
 
 ## IA y modelos OpenRouter
 
-En `Configuracion > Revision e IA`, OpenRouter permite escribir cualquier model id valido, por ejemplo `openrouter/auto` o `proveedor/modelo`. Las sugerencias vienen de OpenRouter, pero no son una jaula.
+En `Configuracion > Revision e IA`, OpenRouter usa `openrouter/free` como modelo
+predeterminado. Es el router oficial de modelos gratuitos: no cobra tokens,
+pero la disponibilidad, los limites y el modelo concreto pueden cambiar según
+la capacidad de OpenRouter. Tambien puedes elegir `openrouter/auto` o uno de los
+modelos gratuitos permitidos.
+
+Guarda tu API key de OpenRouter en esa pantalla. La clave se protege en el
+backend y nunca se muestra en la interfaz ni se escribe en la auditoria. Si la
+IA esta activa y tu usuario tiene permiso, el chat puede utilizar el modelo
+gratuito sin que tengas que escoger un proveedor adicional.
 
 Si OpenRouter rechaza un modelo por saldo, privacidad, proveedor no disponible o ID inexistente, Atlas Balance muestra un error limpio. Si escribes un ID con formato invalido, el backend lo rechaza antes de llamar al proveedor.
 
@@ -482,9 +491,9 @@ En consultas de comisiones y seguros, Atlas Balance filtra ruido antes de llamar
 
 Algunas preguntas de ranking financiero se calculan directamente en Atlas Balance, sin mandar la consulta al proveedor. Por ejemplo, `Que cuentas han tenido mas gastos este trimestre?` devuelve ranking por cuenta; `Que titulares han tenido mas gastos este trimestre?` agrupa por titular y divisa. En esas respuestas veras coste y tokens `0`.
 
-Las respuestas del chat se muestran como texto legible. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
+Las respuestas del chat se muestran como texto legible dentro de una burbuja violeta junto a la cara animada del asistente. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
 
-Tu pregunta aparece como burbuja a la derecha con fondo suave; la respuesta de la IA aparece como texto plano a la izquierda, con la hora y el modelo debajo. Cuando cambia el dia entre mensajes se muestra un divisor `Hoy` / `Ayer` / `DD MMM`.
+Tu pregunta aparece como burbuja a la derecha con fondo suave; la respuesta de la IA aparece a la izquierda con la hora y el modelo debajo. La cara cambia suavemente entre reposo, escritura y pensamiento; si tienes activado `prefers-reduced-motion`, no se mueve. Cuando cambia el dia entre mensajes se muestra un divisor `Hoy` / `Ayer` / `DD MMM`.
 
 El composer (la caja de texto inferior) es una tarjeta. En la fila inferior veras el **modo de pensamiento** (a la izquierda) y el modelo activo + el boton de enviar (a la derecha). El modo de pensamiento cambia la profundidad de razonamiento que pide al proveedor:
 
@@ -504,7 +513,7 @@ En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva.
 
 El chat esta limitado a Atlas Balance, funcionamiento de la app y datos financieros disponibles. Puede responder sobre gastos, ingresos, importes, montos, Seguridad Social, impuestos, comisiones, seguros, recibos, facturas, nominas, cuotas, cargos y cobros si esos datos estan en el contexto financiero accesible para tu usuario. Si preguntas por recetas, cocina, programacion, noticias, ocio, salud, asesoramiento legal externo o cualquier asunto externo, la app debe rechazar la consulta.
 
-En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter`, `OpenAI` o `MiniMax`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta.
+En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter`, `OpenAI` o `MiniMax`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta. Para OpenRouter gratuito, el coste por tokens del proveedor es cero, pero siguen aplicando sus limites de uso y la disponibilidad de sus modelos.
 
 Para OpenRouter, puedes dejar `Auto (gratis permitido)`. Atlas Balance guarda `openrouter/auto`, pero no usa el Auto Router abierto de OpenRouter porque puede chocar con las restricciones de modelos de tu cuenta. En su lugar, usa fallback con un maximo de 3 modelos por consulta, que es el limite efectivo de OpenRouter: `Nemotron 3 Super (free)`, `Gemma 4 31B (free)` y `MiniMax M2.5 (free)`. Si quieres forzar otro modelo gratis permitido, el selector del chat y el de Configuracion tambien muestran `gpt-oss-120b (free)`, `GLM 4.5 Air (free)` y `Qwen3 Coder 480B A35B (free)`.
 
@@ -585,6 +594,13 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 
 La tabla de `Extractos` ahora se lee mas como una hoja de calculo:
 
+- La cabecera separa claramente los nombres de columna de la fila de filtros;
+  ambos quedan alineados incluso al desplazar la tabla horizontalmente.
+- Los filtros de columna siempre están visibles. Los campos de texto buscan
+  dentro de la página cargada, la fecha se selecciona con calendario y los
+  estados ofrecen `Todos`, `Sí` y `No`.
+- `Borrar filtros` limpia los filtros de columna y también los filtros de
+  titular, cuenta y periodo de la pantalla.
 - En la parte superior puedes filtrar por titular, cuenta y periodo.
 - El periodo se elige con dos fechas: `Desde` y `Hasta`.
 - Si dejas una fecha vacia, el filtro queda abierto por ese lado.

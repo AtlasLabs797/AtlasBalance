@@ -131,7 +131,7 @@ export function TopBar() {
             aria-label={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
             title={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
           >
-            <IconAiFace />
+            <IconAiFace state="idle" size={48} />
           </button>
           {chatOpen ? (
             <div className="ai-floating-chat" role="dialog" aria-modal="false" aria-label="Chat flotante IA">

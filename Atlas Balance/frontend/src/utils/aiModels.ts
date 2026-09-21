@@ -4,7 +4,9 @@ export interface AiModelOption {
 }
 
 export const OPENROUTER_AUTO_MODEL = 'openrouter/auto';
-export const OPENROUTER_DEFAULT_RUNTIME_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
+export const OPENROUTER_FREE_MODEL = 'openrouter/free';
+export const OPENROUTER_DEFAULT_RUNTIME_MODEL = OPENROUTER_FREE_MODEL;
+export const OPENROUTER_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 export const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3';
 
@@ -16,7 +18,8 @@ export const aiProviderOptions: AiModelOption[] = [
 
 export const openRouterModelOptions: AiModelOption[] = [
   { value: OPENROUTER_AUTO_MODEL, label: 'OpenRouter Auto' },
-  { value: OPENROUTER_DEFAULT_RUNTIME_MODEL, label: 'Nemotron 3 Super (free)' },
+  { value: OPENROUTER_FREE_MODEL, label: 'Modelos gratis (OpenRouter)' },
+  { value: OPENROUTER_NEMOTRON_MODEL, label: 'Nemotron 3 Super (gratis)' },
   { value: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (free)' },
   { value: 'minimax/minimax-m2.5:free', label: 'MiniMax M2.5 (free)' },
   { value: 'openai/gpt-oss-120b:free', label: 'gpt-oss-120b (free)' },
@@ -58,14 +61,14 @@ export function getDefaultAiModel(provider: string | null | undefined) {
     return DEFAULT_OPENAI_MODEL;
   }
 
-  return normalizedProvider === 'MINIMAX' ? DEFAULT_MINIMAX_MODEL : OPENROUTER_AUTO_MODEL;
+  return normalizedProvider === 'MINIMAX' ? DEFAULT_MINIMAX_MODEL : OPENROUTER_FREE_MODEL;
 }
 
 export function normalizeAiModel(provider: string | null | undefined, model: string | null | undefined) {
   const trimmed = model?.trim() ?? '';
   const normalizedProvider = normalizeAiProvider(provider);
   if (normalizedProvider === 'OPENROUTER') {
-    return trimmed || OPENROUTER_AUTO_MODEL;
+    return trimmed || OPENROUTER_FREE_MODEL;
   }
 
   const options = normalizedProvider === 'OPENAI' ? openAiModelOptions : miniMaxModelOptions;
