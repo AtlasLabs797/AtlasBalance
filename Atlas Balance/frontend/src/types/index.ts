@@ -97,6 +97,7 @@ export interface Extracto {
   fecha_modificacion?: string | null;
   deleted_at?: string | null;
   cuenta_nombre?: string;
+  banco_nombre?: string | null;
   titular_id?: string;
   titular_nombre?: string;
   pais_id?: string | null;

@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { X } from 'lucide-react';
 import { IconAiFace, IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
 import { CommandPalette } from '@/components/layout/CommandPalette';
 import { navigationItems } from '@/utils/navigation';
 import api, { clearSessionState } from '@/services/api';
+import { useAiChatStore } from '@/stores/aiChatStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
 import { useUiStore } from '@/stores/uiStore';
 
@@ -17,6 +19,7 @@ export function TopBar() {
   const theme = useUiStore((state) => state.theme);
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const blockingOverlayCount = useUiStore((state) => state.blockingOverlayCount);
+  const aiLoading = useAiChatStore((state) => state.loading);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
@@ -42,6 +45,7 @@ export function TopBar() {
 
     return { title: 'Atlas Balance', breadcrumb: 'Operación local' };
   }, [location.pathname]);
+  const isIaPage = location.pathname === '/ia';
 
   const handleLogout = async () => {
     try {
@@ -58,10 +62,10 @@ export function TopBar() {
   };
 
   useEffect(() => {
-    if (!aiAvailable || blockingOverlayCount > 0) {
+    if (!aiAvailable || blockingOverlayCount > 0 || isIaPage) {
       setChatOpen(false);
     }
-  }, [aiAvailable, blockingOverlayCount]);
+  }, [aiAvailable, blockingOverlayCount, isIaPage]);
 
   // Atajo global del buscador. Cmd+K en Mac, Ctrl+K en el resto.
   useEffect(() => {
@@ -121,17 +125,17 @@ export function TopBar() {
         </div>
       </header>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      {aiAvailable && blockingOverlayCount === 0 ? (
+      {aiAvailable && !isIaPage && blockingOverlayCount === 0 ? (
         <div className="ai-floating-widget">
           <button
             type="button"
-            className={`ai-floating-button${chatOpen ? ' ai-floating-button--active' : ''}`}
+            className={`ai-floating-button${chatOpen ? ' ai-floating-button--close' : ''}`}
             onClick={() => setChatOpen((current) => !current)}
             aria-expanded={chatOpen}
             aria-label={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
             title={chatOpen ? 'Cerrar chat IA' : 'Abrir chat IA'}
           >
-            <IconAiFace state="idle" size={48} />
+            {chatOpen ? <X size={24} strokeWidth={1.5} aria-hidden="true" /> : <IconAiFace state={aiLoading ? 'thinking' : 'idle'} size={48} />}
           </button>
           {chatOpen ? (
             <div className="ai-floating-chat" role="dialog" aria-modal="false" aria-label="Chat flotante IA">

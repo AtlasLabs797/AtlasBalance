@@ -1,5 +1,33 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-21 - V-03.01 - Animaciones AiFace bloqueadas por movimiento reducido (ENTORNO)
+
+- **Síntoma:** las caras aparecen estáticas en Chrome aunque el estado sea
+  `idle`, `listening` o `thinking`.
+- **Causa:** `matchMedia('(prefers-reduced-motion: reduce)')` devuelve `true`;
+  la media query de accesibilidad aplica `animation: none !important` sobre la
+  forma y los ojos. Los keyframes y las clases sí están cargados.
+- **Solución:** activar los efectos de animación en
+  `Configuración > Accesibilidad > Efectos visuales > Efectos de animación` y
+  recargar la aplicación. No se elimina la protección porque el HTML de
+  referencia también respeta esa preferencia.
+- **Verificación:** Chrome mostró `animation-name: none`, duración `0s` y la
+  regla de movimiento reducido como regla ganadora; no se encontró un error de
+  React ni de carga CSS.
+
+## 2026-09-21 - V-03.01 - Preview frontend sin backend durante la verificacion (ENTORNO)
+
+- **Sintoma:** la consola del navegador mostro `SIN RESPUESTA` en varias
+  peticiones `/api` mientras se inspeccionaba el popup; el panel visual siguio
+  renderizado con el estado ya cargado.
+- **Causa:** en la comprobacion final no habia ningun proceso escuchando en el
+  puerto de desarrollo `5002`; no se atribuye al cambio de `AiFace`.
+- **Solucion:** no se reiniciaron procesos ni se modifico codigo de backend en
+  esta tarea. La validacion funcional contra API queda pendiente de arrancar
+  el entorno completo con el script de desarrollo.
+- **Verificacion:** `5173` y `5002` no estaban escuchando al finalizar la
+  comprobacion; lint, build y tests unitarios frontend siguieron pasando.
+
 ## 2026-09-21 - OpenRouter gratuito rechazado por restricciones ZDR (CORREGIDO)
 
 - **Síntoma:** una API key válida podía devolver `404` al usar un modelo

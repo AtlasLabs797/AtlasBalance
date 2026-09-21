@@ -2,6 +2,153 @@
 
 ## Objetivo
 
+## 2026-09-21 - V-03.01 - Diagnóstico de AiFace sin movimiento en navegador
+
+### Diagnóstico
+
+- El navegador devuelve `matchMedia('(prefers-reduced-motion: reduce)').matches === true`.
+- Los keyframes `atl-face-sway`, `atl-face-idle-*`, `atl-face-listen-*` y
+  `atl-face-morph` están cargados y las caras conservan sus clases de estado.
+- La media query de accesibilidad aplica `animation: none !important`, por lo
+  que el estado computado termina en `animation-name: none` y duración `0s`.
+- El HTML de referencia contiene la misma protección. No es un fallo de React,
+  de los estados ni de la carga del CSS.
+
+### Solución
+
+- No se elimina la protección de movimiento reducido: hacerlo forzaría
+  animaciones contra la preferencia del sistema.
+- Para ver las caras animadas, activa en Windows `Configuración >
+  Accesibilidad > Efectos visuales > Efectos de animación` y recarga la página.
+- La sesión revisada también tenía la sesión de Atlas caducada y el backend sin
+  respuesta; eso afecta a la carga de datos, pero no es la causa de este
+  bloqueo visual.
+
+### Verificación
+
+- En Chrome: `prefers-reduced-motion=true`, keyframes presentes, clase
+  `atl-face atl-face--idle` y animación computada desactivada por la media query.
+- No se modificó código porque el comportamiento observado es el esperado para
+  la preferencia activa.
+
+## 2026-09-21 - V-03.01 - Estado de mensaje enviado y Pensando según referencia
+
+### Trabajo realizado
+
+- Se alineó el mensaje de usuario enviado con
+  `C:\Users\usuario\Downloads\Chat - Mensaje Enviado (standalone).html`:
+  burbuja violeta a la derecha, avatar del usuario, metadato horario y radios
+  asimétricos.
+- Se añadió separación entre cambios de rol para reproducir la composición de
+  `ChatPanel` cuando conviven la pregunta enviada y la respuesta del asistente.
+- El estado `Pensando` ahora aparece dentro de una burbuja del asistente y su
+  etiqueta pulsa con la misma cadencia de la referencia; la cara mantiene el
+  estado animado `thinking`.
+- El placeholder usa la elipsis tipográfica de la referencia y la animación de
+  `Pensando` se pausa bajo `prefers-reduced-motion`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo mantiene avisos LF/CRLF en archivos backend
+  modificados previamente y ajenos a esta corrección.
+
+### Verificación
+
+- Se verificó en el store que el mensaje de usuario se añade antes de la
+  petición y que `loading=true` activa simultáneamente la fila `Pensando`.
+- Se compararon estáticamente las clases, estados, radios, alineación y pulso
+  de la etiqueta con el HTML adjunto.
+- No se pudo abrir directamente el HTML adjunto como `file://` en el navegador
+  de esta sesión por la política de seguridad de URLs locales. La validación
+  visual dinámica con una consulta real queda pendiente; el backend local
+  tampoco estaba escuchando durante la comprobación anterior.
+
+## 2026-09-21 - V-03.01 - AiFace alineada con el HTML de estados
+
+### Trabajo realizado
+
+- Se alinearon los tres ritmos de `AiFace` con `C:\Users\usuario\Downloads\AiFace - Estados (standalone).html`:
+  `idle` usa balanceo de 9 s y ojos de 14 s, `listening` usa ciclos de 7 s y
+  `thinking` morfa la forma en 2,8 s y los ojos en 5,2 s.
+- Se conservaron los keyframes de forma, ojos, parpadeos, seguimiento y morphing
+  del HTML de referencia, junto con la pausa accesible bajo
+  `prefers-reduced-motion`.
+- Se confirmó que el navegador de verificación tiene `prefers-reduced-motion`
+  activo; por eso la animación se desactiva deliberadamente en esa sesión.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo mantiene avisos LF/CRLF en archivos backend
+  modificados previamente y ajenos a esta corrección.
+
+### Verificación
+
+- Se compararon los nombres de keyframes y duraciones contra el HTML adjunto.
+- En Chrome se inspeccionó el estado computado de `AiFace`: con movimiento
+  reducido activo, `animation: none` es el comportamiento esperado.
+- En el popup se comprobaron 420 x 560 px, el cierre 56 x 56 px y el cambio de
+  clase a `atl-face--listening` al escribir, sin enviar la prueba.
+- La comprobación terminó con el backend de desarrollo sin escuchar en `5002`;
+  se registra como incidencia de entorno y no como regresión de esta UI.
+- Pendiente: reproducción visual de los ciclos con movimiento reducido
+  desactivado en el sistema/navegador.
+
+## 2026-09-21 - V-03.01 - Ajuste fino del popup y animación de la cara IA
+
+### Trabajo realizado
+
+- Se redujo la X del botón de cierre a 24 px y trazo 1.5, manteniendo el
+  círculo contenedor de 56 px.
+- Se aumentó la altura del popup compacto de 520 px a 560 px, respetando el
+  límite disponible del viewport.
+- Se hizo más perceptible el movimiento de `AiFace` en reposo, escritura y
+  pensamiento mediante ciclos más cortos y `will-change`; se conserva la
+  desactivación por `prefers-reduced-motion`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Verificación
+
+- Popup abierto en Dashboard: altura nueva, círculo de cierre intacto y X
+  reducida/fina inspeccionados en Chrome.
+- Se compararon capturas separadas del popup para comprobar el estado visual de
+  la cara; el navegador mantiene la protección global de movimiento reducido si
+  el sistema la solicita.
+
 ## 2026-09-21 - V-03.01 - IA OpenRouter gratuita y adaptación visual del chat
 
 ### Trabajo realizado
@@ -201,6 +348,54 @@ Bitacora tecnica acumulativa para registrar cambios implementados, comandos ejec
 Regla de trabajo desde ahora:
 - Cada bloque de trabajo debe anadirse aqui.
 - No cerrar una tarea sin dejar evidencia de verificacion.
+
+---
+
+## 2026-09-21 - V-03.01 - Rediseño UI/UX del asistente IA
+
+### Trabajo realizado
+
+- Se rehizo la composición de `/ia` y del widget flotante con la gramática de
+  las referencias locales: cabecera `Asistente`, cara morada, sugerencias,
+  mensajes agrupados, citas y composer anidado.
+- La cara usa estados `idle`, `listening` y `thinking`; el widget se oculta en
+  `/ia`, se abre en el resto de pantallas y usa un cierre circular separado.
+- Se añadieron menús propios para modelo y modo de pensamiento, con iconos del
+  sistema, selección por sesión y semántica de menú accesible.
+- Se respetan las animaciones proporcionadas y `prefers-reduced-motion`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/stores/aiChatStore.ts`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- `/ia`: cabecera, ocho sugerencias, composer, selector de modelo y selector
+  de pensamiento inspeccionados en Chrome autenticado.
+- Widget flotante: apertura, panel compacto de 420 px y cierre independiente
+  inspeccionados en Dashboard.
+- No se ejecutó una pregunta contra el proveedor externo; la validación se
+  centró en la interfaz y no modificó datos ni configuración.
+
+### Pendientes
+
+- Ninguno dentro del alcance visual. Queda fuera de esta tarea la validación
+  de una respuesta real del proveedor y sus tiempos de streaming.
 
 ---
 
@@ -26502,6 +26697,155 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 
 ---
 
+## 2026-09-21 - V-03.01 - Ampliacion de la tabla de Extractos a 20 filas y columnas completas
+
+### Trabajo realizado
+
+- Se amplio el viewport de escritorio de `Extractos` para reservar espacio para
+  20 filas segun la densidad activa; el limite responsive de movil se conserva.
+- Se elimino `Fila` del conjunto de columnas visibles sin eliminar `fila_numero`
+  del modelo ni de las operaciones internas.
+- Se anadieron `Cuenta` con el nombre de la cuenta, `Banco`, `Titular` y
+  `Divisa`; las columnas extra importadas siguen apareciendo dinamicamente.
+- Se movieron historial y alta inline a la celda `Revisada` para mantener esas
+  acciones despues de retirar la columna `Fila`.
+- El backend incluye `BancoNombre` en la respuesta de lista de extractos.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `dotnet restore ... -p:UseArtifactsOutput=true --ignore-failed-sources`: OK;
+  aviso de red `NU1900` al consultar vulnerabilidades de NuGet.
+- `dotnet build ... -p:DefaultItemExcludes=tools/dotnet-build/**`: OK; 7
+  advertencias preexistentes, 0 errores.
+- `git diff --check`: OK; solo avisos preexistentes de conversion LF/CRLF.
+
+### Verificacion
+
+- La cabecera autenticada mostro `Fecha`, `Cuenta`, `Banco`, `Titular`,
+  `Divisa`, `Concepto`, `Comentarios`, `Importe`, `Saldo`, `Revisada`, `Alerta`
+  y `Desglose`, sin `Fila`.
+- El viewport calculo 968 px en densidad compacta para mostrar 20 filas con
+  el scroll vertical interno disponible.
+- La sesion local se invalido al recompilar el backend y no se repitio el flujo
+  manual de filtros con una credencial nueva.
+
+### Pendientes
+
+- Repetir una prueba manual autenticada de filtros tras volver a iniciar sesion;
+  la logica de filtros no cambio en este ajuste y ya estaba validada en la
+  iteracion anterior.
+
+---
+
+## 2026-09-21 - V-03.01 - Previsualizacion de celda y viewport de 17 filas
+
+### Trabajo realizado
+
+- Se anadio en la franja superior de la tabla una previsualizacion de la celda
+  activa. Muestra la columna y el valor formateado completo, permite envolver o
+  desplazar contenido largo y conserva el valor completo en `title`.
+- La previsualizacion se actualiza al hacer clic o mover el foco con teclado;
+  usa `role="status"` y `aria-live="polite"` para anunciar el cambio sin
+  interrumpir la navegacion.
+- El viewport de escritorio se ajusto para reservar 17 filas en densidad
+  compacta y comoda. El limite especifico de movil se conserva.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversion LF/CRLF en
+  archivos C# modificados en la iteracion anterior.
+
+### Verificacion
+
+- El build de TypeScript y Vite confirma que la previsualizacion de la celda
+  activa compila junto con la tabla existente.
+- La suite unitaria frontend conserva sus 70 pruebas en verde.
+- No se repitio una captura manual autenticada: la sesion local se invalido al
+  recompilar el backend en la iteracion anterior.
+
+### Pendientes
+
+- La comprobacion manual autenticada de filtros sigue pendiente porque la
+  sesion local se invalido al recompilar el backend en la iteracion anterior.
+
+---
+
+## 2026-09-21 - V-03.01 - Compacta fija y selectores buscables en Extractos
+
+### Trabajo realizado
+
+- Se elimino el selector `Compacta/Comoda` de la barra de movimientos. La tabla
+  queda fija en compacta y mantiene el viewport de 17 filas visibles.
+- Se sustituyeron los `<select>` nativos de `Titular` y `Cuenta` por
+  `SearchableSelect`, con el mismo borde, foco, chevron y menu que el lenguaje
+  visual de la pantalla.
+- Las opciones se filtran en tiempo real al escribir; tambien se puede navegar
+  y confirmar con teclado. La seleccion conserva los UUID y la actualizacion de
+  URL existentes.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/common/SearchableSelect.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversion LF/CRLF en
+  archivos C# modificados en la iteracion anterior.
+
+### Verificacion
+
+- La tabla ya no renderiza el selector de densidad y usa la clase compacta fija.
+- TypeScript y Vite compilan el nuevo combobox con filtrado incremental.
+- La suite unitaria frontend conserva sus 70 pruebas en verde.
+- En Chrome autenticado, escribir `Laura` filtro titulares y escribir `Sabadell`
+  filtro cuentas; al seleccionar la cuenta se actualizo la URL y la tabla mostro
+  9 movimientos. `Restablecer` devolvio los 25 movimientos y limpio la URL.
+- La inspeccion del DOM confirmo 2 combobox buscables, 0 controles de densidad,
+  viewport de 836 px y filas de 44 px.
+
+---
+
 ## 2026-09-21 - V-03.01 - Rediseño completo de Extractos y tabla de movimientos
 
 ### Trabajo realizado
@@ -26553,5 +26897,39 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 - No hay pendientes funcionales para el alcance solicitado. No se ejecutó la
   suite E2E completa porque requiere una credencial externa; los filtros se
   probaron manualmente con una sesión autenticada existente.
+
+## 2026-09-21 - V-03.01 - Popup de filtros en lista rectangular
+
+### Trabajo realizado
+
+- Se corrigió el radio del menú de `SearchableSelect` para que `Titular` y
+  `Cuenta` se muestren como una lista rectangular coherente con el resto de
+  desplegables, sin la forma de burbuja elíptica.
+- Se mantuvo el filtrado incremental al escribir y la selección de las
+  opciones existentes.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversión LF/CRLF en
+  archivos C# modificados previamente.
+
+### Verificación
+
+- En Chrome autenticado, `Sabadell` filtró la lista de cuentas a una opción y
+  `Laura` filtró la lista de titulares a una opción.
+- La inspección visual mostró ambos menús como listas rectangulares; el DOM
+  confirmó `border-radius: 11px`.
 
 ---

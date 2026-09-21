@@ -2,6 +2,95 @@
 
 ## Vigencia documental: V-03.01
 
+### 2026-09-21 - Diagnóstico de animaciones estáticas en Chrome
+
+La inspección del navegador confirmó que `AiFace` sí recibe la clase de estado
+(`atl-face--idle` en la vista revisada) y que los keyframes están presentes en
+las hojas de estilo. El estado computado era `animation-name: none` y
+`animation-duration: 0s` porque Chrome tenía activa la media query
+`prefers-reduced-motion: reduce`, cuya regla usa `animation: none !important`.
+
+El HTML de referencia contiene la misma protección. Por tanto, no se cambia el
+CSS para forzar movimiento: la corrección operativa es activar los efectos de
+animación de Windows y recargar. La caducidad de la sesión y la API local sin
+respuesta se registraron por separado y no explican este comportamiento.
+
+### 2026-09-21 - Estado de mensaje enviado y `Pensando`
+
+La referencia `C:\Users\usuario\Downloads\Chat - Mensaje Enviado (standalone).html`
+define el estado de conversación con una pregunta de usuario ya enviada y la
+respuesta del asistente en streaming. `AiChatPanel` ya recibía ese estado desde
+`aiChatStore`: `ask()` añade primero el mensaje del usuario y activa `loading`.
+El ajuste se limita a representar esa secuencia con la misma composición visual.
+
+Los grupos que comienzan un nuevo rol reciben separación adicional. La burbuja
+del usuario se alinea a la derecha, usa `ai-soft`, avatar de 40 px y hora bajo
+el contenido. La fila del asistente conserva la cara de 36 px dentro de un
+contenedor de 40 px. Mientras `loading` es verdadero, la fila `Pensando` usa
+la cara `thinking`, una burbuja `surface-muted` y la etiqueta `Pensando` con
+un pulso de 1,5 s.
+
+La etiqueta y la cara respetan `prefers-reduced-motion`. No se ha modificado la
+petición HTTP, el store ni el contrato del backend.
+
+Verificación: `npm.cmd run lint`, `npm.cmd run build`,
+`npm.cmd run test:unit` (70/70) y `git diff --check` OK. El HTML standalone no
+se pudo abrir como `file://` en Chrome por la política de URLs locales, por lo
+que su comparación se hizo sobre el bundle/markup extraído y no se declara una
+captura visual dinámica de este estado.
+
+### 2026-09-21 - Rediseño final de IA según referencias locales
+
+Se alinea la experiencia de IA con las capturas y el design system entregados
+en `Downloads`: la página `/ia` usa una cabecera compacta, chips de preguntas,
+composer anidado y la cara morada animada; el widget flotante usa el mismo
+componente en una superficie de 420 px y dispone de un cierre independiente.
+
+`AiChatPanel` ahora presenta los mensajes por grupos de usuario/asistente,
+avatares coherentes, citas como chips neutros y los menús propios de modelo y
+modo de pensamiento. `aiChatStore` conserva la selección de modelo por sesión
+sin alterar la configuración persistida. `TopBar` oculta el widget en `/ia` para
+evitar duplicar el asistente y lo cierra al cambiar de ruta.
+
+La cara conecta `idle`, `listening` y `thinking` con reposo, escritura y carga;
+las animaciones se desactivan con `prefers-reduced-motion`. Los menús usan
+iconos Lucide y mantienen foco/semántica de menú accesible.
+
+Archivos principales: `frontend/src/components/ia/AiChatPanel.tsx`,
+`frontend/src/components/layout/TopBar.tsx`,
+`frontend/src/stores/aiChatStore.ts` y
+`frontend/src/styles/layout/revision-ai.css`.
+
+Verificación: `npm.cmd run lint`, `npm.cmd run build`,
+`npm.cmd run test:unit` (70/70) y `git diff --check` OK. La comprobación visual
+autenticada cubrió `/ia`, el widget abierto/cerrado y los menús de modelo y
+pensamiento en Chrome local; no se ejecutó una consulta contra el proveedor
+externo para no alterar datos ni consumo de IA.
+
+### 2026-09-21 - Alineación de AiFace con el HTML de estados
+
+`AiFace` conserva el marcado y los keyframes del archivo de referencia
+`C:\Users\usuario\Downloads\AiFace - Estados (standalone).html`. Se ajustaron
+los ritmos para que coincidan con sus tres estados: `idle` con balanceo de 9 s
+y ojos de 14 s, `listening` con forma y ojos de 7 s, y `thinking` con morphing
+de forma de 2,8 s y ojos de 5,2 s.
+
+La media query `prefers-reduced-motion: reduce` continúa anulando las
+animaciones. En la comprobación de Chrome esa preferencia estaba activa y el
+estado computado fue `animation-name: none`; es una pausa accesible, no un
+fallo de los keyframes.
+
+### 2026-09-21 - Ajuste fino del popup y ritmo de AiFace
+
+El popup compacto pasa a una altura máxima de 560 px sin cambiar su anchura de
+420 px. El círculo de cierre conserva sus 56 px, pero la X se limita a 24 px y
+usa un trazo más fino. Los ciclos de la cara declaran `will-change` y quedan
+alineados con el HTML de estados entregado. La media query de movimiento
+reducido sigue teniendo prioridad por accesibilidad.
+
+Verificación visual: popup abierto en Dashboard, cierre inspeccionado y
+capturas separadas comparadas en Chrome local.
+
 ### 2026-09-21 - OpenRouter gratuito y componente visual AiFace
 
 OpenRouter usa `openrouter/free` como modelo predeterminado. La allowlist del
@@ -6671,3 +6760,75 @@ añadieron dependencias ni se modificó el contrato de la API.
 Verificación: lint OK, build frontend OK con el aviso preexistente de Vite sobre
 `__dirname`, tests unitarios frontend `70/70`, `git diff --check` OK y prueba
 manual autenticada de filtros de concepto, alerta, cuenta y restablecimiento.
+
+## 2026-09-21 - V-03.01 - Extractos: 20 filas, cuenta y columnas completas
+
+`ExtractoTable` ya no incluye `fila_numero` en `BASE_COLUMNS`. El campo sigue
+formando parte del modelo para ordenacion, insercion y auditoria, pero deja de
+ocupar una columna. El boton de historial y el disparador de alta inline se
+renderizan en `checked`, por lo que las acciones no desaparecen con el cambio
+visual.
+
+Las columnas base de la vista general ahora incluyen `fecha`, `cuenta_nombre`,
+`banco_nombre`, `titular_nombre`, `divisa`, `concepto`, `comentarios`,
+`monto`, `saldo`, `checked`, `flagged` y `desglose`. Las columnas dinamicas de
+`columnas_extra` se deduplican frente a las base y se anaden al final. El
+backend expone `BancoNombre` en `ExtractoListItemResponse` desde la cuenta.
+
+El viewport de escritorio se calcula para 20 filas segun la densidad activa,
+con un pequeno margen para bordes y cabeceras; movil mantiene el limite
+responsive. La virtualizacion se conserva, asi que aumentar el espacio visible
+no elimina la proteccion para paginas grandes.
+
+Verificacion: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70`, build API OK con 7 advertencias
+preexistentes, y `git diff --check` OK. La sesion autenticada local se invalido
+al recompilar el backend; la cabecera y la altura se comprobaron antes de esa
+salida, pero no se repitio el flujo manual de filtros despues.
+
+## 2026-09-21 - V-03.01 - Extractos: previsualizacion de celda y viewport de 17 filas
+
+`ExtractoTable` deriva la celda activa a partir de `focusedCell`, `filteredRows` y
+`activeColumns`. La barra superior muestra la etiqueta de la columna y el valor
+formateado mediante `getDisplayCellValue`; el contenido puede envolver y
+desplazarse dentro de la previsualizacion, y el atributo `title` conserva el
+valor completo para lectura adicional. `role="status"` con `aria-live="polite"`
+anuncia el cambio sin interrumpir la navegacion por teclado.
+
+El viewport de escritorio se calcula para 17 filas en densidad compacta y
+comoda. El limite responsive especifico de movil se mantiene sin cambios. No
+se modifica la logica de filtros, paginacion, virtualizacion ni el contrato de
+la API.
+
+## 2026-09-21 - V-03.01 - Extractos: compacta fija y selectores buscables
+
+Se elimino el selector de densidad de `ExtractoTable`; la tabla usa siempre la
+clase `extracto-table-section--compact`, una altura de fila de 44 px y el
+viewport calculado para 17 filas visibles.
+
+Los filtros de `Titular` y `Cuenta` usan `SearchableSelect`, un combobox
+controlado con menu en portal, foco consistente con `AppSelect`, filtrado por
+texto mientras se escribe y navegacion por flechas, `Enter`, `Escape` y
+`Tab`. La seleccion sigue enviando los UUID originales a la URL y al endpoint,
+por lo que no cambia el contrato ni la logica de filtrado remoto.
+
+Verificacion: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70` y `git diff --check` OK. En Chrome
+autenticado, `Laura` filtro titulares, `Sabadell` filtro cuentas, la seleccion
+actualizo la URL y mostro 9 movimientos, y `Restablecer` devolvio los 25
+movimientos. El DOM confirmo dos combobox buscables, ningun selector de densidad,
+viewport de 836 px y filas de 44 px.
+
+## 2026-09-21 - V-03.01 - Listas rectangulares para Titular y Cuenta
+
+El popup de `SearchableSelect` deja de usar el radio de control tipo cápsula
+(`999px`) y adopta `var(--radius-md)`, igual que los menús desplegables del
+sistema. Se conserva el portal fijo, el ancho alineado con el control y el
+filtrado incremental de opciones; el cambio solo corrige la forma, el recorte
+visual y la lectura de la lista.
+
+Verificacion: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70` y `git diff --check` OK. En Chrome
+autenticado, `Sabadell` mostro una unica cuenta coincidente y `Laura` un unico
+titular coincidente; la inspeccion visual y del DOM confirmo un popup rectangular
+con `border-radius: 11px` y sin burbuja eliptica.

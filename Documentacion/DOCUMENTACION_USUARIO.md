@@ -226,6 +226,33 @@ gratuito sin que tengas que escoger un proveedor adicional.
 
 Si OpenRouter rechaza un modelo por saldo, privacidad, proveedor no disponible o ID inexistente, Atlas Balance muestra un error limpio. Si escribes un ID con formato invalido, el backend lo rechaza antes de llamar al proveedor.
 
+El chat se puede abrir desde `IA` para trabajar a pantalla completa o desde la
+cara morada de la esquina inferior derecha en cualquier pantalla compatible.
+Ambas vistas comparten el mismo historial y compositor. La cara cambia de
+animacion cuando esta en reposo, mientras escribes o mientras la IA esta
+pensando, siguiendo el ritmo visual de los tres estados de la referencia; si
+el sistema reduce el movimiento, permanece estable.
+
+Al enviar una pregunta, esta aparece alineada a la derecha con la burbuja
+violeta, el avatar del usuario y la hora. Mientras se prepara la respuesta,
+veras la cara en estado de pensamiento y la etiqueta `Pensando` animada dentro
+de una burbuja del asistente. Cuando llega la respuesta, ese estado desaparece
+y se muestra el contenido con sus citas y detalles habituales.
+
+El popup flotante deja espacio para una conversación algo más alta y su botón
+de cierre mantiene el círculo completo con una X discreta.
+
+Si las caras aparecen quietas, revisa que Windows permita las animaciones:
+`Configuración > Accesibilidad > Efectos visuales > Efectos de animación`.
+Atlas Balance respeta esa preferencia y deja la cara estática cuando está
+desactivada.
+
+En el compositor puedes elegir el modelo disponible y el esfuerzo de
+pensamiento. Las sugerencias de la pantalla inicial rellenan la pregunta sin
+obligarte a memorizar el formato. Las respuestas muestran sus citas y los
+detalles del registro cuando existen; revisalos antes de operar sobre los
+datos.
+
 ## Paquetes de instalacion
 
 Los paquetes de release estan en:
@@ -594,6 +621,12 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 
 La tabla de `Extractos` ahora se lee mas como una hoja de calculo:
 
+- La pantalla se organiza en una cabecera, un bloque de ámbito de consulta y la
+  tabla de movimientos, para distinguir qué conjunto estás consultando de los
+  filtros de cada columna.
+- El bloque superior permite elegir titular, cuenta y periodo con `Desde` y
+  `Hasta`. Cuando hay algún filtro activo aparece `Restablecer` y devuelve la
+  vista general.
 - La cabecera separa claramente los nombres de columna de la fila de filtros;
   ambos quedan alineados incluso al desplazar la tabla horizontalmente.
 - Los filtros de columna siempre están visibles. Los campos de texto buscan
@@ -606,13 +639,30 @@ La tabla de `Extractos` ahora se lee mas como una hoja de calculo:
 - Si dejas una fecha vacia, el filtro queda abierto por ese lado.
 - El periodo elegido queda en la URL, asi que puedes recargar o compartir esa vista sin perder el rango.
 - La cabecera queda fija al desplazarte.
-- La columna `Fila` queda fija al mover la tabla horizontalmente.
-- Para insertar una fila, usa el `+` que aparece al pasar por la columna `Fila`; el borrador se abre dentro de la tabla, no en un formulario separado encima.
+- En escritorio, la rejilla reserva espacio para ver 17 movimientos a la vez en
+  densidad compacta; en movil conserva un viewport mas corto para no romper la
+  navegacion.
+- Al seleccionar una celda, la franja superior muestra su columna y el contenido
+  completo para poder leer valores largos sin perder la referencia de la fila.
+- `Fila` deja de mostrarse como columna: el numero sigue siendo interno para
+  ordenar, insertar y auditar sin ocupar espacio de lectura.
+- La columna `Cuenta` muestra el nombre real de la cuenta. Tambien se muestran
+  por defecto `Banco`, `Titular`, `Divisa` y las columnas extra que llegan con
+  los extractos importados.
+- Para insertar una fila en `Edicion avanzada`, usa el `+` que aparece en la
+  celda `Revisada`; el borrador se abre dentro de la tabla, no en un formulario
+  separado encima.
 - Las celdas tienen bordes mas claros y foco visible al editar.
 - Los importes y saldos usan alineacion derecha y numeros tabulares para comparar cifras rapido.
 - Las columnas tecnicas se muestran con nombres legibles, por ejemplo `Importe` en vez de `monto`.
+- La tabla usa siempre densidad `Compacta`; no hay un selector de densidad que
+  cambie el tamaño de las filas.
+- Los filtros `Titular` y `Cuenta` usan desplegables con el mismo estilo visual
+  que el resto de controles y permiten escribir para filtrar sus opciones. Al
+  abrirlos, las opciones aparecen en una lista rectangular legible, no en una
+  burbuja elíptica.
 
-El funcionamiento no cambia: puedes filtrar, ordenar, editar celdas, abrir historial y cambiar columnas visibles igual que antes.
+El funcionamiento no cambia: puedes filtrar, ordenar, editar celdas, abrir historial y cambiar columnas visibles igual que antes. El historial se abre desde el icono de la celda `Revisada` o con el menu contextual de cualquier celda.
 
 ## Actualizacion visual V-02-02
 

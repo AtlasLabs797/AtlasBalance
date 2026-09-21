@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import axios from 'axios';
-import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import AuditCellModal from '@/components/extractos/AuditCellModal';
 import DesgloseModal from '@/components/extractos/DesgloseModal';
 import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
@@ -125,6 +125,8 @@ export default function ExtractosPage() {
     () => cuentasOptions.find((cuenta) => cuenta.id === cuentaFiltro) ?? null,
     [cuentaFiltro, cuentasOptions]
   );
+
+  const activeScopeFilterCount = [titularFiltro, cuentaFiltro, fechaDesde, fechaHasta].filter(Boolean).length;
 
   // V-02.08: guards anti-carrera. Sin ellos, una respuesta vieja (cuenta o
   // pagina anterior) podia pisar a la nueva si llegaba ultima.
@@ -558,32 +560,61 @@ export default function ExtractosPage() {
     return cols === null || cols.includes(column);
   };
 
+  const clearExternalFilters = () => {
+    setTitularFiltro('');
+    setCuentaFiltro('');
+    setFechaDesde('');
+    setFechaHasta('');
+    setPage(1);
+    updateFilterParams({ titularId: '', cuentaId: '', fechaDesde: '', fechaHasta: '' });
+  };
+
   return (
     <section className="extractos-page">
       <header className="extractos-header">
         <div className="extractos-heading">
+          <span className="extractos-eyebrow">Tesorería / Movimientos</span>
           <h1>Extractos</h1>
           <p>Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
         </div>
-        <div className="extractos-mode-toggle" role="group" aria-label="Modo de extractos">
-          <button
-            type="button"
-            className={modo === 'revision' ? 'active' : ''}
-            onClick={() => setModo('revision')}
-          >
-            Revisión
-          </button>
-          <button
-            type="button"
-            className={modo === 'edicion' ? 'active' : ''}
-            onClick={() => setModo('edicion')}
-          >
-            Edición avanzada
-          </button>
+        <div className="extractos-header-actions">
+          <div className="extractos-mode-toggle" role="group" aria-label="Modo de extractos">
+            <button
+              type="button"
+              className={modo === 'revision' ? 'active' : ''}
+              onClick={() => setModo('revision')}
+            >
+              Revisión
+            </button>
+            <button
+              type="button"
+              className={modo === 'edicion' ? 'active' : ''}
+              onClick={() => setModo('edicion')}
+            >
+              Edición avanzada
+            </button>
+          </div>
         </div>
+      </header>
+
+      <section className="extractos-filter-bar" aria-labelledby="extractos-filter-title">
+        <div className="extractos-filter-bar-head">
+          <div>
+            <span className="extractos-filter-eyebrow">Ámbito de consulta</span>
+            <h2 id="extractos-filter-title">Filtrar movimientos</h2>
+          </div>
+          <span className="extractos-filter-summary" aria-live="polite">
+            {activeScopeFilterCount === 0
+              ? 'Todos los movimientos visibles'
+              : `${activeScopeFilterCount} filtro${activeScopeFilterCount === 1 ? '' : 's'} activo${activeScopeFilterCount === 1 ? '' : 's'}`}
+          </span>
+        </div>
+
         <div className="extractos-filters">
-          <AppSelect
+          <SearchableSelect
+            label="Titular"
             ariaLabel="Titular"
+            placeholder="Buscar titular"
             value={titularFiltro}
             options={[
               { value: '', label: 'Todos los titulares' },
@@ -596,8 +627,10 @@ export default function ExtractosPage() {
               updateFilterParams({ titularId: next, cuentaId: '' });
             }}
           />
-          <AppSelect
+          <SearchableSelect
+            label="Cuenta"
             ariaLabel="Cuenta"
+            placeholder="Buscar cuenta"
             value={cuentaFiltro}
             options={[
               { value: '', label: 'Todas las cuentas' },
@@ -611,48 +644,39 @@ export default function ExtractosPage() {
               updateFilterParams({ cuentaId: next });
             }}
           />
-          <div className="extractos-date-field">
-            <span>Desde</span>
-            <DatePickerField
-              ariaLabel="Fecha desde"
-              value={fechaDesde}
-              placeholder="Desde"
-              onChange={(next) => {
-                setFechaDesde(next);
-                setPage(1);
-                updateFilterParams({ fechaDesde: next });
-              }}
-            />
-          </div>
-          <div className="extractos-date-field">
-            <span>Hasta</span>
-            <DatePickerField
-              ariaLabel="Fecha hasta"
-              value={fechaHasta}
-              placeholder="Hasta"
-              onChange={(next) => {
-                setFechaHasta(next);
-                setPage(1);
-                updateFilterParams({ fechaHasta: next });
-              }}
-            />
-          </div>
-          {(fechaDesde || fechaHasta) ? (
+          <DatePickerField
+            label="Desde"
+            ariaLabel="Fecha desde"
+            value={fechaDesde}
+            placeholder="Todas"
+            onChange={(next) => {
+              setFechaDesde(next);
+              setPage(1);
+              updateFilterParams({ fechaDesde: next });
+            }}
+          />
+          <DatePickerField
+            label="Hasta"
+            ariaLabel="Fecha hasta"
+            value={fechaHasta}
+            placeholder="Todas"
+            onChange={(next) => {
+              setFechaHasta(next);
+              setPage(1);
+              updateFilterParams({ fechaHasta: next });
+            }}
+          />
+          {activeScopeFilterCount > 0 ? (
             <button
               type="button"
               className="extractos-clear-period"
-              onClick={() => {
-                setFechaDesde('');
-                setFechaHasta('');
-                setPage(1);
-                updateFilterParams({ fechaDesde: '', fechaHasta: '' });
-              }}
+              onClick={clearExternalFilters}
             >
-              Limpiar período
+              Restablecer
             </button>
           ) : null}
         </div>
-      </header>
+      </section>
 
       {error && <p className="auth-error" role="alert">{error}</p>}
 
@@ -674,16 +698,9 @@ export default function ExtractosPage() {
         onOpenDesglose={(row) => void onOpenDesglose(row)}
         canAddRow={(row) => modo === 'edicion' && canAddInCuenta(row.cuenta_id, row.titular_id, row.pais_id)}
         canEditCell={canEditCell}
-        inlineInsertEnabled={sortBy === 'fila_numero' && sortDir === 'desc'}
-        hasExternalFilters={Boolean(titularFiltro || cuentaFiltro || fechaDesde || fechaHasta)}
-        onClearFilters={() => {
-          setTitularFiltro('');
-          setCuentaFiltro('');
-          setFechaDesde('');
-          setFechaHasta('');
-          setPage(1);
-          updateFilterParams({ titularId: '', cuentaId: '', fechaDesde: '', fechaHasta: '' });
-        }}
+        inlineInsertEnabled={modo === 'edicion'}
+        hasExternalFilters={activeScopeFilterCount > 0}
+        onClearFilters={clearExternalFilters}
       />
 
       <div className="users-pagination">

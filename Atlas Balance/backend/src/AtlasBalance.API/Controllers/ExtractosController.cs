@@ -159,6 +159,7 @@ public sealed class ExtractosController : ControllerBase
                 Id = x.Id,
                 CuentaId = c.Id,
                 CuentaNombre = c.Nombre,
+                BancoNombre = c.BancoNombre,
                 TitularId = t.Id,
                 TitularNombre = t.Nombre,
                 PaisId = c.PaisId,

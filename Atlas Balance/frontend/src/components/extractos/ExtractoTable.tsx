@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useId } from 'react';
-import { Columns3, FilterX, Plus, Search } from 'lucide-react';
+import { Columns3, FilterX, History, Plus, Search } from 'lucide-react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -60,9 +60,21 @@ interface ExtractoTableProps {
   hasExternalFilters: boolean;
 }
 
-const BASE_COLUMNS = ['fila_numero', 'checked', 'flagged', 'desglose', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo'] as const;
+const BASE_COLUMNS = [
+  'fecha',
+  'cuenta_nombre',
+  'banco_nombre',
+  'titular_nombre',
+  'divisa',
+  'concepto',
+  'comentarios',
+  'monto',
+  'saldo',
+  'checked',
+  'flagged',
+  'desglose',
+] as const;
 const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
-const REQUIRED_COLUMNS = new Set<string>(['fila_numero']);
 const SORTABLE_COLUMNS = new Set<string>(['fila_numero', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo', 'fecha_creacion']);
 const DEFAULT_FOCUSED_CELL = { rowIndex: 0, colIndex: 0 };
 
@@ -95,7 +107,6 @@ export default function ExtractoTable({
   const debouncedFilters = useDebouncedValue(filters, 250);
   const [flagNotes, setFlagNotes] = useState<Record<string, string>>({});
   const [showColumns, setShowColumns] = useState(false);
-  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
   const [focusedCell, setFocusedCell] = useState(DEFAULT_FOCUSED_CELL);
   const [insertDraft, setInsertDraft] = useState<InsertRowDraft | null>(null);
   const [insertSaving, setInsertSaving] = useState(false);
@@ -114,7 +125,9 @@ export default function ExtractoTable({
       }
     });
     rows.forEach((row) => Object.keys(row.columnas_extra ?? {}).forEach((key) => set.add(key)));
-    return [...set].sort((a, b) => a.localeCompare(b));
+    return [...set]
+      .filter((column) => !BASE_COLUMNS.includes(column as (typeof BASE_COLUMNS)[number]))
+      .sort((a, b) => a.localeCompare(b));
   }, [availableExtraColumns, rows]);
 
   const allColumns = useMemo(() => [...BASE_COLUMNS, ...extraColumns], [extraColumns]);
@@ -122,31 +135,31 @@ export default function ExtractoTable({
     if (!visibleColumns) {
       return allColumns;
     }
-    const selected = new Set([...REQUIRED_COLUMNS, ...visibleColumns]);
+    const selected = new Set(visibleColumns);
     const next = allColumns.filter((col) => selected.has(col));
-    return next.length > 0 ? next : [...REQUIRED_COLUMNS];
+    return next.length > 0 ? next : allColumns;
   }, [allColumns, visibleColumns]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
       return activeColumns.every((column) => {
         const term = (debouncedFilters[column] ?? '').trim().toLowerCase();
-        if (!term) return true;
-        if (column === 'fecha') {
-          return row.fecha === term;
-        }
-        const value = getFilterValue(row, column);
-        return value.toLowerCase().includes(term);
+        return matchesColumnFilter(row, column, term);
       });
     });
   }, [rows, debouncedFilters, activeColumns]);
 
-  const headerOffset = density === 'compact' ? 80 : 88;
+  const focusedRow = filteredRows[focusedCell.rowIndex];
+  const focusedColumn = activeColumns[focusedCell.colIndex];
+  const focusedCellValue =
+    focusedRow && focusedColumn ? getDisplayCellValue(focusedRow, focusedColumn) : '';
+
+  const headerOffset = 80;
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
-      const baseSize = density === 'compact' ? 44 : 56;
+      const baseSize = 44;
       return insertDraft?.afterRowId === filteredRows[index]?.id ? baseSize + 214 : baseSize;
     },
     overscan: 15,
@@ -157,7 +170,7 @@ export default function ExtractoTable({
 
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [density, insertDraft?.afterRowId, rowVirtualizer]);
+  }, [insertDraft?.afterRowId, rowVirtualizer]);
 
   useEffect(() => {
     setFocusedCell((current) => ({
@@ -276,7 +289,7 @@ export default function ExtractoTable({
 
     const pageSize = Math.max(
       1,
-      Math.floor((parentRef.current?.clientHeight ?? 420) / (density === 'compact' ? 44 : 56)),
+      Math.floor((parentRef.current?.clientHeight ?? 420) / 44),
     );
 
     switch (event.key) {
@@ -334,12 +347,23 @@ export default function ExtractoTable({
 
   return (
     <section
-      className={`extracto-table-section extracto-table-section--${density}`}
+      className="extracto-table-section extracto-table-section--compact"
       aria-label="Extractos de la página actual en formato tabla editable"
     >
       <div className="extracto-table-toolbar">
         <div>
           <strong>Movimientos</strong>
+        </div>
+        <div className="extracto-cell-preview" role="status" aria-live="polite">
+          <span className="extracto-cell-preview-label">Celda seleccionada</span>
+          {focusedRow && focusedColumn ? (
+            <span className="extracto-cell-preview-value" title={focusedCellValue || 'Sin contenido'}>
+              <strong>{getColumnLabel(focusedColumn)}</strong>
+              <span>{focusedCellValue || '—'}</span>
+            </span>
+          ) : (
+            <span className="extracto-cell-preview-empty">Selecciona una celda para verla completa</span>
+          )}
         </div>
         <div className="extracto-table-actions">
           <button
@@ -364,16 +388,6 @@ export default function ExtractoTable({
             <Columns3 aria-hidden="true" size={14} strokeWidth={1.8} />
             Columnas
           </button>
-          <AppSelect
-            className="extracto-density-control"
-            label="Densidad"
-            value={density}
-            options={[
-              { value: 'comfortable', label: 'Comoda' },
-              { value: 'compact', label: 'Compacta' },
-            ]}
-            onChange={(next) => setDensity(next as 'comfortable' | 'compact')}
-          />
         </div>
       </div>
 
@@ -389,23 +403,21 @@ export default function ExtractoTable({
             </button>
           </div>
           {allColumns.map((column) => {
-            const isRequiredColumn = REQUIRED_COLUMNS.has(column);
-            const checked = isRequiredColumn || (visibleColumns ? visibleColumns.includes(column) : true);
+            const checked = visibleColumns ? activeColumns.includes(column) : true;
             const isLastVisibleColumn = checked && activeColumns.length <= 1 && activeColumns.includes(column);
 
             return (
               <label
                 key={column}
-                className={isRequiredColumn ? 'column-visibility-panel-fixed' : undefined}
-                title={isRequiredColumn ? 'Columna fija para auditoría y alta inline.' : isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}
+                title={isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}
               >
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={isRequiredColumn || isLastVisibleColumn}
+                  disabled={isLastVisibleColumn}
                   onChange={() => onToggleColumn(column, allColumns)}
                 />
-                {getColumnLabel(column)}{isRequiredColumn ? ' (fija)' : ''}
+                {getColumnLabel(column)}
               </label>
             );
           })}
@@ -498,7 +510,7 @@ export default function ExtractoTable({
                       className={`extracto-row ${row.flagged ? 'flagged' : ''}`}
                       style={{ gridTemplateColumns }}
                       role="row"
-                        aria-rowindex={virtualRow.index + 3}
+                      aria-rowindex={virtualRow.index + 3}
                     >
                     {activeColumns.map((column, columnIndex) => {
                       const isFocusedCell =
@@ -550,18 +562,19 @@ export default function ExtractoTable({
                           onOpenDesglose,
                           isActive: isFocusedCell
                         })}
-                        {column === 'fila_numero' ? (
+                        {column === 'checked' ? (
                           <button
                             type="button"
                             className="cell-audit-button"
                             tabIndex={isFocusedCell ? 0 : -1}
-                            onClick={() => onOpenAudit(row, column)}
-                            aria-label={`Ver auditoría de ${column} en fila ${row.fila_numero}`}
+                            onClick={() => onOpenAudit(row, 'fila_numero')}
+                            aria-label={`Ver auditoría de la fila ${row.fila_numero}`}
+                            title="Ver historial"
                           >
-                            Historial
+                            <History aria-hidden="true" size={14} strokeWidth={1.8} />
                           </button>
                         ) : null}
-                        {column === 'fila_numero' && rowCanAdd ? (
+                        {column === 'checked' && rowCanAdd ? (
                           <button
                             type="button"
                             className="extracto-row-insert-trigger"
@@ -758,7 +771,7 @@ function renderCell({
         />
         <input
           value={note}
-          placeholder="Nota de alerta"
+          placeholder={row.flagged ? 'Nota de alerta' : undefined}
           disabled={!canEditFlagNote || !row.flagged}
           tabIndex={isActive ? 0 : -1}
           aria-label={`Nota de alerta para fila ${row.fila_numero}`}
@@ -839,6 +852,14 @@ function getCellValue(row: Extracto, column: string): string {
       return String(row.monto ?? '');
     case 'saldo':
       return String(row.saldo ?? '');
+    case 'cuenta_nombre':
+      return row.cuenta_nombre ?? '';
+    case 'banco_nombre':
+      return row.banco_nombre ?? '';
+    case 'titular_nombre':
+      return row.titular_nombre ?? '';
+    case 'divisa':
+      return row.divisa ?? '';
     default:
       return row.columnas_extra?.[column] ?? '';
   }
@@ -850,6 +871,27 @@ function getFilterValue(row: Extracto, column: string): string {
   }
 
   return `${getCellValue(row, column)} ${getDisplayCellValue(row, column)}`;
+}
+
+function matchesColumnFilter(row: Extracto, column: string, term: string): boolean {
+  if (!term) return true;
+
+  if (column === 'fecha') {
+    const rawDate = (row.fecha ?? '').slice(0, 10);
+    const displayDate = getDisplayCellValue(row, column).toLowerCase();
+    return rawDate === term || displayDate === term;
+  }
+
+  if (column === 'checked') {
+    return (row.checked ? 'si' : 'no') === term;
+  }
+
+  if (column === 'flagged') {
+    return (row.flagged ? 'si' : 'no') === term;
+  }
+
+  const value = getFilterValue(row, column);
+  return value.toLowerCase().includes(term);
 }
 
 function renderFilterControl(column: string, value: string, onChange: (value: string) => void) {
@@ -908,8 +950,11 @@ function getColumnTrack(column: string): string {
 }
 
 function getColumnWidth(column: string): number {
-  if (column === 'fila_numero') return 88;
-  if (column === 'checked') return 112;
+  if (column === 'cuenta_nombre') return 216;
+  if (column === 'banco_nombre') return 160;
+  if (column === 'titular_nombre') return 196;
+  if (column === 'divisa') return 92;
+  if (column === 'checked') return 144;
   if (column === 'flagged') return 176;
   if (column === 'desglose') return 128;
   if (column === 'fecha') return 124;
@@ -930,8 +975,14 @@ function getColumnClassName(column: string): string {
 
 function getColumnLabel(column: string): string {
   switch (column) {
-    case 'fila_numero':
-      return 'Fila';
+    case 'cuenta_nombre':
+      return 'Cuenta';
+    case 'banco_nombre':
+      return 'Banco';
+    case 'titular_nombre':
+      return 'Titular';
+    case 'divisa':
+      return 'Divisa';
     case 'checked':
       return 'Revisada';
     case 'flagged':

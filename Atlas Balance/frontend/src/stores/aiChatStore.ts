@@ -2,7 +2,12 @@ import { create } from 'zustand';
 import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { IaChatResponse, IaConfig } from '@/types';
-import { getAiModelLabel, normalizeAiModel, normalizeThinkingMode, type ThinkingMode } from '@/utils/aiModels';
+import {
+  getAiModelLabel,
+  normalizeAiModel,
+  normalizeThinkingMode,
+  type ThinkingMode,
+} from '@/utils/aiModels';
 import { friendlyIaError } from '@/utils/iaErrors';
 import { getSessionGeneration, isSessionGenerationCurrent } from '@/utils/sessionScope';
 
@@ -54,9 +59,13 @@ interface AiChatState {
   // V-02.09 (Fase UI): modo de pensamiento seleccionado por el usuario. Se
   // persiste entre mensajes pero no se borra con `reset()` (es preferencia).
   thinkingMode: ThinkingMode;
+  // V-03.01: el selector visual del composer permite cambiar el modelo dentro
+  // del catalogo admitido por el provider configurado.
+  selectedModel: string | null;
 
   ensureConfig: () => Promise<void>;
   setThinkingMode: (mode: ThinkingMode) => void;
+  setSelectedModel: (model: string) => void;
   ask: (prompt: string) => Promise<void>;
   reset: () => Promise<void>;
   clear: () => void;
@@ -74,6 +83,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
   configCheckedAt: null,
   configLoading: false,
   thinkingMode: 'auto',
+  selectedModel: null,
 
   ensureConfig: async () => {
     const generation = getSessionGeneration();
@@ -122,6 +132,8 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
 
   setThinkingMode: (mode) => set({ thinkingMode: mode }),
 
+  setSelectedModel: (model) => set({ selectedModel: model }),
+
   ask: async (rawPrompt) => {
     const generation = getSessionGeneration();
     const prompt = rawPrompt.trim();
@@ -146,9 +158,9 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
       return;
     }
 
-    const { thinkingMode, config: cfg } = get();
+    const { thinkingMode, selectedModel, config: cfg } = get();
     const provider = cfg?.provider;
-    const activeModel = normalizeAiModel(provider, cfg?.model);
+    const activeModel = normalizeAiModel(provider, selectedModel || cfg?.model);
     const selectedPaisId = usePaisScopeStore.getState().selectedPaisId;
     const askedAt = Date.now();
 
@@ -243,6 +255,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
       configCheckedAt: null,
       configLoading: false,
       thinkingMode: 'auto',
+      selectedModel: null,
     });
   },
 }));
