@@ -18,6 +18,7 @@ import {
   aiProviderOptions,
   getAiModelOptions,
   getDefaultAiModel,
+  isOpenRouterFreeModel,
   normalizeAiModel,
   normalizeAiProvider,
 } from '@/utils/aiModels';
@@ -102,6 +103,7 @@ export default function ConfiguracionPage() {
       usuario_puede_usar: false,
       configurada: false,
       mensaje_estado: 'La IA está desactivada globalmente.',
+      permite_retencion_datos: false,
       requests_por_minuto: 6,
       requests_por_hora: 30,
       requests_por_dia: 60,
@@ -199,6 +201,7 @@ export default function ConfiguracionPage() {
         usuario_puede_usar: false,
         configurada: false,
         mensaje_estado: 'La IA está desactivada globalmente.',
+        permite_retencion_datos: false,
         requests_por_minuto: 6,
         requests_por_hora: 30,
         requests_por_dia: 60,
@@ -991,11 +994,28 @@ export default function ConfiguracionPage() {
                   onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value) } }))}
                 />
                 {aiUsesOpenRouter ? (
-                  <p className="import-muted">
-                    El modelo predeterminado es <code>openrouter/free</code> y no tiene coste por
-                    tokens. Atlas Balance seudonimiza el contexto antes de enviarlo; OpenRouter
-                    puede cambiar el modelo gratuito disponible según su capacidad.
-                  </p>
+                  <>
+                    <p className="import-muted">
+                      El modelo predeterminado es <code>openrouter/auto</code>, que exige retención
+                      cero de datos (ZDR) al proveedor. Atlas Balance seudonimiza el contexto antes
+                      de enviarlo.
+                    </p>
+                    <label className="config-check">
+                      <input
+                        type="checkbox"
+                        checked={config.ia.permite_retencion_datos}
+                        onChange={(e) =>
+                          setConfig((p) => ({ ...p, ia: { ...p.ia, permite_retencion_datos: e.target.checked } }))
+                        }
+                      />
+                      Permitir modelos gratuitos de OpenRouter
+                    </label>
+                    <p className="auth-error" role="status">
+                      Los modelos gratuitos de OpenRouter pueden guardar y usar para entrenamiento
+                      los datos enviados (importes, saldos y conceptos). Actívalo solo si tu empresa
+                      lo acepta.
+                    </p>
+                  </>
                 ) : (
                   <p className="auth-error" role="status">
                     Aviso: con {aiProviderLabel} la aplicación no puede exigir retención cero por
@@ -1035,7 +1055,9 @@ export default function ConfiguracionPage() {
                     <datalist id="openrouter-modelos">
                       {openRouterModelOptions.map((model) => (
                         <option key={model.value} value={model.value}>
-                          {model.label}
+                          {isOpenRouterFreeModel(model.value) && !config.ia.permite_retencion_datos
+                            ? `${model.label} (requiere permitir modelos gratuitos)`
+                            : model.label}
                         </option>
                       ))}
                     </datalist>

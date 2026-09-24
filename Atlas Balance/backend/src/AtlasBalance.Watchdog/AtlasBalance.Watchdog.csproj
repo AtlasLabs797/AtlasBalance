@@ -24,6 +24,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- SECURITY (P1a): PackageExtraction.cs vive fisicamente en
+         AtlasBalance.API (lo usa ActualizacionService) y se enlaza aqui para
+         que ElevatedUpdateRunner reutilice la misma extraccion ZIP segura
+         (limites de tamano/entradas + proteccion zip-slip) al verificar y
+         extraer su propia copia aislada del paquete, en vez de duplicarla. -->
+    <Compile Include="..\AtlasBalance.API\Services\PackageExtraction.cs" Link="Services\PackageExtraction.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- V-02-04: la ACL de bin/obj bloquea la build desde MSBuild cuando se mezclan
          salidas Release antiguas. Excluirlos evita que se recojan como codigo. -->
     <Compile Remove="bin/**" />

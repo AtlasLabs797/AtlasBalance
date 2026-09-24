@@ -206,9 +206,25 @@ function Protect-AtlasInstallTree {
         } elseif ($relative -eq "scripts") {
             @("${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX")
         } elseif ($relative -eq "updates") {
-            @("${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+            # SECURITY (P1a): la API descarga, verifica firma/digest y extrae
+            # el paquete de actualizacion directamente bajo updates\ (ver
+            # ActualizacionService.DownloadAndPreparePackageAsync), asi que
+            # necesita Modify ahi. Esto ya no reabre el hueco original: el
+            # runner elevado (SYSTEM) nunca confia en lo que haya bajo
+            # updates\; copia el ZIP+firma a una carpeta propia en
+            # config\update-runner y vuelve a verificar la firma sobre esa
+            # copia antes de extraerla y ejecutar nada (ver
+            # ElevatedUpdateRunner). Watchdog solo necesita Modify sobre
+            # updates\requests (mas abajo) para depositar pending-update.json;
+            # aqui solo lee para localizar el ZIP que la API preparo.
+            @("${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX")
         } elseif ($relative -eq "backups") {
-            @("${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+            # La API crea/borra sus propios dumps aqui (BackupService.CreateBackupAsync
+            # via pg_dump, ApplyRetentionAsync, GoogleDriveBackupService.ImportAsync) y
+            # Watchdog escribe su propio backup previo a actualizar y la copia de
+            # rollback de binarios (CreateDatabaseBackupAsync/CreatePackageRollbackCopy);
+            # ambos necesitan Modify.
+            @("${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
         } elseif ($relative -eq "exports") {
             @("${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX")
         } elseif ($relative -eq "api\logs") {
@@ -230,9 +246,14 @@ function Protect-AtlasInstallTree {
     if (Test-Path -LiteralPath $configPath) {
         Invoke-AtlasIcacls -Arguments @($configPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")
     }
+    # SECURITY (P1b): update-runner es donde el runner elevado (SYSTEM, via
+    # la tarea programada AtlasBalance.Update) copia su propio runtime antes
+    # de ejecutarlo. Si Watchdog tuviera Modify aqui podria plantar un DLL
+    # junto al exe copiado y SYSTEM lo cargaria al arrancar el apphost
+    # (la publicacion no es single-file). Solo Administrators/SYSTEM escriben.
     $runnerPath = Join-Path $configPath "update-runner"
     New-Item -ItemType Directory -Path $runnerPath -Force | Out-Null
-    Invoke-AtlasIcacls -Arguments @($runnerPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+    Invoke-AtlasIcacls -Arguments @($runnerPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")
 
     # Los ficheros de configuracion y el certificado se protegen antes de
     # sincronizar el paquete. Conservar solo Administrators/SYSTEM dejaria a
@@ -332,7 +353,7 @@ function Get-AtlasWindowsService {
 
 function Test-AtlasBuiltInServiceAccount {
     param([string]$StartName)
-    return [string]::IsNullOrWhiteSpace($StartName) -or $StartName -match '^(LocalSystem|LocalService|NetworkService|NT AUTHORITY\\|NT SERVICE\\|SYSTEM)$'
+    return [string]::IsNullOrWhiteSpace($StartName) -or $StartName -match '^(LocalSystem|LocalService|NetworkService|SYSTEM|NT AUTHORITY\\.+|NT SERVICE\\.+)$'
 }
 
 function Test-AtlasServiceIdentity {
@@ -344,7 +365,20 @@ function Test-AtlasServiceIdentity {
         throw "El servicio $Name usa '$($service.StartName)'; se rechazan LocalSystem/SYSTEM y cuentas integradas."
     }
     if ($RejectBuiltIn) {
-        $accountName = ([string]$service.StartName -split '\\')[-1]
+        $startName = [string]$service.StartName
+        $segments = @($startName -split '\\')
+        # SECURITY (P6): si viene calificado con dominio/host, solo se acepta
+        # ".", el nombre local del equipo o ninguna calificacion. De lo
+        # contrario "DOMINIO\nombre" se aceptaba con solo tener un usuario
+        # local del mismo nombre, colando identidades de dominio ajenas.
+        if ($segments.Count -gt 1) {
+            $prefix = $segments[0]
+            $allowedPrefixes = @(".", $env:COMPUTERNAME)
+            if (($allowedPrefixes | Where-Object { $_ -eq $prefix }).Count -eq 0) {
+                throw "El servicio $Name usa una cuenta calificada por un dominio o host no permitido ('$startName')."
+            }
+        }
+        $accountName = $segments[-1]
         $user = Get-LocalUser -Name $accountName -ErrorAction SilentlyContinue
         if ($null -eq $user) {
             throw "El servicio $Name no usa una cuenta local administrable; se rechazan identidades heredadas o de dominio."
@@ -418,4 +452,49 @@ function Install-AtlasService {
     New-Service -Name $Name -BinaryPathName ('"' + $ExePath + '"') -DisplayName $DisplayName -Description $Description -StartupType Automatic -Credential $Credential | Out-Null
     & sc.exe failure $Name reset=86400 actions=restart/10000/restart/30000/restart/60000 | Out-Null
     Test-AtlasServiceRegistration -Name $Name -ExpectedPrincipal $ExpectedPrincipal
+}
+
+# SECURITY (P-UPGRADE): instalaciones anteriores a V-03.01 (p.ej. V-02.09)
+# registran los servicios como LocalSystem; Assert-AtlasServiceIdentities con
+# -RejectBuiltIn las rechaza, lo que antes abortaba cualquier actualizacion
+# sobre una instalacion legado sin cambiar nada. Esta funcion migra esa
+# instalacion a cuentas dedicadas reusando EXACTAMENTE las mismas funciones
+# que usa el instalador en una instalacion nueva (Initialize-AtlasServiceAccount,
+# Grant-AtlasLogOnAsService, Protect-AtlasInstallTree, Install-AtlasService,
+# Grant-AtlasServiceControl, Install-AtlasUpdateTask), en vez de duplicar esa
+# logica aqui. El llamador debe volver a invocar Assert-AtlasServiceIdentities
+# despues para confirmar que la migracion dejo las identidades conformes.
+function Repair-AtlasServiceIdentities {
+    param(
+        [string]$ApiServiceName = "AtlasBalance.API",
+        [string]$WatchdogServiceName = "AtlasBalance.Watchdog",
+        [Parameter(Mandatory = $true)][string]$InstallPath,
+        [string]$ApiServiceAccountName = "AtlasBalanceApiSvc",
+        [string]$WatchdogServiceAccountName = "AtlasBalanceWatchdogSvc"
+    )
+
+    $apiService = Get-AtlasWindowsService -Name $ApiServiceName
+    $watchdogService = Get-AtlasWindowsService -Name $WatchdogServiceName
+    if ($null -eq $apiService -or $null -eq $watchdogService) {
+        throw "No se puede migrar identidades: falta el servicio $ApiServiceName o $WatchdogServiceName."
+    }
+
+    $apiAccount = Initialize-AtlasServiceAccount -Name $ApiServiceAccountName -Description "Cuenta dedicada del servicio API de Atlas Balance (migrada desde una instalacion anterior)"
+    $watchdogAccount = Initialize-AtlasServiceAccount -Name $WatchdogServiceAccountName -Description "Cuenta dedicada del servicio Watchdog de Atlas Balance (migrada desde una instalacion anterior)"
+
+    Grant-AtlasLogOnAsService -Sids @($apiAccount.Sid, $watchdogAccount.Sid) -InstallPath $InstallPath
+    Protect-AtlasInstallTree -InstallPath $InstallPath -ApiAccount $apiAccount -WatchdogAccount $watchdogAccount
+    Install-AtlasUpdateTask -InstallPath $InstallPath -WatchdogAccount $watchdogAccount
+
+    $apiExe = Join-Path $InstallPath "api\AtlasBalance.API.exe"
+    $watchdogExe = Join-Path $InstallPath "watchdog\AtlasBalance.Watchdog.exe"
+    Install-AtlasService -Name $WatchdogServiceName -DisplayName "Atlas Balance - Watchdog" -Description "Backups y actualizaciones de Atlas Balance" -ExePath $watchdogExe -Credential $watchdogAccount.Credential -ExpectedPrincipal $watchdogAccount.Principal
+    Install-AtlasService -Name $ApiServiceName -DisplayName "Atlas Balance - API" -Description "API y frontend de Atlas Balance" -ExePath $apiExe -Credential $apiAccount.Credential -ExpectedPrincipal $apiAccount.Principal
+    Grant-AtlasServiceControl -ServiceName $ApiServiceName -AccountSid $watchdogAccount.Sid
+    Grant-AtlasServiceControl -ServiceName $WatchdogServiceName -AccountSid $watchdogAccount.Sid
+
+    return [pscustomobject]@{
+        Api = $apiAccount
+        Watchdog = $watchdogAccount
+    }
 }

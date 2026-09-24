@@ -1,5 +1,6 @@
 <Project>
   <PropertyGroup>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/tools/dotnet-build/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

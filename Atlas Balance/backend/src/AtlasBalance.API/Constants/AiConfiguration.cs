@@ -5,7 +5,10 @@ public static class AiConfiguration
     public const int MaxQuestionLength = 500;
     public const string OpenRouterAutoModel = "openrouter/auto";
     public const string OpenRouterFreeModel = "openrouter/free";
-    public const string OpenRouterDefaultModel = OpenRouterFreeModel;
+    // P2 V-03.01: el default vuelve a un modelo que respeta ZDR (zdr/data_collection=deny).
+    // Los modelos gratuitos de OpenRouter no garantizan retencion cero de datos y ahora
+    // requieren opt-in explicito del admin (ai_allow_data_retention).
+    public const string OpenRouterDefaultModel = OpenRouterAutoModel;
     public const string OpenRouterNemotronModel = "nvidia/nemotron-3-super-120b-a12b:free";
     public const string OpenRouterGptOss120BModel = "openai/gpt-oss-120b:free";
     public const string DefaultOpenAiModel = "gpt-4o-mini";
@@ -56,6 +59,10 @@ public static class AiConfiguration
     [
         OpenRouterAutoModel,
         OpenRouterDefaultModel,
+        // P2 V-03.01: OpenRouterDefaultModel ya no es el modelo gratuito (ahora es
+        // OpenRouterAutoModel), pero el catalogo de modelos gratuitos se mantiene
+        // disponible para cuando el admin active ai_allow_data_retention.
+        OpenRouterFreeModel,
         OpenRouterNemotronModel,
         "google/gemma-4-31b-it:free",
         "minimax/minimax-m2.5:free",

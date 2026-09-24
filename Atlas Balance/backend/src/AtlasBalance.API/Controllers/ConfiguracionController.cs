@@ -171,6 +171,16 @@ public sealed class ConfiguracionController : ControllerBase
             return BadRequest(new { error = "Modelo de IA invalido para el proveedor seleccionado." });
         }
 
+        // P2 V-03.01: los modelos gratuitos de OpenRouter no garantizan retencion cero
+        // de datos. Solo se puede guardar uno como ai_model si el flag llega activado
+        // en esta peticion: es el valor que se persiste debajo, asi que mirar el valor
+        // anterior permitiria desactivarlo dejando guardado un modelo gratuito.
+        if (aiProvider == "OPENROUTER" && AiConfiguration.IsOpenRouterFreeModel(aiModel) &&
+            !aiRequest.PermiteRetencionDatos)
+        {
+            return BadRequest(new { error = "Los modelos gratuitos de OpenRouter pueden conservar tus datos. Activa \"Permitir modelos gratuitos\" antes de guardar este modelo." });
+        }
+
         var aiValidationError = ValidateIaGovernance(aiRequest);
         if (aiValidationError is not null)
         {
@@ -217,6 +227,7 @@ public sealed class ConfiguracionController : ControllerBase
         Upsert(config, "ai_enabled", aiRequest.Habilitada ? "true" : "false", userId, now);
         Upsert(config, "ai_provider", aiProvider, userId, now);
         Upsert(config, "ai_model", aiModel, userId, now);
+        Upsert(config, "ai_allow_data_retention", aiRequest.PermiteRetencionDatos ? "true" : "false", userId, now);
         var openRouterApiKey = aiRequest.OpenRouterApiKey;
         if (!string.IsNullOrWhiteSpace(openRouterApiKey))
         {
@@ -431,6 +442,7 @@ public sealed class ConfiguracionController : ControllerBase
         var hasOpenRouterKey = !string.IsNullOrWhiteSpace(GetValue(config, "openrouter_api_key"));
         var hasOpenAiKey = !string.IsNullOrWhiteSpace(GetValue(config, "openai_api_key"));
         var hasMiniMaxKey = !string.IsNullOrWhiteSpace(GetValue(config, "minimax_api_key"));
+        var permiteRetencionDatos = ParseBool(GetValue(config, "ai_allow_data_retention"), fallback: false);
         var currentMonthKey = DateTime.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
         var storedMonthKey = GetValue(config, "ai_usage_month_key");
         var openRouterConfigured = provider == "OPENROUTER" &&
@@ -456,7 +468,8 @@ public sealed class ConfiguracionController : ControllerBase
             OpenAiApiKeyConfigurada = hasOpenAiKey,
             MiniMaxApiKeyConfigurada = hasMiniMaxKey,
             Configurada = enabled && usuarioPuedeUsarIa && (openRouterConfigured || openAiConfigured || miniMaxConfigured),
-            MensajeEstado = BuildIaStatusMessage(enabled, usuarioPuedeUsarIa, provider, hasOpenRouterKey, hasOpenAiKey, hasMiniMaxKey, model),
+            MensajeEstado = BuildIaStatusMessage(enabled, usuarioPuedeUsarIa, provider, hasOpenRouterKey, hasOpenAiKey, hasMiniMaxKey, model, permiteRetencionDatos),
+            PermiteRetencionDatos = permiteRetencionDatos,
             RequestsPorMinuto = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_minute"), AiConfigurationDefaults.RequestsPerMinute)),
             RequestsPorHora = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_hour"), AiConfigurationDefaults.RequestsPerHour)),
             RequestsPorDia = Math.Max(0, ParseInt(GetValue(config, "ai_requests_per_day"), AiConfigurationDefaults.RequestsPerDay)),
@@ -500,7 +513,7 @@ public sealed class ConfiguracionController : ControllerBase
         };
     }
 
-    private static string BuildIaStatusMessage(bool enabled, bool userCanUse, string provider, bool hasOpenRouterKey, bool hasOpenAiKey, bool hasMiniMaxKey, string model)
+    private static string BuildIaStatusMessage(bool enabled, bool userCanUse, string provider, bool hasOpenRouterKey, bool hasOpenAiKey, bool hasMiniMaxKey, string model, bool permiteRetencionDatos)
     {
         if (!enabled)
         {
@@ -540,6 +553,11 @@ public sealed class ConfiguracionController : ControllerBase
         if (!AiConfiguration.IsAllowedModel(provider, model))
         {
             return "El modelo seleccionado no esta permitido.";
+        }
+
+        if (provider == "OPENROUTER" && AiConfiguration.IsOpenRouterFreeModel(model) && !permiteRetencionDatos)
+        {
+            return "El modelo gratuito guardado requiere que actives \"Permitir modelos gratuitos\" para poder usarse.";
         }
 
         return "IA configurada.";

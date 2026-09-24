@@ -361,6 +361,9 @@ export interface ConfiguracionSistema {
     usuario_puede_usar: boolean;
     configurada: boolean;
     mensaje_estado: string;
+    // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
+    // OpenRouter, que no garantizan retencion cero de datos financieros.
+    permite_retencion_datos: boolean;
     requests_por_minuto: number;
     requests_por_hora: number;
     requests_por_dia: number;
@@ -420,6 +423,9 @@ export interface SaveConfiguracionSistemaRequest {
     minimax_api_key: string;
     model: string;
     habilitada: boolean;
+    // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
+    // OpenRouter, que no garantizan retencion cero de datos financieros.
+    permite_retencion_datos: boolean;
     requests_por_minuto: number;
     requests_por_hora: number;
     requests_por_dia: number;
@@ -486,6 +492,12 @@ export interface IaConfig {
   usuario_puede_usar: boolean;
   configurada: boolean;
   mensaje_estado: string;
+  // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
+  // OpenRouter, que no garantizan retencion cero de datos financieros.
+  permite_retencion_datos: boolean;
+  // P4 V-03.01: modelos que el usuario actual puede elegir en el selector del
+  // chat (el configurado por el admin, mas los gratuitos si esta permitido).
+  modelos_permitidos: string[];
   requests_por_minuto: number;
   requests_por_hora: number;
   requests_por_dia: number;
@@ -550,7 +562,6 @@ export interface IaThinkingModeOption {
 // El store es la fuente canonica; aqui solo se reexporta para que el resto
 // del frontend pueda seguir haciendo `import type { ChatMessage } from '@/types'`.
 export type {
-  AssistantLink,
   AssistantClarificationOption,
   AssistantMessageMeta,
   ChatMessage,

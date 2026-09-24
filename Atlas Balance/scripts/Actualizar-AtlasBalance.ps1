@@ -4,7 +4,13 @@ param(
     [switch]$ElevatedUpdate,
     [switch]$SkipBackup,
     [switch]$PromptForDbOwnerCredentials,
-    [string]$DbOwnerUser = ""
+    [string]$DbOwnerUser = "",
+    # V-03.01 (P-UPGRADE): nombres de cuenta dedicada usados solo cuando la
+    # instalacion detectada es legado (LocalSystem u otra cuenta que no
+    # cumple las reglas actuales) y hay que migrarla. Mismos valores por
+    # defecto que usa Instalar-AtlasBalance.ps1 en una instalacion nueva.
+    [string]$ApiServiceAccount = "AtlasBalanceApiSvc",
+    [string]$WatchdogServiceAccount = "AtlasBalanceWatchdogSvc"
 )
 
 $ErrorActionPreference = "Stop"
@@ -876,10 +882,41 @@ if (-not (Test-IsAdmin) -and -not $ElevatedUpdate) {
     throw "Ejecuta este actualizador como Administrador."
 }
 
-$serviceIdentities = Assert-AtlasServiceIdentities `
-    -ApiServiceName $ApiServiceName `
-    -WatchdogServiceName $WatchdogServiceName `
-    -InstallPath $InstallPath
+try {
+    $serviceIdentities = Assert-AtlasServiceIdentities `
+        -ApiServiceName $ApiServiceName `
+        -WatchdogServiceName $WatchdogServiceName `
+        -InstallPath $InstallPath
+} catch {
+    # V-03.01 (P-UPGRADE): una instalacion anterior a V-03.01 (p.ej. V-02.09)
+    # registra los servicios como LocalSystem; Assert-AtlasServiceIdentities
+    # los rechaza con -RejectBuiltIn. Antes esto abortaba la actualizacion sin
+    # tocar nada. Ahora se migra a cuentas dedicadas con las mismas funciones
+    # que usa el instalador (ver Repair-AtlasServiceIdentities en
+    # ServiceSecurity.ps1) y se reintenta la validacion. Si la migracion
+    # tambien falla, se intenta reiniciar los servicios tal como estaban
+    # (LocalSystem) antes de propagar el error: no debe quedar el sistema
+    # con servicios parados o borrados.
+    Write-Warning "Identidades de servicio no conformes ($($_.Exception.Message)). Migrando instalacion heredada a cuentas dedicadas."
+    try {
+        Repair-AtlasServiceIdentities `
+            -ApiServiceName $ApiServiceName `
+            -WatchdogServiceName $WatchdogServiceName `
+            -InstallPath $InstallPath `
+            -ApiServiceAccountName $ApiServiceAccount `
+            -WatchdogServiceAccountName $WatchdogServiceAccount | Out-Null
+    } catch {
+        Start-ServiceIfExists -Name $ApiServiceName
+        Start-ServiceIfExists -Name $WatchdogServiceName
+        throw "La migracion de identidades de servicio fallo: $($_.Exception.Message). Se intento reiniciar los servicios en su estado previo."
+    }
+
+    $serviceIdentities = Assert-AtlasServiceIdentities `
+        -ApiServiceName $ApiServiceName `
+        -WatchdogServiceName $WatchdogServiceName `
+        -InstallPath $InstallPath
+    Write-Host "Migracion de identidades de servicio completada." -ForegroundColor Green
+}
 $apiServiceUserName = ([string]$serviceIdentities.Api.StartName -split '\\')[-1]
 $watchdogServiceUserName = ([string]$serviceIdentities.Watchdog.StartName -split '\\')[-1]
 $apiServiceUser = Get-LocalUser -Name $apiServiceUserName -ErrorAction Stop

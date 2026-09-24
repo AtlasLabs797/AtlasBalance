@@ -2,6 +2,69 @@
 
 ## Abiertos
 
+### 2026-09-25 - V-03.01 - Cerrado - Revision 2026-09-24: escalada en actualizador elevado, actualizacion desde V-02.09 bloqueada y privacidad IA
+
+- **Contexto:** correccion de los 8 hallazgos de
+  `Documentacion/INFORME_REVISION_2026-09-24.md` mas 1 hallazgo nuevo (#9)
+  encontrado durante el propio arreglo. Verificado por el orquestador contra
+  codigo real, no solo contra el informe.
+- **Cerrados (9):**
+  1. **ALTO** - Escalada Watchdog->SYSTEM: `ElevatedUpdateRunner.cs` ejecutaba
+     el script de actualizacion directamente desde `PackageRoot`, una carpeta
+     con permisos de escritura del Watchdog. Fix: copia ZIP+`.sig` a
+     `config\update-runner\verified-<guid>` (solo Admin/SYSTEM), reverifica la
+     firma RSA sobre esa copia, extrae con `PackageExtraction.TryExtractSafely`
+     compartido y borra el directorio en `finally`. Nuevo codigo de salida 8
+     para extraccion insegura/fallida.
+  2. **MEDIO** - `Run-AtlasElevatedUpdate.ps1` copiaba solo el `.exe` del
+     Watchdog (publish no single-file) y el apphost no arrancaba. Fix: copia
+     el runtime completo (excepto `logs`) a `config\update-runner\run-<guid>`,
+     limpia en `finally` y `$exitCode = 1` por defecto para no salir en 0 si
+     falla la copia bajo PowerShell 5.1.
+  3. **NUEVO/BLOQUEANTE (#9)** - la actualizacion desde dentro de la app nunca
+     funciono en instalaciones V-03.01: la cuenta de servicio de la API solo
+     tenia lectura/ejecucion sobre `updates\` y `backups\`, pero
+     `ActualizacionService` y `BackupService` necesitan escribir ahi. Fix: la
+     API recibe permiso de modificacion sobre `updates\` (no sobre
+     `updates\requests`) y sobre `backups\`; seguro porque el runner SYSTEM
+     reverifica sobre su copia privada.
+  4. **NUEVO/BLOQUEANTE (#10)** - causa raiz de "no se podia actualizar desde
+     la version anterior": el script de actualizacion exigia identidades de
+     servicio no integradas (`-RejectBuiltIn`), y toda instalacion V-02.09
+     corre como `LocalSystem`, asi que la actualizacion abortaba antes de
+     empezar. Fix: nueva `Repair-AtlasServiceIdentities` migra automaticamente
+     las instalaciones antiguas a las cuentas dedicadas
+     `AtlasBalanceApiSvc`/`AtlasBalanceWatchdogSvc`; si la migracion falla,
+     restaura el estado previo de los servicios y aborta.
+  5. **BAJO** - regex de deteccion de cuentas integradas incompleta y cuentas
+     calificadas por dominio ajeno no rechazadas. Fix en
+     `Test-AtlasBuiltInServiceAccount` / `Test-AtlasServiceIdentity`.
+  6. **ALTO** - privacidad IA: modelo gratuito de OpenRouter quedaba activo
+     por defecto sin bloqueo. Fix: `openrouter/auto` con bloque ZDR como
+     modelo por defecto, nuevo flag `ai_allow_data_retention` (por defecto
+     desactivado), y `AskAsync` rechaza modelos gratuitos si el flag esta
+     apagado (`data_retention_not_allowed`).
+  7. **MEDIO** - el usuario del chat podia forzar un modelo distinto al
+     configurado por el admin. Fix: `AskAsync` solo acepta el modelo
+     configurado o un modelo gratuito permitido con el flag activo
+     (`requested_model_not_allowed`); `GET /api/ia/config` expone
+     `modelos_permitidos` y el selector del chat se oculta con una sola
+     opcion disponible.
+  8. **BAJO** - `selectedModel` del chat podia quedar apuntando a un modelo
+     ya no permitido tras cambiar la configuracion. Fix:
+     `resolveSelectedModelAfterConfigRefresh` en `ensureConfig`.
+  9. **INFO** - mojibake en `AuthController.cs:125` ("Sesión cerrada") y
+     eliminacion de renderizado muerto de `enlaces`/`AssistantLink` en el
+     chat IA.
+- **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y
+  `Documentacion/INFORME_REVISION_2026-09-24.md` (seccion "Estado
+  (2026-09-25)" con el detalle del hallazgo #9 y los pendientes de
+  verificacion manual).
+- **Estado:** cerrado en codigo. Backend 935/935, frontend lint/tsc/build/
+  unit 75/75 y los 6 `scripts/*.Tests.ps1` en verde. Pendiente: prueba real
+  de actualizacion V-02.09 -> V-03.01 en VM Windows Server (ver informe de
+  revision para el detalle).
+
 ### 2026-08-23 - V-02.08 - Cerrado parcial - Auditoria integral de seguridad y bugs: 4 altos, 6 medios y cola de menores
 
 - **Contexto:** revision completa del codigo (backend C#, frontend React,

@@ -6,6 +6,7 @@ import {
   getAiModelLabel,
   normalizeAiModel,
   normalizeThinkingMode,
+  resolveSelectedModelAfterConfigRefresh,
   type ThinkingMode,
 } from '@/utils/aiModels';
 import { friendlyIaError } from '@/utils/iaErrors';
@@ -14,11 +15,6 @@ import { getSessionGeneration, isSessionGenerationCurrent } from '@/utils/sessio
 // V-02.09 (Fase 1.6): tipos del chat. Antes vivian dentro de AiChatPanel.tsx;
 // se mueven al store (y se reexportan desde @/types) para que el store pueda
 // importarlos sin acoplamiento circular con el componente.
-
-export interface AssistantLink {
-  etiqueta: string;
-  ruta: string;
-}
 
 export interface AssistantClarificationOption {
   etiqueta: string;
@@ -34,7 +30,6 @@ export interface AssistantMessageMeta {
   origen?: 'local' | 'proveedor';
   periodo?: string;
   divisa?: string;
-  enlaces?: AssistantLink[];
   opcionesAclaracion?: AssistantClarificationOption[];
   thinkingModeAplicado?: string | null;
 }
@@ -101,6 +96,11 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
       const { data } = await api.get<IaConfig>('/ia/config');
       if (!isSessionGenerationCurrent(generation)) return;
       const currentThinkingMode = get().thinkingMode;
+      // P5 V-03.01: si el admin cambio el provider/modelo, el modelo seleccionado
+      // en el chat puede haber dejado de ser valido. Sin este reseteo, la
+      // siguiente pregunta seguia mandando el modelo viejo y el backend
+      // respondia 400 hasta que el usuario cerraba sesion.
+      const nextSelectedModel = resolveSelectedModelAfterConfigRefresh(get().selectedModel, data.modelos_permitidos);
       set({
         config: data,
         configCheckedAt: now,
@@ -110,6 +110,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
         thinkingMode: currentThinkingMode === 'auto'
           ? 'auto'
           : normalizeThinkingMode(data.provider, currentThinkingMode),
+        selectedModel: nextSelectedModel,
         messages: data.configurada
           ? get().messages
           : [

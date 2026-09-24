@@ -4,7 +4,6 @@ import {
   Check,
   ChevronDown,
   Gauge,
-  Link as LinkIcon,
   RotateCcw,
   Sparkles,
   Square,
@@ -18,7 +17,6 @@ import { useAuthStore } from '@/stores/authStore';
 import { useAiChatStore, type ChatMessage } from '@/stores/aiChatStore';
 import {
   getAiModelLabel,
-  getAiModelOptions,
   getThinkingModeOptions,
   normalizeAiModel,
   normalizeAiProvider,
@@ -228,12 +226,23 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
     [usuario?.email, usuario?.nombre_completo],
   );
 
+  // P4 V-03.01: el usuario solo puede elegir entre los modelos que el backend
+  // autoriza para su configuracion (el configurado por el admin, mas los
+  // gratuitos de OpenRouter si esta permitido) — no el catalogo completo del
+  // provider. Si el backend no envia la lista (version anterior), el
+  // fallback es mostrar solo el modelo configurado.
+  const allowedModels = config?.modelos_permitidos;
   const modelOptions = useMemo(() => {
-    const options = getAiModelOptions(selectedProvider);
+    const allowed = allowedModels && allowedModels.length > 0
+      ? allowedModels
+      : configModel
+        ? [configModel]
+        : [];
+    const options = allowed.map((value) => ({ value, label: getAiModelLabel(selectedProvider, value) }));
     return options.some((option) => option.value === activeModel)
       ? options
       : [{ value: activeModel, label: activeModelLabel }, ...options];
-  }, [activeModel, activeModelLabel, selectedProvider]);
+  }, [activeModel, activeModelLabel, allowedModels, configModel, selectedProvider]);
 
   // V-02.09 (Fase UI): el backend publica los modos de pensamiento del provider;
   // si no llega la lista usamos el fallback local en `getThinkingModeOptions`.
@@ -450,15 +459,17 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
               />
               <div className="ai-chat-composer-footer">
                 <div className="ai-chat-composer-footer-left">
-                  <AiMenu
-                    value={activeModel}
-                    options={modelOptions}
-                    onChange={setSelectedModel}
-                    icon={Sparkles}
-                    ariaLabel="Modelo de IA"
-                    buttonLabel={getModelControlLabel(activeModel, activeModelLabel)}
-                    disabled={!canAsk || loading}
-                  />
+                  {modelOptions.length > 1 ? (
+                    <AiMenu
+                      value={activeModel}
+                      options={modelOptions}
+                      onChange={setSelectedModel}
+                      icon={Sparkles}
+                      ariaLabel="Modelo de IA"
+                      buttonLabel={getModelControlLabel(activeModel, activeModelLabel)}
+                      disabled={!canAsk || loading}
+                    />
+                  ) : null}
                   <AiMenu
                     value={thinkingMode}
                     options={thinkingModeOptions}
@@ -564,17 +575,6 @@ function renderMessage(
                   ))}
                 </ul>
               </div>
-            ) : null}
-            {message.meta?.enlaces && message.meta.enlaces.length > 0 ? (
-              <ul className="ai-chat-links">
-                {message.meta.enlaces.map((enlace) => (
-                  <li key={enlace.ruta}>
-                    <a href={enlace.ruta}>
-                      <LinkIcon size={12} aria-hidden="true" /> {enlace.etiqueta}
-                    </a>
-                  </li>
-                ))}
-              </ul>
             ) : null}
             {message.meta ? (
               <details className="ai-chat-message-meta">

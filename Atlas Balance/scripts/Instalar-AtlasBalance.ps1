@@ -1068,9 +1068,16 @@ function Protect-AtlasInstallTree {
         } elseif ($relative -eq "scripts") {
             "${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX"
         } elseif ($relative -eq "updates") {
-            "${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M"
+            # SECURITY (P1a): igual que ServiceSecurity.ps1 Protect-AtlasInstallTree.
+            # La API necesita Modify (descarga/verifica/extrae el paquete aqui);
+            # el runner elevado (SYSTEM) nunca confia en updates\, re-verifica la
+            # firma sobre su propia copia en config\update-runner. Watchdog solo
+            # necesita Modify sobre updates\requests (mas abajo).
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX"
         } elseif ($relative -eq "backups") {
-            "${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M"
+            # La API crea/borra sus propios dumps (BackupService, GoogleDriveBackupService)
+            # y Watchdog escribe backup previo + rollback de binarios al actualizar.
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M"
         } elseif ($relative -eq "exports") {
             "${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX"
         } elseif ($relative -eq "api\logs") {
@@ -1094,9 +1101,11 @@ function Protect-AtlasInstallTree {
     if (Test-Path -LiteralPath $configPath) {
         Invoke-Icacls -Arguments @($configPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")
     }
+    # SECURITY (P1b): igual que ServiceSecurity.ps1 Protect-AtlasInstallTree.
+    # Solo Administrators/SYSTEM escriben en update-runner.
     $runnerPath = Join-Path $configPath "update-runner"
     New-Item -ItemType Directory -Path $runnerPath -Force | Out-Null
-    Invoke-Icacls -Arguments @($runnerPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+    Invoke-Icacls -Arguments @($runnerPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")
 
     # Los ficheros de configuracion y el certificado se protegen antes de
     # sincronizar el paquete. Conservar solo Administrators/SYSTEM dejaria a

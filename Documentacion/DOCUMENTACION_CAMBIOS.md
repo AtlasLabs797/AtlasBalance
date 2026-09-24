@@ -2,6 +2,123 @@
 
 ## Objetivo
 
+## 2026-09-25 - V-03.01 - Correcciones de la revision 2026-09-24
+
+### Trabajo realizado
+
+- Cierre de los 8 hallazgos de `Documentacion/INFORME_REVISION_2026-09-24.md`
+  mas 1 hallazgo nuevo (#9) encontrado al corregir el #1.
+- Actualizador elevado: `ElevatedUpdateRunner.cs` deja de ejecutar el script
+  de actualizacion desde el `PackageRoot` recibido; ahora copia ZIP+`.sig` a
+  una carpeta aislada Admin/SYSTEM (`config\update-runner\verified-<guid>`),
+  reverifica la firma sobre esa copia y extrae con el helper compartido
+  `PackageExtraction.TryExtractSafely` (nuevo archivo, reutilizado tambien
+  por `ActualizacionService`). Nuevo codigo de salida 8.
+- `Run-AtlasElevatedUpdate.ps1` copia ahora el runtime completo del Watchdog
+  (no solo el `.exe`) y corrige el `$exitCode` por defecto para PS 5.1.
+- ACLs reforzadas y corregidas en `ServiceSecurity.ps1` /
+  `Instalar-AtlasBalance.ps1`: `config\update-runner` pasa a ser solo
+  Admin/SYSTEM; Watchdog pasa a RX sobre `updates\` (conserva Modify solo en
+  `updates\requests`); API gana Modify sobre `updates\` y `backups\` (hallazgo
+  #9, sin el cual la actualizacion en la app quedaba rota por permisos).
+- Nueva `Repair-AtlasServiceIdentities` migra automaticamente instalaciones
+  V-02.09 (servicios como `LocalSystem`) a las cuentas dedicadas
+  `AtlasBalanceApiSvc`/`AtlasBalanceWatchdogSvc`; `Actualizar-AtlasBalance.ps1`
+  la invoca cuando `Assert-AtlasServiceIdentities -RejectBuiltIn` falla, y
+  restaura el estado previo de los servicios si la migracion no se completa
+  (hallazgo #10, causa raiz de que no se pudiera actualizar desde la version
+  anterior).
+- IA: modelo por defecto de OpenRouter vuelve a `openrouter/auto` con bloque
+  ZDR; nuevo flag `ai_allow_data_retention` (por defecto desactivado) que
+  controla si se permiten modelos gratuitos; `AskAsync` valida tanto la
+  retencion de datos como que el modelo solicitado por el usuario coincida
+  con el configurado (o un gratuito permitido). `GET /api/ia/config` expone
+  `modelos_permitidos` y el selector de modelo del chat lo usa, ocultandose
+  si solo hay una opcion.
+- Decisiones de frontend: se reutilizo la clase existente `config-check`
+  para el nuevo checkbox de "Permitir modelos gratuitos de OpenRouter" y el
+  parrafo de aviso existente `auth-error` para el texto de advertencia sobre
+  retencion de datos, en vez de crear componentes/clases nuevas. El selector
+  de modelo del chat (`AiChatPanel.tsx`) se oculta cuando la configuracion
+  solo permite un modelo.
+- Correcciones menores: mojibake en `AuthController.cs:125` ("Sesión
+  cerrada"); eliminado codigo muerto de renderizado de
+  `enlaces`/`AssistantLink` en el chat; `backend/Directory.Build.props`
+  excluye `**/tools/dotnet-build/**` de los default items (cache de build
+  bloqueada por AV producia errores de `AssemblyInfo` duplicado).
+
+### Archivos tocados
+
+- `Atlas Balance/backend/Directory.Build.props`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/PackageExtraction.cs` (nuevo)
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/ElevatedUpdateRunner.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceThinkingModeTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ElevatedUpdateRunnerTests.cs` (nuevo)
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/stores/aiChatStore.ts`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/utils/aiModels.ts`
+- `Atlas Balance/frontend/tests/aiModels.test.ts` (nuevo)
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Run-AtlasElevatedUpdate.ps1`
+- `Atlas Balance/scripts/ServiceSecurity.Tests.ps1`
+- `Atlas Balance/scripts/ServiceSecurity.ps1`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/INFORME_REVISION_2026-09-24.md`
+
+### Comandos ejecutados
+
+- `dotnet test tests/AtlasBalance.API.Tests` (suite completa con
+  Postgres/Testcontainers): 935/935 PASS, 0 skipped.
+- `npm run lint`: OK.
+- `npx tsc`: OK.
+- `npm run test:unit` (outDir alternativo, el por defecto bloqueado por AV
+  con EPERM): 75/75 PASS.
+- `vite build --outDir .dist-verify` (el `dist` por defecto estaba bloqueado
+  por AV): OK.
+- Parser PowerShell 5.1 sobre los 5 scripts tocados: OK.
+- Los 6 `scripts/*.Tests.ps1`: PASS.
+
+### Resultado de verificacion
+
+- Backend, frontend y scripts en verde segun los comandos anteriores.
+- Nuevo `ElevatedUpdateRunnerTests` (5 casos) prueba especificamente que un
+  `PackageRoot` manipulado no llega a ejecutarse.
+
+### Pendientes
+
+- Prueba real de actualizacion en VM Windows Server: instalar V-02.09,
+  actualizar a V-03.01 con `Actualizar Atlas Balance.cmd` como Administrador
+  y tambien desde la app (Watchdog viejo); verificar que los servicios
+  quedan como `AtlasBalanceApiSvc`/`AtlasBalanceWatchdogSvc`, que
+  `icacls config\update-runner` no tiene ACE de cuenta de servicio, y que una
+  segunda actualizacion en la app pasa por la tarea programada
+  `AtlasBalance.Update`.
+- Limitacion conocida sin resolver: el flujo de actualizacion interno
+  (`WatchdogSettings:UseExternalPackageUpdater=false`, no usado por defecto
+  en Windows) fallaria porque el Watchdog solo tiene RX sobre
+  `api`/`watchdog`/`scripts`.
+- Se mantienen abiertos de antes: cookies legacy no `__Host` aceptadas en
+  produccion, ventana de gracia en refresh concurrente, interceptor RLS
+  fail-open, etc. (ver `REGISTRO_BUGS.md`).
+
 ## 2026-09-21 - V-03.01 - Diagnóstico de AiFace sin movimiento en navegador
 
 ### Diagnóstico

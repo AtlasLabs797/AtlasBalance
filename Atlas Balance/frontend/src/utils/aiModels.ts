@@ -5,7 +5,10 @@ export interface AiModelOption {
 
 export const OPENROUTER_AUTO_MODEL = 'openrouter/auto';
 export const OPENROUTER_FREE_MODEL = 'openrouter/free';
-export const OPENROUTER_DEFAULT_RUNTIME_MODEL = OPENROUTER_FREE_MODEL;
+// P2 V-03.01: el default vuelve a un modelo que respeta ZDR (zdr/data_collection=deny).
+// Los modelos gratuitos de OpenRouter no garantizan retencion cero de datos y requieren
+// que el admin active "Permitir modelos gratuitos" en Configuracion > IA.
+export const OPENROUTER_DEFAULT_RUNTIME_MODEL = OPENROUTER_AUTO_MODEL;
 export const OPENROUTER_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 export const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3';
@@ -61,14 +64,14 @@ export function getDefaultAiModel(provider: string | null | undefined) {
     return DEFAULT_OPENAI_MODEL;
   }
 
-  return normalizedProvider === 'MINIMAX' ? DEFAULT_MINIMAX_MODEL : OPENROUTER_FREE_MODEL;
+  return normalizedProvider === 'MINIMAX' ? DEFAULT_MINIMAX_MODEL : OPENROUTER_DEFAULT_RUNTIME_MODEL;
 }
 
 export function normalizeAiModel(provider: string | null | undefined, model: string | null | undefined) {
   const trimmed = model?.trim() ?? '';
   const normalizedProvider = normalizeAiProvider(provider);
   if (normalizedProvider === 'OPENROUTER') {
-    return trimmed || OPENROUTER_FREE_MODEL;
+    return trimmed || OPENROUTER_DEFAULT_RUNTIME_MODEL;
   }
 
   const options = normalizedProvider === 'OPENAI' ? openAiModelOptions : miniMaxModelOptions;
@@ -78,6 +81,13 @@ export function normalizeAiModel(provider: string | null | undefined, model: str
 export function getAiModelLabel(provider: string | null | undefined, model: string | null | undefined) {
   const normalizedModel = normalizeAiModel(provider, model);
   return getAiModelOptions(provider).find((item) => item.value === normalizedModel)?.label ?? normalizedModel;
+}
+
+// P2 V-03.01: replica en el frontend la regla de AiConfiguration.IsOpenRouterFreeModel
+// del backend, para poder deshabilitar/marcar modelos gratuitos en la UI.
+export function isOpenRouterFreeModel(model: string | null | undefined) {
+  const trimmed = model?.trim() ?? '';
+  return trimmed === OPENROUTER_FREE_MODEL || trimmed.toLowerCase().endsWith(':free');
 }
 
 export function isValidOpenRouterModelId(model: string | null | undefined) {
@@ -130,6 +140,21 @@ export function getThinkingModeOptions(provider: string | null | undefined): Thi
   }
 
   return normalizedProvider === 'MINIMAX' ? THINKING_MODES_MINIMAX : THINKING_MODES_OPENROUTER;
+}
+
+// P5 V-03.01: al refrescar la config de IA, el modelo seleccionado por el
+// usuario en el chat puede haber dejado de estar permitido (el admin cambio
+// de provider/modelo). Sin este reseteo, el chat seguia mandando el modelo
+// viejo y el backend respondia 400 hasta que el usuario cerraba sesion.
+export function resolveSelectedModelAfterConfigRefresh(
+  currentSelectedModel: string | null,
+  allowedModels: string[] | null | undefined,
+): string | null {
+  if (!currentSelectedModel) {
+    return null;
+  }
+
+  return (allowedModels ?? []).includes(currentSelectedModel) ? currentSelectedModel : null;
 }
 
 export function normalizeThinkingMode(provider: string | null | undefined, value: string | null | undefined): ThinkingMode {

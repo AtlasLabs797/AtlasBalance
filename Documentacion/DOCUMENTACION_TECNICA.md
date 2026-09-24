@@ -2,6 +2,129 @@
 
 ## Vigencia documental: V-03.01
 
+### 2026-09-25 - Correcciones de la revision 2026-09-24
+
+**Actualizador elevado (hallazgos #1, #3, #9).** `ElevatedUpdateRunner.cs`
+(Watchdog) recibia un `PackageRoot` propuesto por la peticion de actualizacion
+y ejecutaba `Actualizar-AtlasBalance.ps1` directamente desde ahi tras
+verificar la firma sobre ese mismo directorio. Esa carpeta era escribible por
+la cuenta del Watchdog, no solo por SYSTEM, asi que modificar su contenido
+entre la verificacion y la ejecucion permitia escalar a SYSTEM (el runner
+elevado corre con ese privilegio). La correccion separa verificacion de
+ejecucion: copia ZIP + `.sig` a una carpeta nueva por ejecucion
+(`config\update-runner\verified-<guid>`) cuyas ACL solo permiten
+Administradores/SYSTEM, repite la verificacion de firma RSA sobre esa copia,
+extrae con el helper compartido `PackageExtraction.TryExtractSafely` (movido
+a `AtlasBalance.API/Services/PackageExtraction.cs` y enlazado tambien en el
+`.csproj` del Watchdog; `ActualizacionService.cs` ahora usa el mismo helper
+en vez de su copia privada) y solo entonces ejecuta el script desde la copia
+verificada. El directorio se borra en `finally` pase lo que pase. Un nuevo
+codigo de salida (8) distingue el fallo de extraccion insegura de los demas
+fallos.
+
+En la misma linea, `Run-AtlasElevatedUpdate.ps1` copiaba unicamente el
+ejecutable del Watchdog (el publish no es single-file), asi que el apphost no
+encontraba sus dependencias al arrancar bajo la identidad elevada. Ahora
+copia el runtime completo (excluyendo `logs`) a un directorio por ejecucion
+(`config\update-runner\run-<guid>`), lo limpia en `finally`, y fija
+`$exitCode = 1` por defecto para que un fallo en la copia no se traduzca en
+exit code 0 bajo PowerShell 5.1 (que no propaga errores de cmdlets como
+excepciones terminantes por defecto).
+
+Reforzar las ACLs de `config\update-runner` (solo Admin/SYSTEM, se retira el
+acceso Modify que tenia el Watchdog) expuso un bug latente separado
+(hallazgo #9): la cuenta de servicio de la API solo tenia lectura/ejecucion
+sobre `updates\`, pero `ActualizacionService.DownloadAndPreparePackageAsync`
+descarga y extrae el paquete ahi mismo antes de pedirle al Watchdog que lo
+procese; con RX exclusivamente, esa descarga fallaba con acceso denegado. El
+mismo patron existia sobre `backups\`, que `BackupService` necesita para
+escribir y borrar backups. La solucion final es que la API tenga Modify sobre
+`updates\` (pero no sobre `updates\requests`, que sigue siendo terreno
+exclusivo del Watchdog) y sobre `backups\`. Esto no reabre el problema de
+escalada porque el runner SYSTEM vuelve a verificar firma y contenido sobre
+su propia copia privada antes de ejecutar nada, independientemente de lo que
+la API haya escrito en `updates\`.
+
+**Migracion de identidades de servicio (hallazgo #10, causa raiz de la
+actualizacion bloqueada).** Desde que se introdujo el requisito de cuentas de
+servicio dedicadas, `Actualizar-AtlasBalance.ps1` invoca
+`Assert-AtlasServiceIdentities -RejectBuiltIn`, que lanza si los servicios
+API/Watchdog corren con una identidad integrada de Windows (`LocalSystem`,
+etc.). El problema: toda instalacion V-02.09 tiene exactamente esa
+configuracion, asi que cualquier intento de actualizar a V-03.01 abortaba en
+el primer chequeo, antes de tocar binarios o backups. La correccion anade
+`Repair-AtlasServiceIdentities` a `ServiceSecurity.ps1`, que reutiliza las
+mismas funciones que usa el instalador para una instalacion nueva
+(`Initialize-AtlasServiceAccount`, `Grant-AtlasLogOnAsService`,
+`Protect-AtlasInstallTree`, `Install-AtlasUpdateTask`, `Install-AtlasService`,
+`Grant-AtlasServiceControl`) para migrar una instalacion existente a las
+cuentas dedicadas `AtlasBalanceApiSvc` / `AtlasBalanceWatchdogSvc` (nombres
+configurables via los nuevos parametros opcionales `-ApiServiceAccount` /
+`-WatchdogServiceAccount`). El script de actualizacion atrapa la excepcion de
+`Assert-AtlasServiceIdentities`, ejecuta la migracion y vuelve a comprobar;
+si la migracion falla, reinicia los servicios en su estado previo y aborta
+limpio en vez de dejar la instalacion a medio migrar.
+
+De paso se corrigio el regex de deteccion de cuentas integradas
+(`Test-AtlasBuiltInServiceAccount`, ahora
+`^(LocalSystem|LocalService|NetworkService|SYSTEM|NT AUTHORITY\.+|NT SERVICE\.+)$`)
+y `Test-AtlasServiceIdentity` pasa a rechazar cuentas calificadas por un
+dominio distinto de `.` o `$env:COMPUTERNAME` (hallazgo #6).
+
+**Privacidad de IA (hallazgos #2, #4, #5).** El modelo por defecto de
+OpenRouter vuelve a `openrouter/auto` con el bloque de restricciones ZDR
+(retencion cero) activo por defecto, revirtiendo el cambio que en su momento
+lo quito para dar soporte a `openrouter/free`. Se anade un flag de
+configuracion nuevo, `ai_allow_data_retention` (expuesto como
+`permite_retencion_datos`, por defecto `false`), que el admin debe activar
+explicitamente para poder guardar o usar un modelo gratuito
+(`openrouter/free` o cualquier `*:free`). `AtlasAiService.AskAsync` valida
+esto en tiempo de peticion: si el modelo efectivo es gratuito y el flag esta
+desactivado, responde `data_retention_not_allowed` sin llamar al proveedor.
+`ConfiguracionController` aplica la misma regla al guardar: no permite
+persistir un modelo gratuito salvo que `permite_retencion_datos` venga `true`
+en la misma peticion.
+
+Sobre esa misma base se cierra el hallazgo de que el usuario del chat podia
+pedir un modelo distinto al configurado por el admin: `AskAsync` ahora solo
+acepta el modelo exactamente igual al configurado, o uno de la lista de
+modelos gratuitos permitidos cuando el flag esta activo; cualquier otro valor
+responde `requested_model_not_allowed`. `GET /api/ia/config` expone la lista
+resultante como `modelos_permitidos`, y el frontend (`AiChatPanel.tsx`) la usa
+para poblar el selector de modelo, ocultandolo cuando solo hay una opcion (no
+tiene sentido un selector de una sola alternativa).
+
+Por ultimo, `aiChatStore.ensureConfig` podia dejar `selectedModel` apuntando
+a un modelo que la configuracion ya no permitia tras un cambio del admin. El
+nuevo helper puro `resolveSelectedModelAfterConfigRefresh` (en
+`frontend/src/utils/aiModels.ts`, con tests dedicados en
+`frontend/tests/aiModels.test.ts`) recalcula la seleccion contra la lista
+vigente cada vez que se refresca la configuracion.
+
+**Archivos principales:**
+`backend/src/AtlasBalance.Watchdog/Services/ElevatedUpdateRunner.cs`,
+`backend/src/AtlasBalance.API/Services/PackageExtraction.cs`,
+`backend/src/AtlasBalance.API/Services/ActualizacionService.cs`,
+`scripts/Run-AtlasElevatedUpdate.ps1`, `scripts/ServiceSecurity.ps1`,
+`scripts/Instalar-AtlasBalance.ps1`, `scripts/Actualizar-AtlasBalance.ps1`,
+`backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`,
+`backend/src/AtlasBalance.API/Services/AtlasAiService.cs`,
+`backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`,
+`backend/src/AtlasBalance.API/DTOs/IaDtos.cs`,
+`frontend/src/pages/ConfiguracionPage.tsx`, `frontend/src/utils/aiModels.ts`,
+`frontend/src/types/index.ts`, `frontend/src/components/ia/AiChatPanel.tsx`,
+`frontend/src/stores/aiChatStore.ts`.
+
+**Verificacion:** `dotnet test tests/AtlasBalance.API.Tests` (suite completa
+con Postgres/Testcontainers) 935/935, 0 skipped, incluye el nuevo
+`ElevatedUpdateRunnerTests` (5 casos que prueban que un `PackageRoot`
+manipulado no llega a ejecutarse); `npm run lint` y `npx tsc` OK; tests
+unitarios frontend 75/75; `vite build --outDir .dist-verify` OK; parser
+PowerShell 5.1 sobre los 5 scripts tocados OK; los 6 `scripts/*.Tests.ps1` en
+verde. Pendiente de verificar manualmente: actualizacion real V-02.09 ->
+V-03.01 en un entorno Windows Server, tanto via `Actualizar Atlas
+Balance.cmd` como desde la app.
+
 ### 2026-09-21 - Diagnóstico de animaciones estáticas en Chrome
 
 La inspección del navegador confirmó que `AiFace` sí recibe la clase de estado

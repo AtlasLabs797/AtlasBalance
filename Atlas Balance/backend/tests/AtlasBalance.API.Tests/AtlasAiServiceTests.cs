@@ -1600,7 +1600,10 @@ public class AtlasAiServiceTests
     public async Task AskAsync_Should_Send_Free_OpenRouter_Model_Without_Provider_Restrictions(string model)
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, model: model);
+        var userId = await SeedAiUserAndConfigAsync(db, model: model, extraConfig:
+        [
+            new Configuracion { Clave = "ai_allow_data_retention", Valor = "true", Tipo = "bool", Descripcion = "Permite modelos gratuitos" }
+        ]);
         var httpFactory = new CapturingHttpClientFactory();
         var sut = new AtlasAiService(
             db,
@@ -1624,13 +1627,16 @@ public class AtlasAiServiceTests
     }
 
     [Theory]
-    [InlineData(AiConfiguration.OpenRouterDefaultModel)]
+    [InlineData(AiConfiguration.OpenRouterFreeModel)]
     [InlineData("z-ai/glm-4.5-air:free")]
     [InlineData("qwen/qwen3-coder:free")]
     public async Task AskAsync_Should_Send_Unpinned_Free_OpenRouter_Model_Without_Provider_Restrictions(string model)
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, model: model);
+        var userId = await SeedAiUserAndConfigAsync(db, model: model, extraConfig:
+        [
+            new Configuracion { Clave = "ai_allow_data_retention", Valor = "true", Tipo = "bool", Descripcion = "Permite modelos gratuitos" }
+        ]);
         var httpFactory = new CapturingHttpClientFactory();
         var sut = new AtlasAiService(
             db,
@@ -1651,11 +1657,67 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().NotContain("\"data_collection\"");
     }
 
+    // P2 V-03.01: sin ai_allow_data_retention, un modelo gratuito de OpenRouter
+    // configurado por el admin se bloquea antes de llamar al proveedor.
+    [Fact]
+    public async Task AskAsync_Should_Block_Free_OpenRouter_Model_When_Data_Retention_Not_Allowed()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db, model: AiConfiguration.OpenRouterFreeModel);
+        var httpFactory = new CapturingHttpClientFactory();
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
+            TestAuditService.Create(db),
+            NullLogger<AtlasAiService>.Instance);
+
+        var act = () => sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<IaConfigurationException>()
+            .WithMessage("*conservar tus datos*");
+        httpFactory.RequestCount.Should().Be(0);
+        (await db.Auditorias.SingleAsync()).DetallesJson.Should().Contain("data_retention_not_allowed");
+    }
+
+    // P4 V-03.01: un usuario no puede pedir un modelo gratuito distinto del
+    // configurado por el admin si ai_allow_data_retention esta desactivado.
+    [Fact]
+    public async Task AskAsync_Should_Block_Requested_Free_Model_When_Data_Retention_Not_Allowed()
+    {
+        await using var db = BuildDbContext();
+        var userId = await SeedAiUserAndConfigAsync(db, model: AiConfiguration.OpenRouterAutoModel);
+        var httpFactory = new CapturingHttpClientFactory();
+        var sut = new AtlasAiService(
+            db,
+            httpFactory,
+            new PlainTextSecretProtector(),
+            new UserAccessService(db, new CacheService(new MemoryCache(new MemoryCacheOptions()), NullLogger<CacheService>.Instance), Options.Create(new CachingOptions())),
+            TestAuditService.Create(db),
+            NullLogger<AtlasAiService>.Instance);
+
+        var act = () => sut.AskAsync(
+            AdminScope(userId),
+            "Resumen de gastos",
+            "127.0.0.1",
+            CancellationToken.None,
+            "qwen/qwen3-coder:free");
+
+        await act.Should().ThrowAsync<IaConfigurationException>()
+            .WithMessage("*No puedes usar ese modelo*");
+        httpFactory.RequestCount.Should().Be(0);
+        (await db.Auditorias.SingleAsync()).DetallesJson.Should().Contain("requested_model_not_allowed");
+    }
+
     [Fact]
     public async Task AskAsync_Should_Use_Requested_Model_Without_Changing_Global_Config()
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, model: AiConfiguration.OpenRouterDefaultModel);
+        var userId = await SeedAiUserAndConfigAsync(db, model: AiConfiguration.OpenRouterDefaultModel, extraConfig:
+        [
+            new Configuracion { Clave = "ai_allow_data_retention", Valor = "true", Tipo = "bool", Descripcion = "Permite modelos gratuitos" }
+        ]);
         var httpFactory = new CapturingHttpClientFactory();
         var sut = new AtlasAiService(
             db,

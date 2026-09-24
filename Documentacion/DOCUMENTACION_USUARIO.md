@@ -213,16 +213,24 @@ Aviso importante: las copias en Drive dependen de la clave local `backup_cloud_e
 
 ## IA y modelos OpenRouter
 
-En `Configuracion > Revision e IA`, OpenRouter usa `openrouter/free` como modelo
-predeterminado. Es el router oficial de modelos gratuitos: no cobra tokens,
-pero la disponibilidad, los limites y el modelo concreto pueden cambiar según
-la capacidad de OpenRouter. Tambien puedes elegir `openrouter/auto` o uno de los
-modelos gratuitos permitidos.
+En `Configuracion > Revision e IA`, OpenRouter usa `openrouter/auto` como
+modelo predeterminado desde `V-03.01` (correcciones del 2026-09-25). Ese
+modelo exige retencion cero de datos (ZDR) al proveedor, ademas de la
+seudonimizacion del contexto financiero que ya hace Atlas Balance antes de
+enviarlo.
+
+Bajo el selector de proveedor hay una nueva opcion para administradores:
+**Permitir modelos gratuitos de OpenRouter**. Esta desactivada por defecto.
+Si la activas, podras guardar y usar modelos gratuitos (`openrouter/free` o
+cualquier modelo `:free`); Atlas Balance te avisa expresamente de que esos
+modelos gratuitos pueden guardar y usar para entrenamiento los datos que se
+les envian (importes, saldos y conceptos), asi que solo debes activarla si
+tu empresa lo acepta. Si tu instalacion ya tenia guardado un modelo gratuito
+de una version anterior, la aplicacion lo bloqueara hasta que un
+administrador entre a `Configuracion` y active esta opcion explicitamente.
 
 Guarda tu API key de OpenRouter en esa pantalla. La clave se protege en el
-backend y nunca se muestra en la interfaz ni se escribe en la auditoria. Si la
-IA esta activa y tu usuario tiene permiso, el chat puede utilizar el modelo
-gratuito sin que tengas que escoger un proveedor adicional.
+backend y nunca se muestra en la interfaz ni se escribe en la auditoria.
 
 Si OpenRouter rechaza un modelo por saldo, privacidad, proveedor no disponible o ID inexistente, Atlas Balance muestra un error limpio. Si escribes un ID con formato invalido, el backend lo rechaza antes de llamar al proveedor.
 
@@ -248,10 +256,14 @@ Atlas Balance respeta esa preferencia y deja la cara estática cuando está
 desactivada.
 
 En el compositor puedes elegir el modelo disponible y el esfuerzo de
-pensamiento. Las sugerencias de la pantalla inicial rellenan la pregunta sin
-obligarte a memorizar el formato. Las respuestas muestran sus citas y los
-detalles del registro cuando existen; revisalos antes de operar sobre los
-datos.
+pensamiento. Desde `V-03.01` (correcciones del 2026-09-25), el selector de
+modelo solo ofrece los modelos que el administrador permite en
+`Configuracion > Revision e IA`; no es posible pedir un modelo distinto al
+configurado. Si solo hay un modelo permitido, el selector no se muestra
+porque no hay nada entre lo que elegir. Las sugerencias de la pantalla
+inicial rellenan la pregunta sin obligarte a memorizar el formato. Las
+respuestas muestran sus citas y los detalles del registro cuando existen;
+revisalos antes de operar sobre los datos.
 
 ## Paquetes de instalacion
 
@@ -283,6 +295,17 @@ No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquet
 Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02.08-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
 Nota vigente de `V-02.08`: el codigo prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este flujo puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
+
+Nota de `V-03.01` (correcciones del 2026-09-25): si tu instalacion viene de
+`V-02.09` o anterior, los servicios de Atlas Balance corrian con una cuenta
+integrada de Windows (`LocalSystem`). Al actualizar a `V-03.01`, el proceso
+detecta esa situacion y migra automaticamente los servicios a cuentas
+dedicadas (`AtlasBalanceApiSvc` para la API, `AtlasBalanceWatchdogSvc` para
+el Watchdog) antes de continuar; no hace falta ninguna accion manual, pero
+debes ejecutar `Actualizar Atlas Balance.cmd` como Administrador para que la
+migracion tenga permisos suficientes. Si la migracion no puede completarse,
+el script restaura los servicios a como estaban y aborta sin dejar la
+instalacion a medias.
 
 ## Limpieza antes de publicar
 

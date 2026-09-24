@@ -328,6 +328,87 @@ public sealed class ConfiguracionControllerTests
         (await db.Configuraciones.SingleAsync(x => x.Clave == "openrouter_api_key")).Valor.Should().Be("openrouter-test-placeholder");
     }
 
+    // P2 V-03.01: no se puede guardar un modelo gratuito de OpenRouter como
+    // ai_model sin activar ai_allow_data_retention en la misma peticion (o
+    // que ya estuviera activado antes).
+    [Fact]
+    public async Task Update_Should_Reject_Free_OpenRouter_Model_Without_Data_Retention_Flag()
+    {
+        await using var db = BuildDbContext();
+        var controller = BuildController(db);
+
+        var result = await controller.Update(new UpdateConfiguracionRequest
+        {
+            Smtp = new UpdateSmtpConfigRequest
+            {
+                Host = "smtp.local",
+                Port = 587,
+                User = "user",
+                Password = "",
+                From = "noreply@test.local"
+            },
+            General = new UpdateGeneralConfigRequest
+            {
+                AppBaseUrl = "https://app.local",
+                AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
+                BackupPath = "C:\\backups",
+                ExportPath = "C:\\exports"
+            },
+            Dashboard = new UpdateDashboardConfigRequest(),
+            Ia = new UpdateIaConfigRequest
+            {
+                Provider = "OPENROUTER",
+                Model = AiConfiguration.OpenRouterFreeModel,
+                Habilitada = true,
+                OpenRouterApiKey = "openrouter-test-placeholder",
+                PermiteRetencionDatos = false
+            }
+        }, CancellationToken.None);
+
+        var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value.Should().NotBeNull();
+        (await db.Configuraciones.Where(x => x.Clave == "ai_model").ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Update_Should_Accept_Free_OpenRouter_Model_When_Data_Retention_Flag_Enabled()
+    {
+        await using var db = BuildDbContext();
+        var controller = BuildController(db);
+
+        var result = await controller.Update(new UpdateConfiguracionRequest
+        {
+            Smtp = new UpdateSmtpConfigRequest
+            {
+                Host = "smtp.local",
+                Port = 587,
+                User = "user",
+                Password = "",
+                From = "noreply@test.local"
+            },
+            General = new UpdateGeneralConfigRequest
+            {
+                AppBaseUrl = "https://app.local",
+                AppUpdateCheckUrl = ConfigurationDefaults.UpdateCheckUrl,
+                BackupPath = "C:\\backups",
+                ExportPath = "C:\\exports"
+            },
+            Dashboard = new UpdateDashboardConfigRequest(),
+            Ia = new UpdateIaConfigRequest
+            {
+                Provider = "OPENROUTER",
+                Model = AiConfiguration.OpenRouterFreeModel,
+                Habilitada = true,
+                OpenRouterApiKey = "openrouter-test-placeholder",
+                PermiteRetencionDatos = true
+            }
+        }, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.OpenRouterFreeModel);
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_allow_data_retention")).Valor.Should().Be("true");
+    }
+
     [Fact]
     public async Task Update_Should_Reject_NonOfficial_Update_Check_Url()
     {

@@ -1,5 +1,205 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-25 - V-03.01 - Correcciones de la revision 2026-09-24 (CORREGIDO)
+
+Grupo de 9 hallazgos de `Documentacion/INFORME_REVISION_2026-09-24.md`, cerrado el
+mismo dia tras verificacion en codigo. Detalle de cada uno:
+
+### #1 (ALTO) - Escalada Watchdog->SYSTEM en el actualizador elevado
+
+- **Error:** `ElevatedUpdateRunner.cs` ejecutaba `Actualizar-AtlasBalance.ps1`
+  directamente desde el `PackageRoot` recibido en la peticion, una carpeta con
+  permisos de escritura de la cuenta del Watchdog (no SYSTEM). Modificar el
+  contenido antes de que el runner elevado lo procesara permitia que un script
+  arbitrario se ejecutase como SYSTEM.
+- **Causa:** la verificacion de firma RSA se hacia sobre la misma copia que
+  luego se ejecutaba, sin aislar esa copia de la cuenta menos privilegiada.
+- **Solucion:** el runner copia ZIP + `.sig` a una carpeta nueva
+  `config\update-runner\verified-<guid>` (ACL solo Admin/SYSTEM), reverifica
+  la firma sobre esa copia, extrae con el helper compartido
+  `PackageExtraction.TryExtractSafely` (nuevo
+  `Services/PackageExtraction.cs`, reutilizado tambien por
+  `ActualizacionService.cs`) y ejecuta el script desde ahi. Borra el
+  directorio en `finally`. Nuevo codigo de salida 8 para extraccion
+  insegura/fallida. ACLs de `scripts/ServiceSecurity.ps1` y
+  `scripts/Instalar-AtlasBalance.ps1` actualizadas: `config\update-runner`
+  pasa a ser solo Admin/SYSTEM (se quita Modify al Watchdog); el Watchdog pasa
+  a RX (antes Modify) sobre `updates\` y conserva Modify solo en
+  `updates\requests`.
+- **Archivos:** `backend/src/AtlasBalance.Watchdog/Services/ElevatedUpdateRunner.cs`,
+  `backend/src/AtlasBalance.API/Services/PackageExtraction.cs`,
+  `backend/src/AtlasBalance.API/Services/ActualizacionService.cs`,
+  `scripts/ServiceSecurity.ps1`, `scripts/Instalar-AtlasBalance.ps1`.
+- **Verificacion:** nuevo `ElevatedUpdateRunnerTests` (5 casos) prueba que un
+  `PackageRoot` manipulado nunca llega a ejecutarse; suite backend completa
+  935/935.
+
+### #3 (MEDIO) - El runner elevado copiaba solo el `.exe` del Watchdog
+
+- **Error:** `Run-AtlasElevatedUpdate.ps1` copiaba unicamente el ejecutable del
+  Watchdog al directorio de ejecucion elevada. Al no ser publish single-file,
+  el apphost no encontraba sus dependencias y no arrancaba.
+- **Causa:** la copia no contemplaba el resto del runtime publicado
+  (`.dll`, `.json`, dependencias).
+- **Solucion:** copia recursiva de todo el runtime del Watchdog (excluyendo
+  `logs`) a un directorio por ejecucion `config\update-runner\run-<guid>`,
+  con limpieza en `finally`. Ademas `$exitCode = 1` por defecto, para que una
+  copia fallida no termine devolviendo 0 bajo PowerShell 5.1.
+- **Archivos:** `scripts/Run-AtlasElevatedUpdate.ps1`.
+- **Verificacion:** parser PS 5.1 OK; suite `scripts/*.Tests.ps1` en verde.
+
+### #9 (NUEVO, BLOQUEANTE) - La actualizacion desde la app nunca funcionaba en V-03.01
+
+- **Error:** hallado durante la correccion del #1: la cuenta de servicio de la
+  API (`AtlasBalanceApiSvc`) solo tenia lectura/ejecucion sobre `updates\`,
+  pero `ActualizacionService.DownloadAndPreparePackageAsync` necesita
+  descargar y extraer ahi mismo -> acceso denegado. Mismo problema en
+  `backups\`, donde `BackupService` escribe y borra backups. El problema no
+  aparecia en el informe original de la revision.
+- **Causa:** al reforzar permisos en la correccion del #1 se dejo a la API sin
+  permiso de escritura donde su propio flujo normal de actualizacion/backup
+  lo necesita.
+- **Solucion:** la API recibe permiso de modificacion sobre `updates\` (pero
+  no sobre `updates\requests`, que sigue siendo del Watchdog) y sobre
+  `backups\`. Es seguro porque el runner SYSTEM reverifica firma y contenido
+  sobre su propia copia privada antes de ejecutar nada (ver #1).
+- **Archivos:** `scripts/ServiceSecurity.ps1`, `scripts/Instalar-AtlasBalance.ps1`.
+- **Verificacion:** `scripts/ServiceSecurity.Tests.ps1` en verde.
+
+### #10 (NUEVO, BLOQUEANTE) - Causa raiz: actualizar desde V-02.09 abortaba siempre
+
+- **Error:** `Actualizar-AtlasBalance.ps1` llamaba a
+  `Assert-AtlasServiceIdentities -RejectBuiltIn`, que lanza excepcion si los
+  servicios corren con una cuenta integrada (`LocalSystem`, etc.). Toda
+  instalacion V-02.09 tiene los servicios asi, asi que cualquier intento de
+  actualizar a V-03.01 abortaba antes de tocar nada.
+- **Causa:** el script no contemplaba migrar instalaciones antiguas, solo
+  exigia que ya cumplieran el requisito nuevo.
+- **Solucion:** nueva `Repair-AtlasServiceIdentities` en `ServiceSecurity.ps1`
+  reutiliza las funciones del instalador (`Initialize-AtlasServiceAccount`,
+  `Grant-AtlasLogOnAsService`, `Protect-AtlasInstallTree`,
+  `Install-AtlasUpdateTask`, `Install-AtlasService`,
+  `Grant-AtlasServiceControl`) para migrar la instalacion a las cuentas
+  dedicadas `AtlasBalanceApiSvc` / `AtlasBalanceWatchdogSvc`. El script de
+  actualizacion atrapa el fallo de `Assert-AtlasServiceIdentities`, migra y
+  vuelve a comprobar; si la migracion falla, restaura los servicios a su
+  estado previo y aborta. Nuevos parametros opcionales
+  `-ApiServiceAccount` / `-WatchdogServiceAccount`.
+- **Archivos:** `scripts/ServiceSecurity.ps1`, `scripts/Actualizar-AtlasBalance.ps1`.
+- **Verificacion:** `scripts/ServiceSecurity.Tests.ps1` en verde; parser PS
+  5.1 OK. Pendiente prueba real de migracion en VM Windows Server.
+
+### #6 (BAJO) - Deteccion de cuentas integradas incompleta
+
+- **Error:** el regex de `Test-AtlasBuiltInServiceAccount` no cubria todas las
+  variantes de cuentas integradas de Windows y `Test-AtlasServiceIdentity` no
+  rechazaba cuentas calificadas por un dominio distinto al equipo local.
+- **Solucion:** regex ampliado a
+  `^(LocalSystem|LocalService|NetworkService|SYSTEM|NT AUTHORITY\.+|NT SERVICE\.+)$`;
+  `Test-AtlasServiceIdentity` rechaza dominios distintos de `.` o
+  `$env:COMPUTERNAME`.
+- **Archivos:** `scripts/ServiceSecurity.ps1`.
+- **Verificacion:** casos nuevos en `scripts/ServiceSecurity.Tests.ps1`.
+
+### #2 (ALTO) - Privacidad IA: modelo gratuito de OpenRouter sin control de retencion
+
+- **Error:** el modelo por defecto de OpenRouter era `openrouter/free` sin
+  ningun control administrativo, exponiendo datos financieros a proveedores
+  que pueden retener/entrenar con ellos sin que el admin lo decidiera
+  explicitamente.
+- **Solucion:** el modelo por defecto vuelve a `openrouter/auto` con bloque
+  ZDR del proveedor. Nuevo flag de configuracion `ai_allow_data_retention`
+  (campo `permite_retencion_datos`, por defecto `false`). `AskAsync` rechaza
+  modelos gratuitos (`openrouter/free`, `*:free`) cuando el flag esta
+  desactivado, con motivo `data_retention_not_allowed`. El admin no puede
+  guardar un modelo gratuito salvo que active el flag en la misma peticion.
+- **Archivos:** `Constants/AiConfiguration.cs`, `Services/AtlasAiService.cs`,
+  `Controllers/ConfiguracionController.cs`, `DTOs/IaDtos.cs`,
+  `frontend/src/pages/ConfiguracionPage.tsx`, `frontend/src/utils/aiModels.ts`,
+  `frontend/src/types/index.ts`.
+- **Verificacion:** `AtlasAiServiceTests.cs`,
+  `AtlasAiServiceThinkingModeTests.cs`, `ConfiguracionControllerTests.cs`;
+  suite backend completa 935/935.
+
+### #4 (MEDIO) - El usuario del chat podia forzar un modelo no autorizado
+
+- **Error:** el endpoint de chat aceptaba cualquier `model` que el frontend
+  enviase, sin comprobarlo contra la configuracion del admin.
+- **Solucion:** `AskAsync` solo acepta el modelo configurado por el admin, o
+  un modelo gratuito de la lista permitida cuando `permite_retencion_datos`
+  esta activo; en cualquier otro caso responde `requested_model_not_allowed`.
+  `GET /api/ia/config` expone `modelos_permitidos` y el selector de modelo del
+  chat (`AiChatPanel.tsx`) usa esa lista y se oculta cuando solo hay una
+  opcion disponible.
+- **Archivos:** `Services/AtlasAiService.cs`,
+  `frontend/src/components/ia/AiChatPanel.tsx`.
+- **Verificacion:** `AtlasAiServiceTests.cs`; `npm run lint` y `npx tsc` OK.
+
+### #5 (BAJO) - `selectedModel` del chat quedaba obsoleto tras cambiar la configuracion
+
+- **Error:** si el admin cambiaba el modelo permitido, el `selectedModel`
+  guardado en el store del chat podia seguir apuntando a un modelo ya no
+  permitido.
+- **Solucion:** `aiChatStore.ensureConfig` recalcula la seleccion con el
+  nuevo helper `resolveSelectedModelAfterConfigRefresh`.
+- **Archivos:** `frontend/src/stores/aiChatStore.ts`,
+  `frontend/src/utils/aiModels.ts`.
+- **Verificacion:** nuevo `frontend/tests/aiModels.test.ts`, agregado a
+  `test:unit` en `package.json`; 75/75 pass.
+
+### #7 (BAJO) - Mojibake en mensaje de sesion cerrada
+
+- **Error:** `AuthController.cs:125` mostraba el mensaje de logout con
+  codificacion incorrecta.
+- **Solucion:** corregido a "Sesión cerrada".
+- **Archivos:** `Controllers/AuthController.cs`.
+- **Verificacion:** revision visual del literal; suite backend 935/935.
+
+### #8 (INFO) - Renderizado muerto de enlaces del asistente
+
+- **Error:** quedaba codigo muerto para renderizar `enlaces`/`AssistantLink`
+  en el chat IA, sin uso real.
+- **Solucion:** eliminado de `AiChatPanel.tsx`, `aiChatStore.ts` y
+  `types/index.ts`.
+- **Archivos:** `frontend/src/components/ia/AiChatPanel.tsx`,
+  `frontend/src/stores/aiChatStore.ts`, `frontend/src/types/index.ts`.
+- **Verificacion:** `npm run lint`, `npx tsc`, `vite build --outDir .dist-verify` OK.
+
+### Infra - cache de build obsoleta bloqueada por antivirus
+
+- **Sintoma:** `dotnet build`/`dotnet test` fallaban con errores de
+  `AssemblyInfo` duplicado.
+- **Causa:** `backend/Directory.Build.props` no excluia
+  `**/tools/dotnet-build/**`, una carpeta de cache de build antigua bloqueada
+  por el antivirus, de los "default items".
+- **Solucion:** exclusion anadida en `Directory.Build.props`.
+- **Verificacion:** `dotnet test tests/AtlasBalance.API.Tests` completo
+  (incluye Postgres/Testcontainers) 935/935, 0 skipped.
+
+### Verificacion general del grupo
+
+- Backend: `dotnet test tests/AtlasBalance.API.Tests` (suite completa,
+  Postgres/Testcontainers incluido) -> 935/935, 0 skipped. Nuevos
+  `ElevatedUpdateRunnerTests` (5) prueban que un `PackageRoot` manipulado
+  nunca se ejecuta.
+- Frontend: `npm run lint` OK; `npx tsc` OK; `test:unit` compilado a
+  `outDir` alternativo (el por defecto estaba bloqueado por AV) -> 75/75
+  pass; `vite build --outDir .dist-verify` OK (`dist` por defecto bloqueado
+  por AV).
+- Scripts: parser PowerShell 5.1 OK en los 5 scripts tocados; los 6
+  `scripts/*.Tests.ps1` pasan.
+- **Pendiente (no verificado en esta sesion):** prueba real de actualizacion
+  en VM Windows Server: instalar V-02.09, actualizar a V-03.01 tanto con
+  `Actualizar Atlas Balance.cmd` como Administrador como desde el propio
+  Watchdog viejo via actualizacion en la app; comprobar que los servicios
+  quedan como `AtlasBalanceApiSvc`/`AtlasBalanceWatchdogSvc`, que
+  `icacls config\update-runner` no tiene ACE de cuenta de servicio, y que una
+  segunda actualizacion en la app (V-03.01 -> siguiente) pasa por la tarea
+  programada `AtlasBalance.Update`. Queda como limitacion conocida el flujo
+  de actualizacion interno (`WatchdogSettings:UseExternalPackageUpdater=false`,
+  no usado por defecto en Windows), que fallaria porque el Watchdog solo
+  tiene RX sobre `api`/`watchdog`/`scripts`.
+
 ## 2026-09-21 - V-03.01 - Animaciones AiFace bloqueadas por movimiento reducido (ENTORNO)
 
 - **Síntoma:** las caras aparecen estáticas en Chrome aunque el estado sea
