@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { AppSelect } from '@/components/common/AppSelect';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
+import { QUERY_STALE_TIMES } from '@/services/queryClient';
+import { queryKeys } from '@/queries/queryKeys';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificacionesAdminStore } from '@/stores/notificacionesAdminStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
@@ -31,6 +35,8 @@ function formatTipoExportacion(value: string) {
 
 export default function ExportacionesPage() {
   const usuario = useAuthStore((state) => state.usuario);
+  const usuarioId = usuario?.id ?? '';
+  const invalidate = useInvalidateAfterMutation();
   const markExportacionesRead = useNotificacionesAdminStore((state) => state.markExportacionesRead);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [rows, setRows] = useState<ExportacionItem[]>([]);
@@ -48,9 +54,13 @@ export default function ExportacionesPage() {
 
   const totalRowsText = useMemo(() => `${rows.length} exportaciones en esta página`, [rows.length]);
 
-  const loadCuentas = async () => {
-    try {
-      const { data } = await api.get<PaginatedResponse<Cuenta>>('/cuentas', {
+  // V-03.01 (#8): cuentas (para el selector) y el listado de exportaciones
+  // migran de api.get en efectos a React Query, mismo patron que
+  // DashboardPage.tsx, con bridge a estado local.
+  const cuentasQuery = useQuery({
+    queryKey: queryKeys.cuentas.list({ usuarioId, page: 1, pageSize: 200, paisId: selectedPaisId || null, sortBy: 'nombre', sortDir: 'asc' }),
+    queryFn: () =>
+      api.get<PaginatedResponse<Cuenta>>('/cuentas', {
         params: {
           page: 1,
           pageSize: 200,
@@ -58,18 +68,15 @@ export default function ExportacionesPage() {
           sortBy: 'nombre',
           sortDir: 'asc',
         },
-      });
-      setCuentas(data.data ?? []);
-    } catch {
-      // Keep page functional even if this fails.
-    }
-  };
+      }).then((res) => res.data),
+    enabled: Boolean(usuarioId),
+    staleTime: QUERY_STALE_TIMES.LISTADO_PAGINADO_MS,
+  });
 
-  const loadRows = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await api.get<PaginatedResponse<ExportacionItem>>('/exportaciones', {
+  const rowsQuery = useQuery<PaginatedResponse<ExportacionItem>>({
+    queryKey: queryKeys.exportaciones.list({ usuarioId, page, pageSize, cuentaId: selectedCuentaId || null, paisId: selectedPaisId || null }),
+    queryFn: ({ signal }) =>
+      api.get<PaginatedResponse<ExportacionItem>>('/exportaciones', {
         params: {
           page,
           pageSize,
@@ -78,17 +85,48 @@ export default function ExportacionesPage() {
           sortBy: 'fecha_exportacion',
           sortDir: 'desc',
         },
-      });
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(usuarioId),
+    placeholderData: keepPreviousData,
+    staleTime: QUERY_STALE_TIMES.LISTADO_PAGINADO_MS,
+  });
+
+  useEffect(() => {
+    if (cuentasQuery.data) {
+      setCuentas(cuentasQuery.data.data ?? []);
+    }
+    // El listado original ignoraba errores en silencio (catch { // no-op }).
+  }, [cuentasQuery.data]);
+
+  useEffect(() => {
+    const data = rowsQuery.data;
+    if (data) {
       setRows(data.data ?? []);
       setTotalPages(Math.max(1, data.total_pages ?? 1));
-    } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar las exportaciones.'));
+    } else if (!rowsQuery.isLoading && !rowsQuery.error) {
       setRows([]);
       setTotalPages(1);
-    } finally {
+    }
+  }, [rowsQuery.data, rowsQuery.isLoading, rowsQuery.error]);
+
+  useEffect(() => {
+    if (rowsQuery.error) {
+      setError(extractErrorMessage(rowsQuery.error, 'No se pudieron cargar las exportaciones.'));
+      setRows([]);
+      setTotalPages(1);
+    } else {
+      setError(null);
+    }
+  }, [rowsQuery.error]);
+
+  useEffect(() => {
+    if (rowsQuery.isLoading) {
+      setLoading(true);
+    } else if (!rowsQuery.isFetching) {
       setLoading(false);
     }
-  };
+  }, [rowsQuery.isLoading, rowsQuery.isFetching]);
 
   const createManualExport = async () => {
     if (!canCreateManualExport) {
@@ -104,7 +142,7 @@ export default function ExportacionesPage() {
     setError(null);
     try {
       await api.post('/exportaciones/manual', { cuenta_id: selectedCuentaId });
-      await loadRows();
+      await invalidate('exportacion');
       if (usuario?.rol === 'ADMIN') {
         await markExportacionesRead();
       }
@@ -138,16 +176,6 @@ export default function ExportacionesPage() {
       setError(extractErrorMessage(err, 'No se pudo descargar el archivo.'));
     }
   };
-
-  useEffect(() => {
-    void loadCuentas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por pais global
-  }, [selectedPaisId]);
-
-  useEffect(() => {
-    void loadRows();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por paginación/filtro cuenta
-  }, [page, pageSize, selectedCuentaId, selectedPaisId]);
 
   useEffect(() => {
     setSelectedCuentaId('');

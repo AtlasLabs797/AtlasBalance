@@ -19,6 +19,16 @@ test('clearQueryClient vacia la cache del cliente singleton compartido', () => {
   assert.equal(queryClient.getQueryData(['demo']), undefined);
 });
 
+test('clearQueryClient elimina datos aunque la clave pertenezca a otro usuario', () => {
+  queryClient.setQueryData(['dashboard', 'principal', { usuarioId: 'usuario-a' }], { saldo: 123 });
+  queryClient.setQueryData(['dashboard', 'principal', { usuarioId: 'usuario-b' }], { saldo: 456 });
+
+  clearQueryClient();
+
+  assert.equal(queryClient.getQueryData(['dashboard', 'principal', { usuarioId: 'usuario-a' }]), undefined);
+  assert.equal(queryClient.getQueryData(['dashboard', 'principal', { usuarioId: 'usuario-b' }]), undefined);
+});
+
 test('QUERY_STALE_TIMES expone valores esperados para dashboard y catalogos', () => {
   assert.equal(QUERY_STALE_TIMES.DASHBOARD_MS, 15_000);
   assert.equal(QUERY_STALE_TIMES.ALERTAS_MS, 10_000);

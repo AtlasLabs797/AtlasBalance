@@ -24,7 +24,7 @@ import { extractErrorMessage } from '@/utils/errorMessage';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
 import { queryKeys } from '@/queries/queryKeys';
 
-const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '9m', '12m', '18m', '24m'];
+const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '12m', '24m'];
 
 function parsePeriodo(value: string | null): PeriodoDashboard {
   return PERIODOS.includes(value as PeriodoDashboard) ? (value as PeriodoDashboard) : '1m';

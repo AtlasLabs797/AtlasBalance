@@ -8,6 +8,7 @@ public sealed class ExtractoListItemResponse
     public Guid Id { get; set; }
     public Guid CuentaId { get; set; }
     public string CuentaNombre { get; set; } = string.Empty;
+    public string? BancoNombre { get; set; }
     public Guid TitularId { get; set; }
     public string TitularNombre { get; set; } = string.Empty;
     public Guid? PaisId { get; set; }

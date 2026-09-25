@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -6,6 +7,9 @@ import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { IntegrationAuditTable } from '@/components/auditoria/IntegrationAuditTable';
+import { QUERY_STALE_TIMES } from '@/services/queryClient';
+import { queryKeys } from '@/queries/queryKeys';
+import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { AuditoriaFiltros, AuditoriaListItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -45,6 +49,7 @@ function isAmountColumn(columna: string | null): boolean {
 }
 
 export default function AuditoriaPage() {
+  const authUsuarioId = useAuthStore((state) => state.usuario?.id ?? '');
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [tab, setTab] = useState<AuditTab>('sistema');
   const [rows, setRows] = useState<AuditoriaListItem[]>([]);
@@ -66,25 +71,34 @@ export default function AuditoriaPage() {
 
   const totalRowsText = useMemo(() => `${rows.length} registros en esta página`, [rows.length]);
 
-  const fetchFiltros = async () => {
-    setLoadingFiltros(true);
-    try {
-      const { data } = await api.get<AuditoriaFiltros>('/auditoria/filtros', {
+  // V-03.01 (#8): filtros y listado migran de api.get en efectos a React
+  // Query (mismo patron que DashboardPage.tsx), con bridge a estado local
+  // para no tocar el resto del componente (tabla, expandido, exportacion).
+  const filtrosQuery = useQuery({
+    queryKey: queryKeys.auditoria.filtros({ usuarioId: authUsuarioId, paisId: selectedPaisId || null }),
+    queryFn: () =>
+      api.get<AuditoriaFiltros>('/auditoria/filtros', {
         params: { paisId: selectedPaisId || undefined },
-      });
-      setFiltros(data);
-    } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar filtros de auditoría'));
-    } finally {
-      setLoadingFiltros(false);
-    }
-  };
+      }).then((res) => res.data),
+    enabled: Boolean(authUsuarioId),
+    staleTime: QUERY_STALE_TIMES.AUDITORIA_MS,
+  });
 
-  const fetchRows = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await api.get<PaginatedResponse<AuditoriaListItem>>('/auditoria', {
+  const rowsQuery = useQuery<PaginatedResponse<AuditoriaListItem>>({
+    queryKey: queryKeys.auditoria.list({
+      usuarioId: authUsuarioId,
+      page,
+      pageSize,
+      usuarioId2: usuarioId || null,
+      cuentaId: cuentaId || null,
+      paisId: selectedPaisId || null,
+      tipoAccion: tipoAccion || null,
+      fechaDesde: fechaDesde || null,
+      fechaHasta: fechaHasta || null,
+      tab,
+    }),
+    queryFn: ({ signal }) =>
+      api.get<PaginatedResponse<AuditoriaListItem>>('/auditoria', {
         params: {
           page,
           pageSize,
@@ -95,30 +109,58 @@ export default function AuditoriaPage() {
           fechaDesde: fechaDesde || undefined,
           fechaHasta: fechaHasta || undefined,
         },
-      });
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(authUsuarioId) && tab === 'sistema',
+    placeholderData: keepPreviousData,
+    staleTime: QUERY_STALE_TIMES.AUDITORIA_MS,
+  });
+
+  useEffect(() => {
+    if (filtrosQuery.data) {
+      setFiltros(filtrosQuery.data);
+    }
+  }, [filtrosQuery.data]);
+
+  useEffect(() => {
+    if (filtrosQuery.error) {
+      setError(extractErrorMessage(filtrosQuery.error, 'No se pudieron cargar filtros de auditoría'));
+    }
+  }, [filtrosQuery.error]);
+
+  useEffect(() => {
+    setLoadingFiltros(filtrosQuery.isLoading);
+  }, [filtrosQuery.isLoading]);
+
+  useEffect(() => {
+    const data = rowsQuery.data;
+    if (data) {
       setRows(data.data ?? []);
       setTotalPages(Math.max(1, data.total_pages ?? 1));
       setExpandedRows({});
-    } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar registros de auditoría'));
+    } else if (!rowsQuery.isLoading && !rowsQuery.error && tab === 'sistema') {
       setRows([]);
       setTotalPages(1);
-    } finally {
+    }
+  }, [rowsQuery.data, rowsQuery.isLoading, rowsQuery.error, tab]);
+
+  useEffect(() => {
+    if (rowsQuery.error) {
+      setError(extractErrorMessage(rowsQuery.error, 'No se pudieron cargar registros de auditoría'));
+      setRows([]);
+      setTotalPages(1);
+    } else if (tab === 'sistema') {
+      setError(null);
+    }
+  }, [rowsQuery.error, tab]);
+
+  useEffect(() => {
+    if (rowsQuery.isLoading) {
+      setLoading(true);
+    } else if (!rowsQuery.isFetching) {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void fetchFiltros();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por pais global
-  }, [selectedPaisId]);
-
-  useEffect(() => {
-    if (tab === 'sistema') {
-      void fetchRows();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- filtros del listado controlan la recarga
-  }, [tab, page, pageSize, usuarioId, cuentaId, selectedPaisId, tipoAccion, fechaDesde, fechaHasta]);
+  }, [rowsQuery.isLoading, rowsQuery.isFetching]);
 
   useEffect(() => {
     setCuentaId('');

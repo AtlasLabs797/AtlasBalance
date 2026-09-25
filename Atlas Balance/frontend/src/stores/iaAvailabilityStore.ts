@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import api from '@/services/api';
 import type { IaConfig } from '@/types';
+import { getSessionGeneration, isSessionGenerationCurrent } from '@/utils/sessionScope';
 
 interface IaAvailabilityState {
   available: boolean;
@@ -25,14 +26,17 @@ export const useIaAvailabilityStore = create<IaAvailabilityState>((set, get) => 
     }
 
     set({ checking: true });
+    const generation = getSessionGeneration();
     try {
       const { data } = await api.get<IaConfig>('/ia/config');
+      if (!isSessionGenerationCurrent(generation)) return;
       set({
         available: Boolean(data.habilitada && data.usuario_puede_usar),
         checking: false,
         checkedAt: now,
       });
     } catch {
+      if (!isSessionGenerationCurrent(generation)) return;
       set({
         available: false,
         checking: false,

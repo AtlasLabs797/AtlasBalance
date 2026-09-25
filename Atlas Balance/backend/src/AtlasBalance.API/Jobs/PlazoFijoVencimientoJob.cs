@@ -15,6 +15,8 @@ public sealed class PlazoFijoVencimientoJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         var cambios = await _plazoFijoService.ProcesarVencimientosAsync(hoy, CancellationToken.None);
         _logger.LogInformation("Job de plazos fijos completado. cambios={Cambios}", cambios);

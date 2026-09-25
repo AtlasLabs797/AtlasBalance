@@ -122,7 +122,7 @@ public sealed class AuthController : ControllerBase
                 cancellationToken);
         }
 
-        return Ok(new { message = "Sesi�n cerrada" });
+        return Ok(new { message = "Sesión cerrada" });
     }
 
     [HttpGet("mfa/trusted-devices")]

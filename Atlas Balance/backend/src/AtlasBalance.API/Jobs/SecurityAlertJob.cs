@@ -21,6 +21,8 @@ public sealed class SecurityAlertJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var alertas = await _alertService.EvaluarYNotificarAsync(CancellationToken.None);
 
         if (alertas.Count == 0)

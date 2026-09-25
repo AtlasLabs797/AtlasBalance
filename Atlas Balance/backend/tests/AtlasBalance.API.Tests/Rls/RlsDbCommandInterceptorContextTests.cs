@@ -22,18 +22,66 @@ public sealed class RlsDbCommandInterceptorContextTests
     private static RlsDbCommandInterceptor CreateInterceptor(IHttpContextAccessor accessor) =>
         new(accessor, new RlsContextSecret(Secret));
 
+    // V-03.01 (#4): sin HttpContext y sin SystemContextScope activo, el
+    // interceptor ya no debe fallar abierto (system/admin=true). Cualquier
+    // codigo que pierda el HttpContext (Task.Run, un IHostedService nuevo, un
+    // job mal escrito) debe caer en un contexto sin privilegios, no heredar
+    // bypass total de RLS.
     [Fact]
-    public void BuildContext_WithoutHttpContext_ShouldReturnSystem()
+    public void BuildContext_WithoutHttpContext_AndWithoutSystemScope_ShouldReturnAnonymous()
     {
         var accessor = new HttpContextAccessor { HttpContext = null };
         var interceptor = CreateInterceptor(accessor);
 
         var context = interceptor.BuildContext();
 
-        context.AuthMode.Should().Be("system");
-        context.IsSystem.Should().BeTrue();
-        context.IsAdmin.Should().BeTrue();
-        context.RequestScope.Should().Be("system");
+        context.AuthMode.Should().Be("anonymous");
+        context.IsSystem.Should().BeFalse();
+        context.IsAdmin.Should().BeFalse();
+        context.RequestScope.Should().Be("anonymous");
+    }
+
+    // La escotilla explicita sigue existiendo para el trabajo de servidor
+    // legitimo (jobs de Hangfire, seed/migraciones en el arranque, la sonda de
+    // salud funcional): entrar en el scope si eleva a system/admin.
+    [Fact]
+    public void BuildContext_WithoutHttpContext_AndWithSystemScopeActive_ShouldReturnSystem()
+    {
+        var accessor = new HttpContextAccessor { HttpContext = null };
+        var interceptor = CreateInterceptor(accessor);
+
+        using (RlsDbCommandInterceptor.SystemContextScope.Enter())
+        {
+            var context = interceptor.BuildContext();
+
+            context.AuthMode.Should().Be("system");
+            context.IsSystem.Should().BeTrue();
+            context.IsAdmin.Should().BeTrue();
+            context.RequestScope.Should().Be("system");
+        }
+    }
+
+    // El scope debe poder anidarse sin que el Dispose interior desactive el
+    // exterior (contador por profundidad, no un flag booleano).
+    [Fact]
+    public void SystemContextScope_ShouldBeNestable()
+    {
+        var accessor = new HttpContextAccessor { HttpContext = null };
+        var interceptor = CreateInterceptor(accessor);
+
+        using (RlsDbCommandInterceptor.SystemContextScope.Enter())
+        {
+            using (RlsDbCommandInterceptor.SystemContextScope.Enter())
+            {
+                interceptor.BuildContext().IsSystem.Should().BeTrue();
+            }
+
+            RlsDbCommandInterceptor.SystemContextScope.IsActive.Should().BeTrue();
+            interceptor.BuildContext().IsSystem.Should().BeTrue();
+        }
+
+        RlsDbCommandInterceptor.SystemContextScope.IsActive.Should().BeFalse();
+        interceptor.BuildContext().IsSystem.Should().BeFalse();
     }
 
     [Fact]

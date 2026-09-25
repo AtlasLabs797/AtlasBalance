@@ -7,20 +7,25 @@
 param(
     [int]$TimeoutSeconds = 60,
     [switch]$NoBuild,
-    [switch]$KeepExisting
+    [switch]$KeepExisting,
+    [int]$ApiPort = 5002
 )
 
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path $PSScriptRoot -Parent
+$workspaceRoot = Split-Path $root -Parent
 $backendPath = Join-Path $root "backend\src\AtlasBalance.API"
 $projectPath = Join-Path $backendPath "AtlasBalance.API.csproj"
-$dllPath = Join-Path $backendPath "bin\Debug\net8.0\AtlasBalance.API.dll"
+$localBuild = Join-Path $workspaceRoot "tools\dotnet-build\api"
+$dllPath = Join-Path $localBuild "bin\Debug\net8.0\AtlasBalance.API.dll"
+$localBuildObjPath = ((Join-Path $localBuild "obj") -replace "\\", "/") + "/"
+$localBuildBinPath = ((Join-Path $localBuild "bin") -replace "\\", "/") + "/"
 $logsPath = Join-Path $root "logs\dev"
 $pidPath = Join-Path $logsPath "atlas-api-dev.pid"
 $stdoutPath = Join-Path $logsPath "atlas-api-dev.out.log"
 $stderrPath = Join-Path $logsPath "atlas-api-dev.err.log"
-$healthUrl = "http://localhost:5000/api/health"
+$healthUrl = "http://localhost:$ApiPort/api/health"
 
 function Repair-ProcessEnvironment {
     $proxyNames = @(
@@ -84,7 +89,7 @@ function Stop-ExistingApi {
         }
     }
 
-    $candidatePids += Get-ListeningPids -Port 5000
+    $candidatePids += Get-ListeningPids -Port $ApiPort
     $candidatePids = @($candidatePids | Select-Object -Unique)
 
     foreach ($processId in $candidatePids) {
@@ -106,7 +111,7 @@ function Stop-ExistingApi {
             ($process.ProcessName -eq "dotnet" -and (Test-Path $pidPath) -and ((Get-Content -LiteralPath $pidPath -ErrorAction SilentlyContinue | Select-Object -First 1) -eq [string]$processId))
 
         if (-not $isAtlasApi) {
-            throw "Port 5000 is already in use by PID $processId ($($process.ProcessName)). Refusing to kill an unrelated process."
+            throw "Port $ApiPort is already in use by PID $processId ($($process.ProcessName)). Refusing to kill an unrelated process."
         }
 
         Write-Host "[backend] Stopping old API PID $processId..." -ForegroundColor Yellow
@@ -125,6 +130,7 @@ function Test-Health {
 }
 
 Repair-ProcessEnvironment
+[Environment]::SetEnvironmentVariable("ASPNETCORE_URLS", "http://127.0.0.1:$ApiPort", "Process")
 New-Item -ItemType Directory -Force -Path $logsPath | Out-Null
 
 if (-not (Test-Path $projectPath)) {
@@ -142,7 +148,13 @@ if (-not $NoBuild) {
     Write-Host "[backend] Building API..." -ForegroundColor Cyan
     Push-Location $backendPath
     try {
-        & dotnet build $projectPath -p:UseAppHost=false --no-restore
+        New-Item -ItemType Directory -Force -Path $localBuild | Out-Null
+        & dotnet restore $projectPath "-p:BaseIntermediateOutputPath=$localBuildObjPath"
+        if ($LASTEXITCODE -ne 0) {
+            throw "dotnet restore failed with exit code $LASTEXITCODE."
+        }
+
+        & dotnet build $projectPath --no-restore -p:UseAppHost=false -p:GenerateAssemblyInfo=false -p:GenerateTargetFrameworkAttribute=false "-p:BaseIntermediateOutputPath=$localBuildObjPath" "-p:BaseOutputPath=$localBuildBinPath"
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet build failed with exit code $LASTEXITCODE."
         }
@@ -159,7 +171,7 @@ Remove-Item -LiteralPath $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
 
 Write-Host "[backend] Starting API..." -ForegroundColor Cyan
 $process = Start-Process -FilePath "dotnet" `
-    -ArgumentList @("bin\Debug\net8.0\AtlasBalance.API.dll") `
+    -ArgumentList @("`"$dllPath`"") `
     -WorkingDirectory $backendPath `
     -WindowStyle Hidden `
     -RedirectStandardOutput $stdoutPath `

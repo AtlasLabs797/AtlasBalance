@@ -486,7 +486,7 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = "Email, nombre y password son obligatorios" });
         }
 
-        if (!SecurityPolicy.TryValidatePassword(request.Password, out var passwordError))
+        if (!SecurityPolicy.TryValidatePassword(request.Password, out var passwordError, request.Email, request.NombreCompleto))
         {
             return BadRequest(new { error = passwordError });
         }
@@ -682,7 +682,7 @@ public sealed class UsuariosController : ControllerBase
         var revokedRefreshTokens = 0;
         if (!string.IsNullOrWhiteSpace(request.PasswordNueva))
         {
-            if (!SecurityPolicy.TryValidatePassword(request.PasswordNueva, out var resetPasswordError))
+            if (!SecurityPolicy.TryValidatePassword(request.PasswordNueva, out var resetPasswordError, usuario.Email, usuario.NombreCompleto))
             {
                 return BadRequest(new { error = resetPasswordError });
             }

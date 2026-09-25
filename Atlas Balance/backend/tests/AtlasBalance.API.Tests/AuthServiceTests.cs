@@ -959,6 +959,33 @@ public class AuthServiceTests
     }
 
     [Fact]
+    public async Task RefreshToken_Should_Keep_A_Replacement_Usable_After_A_Coordinated_Rotation()
+    {
+        await using var db = BuildDbContext();
+        var user = BuildActiveUser("coordinated-refresh@test.local");
+        db.Usuarios.Add(user);
+        await db.SaveChangesAsync();
+
+        var sut = new AuthService(db, BuildConfig(), TestAuditService.Create(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions(), BuildRateLimitingOptions());
+        var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
+        var securityStamp = (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp;
+
+        // La coordinacion entre pestañas evita que dos requests presenten el
+        // mismo token. El backend sigue aceptando la cadena normal: cada
+        // respuesta entrega el unico token que puede usarse a continuacion.
+        var firstRotation = await sut.RefreshTokenAsync(login.RefreshToken!, "127.0.0.1", CancellationToken.None);
+        var secondRotation = await sut.RefreshTokenAsync(firstRotation.RefreshToken!, "127.0.0.1", CancellationToken.None);
+
+        secondRotation.AccessToken.Should().NotBeNullOrWhiteSpace();
+        secondRotation.RefreshToken.Should().NotBeNullOrWhiteSpace();
+        (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp.Should().Be(securityStamp);
+
+        var secondHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(secondRotation.RefreshToken!))).ToLowerInvariant();
+        (await db.RefreshTokens.SingleAsync(x => x.TokenHash == secondHash)).RevocadoEn.Should().BeNull();
+        (await db.Auditorias.AnyAsync(x => x.TipoAccion == AuditActions.RefreshTokenReuseDetected)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Logout_Should_Revoke_Refresh_Token_And_Return_UserId()
     {
         await using var db = BuildDbContext();

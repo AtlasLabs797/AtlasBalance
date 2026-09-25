@@ -1,9 +1,11 @@
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
+using AtlasBalance.API.RateLimiting;
 using AtlasBalance.API.Services;
 using AtlasBalance.API.Services.IaPlanner;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Controllers;
@@ -82,6 +84,10 @@ public sealed class IaController : ControllerBase
         }
     }
 
+    // V-03.01 (hallazgo #2): cierra la carrera de EnsureRequestLimitsAsync, que cuenta usos
+    // ya registrados en BD pero registra el uso DESPUES de que el proveedor responde. Sin esto,
+    // N peticiones concurrentes del mismo usuario pasaban todas el chequeo de limites.
+    [EnableRateLimiting(RateLimitingSetup.PolicyNames.IaChat)]
     [HttpPost("chat")]
     public async Task<IActionResult> Chat([FromBody] IaChatRequest request, CancellationToken cancellationToken)
     {

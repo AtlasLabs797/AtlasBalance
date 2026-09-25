@@ -211,20 +211,52 @@ public sealed class AtlasAiService : IAtlasAiService
             throw new IaConfigurationException("Proveedor de IA no soportado.");
         }
 
+        var configuredModel = state.Model;
         state = ApplyRequestedModel(state, requestedModel);
-        if (!string.IsNullOrWhiteSpace(requestedModel) && !AiConfiguration.IsAllowedModel(state.Provider, state.Model))
+        var requestedModelTrimmed = requestedModel?.Trim();
+        if (!string.IsNullOrWhiteSpace(requestedModelTrimmed))
         {
-            await LogBlockedAsync(scope.UserId, "requested_model_invalid", state, ipAddress, cancellationToken, new
+            if (!AiConfiguration.IsAllowedModel(state.Provider, state.Model))
             {
-                requested_model = requestedModel?.Trim()
-            });
-            throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
+                await LogBlockedAsync(scope.UserId, "requested_model_invalid", state, ipAddress, cancellationToken, new
+                {
+                    requested_model = requestedModelTrimmed
+                });
+                throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
+            }
+
+            // P4 V-03.01: un usuario solo puede pedir el modelo que el admin configuro,
+            // o un modelo gratuito de OpenRouter (allowlisted) cuando el admin activo
+            // ai_allow_data_retention. openrouter/auto y el resto de modelos de pago
+            // solo se usan si son el modelo configurado por el admin.
+            var isConfiguredModel = string.Equals(state.Model, configuredModel, StringComparison.Ordinal);
+            var isAllowedFreeOverride = state.Provider == "OPENROUTER" &&
+                                        AiConfiguration.IsOpenRouterFreeModel(state.Model) &&
+                                        state.AllowDataRetention;
+            if (!isConfiguredModel && !isAllowedFreeOverride)
+            {
+                await LogBlockedAsync(scope.UserId, "requested_model_not_allowed", state, ipAddress, cancellationToken, new
+                {
+                    requested_model = requestedModelTrimmed,
+                    configured_model = configuredModel
+                });
+                throw new IaConfigurationException("No puedes usar ese modelo. Pide a un administrador que lo habilite en Configuracion > IA.");
+            }
         }
 
         if (!AiConfiguration.IsAllowedModel(state.Provider, state.Model))
         {
             await LogBlockedAsync(scope.UserId, "model_invalid", state, ipAddress, cancellationToken);
             throw new IaConfigurationException("Modelo de IA invalido para el proveedor seleccionado.");
+        }
+
+        // P2 V-03.01: los modelos gratuitos de OpenRouter no garantizan retencion cero
+        // de datos financieros (fechas, importes, saldos, conceptos). Solo se usan si
+        // el admin lo autorizo explicitamente.
+        if (state.Provider == "OPENROUTER" && AiConfiguration.IsOpenRouterFreeModel(state.Model) && !state.AllowDataRetention)
+        {
+            await LogBlockedAsync(scope.UserId, "data_retention_not_allowed", state, ipAddress, cancellationToken);
+            throw new IaConfigurationException("Los modelos gratuitos pueden conservar tus datos. Un administrador debe autorizarlo en Configuracion > IA.");
         }
 
         // V-02.09 (Fase UI): modo de pensamiento por provider. Si el valor
@@ -438,7 +470,8 @@ public sealed class AtlasAiService : IAtlasAiService
                     runtime_model = selectedRuntimeModel,
                     http_client = providerCall.HttpClientName,
                     used_http_fallback = providerCall.UsedFallback,
-                    zero_data_retention = state.Provider == "OPENROUTER",
+                    zero_data_retention = state.Provider == "OPENROUTER" &&
+                                          !AiConfiguration.IsOpenRouterFreeModel(selectedRuntimeModel),
                     pais_id = paisId,
                     movimientos_analizados = context.MovimientosAnalizados,
                     pregunta_caracteres = prompt.Length,
@@ -683,16 +716,25 @@ public sealed class AtlasAiService : IAtlasAiService
                 AiConfiguration.ThinkingModeHigh => new { effort = "high" },
                 _ => new { exclude = true }
             };
-            request.Content = JsonContent.Create(new
+            // Los modelos gratuitos y `openrouter/free` no garantizan endpoints
+            // compatibles con ZDR/data_collection=deny. Si enviamos esas
+            // restricciones, OpenRouter puede responder 404 aunque la clave
+            // sea válida. La seudonimización DLP sigue activa antes de salir.
+            var payload = new Dictionary<string, object?>
             {
-                model = runtimeModel,
-                provider = OpenRouterPrivacyProvider(),
-                reasoning = reasoningPayload,
-                temperature = 0.1,
-                max_tokens = state.MaxOutputTokens,
-                stream = false,
-                messages
-            });
+                ["model"] = runtimeModel,
+                ["reasoning"] = reasoningPayload,
+                ["temperature"] = 0.1,
+                ["max_tokens"] = state.MaxOutputTokens,
+                ["stream"] = false,
+                ["messages"] = messages
+            };
+            if (!AiConfiguration.IsOpenRouterFreeModel(runtimeModel))
+            {
+                payload["provider"] = OpenRouterPrivacyProvider();
+            }
+
+            request.Content = JsonContent.Create(payload);
             return request;
         }
 
@@ -827,6 +869,11 @@ public sealed class AtlasAiService : IAtlasAiService
             throw new IaLimitExceededException("Limite diario de consultas de IA alcanzado.");
         }
 
+        // V-03.01: este contador sigue teniendo una carrera entre usuarios DISTINTOS (se lee antes
+        // de que el uso se registre en BD, igual que los contadores de arriba). El limitador de
+        // concurrencia de RateLimitingSetup.PolicyNames.IaChat solo cierra la carrera por usuario.
+        // Con 4-8 usuarios en red local el margen es aceptable; no se cierra aqui para no anadir
+        // un lock global que serializaria todas las consultas de IA de la aplicacion.
         var globalDayCount = await CountUsageSinceAsync(null, dayStart, cancellationToken);
         if (globalDayCount >= state.GlobalRequestsPerDay)
         {
@@ -2264,7 +2311,8 @@ public sealed class AtlasAiService : IAtlasAiService
         var openRouterConfigured = state.Provider == "OPENROUTER" &&
                                    state.HasOpenRouterKey &&
                                    !string.IsNullOrWhiteSpace(state.Model) &&
-                                   AiConfiguration.IsAllowedOpenRouterModel(state.Model);
+                                   AiConfiguration.IsAllowedOpenRouterModel(state.Model) &&
+                                   (!AiConfiguration.IsOpenRouterFreeModel(state.Model) || state.AllowDataRetention);
         var openAiConfigured = state.Provider == "OPENAI" &&
                                state.HasOpenAiKey &&
                                !string.IsNullOrWhiteSpace(state.Model) &&
@@ -2285,6 +2333,8 @@ public sealed class AtlasAiService : IAtlasAiService
             MiniMaxApiKeyConfigurada = state.HasMiniMaxKey,
             Configurada = state.Enabled && userCanUse && (openRouterConfigured || openAiConfigured || miniMaxConfigured),
             MensajeEstado = BuildStatusMessage(state, userCanUse),
+            PermiteRetencionDatos = state.AllowDataRetention,
+            ModelosPermitidos = BuildAllowedModelsForUser(state),
             RequestsPorMinuto = state.RequestsPerMinute,
             RequestsPorHora = state.RequestsPerHour,
             RequestsPorDia = state.RequestsPerDay,
@@ -2308,6 +2358,26 @@ public sealed class AtlasAiService : IAtlasAiService
                 .Select(value => new IaThinkingModeOption { Value = value, Label = HumanizeThinkingMode(value) })
                 .ToArray()
         };
+    }
+
+    // P4 V-03.01: catalogo de modelos que el usuario actual puede elegir en el
+    // selector del chat: el configurado por el admin, mas los modelos gratuitos
+    // de OpenRouter cuando ai_allow_data_retention esta activo (misma regla que
+    // aplica AskAsync al validar el modelo pedido).
+    private static IReadOnlyList<string> BuildAllowedModelsForUser(IaGovernanceState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.Model))
+        {
+            return Array.Empty<string>();
+        }
+
+        var models = new List<string> { state.Model };
+        if (state.Provider == "OPENROUTER" && state.AllowDataRetention)
+        {
+            models.AddRange(AiConfiguration.OpenRouterModels.Where(AiConfiguration.IsOpenRouterFreeModel));
+        }
+
+        return models.Distinct(StringComparer.Ordinal).ToArray();
     }
 
     private static string HumanizeThinkingMode(string value)
@@ -2365,6 +2435,11 @@ public sealed class AtlasAiService : IAtlasAiService
             return "El modelo seleccionado no es valido para el proveedor.";
         }
 
+        if (state.Provider == "OPENROUTER" && AiConfiguration.IsOpenRouterFreeModel(state.Model) && !state.AllowDataRetention)
+        {
+            return "El modelo gratuito guardado requiere que un administrador active \"Permitir modelos gratuitos\" en Configuracion > IA.";
+        }
+
         return "IA configurada.";
     }
 
@@ -2403,7 +2478,8 @@ public sealed class AtlasAiService : IAtlasAiService
             MaxOutputTokens: Math.Clamp(ParseInt(GetValue(config, "ai_max_output_tokens"), AiConfigurationDefaults.MaxOutputTokens), 64, 4000),
             MaxContextRows: Math.Clamp(ParseInt(GetValue(config, "ai_max_context_rows"), AiConfigurationDefaults.MaxContextRows), 0, 500),
             UsageMonthCostEur: storedMonthKey == monthKey ? Math.Max(0, ParseDecimal(GetValue(config, "ai_usage_month_cost_eur"), 0m)) : 0m,
-            UsageTotalCostEur: Math.Max(0, ParseDecimal(GetValue(config, "ai_usage_total_cost_eur"), 0m)));
+            UsageTotalCostEur: Math.Max(0, ParseDecimal(GetValue(config, "ai_usage_total_cost_eur"), 0m)),
+            AllowDataRetention: ParseBool(GetValue(config, "ai_allow_data_retention")));
     }
 
     private static string GetProtectedApiKey(IaGovernanceState state) =>
@@ -2680,6 +2756,11 @@ public sealed class AtlasAiService : IAtlasAiService
             {
                 Id = AiConfiguration.OpenRouterAutoModel,
                 Nombre = "OpenRouter Auto"
+            },
+            new()
+            {
+                Id = AiConfiguration.OpenRouterFreeModel,
+                Nombre = "Modelos gratis (OpenRouter)"
             }
         };
 
@@ -2699,6 +2780,7 @@ public sealed class AtlasAiService : IAtlasAiService
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
             seen.Add(AiConfiguration.OpenRouterAutoModel);
+            seen.Add(AiConfiguration.OpenRouterFreeModel);
             foreach (var item in data.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object ||
@@ -3542,7 +3624,12 @@ public sealed class AtlasAiService : IAtlasAiService
         int MaxOutputTokens,
         int MaxContextRows,
         decimal UsageMonthCostEur,
-        decimal UsageTotalCostEur);
+        decimal UsageTotalCostEur,
+        // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
+        // OpenRouter (no garantizan retencion cero de datos financieros). Default
+        // false para no romper instalaciones que no han construido este estado
+        // desde LoadConfigAsync (p.ej. el estado sintetico de LoadOpenRouterModelsAsync).
+        bool AllowDataRetention = false);
 
     private sealed record IaUsageSnapshot(int Requests, long InputTokens, long OutputTokens, decimal CosteEstimadoEur)
     {

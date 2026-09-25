@@ -24,18 +24,23 @@ param(
     [string]$PostgresDataPath = "",
     [string]$AdminEmail = "admin@atlasbalance.local",
     [string]$AdminPassword = "",
+    [string]$ApiServiceAccount = "AtlasBalanceApiSvc",
+    [string]$WatchdogServiceAccount = "AtlasBalanceWatchdogSvc",
     [switch]$SkipDatabaseSetup,
     [switch]$InstallDependencies,
     [switch]$AllowInternet
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-02.09"
+$AppVersion = "V-03.01"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
+$ApiServiceAccountPrincipal = ""
+$WatchdogServiceAccountPrincipal = ""
 $ManagedPostgres = $false
 $GeneratedPostgresAdminPassword = ""
 $ExistingUsersDetected = $false
+$ExistingConfigurationDetected = $false
 
 # V-02.08: dot-source de la copia atomica con rollback. Mantener
 # Sync-DirectoryPreserveConfig en un archivo separado permite
@@ -46,6 +51,11 @@ $syncModule = Join-Path $PSScriptRoot "Sync-AtlasDirectory.ps1"
 if (Test-Path -LiteralPath $syncModule) {
     . $syncModule
 }
+$serviceSecurityModule = Join-Path $PSScriptRoot "ServiceSecurity.ps1"
+if (-not (Test-Path -LiteralPath $serviceSecurityModule)) {
+    throw "No se encontro ServiceSecurity.ps1; se aborta para no registrar una instalacion sin el runner seguro de actualizaciones."
+}
+. $serviceSecurityModule
 
 $DefaultReleaseSigningPublicKeyPem = @"
 -----BEGIN PUBLIC KEY-----
@@ -150,12 +160,9 @@ function Protect-RestrictedDirectory {
 #       tiene lectura, y cualquiera con sesion en la maquina puede leer quien
 #       entra, desde donde y a que hora.
 #
-#   NO: no protege frente a quien ejecute codigo como SYSTEM. El servicio de la
-#       API corre como LocalSystem (ver Install-OrReplaceService), asi que un RCE
-#       en la aplicacion da SYSTEM y con ello permiso para borrar este fichero,
-#       vaciar el Windows Event Log y leer el connection string. Poner aqui una
-#       ACL de solo-anexar contra SYSTEM seria teatro: SYSTEM puede reescribir su
-#       propia ACL.
+#   NO: no protege frente a quien ejecute codigo como SYSTEM. La cuenta SYSTEM
+#       sigue siendo la identidad administrativa del sistema operativo, pero ni
+#       API ni Watchdog se registran con ella.
 #
 # La defensa real contra ese escenario es sacar los logs de la maquina: reenvio
 # del Event Log a un colector, envio a un syslog, o el webhook de Slack para las
@@ -909,6 +916,404 @@ function Write-JsonFile {
     Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
 }
 
+function Test-ServiceAccountName {
+    param([string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name) -or $Name -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$') {
+        throw "El nombre de cuenta de servicio '$Name' no es valido. Usa un usuario local simple de hasta 20 caracteres."
+    }
+}
+
+function Initialize-AtlasServiceAccount {
+    param([string]$Name, [string]$Description)
+
+    Test-ServiceAccountName -Name $Name
+    $existing = Get-LocalUser -Name $Name -ErrorAction SilentlyContinue
+    $password = New-RandomSecret -Length 48
+    $securePassword = ConvertTo-SecureString -String $password -AsPlainText -Force
+    $password = $null
+
+    if ($existing) {
+        if (-not $existing.Enabled) {
+            Enable-LocalUser -Name $Name -ErrorAction Stop
+        }
+        Set-LocalUser -Name $Name -Password $securePassword -PasswordNeverExpires $true -UserMayChangePassword $false -ErrorAction Stop
+    }
+    else {
+        New-LocalUser -Name $Name `
+            -Password $securePassword `
+            -PasswordNeverExpires `
+            -UserMayNotChangePassword `
+            -AccountNeverExpires `
+            -Description $Description `
+            -ErrorAction Stop | Out-Null
+    }
+
+    $user = Get-LocalUser -Name $Name -ErrorAction Stop
+    $privilegedGroupSids = @(
+        "S-1-5-32-544", "S-1-5-32-548", "S-1-5-32-549",
+        "S-1-5-32-550", "S-1-5-32-551", "S-1-5-32-547"
+    )
+    foreach ($groupSid in $privilegedGroupSids) {
+        $members = @(Get-LocalGroupMember -SID $groupSid -ErrorAction SilentlyContinue)
+        if ($members | Where-Object { $_.SID.Value -eq $user.SID.Value -or $_.Name -match "\\$([regex]::Escape($Name))$" }) {
+            throw "La cuenta de servicio '$Name' pertenece a un grupo local privilegiado ($groupSid). Retirala antes de continuar."
+        }
+    }
+    $principal = ".\$Name"
+    [pscustomobject]@{
+        Name = $Name
+        Principal = $principal
+        ComputerPrincipal = "$env:COMPUTERNAME\$Name"
+        Sid = $user.SID.Value
+        Credential = [pscredential]::new($principal, $securePassword)
+    }
+}
+
+function Get-ServiceLogonRightSids {
+    param([string]$PolicyPath)
+
+    $content = Get-Content -LiteralPath $PolicyPath -Raw -ErrorAction Stop
+    $match = [regex]::Match($content, '(?im)^\s*SeServiceLogonRight\s*=\s*(?<values>[^\r\n]*)')
+    if (-not $match.Success) {
+        return @()
+    }
+
+    return @($match.Groups['values'].Value -split ',' | ForEach-Object {
+        $_.Trim().TrimStart('*')
+    } | Where-Object { $_ -match '^S-1-' })
+}
+
+function Grant-LogOnAsService {
+    param([string[]]$Sids, [string]$InstallPath)
+
+    $securityDirectory = Join-Path $InstallPath "config\ServiceSecurity"
+    New-Item -ItemType Directory -Path $securityDirectory -Force | Out-Null
+    Protect-RestrictedDirectory -Path $securityDirectory
+    $policyPath = Join-Path $securityDirectory "export.inf"
+    $verifyPath = Join-Path $securityDirectory "verify.inf"
+    $databasePath = Join-Path $securityDirectory "service-rights.sdb"
+
+    try {
+        & secedit.exe /export /cfg $policyPath /areas USER_RIGHTS | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "secedit /export devolvio $LASTEXITCODE." }
+
+        $content = Get-Content -LiteralPath $policyPath -Raw -ErrorAction Stop
+        $currentSids = @(Get-ServiceLogonRightSids -PolicyPath $policyPath)
+        $deniedMatch = [regex]::Match($content, '(?im)^\s*SeDenyServiceLogonRight\s*=\s*(?<values>[^\r\n]*)')
+        $deniedSids = if ($deniedMatch.Success) {
+            @($deniedMatch.Groups['values'].Value -split ',' | ForEach-Object { $_.Trim().TrimStart('*') } | Where-Object { $_ -match '^S-' })
+        } else { @() }
+        $blockedSids = @($Sids | Where-Object { $deniedSids -contains $_.ToUpperInvariant() })
+        if ($blockedSids.Count -gt 0) { throw "La politica SeDenyServiceLogonRight bloquea la cuenta de servicio: $($blockedSids -join ', ')." }
+        $desiredSids = @($currentSids + $Sids | ForEach-Object { $_.ToUpperInvariant() } | Sort-Object -Unique)
+        $line = "SeServiceLogonRight = " + (($desiredSids | ForEach-Object { "*$_" }) -join ",")
+        $match = [regex]::Match($content, '(?im)^\s*SeServiceLogonRight\s*=\s*[^\r\n]*')
+        if ($match.Success) {
+            $content = $content.Remove($match.Index, $match.Length).Insert($match.Index, $line)
+        }
+        else {
+            if ($content -notmatch '(?im)^\[Privilege Rights\]') {
+                $content += "`r`n[Privilege Rights]`r`n"
+            }
+            $content += "$line`r`n"
+        }
+        Set-Content -LiteralPath $policyPath -Value $content -Encoding Unicode
+
+        & secedit.exe /configure /db $databasePath /cfg $policyPath /areas USER_RIGHTS /quiet | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "secedit /configure devolvio $LASTEXITCODE." }
+        & secedit.exe /export /cfg $verifyPath /areas USER_RIGHTS | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "No se pudo verificar SeServiceLogonRight." }
+
+        $verifiedSids = @(Get-ServiceLogonRightSids -PolicyPath $verifyPath)
+        foreach ($sid in $Sids) {
+            if ($verifiedSids -notcontains $sid.ToUpperInvariant()) {
+                throw "La cuenta con SID $sid no tiene el derecho 'Log on as a service' tras configurarlo."
+            }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $securityDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Invoke-Icacls {
+    param([string[]]$Arguments)
+
+    & icacls.exe @Arguments | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "icacls fallo sobre '$($Arguments[0])' con codigo $LASTEXITCODE."
+    }
+}
+
+function Protect-AtlasInstallTree {
+    param(
+        [string]$InstallPath,
+        [pscustomobject]$ApiAccount,
+        [pscustomobject]$WatchdogAccount
+    )
+
+    $normalSids = @("*S-1-1-0", "*S-1-5-11", "*S-1-5-32-545", "*S-1-5-4")
+    Invoke-Icacls -Arguments ((@($InstallPath, "/inheritance:r", "/remove:g") + $normalSids + @("/remove:d") + $normalSids))
+    Invoke-Icacls -Arguments @($InstallPath, "/setowner", "*S-1-5-32-544")
+    Invoke-Icacls -Arguments @(
+        $InstallPath, "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F",
+        "${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX")
+
+    foreach ($relative in @("api", "watchdog", "scripts", "backups", "exports", "updates", "logs", "api\logs", "watchdog\logs")) {
+        $path = Join-Path $InstallPath $relative
+        if (-not (Test-Path -LiteralPath $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
+        $grant = if ($relative -in @("api", "watchdog")) {
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX"
+        } elseif ($relative -eq "scripts") {
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)RX", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX"
+        } elseif ($relative -eq "updates") {
+            # SECURITY (P1a): igual que ServiceSecurity.ps1 Protect-AtlasInstallTree.
+            # La API necesita Modify (descarga/verifica/extrae el paquete aqui);
+            # el runner elevado (SYSTEM) nunca confia en updates\, re-verifica la
+            # firma sobre su propia copia en config\update-runner. Watchdog solo
+            # necesita Modify sobre updates\requests (mas abajo).
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX"
+        } elseif ($relative -eq "backups") {
+            # La API crea/borra sus propios dumps (BackupService, GoogleDriveBackupService)
+            # y Watchdog escribe backup previo + rollback de binarios al actualizar.
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M"
+        } elseif ($relative -eq "exports") {
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)RX"
+        } elseif ($relative -eq "api\logs") {
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)M"
+        } elseif ($relative -eq "watchdog\logs") {
+            "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M"
+        } elseif ($relative -in @("backups", "exports", "logs")) {
+            "${ApiAccount.ComputerPrincipal}:(OI)(CI)M", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M"
+        }
+        if ($grant) {
+            Invoke-Icacls -Arguments @($path, "/T", "/C", "/remove:g", $ApiAccount.ComputerPrincipal, $WatchdogAccount.ComputerPrincipal, "/remove:d", $ApiAccount.ComputerPrincipal, $WatchdogAccount.ComputerPrincipal)
+            Invoke-Icacls -Arguments (@($path, "/grant:r") + @($grant))
+        }
+    }
+
+    $requestPath = Join-Path $InstallPath "updates\requests"
+    New-Item -ItemType Directory -Path $requestPath -Force | Out-Null
+    Invoke-Icacls -Arguments @($requestPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+
+    # Logs y estado del Watchdog: igual que ServiceSecurity.ps1
+    # Protect-AtlasInstallTree. DACL protegida (SYSTEM, Administrators y la
+    # cuenta del Watchdog) y la cuenta como propietaria, para que
+    # WatchdogLogConfiguration pueda fijarla al arrancar.
+    foreach ($relative in @("watchdog\logs", "state")) {
+        $path = Join-Path $InstallPath $relative
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        Invoke-Icacls -Arguments @($path, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+        Invoke-Icacls -Arguments @($path, "/setowner", $WatchdogAccount.ComputerPrincipal, "/T", "/C")
+    }
+
+    $configPath = Join-Path $InstallPath "config"
+    if (Test-Path -LiteralPath $configPath) {
+        Invoke-Icacls -Arguments @($configPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")
+    }
+    # SECURITY (P1b): igual que ServiceSecurity.ps1 Protect-AtlasInstallTree.
+    # Solo Administrators/SYSTEM escriben en update-runner.
+    $runnerPath = Join-Path $configPath "update-runner"
+    New-Item -ItemType Directory -Path $runnerPath -Force | Out-Null
+    Invoke-Icacls -Arguments @($runnerPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")
+
+    # Los ficheros de configuracion y el certificado se protegen antes de
+    # sincronizar el paquete. Conservar solo Administrators/SYSTEM dejaria a
+    # los servicios sin poder arrancar; conceder Modify permitiria alterar
+    # secretos o binarios. Cada servicio recibe solo lectura del recurso que
+    # necesita.
+    $apiConfigPath = Join-Path $InstallPath "api\appsettings.Production.json"
+    if (Test-Path -LiteralPath $apiConfigPath) {
+        Invoke-Icacls -Arguments @($apiConfigPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:F", "*S-1-5-18:F", "${ApiAccount.ComputerPrincipal}:R")
+    }
+    $watchdogConfigPath = Join-Path $InstallPath "watchdog\appsettings.Production.json"
+    if (Test-Path -LiteralPath $watchdogConfigPath) {
+        Invoke-Icacls -Arguments @($watchdogConfigPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:F", "*S-1-5-18:F", "${WatchdogAccount.ComputerPrincipal}:R")
+    }
+    $certsPath = Join-Path $InstallPath "certs"
+    if (Test-Path -LiteralPath $certsPath) {
+        Invoke-Icacls -Arguments @($certsPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${ApiAccount.ComputerPrincipal}:(OI)(CI)RX")
+    }
+
+    foreach ($file in @("VERSION", "atlas-balance.runtime.json", "watchdog-state.json")) {
+        $path = Join-Path $InstallPath $file
+        if (Test-Path -LiteralPath $path) {
+            Invoke-Icacls -Arguments @($path, "/grant:r", "${WatchdogAccount.ComputerPrincipal}:M")
+        }
+    }
+
+    $keysPath = Join-Path $env:ProgramData "AtlasBalance\keys"
+    if (Test-Path -LiteralPath $keysPath) {
+        Invoke-Icacls -Arguments @($keysPath, "/grant:r", "${ApiAccount.ComputerPrincipal}:(OI)(CI)M")
+    }
+    $securityLogPath = Join-Path $env:ProgramData "AtlasBalance\logs\security"
+    if (Test-Path -LiteralPath $securityLogPath) {
+        Invoke-Icacls -Arguments @($securityLogPath, "/grant:r", "${ApiAccount.ComputerPrincipal}:(OI)(CI)M")
+    }
+}
+
+function Grant-ServiceControl {
+    param([string]$ServiceName, [string]$AccountSid)
+
+    $descriptor = (& sc.exe sdshow $ServiceName | Where-Object { $_ -match '^D:' } | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($descriptor)) { throw "No se pudo leer el descriptor de seguridad de $ServiceName." }
+    $ace = "(A;;CCLCSWLOCRCRPWP;;;${AccountSid})"
+    $descriptor = [regex]::Replace($descriptor, '\(A;;[^;]*;;;' + [regex]::Escape($AccountSid) + '\)', '')
+    $descriptor = if ($descriptor -match 'S:') { $descriptor -replace 'S:', "$ace`$&" } else { $descriptor + $ace }
+    & sc.exe sdset $ServiceName $descriptor | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo conceder a Watchdog el control minimo de $ServiceName." }
+
+    $verified = (& sc.exe sdshow $ServiceName | Where-Object { $_ -match '^D:' } | Select-Object -First 1)
+    if ($verified -notmatch [regex]::Escape($ace)) {
+        throw "No se verifico el permiso de control del servicio $ServiceName para Watchdog."
+    }
+}
+
+function Test-ServiceRegistration {
+    param([string]$Name, [string]$ExpectedPrincipal)
+
+    $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$Name'" -ErrorAction Stop
+    if ($null -eq $service -or $service.StartName -notin @($ExpectedPrincipal, "$env:COMPUTERNAME\$($ExpectedPrincipal.TrimStart('.\'))")) {
+        throw "El servicio $Name no esta registrado con la cuenta minima esperada '$ExpectedPrincipal'."
+    }
+}
+
+function Get-JsonPathValue {
+    param(
+        [object]$Object,
+        [string[]]$Path
+    )
+
+    $current = $Object
+    foreach ($part in $Path) {
+        if ($null -eq $current -or -not ($current.PSObject.Properties.Name -contains $part)) {
+            return $null
+        }
+        $current = $current.$part
+    }
+
+    return $current
+}
+
+function Get-ConnectionStringValue {
+    param(
+        [string]$ConnectionString,
+        [string]$Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return ""
+    }
+
+    $parts = New-Object System.Collections.Generic.List[string]
+    $partStart = 0
+    $quote = [char]0
+    for ($index = 0; $index -lt $ConnectionString.Length; $index++) {
+        $character = $ConnectionString[$index]
+        if ($quote -ne [char]0) {
+            if ($character -eq $quote) {
+                if ($index + 1 -lt $ConnectionString.Length -and $ConnectionString[$index + 1] -eq $quote) {
+                    $index++
+                }
+                else {
+                    $quote = [char]0
+                }
+            }
+            continue
+        }
+
+        if ($character -eq [char]39 -or $character -eq [char]34) {
+            $quote = $character
+        }
+        elseif ($character -eq ';') {
+            $parts.Add($ConnectionString.Substring($partStart, $index - $partStart))
+            $partStart = $index + 1
+        }
+    }
+    $parts.Add($ConnectionString.Substring($partStart))
+
+    foreach ($part in $parts) {
+        $separator = $part.IndexOf('=')
+        if ($separator -lt 0) { continue }
+
+        $key = $part.Substring(0, $separator).Trim()
+        if (-not [string]::Equals($key, $Name, [StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        $value = $part.Substring($separator + 1).Trim()
+        if ($value.Length -ge 2 -and (($value[0] -eq [char]39 -and $value[$value.Length - 1] -eq [char]39) -or ($value[0] -eq [char]34 -and $value[$value.Length - 1] -eq [char]34))) {
+            $quoteCharacter = $value[0]
+            $value = $value.Substring(1, $value.Length - 2).Replace([string]$quoteCharacter + [string]$quoteCharacter, [string]$quoteCharacter)
+        }
+        return $value
+    }
+
+    return ""
+}
+
+function Read-ExistingInstallConfiguration {
+    param([string]$InstallPath)
+
+    $apiConfigPath = Join-Path $InstallPath "api\appsettings.Production.json"
+    if (-not (Test-Path -LiteralPath $apiConfigPath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $apiConfig = Get-Content -LiteralPath $apiConfigPath -Raw | ConvertFrom-Json
+    } catch {
+        throw "No se pudo leer la configuracion existente de Atlas Balance en ${apiConfigPath}: $($_.Exception.Message)"
+    }
+
+    $watchdogConfigPath = Join-Path $InstallPath "watchdog\appsettings.Production.json"
+    $watchdogConfig = $null
+    if (Test-Path -LiteralPath $watchdogConfigPath -PathType Leaf) {
+        try {
+            $watchdogConfig = Get-Content -LiteralPath $watchdogConfigPath -Raw | ConvertFrom-Json
+        } catch {
+            throw "No se pudo leer la configuracion existente del Watchdog en ${watchdogConfigPath}: $($_.Exception.Message)"
+        }
+    }
+
+    $defaultConnection = [string](Get-JsonPathValue -Object $apiConfig -Path @("ConnectionStrings", "DefaultConnection"))
+    $migrationConnection = [string](Get-JsonPathValue -Object $apiConfig -Path @("ConnectionStrings", "MigrationConnection"))
+    $watchdogSettings = Get-JsonPathValue -Object $watchdogConfig -Path @("WatchdogSettings")
+    $apiWatchdogSettings = Get-JsonPathValue -Object $apiConfig -Path @("WatchdogSettings")
+    $certificate = Get-JsonPathValue -Object $apiConfig -Path @("Kestrel", "Endpoints", "Https", "Certificate")
+
+    $watchdogSecret = [string](Get-JsonPathValue -Object $watchdogSettings -Path @("SharedSecret"))
+    if ([string]::IsNullOrWhiteSpace($watchdogSecret)) {
+        $watchdogSecret = [string](Get-JsonPathValue -Object $apiWatchdogSettings -Path @("SharedSecret"))
+    }
+
+    $ownerUser = Get-ConnectionStringValue -ConnectionString $migrationConnection -Name "Username"
+    $ownerPassword = Get-ConnectionStringValue -ConnectionString $migrationConnection -Name "Password"
+    if ([string]::IsNullOrWhiteSpace($ownerUser)) {
+        $ownerUser = [string](Get-JsonPathValue -Object $watchdogSettings -Path @("DbOwnerUser"))
+    }
+    if ([string]::IsNullOrWhiteSpace($ownerPassword)) {
+        $ownerPassword = [string](Get-JsonPathValue -Object $watchdogSettings -Path @("DbOwnerPassword"))
+    }
+
+    return [pscustomobject]@{
+        JwtSecret = [string](Get-JsonPathValue -Object $apiConfig -Path @("JwtSettings", "Secret"))
+        RlsContextSecret = [string](Get-JsonPathValue -Object $apiConfig -Path @("Security", "RlsContextSecret"))
+        AuditSigningKey = [string](Get-JsonPathValue -Object $apiConfig -Path @("Security", "AuditSigningKey"))
+        WatchdogSecret = $watchdogSecret
+        DbHost = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Host"
+        DbPort = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Port"
+        DbName = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Database"
+        DbUser = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Username"
+        DbPassword = Get-ConnectionStringValue -ConnectionString $defaultConnection -Name "Password"
+        DbOwnerUser = $ownerUser
+        DbOwnerPassword = $ownerPassword
+        CertificatePath = [string](Get-JsonPathValue -Object $certificate -Path @("Path"))
+        CertificatePassword = [string](Get-JsonPathValue -Object $certificate -Path @("Password"))
+    }
+}
+
 function Write-AppSettings {
     param(
         [string]$ApiPath,
@@ -922,7 +1327,11 @@ function Write-AppSettings {
         [string]$AuditSigningKey
     )
 
-    $stateFile = Join-Path $InstallPath "watchdog-state.json"
+    # El estado vive en un directorio propio del Watchdog (ver
+    # Protect-AtlasInstallTree): la raiz de instalacion es de solo lectura
+    # para su cuenta y WatchdogStateStore escribe un temporal junto al fichero.
+    $stateFile = Join-Path $InstallPath "state\watchdog-state.json"
+    $watchdogLogDirectory = Join-Path $InstallPath "watchdog\logs"
     $updateRoot = Join-Path $InstallPath "updates"
     $backupPath = Join-Path $InstallPath "backups"
     $exportPath = Join-Path $InstallPath "exports"
@@ -1067,6 +1476,7 @@ function Write-AppSettings {
             PostgresBinPath = $PostgresBin
             BackupPath = $backupPath
             StateFilePath = $stateFile
+            LogDirectory = $watchdogLogDirectory
             DbHost = $DbHost
             DbPort = [string]$DbPort
             DbName = $DbName
@@ -1080,6 +1490,9 @@ function Write-AppSettings {
             UpdateInstallPath = $InstallPath
             UpdateTargetPath = $apiTarget
         }
+        UpdateSecurity = [ordered]@{
+            ReleaseSigningPublicKeyPem = $ReleaseSigningPublicKeyPem
+        }
         Serilog = [ordered]@{
             MinimumLevel = [ordered]@{
                 Default = "Information"
@@ -1089,8 +1502,24 @@ function Write-AppSettings {
 
     $apiSettingsPath = Join-Path $ApiPath "appsettings.Production.json"
     $watchdogSettingsPath = Join-Path $WatchdogPath "appsettings.Production.json"
-    Write-JsonFile -Value $apiConfig -Path $apiSettingsPath
-    Write-JsonFile -Value $watchdogConfig -Path $watchdogSettingsPath
+
+    # La configuracion productiva contiene secretos y decisiones del operador.
+    # En una reinstalacion no se debe regenerar ni siquiera si el resto del
+    # paquete se vuelve a copiar. Exigimos ambos ficheros para no crear un
+    # Watchdog con un secreto distinto al de una API ya existente.
+    $apiExists = Test-Path -LiteralPath $apiSettingsPath -PathType Leaf
+    $watchdogExists = Test-Path -LiteralPath $watchdogSettingsPath -PathType Leaf
+    if ($apiExists -or $watchdogExists) {
+        if (-not ($apiExists -and $watchdogExists)) {
+            throw "Instalacion existente incompleta: deben existir api\appsettings.Production.json y watchdog\appsettings.Production.json para preservar la configuracion sin desalinear secretos."
+        }
+
+        Write-Host "Configuracion productiva existente preservada; no se regeneran secretos ni se sobrescribe appsettings.Production.json." -ForegroundColor Yellow
+    }
+    else {
+        Write-JsonFile -Value $apiConfig -Path $apiSettingsPath
+        Write-JsonFile -Value $watchdogConfig -Path $watchdogSettingsPath
+    }
     Protect-SecretFile -Path $apiSettingsPath
     Protect-SecretFile -Path $watchdogSettingsPath
     Protect-RestrictedDirectory -Path $dataProtectionKeysPath
@@ -1103,7 +1532,9 @@ function Install-OrReplaceService {
         [string]$Name,
         [string]$DisplayName,
         [string]$Description,
-        [string]$ExePath
+        [string]$ExePath,
+        [pscredential]$Credential,
+        [string]$ExpectedPrincipal
     )
 
     $existing = Get-Service -Name $Name -ErrorAction SilentlyContinue
@@ -1121,9 +1552,11 @@ function Install-OrReplaceService {
         -BinaryPathName ('"' + $ExePath + '"') `
         -DisplayName $DisplayName `
         -Description $Description `
-        -StartupType Automatic | Out-Null
+        -StartupType Automatic `
+        -Credential $Credential | Out-Null
 
     sc.exe failure $Name reset=86400 actions=restart/10000/restart/30000/restart/60000 | Out-Null
+    Test-ServiceRegistration -Name $Name -ExpectedPrincipal $ExpectedPrincipal
 }
 
 function New-AtlasIcon {
@@ -1227,6 +1660,8 @@ function Write-RuntimeAndCredentials {
         InternalApiPort = $InternalApiPort
         ApiServiceName = $ApiServiceName
         WatchdogServiceName = $WatchdogServiceName
+        ApiServiceAccount = $ApiServiceAccount
+        WatchdogServiceAccount = $WatchdogServiceAccount
         PostgresServiceName = if ($ManagedPostgres) { $PostgresServiceName } else { "" }
         ManagedPostgres = [bool]$ManagedPostgres
         DbHost = $DbHost
@@ -1236,6 +1671,11 @@ function Write-RuntimeAndCredentials {
     }
     Write-JsonFile -Value $runtime -Path (Join-Path $InstallPath "atlas-balance.runtime.json")
     Set-Content -LiteralPath (Join-Path $InstallPath "VERSION") -Value $AppVersion -Encoding UTF8
+
+    if ($ExistingConfigurationDetected) {
+        Write-Host "Instalacion existente: se conserva INSTALL_CREDENTIALS_ONCE.txt y no se vuelven a emitir credenciales." -ForegroundColor Yellow
+        return
+    }
 
     $credentialsPath = Join-Path (Join-Path $InstallPath "config") "INSTALL_CREDENTIALS_ONCE.txt"
     if ($ExistingUsersDetected) {
@@ -1345,6 +1785,65 @@ if ($UseReverseProxy -and $InternalApiPort -eq $PublicPort) {
 # V-02.08 (revision PR #33): misma condicion que mas abajo decide si se monta
 # PostgreSQL gestionado (linea ~1316): -InstallDependencies sin
 # -PostgresAdminPassword. Solo en ese caso el preflight debe exigir DbPort libre.
+$existingInstallConfiguration = Read-ExistingInstallConfiguration -InstallPath $InstallPath
+$ExistingConfigurationDetected = $null -ne $existingInstallConfiguration
+
+if ($ExistingConfigurationDetected) {
+    # En una reinstalacion la configuracion ya escrita por el operador es la
+    # autoridad. Reutilizar tambien las credenciales de BD evita que
+    # Ensure-Database cambie las contrasenas de los roles y deje el appsettings
+    # conservado apuntando a credenciales antiguas.
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbHost)) { $DbHost = $existingInstallConfiguration.DbHost }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbPort)) { $DbPort = [int]$existingInstallConfiguration.DbPort }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbName)) { $DbName = $existingInstallConfiguration.DbName }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbUser)) { $DbUser = $existingInstallConfiguration.DbUser }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbPassword)) { $DbPassword = $existingInstallConfiguration.DbPassword }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbOwnerUser)) { $DbOwnerUser = $existingInstallConfiguration.DbOwnerUser }
+    if (-not [string]::IsNullOrWhiteSpace($existingInstallConfiguration.DbOwnerPassword)) { $DbOwnerPassword = $existingInstallConfiguration.DbOwnerPassword }
+
+    $jwtSecret = $existingInstallConfiguration.JwtSecret
+    $rlsContextSecret = $existingInstallConfiguration.RlsContextSecret
+    $auditSigningKey = $existingInstallConfiguration.AuditSigningKey
+    $watchdogSecret = $existingInstallConfiguration.WatchdogSecret
+    # -InstallDependencies es una orden para preparar una instancia nueva.
+    # En una reinstalacion no puede sustituir el host/puerto de la configuracion
+    # conservada ni crear roles en otra base de datos.
+    if ($InstallDependencies) {
+        Write-Host "Instalacion existente detectada: se omite la preparacion automatica de PostgreSQL y se conserva su host/puerto." -ForegroundColor Yellow
+        $InstallDependencies = $false
+    }
+}
+else {
+    $jwtSecret = New-RandomSecret 64
+    $rlsContextSecret = New-RandomSecret 64
+    $auditSigningKey = New-RandomSecret 64
+    $watchdogSecret = New-RandomSecret 64
+}
+
+if ($ExistingConfigurationDetected) {
+    if (-not $SkipDatabaseSetup -and [string]::IsNullOrWhiteSpace($DbPassword)) {
+        throw "La configuracion existente no contiene una contraseña parseable para DbUser; se cancela para no cambiar la contraseña de la base de datos."
+    }
+    if (-not $SkipDatabaseSetup -and [string]::IsNullOrWhiteSpace($DbOwnerPassword)) {
+        throw "La configuracion existente no contiene una contraseña parseable para DbOwnerUser; se cancela para no cambiar la contraseña de la base de datos."
+    }
+}
+else {
+    if ([string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = New-RandomSecret 40 }
+    if ([string]::IsNullOrWhiteSpace($DbOwnerPassword)) { $DbOwnerPassword = New-RandomSecret 40 }
+}
+if ([string]::IsNullOrWhiteSpace($AdminPassword) -and -not $ExistingConfigurationDetected) { $AdminPassword = New-RandomSecret 24 }
+if ([string]::IsNullOrWhiteSpace($PostgresInstallPath)) { $PostgresInstallPath = Join-Path $InstallPath "postgresql\16" }
+if ([string]::IsNullOrWhiteSpace($PostgresDataPath)) { $PostgresDataPath = Join-Path $InstallPath "postgres-data" }
+$certPassword = if ($ExistingConfigurationDetected) { "" } else { New-RandomSecret 40 }
+
+if ($ExistingConfigurationDetected -and -not $UseReverseProxy) {
+    if ([string]::IsNullOrWhiteSpace($existingInstallConfiguration.CertificatePath)) {
+        throw "La instalacion existente no contiene Kestrel:Endpoints:Https:Certificate:Path; no se puede regenerar el certificado sin sobrescribir appsettings.Production.json."
+    }
+    $certPassword = $existingInstallConfiguration.CertificatePassword
+}
+
 $willInstallManagedDb = (-not $SkipDatabaseSetup) -and $InstallDependencies -and [string]::IsNullOrWhiteSpace($PostgresAdminPassword)
 Test-AtlasPreflight -InstallPath $InstallPath -ApiPort $ApiPort -InternalApiPort $InternalApiPort -WatchdogPort $WatchdogPort -DbPort $DbPort -PublicPort $PublicPort -WillInstallManagedDb $willInstallManagedDb
 $internalApiUrl = if ($UseReverseProxy) { "http://127.0.0.1:$InternalApiPort" } else { "https://0.0.0.0:$ApiPort" }
@@ -1355,32 +1854,27 @@ $appUrl = if ($UseReverseProxy) {
     if ($ApiPort -eq 443) { "https://$ServerName" } else { "https://$ServerName`:$ApiPort" }
 }
 
-if ([string]::IsNullOrWhiteSpace($DbPassword)) { $DbPassword = New-RandomSecret 40 }
-if ([string]::IsNullOrWhiteSpace($DbOwnerPassword)) { $DbOwnerPassword = New-RandomSecret 40 }
-if ([string]::IsNullOrWhiteSpace($AdminPassword)) { $AdminPassword = New-RandomSecret 24 }
-if ([string]::IsNullOrWhiteSpace($PostgresInstallPath)) { $PostgresInstallPath = Join-Path $InstallPath "postgresql\16" }
-if ([string]::IsNullOrWhiteSpace($PostgresDataPath)) { $PostgresDataPath = Join-Path $InstallPath "postgres-data" }
-$jwtSecret = New-RandomSecret 64
-# V-02-06 (RLS-SEC-01): el secreto RLS debe ser independiente del JWT. Se
-# genera aleatorio y se persiste en el appsettings efectivo durante la
-# generacion de configuracion mas abajo.
-$rlsContextSecret = New-RandomSecret 64
-# V-02.07: clave de firma de AUDITORIAS, independiente de JWT y de RLS por el
-# mismo motivo: comprometer una no puede permitir forjar el rastro de auditoria.
-$auditSigningKey = New-RandomSecret 64
-$watchdogSecret = New-RandomSecret 64
-$certPassword = New-RandomSecret 40
-
 New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
 foreach ($dir in @("api", "watchdog", "scripts", "backups", "exports", "logs", "certs", "updates", "config")) {
     New-Item -ItemType Directory -Path (Join-Path $InstallPath $dir) -Force | Out-Null
 }
 
 # Backups y exportaciones contienen datos financieros y PII en claro. No deben
-# heredar lectura para usuarios locales del servidor: la API corre como SYSTEM
-# y la operacion la realizan Administradores.
+# heredar lectura para usuarios locales del servidor; las ACL definitivas se
+# aplican despues de sincronizar el paquete, con permisos de API/Watchdog
+# separados.
 Protect-RestrictedDirectory -Path (Join-Path $InstallPath "backups")
 Protect-RestrictedDirectory -Path (Join-Path $InstallPath "exports")
+
+$apiServiceAccount = Initialize-AtlasServiceAccount `
+    -Name $ApiServiceAccount `
+    -Description "Cuenta minima del servicio Atlas Balance API"
+$watchdogServiceAccount = Initialize-AtlasServiceAccount `
+    -Name $WatchdogServiceAccount `
+    -Description "Cuenta minima del servicio Atlas Balance Watchdog"
+Grant-LogOnAsService -Sids @($apiServiceAccount.Sid, $watchdogServiceAccount.Sid) -InstallPath $InstallPath
+$ApiServiceAccountPrincipal = $apiServiceAccount.ComputerPrincipal
+$WatchdogServiceAccountPrincipal = $watchdogServiceAccount.ComputerPrincipal
 
 if (-not $SkipDatabaseSetup) {
     if ($InstallDependencies -and [string]::IsNullOrWhiteSpace($PostgresAdminPassword)) {
@@ -1463,6 +1957,8 @@ foreach ($supportScript in @(
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1",
+    "ServiceSecurity.ps1",
+    "Run-AtlasElevatedUpdate.ps1",
     "Sync-AtlasDirectory.ps1",
     "Sync-AtlasDirectory.Tests.ps1"
 )) {
@@ -1475,11 +1971,18 @@ foreach ($supportScript in @(
 $certPath = ""
 $effectiveCertPassword = ""
 if (-not $UseReverseProxy) {
-    $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
-    Protect-RestrictedDirectory -Path (Join-Path $InstallPath "certs")
-    Protect-SecretFile -Path $cert.Path
-    $certPath = $cert.Path
-    $effectiveCertPassword = $cert.Password
+    if ($ExistingConfigurationDetected) {
+        $certPath = $existingInstallConfiguration.CertificatePath
+        $effectiveCertPassword = $existingInstallConfiguration.CertificatePassword
+        Write-Host "Certificado HTTPS existente preservado; no se vuelve a emitir." -ForegroundColor Yellow
+    }
+    else {
+        $cert = New-AtlasCertificate -CertDirectory (Join-Path $InstallPath "certs") -DnsName $ServerName -Password $certPassword
+        Protect-RestrictedDirectory -Path (Join-Path $InstallPath "certs")
+        Protect-SecretFile -Path $cert.Path
+        $certPath = $cert.Path
+        $effectiveCertPassword = $cert.Password
+    }
 }
 Write-AppSettings `
     -ApiPath $apiPath `
@@ -1494,8 +1997,24 @@ Write-AppSettings `
 
 $apiExe = Join-Path $apiPath "AtlasBalance.API.exe"
 $watchdogExe = Join-Path $watchdogPath "AtlasBalance.Watchdog.exe"
-Install-OrReplaceService -Name $WatchdogServiceName -DisplayName "Atlas Balance - Watchdog" -Description "Backups y actualizaciones de Atlas Balance" -ExePath $watchdogExe
-Install-OrReplaceService -Name $ApiServiceName -DisplayName "Atlas Balance - API" -Description "API y frontend de Atlas Balance" -ExePath $apiExe
+Protect-AtlasInstallTree -InstallPath $InstallPath -ApiAccount $apiServiceAccount -WatchdogAccount $watchdogServiceAccount
+Install-AtlasUpdateTask -InstallPath $InstallPath -WatchdogAccount $watchdogServiceAccount
+Install-OrReplaceService `
+    -Name $WatchdogServiceName `
+    -DisplayName "Atlas Balance - Watchdog" `
+    -Description "Backups y actualizaciones de Atlas Balance" `
+    -ExePath $watchdogExe `
+    -Credential $watchdogServiceAccount.Credential `
+    -ExpectedPrincipal $watchdogServiceAccount.Principal
+Install-OrReplaceService `
+    -Name $ApiServiceName `
+    -DisplayName "Atlas Balance - API" `
+    -Description "API y frontend de Atlas Balance" `
+    -ExePath $apiExe `
+    -Credential $apiServiceAccount.Credential `
+    -ExpectedPrincipal $apiServiceAccount.Principal
+Grant-ServiceControl -ServiceName $ApiServiceName -AccountSid $watchdogServiceAccount.Sid
+Grant-ServiceControl -ServiceName $WatchdogServiceName -AccountSid $watchdogServiceAccount.Sid
 
 $firewallPort = if ($UseReverseProxy) { $PublicPort } else { $ApiPort }
 $firewallName = if ($UseReverseProxy) { "Atlas Balance Public HTTPS $PublicPort" } else { "Atlas Balance HTTPS $ApiPort" }

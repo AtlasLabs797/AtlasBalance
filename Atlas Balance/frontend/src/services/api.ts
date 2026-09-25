@@ -8,6 +8,11 @@ import { useUiStore } from '@/stores/uiStore';
 import type { PermisoUsuario, Usuario } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { clearQueryClient } from '@/services/queryClient';
+import { isSessionResponseCurrent, getSessionGeneration } from '@/utils/sessionScope';
+import {
+  sessionRefreshCoordinator,
+  type RefreshSessionPayload,
+} from '@/services/sessionRefreshCoordinator';
 
 const api = axios.create({
   baseURL: '/api',
@@ -54,6 +59,37 @@ const pushErrorToast = (message: string) => {
   });
 };
 
+const redirectToLogin = () => {
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+};
+
+// Si otra pestaña recibe un 401 irrecuperable (replay, stamp cambiado o
+// refresh caducado), todas las pestañas deben abandonar el estado local. El
+// coordinador solo difunde el fallo; la limpieza sigue pasando por el contrato
+// existente de esta capa y no toca authStore ni queryClient directamente.
+sessionRefreshCoordinator.subscribeToFailure(() => {
+  clearSessionState();
+  redirectToLogin();
+});
+
+// Otra pestaña renovó la sesión y rotó la cookie CSRF compartida. Esta pestaña
+// adopta el token nuevo aunque no estuviera esperando el refresh, siempre que
+// el resultado pertenezca al mismo usuario que tiene cargado.
+sessionRefreshCoordinator.subscribeToPeerSuccess((data, sessionKey) => {
+  const currentUserId = useAuthStore.getState().usuario?.id ?? null;
+  if (currentUserId === null || currentUserId !== sessionKey) {
+    return;
+  }
+
+  syncSessionState(
+    data.usuario as Usuario | null | undefined,
+    data.csrf_token ?? null,
+    data.permisos as PermisoUsuario[] | null | undefined,
+  );
+});
+
 api.interceptors.request.use((config) => {
   const csrfToken = useAuthStore.getState().csrfToken;
   const method = (config.method ?? 'get').toLowerCase();
@@ -73,24 +109,6 @@ api.interceptors.request.use((config) => {
 
   return config;
 });
-
-const MAX_REFRESH_QUEUE = 50;
-let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (value: unknown) => void;
-  reject: (reason: unknown) => void;
-}> = [];
-
-const processQueue = (error: unknown | null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(undefined);
-    }
-  });
-  failedQueue = [];
-};
 
 const getSafeErrorLogDetail = (error: unknown): string => {
   const message = extractErrorMessage(error, '');
@@ -169,32 +187,30 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if (isRefreshing) {
-      if (failedQueue.length >= MAX_REFRESH_QUEUE) {
-        return Promise.reject(error);
-      }
-      originalRequest._retry = true;
-      return new Promise((resolve, reject) => {
-        failedQueue.push({ resolve, reject });
-      }).then(() => api(originalRequest));
-    }
-
     originalRequest._retry = true;
-    isRefreshing = true;
-
+    const refreshGeneration = getSessionGeneration();
+    const refreshUserId = useAuthStore.getState().usuario?.id ?? null;
     try {
-      const { data } = await api.post('/auth/refresh-token');
-      syncSessionState(data.usuario, data.csrf_token, data.permisos);
-      processQueue(null);
+      const sessionKey = refreshUserId ?? 'anonymous';
+      const data = await sessionRefreshCoordinator.refresh(async () => {
+        const { data: refreshData } = await api.post<RefreshSessionPayload>('/auth/refresh-token');
+        return refreshData;
+      }, sessionKey);
+      const currentUserId = useAuthStore.getState().usuario?.id ?? null;
+      if (!isSessionResponseCurrent(refreshGeneration, refreshUserId, currentUserId)) {
+        throw new Error('La respuesta de refresh pertenece a una sesión anterior.');
+      }
+      syncSessionState(
+        data.usuario as Usuario | null | undefined,
+        data.csrf_token ?? null,
+        data.permisos as PermisoUsuario[] | null | undefined,
+      );
       return api(originalRequest);
     } catch (refreshError) {
-      processQueue(refreshError);
       clearSessionState();
       pushErrorToast('Sesión expirada. Vuelve a iniciar sesión.');
-      window.location.href = '/login';
+      redirectToLogin();
       return Promise.reject(refreshError);
-    } finally {
-      isRefreshing = false;
     }
   }
 );

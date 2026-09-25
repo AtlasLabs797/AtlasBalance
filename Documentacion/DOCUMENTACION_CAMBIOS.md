@@ -2,11 +2,1324 @@
 
 ## Objetivo
 
+## 2026-09-25 - V-03.01 - Publicacion del paquete release en GitHub
+
+### Trabajo realizado
+
+- Paquete firmado `AtlasBalance-V-03.01-win-x64.zip` (+ `.sig`) generado y
+  publicado por el workflow `Release` desde la rama `V-03.01` (commit
+  `935eac3`). La clave de firma solo existe como secreto del entorno
+  `release-signing`, por eso no se empaqueta en local.
+- Release `V-03.01-win-x64` creada y marcada como Latest:
+  https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-03.01-win-x64
+
+### Archivos tocados
+
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `gh pr checks 36` (todo en verde antes de publicar)
+- `gh workflow run release.yml --ref V-03.01 -f version=V-03.01 -f runtime=win-x64`
+- `gh run watch 36142771224 --exit-status`
+- `gh release view V-03.01-win-x64`
+
+### Verificacion
+
+- Run 36142771224: `Build, test, and audit` y `Package and publish latest`
+  en `success` (incluye tests Postgres con Testcontainers, auditorias npm y
+  NuGet, escaneo de secretos, lint, tests unitarios y build frontend).
+- Assets publicados: ZIP (105.823.466 bytes) y firma (512 bytes).
+
+### Pendientes
+
+- PR 36 (`V-03.01` -> `main`) sigue abierto; mergear cuando se apruebe.
+
+## 2026-09-25 - V-03.01 - Hallazgos de la review de Codex en el PR 36
+
+### Trabajo realizado
+
+- CI: los checks rojos eran de `b287d20` y `fe7e51c` (2 tests backend no
+  portables a Linux), ya corregidos en `a949b08`. HEAD en verde; nada que
+  tocar en CI.
+- 7 comentarios de la review automatica de Codex, todos corregidos:
+  1. Refresh entre pestañas: una pestaña inactiva ahora adopta el CSRF nuevo
+     cuando otra renueva la sesion (`subscribeToPeerSuccess`), solo si el
+     resultado es del mismo usuario.
+  2. Actualizador protegido: el Watchdog copia ZIP+firma a
+     `updates\requests\pending-update.zip` y escribe la solicitud ANTES de
+     responder a la API, que borra el ZIP original al recibir la respuesta.
+  3. El runner elevado escribe `SUCCESS`/`FAILED` en el estado del Watchdog
+     al terminar (ruta leida de la config protegida, no de la solicitud).
+  4. y 5. Logs y estado del Watchdog en directorios propios
+     (`watchdog\logs`, `state\`) con DACL protegida y la cuenta del Watchdog
+     como propietaria. Configurado en instalador, plantilla y migracion de
+     `Actualizar-AtlasBalance.ps1`.
+  6. Extractos: el error de rango de fechas o de carga se limpia al volver a
+     cargar bien, sin borrar errores de otras acciones.
+  7. El actualizador interno se rechaza en una instalacion real de Windows
+     (Watchdog solo tiene RX sobre `api\`/`watchdog\`).
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/services/{sessionRefreshCoordinator,api}.ts`,
+  `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`,
+  `Atlas Balance/frontend/tests/sessionRefreshCoordinator.test.ts`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/{WatchdogOperationsService,ElevatedUpdateRunner}.cs`,
+  `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Production.json.template`,
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ElevatedUpdateRunnerTests.cs`
+- `Atlas Balance/scripts/{ServiceSecurity,Instalar-AtlasBalance,Actualizar-AtlasBalance}.ps1`
+- `Documentacion/{DOCUMENTACION_CAMBIOS,DOCUMENTACION_TECNICA,LOG_ERRORES_INCIDENCIAS}.md`,
+  `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `gh pr checks 36`, `gh run view --log-failed`, `gh api .../pulls/36/comments`.
+- `npm run test:unit`, `npm run lint`, `tsc -p tsconfig.json --noEmit`.
+- `dotnet test tests/AtlasBalance.API.Tests`.
+- Parser de PowerShell sobre los tres scripts tocados.
+
+### Verificacion
+
+- Verificado: frontend 76/76 tests, lint y typecheck OK; backend 967/967
+  (Windows, suite completa); scripts sin errores de sintaxis.
+- No verificado: instalacion/actualizacion real en Windows Server con cuentas
+  dedicadas (ACL, `icacls /setowner`, tarea programada). Hay que probarlo en
+  una VM antes de publicar.
+- `Test-AtlasSecrets.ps1` en local marca `appsettings.Development.json`, que
+  esta fuera de Git; ya pasaba antes de estos cambios y en CI no aplica.
+
+### Pendientes
+
+- Prueba de instalacion limpia y de actualizacion desde V-02.09 en VM.
+
+## 2026-09-25 - V-03.01 - CI en rojo en el PR 36: tests dependientes de Windows
+
+### Trabajo realizado
+
+- Diagnostico del job `Build, test, and audit` (Ubuntu) del PR 36: 2 tests
+  fallaban en `b287d20` y 3 en HEAD. Todos dependian de Windows (rutas `C:\`
+  y `D:\`, y `powershell.exe`). Detalle en `LOG_ERRORES_INCIDENCIAS.md`.
+- Tests del Watchdog con rutas absolutas portables; test de ejecucion real del
+  runner elevado omitido fuera de Windows.
+- CI: el extractor de nombres de tests fallidos no imprimia nada porque en
+  GitHub el log de xUnit lleva colores ANSI y BOM. `read_test_log` los elimina.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogLogConfigurationTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ElevatedUpdateRunnerTests.cs`
+- `.github/workflows/ci.yml`
+- `Documentacion/{LOG_ERRORES_INCIDENCIAS,DOCUMENTACION_CAMBIOS}.md`,
+  `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `gh pr checks`, `gh run view --log-failed`.
+- `dotnet test ... -- --filter-not-trait "Category=Postgres"` en worktree
+  limpio (Windows) y en `mcr.microsoft.com/dotnet/sdk:8.0` (Linux).
+
+### Verificacion
+
+- Verificado Linux (Docker, con `CI=true` y `GITHUB_ACTIONS=true`, script
+  exacto del paso del workflow): 940 correctos, 1 omitido, 0 fallos; sobre el
+  estado anterior el extractor lista los 3 tests fallidos.
+- Verificado Windows (worktree limpio): 941/941.
+- Bloqueado: `dotnet test` en el checkout principal (`Access denied` en
+  `obj\Release`, bloqueo conocido); se uso un worktree limpio.
+- Pendiente: confirmar en el CI real tras el push.
+
+## 2026-09-25 - V-03.01 - Auditoria de seguridad, fluidez y codigo muerto (checklist pre-publicacion)
+
+### Trabajo realizado
+
+- Revision de la checklist de seguridad pre-publicacion contra el codigo real.
+  Plan con 12 hallazgos; se corrigen todos salvo el #1 (migracion a .NET 10
+  antes del fin de soporte de .NET 8 el 2026-11-10), que queda pendiente por
+  decision del usuario.
+- Ejecutado con subagentes (Sonnet/Haiku) y verificado por el orquestador
+  contra diff, build y tests. Los worktrees de los subagentes se crearon desde
+  `main` (`e670749`) y no desde `V-03.01`; los parches se integraron con
+  `git apply` sobre `V-03.01` y se reverificaron aqui.
+- #2 IA: nueva politica `atlas-ia-chat` (1 peticion simultanea por usuario,
+  sin cola) en `POST /api/ia/chat`. Cierra la carrera por la que N consultas
+  concurrentes pasaban los limites de minuto/hora/dia. El limite global diario
+  entre usuarios distintos conserva la carrera (documentado en codigo).
+- #3 Bundle: se elimina la regla `charts` de `manualChunks`; React ya no cae
+  en el chunk de Recharts y `index.html` deja de precargar los graficos en
+  todas las paginas (login incluido).
+- #4 RLS: `RlsDbCommandInterceptor.BuildContext` devuelve `Anonymous()` (no
+  `System()`) cuando no hay `HttpContext` ni `SystemContextScope`. Los 13 jobs
+  de Hangfire y el seed de arranque abren el scope de forma explicita.
+- #5 Se fusionan `HardenedConciliacionService`,
+  `HardenedBackupConfigurationService` y `HardenedGoogleDriveBackupService` en
+  sus servicios base; se elimina el `SugerirAsync` antiguo (codigo muerto
+  probado por tests). Hallazgo al fusionar: el scope propio de la version
+  Hardened no comprobaba que el titular de la cuenta siguiera activo; el
+  resultado exige `PuedeConciliar` y titular activo.
+- #6 `GET /api/exportaciones/{id}/descargar` responde 404 identico para ID
+  ajeno e inexistente.
+- #7 Medido y no implementado: `set_config` antes de cada comando anade
+  ~110% sobre un `SELECT 1` (2,71 ms -> 5,69 ms). Cachear el contexto por
+  conexion exige detectar cambios de contexto dentro de la vida de la conexion
+  y el rollback de transacciones revierte `set_config`; el riesgo de dejar un
+  contexto obsoleto no compensa para 4-8 usuarios.
+- #8 Extractos, Usuarios, Auditoria y Exportaciones leen con React Query
+  (claves con `usuarioId`, `keepPreviousData` en listas paginadas,
+  invalidacion tras mutaciones).
+- #9 Fuentes Geist a `.woff2` (~434 KB -> ~163 KB); `.ttf` eliminadas.
+- #10 Politica de contrasenas: rechaza contrasenas que contienen el nombre o
+  la parte local del email, y raices comunes con sufijo trivial
+  (`P@ssw0rd2024!`, `tesoreria#2031`).
+- #11 Se elimina `app.UseHttpsRedirection()`, redundante con
+  `HttpsRedirectionMiddleware`.
+- #12 `REGISTRO_BUGS.md`: cerradas las entradas obsoletas de FallbackPolicy y
+  de las 4 tablas sin RLS, mas las de 404/403 y RLS fail-open.
+- Codigo muerto frontend: `useCatalogosQuery.ts`, 13 iconos de `Icons.tsx`,
+  helpers de invalidacion/formato/modelos sin uso, 8 tipos sin uso y reglas
+  CSS huerfanas (`dashboard-banco-*`, `ab-card*`, `ab-kpi*`, `ai-face-svg*`,
+  etc.).
+- Decisiones visuales: ninguna nueva; la migracion a React Query conserva los
+  mismos skeletons, empty states y toasts, y el refetch en segundo plano no
+  vuelve a mostrar el estado de carga.
+
+### Archivos tocados
+
+- Backend: `Constants/SecurityPolicy.cs`, `Controllers/{Exportaciones,Ia,Usuarios}Controller.cs`,
+  `Data/{RlsDbCommandInterceptor,SeedData}.cs`, los 13 archivos de `Jobs/`,
+  `Program.cs`, `RateLimiting/RateLimitingSetup.cs`,
+  `Services/{AtlasAiService,AuthService,BackupConfigurationService,ConciliacionService}.cs`;
+  borrados `Services/Hardened*.cs` (3).
+- Tests backend: `ConciliacionServiceToleranciaTests.cs` (renombrado desde
+  `HardenedConciliacionServiceTests.cs`), `ManualProcessResponseTests.cs`,
+  `RateLimitingSetupTests.cs`, `Rls/RlsDbCommandInterceptorContextTests.cs`,
+  `Rls/RlsPoolResetProbe.cs` (nuevo), `RlsSystemContextScopeIntegrationTests.cs`
+  (nuevo), `SecurityPolicyTests.cs`.
+- Frontend: `index.html`, `vite.config.ts`, `public/fonts/*.woff2` (y borrado
+  de `*.ttf`), `src/components/Icons.tsx`, `src/hooks/queries/useCatalogosQuery.ts`
+  (borrado), `src/hooks/queries/useInvalidateAfterMutation.ts`,
+  `src/pages/{Auditoria,Exportaciones,Extractos,Usuarios}Page.tsx`,
+  `src/queries/{invalidation,queryKeys}.ts`, `src/styles/**` (7 CSS),
+  `src/types/index.ts`, `src/utils/{aiModels,formatters}.ts`.
+
+### Comandos ejecutados
+
+- `npm audit`, `dotnet list package --vulnerable --include-transitive`,
+  `dotnet list package --outdated`.
+- `node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit`,
+  `npm run lint`, `npm run test:unit`, `vite build --outDir <scratchpad>`.
+- `dotnet test tests/AtlasBalance.API.Tests` (suite completa sobre el estado
+  integrado).
+
+### Verificacion
+
+- Verificado: suite backend completa sobre el estado integrado
+  `AtlasBalance.API.Tests` 966/966 (incluye RLS contra PostgreSQL con
+  Testcontainers) y `AtlasBalance.Caching.Tests` 15/15.
+- Verificado: frontend `tsc --noEmit` OK, `npm run lint` OK (0 warnings),
+  `npm run test:unit` 75/75, build Vite a carpeta alternativa OK.
+  `index.html` ya no precarga el chunk de graficos; ningun chunk de entrada
+  importa Recharts. `git diff --check` OK.
+- Bloqueado: `npm run build` a `dist/` y `dotnet build -c Release` de la API
+  (`Access denied` en `dist/` y `obj\Release`, bloqueo AV/lock conocido).
+- No verificado: validacion visual en navegador.
+
+### Pendientes
+
+- #1 migracion a .NET 10 LTS antes del 2026-11-10.
+- Validacion visual en navegador: Extractos tras editar una celda (el refetch
+  en segundo plano no debe mover el scroll), login y dashboard con el bundle
+  nuevo.
+- `npm run build` estandar sigue bloqueado por `Acceso denegado` en `dist/`.
+- `REGISTRO_BUGS.md` sigue teniendo abiertos: huecos del guardarrail de
+  autorizacion, scope `vencimientos` huerfano, scope duplicado en
+  `ExtractosController`, rama auth-flow de `PERMISOS_USUARIO` y tests de jobs
+  con InMemory.
+
+## 2026-09-25 - V-03.01 - Correcciones de la revision 2026-09-24
+
+### Trabajo realizado
+
+- Cierre de los 8 hallazgos de `Documentacion/INFORME_REVISION_2026-09-24.md`
+  mas 1 hallazgo nuevo (#9) encontrado al corregir el #1.
+- Actualizador elevado: `ElevatedUpdateRunner.cs` deja de ejecutar el script
+  de actualizacion desde el `PackageRoot` recibido; ahora copia ZIP+`.sig` a
+  una carpeta aislada Admin/SYSTEM (`config\update-runner\verified-<guid>`),
+  reverifica la firma sobre esa copia y extrae con el helper compartido
+  `PackageExtraction.TryExtractSafely` (nuevo archivo, reutilizado tambien
+  por `ActualizacionService`). Nuevo codigo de salida 8.
+- `Run-AtlasElevatedUpdate.ps1` copia ahora el runtime completo del Watchdog
+  (no solo el `.exe`) y corrige el `$exitCode` por defecto para PS 5.1.
+- ACLs reforzadas y corregidas en `ServiceSecurity.ps1` /
+  `Instalar-AtlasBalance.ps1`: `config\update-runner` pasa a ser solo
+  Admin/SYSTEM; Watchdog pasa a RX sobre `updates\` (conserva Modify solo en
+  `updates\requests`); API gana Modify sobre `updates\` y `backups\` (hallazgo
+  #9, sin el cual la actualizacion en la app quedaba rota por permisos).
+- Nueva `Repair-AtlasServiceIdentities` migra automaticamente instalaciones
+  V-02.09 (servicios como `LocalSystem`) a las cuentas dedicadas
+  `AtlasBalanceApiSvc`/`AtlasBalanceWatchdogSvc`; `Actualizar-AtlasBalance.ps1`
+  la invoca cuando `Assert-AtlasServiceIdentities -RejectBuiltIn` falla, y
+  restaura el estado previo de los servicios si la migracion no se completa
+  (hallazgo #10, causa raiz de que no se pudiera actualizar desde la version
+  anterior).
+- IA: modelo por defecto de OpenRouter vuelve a `openrouter/auto` con bloque
+  ZDR; nuevo flag `ai_allow_data_retention` (por defecto desactivado) que
+  controla si se permiten modelos gratuitos; `AskAsync` valida tanto la
+  retencion de datos como que el modelo solicitado por el usuario coincida
+  con el configurado (o un gratuito permitido). `GET /api/ia/config` expone
+  `modelos_permitidos` y el selector de modelo del chat lo usa, ocultandose
+  si solo hay una opcion.
+- Decisiones de frontend: se reutilizo la clase existente `config-check`
+  para el nuevo checkbox de "Permitir modelos gratuitos de OpenRouter" y el
+  parrafo de aviso existente `auth-error` para el texto de advertencia sobre
+  retencion de datos, en vez de crear componentes/clases nuevas. El selector
+  de modelo del chat (`AiChatPanel.tsx`) se oculta cuando la configuracion
+  solo permite un modelo.
+- Correcciones menores: mojibake en `AuthController.cs:125` ("Sesión
+  cerrada"); eliminado codigo muerto de renderizado de
+  `enlaces`/`AssistantLink` en el chat; `backend/Directory.Build.props`
+  excluye `**/tools/dotnet-build/**` de los default items (cache de build
+  bloqueada por AV producia errores de `AssemblyInfo` duplicado).
+
+### Archivos tocados
+
+- `Atlas Balance/backend/Directory.Build.props`
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/AuthController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/IaDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/ActualizacionService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/PackageExtraction.cs` (nuevo)
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/ElevatedUpdateRunner.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceThinkingModeTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ElevatedUpdateRunnerTests.cs` (nuevo)
+- `Atlas Balance/frontend/package.json`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/stores/aiChatStore.ts`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/frontend/src/utils/aiModels.ts`
+- `Atlas Balance/frontend/tests/aiModels.test.ts` (nuevo)
+- `Atlas Balance/scripts/Actualizar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`
+- `Atlas Balance/scripts/Run-AtlasElevatedUpdate.ps1`
+- `Atlas Balance/scripts/ServiceSecurity.Tests.ps1`
+- `Atlas Balance/scripts/ServiceSecurity.ps1`
+- `Documentacion/REGISTRO_BUGS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/INFORME_REVISION_2026-09-24.md`
+
+### Comandos ejecutados
+
+- `dotnet test tests/AtlasBalance.API.Tests` (suite completa con
+  Postgres/Testcontainers): 935/935 PASS, 0 skipped.
+- `npm run lint`: OK.
+- `npx tsc`: OK.
+- `npm run test:unit` (outDir alternativo, el por defecto bloqueado por AV
+  con EPERM): 75/75 PASS.
+- `vite build --outDir .dist-verify` (el `dist` por defecto estaba bloqueado
+  por AV): OK.
+- Parser PowerShell 5.1 sobre los 5 scripts tocados: OK.
+- Los 6 `scripts/*.Tests.ps1`: PASS.
+
+### Resultado de verificacion
+
+- Backend, frontend y scripts en verde segun los comandos anteriores.
+- Nuevo `ElevatedUpdateRunnerTests` (5 casos) prueba especificamente que un
+  `PackageRoot` manipulado no llega a ejecutarse.
+
+### Pendientes
+
+- Prueba real de actualizacion en VM Windows Server: instalar V-02.09,
+  actualizar a V-03.01 con `Actualizar Atlas Balance.cmd` como Administrador
+  y tambien desde la app (Watchdog viejo); verificar que los servicios
+  quedan como `AtlasBalanceApiSvc`/`AtlasBalanceWatchdogSvc`, que
+  `icacls config\update-runner` no tiene ACE de cuenta de servicio, y que una
+  segunda actualizacion en la app pasa por la tarea programada
+  `AtlasBalance.Update`.
+- Limitacion conocida sin resolver: el flujo de actualizacion interno
+  (`WatchdogSettings:UseExternalPackageUpdater=false`, no usado por defecto
+  en Windows) fallaria porque el Watchdog solo tiene RX sobre
+  `api`/`watchdog`/`scripts`.
+- Se mantienen abiertos de antes: cookies legacy no `__Host` aceptadas en
+  produccion, ventana de gracia en refresh concurrente, interceptor RLS
+  fail-open, etc. (ver `REGISTRO_BUGS.md`).
+
+## 2026-09-21 - V-03.01 - Diagnóstico de AiFace sin movimiento en navegador
+
+### Diagnóstico
+
+- El navegador devuelve `matchMedia('(prefers-reduced-motion: reduce)').matches === true`.
+- Los keyframes `atl-face-sway`, `atl-face-idle-*`, `atl-face-listen-*` y
+  `atl-face-morph` están cargados y las caras conservan sus clases de estado.
+- La media query de accesibilidad aplica `animation: none !important`, por lo
+  que el estado computado termina en `animation-name: none` y duración `0s`.
+- El HTML de referencia contiene la misma protección. No es un fallo de React,
+  de los estados ni de la carga del CSS.
+
+### Solución
+
+- No se elimina la protección de movimiento reducido: hacerlo forzaría
+  animaciones contra la preferencia del sistema.
+- Para ver las caras animadas, activa en Windows `Configuración >
+  Accesibilidad > Efectos visuales > Efectos de animación` y recarga la página.
+- La sesión revisada también tenía la sesión de Atlas caducada y el backend sin
+  respuesta; eso afecta a la carga de datos, pero no es la causa de este
+  bloqueo visual.
+
+### Verificación
+
+- En Chrome: `prefers-reduced-motion=true`, keyframes presentes, clase
+  `atl-face atl-face--idle` y animación computada desactivada por la media query.
+- No se modificó código porque el comportamiento observado es el esperado para
+  la preferencia activa.
+
+## 2026-09-21 - V-03.01 - Estado de mensaje enviado y Pensando según referencia
+
+### Trabajo realizado
+
+- Se alineó el mensaje de usuario enviado con
+  `C:\Users\usuario\Downloads\Chat - Mensaje Enviado (standalone).html`:
+  burbuja violeta a la derecha, avatar del usuario, metadato horario y radios
+  asimétricos.
+- Se añadió separación entre cambios de rol para reproducir la composición de
+  `ChatPanel` cuando conviven la pregunta enviada y la respuesta del asistente.
+- El estado `Pensando` ahora aparece dentro de una burbuja del asistente y su
+  etiqueta pulsa con la misma cadencia de la referencia; la cara mantiene el
+  estado animado `thinking`.
+- El placeholder usa la elipsis tipográfica de la referencia y la animación de
+  `Pensando` se pausa bajo `prefers-reduced-motion`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo mantiene avisos LF/CRLF en archivos backend
+  modificados previamente y ajenos a esta corrección.
+
+### Verificación
+
+- Se verificó en el store que el mensaje de usuario se añade antes de la
+  petición y que `loading=true` activa simultáneamente la fila `Pensando`.
+- Se compararon estáticamente las clases, estados, radios, alineación y pulso
+  de la etiqueta con el HTML adjunto.
+- No se pudo abrir directamente el HTML adjunto como `file://` en el navegador
+  de esta sesión por la política de seguridad de URLs locales. La validación
+  visual dinámica con una consulta real queda pendiente; el backend local
+  tampoco estaba escuchando durante la comprobación anterior.
+
+## 2026-09-21 - V-03.01 - AiFace alineada con el HTML de estados
+
+### Trabajo realizado
+
+- Se alinearon los tres ritmos de `AiFace` con `C:\Users\usuario\Downloads\AiFace - Estados (standalone).html`:
+  `idle` usa balanceo de 9 s y ojos de 14 s, `listening` usa ciclos de 7 s y
+  `thinking` morfa la forma en 2,8 s y los ojos en 5,2 s.
+- Se conservaron los keyframes de forma, ojos, parpadeos, seguimiento y morphing
+  del HTML de referencia, junto con la pausa accesible bajo
+  `prefers-reduced-motion`.
+- Se confirmó que el navegador de verificación tiene `prefers-reduced-motion`
+  activo; por eso la animación se desactiva deliberadamente en esa sesión.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo mantiene avisos LF/CRLF en archivos backend
+  modificados previamente y ajenos a esta corrección.
+
+### Verificación
+
+- Se compararon los nombres de keyframes y duraciones contra el HTML adjunto.
+- En Chrome se inspeccionó el estado computado de `AiFace`: con movimiento
+  reducido activo, `animation: none` es el comportamiento esperado.
+- En el popup se comprobaron 420 x 560 px, el cierre 56 x 56 px y el cambio de
+  clase a `atl-face--listening` al escribir, sin enviar la prueba.
+- La comprobación terminó con el backend de desarrollo sin escuchar en `5002`;
+  se registra como incidencia de entorno y no como regresión de esta UI.
+- Pendiente: reproducción visual de los ciclos con movimiento reducido
+  desactivado en el sistema/navegador.
+
+## 2026-09-21 - V-03.01 - Ajuste fino del popup y animación de la cara IA
+
+### Trabajo realizado
+
+- Se redujo la X del botón de cierre a 24 px y trazo 1.5, manteniendo el
+  círculo contenedor de 56 px.
+- Se aumentó la altura del popup compacto de 520 px a 560 px, respetando el
+  límite disponible del viewport.
+- Se hizo más perceptible el movimiento de `AiFace` en reposo, escritura y
+  pensamiento mediante ciclos más cortos y `will-change`; se conserva la
+  desactivación por `prefers-reduced-motion`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Verificación
+
+- Popup abierto en Dashboard: altura nueva, círculo de cierre intacto y X
+  reducida/fina inspeccionados en Chrome.
+- Se compararon capturas separadas del popup para comprobar el estado visual de
+  la cara; el navegador mantiene la protección global de movimiento reducido si
+  el sistema la solicita.
+
+## 2026-09-21 - V-03.01 - IA OpenRouter gratuita y adaptación visual del chat
+
+### Trabajo realizado
+
+- Se cambió el modelo predeterminado de OpenRouter a `openrouter/free` y se
+  incorporaron sus opciones gratuitas en la allowlist y en la configuración.
+- Se eliminó del payload gratuito el bloque `provider` con restricciones ZDR
+  incompatibles con algunos endpoints gratuitos; la seudonimización DLP se
+  mantiene y el token continúa protegido en backend.
+- Se adaptó `/ia` y el widget flotante al design system entregado en
+  `C:\Users\usuario\Downloads\Atlas balance UI redesign`: panel, chips,
+  composer y cara `AiFace` con estados animados `idle`, `listening` y
+  `thinking`.
+- Se actualizaron los tests de configuración y del payload OpenRouter para
+  distinguir modelos gratuitos de `openrouter/auto`.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/AtlasAiService.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasAiServiceTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ConfiguracionControllerTests.cs`
+- `Atlas Balance/frontend/src/utils/aiModels.ts`
+- `Atlas Balance/frontend/src/components/Icons.tsx`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/pages/ConfiguracionPage.tsx`
+- `Atlas Balance/frontend/src/pages/IaPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- Documentación técnica, de usuario, de cambios, de versión y log de incidencias.
+
+### Verificación
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; queda el aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- Backend: compilación OK; suite ejecutada `905/926`. Los 21 fallos son
+  pruebas PostgreSQL/Testcontainers bloqueadas porque Docker no está
+  disponible en `npipe://./pipe/docker_engine`.
+- Navegador local: `/ia` renderiza las dos caras `AiFace` (48 px y 34 px),
+  ocho chips y el composer; el panel calcula radio de 18 px. La comprobación
+  visual completa sigue pendiente porque la sesión no tiene IA configurada.
+- `git diff --check`: OK; Git solo muestra avisos de normalización LF/CRLF en
+  los cuatro archivos backend modificados.
+
+### Decisiones visuales y pendientes de diseño
+
+- Se reutilizaron los tamaños y la composición del design system entregado,
+  sin introducir Tailwind ni dependencias nuevas.
+- La animación respeta `prefers-reduced-motion`.
+- Pendiente una captura autenticada con la IA realmente activada para validar
+  el flujo de mensajes y el estado `thinking`; el código y los tests no prueban
+  una llamada real a OpenRouter.
+
+## 2026-09-21 - V-03.01 - Cara animada y composición visual del chat IA
+
+### Trabajo realizado
+
+- Se sustituyó la cara circular por una pieza morada de esquinas redondeadas
+  con estados `idle`, `listening` y `thinking`, inspirados en el vídeo y las
+  capturas de `C:\Users\usuario\Downloads\IA`.
+- La cara aparece en la cabecera, junto a las respuestas, en el botón flotante
+  y junto al estado `Pensando`; la animación respeta `prefers-reduced-motion`.
+- La cabecera ahora muestra `Asistente` y `Solo ve lo que tú puedes ver`; la
+  página `/ia` usa el panel como superficie principal y el compositor adopta
+  el fondo y los controles redondeados de la referencia.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/Icons.tsx`
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/pages/IaPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Cabecera de `/ia` comprobada en navegador local: cara morada, título y
+  subtítulo visibles, panel sin la cabecera redundante de la página.
+- La API local tenía la IA desactivada/no configurada, así que no fue posible
+  comprobar en navegador una conversación real ni el estado `Pensando`.
+
+### Pendientes
+
+- Repetir captura visual autenticada con IA configurada para revisar mensajes,
+  sugerencias, composer y widget flotante en estado activo.
+
+## 2026-09-21 - V-03.01 - Extractos alineados con filtros visibles
+
+### Trabajo realizado
+
+- La tabla de Extractos adopta una cabecera en dos filas: títulos y filtros,
+  usando la misma rejilla de columnas para evitar desalineaciones.
+- El toolbar muestra `Movimientos`, `Borrar filtros` y `Columnas`; el borrado
+  limpia tanto los filtros locales de columna como titular, cuenta y periodo.
+- Los filtros de fecha usan el selector de fecha, los estados usan selector y
+  los textos usan buscador; fecha, fila, revisada y alerta comparan valores
+  reales en lugar de quedarse sin coincidencias.
+- Se elimina la barra de fórmula visible para acercar la composición a la
+  referencia, conservando edición, revisión, auditoría, columnas y paginación.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; queda el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación y pendientes
+
+- Verificado por TypeScript, lint y tests unitarios.
+- No se hizo captura visual autenticada: no había servidor local ni sesión de
+  usuario disponible en este turno. La alineación final en navegador queda
+  pendiente de esa comprobación.
+
+## 2026-09-21 - V-03.01 - Correccion del error 500 en MFA de desarrollo
+
+- El backend de prueba estaba levantado y sano, pero la verificacion MFA
+  devolvia HTTP 500 porque Data Protection intentaba escribir en la carpeta de
+  perfil de usuario sin permisos.
+- En desarrollo las claves se guardan ahora en
+  `backend/src/AtlasBalance.API/.dataprotection-keys`, ruta local ignorada por
+  Git. La configuracion de produccion conserva su ruta y DPAPI.
+- `Start-BackendDev.ps1` compila en la salida aislada y arranca el DLL de esa
+  misma salida; antes compilaba alli pero ejecutaba el DLL antiguo de `bin`.
+- Verificacion: backend y frontend sanos; login HTTP 200 y MFA HTTP 200 desde
+  `http://localhost:5173`; build backend sin errores y `git diff --check` OK.
+
+## 2026-09-21 - V-03.01 - Reinicializacion del Authenticator de prueba
+
+- Se reinicializo el MFA de `admin@atlasbalance.local` solo en la base Docker
+  de prueba: secreto, dispositivos de confianza y sesiones activas.
+- No se cambio la contraseña, no se tocaron datos de negocio ni se modifico la
+  instalacion real.
+- Verificacion: login HTTP 200 con `mfa_setup_required=true`, nuevo desafio,
+  secreto y URI QR disponibles. No se documenta ningun secreto.
+
+### 2026-09-21 - V-03.01 - Timeouts de gerente y empleado
+
+- Trabajo: lectura acotada de registros reales, reproduccion en PostgreSQL 16
+  desechable y optimizacion RLS de extractos/columnas extra. Se preservaron los
+  cambios locales previos y no se modifico la instalacion real.
+- Archivos: migracion `20260921090000_OptimizeExtractoRlsPermissionChecks.cs`,
+  nuevo `RowLevelSecurityPerformanceTests.cs`, `RowLevelSecurityTests.cs`,
+  documentacion tecnica, incidencias y version.
+- Comandos: `docker ps`, catalogo mediante `docker exec ... psql`, lectura de
+  logs, `EXPLAIN`, `dotnet build` Release con `UseArtifactsOutput` y
+  `ArtifactsPath` absoluto `tools/dotnet-build/api`; runner xUnit con
+  `-method '*FinancialReads_Should*' -showLiveOutput` y suite completa con limite
+  global de cuatro minutos.
+- Build: xUnit exige apphost; se retiro `UseAppHost=false`. Artefactos previos
+  anidados bajo `src/AtlasBalance.API/tools` causaban atributos duplicados;
+  se excluyeron para esta build con
+  `DefaultItemExcludesInProjectFolder=**/tools/**`, sin borrarlos. Docker requirio
+  ejecucion fuera del sandbox. No existe carpeta `Skills` local.
+- Fixture: la preparacion inicial paso a usar EF para los campos obligatorios.
+  La suite completa detecto `0A000` al cambiar el propietario de una secuencia
+  antes que el de su tabla; se ordenan primero tablas y despues secuencias.
+- Focalizadas: 2/2, ambos roles y 20.000 movimientos ficticios; lecturas
+  de 86-249 ms, cuenta ajena invisible y firma falsa rechazada. Antes, la lectura
+  del gerente agotaba el timeout. Compilacion correcta con avisos preexistentes.
+- Verificacion final: suite backend completa **926/926**, sin fallos ni omitidos,
+  con PostgreSQL real; las lecturas medidas quedaron entre 108 y 282 ms.
+  `git diff --check` correcto. No hubo cambios de frontend ni validacion visual.
+- Se genero el SQL con `IMigrator.GenerateScript` de EF, sin abrir conexiones,
+  y se aplico por `psql -v ON_ERROR_STOP=1` solo a `atlas_balance_db`, dentro de
+  transaccion, con control de migracion previa, lock timeout de 3 s y statement
+  timeout de 20 s. Historial confirmado en `20260921090000`; ambas tablas
+  mantienen RLS/FORCE RLS, los WITH CHECK previos y `app_user` sin superusuario
+  ni BYPASSRLS. No se cambiaron usuarios, credenciales ni datos financieros.
+- Pendiente: comprobacion manual en navegador con las cuentas afectadas.
+  El despliegue en la instalacion real queda fuera del alcance autorizado.
+
 Bitacora tecnica acumulativa para registrar cambios implementados, comandos ejecutados, resultados y pendientes.
 
 Regla de trabajo desde ahora:
 - Cada bloque de trabajo debe anadirse aqui.
 - No cerrar una tarea sin dejar evidencia de verificacion.
+
+---
+
+## 2026-09-21 - V-03.01 - Rediseño UI/UX del asistente IA
+
+### Trabajo realizado
+
+- Se rehizo la composición de `/ia` y del widget flotante con la gramática de
+  las referencias locales: cabecera `Asistente`, cara morada, sugerencias,
+  mensajes agrupados, citas y composer anidado.
+- La cara usa estados `idle`, `listening` y `thinking`; el widget se oculta en
+  `/ia`, se abre en el resto de pantallas y usa un cierre circular separado.
+- Se añadieron menús propios para modelo y modo de pensamiento, con iconos del
+  sistema, selección por sesión y semántica de menú accesible.
+- Se respetan las animaciones proporcionadas y `prefers-reduced-motion`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/ia/AiChatPanel.tsx`
+- `Atlas Balance/frontend/src/components/layout/TopBar.tsx`
+- `Atlas Balance/frontend/src/stores/aiChatStore.ts`
+- `Atlas Balance/frontend/src/styles/layout/revision-ai.css`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `design-qa.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- `/ia`: cabecera, ocho sugerencias, composer, selector de modelo y selector
+  de pensamiento inspeccionados en Chrome autenticado.
+- Widget flotante: apertura, panel compacto de 420 px y cierre independiente
+  inspeccionados en Dashboard.
+- No se ejecutó una pregunta contra el proveedor externo; la validación se
+  centró en la interfaz y no modificó datos ni configuración.
+
+### Pendientes
+
+- Ninguno dentro del alcance visual. Queda fuera de esta tarea la validación
+  de una respuesta real del proveedor y sus tiempos de streaming.
+
+---
+
+## 2026-09-21 - V-03.01 - Selector de país y saldos del dashboard
+
+### Trabajo realizado
+
+- Se cambió la etiqueta visible «Organización» por «País» y se ajustó el
+  nombre accesible del selector.
+- Se ocultó la tarjeta «Saldos por país» del dashboard cuando existe un país
+  seleccionado, porque sus datos ya están filtrados por ese país.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/layout/PaisScopeSelect.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Se confirmó que el selector muestra «País» y que el bloque «Saldos por
+  país» solo se renderiza sin filtro de país.
+
+### Pendientes
+
+- No quedan pendientes funcionales. No se hizo una captura visual autenticada.
+
+## 2026-09-21 - V-03.01 - Simplificación visual del selector de país
+
+### Trabajo realizado
+
+- Se eliminó la tarjeta exterior del selector para evitar el doble borde y el
+  fondo anidado.
+- El campo conserva el label «PAÍS», el control estándar, el foco visible y
+  el comportamiento responsive del sidebar.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- El estilo compactado reserva espacio para el texto y el chevron dentro del
+  ancho del sidebar colapsado, sin cambiar el comportamiento del selector.
+
+### Pendientes
+
+- No quedan pendientes funcionales. No se hizo una captura visual autenticada.
+
+## 2026-09-21 - V-03.01 - Ajuste del selector de país en sidebar colapsado
+
+### Trabajo realizado
+
+- Se ajustó el control desplegable del país para usar el mismo radio y densidad
+  visual que el resto de controles.
+- En el sidebar colapsado se redujo la altura, se centró la abreviatura y se
+  recolocó el chevron para que `Gen` y los códigos ISO no queden cortados.
+- La lista abierta dejó de depender del `<select>` nativo y ahora usa un
+  listbox propio con estilos de Atlas Balance, selección visible y navegación
+  por teclado.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/shell.css`
+- `Atlas Balance/frontend/src/components/layout/PaisScopeDropdown.tsx`
+- `Atlas Balance/frontend/src/components/layout/PaisScopeSelect.tsx`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; aviso preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Se comprobó la compilación y la suite frontend con el selector customizado.
+
+### Pendientes
+
+- No quedan pendientes funcionales. No se hizo una captura visual autenticada.
+
+## 2026-09-20 - V-03.01 - Separacion del entorno de prueba frente a la instalacion real
+
+### Trabajo realizado
+
+- El frontend de `C:\Proyectos\Atlas Balance Dev` mantiene Vite en `5173` y
+  ahora proxifica `/api` exclusivamente hacia el backend de prueba en `5002`.
+- Los scripts de desarrollo dejan de intentar reutilizar el puerto `5000`, que
+  pertenece a la instalacion real en `C:\AtlasBalance`.
+- El backend de prueba usa PostgreSQL Docker en `5433` y su configuracion local
+  ignorada por Git (`appsettings.Development.json` y `.env`).
+- Se restablecio solo el administrador de la base de prueba porque el volumen
+  local ya existia con una contrasena antigua; no se modifico la instalacion real.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/vite.config.ts`
+- `Atlas Balance/scripts/Start-BackendDev.ps1`
+- `Atlas Balance/scripts/Start-Dev.ps1`
+- `Atlas Balance/scripts/Start-LocalDev.ps1`
+- `Atlas Balance/backend/src/AtlasBalance.API/Middleware/CsrfMiddleware.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/appsettings.Development.json.template`
+- `Atlas Balance/frontend/e2e/admin-smoke.spec.ts`
+- `Atlas Balance/frontend/e2e/README.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `docker compose up -d`: OK; contenedor de prueba `atlas_balance_db` en
+  `127.0.0.1:5433`.
+- `Start-BackendDev.ps1 -ApiPort 5002`: compilacion OK con 0 errores y API sana.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK.
+
+### Verificacion
+
+- `http://localhost:5000/api/health`: HTTP 200, instancia real intacta.
+- `http://localhost:5002/api/health`: HTTP 200, instancia de prueba.
+- `http://localhost:5173/api/health`: HTTP 200 a traves del proxy de prueba.
+- Login de `admin@atlasbalance.local` por `http://localhost:5173/api`: HTTP 200
+  contra la base de prueba.
+- La base de prueba contiene 2 usuarios, 3 paises, 3 titulares y 5 cuentas.
+
+### Pendientes
+
+- Los registros demo creados anteriormente en la instalacion real siguen ahi;
+  no se eliminan sin autorizacion explicita.
+
+---
+
+## 2026-09-20 - V-03.01 - Selectores segmentados del dashboard
+
+### Trabajo realizado
+
+- El selector de divisa del dashboard deja de ser un desplegable nativo y pasa
+  a mostrar una opción segmentada por moneda.
+- El periodo visible queda reducido a `1m`, `3m`, `6m`, `12m` y `24m`, como en
+  la referencia visual.
+- Se elimina la cápsula exterior común para que periodo y divisa se perciban
+  como dos selectores independientes.
+- Ambos grupos mantienen navegación por teclado y estado accesible mediante
+  `role="radiogroup"` y `aria-checked`.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/DivisaSelector.tsx`
+- `Atlas Balance/frontend/src/components/dashboard/PeriodoSelector.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardPage.tsx`
+- `Atlas Balance/frontend/src/pages/DashboardTitularPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `git diff --check`: OK.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; Vite mantiene el warning preexistente sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+
+### Decisiones visuales y pendientes de diseño
+
+- Se mantienen los tokens y componentes visuales existentes; los dos filtros
+  usan el mismo patrón de pestañas segmentadas y se adaptan a cinco columnas
+  en móvil.
+- No quedan pendientes de diseño para este ajuste.
+
+---
+
+## 2026-09-20 - V-03.01 - Correccion de origen en proxy local de Vite
+
+### Trabajo realizado
+
+- La API instalada rechazaba el `Origin` del navegador `http://localhost:5173`
+  con `Origen no permitido`, aunque el frontend usaba el proxy local `/api`.
+- El proxy de Vite ahora reenvia `Origin: http://localhost:5000`, que es el
+  origen aceptado por la instancia local instalada.
+- No se modifico la politica CORS de produccion ni se tocaron datos.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/vite.config.ts`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- Pruebas de login por `http://localhost:5173/api/auth/login` con los tres
+  usuarios demo: HTTP 200 en los tres casos.
+- `npm.cmd run lint`: OK.
+
+### Verificacion
+
+- Admin: HTTP 200 y MFA requerido.
+- Gerente demo: HTTP 200 sin error de origen.
+- Empleado demo: HTTP 200 sin error de origen.
+
+### Pendientes
+
+- Recargar la pagina `/login` del navegador para tomar la configuracion nueva
+  del proxy.
+
+---
+
+## 2026-09-20 - V-03.01 - Refuerzo de marca en inicio de sesión
+
+### Trabajo realizado
+
+- Se aumentó la escala visual del logo y del nombre `Atlas Balance` en la
+  pantalla de inicio de sesión.
+- Se hizo más visible el logo y el nombre `Atlas Labs`.
+- El pie de marca `by Atlas Labs` permanece visible también en viewport móvil,
+  donde antes se ocultaba.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/auth.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Decisiones visuales
+
+- Se mantuvieron los tokens de color, tipografía y el layout del formulario.
+- El ajuste se limita a jerarquía de marca, escala y visibilidad responsive;
+  no cambia autenticación ni comportamiento del formulario.
+
+### Verificación
+
+- Pantalla `/login` recargada en el navegador local: `Atlas Balance` y `Atlas
+  Labs` visibles; formulario intacto.
+- `npm.cmd run lint`: OK.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `npm.cmd run build`: OK. Vite mantiene un warning preexistente sobre
+  `__dirname` en `vite.config.ts`.
+
+### Pendientes de diseño
+
+- Ninguno para este ajuste.
+
+---
+
+## 2026-09-17 - V-03.01 - Corrección de índice único de alertas
+
+La migración histórica `20260414200917_AlertasSaldoConstraints` filtraba
+`ix_alertas_saldo_global_unica` solo por `cuenta_id IS NULL`. Eso impedía
+combinar una alerta global con una alerta por tipo de titular. Se añadió
+`20260917210000_RepairAlertasSaldoGlobalIndex`, que recrea el índice con
+`cuenta_id IS NULL AND tipo_titular IS NULL`.
+
+La regresión queda cubierta por
+`RowLevelSecurityTests.CoreFinancialTables_Should_Enforce_Rls_By_User_And_IntegrationScope`.
+Verificación final contra Docker/Testcontainers: suite PostgreSQL `19/19` y
+suite backend completa `924/924`.
+
+---
+
+## 2026-09-17 - V-03.01 - Revisión: actualización elevada y carrera de refresh
+
+### Hallazgos corregidos
+
+- La tarea `AtlasBalance.Update` se registraba como la cuenta Watchdog con
+  `RunLevel=Limited`; no podía actualizar una instalación protegida y, además,
+  el descriptor concedía control total a esa cuenta. Ahora se ejecuta como
+  `SYSTEM` mediante `ServiceAccount/HighestAvailable` y Watchdog solo conserva
+  lectura/ejecución de la tarea (`GRGX`), con escritura limitada al área de
+  solicitudes y actualizaciones firmadas.
+- La invocación compartida de `icacls` mezclaba `/grant:r` con `/setowner`, lo
+  que hacía fallar el endurecimiento de ACL. Se separaron ambas operaciones.
+- API y Watchdog ya no reciben `Modify` heredado sobre sus propios binarios;
+  las ACL de backups y exports quedan diferenciadas por el servicio que las
+  necesita.
+- Una respuesta de refresh iniciada antes de logout/cambio de usuario podía
+  reaparecer en la sesión nueva. Se valida generación e identidad antes de
+  aplicar el payload.
+- El instalador principal duplicaba la limpieza de ACL con una concatenación
+  incorrecta de los argumentos `/remove:g` y `/remove:d`; se corrigió la
+  construcción de argumentos y se separó también `/setowner`.
+
+### Archivos tocados
+
+- `Atlas Balance/scripts/ServiceSecurity.ps1`,
+  `ServiceSecurity.Tests.ps1`, `Instalar-AtlasBalance.ps1`.
+- `Atlas Balance/frontend/src/services/api.ts`,
+  `src/utils/sessionScope.ts`, `tests/sessionScope.test.ts`.
+
+### Verificación
+
+- `ServiceSecurity.Tests.ps1`: OK.
+- La regresión estática del instalador principal cubre la forma correcta de
+  construir los argumentos de `icacls`: OK.
+- Parser PowerShell de instalador, actualizador, instalación de servicios,
+  módulo de seguridad, smoke test y runner: OK.
+- Frontend: lint OK, build OK, `70/70` tests unitarios OK.
+- `git diff --check`: OK.
+- Docker/Testcontainers: bloqueado en este host por acceso denegado a
+  `npipe://./pipe/docker_engine`; no se declara validación PostgreSQL.
+
+---
+
+## 2026-09-17 - V-03.01 - Bloque 12: aislamiento de sesión frontend
+
+### Trabajo realizado
+
+- `authStore` limpia el estado por usuario al cerrar sesión o cambiar de
+  usuario, incluyendo la prevención de conservar un CSRF anterior cuando el
+  nuevo usuario todavía no aporta uno.
+- Se centralizó la limpieza de stores user-scoped: permisos, alertas, país,
+  chat/IA, notificaciones, actualización, UI transitoria y caché TanStack
+  Query. Tema y layout permanecen como preferencias neutras.
+- Se añadieron generaciones de sesión para descartar respuestas async antiguas
+  de IA, alertas, disponibilidad IA, notificaciones y actualización.
+- Se hicieron explícitas las claves user-scoped de storage y se añadieron
+  `usuarioId` a query keys sensibles que podían colisionar.
+
+### Archivos tocados
+
+- Frontend: `src/stores/{authStore,sessionState,aiChatStore,alertasStore,
+  iaAvailabilityStore,notificacionesAdminStore,paisScopeStore,uiStore,
+  updateStore}.ts`, `src/services/queryClient.ts`,
+  `src/queries/queryKeys.ts`, `src/utils/sessionScope.ts`.
+- Tests: `tests/sessionScope.test.ts`, `tests/queryClient.test.ts`,
+  `tests/queryKeys.test.ts`.
+- El bloque 12 no toca `services/api.ts`, `package.json` ni `tsconfig*`; esos
+  ficheros pertenecen al bloque 7 de coordinación de refresh, que se valida
+  por separado.
+
+### Verificación
+
+- Lint focalizado del Bloque 12: OK.
+- Regresiones de aislamiento: `3/3` OK. La suite frontend conjunta quedó en
+  `65/65` al incluir también las pruebas del bloque 7.
+- Regresiones `sessionScope`: `3/3` OK.
+- `git diff --check`: OK.
+
+### Estado
+
+- Sin pendientes funcionales derivados del bloque; queda la aprobación
+  independiente y el commit coordinado de la tanda completa.
+
+---
+
+## 2026-09-17 - V-03.01 - Bloque 8: ruta absoluta y segura de logs del Watchdog
+
+- **Trabajo realizado:** el Watchdog resuelve `WatchdogSettings:LogDirectory`
+  como ruta absoluta y usa `%ProgramData%\AtlasBalance\logs` por defecto.
+  Rechaza rutas relativas, crea el directorio con ACL limitada a `SYSTEM`,
+  Administradores y la identidad efectiva del servicio, y configura rotacion
+  diaria, limite de 50 MiB y 30 ficheros retenidos. El estado del Watchdog
+  tambien deja de caer a un fichero relativo.
+- **Configuracion para el instalador C:** crear `%ProgramData%\AtlasBalance\logs`
+  antes de registrar el servicio y conceder escritura/rotacion a la cuenta real
+  del servicio, ademas de `SYSTEM` y Administradores. Mantener
+  `WatchdogSettings:LogDirectory` y `StateFilePath` con rutas absolutas; nunca
+  depender del working directory del servicio.
+- **Tests:** `WatchdogLogConfigurationTests` cubre defaults absolutos,
+  configuracion absoluta, rutas relativas, working directory inesperado y fallo
+  cerrado cuando el destino no es escribible.
+- **Archivos de este bloque:** Watchdog logging/configuracion/estado,
+  `appsettings` del Watchdog, `packages.lock.json`, test focalizado y esta
+  documentacion. No se modifican instaladores ni frontend.
+- **Verificación:** build del proyecto de tests sin errores y pruebas
+  focalizadas `WatchdogLogConfiguration` `6/6`, `WatchdogStateStore` `2/2` y
+  helper de actualización `1/1` OK. La ACL existente se verifica de forma
+  fail-closed, incluida la propiedad del fichero/directorio.
+
+---
+
+## 2026-09-17 - V-03.01 - Coordinacion de auditoria de seguridad (estado de sesion)
+
+- **Commits aprobados en esta sesion:** `6610adb` (permiso de escritura en
+  exportacion manual), `6b6b959` y `d406ccf` (fallback autenticado y guardia
+  de Hangfire), `b171567` (health), `7454c3d` (RLS restante) y `4b37701`
+  (origen autorizado de release).
+- **Verificacion local:** `dotnet restore --locked-mode` y `dotnet build -c
+  Release` correctos; las pruebas focalizadas de autorizacion, health y
+  rate limiting fueron correctas; `MigrationDiscoveryTests` fue correcto.
+  PostgreSQL/Testcontainers sigue bloqueado porque Docker no esta disponible.
+  Frontend: `npm ci`, lint, `test:unit` (57/57) y build correctos.
+- **Bloque 4:** existe un parche no comprometido para preservar secretos del
+  instalador y una prueba PowerShell especifica. El parser conserva valores
+  quoted con `;` y barras inversas literales; el script pasa sintaxis y el
+  test especifico. La revision independiente lo aprobo tras corregir el
+  parseo y las rutas de reinstalacion contra otra BD. Commit posterior:
+  `fix(installer): preserve existing security secrets`.
+- **Bloques pendientes:** minimo privilegio Windows, refresh entre pestanas,
+  ruta absoluta de logs Watchdog, secretos de smoke test, auditoria transversal
+  con nuevas vulnerabilidades confirmadas, aislamiento de caches frontend y
+  auditoria final. El limite de subagentes impidio completar el ciclo exigido.
+- **Riesgos de infraestructura:** no existe `origin/V-03.01` en el remoto
+  consultado; `npm audit` y la auditoria NuGet no pudieron consultar sus
+  registros por bloqueo de red.
+
+---
+
+## 2026-09-17 - V-03.01 - RLS para alertas, uso IA y operaciones de backup
+
+- **Motivacion:** `ALERTAS_SALDO`, `ALERTA_DESTINATARIOS`, `IA_USO_USUARIOS`
+  y `BACKUP_OPERATIONS` no tenian el mismo backstop RLS que el resto de las
+  tablas sensibles.
+- **Trabajo realizado:** nueva migracion
+  `20260917100000_CompleteScopedRls.cs` con `ENABLE ROW LEVEL SECURITY` y
+  `FORCE ROW LEVEL SECURITY`. Las alertas se resuelven por cuenta, tipo de
+  titular o alcance global usando solo cuentas activas y titulares activos
+  accesibles; sus destinatarios siguen esa visibilidad solo en modo usuario y
+  solo ADMIN/SYSTEM puede escribir ambas tablas. El uso IA queda aislado por
+  `usuario_id`, con `WITH CHECK` para impedir cambiar de propietario; el
+  borrado queda reservado a ADMIN/SYSTEM. Las operaciones de backup quedan
+  restringidas a ADMIN/SYSTEM, incluido el contexto SYSTEM usado por
+  Hangfire/Watchdog.
+- **Tests añadidos/modificados:** `RowLevelSecurityTests` usa PostgreSQL real
+  cuando Testcontainers está disponible y cubre lectura, INSERT, UPDATE,
+  DELETE, firma inválida, usuario no autorizado, integración, ADMIN y
+  SYSTEM. `MigrationDiscoveryTests` comprueba que EF descubre la migracion.
+- **Comandos ejecutados:** compilacion del proyecto de tests con
+  `dotnet test ... --no-restore --filter FullyQualifiedName~RowLevelSecurityTests`:
+  **compila correctamente**. Ejecucion focalizada del ensamblado xUnit:
+  **bloqueada antes del test** porque Testcontainers no pudo conectar con
+  `npipe://./pipe/docker_engine` (Docker no disponible en este host).
+- **Pendientes:** ejecutar `Category=Postgres` en Docker/CI y validar la
+  migracion en PostgreSQL de staging. No se hizo commit en esta implementacion;
+  queda para el coordinador tras revision independiente.
+
+---
+
+## 2026-09-17 - V-03.01 - Endurecimiento de health checks públicos
+
+- **Motivacion:** las sondas anónimas de readiness y functional exponían
+  diagnóstico operativo y readiness no tenía un límite dedicado.
+- **Trabajo realizado:** `/api/health` devuelve únicamente liveness mínimo;
+  `/api/health/ready` y `/api/health/functional` mantienen acceso anónimo
+  para instalador/actualizador, devuelven solo `status` y comparten un rate
+  limit por IP configurable (`HealthPerMinutePerIp`, 30/min por defecto).
+  `/api/sistema/salud` mantiene el detalle detrás de `ADMIN` y las variantes no
+  registradas no heredan la exención de health.
+- **Archivos tocados por este bloque:** `Program.cs`, `HealthProbeDtos.cs`,
+  `HealthCheckService.cs`, `RateLimitingOptions.cs`, `RateLimitingSetup.cs`,
+  los tres `appsettings`, `HealthEndpointSecurityTests.cs`,
+  `RateLimitingSetupTests.cs` y documentación técnica/versionada.
+- **Comandos ejecutados:** `dotnet test AtlasBalance.API.Tests.csproj
+  --no-restore -- --filter-class AtlasBalance.API.Tests.HealthEndpointSecurityTests
+  --filter-class AtlasBalance.API.Tests.RateLimitingSetupTests`: **16/16 OK**.
+  `dotnet build AtlasBalance.API.csproj -c Release --no-restore
+  -p:UseAppHost=false`: **OK, 0 advertencias, 0 errores**. `git diff --check`:
+  **OK** (solo avisos de normalización LF/CRLF de Git).
+- **Pendientes:** revisión independiente y commit del coordinador.
+
+---
+
+## 2026-09-17 - V-03.01 - Scope efectivo en `/api/paises` y backstop RLS
+
+- **Motivacion:** reproducir y corregir que un usuario no administrador viera
+  países activos sin cuentas accesibles. La causa estaba en
+  `PaisesController`, no en `UserAccessService`.
+- **Trabajo realizado:**
+  - `PaisesController` inyecta `IUserAccessService` y deriva los países desde
+    `ApplyCuentaScope`, manteniendo el bypass completo de ADMIN.
+  - Nueva migración
+    `20260917090000_AlignPaisRlsWithAccountScope.cs`: RLS de `PAISES` exige una
+    cuenta activa y autorizada; países sin cuentas accesibles quedan fuera.
+  - `Atlas Balance/scripts/Diagnose-PermissionConsistency.sql` permite detectar
+    filas históricas incompatibles o duplicadas sin modificar datos.
+  - `PaisesControllerTests` cubre país, titular sin país y ADMIN.
+  - `UserAccessScopeMatrixTests` cubre global y cuenta creada después del
+    permiso sin crear filas nuevas de permiso.
+  - `RowLevelSecurityTests` cubre país completo, global, país sin cuentas y
+    compara IDs de PostgreSQL con `UserAccessService`.
+  - No se cambia el esquema de permisos ni se convierten scopes jerárquicos en
+    permisos cuenta por cuenta. No hubo cambios de frontend: la UI existente ya
+    representa correctamente los valores nulos y mantiene la coherencia de una
+    cuenta seleccionada.
+- **Archivos tocados:**
+  - `Atlas Balance/backend/src/AtlasBalance.API/Controllers/PaisesController.cs`
+  - `Atlas Balance/backend/src/AtlasBalance.API/Migrations/20260917090000_AlignPaisRlsWithAccountScope.cs`
+  - `Atlas Balance/scripts/Diagnose-PermissionConsistency.sql`
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/PaisesControllerTests.cs`
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/UserAccessScopeMatrixTests.cs`
+  - `Atlas Balance/backend/tests/AtlasBalance.API.Tests/RowLevelSecurityTests.cs`
+  - Documentación técnica, de usuario, versión, log de incidencias y esta
+    bitácora.
+- **Comandos ejecutados:**
+  - `dotnet restore tests\AtlasBalance.API.Tests`: OK.
+  - `dotnet test tests\AtlasBalance.API.Tests --no-restore -- --filter-not-trait "Category=Postgres"`: **883/883 OK**.
+  - `dotnet test tests\AtlasBalance.API.Tests --no-restore -- --filter-trait "Category=Postgres"`: **19 fallos**, todos por Docker no disponible (`npipe://./pipe/docker_engine`).
+  - `npm.cmd ci`: OK, 0 vulnerabilidades.
+  - `npm.cmd run lint`: OK.
+  - `npm.cmd run test:unit`: **57/57 OK**.
+  - `npm.cmd run build`: OK; solo dejó el warning conocido de `__dirname` en Vite.
+  - `git diff --check`: OK, con warnings de conversión LF/CRLF de Git.
+- **Verificación:** compilación backend correcta, suite no-Postgres verde
+  (`883/883`) y `AtlasBalance.Caching.Tests` verde (`15/15`).
+  La validación PostgreSQL/Testcontainers no se puede declarar verde hasta
+  disponer de Docker.
+- **Pendientes:** ejecutar `Category=Postgres` y validar la migración en
+  staging PostgreSQL. No se realizó validación visual con navegador.
+
+---
+
+## 2026-09-16 - V-03.01 - Apertura de la rama V-03.01 y bump de version V-02.09 -> V-03.01 / 3.1.0
+
+- **Motivacion:** peticion del operador de abrir una nueva version
+  partiendo del HEAD de `main` (`e670749`, `V-02.09`). `V-02.09` queda
+  cerrada como base historica y `V-03.01` arranca como nueva version
+  vigente.
+- **Trabajo realizado (solo bump, sin contenido funcional):**
+  - `Atlas Balance/VERSION`: `V-02.09` -> `V-03.01`.
+  - `Atlas Balance/Directory.Build.props`: `Version 2.9.0`,
+    `AssemblyVersion 2.9.0.0`, `FileVersion 2.9.0.0`,
+    `InformationalVersion V-02.09` -> `Version 3.1.0`,
+    `AssemblyVersion 3.1.0.0`, `FileVersion 3.1.0.0`,
+    `InformationalVersion V-03.01`.
+  - `Atlas Balance/frontend/package.json` y `package-lock.json`:
+    `version 2.9.0` / `appVersion V-02.09` ->
+    `version 3.1.0` / `appVersion V-03.01` (raiz + paquete raiz).
+  - `Atlas Balance/backend/src/AtlasBalance.API/Data/SeedData.cs`:
+    `["app_version"] = ("V-02.09", ...)` -> `("V-03.01", ...)`.
+  - `.github/workflows/release.yml`: `default: "V-02-09"` ->
+    `default: "V-03-01"` (el input de la CI exige guion; el script de
+    alineacion convierte `V-03.01` a `V-03-01` para el tag).
+  - `Atlas Balance/scripts/Build-Release.ps1`:
+    `[string]$Version = "V-02.09"` -> `[string]$Version = "V-03.01"`.
+  - `Atlas Balance/scripts/Instalar-AtlasBalance.ps1`:
+    `$AppVersion = "V-02.09"` -> `$AppVersion = "V-03.01"`.
+  - `Atlas Balance/scripts/install.ps1`: comprobacion del nombre del zip
+    `AtlasBalance-V-02.09-win-x64.zip` ->
+    `AtlasBalance-V-03.01-win-x64.zip`.
+  - `Documentacion/DOCUMENTACION_TECNICA.md` y
+    `Documentacion/DOCUMENTACION_USUARIO.md`: cabecera de vigencia
+    documental actualizada a `V-03.01`. El cuerpo conserva los marcadores
+    historicos `V-XX.YY` sin tocar.
+  - `Documentacion/Versiones/version_actual.md` reescrito: apunta a
+    `v-03.01.md` y deja constancia del cierre de `V-02.09` y de la base
+    desde la que se parte (`e670749`).
+  - `Documentacion/Versiones/v-03.01.md` creado: cubre el bump y los
+    criterios de verificacion.
+- **Rama:** `V-03.01` (creada desde `main`, HEAD `e670749`).
+- **Archivos tocados:** los listados arriba (VERSION, props, package,
+  package-lock, SeedData, release.yml, 3 scripts, 3 docs + cabecera de 2
+  docs).
+- **Comandos ejecutados:**
+  - `git checkout -b V-03.01` desde `main`.
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+    "C:\Proyectos\Atlas Balance Dev\Atlas Balance\scripts\Check-VersionAlignment.ps1"
+    -ExpectedVersion "V-03.01"`: **OK** (`V-03.01` / `3.1.0` alineado en
+    VERSION, Directory.Build.props, package.json, package-lock.json,
+    SeedData.app_version, release.default, Build-Release.default,
+    Instalar.default, install.default).
+- **Verificacion:** `Check-VersionAlignment.ps1` en verde. No se ha
+  ejecutado build de backend, lint ni suite porque este bloque es solo
+  bump de version; las suites se ejecutan en el primer bloque funcional
+  de V-03.01.
+- **Pendientes:** contenido funcional de V-03.01 (a definir por el
+  operador).
 
 ---
 
@@ -25634,5 +26947,340 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 - Push de la rama hotfix y merge del PR #35.
 - `stash pop` en `V-03.00` para recuperar el WIP de diseno.
 - Unificar el bucle del instalador con deadline global.
+
+---
+
+## 2026-09-20 - V-03.01 - Rediseño visual de donuts de Concentración
+
+### Trabajo realizado
+
+- Se rediseñó cada donut del dashboard para seguir la referencia visual:
+  cabecera con etiqueta `Donut`, resumen del 100%, panel gris, leyenda lateral
+  y total centrado.
+- Se añadieron extremos redondeados y se limitaron las partes visibles a cuatro,
+  agrupando el resto como `Otros`.
+- La leyenda conserva el detalle monetario en el tooltip y muestra en reposo
+  solo nombre y porcentaje para evitar ruido visual.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/ConcentracionDonutCharts.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; advertencia preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- Comprobación visual en el dashboard local: composición, leyenda y agrupación
+  de cuatro partes visibles confirmadas.
+- La sesión del dashboard expiró al final de la comprobación; no se reautenticó
+  ni se usaron credenciales. El último ajuste de formato/fondo queda verificado
+  por lint, build y tests, pero no por una segunda captura autenticada.
+
+### Pendientes
+
+- Ninguno funcional. Si se requiere una captura final tras el último ajuste,
+  hay que abrir de nuevo el dashboard con una sesión válida.
+
+---
+
+## 2026-09-21 - V-03.01 - Ajuste final de Concentración
+
+### Trabajo realizado
+
+- Se eliminó de las tarjetas de Concentración el badge `Donut` y el resumen
+  `100% ... asignados`, dejando únicamente el título del reparto sobre la
+  burbuja.
+- El importe central del donut usa una escala relativa al tamaño del gráfico y
+  queda recortado dentro de su área para evitar desbordamientos.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/ConcentracionDonutCharts.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; advertencia preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- El código ya no contiene el badge ni el texto `100%` de la cabecera.
+- La sesión autenticada del dashboard no estaba disponible para una nueva
+  captura visual; no se usaron credenciales.
+
+---
+
+## 2026-09-21 - V-03.01 - Donut sin burbuja gris y con mayor área interior
+
+### Trabajo realizado
+
+- Se eliminaron el fondo gris, el radio y el relleno de las burbujas que
+  envolvían cada gráfico de Concentración.
+- Se amplió la columna del gráfico, la altura disponible y los radios del donut
+  para aumentar el espacio útil del texto central sin solaparlo.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/dashboard/ConcentracionDonutCharts.tsx`
+- `Atlas Balance/frontend/src/styles/layout/dashboard.css`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; advertencia preexistente de Vite sobre `__dirname`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK.
+
+### Verificación
+
+- El bloque de fondo ya no aplica color, radio ni relleno tipo píldora.
+- La captura visual final no se realizó porque no había sesión autenticada
+  disponible en el dashboard; no se usaron credenciales.
+
+---
+
+## 2026-09-21 - V-03.01 - Ampliacion de la tabla de Extractos a 20 filas y columnas completas
+
+### Trabajo realizado
+
+- Se amplio el viewport de escritorio de `Extractos` para reservar espacio para
+  20 filas segun la densidad activa; el limite responsive de movil se conserva.
+- Se elimino `Fila` del conjunto de columnas visibles sin eliminar `fila_numero`
+  del modelo ni de las operaciones internas.
+- Se anadieron `Cuenta` con el nombre de la cuenta, `Banco`, `Titular` y
+  `Divisa`; las columnas extra importadas siguen apareciendo dinamicamente.
+- Se movieron historial y alta inline a la celda `Revisada` para mantener esas
+  acciones despues de retirar la columna `Fila`.
+- El backend incluye `BancoNombre` en la respuesta de lista de extractos.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Atlas Balance/frontend/src/types/index.ts`
+- `Atlas Balance/backend/src/AtlasBalance.API/DTOs/ExtractosDtos.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `dotnet restore ... -p:UseArtifactsOutput=true --ignore-failed-sources`: OK;
+  aviso de red `NU1900` al consultar vulnerabilidades de NuGet.
+- `dotnet build ... -p:DefaultItemExcludes=tools/dotnet-build/**`: OK; 7
+  advertencias preexistentes, 0 errores.
+- `git diff --check`: OK; solo avisos preexistentes de conversion LF/CRLF.
+
+### Verificacion
+
+- La cabecera autenticada mostro `Fecha`, `Cuenta`, `Banco`, `Titular`,
+  `Divisa`, `Concepto`, `Comentarios`, `Importe`, `Saldo`, `Revisada`, `Alerta`
+  y `Desglose`, sin `Fila`.
+- El viewport calculo 968 px en densidad compacta para mostrar 20 filas con
+  el scroll vertical interno disponible.
+- La sesion local se invalido al recompilar el backend y no se repitio el flujo
+  manual de filtros con una credencial nueva.
+
+### Pendientes
+
+- Repetir una prueba manual autenticada de filtros tras volver a iniciar sesion;
+  la logica de filtros no cambio en este ajuste y ya estaba validada en la
+  iteracion anterior.
+
+---
+
+## 2026-09-21 - V-03.01 - Previsualizacion de celda y viewport de 17 filas
+
+### Trabajo realizado
+
+- Se anadio en la franja superior de la tabla una previsualizacion de la celda
+  activa. Muestra la columna y el valor formateado completo, permite envolver o
+  desplazar contenido largo y conserva el valor completo en `title`.
+- La previsualizacion se actualiza al hacer clic o mover el foco con teclado;
+  usa `role="status"` y `aria-live="polite"` para anunciar el cambio sin
+  interrumpir la navegacion.
+- El viewport de escritorio se ajusto para reservar 17 filas en densidad
+  compacta y comoda. El limite especifico de movil se conserva.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversion LF/CRLF en
+  archivos C# modificados en la iteracion anterior.
+
+### Verificacion
+
+- El build de TypeScript y Vite confirma que la previsualizacion de la celda
+  activa compila junto con la tabla existente.
+- La suite unitaria frontend conserva sus 70 pruebas en verde.
+- No se repitio una captura manual autenticada: la sesion local se invalido al
+  recompilar el backend en la iteracion anterior.
+
+### Pendientes
+
+- La comprobacion manual autenticada de filtros sigue pendiente porque la
+  sesion local se invalido al recompilar el backend en la iteracion anterior.
+
+---
+
+## 2026-09-21 - V-03.01 - Compacta fija y selectores buscables en Extractos
+
+### Trabajo realizado
+
+- Se elimino el selector `Compacta/Comoda` de la barra de movimientos. La tabla
+  queda fija en compacta y mantiene el viewport de 17 filas visibles.
+- Se sustituyeron los `<select>` nativos de `Titular` y `Cuenta` por
+  `SearchableSelect`, con el mismo borde, foco, chevron y menu que el lenguaje
+  visual de la pantalla.
+- Las opciones se filtran en tiempo real al escribir; tambien se puede navegar
+  y confirmar con teclado. La seleccion conserva los UUID y la actualizacion de
+  URL existentes.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/components/common/SearchableSelect.tsx`
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversion LF/CRLF en
+  archivos C# modificados en la iteracion anterior.
+
+### Verificacion
+
+- La tabla ya no renderiza el selector de densidad y usa la clase compacta fija.
+- TypeScript y Vite compilan el nuevo combobox con filtrado incremental.
+- La suite unitaria frontend conserva sus 70 pruebas en verde.
+- En Chrome autenticado, escribir `Laura` filtro titulares y escribir `Sabadell`
+  filtro cuentas; al seleccionar la cuenta se actualizo la URL y la tabla mostro
+  9 movimientos. `Restablecer` devolvio los 25 movimientos y limpio la URL.
+- La inspeccion del DOM confirmo 2 combobox buscables, 0 controles de densidad,
+  viewport de 836 px y filas de 44 px.
+
+---
+
+## 2026-09-21 - V-03.01 - Rediseño completo de Extractos y tabla de movimientos
+
+### Trabajo realizado
+
+- Se reorganizó la página de Extractos con una jerarquía clara: cabecera de
+  tesorería, selector de modo, tarjeta de ámbito de consulta y tabla de
+  movimientos.
+- Se rediseñó la tabla como una tarjeta de datos densa: toolbar, control de
+  columnas, densidad compacta por defecto, cabeceras y filtros alineados,
+  estados de foco, hover, footer y scroll horizontal.
+- Se corrigió el filtrado de fechas y estados: las fechas aceptan el valor ISO
+  y su representación visible, mientras que `Sí`/`No` comparan el booleano real
+  sin contaminarse con el texto de notas de alerta.
+- `Borrar filtros` limpia filtros locales y de ámbito; `Restablecer` limpia
+  titular, cuenta y periodo desde la tarjeta superior.
+- Se añadieron ajustes responsive para tablet y móvil sin cambiar el contrato
+  de datos ni la lógica de edición/auditoría existente.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`
+- `Atlas Balance/frontend/src/components/extractos/ExtractoTable.tsx`
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversión LF/CRLF en
+  archivos de IA fuera de este cambio.
+
+### Verificación
+
+- Captura visual autenticada de `http://localhost:5173/extractos` confirmada.
+- Filtro de concepto: `Pago impuestos` redujo la vista a 1 de 25 filas.
+- Filtro de alerta `No`: redujo la vista a 20 de 25 filas.
+- Filtro de cuenta: actualizó la URL y mostró 9 movimientos.
+- `Restablecer`: devolvió la vista a 25 de 25 filas y eliminó el parámetro de
+  cuenta de la URL.
+
+### Pendientes
+
+- No hay pendientes funcionales para el alcance solicitado. No se ejecutó la
+  suite E2E completa porque requiere una credencial externa; los filtros se
+  probaron manualmente con una sesión autenticada existente.
+
+## 2026-09-21 - V-03.01 - Popup de filtros en lista rectangular
+
+### Trabajo realizado
+
+- Se corrigió el radio del menú de `SearchableSelect` para que `Titular` y
+  `Cuenta` se muestren como una lista rectangular coherente con el resto de
+  desplegables, sin la forma de burbuja elíptica.
+- Se mantuvo el filtrado incremental al escribir y la selección de las
+  opciones existentes.
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/styles/layout/extractos.css`
+- `Documentacion/DOCUMENTACION_USUARIO.md`
+- `Documentacion/DOCUMENTACION_TECNICA.md`
+- `Documentacion/Versiones/v-03.01.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `npm.cmd run lint`: OK.
+- `npm.cmd run build`: OK; permanece el aviso preexistente de Vite sobre
+  `__dirname` en `vite.config.ts`.
+- `npm.cmd run test:unit`: OK, 70/70.
+- `git diff --check`: OK; solo avisos preexistentes de conversión LF/CRLF en
+  archivos C# modificados previamente.
+
+### Verificación
+
+- En Chrome autenticado, `Sabadell` filtró la lista de cuentas a una opción y
+  `Laura` filtró la lista de titulares a una opción.
+- La inspección visual mostró ambos menús como listas rectangulares; el DOM
+  confirmó `border-radius: 11px`.
 
 ---

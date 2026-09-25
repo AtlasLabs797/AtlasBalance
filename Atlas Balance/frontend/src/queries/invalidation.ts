@@ -26,10 +26,6 @@ export function invalidateExtractosFamilia(qc: QueryClientApi): Promise<void> {
   return qc.invalidateQueries({ queryKey: extractosPrefixes });
 }
 
-export function invalidateDashboardFamilia(qc: QueryClientApi): Promise<void> {
-  return qc.invalidateQueries({ queryKey: dashboardPrefixes });
-}
-
 export function invalidateAlertasFamilia(qc: QueryClientApi): Promise<void> {
   return qc.invalidateQueries({ queryKey: alertasPrefixes });
 }
@@ -52,10 +48,6 @@ export function invalidateConfiguracionFamilia(qc: QueryClientApi): Promise<void
     qc.invalidateQueries({ queryKey: iaPrefixes }),
     qc.invalidateQueries({ queryKey: sistemaPrefixes }),
   ]).then(() => undefined);
-}
-
-export function invalidateFullCatalog(qc: QueryClientApi): Promise<void> {
-  return qc.invalidateQueries();
 }
 
 export const mutationInvalidation = {

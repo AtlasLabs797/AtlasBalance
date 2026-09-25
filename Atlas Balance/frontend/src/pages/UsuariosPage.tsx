@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import UsuarioModal, {
   type CatalogCuenta,
   type CatalogPais,
   type CatalogTitular,
 } from '@/components/usuarios/UsuarioModal';
 import api from '@/services/api';
+import { QUERY_STALE_TIMES } from '@/services/queryClient';
+import { queryKeys } from '@/queries/queryKeys';
+import { useAuthStore } from '@/stores/authStore';
+import type { PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 interface UsuarioRow {
@@ -50,7 +56,15 @@ const rolLabels: Record<UsuarioRow['rol'], string> = {
   EMPLEADO: 'Empleado',
 };
 
+interface CatalogosPermisos {
+  titulares: CatalogTitular[];
+  cuentas: CatalogCuenta[];
+  paises: CatalogPais[];
+}
+
 export default function UsuariosPage() {
+  const usuarioId = useAuthStore((state) => state.usuario?.id ?? '');
+  const invalidate = useInvalidateAfterMutation();
   const [rows, setRows] = useState<UsuarioRow[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -80,23 +94,21 @@ export default function UsuariosPage() {
     [rows]
   );
 
-  const loadCatalogs = async () => {
-    try {
-      const { data } = await api.get('/usuarios/catalogos-permisos');
-      setTitulares(data.titulares ?? []);
-      setCuentas(data.cuentas ?? []);
-      setPaises(data.paises ?? []);
-    } catch {
-      // no-op
-    }
-  };
+  // V-03.01 (#8): catalogos-permisos y el listado paginado migran de
+  // api.get en efectos a React Query (mismo patron que DashboardPage.tsx /
+  // CuentaDetailPage.tsx), manteniendo el resto del componente igual via
+  // un bridge a estado local.
+  const catalogosQuery = useQuery({
+    queryKey: queryKeys.catalogo.catalogosPermisos({ usuarioId }),
+    queryFn: () => api.get<CatalogosPermisos>('/usuarios/catalogos-permisos').then((res) => res.data),
+    enabled: Boolean(usuarioId),
+    staleTime: QUERY_STALE_TIMES.CATALOGO_CORTO_MS,
+  });
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { data } = await api.get('/usuarios', {
+  const listQuery = useQuery<PaginatedResponse<UsuarioRow>>({
+    queryKey: queryKeys.usuarios.list({ usuarioId, page, pageSize, search: search || null, incluirEliminados }),
+    queryFn: ({ signal }) =>
+      api.get<PaginatedResponse<UsuarioRow>>('/usuarios', {
         params: {
           page,
           pageSize,
@@ -105,26 +117,54 @@ export default function UsuariosPage() {
           sortBy: 'fecha_creacion',
           sortDir: 'desc',
         },
-      });
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(usuarioId),
+    placeholderData: keepPreviousData,
+    staleTime: QUERY_STALE_TIMES.USUARIOS_MS,
+  });
 
+  useEffect(() => {
+    if (catalogosQuery.data) {
+      setTitulares(catalogosQuery.data.titulares ?? []);
+      setCuentas(catalogosQuery.data.cuentas ?? []);
+      setPaises(catalogosQuery.data.paises ?? []);
+    }
+    // El catalogo original ignoraba errores en silencio (catch { // no-op }).
+  }, [catalogosQuery.data]);
+
+  useEffect(() => {
+    const data = listQuery.data;
+    if (data) {
       setRows(data.data ?? []);
       setTotal(data.total ?? 0);
       setTotalPages(Math.max(data.total_pages ?? 1, 1));
-    } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar los usuarios.'));
-    } finally {
+    } else if (!listQuery.isLoading && !listQuery.error) {
+      setRows([]);
+      setTotal(0);
+      setTotalPages(1);
+    }
+  }, [listQuery.data, listQuery.isLoading, listQuery.error]);
+
+  useEffect(() => {
+    if (listQuery.error) {
+      setError(extractErrorMessage(listQuery.error, 'No se pudieron cargar los usuarios.'));
+    } else {
+      setError(null);
+    }
+  }, [listQuery.error]);
+
+  useEffect(() => {
+    if (listQuery.isLoading) {
+      setLoading(true);
+    } else if (!listQuery.isFetching) {
       setLoading(false);
     }
+  }, [listQuery.isLoading, listQuery.isFetching]);
+
+  const loadData = async () => {
+    await invalidate('usuario');
   };
-
-  useEffect(() => {
-    void loadCatalogs();
-  }, []);
-
-  useEffect(() => {
-    void loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros y paginación
-  }, [page, pageSize, search, incluirEliminados]);
 
   const openCreateModal = () => {
     setEditingId(null);

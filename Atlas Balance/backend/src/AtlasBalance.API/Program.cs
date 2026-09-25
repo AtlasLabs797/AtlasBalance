@@ -206,7 +206,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(AtlasBalance.API.AuthorizationConfiguration.Configure);
 builder.Services.AddMemoryCache();
 builder.Services.Configure<CachingOptions>(builder.Configuration.GetSection(CachingOptions.SectionName));
 builder.Services.AddSingleton<ICacheService>(sp =>
@@ -235,23 +235,29 @@ builder.Services.AddHsts(options =>
 ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 var dataProtectionBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("AtlasBalance");
-if (!builder.Environment.IsDevelopment())
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(dataProtectionKeysPath))
 {
-    var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
-    if (string.IsNullOrWhiteSpace(dataProtectionKeysPath))
-    {
-        dataProtectionKeysPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "AtlasBalance",
-            "keys");
-    }
+    dataProtectionKeysPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "AtlasBalance",
+        "keys");
+}
 
+if (string.IsNullOrWhiteSpace(dataProtectionKeysPath) && builder.Environment.IsDevelopment())
+{
+    dataProtectionKeysPath = Path.Combine(builder.Environment.ContentRootPath, ".dataprotection-keys");
+}
+
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
     Directory.CreateDirectory(dataProtectionKeysPath);
     dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
-    if (OperatingSystem.IsWindows())
-    {
-        dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine: true);
-    }
+}
+
+if (!builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
+{
+    dataProtectionBuilder.ProtectKeysWithDpapi(protectToLocalMachine: true);
 }
 builder.Services.AddHttpClient("exchange-rate-api", client =>
 {
@@ -403,8 +409,7 @@ builder.Services.AddHttpClient(SlackAlertNotifier.HttpClientName, client =>
 builder.Services.AddScoped<ITiposCambioService, TiposCambioService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IImportacionService, ImportacionService>();
-builder.Services.AddScoped<ConciliacionService>();
-builder.Services.AddScoped<IConciliacionService, HardenedConciliacionService>();
+builder.Services.AddScoped<IConciliacionService, ConciliacionService>();
 builder.Services.AddScoped<IUserAccessService, UserAccessService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
@@ -420,11 +425,9 @@ builder.Services.AddSingleton<IDocumentationHelpService>(_ => new DocumentationH
     builder.Configuration["Documentation:UserPath"]
     ?? Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "..", "..", "Documentacion", "DOCUMENTACION_USUARIO.md"))));
 builder.Services.AddScoped<IBackupService, BackupService>();
-builder.Services.AddScoped<BackupConfigurationService>();
-builder.Services.AddScoped<IBackupConfigurationService, HardenedBackupConfigurationService>();
+builder.Services.AddScoped<IBackupConfigurationService, BackupConfigurationService>();
 builder.Services.AddScoped<IBackupEncryptionService, BackupEncryptionService>();
-builder.Services.AddScoped<GoogleDriveBackupService>();
-builder.Services.AddScoped<IGoogleDriveBackupService, HardenedGoogleDriveBackupService>();
+builder.Services.AddScoped<IGoogleDriveBackupService, GoogleDriveBackupService>();
 builder.Services.AddScoped<IConfiguracionRepository, ConfiguracionRepository>();
 builder.Services.AddScoped<IExportacionService, ExportacionService>();
 builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
@@ -466,11 +469,18 @@ using (var scope = app.Services.CreateScope())
     GrantRuntimeDatabasePrivileges(effectiveMigrationConnectionString, runtimeConnectionString);
     NpgsqlConnection.ClearAllPools();
 
+    // V-03.01 (#4): este AppDbContext si pasa por RlsDbCommandInterceptor (a
+    // diferencia de migrationDb, creado a mano sin interceptores) y se ejecuta
+    // en el arranque, sin HttpContext. Sin este scope el interceptor denegaria
+    // los INSERT/UPDATE del seed bajo el contexto Anonymous().
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    SeedData.Initialize(db, app.Configuration, app.Environment);
-    ProtectExistingConfigurationSecrets(
-        db,
-        scope.ServiceProvider.GetRequiredService<ISecretProtector>());
+    using (AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter())
+    {
+        SeedData.Initialize(db, app.Configuration, app.Environment);
+        ProtectExistingConfigurationSecrets(
+            db,
+            scope.ServiceProvider.GetRequiredService<ISecretProtector>());
+    }
 
     // Configure recurring jobs
     var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
@@ -631,7 +641,7 @@ app.Use(async (context, next) =>
         headers.Remove("Server");
 
         var connectSrc = app.Environment.IsDevelopment()
-            ? "'self' http://localhost:5173 https://localhost:5000 http://localhost:5000"
+            ? "'self' http://localhost:5173 http://localhost:5002 https://localhost:5000 http://localhost:5000"
             : "'self'";
 
         // V-02-05 (LOW-BE-2): upgrade-insecure-requests en produccion para forzar HTTPS.
@@ -664,10 +674,6 @@ if (app.Environment.IsDevelopment())
     app.UseCors();
 }
 
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
 app.UseDefaultFiles();
 
 var staticFileOptions = new StaticFileOptions();
@@ -716,7 +722,7 @@ if (app.Environment.IsDevelopment())
     app.MapHangfireDashboard("/hangfire");
 }
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+app.MapGet("/api/health", () => Results.Ok(HealthProbeResponses.Liveness())).AllowAnonymous();
 
 // V-02.08: dos niveles adicionales de health check para distinguir el
 // "el proceso responde" del "el sistema esta sano" y del "el RLS funciona".
@@ -740,8 +746,8 @@ app.MapGet("/api/health/ready", async (
 {
     var salud = await health.ComprobarAsync(cancellationToken);
     return salud.Estado == EstadoSalud.NoSano
-        ? Results.Json(salud, statusCode: StatusCodes.Status503ServiceUnavailable)
-        : Results.Ok(salud);
+        ? Results.Json(HealthProbeResponses.Readiness(salud), statusCode: StatusCodes.Status503ServiceUnavailable)
+        : Results.Ok(HealthProbeResponses.Readiness(salud));
 }).AllowAnonymous();
 
 app.MapGet("/api/health/functional", async (
@@ -755,8 +761,6 @@ app.MapGet("/api/health/functional", async (
     // RLS no permite el INSERT con el contexto actual, obtendremos un 42501.
     var configValido = false;
     var insertOk = false;
-    string? detalleConfig = null;
-    string? detalleInsert = null;
     try
     {
         var result = await dbContext.Database
@@ -766,13 +770,13 @@ app.MapGet("/api/health/functional", async (
         configValido = result.Count > 0 && result[0].Value;
         if (!configValido)
         {
-            detalleConfig = "atlas_security.context_is_valid() devolvio false: el secreto RLS no esta alineado o la policy no esta desplegada.";
+            logger.LogWarning(
+                "atlas_security.context_is_valid() devolvio false: el secreto RLS no esta alineado o la policy no esta desplegada");
         }
     }
     catch (Exception ex)
     {
         logger.LogWarning(ex, "No se pudo evaluar atlas_security.context_is_valid()");
-        detalleConfig = "No se pudo evaluar la funcion de validacion del contexto RLS. Revisa el log del servidor.";
     }
 
     if (configValido)
@@ -809,34 +813,18 @@ app.MapGet("/api/health/functional", async (
         catch (Exception ex)
         {
             logger.LogWarning(ex, "No se pudo ejecutar el INSERT firmado de smoke en AUDITORIAS");
-            // V-02.08: ex.Message puede exponer host/puerto/esquema/nombres de
-            // politica RLS a un llamador anonimo no autenticado. El detalle
-            // completo queda solo en el log del servidor (linea de arriba).
-            detalleInsert = "El INSERT firmado de smoke en AUDITORIAS fallo. Revisa el log del servidor.";
         }
     }
 
-    var respuesta = new
-    {
-        estado = configValido && insertOk ? "funcional" : "no_funcional",
-        contexto_rls = new
-        {
-            valido = configValido,
-            detalle = detalleConfig
-        },
-        auditoria_firmada = new
-        {
-            ok = insertOk,
-            detalle = detalleInsert
-        }
-    };
     return configValido && insertOk
-        ? Results.Ok(respuesta)
-        : Results.Json(respuesta, statusCode: StatusCodes.Status503ServiceUnavailable);
+        ? Results.Ok(HealthProbeResponses.Functional(configValido, insertOk))
+        : Results.Json(
+            HealthProbeResponses.Functional(configValido, insertOk),
+            statusCode: StatusCodes.Status503ServiceUnavailable);
 }).AllowAnonymous();
 
-app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" }));
-app.MapFallbackToFile("index.html", staticFileOptions);
+app.MapFallback("/api/{**catchAll}", () => Results.NotFound(new { error = "Endpoint no encontrado" })).AllowAnonymous();
+app.MapFallbackToFile("index.html", staticFileOptions).AllowAnonymous();
 
 app.Run();
 

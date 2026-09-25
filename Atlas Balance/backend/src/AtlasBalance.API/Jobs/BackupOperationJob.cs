@@ -27,6 +27,8 @@ public sealed class BackupOperationJob
 
     public async Task ExecuteManualAsync(Guid operationId, Guid? userId, CancellationToken cancellationToken)
     {
+        // V-03.01 (#4): se ejecuta en un worker de Hangfire, sin HttpContext.
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         await ExecuteAsync(operationId, async () =>
         {
             var backup = await _backupService.CreateBackupAsync(TipoProceso.MANUAL, userId, cancellationToken);
@@ -36,6 +38,8 @@ public sealed class BackupOperationJob
 
     public async Task ExecuteDriveImportAsync(Guid operationId, string fileId, Guid? userId, CancellationToken cancellationToken)
     {
+        // V-03.01 (#4): se ejecuta en un worker de Hangfire, sin HttpContext.
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         await ExecuteAsync(operationId, async () =>
         {
             var backup = await _googleDriveBackupService.ImportAsync(fileId, userId, null, cancellationToken);

@@ -15,6 +15,8 @@ public sealed class ExportMensualJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         try
         {
             var total = await _exportacionService.ExportarMensualAsync(CancellationToken.None);

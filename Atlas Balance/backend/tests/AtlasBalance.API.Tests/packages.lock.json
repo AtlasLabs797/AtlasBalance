@@ -998,7 +998,8 @@
           "Microsoft.Extensions.Hosting.WindowsServices": "[8.0.1, )",
           "Serilog.AspNetCore": "[8.0.3, )",
           "Serilog.Sinks.Console": "[6.1.1, )",
-          "Serilog.Sinks.File": "[6.0.0, )"
+          "Serilog.Sinks.File": "[6.0.0, )",
+          "System.Security.AccessControl": "[6.0.1, )"
         }
       }
     }

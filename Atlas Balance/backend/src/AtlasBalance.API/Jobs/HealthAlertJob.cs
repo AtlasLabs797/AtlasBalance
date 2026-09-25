@@ -68,6 +68,8 @@ public sealed class HealthAlertJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         if (!_options.Habilitado)
         {
             return;

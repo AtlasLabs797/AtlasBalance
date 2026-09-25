@@ -79,7 +79,12 @@ public class AtlasAiServiceThinkingModeTests
             new Configuracion { Clave = "minimax_api_key", Valor = "test-minimax-key", Tipo = "secret", Descripcion = "API key MiniMax" },
             new Configuracion { Clave = "ai_model", Valor = model, Tipo = "string", Descripcion = "Modelo IA" },
             new Configuracion { Clave = "ai_max_output_tokens", Valor = "100", Tipo = "int", Descripcion = "Salida" },
-            new Configuracion { Clave = "ai_max_context_rows", Valor = "5", Tipo = "int", Descripcion = "Contexto" });
+            new Configuracion { Clave = "ai_max_context_rows", Valor = "5", Tipo = "int", Descripcion = "Contexto" },
+            // P2 V-03.01: estos tests cubren el formato del payload de thinking_mode,
+            // no la politica de retencion de datos; se habilita el flag para que los
+            // casos con modelo gratuito de OpenRouter no se bloqueen antes de llegar
+            // al proveedor.
+            new Configuracion { Clave = "ai_allow_data_retention", Valor = "true", Tipo = "bool", Descripcion = "Permite modelos gratuitos" });
 
         await db.SaveChangesAsync();
         return userId;

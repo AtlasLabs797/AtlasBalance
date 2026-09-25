@@ -14,10 +14,11 @@ import { CreateTokenModal } from '@/components/integraciones/CreateTokenModal';
 import { TokenCreatedModal } from '@/components/integraciones/TokenCreatedModal';
 import { TokenList } from '@/components/integraciones/TokenList';
 import {
-  OPENROUTER_AUTO_MODEL,
+  OPENROUTER_DEFAULT_RUNTIME_MODEL,
   aiProviderOptions,
   getAiModelOptions,
   getDefaultAiModel,
+  isOpenRouterFreeModel,
   normalizeAiModel,
   normalizeAiProvider,
 } from '@/utils/aiModels';
@@ -97,11 +98,12 @@ export default function ConfiguracionPage() {
       openai_api_key_configurada: false,
       minimax_api_key: '',
       minimax_api_key_configurada: false,
-      model: OPENROUTER_AUTO_MODEL,
+      model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
       habilitada: false,
       usuario_puede_usar: false,
       configurada: false,
       mensaje_estado: 'La IA está desactivada globalmente.',
+      permite_retencion_datos: false,
       requests_por_minuto: 6,
       requests_por_hora: 30,
       requests_por_dia: 60,
@@ -194,11 +196,12 @@ export default function ConfiguracionPage() {
         openai_api_key_configurada: false,
         minimax_api_key: '',
         minimax_api_key_configurada: false,
-        model: OPENROUTER_AUTO_MODEL,
+        model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
         habilitada: false,
         usuario_puede_usar: false,
         configurada: false,
         mensaje_estado: 'La IA está desactivada globalmente.',
+        permite_retencion_datos: false,
         requests_por_minuto: 6,
         requests_por_hora: 30,
         requests_por_dia: 60,
@@ -991,11 +994,28 @@ export default function ConfiguracionPage() {
                   onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value) } }))}
                 />
                 {aiUsesOpenRouter ? (
-                  <p className="import-muted">
-                    Con OpenRouter, Atlas Balance solicita retención cero de datos (zdr) y deniega
-                    la recopilación en cada consulta. El contexto financiero se envía a la nube para
-                    responder, pero el proveedor no debe conservarlo.
-                  </p>
+                  <>
+                    <p className="import-muted">
+                      El modelo predeterminado es <code>openrouter/auto</code>, que exige retención
+                      cero de datos (ZDR) al proveedor. Atlas Balance seudonimiza el contexto antes
+                      de enviarlo.
+                    </p>
+                    <label className="config-check">
+                      <input
+                        type="checkbox"
+                        checked={config.ia.permite_retencion_datos}
+                        onChange={(e) =>
+                          setConfig((p) => ({ ...p, ia: { ...p.ia, permite_retencion_datos: e.target.checked } }))
+                        }
+                      />
+                      Permitir modelos gratuitos de OpenRouter
+                    </label>
+                    <p className="auth-error" role="status">
+                      Los modelos gratuitos de OpenRouter pueden guardar y usar para entrenamiento
+                      los datos enviados (importes, saldos y conceptos). Actívalo solo si tu empresa
+                      lo acepta.
+                    </p>
+                  </>
                 ) : (
                   <p className="auth-error" role="status">
                     Aviso: con {aiProviderLabel} la aplicación no puede exigir retención cero por
@@ -1035,7 +1055,9 @@ export default function ConfiguracionPage() {
                     <datalist id="openrouter-modelos">
                       {openRouterModelOptions.map((model) => (
                         <option key={model.value} value={model.value}>
-                          {model.label}
+                          {isOpenRouterFreeModel(model.value) && !config.ia.permite_retencion_datos
+                            ? `${model.label} (requiere permitir modelos gratuitos)`
+                            : model.label}
                         </option>
                       ))}
                     </datalist>

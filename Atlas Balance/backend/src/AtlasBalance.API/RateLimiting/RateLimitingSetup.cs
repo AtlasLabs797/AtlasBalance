@@ -24,17 +24,23 @@ internal static class RateLimitingSetup
     internal static class PolicyNames
     {
         public const string Expensive = "atlas-expensive";
+
+        /// <summary>
+        /// V-03.01 (hallazgo #2): cierra la carrera de <c>AtlasAiService.EnsureRequestLimitsAsync</c>,
+        /// que cuenta usos ya registrados en BD pero registra el uso DESPUES de que el proveedor
+        /// responde. N peticiones concurrentes del mismo usuario pasaban todas el chequeo de
+        /// minuto/hora/dia porque ninguna habia registrado uso todavia cuando las demas comprobaban.
+        /// Un limitador de concurrencia (1 peticion simultanea por usuario, sin cola) no depende de
+        /// contadores en BD: la segunda peticion del mismo usuario se rechaza en el momento, antes
+        /// de tocar el proveedor.
+        /// </summary>
+        public const string IaChat = "atlas-ia-chat";
     }
 
     private const string IntegrationPathPrefix = "/api/integration/openclaw";
     private const string ApiPathPrefix = "/api";
     private const string HealthPath = "/api/health";
-    private const string HealthPathPrefix = "/api/health/";
-    // V-02.08: a diferencia de /api/health y /api/health/ready (stateless),
-    // /api/health/functional abre una transaccion, publica un contexto RLS
-    // elevado, inserta en AUDITORIAS y hace rollback en cada llamada. Eximirlo
-    // del limitador permitiria a un cliente anonimo agotar el pool de
-    // conexiones de PostgreSQL con sondas paralelas ilimitadas.
+    private const string ReadinessHealthPath = "/api/health/ready";
     private const string FunctionalHealthPath = "/api/health/functional";
 
     /// <summary>
@@ -85,10 +91,43 @@ internal static class RateLimitingSetup
                     options.Window);
             });
 
+            limiter.AddPolicy(PolicyNames.IaChat, context =>
+            {
+                var options = context.RequestServices
+                    .GetRequiredService<IOptions<RateLimitingOptions>>().Value;
+
+                if (!options.Enabled)
+                {
+                    return RateLimitPartition.GetNoLimiter("disabled");
+                }
+
+                return ResolveIaChatPartition(context);
+            });
+
             limiter.OnRejected = OnRejectedAsync;
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Particion de concurrencia para <see cref="PolicyNames.IaChat"/>: 1 peticion simultanea
+    /// por usuario, sin cola (<c>QueueLimit = 0</c>), asi que una segunda peticion concurrente
+    /// del mismo usuario se rechaza al instante en vez de esperar a que la primera termine.
+    /// Es <c>internal</c> (no <c>private</c>) para que los tests puedan montar un
+    /// <see cref="PartitionedRateLimiter{HttpContext}"/> identico al que registra
+    /// <c>AddPolicy</c> sin tener que resolver politicas nombradas desde el pipeline HTTP real.
+    /// </summary>
+    internal static RateLimitPartition<string> ResolveIaChatPartition(HttpContext context)
+    {
+        var key = $"ia-chat:{ResolveIdentityKey(context)}";
+
+        return RateLimitPartition.GetConcurrencyLimiter(key, _ => new ConcurrencyLimiterOptions
+        {
+            PermitLimit = 1,
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        });
     }
 
     private static RateLimitPartition<string> ResolvePartition(HttpContext context, RateLimitingOptions options)
@@ -100,22 +139,22 @@ internal static class RateLimitingSetup
 
         var path = context.Request.Path;
 
-        // Los estaticos de la SPA y el healthcheck no consumen presupuesto de API.
-        // V-02.08: tambien se eximen los nuevos /api/health/ready y
-        // /api/health/functional, que el instalador y el actualizador invocan
-        // como sondeos de readiness tras reiniciar servicios.
-        if (path.Equals(FunctionalHealthPath, StringComparison.OrdinalIgnoreCase))
+        // El liveness es stateless y minimo, por lo que queda exento. Las
+        // sondas de readiness/functional hacen trabajo de BD (la funcional
+        // abre una transaccion y hace rollback) y comparten un cubo por IP:
+        // asi alternar entre ambas rutas no duplica el presupuesto.
+        if (path.Equals(ReadinessHealthPath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(FunctionalHealthPath, StringComparison.OrdinalIgnoreCase))
         {
-            return Window($"health-functional:{ResolveIpKey(context)}", options.AuthPerMinutePerIp, options.Window);
+            return Window($"health:{ResolveIpKey(context)}", options.HealthPerMinutePerIp, options.Window);
         }
 
         if (!path.StartsWithSegments(ApiPathPrefix)
-            // V-02.09 (CodeQL #33): exencion intencional por diseno. Estaticos y healthchecks
-            // son publicos y sin estado; limitarlos no aporta valor de seguridad. La decision
-            // usa StartsWithSegments sobre el PathString ya parseado, no cadena cruda.
+            // V-02.09 (CodeQL #33): exencion intencional por diseno. Los
+            // estaticos y el liveness son publicos y sin estado; limitarlos no
+            // aporta valor de seguridad. La decision usa PathString ya parseado.
             // codeql[cs/user-controlled-bypass]
-            || path.Equals(HealthPath)
-            || path.StartsWithSegments(HealthPathPrefix))
+            || path.Equals(HealthPath))
         {
             return RateLimitPartition.GetNoLimiter("exento");
         }

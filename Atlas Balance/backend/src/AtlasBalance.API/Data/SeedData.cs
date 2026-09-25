@@ -47,7 +47,7 @@ public static class SeedData
 
         var adminId = Guid.NewGuid();
         var adminEmail = ResolveSeedAdminEmail(configuration);
-        var adminPassword = ResolveSeedAdminPassword(configuration, isDevelopment);
+        var adminPassword = ResolveSeedAdminPassword(configuration, isDevelopment, adminEmail, "Administrador");
 
         context.Usuarios.Add(new Usuario
         {
@@ -145,13 +145,13 @@ public static class SeedData
             // V-02.07 (retencion de PII): defaults leidos por LimpiezaExportacionesJob.
             ["exportacion_retention_days"] = ("90", "int", "Dias de retencion de exportaciones antes de purgarse"),
             ["importacion_contenido_retention_days"] = ("180", "int", "Dias de retencion del contenido bruto de importacion antes de vaciarse"),
-            // V-02.09 (alineamiento runtime): el seed debe estar alineado con el paquete que
+            // V-03.01 (alineamiento runtime): el seed debe estar alineado con el paquete que
             // el operador esta ejecutando. Mantener una version atras provoca que el
             // default de versiones y el campo "app_version" que reportan
             // servicios como ActualizacionService.Invoke o SettingsTray queden
-            // una version atras del runtime real. Se actualiza a V-02.09, que
+            // una version atras del runtime real. Se actualiza a V-03.01, que
             // es el InformationalVersion declarado en Directory.Build.props.
-            ["app_version"] = ("V-02.09", "string", "Version instalada"),
+            ["app_version"] = ("V-03.01", "string", "Version instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["app_update_auto_enabled"] = ("false", "bool", "Aplicar automaticamente releases firmados de GitHub"),
             ["app_update_auto_hour_utc"] = ("3", "int", "Hora UTC minima para la comprobacion automatica diaria"),
@@ -244,7 +244,7 @@ public static class SeedData
             : configuredEmail;
     }
 
-    private static string ResolveSeedAdminPassword(IConfiguration? configuration, bool isDevelopment)
+    private static string ResolveSeedAdminPassword(IConfiguration? configuration, bool isDevelopment, string adminEmail, string adminFullName)
     {
         var configuredPassword = configuration?["SeedAdmin:Password"]?.Trim();
         if (string.IsNullOrWhiteSpace(configuredPassword))
@@ -252,7 +252,7 @@ public static class SeedData
             throw new InvalidOperationException("SeedAdmin:Password must be configured before first startup.");
         }
 
-        if (!SecurityPolicy.TryValidatePassword(configuredPassword, out var passwordError))
+        if (!SecurityPolicy.TryValidatePassword(configuredPassword, out var passwordError, adminEmail, adminFullName))
         {
             throw new InvalidOperationException($"SeedAdmin:Password is not valid: {passwordError}.");
         }

@@ -52,6 +52,7 @@ public sealed class RateLimitingSetupTests
         var options = new RateLimitingOptions();
 
         options.AuthPerMinutePerIp.Should().Be(10);
+        options.HealthPerMinutePerIp.Should().Be(30);
         options.AnonymousPerMinutePerIp.Should().Be(60);
         options.ReadPerMinutePerUser.Should().Be(300);
         options.WritePerMinutePerUser.Should().Be(60);
@@ -118,6 +119,52 @@ public sealed class RateLimitingSetupTests
             using var lease = limiter.AttemptAcquire(context);
             lease.IsAcquired.Should().BeTrue();
         }
+    }
+
+    [Fact]
+    public void GlobalLimiter_Should_Share_Health_Budget_Between_Readiness_And_Functional()
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            [$"{RateLimitingOptions.SectionName}:HealthPerMinutePerIp"] = "2"
+        });
+        var limiter = ResolveGlobalLimiter(provider);
+
+        using (var readinessLease = limiter.AttemptAcquire(
+                   BuildContext(provider, "/api/health/ready", "GET", ip: "10.0.0.2")))
+        {
+            readinessLease.IsAcquired.Should().BeTrue();
+        }
+
+        using (var functionalLease = limiter.AttemptAcquire(
+                   BuildContext(provider, "/api/health/functional", "GET", ip: "10.0.0.2")))
+        {
+            functionalLease.IsAcquired.Should().BeTrue();
+        }
+
+        using var exhaustedLease = limiter.AttemptAcquire(
+            BuildContext(provider, "/api/health/ready", "GET", ip: "10.0.0.2"));
+        exhaustedLease.IsAcquired.Should().BeFalse(
+            "readiness y functional ejecutan trabajo de BD y no deben duplicar el presupuesto al alternar rutas");
+    }
+
+    [Fact]
+    public void GlobalLimiter_Should_Not_Exempt_Unknown_Health_Variants()
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            [$"{RateLimitingOptions.SectionName}:AnonymousPerMinutePerIp"] = "1"
+        });
+        var limiter = ResolveGlobalLimiter(provider);
+
+        using var firstLease = limiter.AttemptAcquire(
+            BuildContext(provider, "/api/health/ready/extra", "GET", ip: "10.0.0.3"));
+        firstLease.IsAcquired.Should().BeTrue();
+
+        using var secondLease = limiter.AttemptAcquire(
+            BuildContext(provider, "/api/health/ready/extra", "GET", ip: "10.0.0.3"));
+        secondLease.IsAcquired.Should().BeFalse(
+            "una variante que no corresponde a una ruta registrada no puede heredar la exencion del liveness");
     }
 
     [Fact]
@@ -232,6 +279,69 @@ public sealed class RateLimitingSetupTests
         var readContext = BuildContext(provider, "/api/cuentas", "GET", ip: "10.0.0.9", userId: "user-2");
         using var readLease = limiter.AttemptAcquire(readContext);
         readLease.IsAcquired.Should().BeTrue("read y write son cubos distintos aunque el usuario sea el mismo");
+    }
+
+    [Fact]
+    public void PolicyNames_IaChat_Should_Be_Stable_Identifier()
+    {
+        RateLimitingSetup.PolicyNames.IaChat.Should().Be("atlas-ia-chat");
+    }
+
+    /// <summary>
+    /// V-03.01 (hallazgo #2): <c>ResolveIaChatPartition</c> es la funcion de particion que
+    /// <c>AddPolicy(PolicyNames.IaChat, ...)</c> registra en el pipeline HTTP real. Como las
+    /// politicas nombradas no exponen un <see cref="PartitionedRateLimiter{HttpContext}"/>
+    /// publico (a diferencia de <see cref="RateLimiterOptions.GlobalLimiter"/>), el test monta
+    /// uno identico a mano con esa misma funcion para ejercitar el limitador de concurrencia
+    /// sin levantar el pipeline de ASP.NET Core completo.
+    /// </summary>
+    [Fact]
+    public void IaChatPolicy_Should_Reject_Second_Concurrent_Request_From_Same_User()
+    {
+        var limiter = PartitionedRateLimiter.Create<HttpContext, string>(RateLimitingSetup.ResolveIaChatPartition);
+
+        var context = BuildContext(BuildProvider(), "/api/ia/chat", "POST", ip: "10.0.0.9", userId: "user-1");
+
+        using var firstLease = limiter.AttemptAcquire(context);
+        firstLease.IsAcquired.Should().BeTrue("la primera peticion de IA del usuario debe pasar");
+
+        using var secondLease = limiter.AttemptAcquire(context);
+        secondLease.IsAcquired.Should().BeFalse(
+            "una segunda peticion concurrente del mismo usuario debe rechazarse: el limite de concurrencia es 1 y no hay cola");
+    }
+
+    [Fact]
+    public void IaChatPolicy_Should_Not_Block_Different_Users_From_Each_Other()
+    {
+        var limiter = PartitionedRateLimiter.Create<HttpContext, string>(RateLimitingSetup.ResolveIaChatPartition);
+
+        var contextUser1 = BuildContext(BuildProvider(), "/api/ia/chat", "POST", ip: "10.0.0.9", userId: "user-1");
+        var contextUser2 = BuildContext(BuildProvider(), "/api/ia/chat", "POST", ip: "10.0.0.9", userId: "user-2");
+
+        using var leaseUser1 = limiter.AttemptAcquire(contextUser1);
+        leaseUser1.IsAcquired.Should().BeTrue();
+
+        using var leaseUser2 = limiter.AttemptAcquire(contextUser2);
+        leaseUser2.IsAcquired.Should().BeTrue("cada usuario tiene su propio cubo de concurrencia, no comparten presupuesto");
+    }
+
+    [Fact]
+    public void IaChatPolicy_Should_Allow_New_Request_After_Previous_Lease_Is_Released()
+    {
+        var limiter = PartitionedRateLimiter.Create<HttpContext, string>(RateLimitingSetup.ResolveIaChatPartition);
+
+        var context = BuildContext(BuildProvider(), "/api/ia/chat", "POST", ip: "10.0.0.9", userId: "user-1");
+
+        using (var firstLease = limiter.AttemptAcquire(context))
+        {
+            firstLease.IsAcquired.Should().BeTrue();
+        }
+        // El using anterior libera el permiso al hacer Dispose, simulando que la peticion
+        // en curso termino (exito, error del proveedor o excepcion): la siguiente peticion
+        // del mismo usuario ya no deberia chocar contra el limite de concurrencia.
+
+        using var secondLease = limiter.AttemptAcquire(context);
+        secondLease.IsAcquired.Should().BeTrue("tras liberar el permiso de la peticion anterior, el usuario puede volver a preguntar");
     }
 
     [Fact]

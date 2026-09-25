@@ -208,7 +208,14 @@ public sealed class RlsDbCommandInterceptor : DbCommandInterceptor
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext is null)
         {
-            return RlsSessionContext.System();
+            // V-03.01 (#4): sin HttpContext y sin SystemContextScope activo no hay
+            // forma de saber en nombre de quien se ejecuta el comando. Antes esto
+            // devolvia System() (bypass total de RLS), asi que cualquier codigo que
+            // perdiera el HttpContext (Task.Run, un IHostedService nuevo, un job mal
+            // escrito) heredaba privilegio maximo en silencio. Ahora se deniega por
+            // defecto: el trabajo de servidor legitimo debe pedir la elevacion
+            // explicitamente entrando en SystemContextScope.
+            return RlsSessionContext.Anonymous();
         }
 
         if (httpContext.Items.TryGetValue(IntegrationHttpContextItemKeys.CurrentIntegrationToken, out var tokenValue) &&

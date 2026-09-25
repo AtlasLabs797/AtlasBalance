@@ -7,8 +7,8 @@ import type { NameType, ValueType } from 'recharts/types/component/DefaultToolti
 import type { DashboardConcentracionBanco, DashboardSaldoTitular } from '@/types';
 import { formatCompactCurrency, formatCurrency } from '@/utils/formatters';
 
-// DESIGN.md §3.1: maximo cinco series por grafico; el resto se agrupa en
-// "Otros", que va siempre en --chart-8 (via --chart-series-other).
+// La referencia visual limita cada donut a cuatro partes visibles; el resto se
+// agrupa en "Otros", que va siempre en --chart-8 (via --chart-series-other).
 const DONUT_COLORS = [
   'var(--chart-series-1)',
   'var(--chart-series-2)',
@@ -18,10 +18,10 @@ const DONUT_COLORS = [
 ];
 const OTROS_COLOR = 'var(--chart-series-other)';
 const SMALL_SLICE_THRESHOLD = 1.5;
-const MAX_SLICES = 5;
+const MAX_SLICES = 3;
 
-const DONUT_INNER_RADIUS = '55%';
-const DONUT_OUTER_RADIUS = '80%';
+const DONUT_INNER_RADIUS = '62%';
+const DONUT_OUTER_RADIUS = '84%';
 
 interface ConcentracionDonutChartsProps {
   bancos: DashboardConcentracionBanco[];
@@ -77,6 +77,19 @@ function sliceColor(entry: DonutEntry, index: number): string {
   return entry.isOtros ? OTROS_COLOR : DONUT_COLORS[index % DONUT_COLORS.length];
 }
 
+function formatDonutTotal(amount: number, divisa: string): string {
+  try {
+    return new Intl.NumberFormat('es-ES', {
+      style: 'currency',
+      currency: divisa,
+      notation: 'compact',
+      maximumFractionDigits: amount >= 1_000_000 ? 2 : 1,
+    }).format(amount);
+  } catch {
+    return formatCompactCurrency(amount, divisa);
+  }
+}
+
 export function ConcentracionDonutCharts({ bancos, titulares, divisa }: ConcentracionDonutChartsProps) {
   const bancosData = buildBancosData(bancos);
   const titularesData = buildTitularesData(titulares);
@@ -119,67 +132,64 @@ interface DonutPanelProps {
 }
 
 function DonutPanel({ title, data, total, divisa, ariaLabel }: DonutPanelProps) {
-  const entidadesLabel = `${data.reduce((n, e) => n + (e.isOtros ? (e.otrosCount ?? 1) : 1), 0)} entidades`;
+  const formattedTotal = formatDonutTotal(total, divisa);
 
   return (
     <div className="concentracion-donut-panel">
       <h3 className="concentracion-donut-title">{title}</h3>
-      <div className="concentracion-donut-chart" role="img" aria-label={ariaLabel}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius={DONUT_INNER_RADIUS}
-              outerRadius={DONUT_OUTER_RADIUS}
-              dataKey="value"
-              nameKey="name"
-              startAngle={90}
-              endAngle={-270}
-              paddingAngle={data.length > 1 ? 2 : 0}
-              strokeWidth={0}
-            >
-              {data.map((entry, index) => (
-                <Cell key={entry.name} fill={sliceColor(entry, index)} />
-              ))}
-            </Pie>
-            <Tooltip
-              content={(props) => <DonutTooltip {...props} divisa={divisa} />}
-              wrapperStyle={{ zIndex: 100 }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="concentracion-donut-center" aria-hidden="true">
-          <span className="concentracion-donut-center-value">
-            {formatCompactCurrency(total, divisa)}
-          </span>
-          <span className="concentracion-donut-center-label">{entidadesLabel}</span>
+      <div className="concentracion-donut-body">
+        <div className="concentracion-donut-chart" role="img" aria-label={ariaLabel}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                innerRadius={DONUT_INNER_RADIUS}
+                outerRadius={DONUT_OUTER_RADIUS}
+                dataKey="value"
+                nameKey="name"
+                startAngle={90}
+                endAngle={-270}
+                paddingAngle={data.length > 1 ? 3 : 0}
+                cornerRadius={10}
+                strokeWidth={0}
+              >
+                {data.map((entry, index) => (
+                  <Cell key={entry.name} fill={sliceColor(entry, index)} />
+                ))}
+              </Pie>
+              <Tooltip
+                content={(props) => <DonutTooltip {...props} divisa={divisa} />}
+                wrapperStyle={{ zIndex: 100 }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="concentracion-donut-center" aria-hidden="true">
+            <span className="concentracion-donut-center-value">
+              {formattedTotal}
+            </span>
+            <span className="concentracion-donut-center-label">total</span>
+          </div>
         </div>
-      </div>
-      <ul className="concentracion-donut-legend">
-        {data.map((entry, index) => (
-          <li
-            key={entry.name}
-            className={`concentracion-donut-legend-item${entry.isOtros ? ' concentracion-donut-legend-item--otros' : ''}`}
-            style={{ '--entry-color': sliceColor(entry, index) } as CSSProperties}
-          >
-            <span className="concentracion-donut-legend-dot" aria-hidden="true" />
-            <span className="concentracion-donut-legend-name">
-              {entry.isOtros ? `Otros (${entry.otrosCount})` : entry.name}
-            </span>
-            <span className="concentracion-donut-legend-meta">
-              <span className="concentracion-donut-legend-amount">
-                {formatCompactCurrency(entry.value, divisa)}
+        <ul className="concentracion-donut-legend">
+          {data.map((entry, index) => (
+            <li
+              key={entry.name}
+              className={`concentracion-donut-legend-item${entry.isOtros ? ' concentracion-donut-legend-item--otros' : ''}`}
+              style={{ '--entry-color': sliceColor(entry, index) } as CSSProperties}
+            >
+              <span className="concentracion-donut-legend-dot" aria-hidden="true" />
+              <span className="concentracion-donut-legend-name">
+                {entry.isOtros ? `Otros (${entry.otrosCount})` : entry.name}
               </span>
-              <span className="concentracion-donut-legend-sep" aria-hidden="true">·</span>
               <span className="concentracion-donut-legend-pct">
-                {entry.porcentaje.toFixed(1)}%
+                {Math.round(entry.porcentaje)}%
               </span>
-            </span>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

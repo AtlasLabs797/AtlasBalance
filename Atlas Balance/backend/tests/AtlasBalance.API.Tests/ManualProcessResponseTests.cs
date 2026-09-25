@@ -170,7 +170,7 @@ public class ManualProcessResponseTests
         var controller = new ExportacionesController(
             db,
             new FakeExportacionService(),
-            new FakeUserAccessService());
+            new FakeUserAccessService(canAccessCuenta: true, canWriteCuenta: true));
         controller.ControllerContext = BuildControllerContext();
 
         var result = await controller.Manual(
@@ -185,13 +185,30 @@ public class ManualProcessResponseTests
     }
 
     [Fact]
-    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Write_Cuenta()
+    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Can_Access_But_Cannot_Write_Cuenta()
     {
         await using var db = BuildDbContext();
         var controller = new ExportacionesController(
             db,
             new FakeExportacionService(),
-            new FakeUserAccessService(canAccessCuenta: false));
+            new FakeUserAccessService(canAccessCuenta: true, canWriteCuenta: false));
+        controller.ControllerContext = BuildControllerContext();
+
+        var result = await controller.Manual(
+            new ExportacionManualRequest { CuentaId = Guid.NewGuid() },
+            CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task ExportacionManual_Should_Return_Forbidden_When_User_Cannot_Access_Cuenta()
+    {
+        await using var db = BuildDbContext();
+        var controller = new ExportacionesController(
+            db,
+            new FakeExportacionService(),
+            new FakeUserAccessService(canAccessCuenta: false, canWriteCuenta: true));
         controller.ControllerContext = BuildControllerContext();
 
         var result = await controller.Manual(
@@ -217,6 +234,27 @@ public class ManualProcessResponseTests
 
         var status = result.Should().BeOfType<ObjectResult>().Subject;
         status.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+    }
+
+    [Fact]
+    public async Task Descargar_Should_Answer_Foreign_And_Missing_Export_Identically()
+    {
+        await using var db = BuildDbContext();
+        var ajena = new Exportacion { Id = Guid.NewGuid(), CuentaId = Guid.NewGuid(), RutaArchivo = @"C:\atlas-balance\exports\x.xlsx" };
+        db.Exportaciones.Add(ajena);
+        await db.SaveChangesAsync();
+        var controller = new ExportacionesController(
+            db,
+            new FakeExportacionService(),
+            new FakeUserAccessService(canAccessCuenta: false));
+        controller.ControllerContext = BuildControllerContext();
+
+        var foreign = await controller.Descargar(ajena.Id, CancellationToken.None);
+        var missing = await controller.Descargar(Guid.NewGuid(), CancellationToken.None);
+
+        var foreignNotFound = foreign.Should().BeOfType<NotFoundObjectResult>().Subject;
+        var missingNotFound = missing.Should().BeOfType<NotFoundObjectResult>().Subject;
+        JsonSerializer.Serialize(foreignNotFound.Value).Should().Be(JsonSerializer.Serialize(missingNotFound.Value));
     }
 
     private static ControllerContext BuildControllerContext()

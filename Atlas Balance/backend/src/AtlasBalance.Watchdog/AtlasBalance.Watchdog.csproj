@@ -13,6 +13,7 @@
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <PackageReference Include="System.Security.AccessControl" Version="6.0.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +21,15 @@
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
     <Content Update="appsettings.Development.json.template" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
     <Content Update="appsettings.Production.json.template" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SECURITY (P1a): PackageExtraction.cs vive fisicamente en
+         AtlasBalance.API (lo usa ActualizacionService) y se enlaza aqui para
+         que ElevatedUpdateRunner reutilice la misma extraccion ZIP segura
+         (limites de tamano/entradas + proteccion zip-slip) al verificar y
+         extraer su propia copia aislada del paquete, en vez de duplicarla. -->
+    <Compile Include="..\AtlasBalance.API\Services\PackageExtraction.cs" Link="Services\PackageExtraction.cs" />
   </ItemGroup>
 
   <ItemGroup>

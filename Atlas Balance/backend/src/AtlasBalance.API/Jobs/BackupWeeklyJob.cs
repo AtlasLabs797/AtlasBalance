@@ -16,6 +16,8 @@ public sealed class BackupWeeklyJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         try
         {
             await _backupService.CreateBackupAsync(TipoProceso.AUTO, null, CancellationToken.None);

@@ -16,11 +16,13 @@ namespace AtlasBalance.API.Controllers;
 public sealed class PaisesController : ControllerBase
 {
     private readonly AppDbContext _dbContext;
+    private readonly IUserAccessService _userAccessService;
     private readonly IAuditService _auditService;
 
-    public PaisesController(AppDbContext dbContext, IAuditService auditService)
+    public PaisesController(AppDbContext dbContext, IUserAccessService userAccessService, IAuditService auditService)
     {
         _dbContext = dbContext;
+        _userAccessService = userAccessService;
         _auditService = auditService;
     }
 
@@ -60,6 +62,15 @@ public sealed class PaisesController : ControllerBase
         else if (!incluirInactivos)
         {
             query = query.Where(x => x.Activo);
+        }
+
+        if (!isAdmin)
+        {
+            var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
+            var accessibleAccounts = _userAccessService.ApplyCuentaScope(
+                _dbContext.Cuentas.AsNoTracking(),
+                scope);
+            query = query.Where(p => accessibleAccounts.Any(c => c.PaisId == p.Id));
         }
 
         // V-02.08: el campo de busqueda de la UI (PaisesPage) mandaba "search"

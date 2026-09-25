@@ -31,6 +31,8 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
         "Launch-AtlasBalance.ps1",
         "Reset-AdminPassword.ps1",
         "install-cert-client.ps1",
+        "ServiceSecurity.ps1",
+        "Run-AtlasElevatedUpdate.ps1",
         "install.ps1",
         "start.ps1",
         "uninstall-services.ps1",
@@ -186,6 +188,18 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
+        var externalUpdater = ShouldUseExternalPackageUpdater(fullTargetPath);
+        if (!externalUpdater && IsInstalledWatchdogLayout(fullTargetPath))
+        {
+            // Con las cuentas de servicio dedicadas, Watchdog solo tiene RX
+            // sobre api\ y watchdog\ (ServiceSecurity.ps1). El actualizador
+            // interno copiaria binarios ahi y fallaria a medias tras parar la
+            // API, asi que en una instalacion real solo vale el runner elevado.
+            _logger.LogError(
+                "Update rechazado: WatchdogSettings:UseExternalPackageUpdater=false no es compatible con una instalacion con cuentas de servicio dedicadas.");
+            return false;
+        }
+
         if (!await _operationLock.WaitAsync(0, cancellationToken))
         {
             return false;
@@ -206,19 +220,49 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             throw;
         }
 
+        if (externalUpdater)
+        {
+            // La API borra el ZIP y su firma en cuanto este POST responde, y
+            // el runner elevado arranca despues de forma asincrona. La
+            // solicitud y su copia del paquete se preparan aqui, antes de
+            // responder, para que el runner no compita con esa limpieza.
+            try
+            {
+                await StageElevatedUpdateRequestAsync(fullSourcePath, packageZipPath, fullTargetPath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "No se pudo preparar la solicitud del actualizador protegido");
+                try
+                {
+                    await _stateStore.SetAsync(
+                        CreateState("FAILED", "UPDATE_APP", "No se pudo preparar la actualizacion. Revise los logs protegidos del servidor."),
+                        CancellationToken.None);
+                }
+                finally
+                {
+                    _operationLock.Release();
+                }
+
+                return false;
+            }
+        }
+
         _ = Task.Run(async () =>
         {
-            var finalState = CreateState("FAILED", "UPDATE_APP", "Operacion interrumpida");
+            WatchdogState? finalState = CreateState("FAILED", "UPDATE_APP", "Operacion interrumpida");
             string? rollbackPath = null;
             var apiStartedInOperation = false;
-            var externalUpdater = ShouldUseExternalPackageUpdater(fullTargetPath);
             try
             {
                 if (externalUpdater)
                 {
-                    var updateResult = await RunPackageUpdateViaHelperAsync(fullSourcePath, fullTargetPath, CancellationToken.None);
+                    var updateResult = await TriggerElevatedUpdateTaskAsync(CancellationToken.None);
+                    // Si la tarea arranco, el estado final lo escribe el
+                    // runner elevado. Escribir aqui otro RUNNING podria pisar
+                    // un FAILED rapido del runner y dejarlo colgado.
                     finalState = updateResult.Success
-                        ? CreateState("SUCCESS", "UPDATE_APP", "Actualizacion completada")
+                        ? null
                         : CreateState("FAILED", "UPDATE_APP", "Actualizacion externa fallo. Revise los logs protegidos del servidor.");
                     return;
                 }
@@ -266,7 +310,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                         await StartApiServiceSafeAsync(CancellationToken.None);
                     }
 
-                    await _stateStore.SetAsync(finalState, CancellationToken.None);
+                    if (finalState is not null)
+                    {
+                        await _stateStore.SetAsync(finalState, CancellationToken.None);
+                    }
                 }
                 finally
                 {
@@ -780,51 +827,60 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
-        var watchdogInstallPath = Path.Combine(installPath, "watchdog");
-        return IsPathWithinRoot(AppContext.BaseDirectory, watchdogInstallPath);
+        return IsInstalledWatchdogLayout(installPath);
     }
 
-    private async Task<(bool Success, string? Error)> RunPackageUpdateViaHelperAsync(
+    private static bool IsInstalledWatchdogLayout(string installPath) =>
+        OperatingSystem.IsWindows() &&
+        IsPathWithinRoot(AppContext.BaseDirectory, Path.Combine(installPath, "watchdog"));
+
+    private static async Task StageElevatedUpdateRequestAsync(
         string packageRoot,
+        string packageZipPath,
         string installPath,
         CancellationToken cancellationToken)
     {
-        var updaterScript = Path.Combine(packageRoot, "scripts", "Actualizar-AtlasBalance.ps1");
-        if (!File.Exists(updaterScript))
+        var requestDirectory = Path.Combine(installPath, "updates", "requests");
+        var requestPath = Path.Combine(requestDirectory, "pending-update.json");
+        var stagedZipPath = Path.Combine(requestDirectory, "pending-update.zip");
+        Directory.CreateDirectory(requestDirectory);
+
+        // Copia propia del ZIP y su firma: la API los borra al recibir la
+        // respuesta. El runner elevado vuelve a verificar la firma sobre su
+        // copia protegida, asi que esta copia no necesita ser de confianza.
+        File.Copy(Path.GetFullPath(packageZipPath), stagedZipPath, overwrite: true);
+        File.Copy(Path.GetFullPath(packageZipPath) + ".sig", stagedZipPath + ".sig", overwrite: true);
+
+        var request = new
         {
-            return (false, "El paquete no incluye scripts\\Actualizar-AtlasBalance.ps1.");
+            PackageRoot = packageRoot,
+            PackageZipPath = stagedZipPath,
+            InstallPath = installPath
+        };
+        var temporaryPath = requestPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, JsonSerializer.Serialize(request), cancellationToken);
+            File.Move(temporaryPath, requestPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private async Task<(bool Success, string? Error)> TriggerElevatedUpdateTaskAsync(CancellationToken cancellationToken)
+    {
+        var schtasks = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe");
+        if (!File.Exists(schtasks))
+        {
+            return (false, "No se encontro schtasks.exe en System32.");
         }
 
-        var sourceRoot = _configuration["WatchdogSettings:UpdateSourceRoot"] ?? Path.Combine(installPath, "updates");
-        if (!IsExplicitlyRooted(sourceRoot))
-        {
-            return (false, "WatchdogSettings:UpdateSourceRoot no es absoluto.");
-        }
-
-        var helperPath = Path.Combine(sourceRoot, $"run-online-update-{Guid.NewGuid():N}.ps1");
-        Directory.CreateDirectory(sourceRoot);
-        File.WriteAllText(helperPath, BuildOnlineUpdateHelperScript());
-
-        var stateFilePath = _configuration["WatchdogSettings:StateFilePath"] ??
-                            Path.Combine(installPath, "watchdog-state.json");
-
-        return await RunProcessAsync(
-            ResolvePowerShellExecutable(),
-            [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                helperPath,
-                "-UpdaterScript",
-                updaterScript,
-                "-InstallPath",
-                installPath,
-                "-StateFilePath",
-                stateFilePath
-            ],
-            null,
-            cancellationToken);
+        return await RunProcessAsync(schtasks, ["/Run", "/TN", "AtlasBalance.Update"], null, cancellationToken);
     }
 
     private static string ResolvePowerShellExecutable()
@@ -869,12 +925,25 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 New-Item -ItemType Directory -Path $directory -Force | Out-Null
             }
 
-            [ordered]@{
-                Estado = $Estado
-                Operacion = "UPDATE_APP"
-                Mensaje = $Mensaje
-                UpdatedAt = (Get-Date).ToUniversalTime().ToString("o")
-            } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $StateFilePath -Encoding UTF8
+            $temporaryPath = "$StateFilePath.$([Guid]::NewGuid().ToString('N')).tmp"
+            try {
+                [ordered]@{
+                    Estado = $Estado
+                    Operacion = "UPDATE_APP"
+                    Mensaje = $Mensaje
+                    UpdatedAt = (Get-Date).ToUniversalTime().ToString("o")
+                } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temporaryPath -Encoding UTF8
+
+                if ([System.IO.File]::Exists($StateFilePath)) {
+                    [System.IO.File]::Replace($temporaryPath, $StateFilePath, $null)
+                } else {
+                    [System.IO.File]::Move($temporaryPath, $StateFilePath)
+                }
+            } finally {
+                if (Test-Path -LiteralPath $temporaryPath) {
+                    Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+                }
+            }
         }
 
         try {

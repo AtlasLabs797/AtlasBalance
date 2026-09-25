@@ -56,20 +56,6 @@
   gap: var(--space-2);
 }
 
-.kpi-card {
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-card);
-  background: var(--color-bg-primary);
-  padding: var(--space-3);
-  transition: border-color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .kpi-card:hover {
-    border-color: var(--surface-border-hover);
-  }
-}
-
 .phase2-page {
   display: grid;
   gap: var(--space-4);

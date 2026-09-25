@@ -4,7 +4,12 @@ export interface AiModelOption {
 }
 
 export const OPENROUTER_AUTO_MODEL = 'openrouter/auto';
-export const OPENROUTER_DEFAULT_RUNTIME_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
+export const OPENROUTER_FREE_MODEL = 'openrouter/free';
+// P2 V-03.01: el default vuelve a un modelo que respeta ZDR (zdr/data_collection=deny).
+// Los modelos gratuitos de OpenRouter no garantizan retencion cero de datos y requieren
+// que el admin active "Permitir modelos gratuitos" en Configuracion > IA.
+export const OPENROUTER_DEFAULT_RUNTIME_MODEL = OPENROUTER_AUTO_MODEL;
+export const OPENROUTER_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 export const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3';
 
@@ -16,7 +21,8 @@ export const aiProviderOptions: AiModelOption[] = [
 
 export const openRouterModelOptions: AiModelOption[] = [
   { value: OPENROUTER_AUTO_MODEL, label: 'OpenRouter Auto' },
-  { value: OPENROUTER_DEFAULT_RUNTIME_MODEL, label: 'Nemotron 3 Super (free)' },
+  { value: OPENROUTER_FREE_MODEL, label: 'Modelos gratis (OpenRouter)' },
+  { value: OPENROUTER_NEMOTRON_MODEL, label: 'Nemotron 3 Super (gratis)' },
   { value: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (free)' },
   { value: 'minimax/minimax-m2.5:free', label: 'MiniMax M2.5 (free)' },
   { value: 'openai/gpt-oss-120b:free', label: 'gpt-oss-120b (free)' },
@@ -58,14 +64,14 @@ export function getDefaultAiModel(provider: string | null | undefined) {
     return DEFAULT_OPENAI_MODEL;
   }
 
-  return normalizedProvider === 'MINIMAX' ? DEFAULT_MINIMAX_MODEL : OPENROUTER_AUTO_MODEL;
+  return normalizedProvider === 'MINIMAX' ? DEFAULT_MINIMAX_MODEL : OPENROUTER_DEFAULT_RUNTIME_MODEL;
 }
 
 export function normalizeAiModel(provider: string | null | undefined, model: string | null | undefined) {
   const trimmed = model?.trim() ?? '';
   const normalizedProvider = normalizeAiProvider(provider);
   if (normalizedProvider === 'OPENROUTER') {
-    return trimmed || OPENROUTER_AUTO_MODEL;
+    return trimmed || OPENROUTER_DEFAULT_RUNTIME_MODEL;
   }
 
   const options = normalizedProvider === 'OPENAI' ? openAiModelOptions : miniMaxModelOptions;
@@ -77,17 +83,11 @@ export function getAiModelLabel(provider: string | null | undefined, model: stri
   return getAiModelOptions(provider).find((item) => item.value === normalizedModel)?.label ?? normalizedModel;
 }
 
-export function isValidOpenRouterModelId(model: string | null | undefined) {
+// P2 V-03.01: replica en el frontend la regla de AiConfiguration.IsOpenRouterFreeModel
+// del backend, para poder deshabilitar/marcar modelos gratuitos en la UI.
+export function isOpenRouterFreeModel(model: string | null | undefined) {
   const trimmed = model?.trim() ?? '';
-  if (trimmed.length < 3 || trimmed.length > 160) {
-    return false;
-  }
-
-  if (trimmed.includes('..') || trimmed.includes('//') || trimmed.startsWith('/') || trimmed.endsWith('/')) {
-    return false;
-  }
-
-  return /^[A-Za-z0-9/_:.\-+]+$/.test(trimmed);
+  return trimmed === OPENROUTER_FREE_MODEL || trimmed.toLowerCase().endsWith(':free');
 }
 
 // V-02.09 (Fase UI): modo de razonamiento por provider. No todos los
@@ -127,6 +127,21 @@ export function getThinkingModeOptions(provider: string | null | undefined): Thi
   }
 
   return normalizedProvider === 'MINIMAX' ? THINKING_MODES_MINIMAX : THINKING_MODES_OPENROUTER;
+}
+
+// P5 V-03.01: al refrescar la config de IA, el modelo seleccionado por el
+// usuario en el chat puede haber dejado de estar permitido (el admin cambio
+// de provider/modelo). Sin este reseteo, el chat seguia mandando el modelo
+// viejo y el backend respondia 400 hasta que el usuario cerraba sesion.
+export function resolveSelectedModelAfterConfigRefresh(
+  currentSelectedModel: string | null,
+  allowedModels: string[] | null | undefined,
+): string | null {
+  if (!currentSelectedModel) {
+    return null;
+  }
+
+  return (allowedModels ?? []).includes(currentSelectedModel) ? currentSelectedModel : null;
 }
 
 export function normalizeThinkingMode(provider: string | null | undefined, value: string | null | undefined): ThinkingMode {

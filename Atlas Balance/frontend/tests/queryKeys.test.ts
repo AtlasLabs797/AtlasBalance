@@ -71,3 +71,18 @@ test('queryKeys.extractos.list separa pagina y pageSize', () => {
   assert.notDeepEqual(page1, page2);
   assert.notDeepEqual(page1, sizeGrande);
 });
+
+test('queryKeys de recursos sensibles separan usuarios aunque compartan el mismo id', () => {
+  assert.notDeepEqual(
+    queryKeys.dashboard.saldosTitular({ usuarioId: 'u1', titularId: 't1' }),
+    queryKeys.dashboard.saldosTitular({ usuarioId: 'u2', titularId: 't1' })
+  );
+  assert.notDeepEqual(
+    queryKeys.extractos.desglose({ usuarioId: 'u1', extractoId: 'e1' }),
+    queryKeys.extractos.desglose({ usuarioId: 'u2', extractoId: 'e1' })
+  );
+  assert.notDeepEqual(
+    queryKeys.catalogo.importacionLote({ usuarioId: 'u1', loteId: 'l1' }),
+    queryKeys.catalogo.importacionLote({ usuarioId: 'u2', loteId: 'l1' })
+  );
+});

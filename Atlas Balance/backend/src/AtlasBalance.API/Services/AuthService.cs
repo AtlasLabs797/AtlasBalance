@@ -794,15 +794,15 @@ _secretProtector = secretProtector;
             throw new AuthException("Contraseña actual requerida", StatusCodes.Status400BadRequest);
         }
 
-        if (!SecurityPolicy.TryValidatePassword(passwordNueva, out var passwordError))
-        {
-            throw new AuthException(passwordError, StatusCodes.Status400BadRequest);
-        }
-
         var usuario = await _dbContext.Usuarios.FirstOrDefaultAsync(u => u.Id == userId && u.Activo, cancellationToken);
         if (usuario is null)
         {
             throw new AuthException("Usuario no encontrado", StatusCodes.Status404NotFound);
+        }
+
+        if (!SecurityPolicy.TryValidatePassword(passwordNueva, out var passwordError, usuario.Email, usuario.NombreCompleto))
+        {
+            throw new AuthException(passwordError, StatusCodes.Status400BadRequest);
         }
 
         var now = DateTime.UtcNow;

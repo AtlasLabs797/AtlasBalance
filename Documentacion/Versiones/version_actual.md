@@ -1,22 +1,27 @@
 # Version actual
 
-Version actual del proyecto: `V-02.09`
+Version actual del proyecto: `V-03.01`
 
-Fecha de registro: 2026-08-25
+Fecha de registro: 2026-09-16
 
 ## Fuentes de version
 
-- Runtime backend: `Atlas Balance/Directory.Build.props` (`2.9.0` / `V-02.09`)
-- Runtime frontend: `Atlas Balance/frontend/package.json` (`2.9.0` / `V-02.09`)
-- Trazabilidad de paquete: `Atlas Balance/VERSION` (`V-02.09`)
-- Documentacion de version: `Documentacion/Versiones/v-02.09.md`
+- Runtime backend: `Atlas Balance/Directory.Build.props` (`3.1.0` / `V-03.01`)
+- Runtime frontend: `Atlas Balance/frontend/package.json` (`3.1.0` / `V-03.01`)
+- Trazabilidad de paquete: `Atlas Balance/VERSION` (`V-03.01`)
+- Documentacion de version: `Documentacion/Versiones/v-03.01.md`
 
-Los tres archivos runtime estan **alineados** en `V-02.09` / `2.9.0`.
+Los tres archivos runtime estan **alineados** en `V-03.01` / `3.1.0`.
+
+El script `Atlas Balance/scripts/Check-VersionAlignment.ps1` verifica
+ademas `frontend/package-lock.json`, `backend/.../Data/SeedData.cs`,
+`.github/workflows/release.yml`, `scripts/Build-Release.ps1`,
+`scripts/Instalar-AtlasBalance.ps1` y `scripts/install.ps1`.
 
 ## Base anterior
 
-- Version de trabajo previa: `V-02.08`
-- Documentacion historica: `Documentacion/Versiones/v-02.08.md`
+- Version de trabajo previa: `V-02.09`
+- Documentacion historica: `Documentacion/Versiones/v-02.09.md`
 
 ## Reglas
 
@@ -27,20 +32,13 @@ Los tres archivos runtime estan **alineados** en `V-02.09` / `2.9.0`.
 
 ## Historial de la decision de version
 
-El 2026-08-23 se decidio que la version vigente volvia a ser `V-02.08` mientras
-los tres archivos runtime conservaban `V-02.09` / `2.9.0` del ciclo anterior.
-Esa discrepancia queda **resuelta el 2026-08-25**: se adopta `V-02.09` como
-version vigente, que es lo que ya declaraban los tres archivos runtime y lo que
-nombra la rama de trabajo.
+El 2026-08-25 se adopto `V-02.09` como version vigente, alineando los
+tres archivos runtime con la documentacion. Esa version permanecio
+vigente hasta el 2026-09-16, cuando se cerro `V-02.09` y se abrio
+`V-03.01` partiendo del HEAD de `main` (`main` apuntaba a
+`e670749` y mantenia `V-02.09` como base del hotfix
+`hotfix/V-02.09-actualizador-sonda-funcional`, ya mergeado).
 
-**Donde esta documentado el redisenio.** El ciclo de redisenio de Claude Design
-(agosto 2026) se ejecuto y se registro bajo `v-02.08.md`, porque en ese momento
-esa era la version vigente segun este archivo. No se ha movido de sitio para no
-romper la trazabilidad de lo ya commiteado. Las tres entradas relevantes, todas
-en `Documentacion/Versiones/v-02.08.md`, son:
-
-1. "Verificacion y cierre del redisenio de Claude Design (2026-08-25)"
-2. "Cierre de los pendientes de diseno del redisenio (2026-08-25, segunda pasada)"
-3. "Sincronizacion con el proyecto de Claude Design (2026-08-25, tercera pasada)"
-
-El trabajo **nuevo** a partir de esta fecha se registra en `v-02.09.md`.
+El bump a `V-03.01` cubre solo alineacion de fuentes; el contenido
+funcional del nuevo ciclo se documentara en `v-03.01.md` a medida que
+se implemente. `v-02.09.md` permanece como historico sin tocar.

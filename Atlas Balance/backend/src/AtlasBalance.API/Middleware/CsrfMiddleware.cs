@@ -9,7 +9,7 @@ public sealed class CsrfMiddleware
     private readonly ILogger<CsrfMiddleware> _logger;
     private readonly bool _isDevelopment;
 
-    // V-02.07: en desarrollo el frontend corre en Vite (5173) y la API en 5000, asi que
+    // V-02.07: en desarrollo el frontend corre en Vite (5173) y la API en 5002, asi que
     // las peticiones son cross-origin de forma legitima. En produccion el frontend se
     // sirve como estatico desde la propia API, luego siempre es same-origin.
     private static readonly HashSet<string> DevelopmentOrigins = new(StringComparer.OrdinalIgnoreCase)

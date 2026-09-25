@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { useAiChatStore } from '@/stores/aiChatStore';
+import { clearUserScopedState } from '@/stores/sessionState';
 import type { Usuario } from '@/types';
+import { shouldResetUserScopedState } from '@/utils/sessionScope';
 
 interface AuthState {
   usuario: Usuario | null;
@@ -14,13 +15,18 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   usuario: null,
   csrfToken: null,
   isAuthenticated: false,
   isLoading: true, // true until we check auth status on app load
 
-  setUsuario: (usuario, csrfToken) =>
+  setUsuario: (usuario, csrfToken) => {
+    const userChanged = shouldResetUserScopedState(get().usuario?.id ?? null, usuario.id);
+    if (userChanged) {
+      clearUserScopedState();
+    }
+
     set((state) => ({
       // V-02.06: el backend ahora expone si el usuario actual esta obligado a
       // usar Authenticator. Mantenemos el valor en el store para que ProtectedRoute
@@ -35,17 +41,14 @@ export const useAuthStore = create<AuthState>((set) => ({
             ? usuario.mfa_required
             : usuario.mfa_enabled,
       },
-      csrfToken: csrfToken ?? state.csrfToken,
+      csrfToken: csrfToken ?? (userChanged ? null : state.csrfToken),
       isAuthenticated: true,
       isLoading: false,
-    })),
+    }));
+  },
 
   logout: () => {
-    // V-02.08: todos los caminos de logout (TopBar, useSessionTimeout,
-    // expiracion de sesion en api.ts, etc.) pasan por aqui. Sin este clear, el
-    // siguiente usuario que abra sesion en el mismo navegador veria las
-    // preguntas y respuestas de IA del usuario anterior en aiChatStore.
-    useAiChatStore.getState().clear();
+    clearUserScopedState();
     set({ usuario: null, csrfToken: null, isAuthenticated: false, isLoading: false });
   },
 

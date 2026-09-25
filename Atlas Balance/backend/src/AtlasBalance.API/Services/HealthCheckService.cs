@@ -10,7 +10,8 @@ public interface IAppHealthService
 {
     /// <summary>
     /// Comprobacion completa: base de datos, disco y pool de conexiones. Es la
-    /// que responde /api/sistema/salud y la que consume el job de alertas.
+    /// que responde /api/sistema/salud y la que consume el job de alertas. Las
+    /// sondas publicas solo proyectan el estado y nunca exponen este resultado.
     /// </summary>
     Task<SaludResponse> ComprobarAsync(CancellationToken cancellationToken);
 }

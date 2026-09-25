@@ -27,6 +27,9 @@ public sealed class RateLimitingOptions
     /// <summary>Endpoints que verifican credenciales, por IP. El checklist pide 5-10.</summary>
     public int AuthPerMinutePerIp { get; set; } = 10;
 
+    /// <summary>Health checks de readiness/funcionales, por IP.</summary>
+    public int HealthPerMinutePerIp { get; set; } = 30;
+
     /// <summary>Resto de rutas anonimas (hoy solo telemetria), por IP.</summary>
     public int AnonymousPerMinutePerIp { get; set; } = 60;
 

@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -7,6 +6,7 @@ using System.Text.RegularExpressions;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Logging;
+using AtlasBalance.Shared.Packaging;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Services;
@@ -21,9 +21,6 @@ public interface IActualizacionService
 public sealed class ActualizacionService : IActualizacionService
 {
     private const long MaxUpdatePackageBytes = 300L * 1024L * 1024L;
-    private const long MaxExtractedPackageBytes = 1024L * 1024L * 1024L;
-    private const long MaxArchiveEntryBytes = 512L * 1024L * 1024L;
-    private const int MaxArchiveEntries = 10000;
 
     private readonly AppDbContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -798,84 +795,8 @@ public sealed class ActualizacionService : IActualizacionService
         return rawSignature;
     }
 
-    private static bool TryExtractPackageSafely(string zipPath, string packageRoot)
-    {
-        Directory.CreateDirectory(packageRoot);
-        var rootFullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(packageRoot));
-        var rootFullPathWithSeparator = EnsureTrailingSeparator(rootFullPath);
-
-        using var archive = ZipFile.OpenRead(zipPath);
-        var entryCount = 0;
-        var totalUncompressedBytes = 0L;
-        foreach (var entry in archive.Entries)
-        {
-            if (string.IsNullOrEmpty(entry.FullName))
-            {
-                continue;
-            }
-
-            entryCount++;
-            if (entryCount > MaxArchiveEntries ||
-                entry.Length < 0 ||
-                entry.Length > MaxArchiveEntryBytes)
-            {
-                Directory.Delete(packageRoot, recursive: true);
-                return false;
-            }
-
-            totalUncompressedBytes += entry.Length;
-            if (totalUncompressedBytes > MaxExtractedPackageBytes)
-            {
-                Directory.Delete(packageRoot, recursive: true);
-                return false;
-            }
-
-            var destinationFullPath = Path.GetFullPath(Path.Combine(packageRoot, entry.FullName));
-            var isDirectoryEntry = entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\');
-            var destinationNormalized = Path.TrimEndingDirectorySeparator(destinationFullPath);
-
-            if (string.Equals(destinationNormalized, rootFullPath, StringComparison.OrdinalIgnoreCase))
-            {
-                if (!IsCurrentDirectoryEntry(entry.FullName, isDirectoryEntry, entry.Length))
-                {
-                    Directory.Delete(packageRoot, recursive: true);
-                    return false;
-                }
-
-                Directory.CreateDirectory(rootFullPath);
-                continue;
-            }
-
-            if (!destinationFullPath.StartsWith(rootFullPathWithSeparator, StringComparison.OrdinalIgnoreCase))
-            {
-                Directory.Delete(packageRoot, recursive: true);
-                return false;
-            }
-
-            if (isDirectoryEntry)
-            {
-                Directory.CreateDirectory(destinationFullPath);
-                continue;
-            }
-
-            var directory = Path.GetDirectoryName(destinationFullPath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            entry.ExtractToFile(destinationFullPath, overwrite: true);
-        }
-
-        return true;
-    }
-
-    private static bool IsCurrentDirectoryEntry(string entryName, bool isDirectoryEntry, long entryLength)
-    {
-        var normalizedName = entryName.Replace('\\', '/').TrimEnd('/');
-        return string.Equals(normalizedName, ".", StringComparison.Ordinal) &&
-               (isDirectoryEntry || entryLength == 0);
-    }
+    private static bool TryExtractPackageSafely(string zipPath, string packageRoot) =>
+        PackageExtraction.TryExtractSafely(zipPath, packageRoot);
 
     private static async Task<bool> CopyContentToFileWithLimitAsync(HttpContent content, string destinationPath, long maxBytes, CancellationToken cancellationToken)
     {

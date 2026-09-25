@@ -135,7 +135,8 @@ public sealed class ExportacionesController : ControllerBase
     public async Task<IActionResult> Manual([FromBody] ExportacionManualRequest request, CancellationToken cancellationToken)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
-        var canExport = await _userAccessService.CanAccessCuentaAsync(request.CuentaId, scope, cancellationToken);
+        var canExport = await _userAccessService.CanAccessCuentaAsync(request.CuentaId, scope, cancellationToken)
+            && await _userAccessService.CanWriteCuentaAsync(request.CuentaId, scope, cancellationToken);
         if (!canExport)
         {
             return Forbid();
@@ -184,7 +185,7 @@ public sealed class ExportacionesController : ControllerBase
         var canAccess = await _userAccessService.CanAccessCuentaAsync(exportacion.CuentaId, scope, cancellationToken);
         if (!canAccess)
         {
-            return Forbid();
+            return NotFound(new { error = "Exportación no encontrada" });
         }
 
         var configuredExportRoot = await _dbContext.Configuraciones

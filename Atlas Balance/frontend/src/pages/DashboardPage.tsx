@@ -25,7 +25,7 @@ import { extractErrorMessage } from '@/utils/errorMessage';
 import { queryKeys } from '@/queries/queryKeys';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
 
-const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '9m', '12m', '18m', '24m'];
+const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '12m', '24m'];
 const TIPO_TITULAR_LABELS = {
   EMPRESA: 'Empresa',
   AUTONOMO: 'Autónomo',
@@ -413,7 +413,7 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      {principal.saldos_por_pais?.length ? (
+      {!selectedPaisId && principal.saldos_por_pais?.length ? (
         <section className="dashboard-card">
           <header className="dashboard-card-header">
             <h2>Saldos por país</h2>

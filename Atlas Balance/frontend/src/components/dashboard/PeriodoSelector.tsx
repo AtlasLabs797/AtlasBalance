@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import type { PeriodoDashboard } from '@/types';
 
-const PERIODOS_DASHBOARD: PeriodoDashboard[] = ['1m', '3m', '6m', '9m', '12m', '18m', '24m'];
+const PERIODOS_DASHBOARD: PeriodoDashboard[] = ['1m', '3m', '6m', '12m', '24m'];
 
 interface PeriodoSelectorProps {
   value: PeriodoDashboard;

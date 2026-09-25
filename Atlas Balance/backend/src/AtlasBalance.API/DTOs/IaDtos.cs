@@ -17,6 +17,12 @@ public sealed class IaConfigResponse
     public bool MiniMaxApiKeyConfigurada { get; set; }
     public bool Configurada { get; set; }
     public string MensajeEstado { get; set; } = string.Empty;
+    // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
+    // OpenRouter, que no garantizan retencion cero de datos financieros.
+    public bool PermiteRetencionDatos { get; set; }
+    // P4 V-03.01: modelos que el usuario actual puede elegir en el selector del chat
+    // (el configurado por el admin, mas los gratuitos si PermiteRetencionDatos = true).
+    public IReadOnlyList<string> ModelosPermitidos { get; set; } = Array.Empty<string>();
     public int RequestsPorMinuto { get; set; } = AiConfigurationDefaults.RequestsPerMinute;
     public int RequestsPorHora { get; set; } = AiConfigurationDefaults.RequestsPerHour;
     public int RequestsPorDia { get; set; } = AiConfigurationDefaults.RequestsPerDay;
@@ -55,6 +61,9 @@ public sealed class UpdateIaConfigRequest
     [MaxLength(256)]
     public string Model { get; set; } = string.Empty;
     public bool Habilitada { get; set; }
+    // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
+    // OpenRouter, que no garantizan retencion cero de datos financieros.
+    public bool PermiteRetencionDatos { get; set; }
     [JsonPropertyName("openrouter_api_key")]
     [MaxLength(1024)]
     public string OpenRouterApiKey { get; set; } = string.Empty;

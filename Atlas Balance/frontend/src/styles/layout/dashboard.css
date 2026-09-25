@@ -71,11 +71,7 @@
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
-  padding: 0.25rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--bg-surface-soft) 78%, var(--bg-surface) 22%);
-  box-shadow: none;
+  padding: 0;
 }
 
 .dashboard-hero-card {
@@ -247,17 +243,6 @@
   font-weight: var(--font-weight-medium) !important;
 }
 
-.dashboard-secondary-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 2fr;
-  gap: var(--space-3);
-  align-items: stretch;
-}
-
-.dashboard-secondary-row .dashboard-kpi {
-  padding: var(--pad-card);
-}
-
 .dashboard-select-control {
   display: grid;
   gap: var(--space-1);
@@ -276,7 +261,8 @@
   white-space: nowrap;
 }
 
-.dashboard-periodo-tabs .ab-tabs {
+.dashboard-periodo-tabs .ab-tabs,
+.dashboard-divisa-tabs .ab-tabs {
   flex-wrap: wrap;
   gap: var(--space-1);
   padding: 3px;
@@ -286,7 +272,8 @@
   box-shadow: none;
 }
 
-.dashboard-periodo-tabs .ab-tab {
+.dashboard-periodo-tabs .ab-tab,
+.dashboard-divisa-tabs .ab-tab {
   min-height: 2.25rem;
   min-width: 3rem;
   border: 0;
@@ -295,7 +282,8 @@
   color: var(--text-secondary);
 }
 
-.dashboard-periodo-tabs .ab-tab[aria-checked="true"] {
+.dashboard-periodo-tabs .ab-tab[aria-checked="true"],
+.dashboard-divisa-tabs .ab-tab[aria-checked="true"] {
   border: 0;
   background: var(--surface-card);
   color: var(--text-primary);
@@ -316,6 +304,10 @@
 }
 
 .dashboard-select-control.dashboard-periodo-tabs {
+  width: auto;
+}
+
+.dashboard-select-control.dashboard-divisa-tabs {
   width: auto;
 }
 
@@ -361,73 +353,6 @@
   container-type: inline-size;
 }
 
-.dashboard-banco-list {
-  display: grid;
-  gap: var(--space-3);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.dashboard-banco-item {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  gap: var(--space-1) var(--space-3);
-  align-items: center;
-}
-
-.dashboard-banco-info {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.dashboard-banco-info span {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard-banco-info strong {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
-
-.dashboard-banco-bar-wrap {
-  grid-column: 1;
-  height: 0.45rem;
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-soft);
-  border: 1px solid var(--border-soft);
-  overflow: hidden;
-}
-
-.dashboard-banco-bar {
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--accent-primary);
-  min-width: 2px;
-  transition: width var(--transition-normal);
-}
-
-.dashboard-banco-pct {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
-  text-align: right;
-  align-self: center;
-}
-
 /* ── Concentración donut charts ── */
 .concentracion-donuts-grid {
   display: grid;
@@ -438,7 +363,8 @@
 
 .concentracion-donut-panel {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .concentracion-donut-title {
@@ -450,11 +376,23 @@
   margin: 0;
 }
 
+.concentracion-donut-body {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.2fr) minmax(0, 0.95fr);
+  gap: var(--space-4);
+  align-items: center;
+  min-width: 0;
+  min-height: 13.5rem;
+  padding: var(--space-2) 0;
+}
+
 .concentracion-donut-chart {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 0.85;
-  max-height: 260px;
+  aspect-ratio: 1;
+  min-width: 0;
+  max-height: 13rem;
+  container-type: inline-size;
 }
 
 .concentracion-donut-center {
@@ -470,14 +408,15 @@
 
 .concentracion-donut-center-value {
   font-family: var(--font-family-mono);
-  /* .atl-donut__value: mono 14/600 tabular. A 21px y peso 700 los glifos
-     median mas que el agujero del donut y pisaban el anillo. */
-  font-size: var(--text-14);
+  font-size: clamp(var(--text-12), 9.5cqw, var(--text-17));
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   color: var(--text-primary);
-  line-height: 1.2;
+  line-height: 1;
+  max-width: calc(100% - var(--space-2));
+  overflow: hidden;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -493,9 +432,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 14rem;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  min-width: 0;
 }
 
 .concentracion-donut-legend-item + .concentracion-donut-legend-item {
@@ -504,11 +441,11 @@
 
 .concentracion-donut-legend-item {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-1) var(--space-3);
   min-width: 0;
-  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  padding: var(--space-2) 0;
 }
 
 .concentracion-donut-legend-item--otros .concentracion-donut-legend-name {
@@ -533,26 +470,6 @@
   min-width: 0;
 }
 
-.concentracion-donut-legend-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.concentracion-donut-legend-amount {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
-}
-
-.concentracion-donut-legend-sep {
-  font-size: var(--font-size-xs);
-  color: var(--border-medium, var(--border-soft));
-  user-select: none;
-}
-
 .concentracion-donut-legend-pct {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-sm);
@@ -560,6 +477,14 @@
   color: var(--color-text-secondary);
   min-width: 3.5ch;
   text-align: right;
+}
+
+@container (max-width: 760px) {
+  .concentracion-donut-body {
+    grid-template-columns: minmax(10rem, 1.1fr) minmax(0, 1fr);
+    gap: var(--space-3);
+    padding-inline: 0;
+  }
 }
 
 @container (max-width: 560px) {
@@ -662,12 +587,6 @@
   min-width: 0;
 }
 
-.dashboard-evolution-card {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  padding: var(--space-5) var(--space-6) var(--space-6);
-}
-
 .dashboard-card-header {
   display: flex;
   align-items: flex-start;
@@ -712,10 +631,6 @@
 
 .dashboard-plazo-card {
   padding: 1.35rem;
-}
-
-.dashboard-secondary-row .dashboard-plazo-card {
-  align-self: stretch;
 }
 
 .dashboard-plazo-metrics {
@@ -1486,14 +1401,6 @@
       "chart";
   }
 
-  .dashboard-secondary-row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .dashboard-secondary-row .dashboard-plazo-card {
-    grid-column: 1 / -1;
-  }
-
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -1538,14 +1445,6 @@
     padding: 0;
   }
 
-  .dashboard-secondary-row {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-secondary-row .dashboard-plazo-card {
-    grid-column: 1;
-  }
-
   .dashboard-plazo-metrics {
     grid-template-columns: 1fr;
   }
@@ -1575,10 +1474,6 @@
   .account-identity-strip > div,
   .account-identity-strip .account-identity-iban {
     flex-basis: 100%;
-  }
-
-  .dashboard-evolution-card {
-    padding: var(--space-4);
   }
 
   .dashboard-card-header--chart {
@@ -1635,13 +1530,16 @@
 
   .dashboard-periodo-tabs,
   .dashboard-periodo-tabs .ab-tabs,
+  .dashboard-divisa-tabs,
+  .dashboard-divisa-tabs .ab-tabs,
   .dashboard-toolbar-actions .dashboard-select-control {
     width: 100%;
   }
 
-  .dashboard-periodo-tabs .ab-tabs {
+  .dashboard-periodo-tabs .ab-tabs,
+  .dashboard-divisa-tabs .ab-tabs {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .dashboard-periodo-tabs .ab-tab {

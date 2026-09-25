@@ -1,11 +1,524 @@
 # Documentacion tecnica
 
-## Vigencia documental: V-02.09
+## Vigencia documental: V-03.01
 
-La version activa de la aplicacion es `V-02.09` (runtime `2.9.0`). Este
-documento conserva debajo el historial tecnico de V-02.08 y versiones
+### 2026-09-25 - Correcciones de la review de Codex (PR 36)
+
+**Refresh entre pestañas.** `createRefreshCoordinator` expone
+`subscribeToPeerSuccess(listener)`. Se dispara con los resultados `completed`
+que llegan por `BroadcastChannel` (o por el evento `storage` si no hay canal)
+y que no publico esta pestaña. `api.ts` aplica `syncSessionState` solo si
+`sessionKey` coincide con el usuario cargado.
+
+**Actualizacion protegida.** `StartUpdateAsync` decide el modo antes de tomar
+el lock. En modo externo, `StageElevatedUpdateRequestAsync` copia ZIP y `.sig`
+a `updates\requests\pending-update.zip` y escribe `pending-update.json` antes
+de responder; la tarea en segundo plano solo lanza `schtasks /Run` y, si
+arranca, no vuelve a escribir estado (evita pisar un `FAILED` rapido del
+runner). La
+solicitud ya no lleva `StateFilePath`. `ElevatedUpdateRunner.RunAsync`
+envuelve la ejecucion y, al terminar, escribe `SUCCESS`/`FAILED` en el
+`WatchdogSettings:StateFilePath` de `watchdog\appsettings.Production.json`
+(si no esta configurado, no escribe). El fichero se crea con DACL protegida:
+SYSTEM, Administrators y las reglas Allow del directorio de estado, para que
+`WatchdogLogConfiguration.EnsureStatePath` lo acepte. Con
+`UseExternalPackageUpdater=false` en una instalacion real de Windows la
+actualizacion se rechaza.
+
+**Directorios del Watchdog.** `Protect-AtlasInstallTree` (en
+`ServiceSecurity.ps1` y en `Instalar-AtlasBalance.ps1`) crea `watchdog\logs` y
+`state\` sin herencia, con Administrators/SYSTEM F y la cuenta del Watchdog M,
+y la cuenta como propietaria (`icacls /setowner /T`), para que el servicio
+pueda fijar su propia DACL al arrancar. El instalador escribe
+`WatchdogSettings:LogDirectory = <InstallPath>\watchdog\logs` y
+`StateFilePath = <InstallPath>\state\watchdog-state.json`;
+`Actualizar-AtlasBalance.ps1` migra el `StateFilePath` antiguo de la raiz y
+anade `LogDirectory` si falta. La API sigue leyendo el estado por
+`/watchdog/estado` si no puede abrir el fichero.
+
+**Extractos.** `rowsErrorRef` guarda el ultimo mensaje puesto por la carga de
+filas; una carga correcta lo borra solo si sigue siendo el error visible.
+
+### 2026-09-25 - Auditoria de seguridad, fluidez y codigo muerto
+
+**Chat IA (#2).** `AtlasAiService.EnsureRequestLimitsAsync` cuenta usos ya
+guardados y el uso se guarda al responder el proveedor, asi que peticiones
+concurrentes del mismo usuario pasaban todas. `RateLimitingSetup` anade la
+politica `atlas-ia-chat` (`ConcurrencyLimiter`, `PermitLimit=1`,
+`QueueLimit=0`, particion por usuario via `ResolveIdentityKey`), aplicada con
+`[EnableRateLimiting]` a `POST /api/ia/chat`. El rechazo reutiliza
+`OnRejectedAsync` (429 + `Retry-After`). El contador global diario entre
+usuarios distintos conserva la carrera: cerrarla exige un lock global.
+
+**RLS deniega por defecto (#4).** `RlsDbCommandInterceptor.BuildContext`
+publica `RlsSessionContext.Anonymous()` si no hay `HttpContext` ni
+`SystemContextScope`. Antes publicaba `System()` (bypass total). Cada job de
+Hangfire abre `SystemContextScope.Enter()` en su metodo de entrada (se
+descarto un `IServerFilter` porque no esta garantizado que el `AsyncLocal`
+fluya del filtro al metodo del job) y `Program.cs` envuelve seed +
+`ProtectExistingConfigurationSecrets`. Las migraciones usan un
+`AppDbContext` sin interceptor. `ShouldSkip` con conexion cerrada se deja:
+EF abre la conexion antes de invocar los interceptores de comando.
+Tests: `Rls/RlsDbCommandInterceptorContextTests.cs` y
+`RlsSystemContextScopeIntegrationTests.cs` (Postgres real: escritura
+denegada sin scope, permitida con scope, `LimpiezaExportacionesJob` purga
+con su propio scope).
+
+**Coste del contexto RLS (#7, no implementado).** Medido con Testcontainers:
+`SELECT 1` 2,71 ms sin reaplicar contexto frente a 5,69 ms con el
+`set_config` firmado. No se cachea por conexion porque (a) el contexto puede
+cambiar dentro de la vida de una conexion (`SystemContextScope`) y (b) un
+`ROLLBACK` revierte `set_config` aunque sea de sesion, dejando la cache
+desalineada. `Rls/RlsPoolResetProbe.cs` fija la precondicion de que Npgsql
+resetea el estado de sesion al devolver la conexion al pool.
+
+**Servicios Hardened fusionados (#5).** `ConciliacionService` incorpora el
+`SugerirAsync` de produccion (una sola consulta de extractos, tolerancias
+`conciliacion_tolerance_amount`/`_percent`, score con penalizacion por
+diferencia). `ApplyCuentaScope(..., soloPuedeConciliar: true)` para
+sugerencias: exige `PuedeConciliar` y titular activo; el scope propio de la
+version Hardened omitia el titular activo. `BackupConfigurationService`
+absorbe el backfill de `EsSecreto` sobre `google_drive_oauth_client_secret` y
+`backup_cloud_encryption_key`. `HardenedGoogleDriveBackupService` era un
+pass-through. DI registra las interfaces directamente.
+
+**Otros.** `ExportacionesController.Descargar` devuelve el mismo
+`NotFound` para ID ajeno e inexistente (#6). `SecurityPolicy.TryValidatePassword`
+acepta `userEmail`/`userFullName` opcionales y rechaza palabras de 4+
+caracteres del nombre o de la parte local del email, y raices comunes con
+sufijo de no-letras tras normalizar leet solo sobre la base (#10);
+`AuthService.CambiarPasswordAsync` valida tras cargar el usuario. Se elimina
+`app.UseHttpsRedirection()`, inalcanzable tras `HttpsRedirectionMiddleware`
+(#11).
+
+**Frontend.** `vite.config.ts` sin regla `charts` en `manualChunks` (#3):
+Recharts queda en un chunk que solo cargan las paginas con graficos. Fuentes
+woff2 convertidas con fontTools (#9). React Query en
+`ExtractosPage`/`UsuariosPage`/`AuditoriaPage`/`ExportacionesPage` con puente
+a estado local, como en `CuentaDetailPage` (#8). Borrado de codigo muerto
+listado en `DOCUMENTACION_CAMBIOS.md`.
+
+### 2026-09-25 - Correcciones de la revision 2026-09-24
+
+**Actualizador elevado (hallazgos #1, #3, #9).** `ElevatedUpdateRunner.cs`
+(Watchdog) recibia un `PackageRoot` propuesto por la peticion de actualizacion
+y ejecutaba `Actualizar-AtlasBalance.ps1` directamente desde ahi tras
+verificar la firma sobre ese mismo directorio. Esa carpeta era escribible por
+la cuenta del Watchdog, no solo por SYSTEM, asi que modificar su contenido
+entre la verificacion y la ejecucion permitia escalar a SYSTEM (el runner
+elevado corre con ese privilegio). La correccion separa verificacion de
+ejecucion: copia ZIP + `.sig` a una carpeta nueva por ejecucion
+(`config\update-runner\verified-<guid>`) cuyas ACL solo permiten
+Administradores/SYSTEM, repite la verificacion de firma RSA sobre esa copia,
+extrae con el helper compartido `PackageExtraction.TryExtractSafely` (movido
+a `AtlasBalance.API/Services/PackageExtraction.cs` y enlazado tambien en el
+`.csproj` del Watchdog; `ActualizacionService.cs` ahora usa el mismo helper
+en vez de su copia privada) y solo entonces ejecuta el script desde la copia
+verificada. El directorio se borra en `finally` pase lo que pase. Un nuevo
+codigo de salida (8) distingue el fallo de extraccion insegura de los demas
+fallos.
+
+En la misma linea, `Run-AtlasElevatedUpdate.ps1` copiaba unicamente el
+ejecutable del Watchdog (el publish no es single-file), asi que el apphost no
+encontraba sus dependencias al arrancar bajo la identidad elevada. Ahora
+copia el runtime completo (excluyendo `logs`) a un directorio por ejecucion
+(`config\update-runner\run-<guid>`), lo limpia en `finally`, y fija
+`$exitCode = 1` por defecto para que un fallo en la copia no se traduzca en
+exit code 0 bajo PowerShell 5.1 (que no propaga errores de cmdlets como
+excepciones terminantes por defecto).
+
+Reforzar las ACLs de `config\update-runner` (solo Admin/SYSTEM, se retira el
+acceso Modify que tenia el Watchdog) expuso un bug latente separado
+(hallazgo #9): la cuenta de servicio de la API solo tenia lectura/ejecucion
+sobre `updates\`, pero `ActualizacionService.DownloadAndPreparePackageAsync`
+descarga y extrae el paquete ahi mismo antes de pedirle al Watchdog que lo
+procese; con RX exclusivamente, esa descarga fallaba con acceso denegado. El
+mismo patron existia sobre `backups\`, que `BackupService` necesita para
+escribir y borrar backups. La solucion final es que la API tenga Modify sobre
+`updates\` (pero no sobre `updates\requests`, que sigue siendo terreno
+exclusivo del Watchdog) y sobre `backups\`. Esto no reabre el problema de
+escalada porque el runner SYSTEM vuelve a verificar firma y contenido sobre
+su propia copia privada antes de ejecutar nada, independientemente de lo que
+la API haya escrito en `updates\`.
+
+**Migracion de identidades de servicio (hallazgo #10, causa raiz de la
+actualizacion bloqueada).** Desde que se introdujo el requisito de cuentas de
+servicio dedicadas, `Actualizar-AtlasBalance.ps1` invoca
+`Assert-AtlasServiceIdentities -RejectBuiltIn`, que lanza si los servicios
+API/Watchdog corren con una identidad integrada de Windows (`LocalSystem`,
+etc.). El problema: toda instalacion V-02.09 tiene exactamente esa
+configuracion, asi que cualquier intento de actualizar a V-03.01 abortaba en
+el primer chequeo, antes de tocar binarios o backups. La correccion anade
+`Repair-AtlasServiceIdentities` a `ServiceSecurity.ps1`, que reutiliza las
+mismas funciones que usa el instalador para una instalacion nueva
+(`Initialize-AtlasServiceAccount`, `Grant-AtlasLogOnAsService`,
+`Protect-AtlasInstallTree`, `Install-AtlasUpdateTask`, `Install-AtlasService`,
+`Grant-AtlasServiceControl`) para migrar una instalacion existente a las
+cuentas dedicadas `AtlasBalanceApiSvc` / `AtlasBalanceWatchdogSvc` (nombres
+configurables via los nuevos parametros opcionales `-ApiServiceAccount` /
+`-WatchdogServiceAccount`). El script de actualizacion atrapa la excepcion de
+`Assert-AtlasServiceIdentities`, ejecuta la migracion y vuelve a comprobar;
+si la migracion falla, reinicia los servicios en su estado previo y aborta
+limpio en vez de dejar la instalacion a medio migrar.
+
+De paso se corrigio el regex de deteccion de cuentas integradas
+(`Test-AtlasBuiltInServiceAccount`, ahora
+`^(LocalSystem|LocalService|NetworkService|SYSTEM|NT AUTHORITY\.+|NT SERVICE\.+)$`)
+y `Test-AtlasServiceIdentity` pasa a rechazar cuentas calificadas por un
+dominio distinto de `.` o `$env:COMPUTERNAME` (hallazgo #6).
+
+**Privacidad de IA (hallazgos #2, #4, #5).** El modelo por defecto de
+OpenRouter vuelve a `openrouter/auto` con el bloque de restricciones ZDR
+(retencion cero) activo por defecto, revirtiendo el cambio que en su momento
+lo quito para dar soporte a `openrouter/free`. Se anade un flag de
+configuracion nuevo, `ai_allow_data_retention` (expuesto como
+`permite_retencion_datos`, por defecto `false`), que el admin debe activar
+explicitamente para poder guardar o usar un modelo gratuito
+(`openrouter/free` o cualquier `*:free`). `AtlasAiService.AskAsync` valida
+esto en tiempo de peticion: si el modelo efectivo es gratuito y el flag esta
+desactivado, responde `data_retention_not_allowed` sin llamar al proveedor.
+`ConfiguracionController` aplica la misma regla al guardar: no permite
+persistir un modelo gratuito salvo que `permite_retencion_datos` venga `true`
+en la misma peticion.
+
+Sobre esa misma base se cierra el hallazgo de que el usuario del chat podia
+pedir un modelo distinto al configurado por el admin: `AskAsync` ahora solo
+acepta el modelo exactamente igual al configurado, o uno de la lista de
+modelos gratuitos permitidos cuando el flag esta activo; cualquier otro valor
+responde `requested_model_not_allowed`. `GET /api/ia/config` expone la lista
+resultante como `modelos_permitidos`, y el frontend (`AiChatPanel.tsx`) la usa
+para poblar el selector de modelo, ocultandolo cuando solo hay una opcion (no
+tiene sentido un selector de una sola alternativa).
+
+Por ultimo, `aiChatStore.ensureConfig` podia dejar `selectedModel` apuntando
+a un modelo que la configuracion ya no permitia tras un cambio del admin. El
+nuevo helper puro `resolveSelectedModelAfterConfigRefresh` (en
+`frontend/src/utils/aiModels.ts`, con tests dedicados en
+`frontend/tests/aiModels.test.ts`) recalcula la seleccion contra la lista
+vigente cada vez que se refresca la configuracion.
+
+**Archivos principales:**
+`backend/src/AtlasBalance.Watchdog/Services/ElevatedUpdateRunner.cs`,
+`backend/src/AtlasBalance.API/Services/PackageExtraction.cs`,
+`backend/src/AtlasBalance.API/Services/ActualizacionService.cs`,
+`scripts/Run-AtlasElevatedUpdate.ps1`, `scripts/ServiceSecurity.ps1`,
+`scripts/Instalar-AtlasBalance.ps1`, `scripts/Actualizar-AtlasBalance.ps1`,
+`backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`,
+`backend/src/AtlasBalance.API/Services/AtlasAiService.cs`,
+`backend/src/AtlasBalance.API/Controllers/ConfiguracionController.cs`,
+`backend/src/AtlasBalance.API/DTOs/IaDtos.cs`,
+`frontend/src/pages/ConfiguracionPage.tsx`, `frontend/src/utils/aiModels.ts`,
+`frontend/src/types/index.ts`, `frontend/src/components/ia/AiChatPanel.tsx`,
+`frontend/src/stores/aiChatStore.ts`.
+
+**Verificacion:** `dotnet test tests/AtlasBalance.API.Tests` (suite completa
+con Postgres/Testcontainers) 935/935, 0 skipped, incluye el nuevo
+`ElevatedUpdateRunnerTests` (5 casos que prueban que un `PackageRoot`
+manipulado no llega a ejecutarse); `npm run lint` y `npx tsc` OK; tests
+unitarios frontend 75/75; `vite build --outDir .dist-verify` OK; parser
+PowerShell 5.1 sobre los 5 scripts tocados OK; los 6 `scripts/*.Tests.ps1` en
+verde. Pendiente de verificar manualmente: actualizacion real V-02.09 ->
+V-03.01 en un entorno Windows Server, tanto via `Actualizar Atlas
+Balance.cmd` como desde la app.
+
+### 2026-09-21 - Diagnóstico de animaciones estáticas en Chrome
+
+La inspección del navegador confirmó que `AiFace` sí recibe la clase de estado
+(`atl-face--idle` en la vista revisada) y que los keyframes están presentes en
+las hojas de estilo. El estado computado era `animation-name: none` y
+`animation-duration: 0s` porque Chrome tenía activa la media query
+`prefers-reduced-motion: reduce`, cuya regla usa `animation: none !important`.
+
+El HTML de referencia contiene la misma protección. Por tanto, no se cambia el
+CSS para forzar movimiento: la corrección operativa es activar los efectos de
+animación de Windows y recargar. La caducidad de la sesión y la API local sin
+respuesta se registraron por separado y no explican este comportamiento.
+
+### 2026-09-21 - Estado de mensaje enviado y `Pensando`
+
+La referencia `C:\Users\usuario\Downloads\Chat - Mensaje Enviado (standalone).html`
+define el estado de conversación con una pregunta de usuario ya enviada y la
+respuesta del asistente en streaming. `AiChatPanel` ya recibía ese estado desde
+`aiChatStore`: `ask()` añade primero el mensaje del usuario y activa `loading`.
+El ajuste se limita a representar esa secuencia con la misma composición visual.
+
+Los grupos que comienzan un nuevo rol reciben separación adicional. La burbuja
+del usuario se alinea a la derecha, usa `ai-soft`, avatar de 40 px y hora bajo
+el contenido. La fila del asistente conserva la cara de 36 px dentro de un
+contenedor de 40 px. Mientras `loading` es verdadero, la fila `Pensando` usa
+la cara `thinking`, una burbuja `surface-muted` y la etiqueta `Pensando` con
+un pulso de 1,5 s.
+
+La etiqueta y la cara respetan `prefers-reduced-motion`. No se ha modificado la
+petición HTTP, el store ni el contrato del backend.
+
+Verificación: `npm.cmd run lint`, `npm.cmd run build`,
+`npm.cmd run test:unit` (70/70) y `git diff --check` OK. El HTML standalone no
+se pudo abrir como `file://` en Chrome por la política de URLs locales, por lo
+que su comparación se hizo sobre el bundle/markup extraído y no se declara una
+captura visual dinámica de este estado.
+
+### 2026-09-21 - Rediseño final de IA según referencias locales
+
+Se alinea la experiencia de IA con las capturas y el design system entregados
+en `Downloads`: la página `/ia` usa una cabecera compacta, chips de preguntas,
+composer anidado y la cara morada animada; el widget flotante usa el mismo
+componente en una superficie de 420 px y dispone de un cierre independiente.
+
+`AiChatPanel` ahora presenta los mensajes por grupos de usuario/asistente,
+avatares coherentes, citas como chips neutros y los menús propios de modelo y
+modo de pensamiento. `aiChatStore` conserva la selección de modelo por sesión
+sin alterar la configuración persistida. `TopBar` oculta el widget en `/ia` para
+evitar duplicar el asistente y lo cierra al cambiar de ruta.
+
+La cara conecta `idle`, `listening` y `thinking` con reposo, escritura y carga;
+las animaciones se desactivan con `prefers-reduced-motion`. Los menús usan
+iconos Lucide y mantienen foco/semántica de menú accesible.
+
+Archivos principales: `frontend/src/components/ia/AiChatPanel.tsx`,
+`frontend/src/components/layout/TopBar.tsx`,
+`frontend/src/stores/aiChatStore.ts` y
+`frontend/src/styles/layout/revision-ai.css`.
+
+Verificación: `npm.cmd run lint`, `npm.cmd run build`,
+`npm.cmd run test:unit` (70/70) y `git diff --check` OK. La comprobación visual
+autenticada cubrió `/ia`, el widget abierto/cerrado y los menús de modelo y
+pensamiento en Chrome local; no se ejecutó una consulta contra el proveedor
+externo para no alterar datos ni consumo de IA.
+
+### 2026-09-21 - Alineación de AiFace con el HTML de estados
+
+`AiFace` conserva el marcado y los keyframes del archivo de referencia
+`C:\Users\usuario\Downloads\AiFace - Estados (standalone).html`. Se ajustaron
+los ritmos para que coincidan con sus tres estados: `idle` con balanceo de 9 s
+y ojos de 14 s, `listening` con forma y ojos de 7 s, y `thinking` con morphing
+de forma de 2,8 s y ojos de 5,2 s.
+
+La media query `prefers-reduced-motion: reduce` continúa anulando las
+animaciones. En la comprobación de Chrome esa preferencia estaba activa y el
+estado computado fue `animation-name: none`; es una pausa accesible, no un
+fallo de los keyframes.
+
+### 2026-09-21 - Ajuste fino del popup y ritmo de AiFace
+
+El popup compacto pasa a una altura máxima de 560 px sin cambiar su anchura de
+420 px. El círculo de cierre conserva sus 56 px, pero la X se limita a 24 px y
+usa un trazo más fino. Los ciclos de la cara declaran `will-change` y quedan
+alineados con el HTML de estados entregado. La media query de movimiento
+reducido sigue teniendo prioridad por accesibilidad.
+
+Verificación visual: popup abierto en Dashboard, cierre inspeccionado y
+capturas separadas comparadas en Chrome local.
+
+### 2026-09-21 - OpenRouter gratuito y componente visual AiFace
+
+OpenRouter usa `openrouter/free` como modelo predeterminado. La allowlist del
+backend conserva `openrouter/auto`, incorpora el router gratuito y mantiene los
+modelos `:free` permitidos. Las peticiones a modelos gratuitos no incluyen el
+bloque `provider` con `zdr=true` y `data_collection=deny`, porque esas
+restricciones pueden dejar sin rutas compatibles a un endpoint gratuito.
+La seudonimización DLP del contexto financiero se mantiene antes de enviar la
+petición, y la auditoría distingue que una llamada gratuita no es una llamada
+con garantía ZDR del proveedor.
+
+La interfaz IA adopta los tamaños y la composición de `ChatPanel`/`AiFace` del
+design system entregado por el usuario: panel de 420 px en el widget flotante,
+cabecera de 64 px, chips de sugerencias, composer anidado y cara morada con
+estados `idle`, `listening` y `thinking`. En `prefers-reduced-motion` las
+animaciones se desactivan.
+
+Archivos principales: `backend/src/AtlasBalance.API/Constants/AiConfiguration.cs`,
+`backend/src/AtlasBalance.API/Services/AtlasAiService.cs`,
+`frontend/src/utils/aiModels.ts`, `frontend/src/components/Icons.tsx`,
+`frontend/src/components/ia/AiChatPanel.tsx` y
+`frontend/src/styles/layout/revision-ai.css`.
+
+Verificación: lint frontend OK, build frontend OK con el aviso preexistente de
+Vite sobre `__dirname`, tests unitarios frontend `70/70`, compilación y tests
+afectados de backend sin fallos funcionales. La suite backend completa ejecutó
+`905/926`: los `21` restantes requieren Docker/Testcontainers y este host no
+tenía disponible `npipe://./pipe/docker_engine`.
+
+### 2026-09-21 - Canal IA: AiFace animada y composición de chat
+
+La marca del asistente deja de ser una cara circular estática y pasa a ser
+`IconAiFace`, una pieza morada con tres estados visuales: `idle` en reposo,
+`listening` mientras el usuario escribe y `thinking` mientras se procesa una
+respuesta. La animación se detiene cuando el usuario tiene activado
+`prefers-reduced-motion`.
+
+`AiChatPanel` usa la cabecera `Asistente / Solo ve lo que tú puedes ver`,
+coloca la cara junto a las respuestas y durante `Pensando`, y mantiene el
+mismo store, permisos, límites, enlaces y detalles técnicos del chat
+existente. La página `/ia` elimina la cabecera redundante para que el panel
+ocupe la superficie principal; el widget flotante conserva su apertura,
+cierre y carga diferida.
+
+Archivos: `frontend/src/components/Icons.tsx`,
+`frontend/src/components/ia/AiChatPanel.tsx`,
+`frontend/src/components/layout/TopBar.tsx`, `frontend/src/pages/IaPage.tsx` y
+`frontend/src/styles/layout/revision-ai.css`.
+
+Verificación: `npm.cmd run lint`, `npm.cmd run build`,
+`npm.cmd run test:unit` (70/70) y `git diff --check` OK. La comprobación
+visual autenticada solo pudo cubrir la cabecera y el estado de IA no
+disponible; la API local tenía la IA desactivada, por lo que el flujo con
+mensajes y el estado `Pensando` queda pendiente de una sesión configurada.
+
+### 2026-09-21 - Rendimiento RLS de extractos para gerente y empleado
+
+La migracion `20260921090000_OptimizeExtractoRlsPermissionChecks` optimiza
+`USING` de las politicas de lectura y escritura de `EXTRACTOS` y
+`EXTRACTOS_COLUMNAS_EXTRA`. Las politicas `FOR ALL` tambien intervienen en
+SELECT. Se conservan los helpers de autorizacion, `WITH CHECK`, FORCE RLS,
+firmas y reglas de borrado existentes.
+
+Las subconsultas sin correlacion calculan el conjunto autorizado por sentencia.
+En columnas extra, el CTE `MATERIALIZED` impide que el optimizador vuelva a
+consultar cuentas y permisos por cada extracto mediante un nested loop.
+No se anaden caches entre peticiones ni se modifican permisos de usuarios.
+`Down` restaura las cuatro expresiones anteriores. No cambia el modelo EF.
+
+Regresion: `RowLevelSecurityPerformanceTests.cs`, 20.000 movimientos ficticios,
+gerente/empleado, scopes data/dashboard, cuenta permitida y denegada, columnas
+extra, saldo mas reciente y firma invalida. Cada consulta medida tiene timeout
+de 8 s, inferior a los 15 s del navegador. Antes, la lectura del gerente agotaba
+ese limite. En la prueba focalizada, las lecturas corregidas tardaron 86-249 ms;
+no son tiempos de produccion. Referencia: [politicas PostgreSQL 16](https://www.postgresql.org/docs/16/sql-createpolicy.html).
+
+La version activa de la aplicacion es `V-03.01` (runtime `3.1.0`). Este
+documento conserva debajo el historial tecnico de V-02.09 y versiones
 anteriores; esos rotulos no deben sustituirse porque identifican el origen de
 cada cambio.
+
+### 2026-09-21 - Extractos: cabecera alineada y filtros funcionales
+
+`ExtractoTable` renderiza la cabecera como dos filas con el mismo
+`gridTemplateColumns`: una para títulos/ordenación y otra para filtros. Así el
+campo de cada filtro queda alineado con sus celdas aunque existan columnas
+extra y scroll horizontal. Los filtros se mantienen locales a la página
+cargada, como antes, y el botón `Borrar filtros` además limpia los filtros de
+scope y periodo gestionados por `ExtractosPage`.
+
+Los filtros de fecha comparan ISO directamente; fila, revisada y alerta tienen
+valores filtrables explícitos; el resto combina valor almacenado y valor
+formateado para que importes y fechas legibles no fallen por su representación.
+La barra de fórmula visible se retiró de la composición, pero no se eliminaron
+las acciones de edición, revisión, auditoría, desglose, columnas ni paginación.
+
+## 2026-09-17 - V-03.01 - Revisión de mínimo privilegio y refresh
+
+La tarea `AtlasBalance.Update` se registra como `SYSTEM` con `ServiceAccount`
+y `HighestAvailable`. La cuenta del Watchdog solo tiene `GRGX` sobre la tarea,
+`Modify` sobre `updates\requests` y las rutas operativas que necesita; no tiene
+`Modify` heredado sobre `api` ni `watchdog`, por lo que no puede reemplazar sus
+propios binarios. El runner comprueba que las rutas estén bajo la instalación y
+verifica la firma RSA del ZIP antes de delegar en el actualizador.
+
+La configuración de ACL separa `/setowner` de `/grant:r` en `icacls`. API y
+Watchdog reciben permisos diferentes sobre backups y exports. Una respuesta de
+refresh frontend solo se aplica si conserva la misma generación de sesión y el
+mismo `usuarioId` que existían al iniciar la renovación. El instalador principal
+usa la misma construcción de argumentos y no concatena el primer SID a
+`/remove:g` o `/remove:d`.
+
+## 2026-09-17 - V-03.01 - Índice único de alertas
+
+La migración `20260917210000_RepairAlertasSaldoGlobalIndex` corrige el índice
+histórico `ix_alertas_saldo_global_unica`: su filtro debe exigir tanto
+`cuenta_id IS NULL` como `tipo_titular IS NULL`. Así se permite una alerta
+global y, simultáneamente, alertas globales específicas por tipo de titular,
+sin relajar la unicidad por cuenta ni la política RLS.
+
+## 2026-09-17 - V-03.01 - Bloque 8: logs del Watchdog
+
+El Watchdog no usa rutas relativas para logs ni para su fichero de estado.
+`WatchdogSettings:LogDirectory` admite una ruta absoluta configurable y, si se
+omite, resuelve `%ProgramData%\AtlasBalance\logs`. Tambien se expanden
+variables de entorno antes de validar que la ruta sea absoluta; una ruta como
+`logs\watchdog.log` se rechaza para evitar que un Windows Service escriba en
+`C:\Windows\System32` u otro working directory inesperado.
+
+Al arrancar, el Watchdog crea el directorio y en Windows aplica una DACL
+protegida para `SYSTEM`, Administradores y la identidad efectiva del servicio.
+El sink de Serilog rota diariamente, limita cada fichero a 50 MiB y conserva
+30 ficheros. El instalador debe precrear la carpeta con esa misma allowlist y
+mantener `WatchdogSettings:LogDirectory`/`StateFilePath` absolutos.
+
+## 2026-09-17 - V-03.01 - Sondas de salud públicas con respuesta mínima
+
+- `GET /api/health` es liveness público y stateless: devuelve únicamente
+  `{"status":"healthy"}`.
+- `GET /api/health/ready` ejecuta la comprobación real de BD, disco y pool,
+  pero para anónimos proyecta únicamente `status=ready` o `status=not_ready`.
+- `GET /api/health/functional` conserva la verificación RLS/auditoría necesaria
+  para instalador y actualizador, pero para anónimos proyecta únicamente
+  `status=functional` o `status=not_functional`; los errores completos quedan
+  en el log del servidor.
+- Readiness y functional comparten el cubo `health:<ip>` del limitador global,
+  configurable como `AtlasBalance:RateLimiting:HealthPerMinutePerIp` (30/min
+  por defecto). Solo la ruta exacta de liveness queda exenta; una variante no
+  registrada cae en el límite anónimo normal.
+- `GET /api/sistema/salud` sigue siendo la superficie de detalle y permanece
+  restringido a `ADMIN` mediante `SistemaController`.
+
+## 2026-09-17 - V-03.01 - Paises visibles derivados del scope efectivo
+
+### Que
+
+- `PaisesController.Listar` aplica `IUserAccessService.ApplyCuentaScope` y
+  devuelve solo países activos que tienen alguna cuenta accesible para el
+  usuario no administrador.
+- La migración `20260917090000_AlignPaisRlsWithAccountScope` alinea la policy
+  RLS de `PAISES` con esa misma condición. ADMIN y SYSTEM conservan el bypass.
+
+### Por que
+
+El endpoint devolvía todos los países activos a cualquier usuario autenticado,
+aunque sus cuentas estuvieran limitadas por país, titular o cuenta. El selector
+podía mostrar países sin datos accesibles. Derivar los países desde las cuentas
+es la única forma correcta de cubrir también permisos con `pais_id = NULL` y
+`titular_id` concreto.
+
+### Alcance
+
+No se modifica `PERMISOS_USUARIO`, no se generan permisos por cuenta y no se
+tocan `UserAccessService`, `TitularesController` ni `CuentasController`: ya
+aplicaban la intersección jerárquica existente. `UsuarioModal` ya serializaba
+los selectores vacíos como `null` y corregía país/titular al elegir una cuenta.
+`Atlas Balance/scripts/Diagnose-PermissionConsistency.sql` ofrece un diagnóstico
+de solo lectura para filas históricas con cuenta inexistente, país/titular
+incompatibles o duplicados exactos. No se ejecuta ni modifica datos
+automáticamente.
+
+## 2026-09-17 - V-03.01 - RLS de alertas, uso IA y operaciones de backup
+
+### Que
+
+- La migración `20260917100000_CompleteScopedRls` activa y fuerza RLS en
+  `ALERTAS_SALDO`, `ALERTA_DESTINATARIOS`, `IA_USO_USUARIOS` y
+  `BACKUP_OPERATIONS`.
+- `ALERTAS_SALDO` permite lectura en modo usuario o integración solo cuando la
+  alerta corresponde a una cuenta activa accesible, o a un tipo/global que
+  tiene al menos una cuenta activa y un titular activo dentro de ese scope.
+  La escritura queda en `ADMIN/SYSTEM`.
+- `ALERTA_DESTINATARIOS` replica la visibilidad de la alerta para usuarios,
+  pero no expone destinatarios a integraciones; toda escritura queda en
+  `ADMIN/SYSTEM`.
+- `IA_USO_USUARIOS` permite al usuario autenticado leer y mantener únicamente
+  su fila; `WITH CHECK` impide cambiar `usuario_id`. El borrado queda en
+  `ADMIN/SYSTEM`.
+- `BACKUP_OPERATIONS` queda restringida a `ADMIN/SYSTEM`. Hangfire usa el
+  contexto `SYSTEM` porque sus consultas se ejecutan sin `HttpContext`; el
+  Watchdog no accede directamente a esta tabla.
+
+### Verificacion
+
+`RowLevelSecurityTests` ejercita PostgreSQL/Testcontainers, pero la ejecución
+en este host queda bloqueada antes de arrancar el contenedor porque Docker no
+está disponible en `npipe://./pipe/docker_engine`. La build Release de API y
+tests y el test de descubrimiento de migraciones pasan; el gate PostgreSQL
+queda pendiente en CI o en un host con Docker.
 
 ## 2026-08-07 - V-02.09 - Chat IA: composer, mensajes y modo de pensamiento
 
@@ -6428,3 +6941,113 @@ mensaje de su IOE (queda como InnerException para el log).
   0 errores (6 warnings CS0618 preexistentes).
 - Pendiente: unificar el bucle del instalador (24 x 5 s, `-TimeoutSec 20`,
   sin deadline) con el mismo patron; preexistente en `main`, fuera del PR.
+
+## 2026-09-17 - V-03.01 - Frontera de sesión frontend
+
+El estado que puede contener datos financieros, permisos o contexto de una
+cuenta se considera user-scoped. `authStore` coordina su limpieza en logout y
+cuando cambia `usuario.id`: stores Zustand, storage de país/banner, UI
+transitoria y la caché de TanStack Query. El tema y el layout son preferencias
+neutras y se conservan.
+
+Las operaciones async de IA, alertas, disponibilidad, notificaciones y
+actualización capturan una generación de sesión. Si logout o cambio de usuario
+avanza la generación, una respuesta antigua no puede escribir sobre el estado
+de la sesión nueva. Las query keys de recursos sensibles incluyen también
+`usuarioId`; esto es defensa en profundidad y no sustituye la autorización del
+backend.
+
+## 2026-09-21 - V-03.01 - Rediseño de Extractos y tabla de movimientos
+
+La página `Extractos` separa ahora la jerarquía de consulta de la rejilla de
+datos. La cabecera mantiene el modo `Revisión`/`Edición avanzada`; una tarjeta
+superior concentra titular, cuenta y rango (`Desde`/`Hasta`); la tabla conserva
+la edición, auditoría, desglose, columnas configurables, paginación y
+virtualización existentes.
+
+`ExtractoTable` arranca en densidad compacta y mantiene la estructura de dos
+filas de cabecera: nombres de columna y filtros. El helper
+`matchesColumnFilter` trata fecha, `checked` y `flagged` con comparación
+semántica; el resto de columnas conserva búsqueda textual. Esto evita que el
+filtro `Alerta = No` coincida accidentalmente con una nota de alerta.
+
+La hoja de estilos añade la composición visual alineada con el sistema de diseño
+actual: bordes planos, controles compactos, contraste de cabeceras, foco visible,
+footer de resultados, scroll horizontal y breakpoints para tablet/móvil. No se
+añadieron dependencias ni se modificó el contrato de la API.
+
+Verificación: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70`, `git diff --check` OK y prueba
+manual autenticada de filtros de concepto, alerta, cuenta y restablecimiento.
+
+## 2026-09-21 - V-03.01 - Extractos: 20 filas, cuenta y columnas completas
+
+`ExtractoTable` ya no incluye `fila_numero` en `BASE_COLUMNS`. El campo sigue
+formando parte del modelo para ordenacion, insercion y auditoria, pero deja de
+ocupar una columna. El boton de historial y el disparador de alta inline se
+renderizan en `checked`, por lo que las acciones no desaparecen con el cambio
+visual.
+
+Las columnas base de la vista general ahora incluyen `fecha`, `cuenta_nombre`,
+`banco_nombre`, `titular_nombre`, `divisa`, `concepto`, `comentarios`,
+`monto`, `saldo`, `checked`, `flagged` y `desglose`. Las columnas dinamicas de
+`columnas_extra` se deduplican frente a las base y se anaden al final. El
+backend expone `BancoNombre` en `ExtractoListItemResponse` desde la cuenta.
+
+El viewport de escritorio se calcula para 20 filas segun la densidad activa,
+con un pequeno margen para bordes y cabeceras; movil mantiene el limite
+responsive. La virtualizacion se conserva, asi que aumentar el espacio visible
+no elimina la proteccion para paginas grandes.
+
+Verificacion: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70`, build API OK con 7 advertencias
+preexistentes, y `git diff --check` OK. La sesion autenticada local se invalido
+al recompilar el backend; la cabecera y la altura se comprobaron antes de esa
+salida, pero no se repitio el flujo manual de filtros despues.
+
+## 2026-09-21 - V-03.01 - Extractos: previsualizacion de celda y viewport de 17 filas
+
+`ExtractoTable` deriva la celda activa a partir de `focusedCell`, `filteredRows` y
+`activeColumns`. La barra superior muestra la etiqueta de la columna y el valor
+formateado mediante `getDisplayCellValue`; el contenido puede envolver y
+desplazarse dentro de la previsualizacion, y el atributo `title` conserva el
+valor completo para lectura adicional. `role="status"` con `aria-live="polite"`
+anuncia el cambio sin interrumpir la navegacion por teclado.
+
+El viewport de escritorio se calcula para 17 filas en densidad compacta y
+comoda. El limite responsive especifico de movil se mantiene sin cambios. No
+se modifica la logica de filtros, paginacion, virtualizacion ni el contrato de
+la API.
+
+## 2026-09-21 - V-03.01 - Extractos: compacta fija y selectores buscables
+
+Se elimino el selector de densidad de `ExtractoTable`; la tabla usa siempre la
+clase `extracto-table-section--compact`, una altura de fila de 44 px y el
+viewport calculado para 17 filas visibles.
+
+Los filtros de `Titular` y `Cuenta` usan `SearchableSelect`, un combobox
+controlado con menu en portal, foco consistente con `AppSelect`, filtrado por
+texto mientras se escribe y navegacion por flechas, `Enter`, `Escape` y
+`Tab`. La seleccion sigue enviando los UUID originales a la URL y al endpoint,
+por lo que no cambia el contrato ni la logica de filtrado remoto.
+
+Verificacion: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70` y `git diff --check` OK. En Chrome
+autenticado, `Laura` filtro titulares, `Sabadell` filtro cuentas, la seleccion
+actualizo la URL y mostro 9 movimientos, y `Restablecer` devolvio los 25
+movimientos. El DOM confirmo dos combobox buscables, ningun selector de densidad,
+viewport de 836 px y filas de 44 px.
+
+## 2026-09-21 - V-03.01 - Listas rectangulares para Titular y Cuenta
+
+El popup de `SearchableSelect` deja de usar el radio de control tipo cápsula
+(`999px`) y adopta `var(--radius-md)`, igual que los menús desplegables del
+sistema. Se conserva el portal fijo, el ancho alineado con el control y el
+filtrado incremental de opciones; el cambio solo corrige la forma, el recorte
+visual y la lectura de la lista.
+
+Verificacion: lint OK, build frontend OK con el aviso preexistente de Vite sobre
+`__dirname`, tests unitarios frontend `70/70` y `git diff --check` OK. En Chrome
+autenticado, `Sabadell` mostro una unica cuenta coincidente y `Laura` un unico
+titular coincidente; la inspeccion visual y del DOM confirmo un popup rectangular
+con `border-radius: 11px` y sin burbuja eliptica.

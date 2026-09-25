@@ -29,6 +29,7 @@
     "src/utils/permisosFormUtils.ts",
     "src/utils/iaErrors.ts",
     "src/services/queryClient.ts",
+    "src/services/sessionRefreshCoordinator.ts",
     "src/queries/queryKeys.ts",
     "src/queries/invalidation.ts",
     "tests/**/*.test.ts"

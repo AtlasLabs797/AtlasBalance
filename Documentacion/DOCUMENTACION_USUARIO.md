@@ -1,6 +1,6 @@
 # Documentacion de usuario
 
-Documento vigente para `V-02.08`. Las menciones `Desde V-02.07` conservan la
+Documento vigente para `V-03.01`. Las menciones `Desde V-XX.YY` conservan la
 version en la que se introdujo cada comportamiento; no son una referencia a una
 version anterior instalada.
 
@@ -157,7 +157,7 @@ Desde V-02.07, al cerrar sesion se cierran TODAS las sesiones abiertas de ese us
 
 En `Cuentas`, cada cuenta puede tener un pais opcional. Las cuentas antiguas quedan sin pais para no romper datos existentes.
 
-El selector `Organizacion` de la barra lateral es ahora el scope global por pais:
+El selector `Pais` de la barra lateral define el scope global por pais:
 
 - `General` muestra todo, incluidas cuentas sin pais.
 - Un pais concreto muestra solo cuentas, saldos, movimientos, titulares y datos derivados de ese pais.
@@ -165,9 +165,17 @@ El selector `Organizacion` de la barra lateral es ahora el scope global por pais
 
 El campo `Pais` en alta/edicion de cuenta solo asigna esa etiqueta a la cuenta. No cambia el scope de la app.
 
-El dashboard muestra `Saldos por pais`, para que no tengas que adivinar si el scope esta haciendo algo.
+El dashboard muestra `Saldos por pais` cuando estas en `General`. Al elegir un
+pais concreto, ese bloque se oculta porque el resto del dashboard ya esta
+filtrado a ese unico pais.
 
 Los paises se gestionan desde el catalogo `/api/paises` por administradores. Borrar un pais es soft delete: las cuentas existentes no se rompen, pero el pais deja de estar disponible para nuevas asignaciones normales.
+
+Para usuarios no administradores, el selector solo muestra países donde existe
+alguna cuenta a la que tienen acceso efectivo. Esto incluye cuentas concedidas
+por un permiso global, por país, por titular repartido entre varios países o
+por una cuenta concreta. Un país nuevo queda visible automáticamente cuando
+una cuenta accesible se crea allí.
 
 Importante: el pais ya no es solo un filtro visual. En permisos de usuario y tokens de integracion, un administrador puede limitar el acceso a un pais concreto. Si ademas se elige titular o cuenta, Atlas Balance exige que todas esas condiciones coincidan a la vez.
 
@@ -205,9 +213,57 @@ Aviso importante: las copias en Drive dependen de la clave local `backup_cloud_e
 
 ## IA y modelos OpenRouter
 
-En `Configuracion > Revision e IA`, OpenRouter permite escribir cualquier model id valido, por ejemplo `openrouter/auto` o `proveedor/modelo`. Las sugerencias vienen de OpenRouter, pero no son una jaula.
+En `Configuracion > Revision e IA`, OpenRouter usa `openrouter/auto` como
+modelo predeterminado desde `V-03.01` (correcciones del 2026-09-25). Ese
+modelo exige retencion cero de datos (ZDR) al proveedor, ademas de la
+seudonimizacion del contexto financiero que ya hace Atlas Balance antes de
+enviarlo.
+
+Bajo el selector de proveedor hay una nueva opcion para administradores:
+**Permitir modelos gratuitos de OpenRouter**. Esta desactivada por defecto.
+Si la activas, podras guardar y usar modelos gratuitos (`openrouter/free` o
+cualquier modelo `:free`); Atlas Balance te avisa expresamente de que esos
+modelos gratuitos pueden guardar y usar para entrenamiento los datos que se
+les envian (importes, saldos y conceptos), asi que solo debes activarla si
+tu empresa lo acepta. Si tu instalacion ya tenia guardado un modelo gratuito
+de una version anterior, la aplicacion lo bloqueara hasta que un
+administrador entre a `Configuracion` y active esta opcion explicitamente.
+
+Guarda tu API key de OpenRouter en esa pantalla. La clave se protege en el
+backend y nunca se muestra en la interfaz ni se escribe en la auditoria.
 
 Si OpenRouter rechaza un modelo por saldo, privacidad, proveedor no disponible o ID inexistente, Atlas Balance muestra un error limpio. Si escribes un ID con formato invalido, el backend lo rechaza antes de llamar al proveedor.
+
+El chat se puede abrir desde `IA` para trabajar a pantalla completa o desde la
+cara morada de la esquina inferior derecha en cualquier pantalla compatible.
+Ambas vistas comparten el mismo historial y compositor. La cara cambia de
+animacion cuando esta en reposo, mientras escribes o mientras la IA esta
+pensando, siguiendo el ritmo visual de los tres estados de la referencia; si
+el sistema reduce el movimiento, permanece estable.
+
+Al enviar una pregunta, esta aparece alineada a la derecha con la burbuja
+violeta, el avatar del usuario y la hora. Mientras se prepara la respuesta,
+veras la cara en estado de pensamiento y la etiqueta `Pensando` animada dentro
+de una burbuja del asistente. Cuando llega la respuesta, ese estado desaparece
+y se muestra el contenido con sus citas y detalles habituales.
+
+El popup flotante deja espacio para una conversación algo más alta y su botón
+de cierre mantiene el círculo completo con una X discreta.
+
+Si las caras aparecen quietas, revisa que Windows permita las animaciones:
+`Configuración > Accesibilidad > Efectos visuales > Efectos de animación`.
+Atlas Balance respeta esa preferencia y deja la cara estática cuando está
+desactivada.
+
+En el compositor puedes elegir el modelo disponible y el esfuerzo de
+pensamiento. Desde `V-03.01` (correcciones del 2026-09-25), el selector de
+modelo solo ofrece los modelos que el administrador permite en
+`Configuracion > Revision e IA`; no es posible pedir un modelo distinto al
+configurado. Si solo hay un modelo permitido, el selector no se muestra
+porque no hay nada entre lo que elegir. Las sugerencias de la pantalla
+inicial rellenan la pregunta sin obligarte a memorizar el formato. Las
+respuestas muestran sus citas y los detalles del registro cuando existen;
+revisalos antes de operar sobre los datos.
 
 ## Paquetes de instalacion
 
@@ -239,6 +295,17 @@ No instales desde el ZIP `main` de GitHub ni desde una carpeta fuente. El paquet
 Para actualizacion desde la app, el release de GitHub debe incluir tambien `AtlasBalance-V-02.08-win-x64.zip.sig`. Si falta la firma, el actualizador online lo rechazara. Desde `V-01.06`, el script de release tambien falla si no hay clave de firma, salvo que se use `-AllowUnsignedLocal` para una prueba local que no se debe publicar. Bien rechazado: actualizar una app financiera sin firma es jugar con cerillas al lado de gasolina.
 
 Nota vigente de `V-02.08`: el codigo prepara la actualizacion online completa desde GitHub `latest`, incluyendo API, Watchdog, scripts, wrappers y metadatos raiz. Una instalacion que todavia tenga un Watchdog anterior a este flujo puede necesitar un primer `update.cmd` manual o una ruta puente; esperar que el Watchdog viejo ejecute el flujo nuevo es magia barata, no ingenieria.
+
+Nota de `V-03.01` (correcciones del 2026-09-25): si tu instalacion viene de
+`V-02.09` o anterior, los servicios de Atlas Balance corrian con una cuenta
+integrada de Windows (`LocalSystem`). Al actualizar a `V-03.01`, el proceso
+detecta esa situacion y migra automaticamente los servicios a cuentas
+dedicadas (`AtlasBalanceApiSvc` para la API, `AtlasBalanceWatchdogSvc` para
+el Watchdog) antes de continuar; no hace falta ninguna accion manual, pero
+debes ejecutar `Actualizar Atlas Balance.cmd` como Administrador para que la
+migracion tenga permisos suficientes. Si la migracion no puede completarse,
+el script restaura los servicios a como estaban y aborta sin dejar la
+instalacion a medias.
 
 ## Limpieza antes de publicar
 
@@ -472,11 +539,13 @@ La IA responde usando contexto financiero real minimizado: saldos, agregados y m
 
 En consultas de comisiones y seguros, Atlas Balance filtra ruido antes de llamar al proveedor. Un cargo normal de tarjeta, una cuota/leasing, una transferencia, Seguridad Social/TGSS, Generalitat, anulaciones, devoluciones y reembolsos no deben inflar los totales de seguros o comisiones que recibe la IA.
 
+Desde V-03.01 solo puedes tener una pregunta a la IA en curso a la vez. Si envias otra (por ejemplo desde otra pestana) antes de que termine la primera, veras un aviso de demasiadas peticiones: espera a que llegue la respuesta y vuelve a enviarla.
+
 Algunas preguntas de ranking financiero se calculan directamente en Atlas Balance, sin mandar la consulta al proveedor. Por ejemplo, `Que cuentas han tenido mas gastos este trimestre?` devuelve ranking por cuenta; `Que titulares han tenido mas gastos este trimestre?` agrupa por titular y divisa. En esas respuestas veras coste y tokens `0`.
 
-Las respuestas del chat se muestran como texto legible. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
+Las respuestas del chat se muestran como texto legible dentro de una burbuja violeta junto a la cara animada del asistente. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
 
-Tu pregunta aparece como burbuja a la derecha con fondo suave; la respuesta de la IA aparece como texto plano a la izquierda, con la hora y el modelo debajo. Cuando cambia el dia entre mensajes se muestra un divisor `Hoy` / `Ayer` / `DD MMM`.
+Tu pregunta aparece como burbuja a la derecha con fondo suave; la respuesta de la IA aparece a la izquierda con la hora y el modelo debajo. La cara cambia suavemente entre reposo, escritura y pensamiento; si tienes activado `prefers-reduced-motion`, no se mueve. Cuando cambia el dia entre mensajes se muestra un divisor `Hoy` / `Ayer` / `DD MMM`.
 
 El composer (la caja de texto inferior) es una tarjeta. En la fila inferior veras el **modo de pensamiento** (a la izquierda) y el modelo activo + el boton de enviar (a la derecha). El modo de pensamiento cambia la profundidad de razonamiento que pide al proveedor:
 
@@ -496,7 +565,7 @@ En el chat, `Enter` envia la pregunta y `Shift+Enter` inserta una linea nueva.
 
 El chat esta limitado a Atlas Balance, funcionamiento de la app y datos financieros disponibles. Puede responder sobre gastos, ingresos, importes, montos, Seguridad Social, impuestos, comisiones, seguros, recibos, facturas, nominas, cuotas, cargos y cobros si esos datos estan en el contexto financiero accesible para tu usuario. Si preguntas por recetas, cocina, programacion, noticias, ocio, salud, asesoramiento legal externo o cualquier asunto externo, la app debe rechazar la consulta.
 
-En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter`, `OpenAI` o `MiniMax`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta.
+En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir proveedor `OpenRouter`, `OpenAI` o `MiniMax`, guardar la API key correspondiente, elegir modelo, definir limites por minuto/hora/dia, limite global, presupuesto mensual/total, coste estimado por token y limites de contexto/respuesta. Para OpenRouter gratuito, el coste por tokens del proveedor es cero, pero siguen aplicando sus limites de uso y la disponibilidad de sus modelos.
 
 Para OpenRouter, puedes dejar `Auto (gratis permitido)`. Atlas Balance guarda `openrouter/auto`, pero no usa el Auto Router abierto de OpenRouter porque puede chocar con las restricciones de modelos de tu cuenta. En su lugar, usa fallback con un maximo de 3 modelos por consulta, que es el limite efectivo de OpenRouter: `Nemotron 3 Super (free)`, `Gemma 4 31B (free)` y `MiniMax M2.5 (free)`. Si quieres forzar otro modelo gratis permitido, el selector del chat y el de Configuracion tambien muestran `gpt-oss-120b (free)`, `GLM 4.5 Air (free)` y `Qwen3 Coder 480B A35B (free)`.
 
@@ -519,7 +588,7 @@ El dashboard principal muestra:
 - Grafica de evolucion de saldo en la misma zona principal del dashboard, con ingresos y egresos visibles como lineas.
 - KPIs de ingresos, egresos, disponible e inmovilizado cuando hay datos suficientes.
 - Plazos fijos: monto total, intereses aproximados y dias hasta el proximo vencimiento.
-- Saldos por pais, concentracion por banco/titular y saldos por titular.
+- Saldos por pais cuando el scope esta en `General`, concentracion por banco/titular y saldos por titular.
 - En `Cuentas > Saldos y evolucion`, la grafica de `Evolucion` se muestra antes del listado de cuentas.
 
 En desktop, los saldos por titular aparecen junto a `Plazos fijos`; en movil se apilan. Los titulares se agrupan en Empresa, Autonomo y Particular.
@@ -539,7 +608,7 @@ En el dashboard de una cuenta, la tabla de movimientos permite seleccionar filas
 
 La interfaz mantiene el mismo funcionamiento, pero ahora los botones, campos, pestanas, tarjetas, tablas y estados de foco usan un sistema visual comun. No cambia el flujo de trabajo: solo debe sentirse mas consistente al pasar de dashboard a cuentas, extractos, importacion, configuracion o administracion.
 
-El menu lateral sigue el tema que tengas puesto: claro con tema claro, oscuro con tema oscuro. Agrupa operacion, control y sistema, mantiene el selector global de pais/organizacion y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
+El menu lateral sigue el tema que tengas puesto: claro con tema claro, oscuro con tema oscuro. Agrupa operacion, control y sistema, mantiene el selector global de pais y conserva los avisos de alertas, exportaciones pendientes y actualizacion disponible.
 
 La barra superior queda fija al desplazarte. Desde ahi puedes contraer el menu, cambiar tema, abrir/cerrar el chat IA si tienes permiso y cerrar sesion.
 
@@ -557,6 +626,7 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 - Desde V-02.07, cerrar sesion cierra todas las sesiones abiertas del usuario en todos los dispositivos, no solo la sesion actual. El dispositivo recordado para el codigo de Authenticator no se pierde al cerrar sesion.
 - Desde V-02.07, si al cambiar la contrasena escribes 5 veces mal la contrasena actual, la cuenta se bloquea 30 minutos, igual que en el login.
 - Desde V-02.07, las contrasenas nuevas se comparan contra una lista mas amplia de contrasenas filtradas comunes. Alguna contrasena que antes se aceptaba puede rechazarse ahora por "demasiado comun"; en ese caso, elige otra que no sea una variante obvia de una palabra o frase habitual.
+- Desde V-03.01, una contrasena nueva no puede contener tu nombre ni la parte de tu email antes de la @ (palabras de 4 letras o mas), ni ser una palabra muy comun con numeros o simbolos al final (por ejemplo `Tesoreria2026!` o `P@ssw0rd2024`). Una frase larga de varias palabras funciona mejor.
 - No guardes contrasenas en documentos.
 - No pegues tokens ni credenciales en tickets, logs o notas.
 - Las credenciales iniciales de instalacion deben tratarse como temporales y cambiarse en el primer acceso.
@@ -577,18 +647,48 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 
 La tabla de `Extractos` ahora se lee mas como una hoja de calculo:
 
+- La pantalla se organiza en una cabecera, un bloque de ámbito de consulta y la
+  tabla de movimientos, para distinguir qué conjunto estás consultando de los
+  filtros de cada columna.
+- El bloque superior permite elegir titular, cuenta y periodo con `Desde` y
+  `Hasta`. Cuando hay algún filtro activo aparece `Restablecer` y devuelve la
+  vista general.
+- La cabecera separa claramente los nombres de columna de la fila de filtros;
+  ambos quedan alineados incluso al desplazar la tabla horizontalmente.
+- Los filtros de columna siempre están visibles. Los campos de texto buscan
+  dentro de la página cargada, la fecha se selecciona con calendario y los
+  estados ofrecen `Todos`, `Sí` y `No`.
+- `Borrar filtros` limpia los filtros de columna y también los filtros de
+  titular, cuenta y periodo de la pantalla.
 - En la parte superior puedes filtrar por titular, cuenta y periodo.
 - El periodo se elige con dos fechas: `Desde` y `Hasta`.
 - Si dejas una fecha vacia, el filtro queda abierto por ese lado.
 - El periodo elegido queda en la URL, asi que puedes recargar o compartir esa vista sin perder el rango.
 - La cabecera queda fija al desplazarte.
-- La columna `Fila` queda fija al mover la tabla horizontalmente.
-- Para insertar una fila, usa el `+` que aparece al pasar por la columna `Fila`; el borrador se abre dentro de la tabla, no en un formulario separado encima.
+- En escritorio, la rejilla reserva espacio para ver 17 movimientos a la vez en
+  densidad compacta; en movil conserva un viewport mas corto para no romper la
+  navegacion.
+- Al seleccionar una celda, la franja superior muestra su columna y el contenido
+  completo para poder leer valores largos sin perder la referencia de la fila.
+- `Fila` deja de mostrarse como columna: el numero sigue siendo interno para
+  ordenar, insertar y auditar sin ocupar espacio de lectura.
+- La columna `Cuenta` muestra el nombre real de la cuenta. Tambien se muestran
+  por defecto `Banco`, `Titular`, `Divisa` y las columnas extra que llegan con
+  los extractos importados.
+- Para insertar una fila en `Edicion avanzada`, usa el `+` que aparece en la
+  celda `Revisada`; el borrador se abre dentro de la tabla, no en un formulario
+  separado encima.
 - Las celdas tienen bordes mas claros y foco visible al editar.
 - Los importes y saldos usan alineacion derecha y numeros tabulares para comparar cifras rapido.
 - Las columnas tecnicas se muestran con nombres legibles, por ejemplo `Importe` en vez de `monto`.
+- La tabla usa siempre densidad `Compacta`; no hay un selector de densidad que
+  cambie el tamaño de las filas.
+- Los filtros `Titular` y `Cuenta` usan desplegables con el mismo estilo visual
+  que el resto de controles y permiten escribir para filtrar sus opciones. Al
+  abrirlos, las opciones aparecen en una lista rectangular legible, no en una
+  burbuja elíptica.
 
-El funcionamiento no cambia: puedes filtrar, ordenar, editar celdas, abrir historial y cambiar columnas visibles igual que antes.
+El funcionamiento no cambia: puedes filtrar, ordenar, editar celdas, abrir historial y cambiar columnas visibles igual que antes. El historial se abre desde el icono de la celda `Revisada` o con el menu contextual de cualquier celda.
 
 ## Actualizacion visual V-02-02
 

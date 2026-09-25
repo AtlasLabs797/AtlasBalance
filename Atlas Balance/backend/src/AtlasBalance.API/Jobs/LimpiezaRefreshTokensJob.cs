@@ -16,6 +16,8 @@ public sealed class LimpiezaRefreshTokensJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var now = DateTime.UtcNow;
         var rows = await _dbContext.RefreshTokens
             .Where(x => x.ExpiraEn <= now || (x.RevocadoEn.HasValue && x.RevocadoEn.Value <= now.AddDays(-1)))

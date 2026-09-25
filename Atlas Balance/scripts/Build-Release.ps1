@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "V-02.09",
+    [string]$Version = "V-03.01",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$CleanNpmInstall,
@@ -231,6 +231,7 @@ foreach ($script in @(
     "Instalar-AtlasBalance.ps1",
     "Reset-AdminPassword.ps1",
     "Actualizar-AtlasBalance.ps1",
+    "Run-AtlasElevatedUpdate.ps1",
     "Launch-AtlasBalance.ps1",
     "install-cert-client.ps1",
     "uninstall-services.ps1",
@@ -243,6 +244,7 @@ foreach ($script in @(
     "Smoke-Test-AtlasBalance.ps1",
     "Mfa-Totp.ps1",
     "Mfa-Totp.Tests.ps1",
+    "ServiceSecurity.ps1",
     "Sync-AtlasDirectory.ps1",
     "Sync-AtlasDirectory.Tests.ps1",
     "Caddyfile.example"

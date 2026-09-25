@@ -1,10 +1,17 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
+using AtlasBalance.Watchdog.Logging;
 using AtlasBalance.Watchdog.RateLimiting;
 using AtlasBalance.Watchdog.Services;
 using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
+
+if (ElevatedUpdateRunner.IsRequested(args))
+{
+    Environment.ExitCode = await ElevatedUpdateRunner.RunAsync(args);
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 AddExternalDevelopmentSecrets(builder.Configuration, builder.Environment, "AtlasBalance.Watchdog.Development.json");
@@ -15,11 +22,22 @@ builder.WebHost.ConfigureKestrel(options =>
     options.ListenLocalhost(5001);
     options.Limits.MaxRequestBodySize = WatchdogRateLimiting.MaxRequestBodySize;
 });
-builder.Host.UseSerilog((context, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .Enrich.FromLogContext()
-    .WriteTo.Console()
-    .WriteTo.File("logs/watchdog-.log", rollingInterval: RollingInterval.Day));
+builder.Host.UseSerilog((context, config) =>
+{
+    var logFilePath = WatchdogLogConfiguration.ResolveLogFilePath(context.Configuration);
+    WatchdogLogConfiguration.EnsureLogDirectory(logFilePath);
+
+    config
+        .ReadFrom.Configuration(context.Configuration)
+        .Enrich.FromLogContext()
+        .WriteTo.Console()
+        .WriteTo.File(
+            logFilePath,
+            rollingInterval: RollingInterval.Day,
+            fileSizeLimitBytes: 50L * 1024L * 1024L,
+            retainedFileCountLimit: 30,
+            rollOnFileSizeLimit: true);
+});
 
 builder.Services.AddControllers();
 builder.Services.AddRateLimiter(options =>

@@ -8,22 +8,40 @@ using Xunit;
 
 namespace AtlasBalance.API.Tests;
 
-// V-02.07: guardarrail de IDOR. `AddAuthorization()` en Program.cs no define
-// FallbackPolicy, asi que una accion sin atributo explicito queda ANONIMA, no
-// denegada. El vector real de IDOR en este proyecto no es un endpoint mal
-// escrito sino un controller nuevo al que se le olvida el [Authorize]; con la
-// configuracion actual ese olvido no falla en ningun sitio, simplemente publica
-// el endpoint. Estos tests convierten ese olvido en un fallo de build.
+// V-03.01: guardarrail de IDOR en defensa en profundidad. La FallbackPolicy de
+// Program.cs protege cualquier endpoint nuevo que olvide [Authorize]. Estos
+// tests mantienen la declaracion explicita por controller/accion para que un
+// olvido siga siendo visible en la revision y para justificar las excepciones.
 public sealed class ControllerAuthorizationCoverageTests
 {
-    // Unica superficie deliberadamente anonima que NO lleva atributo de
-    // autorizacion: la protege IntegrationAuthMiddleware por Bearer token propio
-    // (deny-by-default, ver IntegrationAuthMiddleware.cs:115 y TokenAllowsEndpoint).
-    // Si se anade otro controller aqui, hay que justificar quien lo protege.
+    // La integracion declara [AllowAnonymous] porque la protege
+    // IntegrationAuthMiddleware con Bearer token propio (deny-by-default, ver
+    // IntegrationAuthMiddleware.cs:115 y TokenAllowsEndpoint). Si se anade otro
+    // controller con autenticacion fuera de ASP.NET, hay que justificarlo aqui.
     private static readonly HashSet<string> ControllersProtegidosPorMiddleware =
     [
         nameof(IntegrationOpenClawController)
     ];
+
+    [Fact]
+    public void Integration_OpenClaw_Debe_Declarar_AllowAnonymous_Para_Dejar_Actuar_Al_Middleware()
+    {
+        typeof(IntegrationOpenClawController)
+            .GetCustomAttribute<AllowAnonymousAttribute>()
+            .Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Hangfire_Dashboard_No_Debe_Declarar_AllowAnonymous()
+    {
+        var programPath = TestSourceLocator.Find("AtlasBalance.API", "Program.cs");
+        var program = File.ReadAllText(programPath);
+        var dashboardDeclaration = program
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .Single(line => line.Contains("MapHangfireDashboard(\"/hangfire\")", StringComparison.Ordinal));
+
+        dashboardDeclaration.Should().NotContain("AllowAnonymous");
+    }
 
     [Fact]
     public void Toda_Accion_De_Controller_Debe_Declarar_Autorizacion_Explicita()
@@ -51,8 +69,8 @@ public sealed class ControllerAuthorizationCoverageTests
         }
 
         sinAutorizacion.Should().BeEmpty(
-            "toda accion debe llevar [Authorize] o [AllowAnonymous] explicito: sin FallbackPolicy " +
-            "una accion sin atributo queda publica y expone sus recursos por id (IDOR)");
+            "toda accion debe llevar [Authorize] o [AllowAnonymous] explicito, aunque la FallbackPolicy " +
+            "proteja por defecto: las excepciones deben quedar justificadas y visibles");
     }
 
     [Fact]

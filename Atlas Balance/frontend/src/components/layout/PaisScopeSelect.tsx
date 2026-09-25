@@ -1,5 +1,5 @@
-import { AppSelect } from '@/components/common/AppSelect';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
+import { PaisScopeDropdown } from '@/components/layout/PaisScopeDropdown';
 
 interface PaisScopeSelectProps {
   compact?: boolean;
@@ -25,12 +25,13 @@ export function PaisScopeSelect({ compact = false }: PaisScopeSelectProps) {
 
   return (
     <div className={`pais-scope${compact ? ' pais-scope--compact' : ''}`}>
-      {!compact ? <span className="pais-scope-label">Organización</span> : null}
-      <AppSelect
-        ariaLabel="Scope global por país"
+      {!compact ? <span className="pais-scope-label">País</span> : null}
+      <PaisScopeDropdown
+        ariaLabel="Seleccionar país"
         value={selectedPaisId}
         options={options}
         onChange={setSelectedPaisId}
+        compact={compact}
         disabled={loading}
       />
       {lastError && !compact ? (

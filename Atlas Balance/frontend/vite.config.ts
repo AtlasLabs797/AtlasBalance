@@ -147,8 +147,13 @@ export default defineConfig({
     allowedHosts: ['localhost', '127.0.0.1'],
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:5002',
         changeOrigin: true,
+        headers: {
+          // El navegador sigue hablando con Vite en localhost:5173; el proxy
+          // reenvia la peticion a la API de prueba en localhost:5002.
+          Origin: 'http://localhost:5002',
+        },
       },
     },
   },
@@ -168,7 +173,12 @@ export default defineConfig({
         // servidor de desarrollo, asi que no afecta al modo dev.
         minify: { compress: { dropConsole: true, dropDebugger: true } },
         manualChunks(id) {
-          if (id.includes('node_modules/recharts')) return 'charts';
+          // V-03.01 (#3): recharts y sus deps (d3-*, victory-vendor, redux,
+          // reselect, immer, es-toolkit, decimal.js-light...) ya NO se
+          // fuerzan a un chunk propio: al no tener regla manual, Rolldown
+          // las agrupa por dependencia real, y como solo las importan los
+          // componentes de graficos dentro de paginas lazy (dashboard), el
+          // chunk resultante lo cargan solo esas rutas, no login ni el resto.
           if (id.includes('node_modules/zustand')) return 'state';
           if (id.includes('node_modules/lucide-react')) return 'icons';
           if (id.includes('node_modules/react-hook-form')) return 'forms';
