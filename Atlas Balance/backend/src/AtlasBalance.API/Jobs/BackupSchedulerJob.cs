@@ -27,6 +27,8 @@ public sealed class BackupSchedulerJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var config = await _dbContext.Configuraciones
             .ToDictionaryAsync(x => x.Clave, x => x.Valor, StringComparer.OrdinalIgnoreCase, CancellationToken.None);
         var schedule = BackupSchedule.FromConfig(config);

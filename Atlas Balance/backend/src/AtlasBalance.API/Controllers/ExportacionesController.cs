@@ -185,7 +185,7 @@ public sealed class ExportacionesController : ControllerBase
         var canAccess = await _userAccessService.CanAccessCuentaAsync(exportacion.CuentaId, scope, cancellationToken);
         if (!canAccess)
         {
-            return Forbid();
+            return NotFound(new { error = "Exportación no encontrada" });
         }
 
         var configuredExportRoot = await _dbContext.Configuraciones

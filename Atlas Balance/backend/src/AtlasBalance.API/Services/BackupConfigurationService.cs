@@ -19,6 +19,12 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
     public const string DestinationLocal = "LOCAL";
     public const string DestinationLocalAndGoogleDrive = "LOCAL_Y_GOOGLE_DRIVE";
 
+    private static readonly string[] SecretConfigKeysToEnforce =
+    [
+        "google_drive_oauth_client_secret",
+        "backup_cloud_encryption_key"
+    ];
+
     private readonly AppDbContext _dbContext;
     private readonly ISecretProtector _secretProtector;
     private readonly IAuditService _auditService;
@@ -134,6 +140,20 @@ public sealed class BackupConfigurationService : IBackupConfigurationService
             // V-02-05 (MED-8): marcar EsSecreto=true explicitamente. Antes el
             // flag quedaba en false para secrets recien actualizados.
             Upsert(rows, "google_drive_oauth_client_secret", _secretProtector.ProtectForStorage(request.GoogleDriveClientSecret), userId, now, isSecret: true);
+        }
+
+        // (ex-Hardened) tras cada actualizacion correcta, forzar EsSecreto=true
+        // en estas claves si ya existian en BD sin el flag (p.ej. filas creadas
+        // por otra via, antes de que IsSensitiveConfigKey cubriera el patron).
+        // Upsert() solo corrige la fila si esta funcion la toca en esta llamada;
+        // esto repara filas preexistentes que no pasaron por aqui.
+        foreach (var key in SecretConfigKeysToEnforce)
+        {
+            var row = rows.FirstOrDefault(x => x.Clave.Equals(key, StringComparison.OrdinalIgnoreCase));
+            if (row is not null && !row.EsSecreto)
+            {
+                row.EsSecreto = true;
+            }
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);

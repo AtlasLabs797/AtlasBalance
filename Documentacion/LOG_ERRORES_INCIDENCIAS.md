@@ -1,5 +1,36 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-25 - V-03.01 - Auditoria de seguridad, fluidez y codigo muerto (CORREGIDO)
+
+- **Limite IA saltable por concurrencia.** Causa: los contadores leen usos ya
+  guardados y el uso se guarda al terminar la llamada. Solucion: politica
+  `atlas-ia-chat` (concurrencia 1 por usuario) en `POST /api/ia/chat`.
+- **RLS con privilegio maximo sin contexto.** Causa: `BuildContext` devolvia
+  `System()` sin `HttpContext`. Solucion: `Anonymous()` por defecto y
+  `SystemContextScope` explicito en jobs y seed.
+- **Recharts en la carga inicial.** Causa: la regla `charts` de
+  `manualChunks` arrastraba React al chunk de graficos y todos los chunks de
+  entrada lo importaban. Solucion: quitar la regla.
+- **Tests sobre codigo muerto.** Causa: `HardenedConciliacionService`
+  reemplazaba `SugerirAsync` pero los tests seguian probando la version base.
+  Solucion: fusion en un unico servicio. Al fusionar aparecio que el scope de
+  la version Hardened no exigia titular activo; corregido.
+- **Test roto por la politica nueva de contrasenas.**
+  `UsuariosControllerTests.Actualizar_Should_Revoke_Sessions_When_Admin_Resets_Password`
+  usaba `ResetPass12345!` para el usuario "Reset Target": ahora se rechaza por
+  contener el nombre. Se cambio el dato del test, no la regla.
+- **Worktrees de subagentes sobre base equivocada.** Causa: el aislamiento por
+  worktree parte de `main` (`e670749`), no de la rama activa `V-03.01`.
+  Solucion: integrar con `git apply` (sin `--3way` cuando otro agente edita
+  el mismo checkout) y reverificar la suite completa sobre `V-03.01`.
+- **`dotnet test --filter` ignorado.** Causa: xUnit v3 sobre
+  Microsoft.Testing.Platform (aviso MTP0001). Solucion: filtrar con opciones
+  del runner (`-- -class ...`) o ejecutar el `.exe` de tests. xUnit v3 exige
+  apphost: no usar `-p:UseAppHost=false` en `dotnet test`.
+- **Bloqueo conocido sin resolver:** `dotnet build -c Release` de la API
+  falla con `Access denied` en `obj\Release\...AssemblyInfoInputs.cache`
+  (mismo patron AV/lock que `dist/`). Debug compila y la suite pasa.
+
 ## 2026-09-25 - V-03.01 - Correcciones de la revision 2026-09-24 (CORREGIDO)
 
 Grupo de 9 hallazgos de `Documentacion/INFORME_REVISION_2026-09-24.md`, cerrado el

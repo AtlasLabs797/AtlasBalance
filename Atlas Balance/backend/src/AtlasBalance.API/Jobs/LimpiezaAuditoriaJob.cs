@@ -50,6 +50,8 @@ public sealed class LimpiezaAuditoriaJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var retentionDays = _configuration.GetValue("Auditoria:RetentionDays", RetentionDays);
         var integrationRetentionDays = _configuration.GetValue(
             "Auditoria:IntegrationRetentionDays",

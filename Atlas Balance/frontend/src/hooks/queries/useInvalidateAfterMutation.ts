@@ -14,9 +14,3 @@ export function useInvalidateAfterMutation(): (kind: MutationKind) => Promise<vo
     [queryClient]
   );
 }
-
-export function useQueryCache(): { queryClient: QueryClientApi; invalidate: ReturnType<typeof useInvalidateAfterMutation> } {
-  const queryClient = useQueryClient();
-  const invalidate = useInvalidateAfterMutation();
-  return { queryClient, invalidate };
-}

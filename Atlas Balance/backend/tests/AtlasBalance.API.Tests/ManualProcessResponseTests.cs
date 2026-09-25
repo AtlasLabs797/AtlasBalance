@@ -236,6 +236,27 @@ public class ManualProcessResponseTests
         status.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
     }
 
+    [Fact]
+    public async Task Descargar_Should_Answer_Foreign_And_Missing_Export_Identically()
+    {
+        await using var db = BuildDbContext();
+        var ajena = new Exportacion { Id = Guid.NewGuid(), CuentaId = Guid.NewGuid(), RutaArchivo = @"C:\atlas-balance\exports\x.xlsx" };
+        db.Exportaciones.Add(ajena);
+        await db.SaveChangesAsync();
+        var controller = new ExportacionesController(
+            db,
+            new FakeExportacionService(),
+            new FakeUserAccessService(canAccessCuenta: false));
+        controller.ControllerContext = BuildControllerContext();
+
+        var foreign = await controller.Descargar(ajena.Id, CancellationToken.None);
+        var missing = await controller.Descargar(Guid.NewGuid(), CancellationToken.None);
+
+        var foreignNotFound = foreign.Should().BeOfType<NotFoundObjectResult>().Subject;
+        var missingNotFound = missing.Should().BeOfType<NotFoundObjectResult>().Subject;
+        JsonSerializer.Serialize(foreignNotFound.Value).Should().Be(JsonSerializer.Serialize(missingNotFound.Value));
+    }
+
     private static ControllerContext BuildControllerContext()
     {
         return new ControllerContext

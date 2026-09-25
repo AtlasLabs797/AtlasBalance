@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace AtlasBalance.API.Constants;
 
 public static class SecurityPolicy
@@ -71,6 +73,17 @@ public static class SecurityPolicy
         "rootroot123456", "superadmin123", "sysadmin123456", "welcome1234567"
     };
 
+    // Raices comunes de contrasenas para validar patron word+suffix
+    // Extraidas de la lista CommonPasswords y otros patrones observados
+    private static readonly HashSet<string> CommonPasswordRoots = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "password", "contrasena", "qwerty", "admin", "administrador", "atlasbalance",
+        "tesoreria", "welcome", "bienvenido", "iloveyou", "letmein",
+        "baseball", "football", "princess", "starwars", "sunshine", "superman", "whatever", "trustno",
+        "changeme", "bienvenida", "seguridad", "usuario", "empresa", "familia", "contabilidad",
+        "finanzas", "balance", "sysadmin", "superadmin"
+    };
+
     /// <summary>
     /// Vista de solo lectura para que los tests puedan comprobar la invariante de
     /// longitud. Se expone la vista y no el <see cref="HashSet{T}"/> directamente:
@@ -79,7 +92,7 @@ public static class SecurityPolicy
     /// </summary>
     internal static IReadOnlySet<string> CommonPasswordsView => CommonPasswords;
 
-    public static bool TryValidatePassword(string? password, out string error)
+    public static bool TryValidatePassword(string? password, out string error, string? userEmail = null, string? userFullName = null)
     {
         if (string.IsNullOrWhiteSpace(password) || password.Length < MinPasswordLength)
         {
@@ -100,7 +113,86 @@ public static class SecurityPolicy
             return false;
         }
 
+        // Validar contra datos del usuario si se proporcionan
+        if (!string.IsNullOrWhiteSpace(userEmail))
+        {
+            var emailLocalPart = userEmail.Split('@')[0];
+            // Eliminar puntos y guiones del email para comparación
+            var emailParts = Regex.Split(emailLocalPart, @"[\.\-_]", RegexOptions.IgnoreCase);
+            foreach (var part in emailParts)
+            {
+                if (part.Length >= 4 && normalized.Contains(part, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "La contraseña no puede contener tu nombre o tu email";
+                    return false;
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(userFullName))
+        {
+            var nameParts = userFullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in nameParts)
+            {
+                if (part.Length >= 4 && normalized.Contains(part, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "La contraseña no puede contener tu nombre o tu email";
+                    return false;
+                }
+            }
+        }
+
+        // Validar patron word+suffix trivial
+        if (IsPatternWordPlusSuffix(normalized))
+        {
+            error = "La contraseña es demasiado comun";
+            return false;
+        }
+
         error = string.Empty;
         return true;
+    }
+
+    private static bool IsPatternWordPlusSuffix(string password)
+    {
+        var lower = password.Trim().ToLowerInvariant();
+
+        // Quitar del final la racha máxima de caracteres que no son letras ASCII
+        var baseWithoutSuffix = Regex.Replace(lower, "[^a-z]+$", "");
+        var hadSuffix = baseWithoutSuffix.Length < lower.Length;
+
+        if (!hadSuffix)
+        {
+            // No hay sufijo, así que no es un patrón word+suffix
+            return false;
+        }
+
+        // Aplicar normalización leet SOLO a la base
+        var normalized = NormalizeForPatternDetection(baseWithoutSuffix);
+
+        // Comparar con igualdad exacta (no StartsWith) a una raíz
+        foreach (var root in CommonPasswordRoots)
+        {
+            if (normalized.Equals(root, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeForPatternDetection(string password)
+    {
+        // Aplicar sustituciones leet basicas
+        var result = password.Replace("0", "o", StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("1", "i", StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("3", "e", StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("4", "a", StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("5", "s", StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("7", "t", StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("@", "a", StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("$", "s", StringComparison.OrdinalIgnoreCase);
+        return result;
     }
 }

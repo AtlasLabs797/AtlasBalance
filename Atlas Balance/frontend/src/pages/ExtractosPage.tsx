@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import axios from 'axios';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -9,7 +10,11 @@ import DesgloseModal from '@/components/extractos/DesgloseModal';
 import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
 import ExtractoTable from '@/components/extractos/ExtractoTable';
 import type { InsertExtractoDraftPayload } from '@/components/extractos/ExtractoTable';
+import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
+import { QUERY_GC_TIMES, QUERY_STALE_TIMES } from '@/services/queryClient';
+import { queryKeys } from '@/queries/queryKeys';
+import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type { AuditCellEntry, Extracto, ExtractoDesgloseResumen, PaginatedResponse, TitularConCuentas } from '@/types';
@@ -55,6 +60,9 @@ function getLocalDesgloseEstado(count: number | undefined, total: number | undef
 
 export default function ExtractosPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const usuarioId = useAuthStore((state) => state.usuario?.id ?? '');
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfterMutation();
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const [rows, setRows] = useState<Extracto[]>([]);
   const [sortBy, setSortBy] = useState('fecha');
@@ -128,43 +136,45 @@ export default function ExtractosPage() {
 
   const activeScopeFilterCount = [titularFiltro, cuentaFiltro, fechaDesde, fechaHasta].filter(Boolean).length;
 
-  // V-02.08: guards anti-carrera. Sin ellos, una respuesta vieja (cuenta o
-  // pagina anterior) podia pisar a la nueva si llegaba ultima.
-  const resumenRequestIdRef = useRef(0);
-  const rowsRequestIdRef = useRef(0);
-  const visibleColumnsRequestIdRef = useRef(0);
+  // V-03.01 (#8): las 3 lecturas de esta pagina (resumen de cuentas, listado
+  // paginado de movimientos y preferencias de columnas visibles) migran de
+  // api.get en efectos manuales a React Query, siguiendo el mismo patron que
+  // CuentaDetailPage.tsx (useQuery + bridge a estado local para no tocar el
+  // resto del componente, que sigue leyendo `rows`/`titularesResumen`/
+  // `visibleColumns` como antes).
+  const fechaRangoInvalido = Boolean(fechaDesde && fechaHasta && fechaDesde > fechaHasta);
 
-  const loadResumen = useCallback(async () => {
-    const requestId = ++resumenRequestIdRef.current;
-    try {
-      const { data } = await api.get<TitularConCuentas[]>('/extractos/titulares-resumen', {
+  const resumenQuery = useQuery({
+    queryKey: queryKeys.extractos.titularesResumen({ usuarioId, paisId: selectedPaisId || null }),
+    queryFn: ({ signal }) =>
+      api.get<TitularConCuentas[]>('/extractos/titulares-resumen', {
         params: { paisId: selectedPaisId || undefined },
-      });
-      if (requestId !== resumenRequestIdRef.current) return;
-      setTitularesResumen(data);
-    } catch (err) {
-      if (requestId !== resumenRequestIdRef.current) return;
-      setTitularesResumen([]);
-      setError(extractErrorMessage(err, 'No se pudieron cargar las cuentas disponibles.'));
-    }
-  }, [selectedPaisId]);
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(usuarioId),
+    staleTime: QUERY_STALE_TIMES.EXTRACTOS_MS,
+  });
 
-  const loadRows = useCallback(async () => {
-    const requestId = ++rowsRequestIdRef.current;
-    setLoading(true);
-    setError(null);
-    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
-      setRows([]);
-      setAvailableExtraColumns([]);
-      setTotalPages(1);
-      setTotalRows(0);
-      setError('La fecha desde no puede ser posterior a la fecha hasta.');
-      setLoading(false);
-      return;
-    }
+  const rowsQueryParams = useMemo(
+    () => ({
+      usuarioId,
+      cuentaId: asUuidOrUndefined(cuentaFiltro) ?? null,
+      titularId: asUuidOrUndefined(titularFiltro) ?? null,
+      paisId: asUuidOrUndefined(selectedPaisId) ?? null,
+      fechaDesde: fechaDesde || null,
+      fechaHasta: fechaHasta || null,
+      page,
+      pageSize,
+      sortBy,
+      sortDir,
+    }),
+    [usuarioId, cuentaFiltro, titularFiltro, selectedPaisId, fechaDesde, fechaHasta, page, pageSize, sortBy, sortDir]
+  );
 
-    try {
-      const { data } = await api.get<PaginatedResponse<Extracto>>('/extractos', {
+  const rowsQuery = useQuery<PaginatedResponse<Extracto>>({
+    queryKey: queryKeys.extractos.list(rowsQueryParams),
+    queryFn: ({ signal }) =>
+      api.get<PaginatedResponse<Extracto>>('/extractos', {
         params: {
           page,
           pageSize,
@@ -175,57 +185,118 @@ export default function ExtractosPage() {
           paisId: asUuidOrUndefined(selectedPaisId),
           fechaDesde: fechaDesde || undefined,
           fechaHasta: fechaHasta || undefined
-        }
-      });
-      if (requestId !== rowsRequestIdRef.current) return;
-      setRows(data.data ?? []);
-      setAvailableExtraColumns(data.columnas_disponibles ?? []);
-      setTotalPages(Math.max(1, data.total_pages ?? 1));
-      setTotalRows(data.total ?? data.data?.length ?? 0);
-    } catch (err) {
-      if (requestId !== rowsRequestIdRef.current) return;
-      setError(extractErrorMessage(err, 'No se pudieron cargar extractos'));
+        },
+        signal,
+      }).then((res) => res.data),
+    enabled: Boolean(usuarioId) && !fechaRangoInvalido,
+    placeholderData: keepPreviousData,
+    staleTime: QUERY_STALE_TIMES.EXTRACTOS_MS,
+    gcTime: QUERY_GC_TIMES.EXTRACTOS_MS,
+  });
+
+  const columnasVisiblesParams = useMemo(
+    () => ({
+      usuarioId,
+      cuentaId: asUuidOrUndefined(cuentaFiltro) ?? null,
+      titularId: asUuidOrUndefined(selectedCuenta?.titular_id) ?? asUuidOrUndefined(titularFiltro) ?? null,
+      paisId: asUuidOrUndefined(selectedCuenta?.pais_id) ?? asUuidOrUndefined(selectedPaisId) ?? null,
+    }),
+    [usuarioId, cuentaFiltro, selectedCuenta, titularFiltro, selectedPaisId]
+  );
+
+  const visibleColumnsQuery = useQuery({
+    queryKey: queryKeys.extractos.columnasVisibles(columnasVisiblesParams),
+    queryFn: () =>
+      api.get<{ columnas_visibles: string[] | null }>('/extractos/columnas-visibles', {
+        params: {
+          cuentaId: columnasVisiblesParams.cuentaId ?? undefined,
+          titularId: columnasVisiblesParams.titularId ?? undefined,
+          paisId: columnasVisiblesParams.paisId ?? undefined,
+        },
+      }).then((res) => res.data),
+    enabled: Boolean(usuarioId),
+    staleTime: QUERY_STALE_TIMES.EXTRACTOS_MS,
+  });
+
+  useEffect(() => {
+    if (resumenQuery.data) {
+      setTitularesResumen(resumenQuery.data);
+    } else if (!resumenQuery.isLoading && !resumenQuery.error) {
+      setTitularesResumen([]);
+    }
+  }, [resumenQuery.data, resumenQuery.isLoading, resumenQuery.error]);
+
+  useEffect(() => {
+    if (resumenQuery.error) {
+      setTitularesResumen([]);
+      setError(extractErrorMessage(resumenQuery.error, 'No se pudieron cargar las cuentas disponibles.'));
+    }
+  }, [resumenQuery.error]);
+
+  useEffect(() => {
+    if (fechaRangoInvalido) {
       setRows([]);
       setAvailableExtraColumns([]);
       setTotalPages(1);
       setTotalRows(0);
-    } finally {
-      if (requestId === rowsRequestIdRef.current) {
-        setLoading(false);
-      }
+      setError('La fecha desde no puede ser posterior a la fecha hasta.');
+      return;
     }
-  }, [page, pageSize, sortBy, sortDir, cuentaFiltro, titularFiltro, selectedPaisId, fechaDesde, fechaHasta]);
 
-  const loadVisibleColumns = useCallback(async () => {
-    const requestId = ++visibleColumnsRequestIdRef.current;
-    try {
-      const { data } = await api.get('/extractos/columnas-visibles', {
-        params: {
-          cuentaId: asUuidOrUndefined(cuentaFiltro),
-          titularId: asUuidOrUndefined(selectedCuenta?.titular_id) ?? asUuidOrUndefined(titularFiltro),
-          paisId: asUuidOrUndefined(selectedCuenta?.pais_id) ?? asUuidOrUndefined(selectedPaisId)
-        }
-      });
-      if (requestId !== visibleColumnsRequestIdRef.current) return;
-      setVisibleColumns(data.columnas_visibles ?? null);
-    } catch (err) {
-      if (requestId !== visibleColumnsRequestIdRef.current) return;
+    const data = rowsQuery.data;
+    if (data) {
+      setRows(data.data ?? []);
+      setAvailableExtraColumns(data.columnas_disponibles ?? []);
+      setTotalPages(Math.max(1, data.total_pages ?? 1));
+      setTotalRows(data.total ?? data.data?.length ?? 0);
+    } else if (!rowsQuery.isLoading && !rowsQuery.error) {
+      setRows([]);
+      setAvailableExtraColumns([]);
+      setTotalPages(1);
+      setTotalRows(0);
+    }
+  }, [rowsQuery.data, rowsQuery.isLoading, rowsQuery.error, fechaRangoInvalido]);
+
+  useEffect(() => {
+    if (rowsQuery.error && !fechaRangoInvalido) {
+      setError(extractErrorMessage(rowsQuery.error, 'No se pudieron cargar extractos'));
+      setRows([]);
+      setAvailableExtraColumns([]);
+      setTotalPages(1);
+      setTotalRows(0);
+    }
+  }, [rowsQuery.error, fechaRangoInvalido]);
+
+  useEffect(() => {
+    // Igual que en CuentaDetailPage: solo la carga inicial de una clave nueva
+    // (isLoading) enciende el indicador de carga de la tabla. Un refetch de
+    // fondo tras invalidar cache (p. ej. al guardar una celda) no debe volver
+    // a mostrar el loading ni interrumpir la tabla virtualizada.
+    if (rowsQuery.isLoading) {
+      setLoading(true);
+    } else if (!rowsQuery.isFetching) {
+      setLoading(false);
+    }
+  }, [rowsQuery.isLoading, rowsQuery.isFetching]);
+
+  useEffect(() => {
+    if (visibleColumnsQuery.data) {
+      setVisibleColumns(visibleColumnsQuery.data.columnas_visibles ?? null);
+    } else if (!visibleColumnsQuery.isLoading && !visibleColumnsQuery.error) {
       setVisibleColumns(null);
-      setError(extractErrorMessage(err, 'No se pudieron cargar las preferencias de columnas.'));
     }
-  }, [cuentaFiltro, selectedCuenta, selectedPaisId, titularFiltro]);
+  }, [visibleColumnsQuery.data, visibleColumnsQuery.isLoading, visibleColumnsQuery.error]);
 
   useEffect(() => {
-    void loadResumen();
-  }, [loadResumen]);
+    if (visibleColumnsQuery.error) {
+      setVisibleColumns(null);
+      setError(extractErrorMessage(visibleColumnsQuery.error, 'No se pudieron cargar las preferencias de columnas.'));
+    }
+  }, [visibleColumnsQuery.error]);
 
-  useEffect(() => {
-    void loadRows();
-  }, [loadRows]);
-
-  useEffect(() => {
-    void loadVisibleColumns();
-  }, [loadVisibleColumns]);
+  const loadRows = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.extractos.list(rowsQueryParams) });
+  }, [queryClient, rowsQueryParams]);
 
   useEffect(() => {
     if (!didMountPaisScopeRef.current) {
@@ -314,6 +385,7 @@ export default function ExtractosPage() {
       }
 
       await api.put('/extractos/columnas-visibles', payload);
+      await invalidate('extractoColumnasVisibles');
     } catch (err) {
       setVisibleColumns(visibleColumns);
       setError(extractErrorMessage(err, 'No se pudieron guardar las columnas visibles.'));
@@ -378,6 +450,10 @@ export default function ExtractosPage() {
           })
         );
       }
+      // PUT /extractos puede recalcular saldo/dashboard/alertas segun la
+      // columna; invalida esas familias en segundo plano (no reactiva el
+      // loading de esta tabla, ver el bridge de rowsQuery mas arriba).
+      await invalidate('extractoUpdate');
     } catch (err) {
       // Conflicto de concurrencia (otro usuario edito la fila): recargamos para
       // que el usuario vea el dato fresco antes de reintentar. El interceptor ya
@@ -395,6 +471,7 @@ export default function ExtractosPage() {
     try {
       await api.patch(`/extractos/${row.id}/check`, { checked });
       setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, checked } : r)));
+      await invalidate('extractoCheck');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo marcar la fila como revisada.'));
     }
@@ -406,6 +483,7 @@ export default function ExtractosPage() {
     try {
       await api.patch(`/extractos/${row.id}/flag`, { flagged, nota: flagged ? nota : undefined });
       setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, flagged, flagged_nota: nextNota } : r)));
+      await invalidate('extractoFlag');
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo actualizar la alerta de la fila.'));
     }
@@ -416,6 +494,7 @@ export default function ExtractosPage() {
     try {
       await api.post('/extractos', payload);
       await loadRows();
+      await invalidate('extractoCreate');
     } catch (err) {
       const message = extractErrorMessage(err, 'No se pudo insertar la fila.');
       setError(message);
@@ -522,6 +601,7 @@ export default function ExtractosPage() {
             }
           : current,
       );
+      await invalidate('extractoDesglose');
     } catch (err) {
       const message = extractErrorMessage(err, 'No se pudo guardar el desglose.');
       if (axios.isAxiosError(err) && err.response?.status === 409) {

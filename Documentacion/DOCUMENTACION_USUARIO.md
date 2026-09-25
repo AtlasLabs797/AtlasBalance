@@ -539,6 +539,8 @@ La IA responde usando contexto financiero real minimizado: saldos, agregados y m
 
 En consultas de comisiones y seguros, Atlas Balance filtra ruido antes de llamar al proveedor. Un cargo normal de tarjeta, una cuota/leasing, una transferencia, Seguridad Social/TGSS, Generalitat, anulaciones, devoluciones y reembolsos no deben inflar los totales de seguros o comisiones que recibe la IA.
 
+Desde V-03.01 solo puedes tener una pregunta a la IA en curso a la vez. Si envias otra (por ejemplo desde otra pestana) antes de que termine la primera, veras un aviso de demasiadas peticiones: espera a que llegue la respuesta y vuelve a enviarla.
+
 Algunas preguntas de ranking financiero se calculan directamente en Atlas Balance, sin mandar la consulta al proveedor. Por ejemplo, `Que cuentas han tenido mas gastos este trimestre?` devuelve ranking por cuenta; `Que titulares han tenido mas gastos este trimestre?` agrupa por titular y divisa. En esas respuestas veras coste y tokens `0`.
 
 Las respuestas del chat se muestran como texto legible dentro de una burbuja violeta junto a la cara animada del asistente. Si el proveedor devuelve una tabla Markdown, Atlas Balance la convierte en datos simples para que no veas pipes, asteriscos ni filas raras. Los detalles tecnicos de modelo, tokens y coste quedan plegados en `Detalles de IA`.
@@ -624,6 +626,7 @@ En tablets y pantallas pequenas se conservan los targets tactiles amplios y la n
 - Desde V-02.07, cerrar sesion cierra todas las sesiones abiertas del usuario en todos los dispositivos, no solo la sesion actual. El dispositivo recordado para el codigo de Authenticator no se pierde al cerrar sesion.
 - Desde V-02.07, si al cambiar la contrasena escribes 5 veces mal la contrasena actual, la cuenta se bloquea 30 minutos, igual que en el login.
 - Desde V-02.07, las contrasenas nuevas se comparan contra una lista mas amplia de contrasenas filtradas comunes. Alguna contrasena que antes se aceptaba puede rechazarse ahora por "demasiado comun"; en ese caso, elige otra que no sea una variante obvia de una palabra o frase habitual.
+- Desde V-03.01, una contrasena nueva no puede contener tu nombre ni la parte de tu email antes de la @ (palabras de 4 letras o mas), ni ser una palabra muy comun con numeros o simbolos al final (por ejemplo `Tesoreria2026!` o `P@ssw0rd2024`). Una frase larga de varias palabras funciona mejor.
 - No guardes contrasenas en documentos.
 - No pegues tokens ni credenciales en tickets, logs o notas.
 - Las credenciales iniciales de instalacion deben tratarse como temporales y cambiarse en el primer acceso.

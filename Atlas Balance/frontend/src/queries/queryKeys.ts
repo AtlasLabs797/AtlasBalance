@@ -215,8 +215,6 @@ export const queryKeys = {
   },
 } as const;
 
-export type QueryKey = readonly unknown[];
-
 export function normalizeQueryParams<T extends Record<string, unknown>>(params: T): T {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(params)) {

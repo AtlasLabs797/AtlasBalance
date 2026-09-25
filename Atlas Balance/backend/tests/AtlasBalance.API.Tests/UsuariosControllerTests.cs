@@ -156,7 +156,7 @@ public class UsuariosControllerTests
             Rol = user.Rol,
             Activo = true,
             PrimerLogin = false,
-            PasswordNueva = "ResetPass12345!",
+            PasswordNueva = "Cambio-Seguro-9471!",
             Emails = new[] { user.Email },
             Permisos = Array.Empty<SavePermisoUsuarioRequest>()
         };
@@ -167,7 +167,7 @@ public class UsuariosControllerTests
         var persisted = await db.Usuarios.SingleAsync(x => x.Id == user.Id);
         persisted.SecurityStamp.Should().NotBe(originalStamp);
         persisted.PasswordChangedAt.Should().NotBeNull();
-        BCrypt.Net.BCrypt.Verify("ResetPass12345!", persisted.PasswordHash).Should().BeTrue();
+        BCrypt.Net.BCrypt.Verify("Cambio-Seguro-9471!", persisted.PasswordHash).Should().BeTrue();
         (await db.RefreshTokens.SingleAsync(x => x.UsuarioId == user.Id)).RevocadoEn.Should().NotBeNull();
         (await db.Auditorias.AnyAsync(x => x.EntidadId == user.Id && x.TipoAccion == AuditActions.PasswordReset)).Should().BeTrue();
     }

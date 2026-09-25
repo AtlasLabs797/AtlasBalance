@@ -211,7 +211,9 @@
 - **Estado:** cerrado en codigo, verificado por la suite automatizada
   local. Pendiente: gate de CI con PostgreSQL/Testcontainers.
 
-### 2026-08-02 - V-02.07 - Abierto - `AddAuthorization()` sin `FallbackPolicy`: una accion sin atributo queda publica
+### 2026-08-02 - V-02.07 - Cerrado - `AddAuthorization()` sin `FallbackPolicy`: una accion sin atributo queda publica
+
+- **Estado (2026-09-25, V-03.01):** cerrado. La entrada estaba obsoleta: `AuthorizationConfiguration.cs:9` define `FallbackPolicy` autenticada desde el commit `6b6b959` ("security(auth): enforce authenticated fallback policy").
 
 - **Contexto:** auditoria de permisos endpoint por endpoint del 2026-08-02.
   Ya estaba identificado como pendiente en el bloque "Auditoria IDOR de toda
@@ -287,7 +289,9 @@
   regla en `UserAccessService`, nada obliga a actualizar la copia, y el
   fallo seria silencioso. Es deuda, no bug.
 
-### 2026-08-02 - V-02.07 - Abierto - `ExportacionesController.Descargar` distingue 404 de 403
+### 2026-08-02 - V-02.07 - Cerrado - `ExportacionesController.Descargar` distingue 404 de 403
+
+- **Estado (2026-09-25, V-03.01):** cerrado. ID ajeno e inexistente devuelven el mismo `NotFound`. Test: `ManualProcessResponseTests.Descargar_Should_Answer_Foreign_And_Missing_Export_Identically`.
 
 - **Contexto:** misma auditoria. Severidad muy baja, se registra por
   completitud.
@@ -328,7 +332,9 @@
   entrar sin poder ejecutar la suite completa de auth antes y despues.
 - **Riesgo de no hacerlo:** bajo mientras el filtro en C# siga ahi.
 
-### 2026-07-31 - V-02.07 - Abierto - `RlsDbCommandInterceptor` falla abierto en dos puntos
+### 2026-07-31 - V-02.07 - Cerrado - `RlsDbCommandInterceptor` falla abierto en dos puntos
+
+- **Estado (2026-09-25, V-03.01):** cerrado. Punto 1: sin `HttpContext` ni `SystemContextScope` se publica `Anonymous()`; los 13 jobs de Hangfire y el seed de arranque abren el scope explicitamente. Punto 2: `ShouldSkip` con conexion cerrada no es alcanzable (EF abre la conexion antes de invocar los interceptores de comando) y se deja como guarda defensiva. Tests: `Rls/RlsDbCommandInterceptorContextTests.cs`, `RlsSystemContextScopeIntegrationTests.cs`.
 
 - **Descripcion:** dos comportamientos que estan del lado inseguro:
   1. `RlsDbCommandInterceptor.cs:159-163`: si `HttpContext` es `null`, el
@@ -354,7 +360,9 @@
   query. Ambos son refactors que tocan los ~10 jobs y el arranque, y
   necesitan la suite verde antes y despues.
 
-### 2026-07-31 - V-02.07 - Abierto - Cuatro tablas con ambito de cuenta o usuario siguen sin RLS
+### 2026-07-31 - V-02.07 - Cerrado - Cuatro tablas con ambito de cuenta o usuario siguen sin RLS
+
+- **Estado (2026-09-25, V-03.01):** cerrado. La entrada estaba obsoleta: la migracion `20260917100000_CompleteScopedRls` activa `ENABLE`+`FORCE ROW LEVEL SECURITY` y policies en `ALERTAS_SALDO`, `ALERTA_DESTINATARIOS`, `IA_USO_USUARIOS` y `BACKUP_OPERATIONS`. `USUARIOS`, `USUARIO_EMAILS`, `REFRESH_TOKENS` e `INTEGRATION_TOKENS` siguen protegidas por rol, como ya se indicaba.
 
 - **Descripcion:** de las 35 tablas del modelo, 23 tienen `ENABLE` +
   `FORCE ROW LEVEL SECURITY`. De las 12 restantes, la mayoria son catalogos

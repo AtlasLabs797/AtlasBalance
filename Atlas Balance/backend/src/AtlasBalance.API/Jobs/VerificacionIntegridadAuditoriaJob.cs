@@ -40,6 +40,8 @@ public sealed class VerificacionIntegridadAuditoriaJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var desde = _clock.UtcNow.AddDays(-DiasVerificados);
         var resultado = await _integridad.VerificarAsync(desde, null, CancellationToken.None);
 

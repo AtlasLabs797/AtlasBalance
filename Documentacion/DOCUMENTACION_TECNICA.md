@@ -2,6 +2,65 @@
 
 ## Vigencia documental: V-03.01
 
+### 2026-09-25 - Auditoria de seguridad, fluidez y codigo muerto
+
+**Chat IA (#2).** `AtlasAiService.EnsureRequestLimitsAsync` cuenta usos ya
+guardados y el uso se guarda al responder el proveedor, asi que peticiones
+concurrentes del mismo usuario pasaban todas. `RateLimitingSetup` anade la
+politica `atlas-ia-chat` (`ConcurrencyLimiter`, `PermitLimit=1`,
+`QueueLimit=0`, particion por usuario via `ResolveIdentityKey`), aplicada con
+`[EnableRateLimiting]` a `POST /api/ia/chat`. El rechazo reutiliza
+`OnRejectedAsync` (429 + `Retry-After`). El contador global diario entre
+usuarios distintos conserva la carrera: cerrarla exige un lock global.
+
+**RLS deniega por defecto (#4).** `RlsDbCommandInterceptor.BuildContext`
+publica `RlsSessionContext.Anonymous()` si no hay `HttpContext` ni
+`SystemContextScope`. Antes publicaba `System()` (bypass total). Cada job de
+Hangfire abre `SystemContextScope.Enter()` en su metodo de entrada (se
+descarto un `IServerFilter` porque no esta garantizado que el `AsyncLocal`
+fluya del filtro al metodo del job) y `Program.cs` envuelve seed +
+`ProtectExistingConfigurationSecrets`. Las migraciones usan un
+`AppDbContext` sin interceptor. `ShouldSkip` con conexion cerrada se deja:
+EF abre la conexion antes de invocar los interceptores de comando.
+Tests: `Rls/RlsDbCommandInterceptorContextTests.cs` y
+`RlsSystemContextScopeIntegrationTests.cs` (Postgres real: escritura
+denegada sin scope, permitida con scope, `LimpiezaExportacionesJob` purga
+con su propio scope).
+
+**Coste del contexto RLS (#7, no implementado).** Medido con Testcontainers:
+`SELECT 1` 2,71 ms sin reaplicar contexto frente a 5,69 ms con el
+`set_config` firmado. No se cachea por conexion porque (a) el contexto puede
+cambiar dentro de la vida de una conexion (`SystemContextScope`) y (b) un
+`ROLLBACK` revierte `set_config` aunque sea de sesion, dejando la cache
+desalineada. `Rls/RlsPoolResetProbe.cs` fija la precondicion de que Npgsql
+resetea el estado de sesion al devolver la conexion al pool.
+
+**Servicios Hardened fusionados (#5).** `ConciliacionService` incorpora el
+`SugerirAsync` de produccion (una sola consulta de extractos, tolerancias
+`conciliacion_tolerance_amount`/`_percent`, score con penalizacion por
+diferencia). `ApplyCuentaScope(..., soloPuedeConciliar: true)` para
+sugerencias: exige `PuedeConciliar` y titular activo; el scope propio de la
+version Hardened omitia el titular activo. `BackupConfigurationService`
+absorbe el backfill de `EsSecreto` sobre `google_drive_oauth_client_secret` y
+`backup_cloud_encryption_key`. `HardenedGoogleDriveBackupService` era un
+pass-through. DI registra las interfaces directamente.
+
+**Otros.** `ExportacionesController.Descargar` devuelve el mismo
+`NotFound` para ID ajeno e inexistente (#6). `SecurityPolicy.TryValidatePassword`
+acepta `userEmail`/`userFullName` opcionales y rechaza palabras de 4+
+caracteres del nombre o de la parte local del email, y raices comunes con
+sufijo de no-letras tras normalizar leet solo sobre la base (#10);
+`AuthService.CambiarPasswordAsync` valida tras cargar el usuario. Se elimina
+`app.UseHttpsRedirection()`, inalcanzable tras `HttpsRedirectionMiddleware`
+(#11).
+
+**Frontend.** `vite.config.ts` sin regla `charts` en `manualChunks` (#3):
+Recharts queda en un chunk que solo cargan las paginas con graficos. Fuentes
+woff2 convertidas con fontTools (#9). React Query en
+`ExtractosPage`/`UsuariosPage`/`AuditoriaPage`/`ExportacionesPage` con puente
+a estado local, como en `CuentaDetailPage` (#8). Borrado de codigo muerto
+listado en `DOCUMENTACION_CAMBIOS.md`.
+
 ### 2026-09-25 - Correcciones de la revision 2026-09-24
 
 **Actualizador elevado (hallazgos #1, #3, #9).** `ElevatedUpdateRunner.cs`

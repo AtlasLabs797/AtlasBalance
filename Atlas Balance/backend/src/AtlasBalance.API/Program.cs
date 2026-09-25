@@ -409,8 +409,7 @@ builder.Services.AddHttpClient(SlackAlertNotifier.HttpClientName, client =>
 builder.Services.AddScoped<ITiposCambioService, TiposCambioService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IImportacionService, ImportacionService>();
-builder.Services.AddScoped<ConciliacionService>();
-builder.Services.AddScoped<IConciliacionService, HardenedConciliacionService>();
+builder.Services.AddScoped<IConciliacionService, ConciliacionService>();
 builder.Services.AddScoped<IUserAccessService, UserAccessService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
@@ -426,11 +425,9 @@ builder.Services.AddSingleton<IDocumentationHelpService>(_ => new DocumentationH
     builder.Configuration["Documentation:UserPath"]
     ?? Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "..", "..", "Documentacion", "DOCUMENTACION_USUARIO.md"))));
 builder.Services.AddScoped<IBackupService, BackupService>();
-builder.Services.AddScoped<BackupConfigurationService>();
-builder.Services.AddScoped<IBackupConfigurationService, HardenedBackupConfigurationService>();
+builder.Services.AddScoped<IBackupConfigurationService, BackupConfigurationService>();
 builder.Services.AddScoped<IBackupEncryptionService, BackupEncryptionService>();
-builder.Services.AddScoped<GoogleDriveBackupService>();
-builder.Services.AddScoped<IGoogleDriveBackupService, HardenedGoogleDriveBackupService>();
+builder.Services.AddScoped<IGoogleDriveBackupService, GoogleDriveBackupService>();
 builder.Services.AddScoped<IConfiguracionRepository, ConfiguracionRepository>();
 builder.Services.AddScoped<IExportacionService, ExportacionService>();
 builder.Services.AddScoped<IWatchdogClientService, WatchdogClientService>();
@@ -472,11 +469,18 @@ using (var scope = app.Services.CreateScope())
     GrantRuntimeDatabasePrivileges(effectiveMigrationConnectionString, runtimeConnectionString);
     NpgsqlConnection.ClearAllPools();
 
+    // V-03.01 (#4): este AppDbContext si pasa por RlsDbCommandInterceptor (a
+    // diferencia de migrationDb, creado a mano sin interceptores) y se ejecuta
+    // en el arranque, sin HttpContext. Sin este scope el interceptor denegaria
+    // los INSERT/UPDATE del seed bajo el contexto Anonymous().
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    SeedData.Initialize(db, app.Configuration, app.Environment);
-    ProtectExistingConfigurationSecrets(
-        db,
-        scope.ServiceProvider.GetRequiredService<ISecretProtector>());
+    using (AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter())
+    {
+        SeedData.Initialize(db, app.Configuration, app.Environment);
+        ProtectExistingConfigurationSecrets(
+            db,
+            scope.ServiceProvider.GetRequiredService<ISecretProtector>());
+    }
 
     // Configure recurring jobs
     var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
@@ -670,10 +674,6 @@ if (app.Environment.IsDevelopment())
     app.UseCors();
 }
 
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
 app.UseDefaultFiles();
 
 var staticFileOptions = new StaticFileOptions();

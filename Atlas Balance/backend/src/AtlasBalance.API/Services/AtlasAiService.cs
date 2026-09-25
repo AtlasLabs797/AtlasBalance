@@ -869,6 +869,11 @@ public sealed class AtlasAiService : IAtlasAiService
             throw new IaLimitExceededException("Limite diario de consultas de IA alcanzado.");
         }
 
+        // V-03.01: este contador sigue teniendo una carrera entre usuarios DISTINTOS (se lee antes
+        // de que el uso se registre en BD, igual que los contadores de arriba). El limitador de
+        // concurrencia de RateLimitingSetup.PolicyNames.IaChat solo cierra la carrera por usuario.
+        // Con 4-8 usuarios en red local el margen es aceptable; no se cierra aqui para no anadir
+        // un lock global que serializaria todas las consultas de IA de la aplicacion.
         var globalDayCount = await CountUsageSinceAsync(null, dayStart, cancellationToken);
         if (globalDayCount >= state.GlobalRequestsPerDay)
         {

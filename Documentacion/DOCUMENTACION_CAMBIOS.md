@@ -2,6 +2,113 @@
 
 ## Objetivo
 
+## 2026-09-25 - V-03.01 - Auditoria de seguridad, fluidez y codigo muerto (checklist pre-publicacion)
+
+### Trabajo realizado
+
+- Revision de la checklist de seguridad pre-publicacion contra el codigo real.
+  Plan con 12 hallazgos; se corrigen todos salvo el #1 (migracion a .NET 10
+  antes del fin de soporte de .NET 8 el 2026-11-10), que queda pendiente por
+  decision del usuario.
+- Ejecutado con subagentes (Sonnet/Haiku) y verificado por el orquestador
+  contra diff, build y tests. Los worktrees de los subagentes se crearon desde
+  `main` (`e670749`) y no desde `V-03.01`; los parches se integraron con
+  `git apply` sobre `V-03.01` y se reverificaron aqui.
+- #2 IA: nueva politica `atlas-ia-chat` (1 peticion simultanea por usuario,
+  sin cola) en `POST /api/ia/chat`. Cierra la carrera por la que N consultas
+  concurrentes pasaban los limites de minuto/hora/dia. El limite global diario
+  entre usuarios distintos conserva la carrera (documentado en codigo).
+- #3 Bundle: se elimina la regla `charts` de `manualChunks`; React ya no cae
+  en el chunk de Recharts y `index.html` deja de precargar los graficos en
+  todas las paginas (login incluido).
+- #4 RLS: `RlsDbCommandInterceptor.BuildContext` devuelve `Anonymous()` (no
+  `System()`) cuando no hay `HttpContext` ni `SystemContextScope`. Los 13 jobs
+  de Hangfire y el seed de arranque abren el scope de forma explicita.
+- #5 Se fusionan `HardenedConciliacionService`,
+  `HardenedBackupConfigurationService` y `HardenedGoogleDriveBackupService` en
+  sus servicios base; se elimina el `SugerirAsync` antiguo (codigo muerto
+  probado por tests). Hallazgo al fusionar: el scope propio de la version
+  Hardened no comprobaba que el titular de la cuenta siguiera activo; el
+  resultado exige `PuedeConciliar` y titular activo.
+- #6 `GET /api/exportaciones/{id}/descargar` responde 404 identico para ID
+  ajeno e inexistente.
+- #7 Medido y no implementado: `set_config` antes de cada comando anade
+  ~110% sobre un `SELECT 1` (2,71 ms -> 5,69 ms). Cachear el contexto por
+  conexion exige detectar cambios de contexto dentro de la vida de la conexion
+  y el rollback de transacciones revierte `set_config`; el riesgo de dejar un
+  contexto obsoleto no compensa para 4-8 usuarios.
+- #8 Extractos, Usuarios, Auditoria y Exportaciones leen con React Query
+  (claves con `usuarioId`, `keepPreviousData` en listas paginadas,
+  invalidacion tras mutaciones).
+- #9 Fuentes Geist a `.woff2` (~434 KB -> ~163 KB); `.ttf` eliminadas.
+- #10 Politica de contrasenas: rechaza contrasenas que contienen el nombre o
+  la parte local del email, y raices comunes con sufijo trivial
+  (`P@ssw0rd2024!`, `tesoreria#2031`).
+- #11 Se elimina `app.UseHttpsRedirection()`, redundante con
+  `HttpsRedirectionMiddleware`.
+- #12 `REGISTRO_BUGS.md`: cerradas las entradas obsoletas de FallbackPolicy y
+  de las 4 tablas sin RLS, mas las de 404/403 y RLS fail-open.
+- Codigo muerto frontend: `useCatalogosQuery.ts`, 13 iconos de `Icons.tsx`,
+  helpers de invalidacion/formato/modelos sin uso, 8 tipos sin uso y reglas
+  CSS huerfanas (`dashboard-banco-*`, `ab-card*`, `ab-kpi*`, `ai-face-svg*`,
+  etc.).
+- Decisiones visuales: ninguna nueva; la migracion a React Query conserva los
+  mismos skeletons, empty states y toasts, y el refetch en segundo plano no
+  vuelve a mostrar el estado de carga.
+
+### Archivos tocados
+
+- Backend: `Constants/SecurityPolicy.cs`, `Controllers/{Exportaciones,Ia,Usuarios}Controller.cs`,
+  `Data/{RlsDbCommandInterceptor,SeedData}.cs`, los 13 archivos de `Jobs/`,
+  `Program.cs`, `RateLimiting/RateLimitingSetup.cs`,
+  `Services/{AtlasAiService,AuthService,BackupConfigurationService,ConciliacionService}.cs`;
+  borrados `Services/Hardened*.cs` (3).
+- Tests backend: `ConciliacionServiceToleranciaTests.cs` (renombrado desde
+  `HardenedConciliacionServiceTests.cs`), `ManualProcessResponseTests.cs`,
+  `RateLimitingSetupTests.cs`, `Rls/RlsDbCommandInterceptorContextTests.cs`,
+  `Rls/RlsPoolResetProbe.cs` (nuevo), `RlsSystemContextScopeIntegrationTests.cs`
+  (nuevo), `SecurityPolicyTests.cs`.
+- Frontend: `index.html`, `vite.config.ts`, `public/fonts/*.woff2` (y borrado
+  de `*.ttf`), `src/components/Icons.tsx`, `src/hooks/queries/useCatalogosQuery.ts`
+  (borrado), `src/hooks/queries/useInvalidateAfterMutation.ts`,
+  `src/pages/{Auditoria,Exportaciones,Extractos,Usuarios}Page.tsx`,
+  `src/queries/{invalidation,queryKeys}.ts`, `src/styles/**` (7 CSS),
+  `src/types/index.ts`, `src/utils/{aiModels,formatters}.ts`.
+
+### Comandos ejecutados
+
+- `npm audit`, `dotnet list package --vulnerable --include-transitive`,
+  `dotnet list package --outdated`.
+- `node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit`,
+  `npm run lint`, `npm run test:unit`, `vite build --outDir <scratchpad>`.
+- `dotnet test tests/AtlasBalance.API.Tests` (suite completa sobre el estado
+  integrado).
+
+### Verificacion
+
+- Verificado: suite backend completa sobre el estado integrado
+  `AtlasBalance.API.Tests` 966/966 (incluye RLS contra PostgreSQL con
+  Testcontainers) y `AtlasBalance.Caching.Tests` 15/15.
+- Verificado: frontend `tsc --noEmit` OK, `npm run lint` OK (0 warnings),
+  `npm run test:unit` 75/75, build Vite a carpeta alternativa OK.
+  `index.html` ya no precarga el chunk de graficos; ningun chunk de entrada
+  importa Recharts. `git diff --check` OK.
+- Bloqueado: `npm run build` a `dist/` y `dotnet build -c Release` de la API
+  (`Access denied` en `dist/` y `obj\Release`, bloqueo AV/lock conocido).
+- No verificado: validacion visual en navegador.
+
+### Pendientes
+
+- #1 migracion a .NET 10 LTS antes del 2026-11-10.
+- Validacion visual en navegador: Extractos tras editar una celda (el refetch
+  en segundo plano no debe mover el scroll), login y dashboard con el bundle
+  nuevo.
+- `npm run build` estandar sigue bloqueado por `Acceso denegado` en `dist/`.
+- `REGISTRO_BUGS.md` sigue teniendo abiertos: huecos del guardarrail de
+  autorizacion, scope `vencimientos` huerfano, scope duplicado en
+  `ExtractosController`, rama auth-flow de `PERMISOS_USUARIO` y tests de jobs
+  con InMemory.
+
 ## 2026-09-25 - V-03.01 - Correcciones de la revision 2026-09-24
 
 ### Trabajo realizado

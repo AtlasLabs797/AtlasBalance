@@ -33,6 +33,9 @@ public sealed class AutoUpdateJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        // Sin este scope, RlsDbCommandInterceptor.BuildContext() deniega por defecto.
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var now = _clock.UtcNow;
         var config = await _dbContext.Configuraciones.ToListAsync(CancellationToken.None);
 

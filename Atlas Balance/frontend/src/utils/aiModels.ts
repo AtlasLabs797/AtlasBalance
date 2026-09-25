@@ -90,19 +90,6 @@ export function isOpenRouterFreeModel(model: string | null | undefined) {
   return trimmed === OPENROUTER_FREE_MODEL || trimmed.toLowerCase().endsWith(':free');
 }
 
-export function isValidOpenRouterModelId(model: string | null | undefined) {
-  const trimmed = model?.trim() ?? '';
-  if (trimmed.length < 3 || trimmed.length > 160) {
-    return false;
-  }
-
-  if (trimmed.includes('..') || trimmed.includes('//') || trimmed.startsWith('/') || trimmed.endsWith('/')) {
-    return false;
-  }
-
-  return /^[A-Za-z0-9/_:.\-+]+$/.test(trimmed);
-}
-
 // V-02.09 (Fase UI): modo de razonamiento por provider. No todos los
 // proveedores exponen el mismo control: OpenAI usa reasoning_effort
 // (low/medium/high), MiniMax usa thinking.type (on/off), OpenRouter lo

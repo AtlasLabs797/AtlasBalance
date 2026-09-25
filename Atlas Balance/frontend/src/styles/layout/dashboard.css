@@ -243,17 +243,6 @@
   font-weight: var(--font-weight-medium) !important;
 }
 
-.dashboard-secondary-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 2fr;
-  gap: var(--space-3);
-  align-items: stretch;
-}
-
-.dashboard-secondary-row .dashboard-kpi {
-  padding: var(--pad-card);
-}
-
 .dashboard-select-control {
   display: grid;
   gap: var(--space-1);
@@ -362,73 +351,6 @@
 
 .dashboard-bancos-card {
   container-type: inline-size;
-}
-
-.dashboard-banco-list {
-  display: grid;
-  gap: var(--space-3);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.dashboard-banco-item {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  gap: var(--space-1) var(--space-3);
-  align-items: center;
-}
-
-.dashboard-banco-info {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.dashboard-banco-info span {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard-banco-info strong {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
-
-.dashboard-banco-bar-wrap {
-  grid-column: 1;
-  height: 0.45rem;
-  border-radius: var(--radius-pill);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-soft);
-  overflow: hidden;
-}
-
-.dashboard-banco-bar {
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--accent-primary);
-  min-width: 2px;
-  transition: width var(--transition-normal);
-}
-
-.dashboard-banco-pct {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
-  text-align: right;
-  align-self: center;
 }
 
 /* ── Concentración donut charts ── */
@@ -665,12 +587,6 @@
   min-width: 0;
 }
 
-.dashboard-evolution-card {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  padding: var(--space-5) var(--space-6) var(--space-6);
-}
-
 .dashboard-card-header {
   display: flex;
   align-items: flex-start;
@@ -715,10 +631,6 @@
 
 .dashboard-plazo-card {
   padding: 1.35rem;
-}
-
-.dashboard-secondary-row .dashboard-plazo-card {
-  align-self: stretch;
 }
 
 .dashboard-plazo-metrics {
@@ -1489,14 +1401,6 @@
       "chart";
   }
 
-  .dashboard-secondary-row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .dashboard-secondary-row .dashboard-plazo-card {
-    grid-column: 1 / -1;
-  }
-
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -1541,14 +1445,6 @@
     padding: 0;
   }
 
-  .dashboard-secondary-row {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-secondary-row .dashboard-plazo-card {
-    grid-column: 1;
-  }
-
   .dashboard-plazo-metrics {
     grid-template-columns: 1fr;
   }
@@ -1578,10 +1474,6 @@
   .account-identity-strip > div,
   .account-identity-strip .account-identity-iban {
     flex-basis: 100%;
-  }
-
-  .dashboard-evolution-card {
-    padding: var(--space-4);
   }
 
   .dashboard-card-header--chart {

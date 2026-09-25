@@ -4,7 +4,6 @@ export type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO';
 export type TipoTitular = 'EMPRESA' | 'AUTONOMO' | 'PARTICULAR';
 export type TipoCuenta = 'NORMAL' | 'EFECTIVO' | 'PLAZO_FIJO';
 export type EstadoPlazoFijo = 'ACTIVO' | 'PROXIMO_VENCER' | 'VENCIDO' | 'RENOVADO' | 'CANCELADO';
-export type EstadoToken = 'activo' | 'revocado';
 export type FuenteTipoCambio = 'API' | 'MANUAL';
 export type EstadoBackup = 'PENDING' | 'SUCCESS' | 'FAILED';
 export type TipoBackup = 'AUTO' | 'MANUAL';
@@ -165,15 +164,6 @@ export interface AuditCellEntry {
   usuario_id: string | null;
 }
 
-export interface FormatoImportacion {
-  id: string;
-  nombre: string;
-  banco_nombre: string | null;
-  divisa: string | null;
-  mapeo_json: MapeoColumnas;
-  activo: boolean;
-}
-
 export type TipoMontoImportacion = 'una_columna' | 'dos_columnas' | 'tres_columnas';
 
 export interface MapeoColumnas {
@@ -205,18 +195,6 @@ export interface PermisoUsuario {
   puede_cerrar_conciliacion: boolean;
   columnas_visibles: string[] | null;
   columnas_editables: string[] | null;
-}
-
-export interface AlertaSaldo {
-  id: string;
-  cuenta_id: string | null;
-  tipo_titular: TipoTitular | null;
-  alcance: 'GLOBAL' | 'TIPO_TITULAR' | 'CUENTA';
-  saldo_minimo: number;
-  activa: boolean;
-  fecha_creacion: string;
-  fecha_ultima_alerta: string | null;
-  destinatarios?: AlertaDestinatario[];
 }
 
 export interface AlertaDestinatario {
@@ -377,62 +355,6 @@ export interface ConfiguracionSistema {
     requests_mes_usuario: number;
     tokens_entrada_mes_usuario: number;
     tokens_salida_mes_usuario: number;
-    porcentaje_aviso_presupuesto: number;
-    input_cost_per_million_tokens_eur: number;
-    output_cost_per_million_tokens_eur: number;
-    max_input_tokens: number;
-    max_output_tokens: number;
-    max_context_rows: number;
-  };
-}
-
-export interface SaveConfiguracionSistemaRequest {
-  smtp: {
-    host: string;
-    port: number;
-    user: string;
-    password: string;
-    from: string;
-  };
-  general: {
-    app_base_url: string;
-    app_update_check_url: string;
-    app_update_auto_enabled: boolean;
-    app_update_auto_hour_utc: number;
-    mfa_remember_device_enabled: boolean;
-    require_mfa_for_non_admin_users: boolean;
-    backup_path: string;
-    export_path: string;
-  };
-  exchange: {
-    api_key: string;
-  };
-  dashboard: {
-    color_ingresos: string;
-    color_egresos: string;
-    color_saldo: string;
-  };
-  revision: {
-    comisiones_importe_minimo: number;
-    saldo_bajo_cooldown_horas: number;
-  };
-  ia: {
-    provider: string;
-    openrouter_api_key: string;
-    openai_api_key: string;
-    minimax_api_key: string;
-    model: string;
-    habilitada: boolean;
-    // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
-    // OpenRouter, que no garantizan retencion cero de datos financieros.
-    permite_retencion_datos: boolean;
-    requests_por_minuto: number;
-    requests_por_hora: number;
-    requests_por_dia: number;
-    requests_globales_por_dia: number;
-    presupuesto_mensual_eur: number;
-    presupuesto_mensual_usuario_eur: number;
-    presupuesto_total_eur: number;
     porcentaje_aviso_presupuesto: number;
     input_cost_per_million_tokens_eur: number;
     output_cost_per_million_tokens_eur: number;
@@ -666,10 +588,6 @@ export interface WatchdogState {
   updated_at: string | null;
 }
 
-export interface VersionActualResponse {
-  version_actual: string;
-}
-
 export interface VersionDisponibleResponse {
   version_actual: string;
   version_disponible: string | null;
@@ -733,8 +651,6 @@ export interface CreateIntegrationTokenRequest {
   }>;
 }
 
-export type SaveIntegrationTokenRequest = CreateIntegrationTokenRequest;
-
 export interface CreateIntegrationTokenResponse {
   token: IntegrationTokenDetail;
   token_plano: string;
@@ -766,10 +682,6 @@ export interface PaginatedResponse<T> {
   page_size: number;
   total_pages: number;
   columnas_disponibles?: string[] | null;
-}
-
-export interface ApiResponse<T> {
-  data: T;
 }
 
 export interface LoginResponse {
@@ -995,14 +907,6 @@ export interface ImportacionLote {
   divisa_mismatch: boolean;
   divisa_cuenta: string;
   divisa_esperada: string | null;
-}
-
-export interface ImportacionLoteFila extends ImportRowResult {
-  id: string;
-  lote_id: string;
-  seleccionada_default: boolean;
-  estado: string;
-  fingerprint: string | null;
 }
 
 export interface ImportacionLoteDetalle {

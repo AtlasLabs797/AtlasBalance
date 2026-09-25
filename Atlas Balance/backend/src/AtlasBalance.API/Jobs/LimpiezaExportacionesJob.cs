@@ -36,6 +36,8 @@ public sealed class LimpiezaExportacionesJob
 
     public async Task ExecuteAsync()
     {
+        // V-03.01 (#4): trabajo de servidor sin HttpContext (worker de Hangfire).
+        using var _rlsScope = AtlasBalance.API.Data.RlsDbCommandInterceptor.SystemContextScope.Enter();
         var now = _clock.UtcNow;
 
         await PurgeExportacionesAsync(now, CancellationToken.None);

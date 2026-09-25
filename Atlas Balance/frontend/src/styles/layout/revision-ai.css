@@ -355,74 +355,6 @@ button.revision-status:active:not(:disabled) {
   animation: ai-face-pulse 1.2s var(--ease-premium) infinite;
 }
 
-.ai-face-svg {
-  overflow: visible;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.ai-face-svg--idle {
-  animation: ai-face-idle 4.8s var(--ease-premium) infinite;
-}
-
-.ai-face-svg--listening {
-  animation: ai-face-listening 1.8s var(--ease-premium) infinite;
-}
-
-.ai-face-svg--thinking {
-  animation: ai-face-thinking 1.15s var(--ease-premium) infinite;
-}
-
-.ai-face-svg--idle .ai-face-eyes {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: ai-face-blink 4.8s var(--ease-premium) infinite;
-}
-
-@keyframes ai-face-idle {
-  0%,
-  100% {
-    transform: rotate(-7deg) translateY(0);
-  }
-  42% {
-    transform: rotate(-7deg) translateY(-0.15rem);
-  }
-  58% {
-    transform: rotate(-3deg) translateY(0);
-  }
-}
-
-@keyframes ai-face-listening {
-  0%,
-  100% {
-    transform: rotate(0deg) scale(1);
-  }
-  50% {
-    transform: rotate(3deg) scale(1.04);
-  }
-}
-
-@keyframes ai-face-thinking {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(-0.1rem) scale(1.05);
-  }
-}
-
-@keyframes ai-face-blink {
-  0%,
-  44%,
-  48%,
-  100% {
-    transform: scaleY(1);
-  }
-  46% {
-    transform: scaleY(0.2);
-  }
-}
 
 @keyframes ai-face-halo {
   0%,
@@ -1018,11 +950,6 @@ button.revision-status:active:not(:disabled) {
   .ai-chat-loading-dots span,
   .ai-chat-face::after,
   .ai-chat-face--thinking svg {
-    animation: none !important;
-  }
-
-  .ai-face-svg,
-  .ai-face-svg--idle .ai-face-eyes {
     animation: none !important;
   }
 

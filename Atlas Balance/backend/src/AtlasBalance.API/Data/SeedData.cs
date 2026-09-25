@@ -47,7 +47,7 @@ public static class SeedData
 
         var adminId = Guid.NewGuid();
         var adminEmail = ResolveSeedAdminEmail(configuration);
-        var adminPassword = ResolveSeedAdminPassword(configuration, isDevelopment);
+        var adminPassword = ResolveSeedAdminPassword(configuration, isDevelopment, adminEmail, "Administrador");
 
         context.Usuarios.Add(new Usuario
         {
@@ -244,7 +244,7 @@ public static class SeedData
             : configuredEmail;
     }
 
-    private static string ResolveSeedAdminPassword(IConfiguration? configuration, bool isDevelopment)
+    private static string ResolveSeedAdminPassword(IConfiguration? configuration, bool isDevelopment, string adminEmail, string adminFullName)
     {
         var configuredPassword = configuration?["SeedAdmin:Password"]?.Trim();
         if (string.IsNullOrWhiteSpace(configuredPassword))
@@ -252,7 +252,7 @@ public static class SeedData
             throw new InvalidOperationException("SeedAdmin:Password must be configured before first startup.");
         }
 
-        if (!SecurityPolicy.TryValidatePassword(configuredPassword, out var passwordError))
+        if (!SecurityPolicy.TryValidatePassword(configuredPassword, out var passwordError, adminEmail, adminFullName))
         {
             throw new InvalidOperationException($"SeedAdmin:Password is not valid: {passwordError}.");
         }

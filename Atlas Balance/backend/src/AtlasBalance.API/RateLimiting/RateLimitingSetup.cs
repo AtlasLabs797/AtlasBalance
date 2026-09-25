@@ -24,6 +24,17 @@ internal static class RateLimitingSetup
     internal static class PolicyNames
     {
         public const string Expensive = "atlas-expensive";
+
+        /// <summary>
+        /// V-03.01 (hallazgo #2): cierra la carrera de <c>AtlasAiService.EnsureRequestLimitsAsync</c>,
+        /// que cuenta usos ya registrados en BD pero registra el uso DESPUES de que el proveedor
+        /// responde. N peticiones concurrentes del mismo usuario pasaban todas el chequeo de
+        /// minuto/hora/dia porque ninguna habia registrado uso todavia cuando las demas comprobaban.
+        /// Un limitador de concurrencia (1 peticion simultanea por usuario, sin cola) no depende de
+        /// contadores en BD: la segunda peticion del mismo usuario se rechaza en el momento, antes
+        /// de tocar el proveedor.
+        /// </summary>
+        public const string IaChat = "atlas-ia-chat";
     }
 
     private const string IntegrationPathPrefix = "/api/integration/openclaw";
@@ -80,10 +91,43 @@ internal static class RateLimitingSetup
                     options.Window);
             });
 
+            limiter.AddPolicy(PolicyNames.IaChat, context =>
+            {
+                var options = context.RequestServices
+                    .GetRequiredService<IOptions<RateLimitingOptions>>().Value;
+
+                if (!options.Enabled)
+                {
+                    return RateLimitPartition.GetNoLimiter("disabled");
+                }
+
+                return ResolveIaChatPartition(context);
+            });
+
             limiter.OnRejected = OnRejectedAsync;
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Particion de concurrencia para <see cref="PolicyNames.IaChat"/>: 1 peticion simultanea
+    /// por usuario, sin cola (<c>QueueLimit = 0</c>), asi que una segunda peticion concurrente
+    /// del mismo usuario se rechaza al instante en vez de esperar a que la primera termine.
+    /// Es <c>internal</c> (no <c>private</c>) para que los tests puedan montar un
+    /// <see cref="PartitionedRateLimiter{HttpContext}"/> identico al que registra
+    /// <c>AddPolicy</c> sin tener que resolver politicas nombradas desde el pipeline HTTP real.
+    /// </summary>
+    internal static RateLimitPartition<string> ResolveIaChatPartition(HttpContext context)
+    {
+        var key = $"ia-chat:{ResolveIdentityKey(context)}";
+
+        return RateLimitPartition.GetConcurrencyLimiter(key, _ => new ConcurrencyLimiterOptions
+        {
+            PermitLimit = 1,
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        });
     }
 
     private static RateLimitPartition<string> ResolvePartition(HttpContext context, RateLimitingOptions options)
