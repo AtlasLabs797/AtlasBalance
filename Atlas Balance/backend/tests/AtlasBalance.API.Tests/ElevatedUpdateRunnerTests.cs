@@ -128,6 +128,9 @@ public sealed class ElevatedUpdateRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_Should_Execute_The_Script_From_The_Verified_Zip_Copy_Not_PackageRoot()
     {
+        // Ejecuta un script real con Windows PowerShell; sin powershell.exe el runner devuelve 6.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Requiere Windows PowerShell (powershell.exe).");
+
         // El ZIP firmado SI trae un script propio, que deja su propio centinela al ejecutarse.
         var verifiedSentinelPath = Path.Combine(_installPath, "sentinel-verified-copy-executed.txt");
         var (zipPath, packageRoot) = CreateUpdatesLayout(

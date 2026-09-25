@@ -10,9 +10,11 @@ public sealed class WatchdogLogConfigurationTests
     [Fact]
     public void DefaultLogDirectory_Should_Be_Absolute_And_Independent_Of_WorkingDirectory()
     {
-        var result = WatchdogLogConfiguration.ResolveLogDirectory(null, @"C:\ProgramData");
+        // Raiz absoluta en cualquier SO: C:\ProgramData solo es absoluta en Windows.
+        var programData = Path.Combine(Path.GetTempPath(), "ProgramData");
+        var result = WatchdogLogConfiguration.ResolveLogDirectory(null, programData);
 
-        result.Should().Be(Path.GetFullPath(@"C:\ProgramData\AtlasBalance\logs"));
+        result.Should().Be(Path.GetFullPath(Path.Combine(programData, "AtlasBalance", "logs")));
         Path.IsPathRooted(result).Should().BeTrue();
     }
 
@@ -28,9 +30,10 @@ public sealed class WatchdogLogConfigurationTests
     [Fact]
     public void AbsoluteConfiguredLogDirectory_Should_Be_Used()
     {
-        var result = WatchdogLogConfiguration.ResolveLogDirectory(@"D:\AtlasBalance\logs");
+        var configured = Path.Combine(Path.GetTempPath(), "AtlasBalance", "logs");
+        var result = WatchdogLogConfiguration.ResolveLogDirectory(configured);
 
-        result.Should().Be(Path.GetFullPath(@"D:\AtlasBalance\logs"));
+        result.Should().Be(Path.GetFullPath(configured));
     }
 
     [Fact]

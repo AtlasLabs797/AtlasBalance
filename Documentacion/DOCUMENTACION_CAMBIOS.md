@@ -2,6 +2,42 @@
 
 ## Objetivo
 
+## 2026-09-25 - V-03.01 - CI en rojo en el PR 36: tests dependientes de Windows
+
+### Trabajo realizado
+
+- Diagnostico del job `Build, test, and audit` (Ubuntu) del PR 36: 2 tests
+  fallaban en `b287d20` y 3 en HEAD. Todos dependian de Windows (rutas `C:\`
+  y `D:\`, y `powershell.exe`). Detalle en `LOG_ERRORES_INCIDENCIAS.md`.
+- Tests del Watchdog con rutas absolutas portables; test de ejecucion real del
+  runner elevado omitido fuera de Windows.
+- CI: el extractor de nombres de tests fallidos no imprimia nada porque en
+  GitHub el log de xUnit lleva colores ANSI y BOM. `read_test_log` los elimina.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/WatchdogLogConfigurationTests.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ElevatedUpdateRunnerTests.cs`
+- `.github/workflows/ci.yml`
+- `Documentacion/{LOG_ERRORES_INCIDENCIAS,DOCUMENTACION_CAMBIOS}.md`,
+  `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `gh pr checks`, `gh run view --log-failed`.
+- `dotnet test ... -- --filter-not-trait "Category=Postgres"` en worktree
+  limpio (Windows) y en `mcr.microsoft.com/dotnet/sdk:8.0` (Linux).
+
+### Verificacion
+
+- Verificado Linux (Docker, con `CI=true` y `GITHUB_ACTIONS=true`, script
+  exacto del paso del workflow): 940 correctos, 1 omitido, 0 fallos; sobre el
+  estado anterior el extractor lista los 3 tests fallidos.
+- Verificado Windows (worktree limpio): 941/941.
+- Bloqueado: `dotnet test` en el checkout principal (`Access denied` en
+  `obj\Release`, bloqueo conocido); se uso un worktree limpio.
+- Pendiente: confirmar en el CI real tras el push.
+
 ## 2026-09-25 - V-03.01 - Auditoria de seguridad, fluidez y codigo muerto (checklist pre-publicacion)
 
 ### Trabajo realizado

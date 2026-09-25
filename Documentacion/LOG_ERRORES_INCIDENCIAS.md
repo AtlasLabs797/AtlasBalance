@@ -1,5 +1,30 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-25 - V-03.01 - CI `Build, test, and audit` en rojo por tests dependientes de Windows (CERRADO)
+
+- **Run:** `36091657440` (PR 36, commit `b287d20`), paso `Test backend`:
+  `Failed: 2, Passed: 903`. En local (Windows) la suite pasaba entera.
+- **Reproduccion:** `mcr.microsoft.com/dotnet/sdk:8.0` en Docker sobre
+  `git archive`. En HEAD (`fe7e51c`) fallaban 3:
+  - `WatchdogLogConfigurationTests.DefaultLogDirectory_Should_Be_Absolute_And_Independent_Of_WorkingDirectory`
+    y `AbsoluteConfiguredLogDirectory_Should_Be_Used`: usaban `C:\ProgramData`
+    y `D:\AtlasBalance\logs`, que en Linux no son rutas absolutas y el codigo
+    los rechaza con razon. Mismo patron que el incidente del 2026-08-04.
+  - `ElevatedUpdateRunnerTests.RunAsync_Should_Execute_The_Script_From_The_Verified_Zip_Copy_Not_PackageRoot`
+    (nuevo en `94c2718`): ejecuta un script real con `powershell.exe`; sin el
+    binario el runner devuelve 6.
+- **Solucion:** los tests del Watchdog construyen rutas absolutas con
+  `Path.GetTempPath()`; el test del runner se marca
+  `Assert.SkipUnless(OperatingSystem.IsWindows(), ...)` para que en Linux
+  conste como omitido y no como verde falso. No se toca codigo de produccion.
+- **Extractor de nombres mudo en CI:** el paso imprimia solo el aviso final.
+  Causa: con `CI=true`/`GITHUB_ACTIONS=true` xUnit/MTP colorea tambien el log
+  de resultados (`ESC[31mfailed ESC[m AtlasBalance...`) y la primera linea
+  arrastra el BOM tras `iconv`; el grep anclado a inicio de linea no casaba.
+  Reproducido en Docker con esas variables. Solucion: `read_test_log` en
+  `.github/workflows/ci.yml` quita BOM y secuencias ANSI antes del grep.
+  Verificado: con las variables de CI lista los 3 identificadores.
+
 ## 2026-09-25 - V-03.01 - Auditoria de seguridad, fluidez y codigo muerto (CORREGIDO)
 
 - **Limite IA saltable por concurrencia.** Causa: los contadores leen usos ya

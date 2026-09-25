@@ -61,12 +61,14 @@ jobs:
           dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release --no-restore -- --filter-not-trait "Category=Postgres"
           test_exit=$?
           if (( test_exit != 0 )); then
+            # En CI xUnit/MTP colorea el log (ESC[31mfailed ESC[m ...): se quitan
+            # BOM y secuencias ANSI para que el grep anclado a inicio de linea case.
             read_test_log() {
               if [[ "$(od -An -t x1 -N2 "$1" | tr -d '[:space:]')" == "fffe" ]]; then
                 iconv -f UTF-16LE -t UTF-8 "$1"
               else
                 cat "$1"
-              fi
+              fi | sed -E $'s/^\xEF\xBB\xBF//; s/\x1B\\[[0-9;]*[A-Za-z]//g'
             }
             found_log=0
             while IFS= read -r test_log; do
