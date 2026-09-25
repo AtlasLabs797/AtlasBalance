@@ -1,5 +1,31 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-25 - V-03.01 - Review de Codex en el PR 36 (CORREGIDO)
+
+- **CSRF viejo en pestañas inactivas.** Causa: el coordinador de refresh solo
+  entregaba el payload a pestañas que esperaban `refresh()`; el refresh rota
+  la cookie CSRF compartida y las demas mandaban el token viejo (403).
+  Solucion: `subscribeToPeerSuccess` en `sessionRefreshCoordinator.ts` y
+  sincronizacion en `api.ts` si el usuario coincide.
+- **Actualizacion que no llegaba a aplicarse.** Causa: la API borra ZIP y
+  firma al responder el Watchdog, y el runner elevado arranca despues.
+  Solucion: el Watchdog copia ZIP+firma a `updates\requests` antes de
+  responder; el runner borra esa copia al terminar.
+- **Estado en RUNNING para siempre.** Causa: nadie escribia el resultado del
+  runner elevado. Solucion: `ElevatedUpdateRunner` escribe `SUCCESS`/`FAILED`
+  con DACL protegida copiada del directorio de estado.
+- **Watchdog sin arrancar en instalacion limpia.** Causa: logs en
+  `%ProgramData%\AtlasBalance\logs` y estado en la raiz de instalacion, ambos
+  sin escritura (ni DACL propia) para la cuenta dedicada. Solucion:
+  `watchdog\logs` y `state\` con DACL protegida y la cuenta como propietaria;
+  `LogDirectory`/`StateFilePath` apuntan ahi (instalador, plantilla y
+  migracion al actualizar).
+- **Error de fechas pegado en Extractos.** Causa: una carga correcta no
+  limpiaba `error`. Solucion: se limpia solo si el mensaje lo puso la carga de
+  filas.
+- **Actualizador interno imposible con ACL de solo lectura.** Solucion: se
+  rechaza `UseExternalPackageUpdater=false` en una instalacion real de Windows.
+
 ## 2026-09-25 - V-03.01 - CI `Build, test, and audit` en rojo por tests dependientes de Windows (CERRADO)
 
 - **Run:** `36091657440` (PR 36, commit `b287d20`), paso `Test backend`:

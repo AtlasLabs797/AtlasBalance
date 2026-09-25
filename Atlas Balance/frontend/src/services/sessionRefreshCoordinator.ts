@@ -169,10 +169,13 @@ export const createRefreshCoordinator = (options: RefreshCoordinatorOptions = {}
   let activeRefresh: Promise<RefreshSessionPayload> | null = null;
   let activeSessionKey: string | null = null;
   const failureListeners = new Set<() => void>();
+  const peerSuccessListeners = new Set<(payload: RefreshSessionPayload, sessionKey: string) => void>();
+  let lastPublishedOutcomeId: string | null = null;
   const pendingRequests = new Map<string, RefreshRequest[]>();
 
   const publishOutcome = (outcome: RefreshOutcome): void => {
     latestOutcome = outcome;
+    lastPublishedOutcomeId = outcome.id;
     try {
       channel?.postMessage(outcome);
     } catch {
@@ -230,6 +233,17 @@ export const createRefreshCoordinator = (options: RefreshCoordinatorOptions = {}
     }
   };
 
+  // El refresh rota la cookie CSRF compartida. Una pestaña inactiva que no
+  // estaba esperando refresh() también debe recibir el token nuevo; si no, su
+  // siguiente mutación enviaría el CSRF viejo y acabaría en 403.
+  const notifyPeerSuccess = (candidate: unknown): void => {
+    if (!isRefreshOutcome(candidate) || candidate.type !== 'completed' || candidate.id === lastPublishedOutcomeId) {
+      return;
+    }
+
+    peerSuccessListeners.forEach((listener) => listener(candidate.payload, candidate.sessionKey));
+  };
+
   const onChannelMessage = (event: { data: unknown }): void => {
     if (isRefreshRequest(event.data)) {
       registerRequest(event.data);
@@ -237,9 +251,30 @@ export const createRefreshCoordinator = (options: RefreshCoordinatorOptions = {}
     }
 
     acceptOutcome(event.data);
+    notifyPeerSuccess(event.data);
   };
 
   channel?.addEventListener('message', onChannelMessage);
+
+  // Sin BroadcastChannel, el único aviso entre pestañas es el evento storage.
+  const onStorageEvent = (event: StorageEvent): void => {
+    if (event.key !== REFRESH_OUTCOME_STORAGE_KEY || !event.newValue) {
+      return;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(event.newValue);
+      acceptOutcome(parsed);
+      notifyPeerSuccess(parsed);
+    } catch {
+      // Entrada corrupta o ajena: se ignora.
+    }
+  };
+
+  const listensStorageEvents = !channel && !!storage && typeof window !== 'undefined';
+  if (listensStorageEvents) {
+    window.addEventListener('storage', onStorageEvent);
+  }
 
   const readStoredOutcome = (): RefreshOutcome | null => {
     if (!storage) {
@@ -519,12 +554,20 @@ export const createRefreshCoordinator = (options: RefreshCoordinatorOptions = {}
     return () => failureListeners.delete(listener);
   };
 
+  const subscribeToPeerSuccess = (listener: (payload: RefreshSessionPayload, sessionKey: string) => void): (() => void) => {
+    peerSuccessListeners.add(listener);
+    return () => peerSuccessListeners.delete(listener);
+  };
+
   const close = (): void => {
     channel?.removeEventListener('message', onChannelMessage);
+    if (listensStorageEvents) {
+      window.removeEventListener('storage', onStorageEvent);
+    }
     channel?.close();
   };
 
-  return { refresh, subscribeToFailure, close };
+  return { refresh, subscribeToFailure, subscribeToPeerSuccess, close };
 };
 
 export const sessionRefreshCoordinator = createRefreshCoordinator();

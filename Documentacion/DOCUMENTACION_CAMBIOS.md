@@ -2,6 +2,64 @@
 
 ## Objetivo
 
+## 2026-09-25 - V-03.01 - Hallazgos de la review de Codex en el PR 36
+
+### Trabajo realizado
+
+- CI: los checks rojos eran de `b287d20` y `fe7e51c` (2 tests backend no
+  portables a Linux), ya corregidos en `a949b08`. HEAD en verde; nada que
+  tocar en CI.
+- 7 comentarios de la review automatica de Codex, todos corregidos:
+  1. Refresh entre pestañas: una pestaña inactiva ahora adopta el CSRF nuevo
+     cuando otra renueva la sesion (`subscribeToPeerSuccess`), solo si el
+     resultado es del mismo usuario.
+  2. Actualizador protegido: el Watchdog copia ZIP+firma a
+     `updates\requests\pending-update.zip` y escribe la solicitud ANTES de
+     responder a la API, que borra el ZIP original al recibir la respuesta.
+  3. El runner elevado escribe `SUCCESS`/`FAILED` en el estado del Watchdog
+     al terminar (ruta leida de la config protegida, no de la solicitud).
+  4. y 5. Logs y estado del Watchdog en directorios propios
+     (`watchdog\logs`, `state\`) con DACL protegida y la cuenta del Watchdog
+     como propietaria. Configurado en instalador, plantilla y migracion de
+     `Actualizar-AtlasBalance.ps1`.
+  6. Extractos: el error de rango de fechas o de carga se limpia al volver a
+     cargar bien, sin borrar errores de otras acciones.
+  7. El actualizador interno se rechaza en una instalacion real de Windows
+     (Watchdog solo tiene RX sobre `api\`/`watchdog\`).
+
+### Archivos tocados
+
+- `Atlas Balance/frontend/src/services/{sessionRefreshCoordinator,api}.ts`,
+  `Atlas Balance/frontend/src/pages/ExtractosPage.tsx`,
+  `Atlas Balance/frontend/tests/sessionRefreshCoordinator.test.ts`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/Services/{WatchdogOperationsService,ElevatedUpdateRunner}.cs`,
+  `Atlas Balance/backend/src/AtlasBalance.Watchdog/appsettings.Production.json.template`,
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/ElevatedUpdateRunnerTests.cs`
+- `Atlas Balance/scripts/{ServiceSecurity,Instalar-AtlasBalance,Actualizar-AtlasBalance}.ps1`
+- `Documentacion/{DOCUMENTACION_CAMBIOS,DOCUMENTACION_TECNICA,LOG_ERRORES_INCIDENCIAS}.md`,
+  `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `gh pr checks 36`, `gh run view --log-failed`, `gh api .../pulls/36/comments`.
+- `npm run test:unit`, `npm run lint`, `tsc -p tsconfig.json --noEmit`.
+- `dotnet test tests/AtlasBalance.API.Tests`.
+- Parser de PowerShell sobre los tres scripts tocados.
+
+### Verificacion
+
+- Verificado: frontend 76/76 tests, lint y typecheck OK; backend 967/967
+  (Windows, suite completa); scripts sin errores de sintaxis.
+- No verificado: instalacion/actualizacion real en Windows Server con cuentas
+  dedicadas (ACL, `icacls /setowner`, tarea programada). Hay que probarlo en
+  una VM antes de publicar.
+- `Test-AtlasSecrets.ps1` en local marca `appsettings.Development.json`, que
+  esta fuera de Git; ya pasaba antes de estos cambios y en CI no aplica.
+
+### Pendientes
+
+- Prueba de instalacion limpia y de actualizacion desde V-02.09 en VM.
+
 ## 2026-09-25 - V-03.01 - CI en rojo en el PR 36: tests dependientes de Windows
 
 ### Trabajo realizado

@@ -2,6 +2,43 @@
 
 ## Vigencia documental: V-03.01
 
+### 2026-09-25 - Correcciones de la review de Codex (PR 36)
+
+**Refresh entre pestañas.** `createRefreshCoordinator` expone
+`subscribeToPeerSuccess(listener)`. Se dispara con los resultados `completed`
+que llegan por `BroadcastChannel` (o por el evento `storage` si no hay canal)
+y que no publico esta pestaña. `api.ts` aplica `syncSessionState` solo si
+`sessionKey` coincide con el usuario cargado.
+
+**Actualizacion protegida.** `StartUpdateAsync` decide el modo antes de tomar
+el lock. En modo externo, `StageElevatedUpdateRequestAsync` copia ZIP y `.sig`
+a `updates\requests\pending-update.zip` y escribe `pending-update.json` antes
+de responder; la tarea en segundo plano solo lanza `schtasks /Run` y, si
+arranca, no vuelve a escribir estado (evita pisar un `FAILED` rapido del
+runner). La
+solicitud ya no lleva `StateFilePath`. `ElevatedUpdateRunner.RunAsync`
+envuelve la ejecucion y, al terminar, escribe `SUCCESS`/`FAILED` en el
+`WatchdogSettings:StateFilePath` de `watchdog\appsettings.Production.json`
+(si no esta configurado, no escribe). El fichero se crea con DACL protegida:
+SYSTEM, Administrators y las reglas Allow del directorio de estado, para que
+`WatchdogLogConfiguration.EnsureStatePath` lo acepte. Con
+`UseExternalPackageUpdater=false` en una instalacion real de Windows la
+actualizacion se rechaza.
+
+**Directorios del Watchdog.** `Protect-AtlasInstallTree` (en
+`ServiceSecurity.ps1` y en `Instalar-AtlasBalance.ps1`) crea `watchdog\logs` y
+`state\` sin herencia, con Administrators/SYSTEM F y la cuenta del Watchdog M,
+y la cuenta como propietaria (`icacls /setowner /T`), para que el servicio
+pueda fijar su propia DACL al arrancar. El instalador escribe
+`WatchdogSettings:LogDirectory = <InstallPath>\watchdog\logs` y
+`StateFilePath = <InstallPath>\state\watchdog-state.json`;
+`Actualizar-AtlasBalance.ps1` migra el `StateFilePath` antiguo de la raiz y
+anade `LogDirectory` si falta. La API sigue leyendo el estado por
+`/watchdog/estado` si no puede abrir el fichero.
+
+**Extractos.** `rowsErrorRef` guarda el ultimo mensaje puesto por la carga de
+filas; una carga correcta lo borra solo si sigue siendo el error visible.
+
 ### 2026-09-25 - Auditoria de seguridad, fluidez y codigo muerto
 
 **Chat IA (#2).** `AtlasAiService.EnsureRequestLimitsAsync` cuenta usos ya

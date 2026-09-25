@@ -1097,6 +1097,17 @@ function Protect-AtlasInstallTree {
     New-Item -ItemType Directory -Path $requestPath -Force | Out-Null
     Invoke-Icacls -Arguments @($requestPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
 
+    # Logs y estado del Watchdog: igual que ServiceSecurity.ps1
+    # Protect-AtlasInstallTree. DACL protegida (SYSTEM, Administrators y la
+    # cuenta del Watchdog) y la cuenta como propietaria, para que
+    # WatchdogLogConfiguration pueda fijarla al arrancar.
+    foreach ($relative in @("watchdog\logs", "state")) {
+        $path = Join-Path $InstallPath $relative
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        Invoke-Icacls -Arguments @($path, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+        Invoke-Icacls -Arguments @($path, "/setowner", $WatchdogAccount.ComputerPrincipal, "/T", "/C")
+    }
+
     $configPath = Join-Path $InstallPath "config"
     if (Test-Path -LiteralPath $configPath) {
         Invoke-Icacls -Arguments @($configPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")
@@ -1316,7 +1327,11 @@ function Write-AppSettings {
         [string]$AuditSigningKey
     )
 
-    $stateFile = Join-Path $InstallPath "watchdog-state.json"
+    # El estado vive en un directorio propio del Watchdog (ver
+    # Protect-AtlasInstallTree): la raiz de instalacion es de solo lectura
+    # para su cuenta y WatchdogStateStore escribe un temporal junto al fichero.
+    $stateFile = Join-Path $InstallPath "state\watchdog-state.json"
+    $watchdogLogDirectory = Join-Path $InstallPath "watchdog\logs"
     $updateRoot = Join-Path $InstallPath "updates"
     $backupPath = Join-Path $InstallPath "backups"
     $exportPath = Join-Path $InstallPath "exports"
@@ -1461,6 +1476,7 @@ function Write-AppSettings {
             PostgresBinPath = $PostgresBin
             BackupPath = $backupPath
             StateFilePath = $stateFile
+            LogDirectory = $watchdogLogDirectory
             DbHost = $DbHost
             DbPort = [string]$DbPort
             DbName = $DbName

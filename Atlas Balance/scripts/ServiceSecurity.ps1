@@ -242,6 +242,17 @@ function Protect-AtlasInstallTree {
     New-Item -ItemType Directory -Path $requestPath -Force | Out-Null
     Invoke-AtlasIcacls -Arguments @($requestPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
 
+    # Logs y estado del Watchdog: WatchdogLogConfiguration exige una DACL
+    # protegida con solo SYSTEM, Administrators y la propia cuenta, y la
+    # reescribe al arrancar. Sin herencia y con la cuenta como propietaria,
+    # el servicio puede fijarla sin tocar la raiz compartida de instalacion.
+    foreach ($relative in @("watchdog\logs", "state")) {
+        $path = Join-Path $InstallPath $relative
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        Invoke-AtlasIcacls -Arguments @($path, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "${WatchdogAccount.ComputerPrincipal}:(OI)(CI)M")
+        Invoke-AtlasIcacls -Arguments @($path, "/setowner", $WatchdogAccount.ComputerPrincipal, "/T", "/C")
+    }
+
     $configPath = Join-Path $InstallPath "config"
     if (Test-Path -LiteralPath $configPath) {
         Invoke-AtlasIcacls -Arguments @($configPath, "/inheritance:r", "/grant:r", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F")

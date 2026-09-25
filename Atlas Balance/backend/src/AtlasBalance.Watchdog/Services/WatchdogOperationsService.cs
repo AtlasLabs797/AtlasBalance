@@ -188,6 +188,18 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
+        var externalUpdater = ShouldUseExternalPackageUpdater(fullTargetPath);
+        if (!externalUpdater && IsInstalledWatchdogLayout(fullTargetPath))
+        {
+            // Con las cuentas de servicio dedicadas, Watchdog solo tiene RX
+            // sobre api\ y watchdog\ (ServiceSecurity.ps1). El actualizador
+            // interno copiaria binarios ahi y fallaria a medias tras parar la
+            // API, asi que en una instalacion real solo vale el runner elevado.
+            _logger.LogError(
+                "Update rechazado: WatchdogSettings:UseExternalPackageUpdater=false no es compatible con una instalacion con cuentas de servicio dedicadas.");
+            return false;
+        }
+
         if (!await _operationLock.WaitAsync(0, cancellationToken))
         {
             return false;
@@ -208,19 +220,49 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             throw;
         }
 
+        if (externalUpdater)
+        {
+            // La API borra el ZIP y su firma en cuanto este POST responde, y
+            // el runner elevado arranca despues de forma asincrona. La
+            // solicitud y su copia del paquete se preparan aqui, antes de
+            // responder, para que el runner no compita con esa limpieza.
+            try
+            {
+                await StageElevatedUpdateRequestAsync(fullSourcePath, packageZipPath, fullTargetPath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "No se pudo preparar la solicitud del actualizador protegido");
+                try
+                {
+                    await _stateStore.SetAsync(
+                        CreateState("FAILED", "UPDATE_APP", "No se pudo preparar la actualizacion. Revise los logs protegidos del servidor."),
+                        CancellationToken.None);
+                }
+                finally
+                {
+                    _operationLock.Release();
+                }
+
+                return false;
+            }
+        }
+
         _ = Task.Run(async () =>
         {
-            var finalState = CreateState("FAILED", "UPDATE_APP", "Operacion interrumpida");
+            WatchdogState? finalState = CreateState("FAILED", "UPDATE_APP", "Operacion interrumpida");
             string? rollbackPath = null;
             var apiStartedInOperation = false;
-            var externalUpdater = ShouldUseExternalPackageUpdater(fullTargetPath);
             try
             {
                 if (externalUpdater)
                 {
-                    var updateResult = await RunPackageUpdateViaHelperAsync(fullSourcePath, fullTargetPath, CancellationToken.None);
+                    var updateResult = await TriggerElevatedUpdateTaskAsync(CancellationToken.None);
+                    // Si la tarea arranco, el estado final lo escribe el
+                    // runner elevado. Escribir aqui otro RUNNING podria pisar
+                    // un FAILED rapido del runner y dejarlo colgado.
                     finalState = updateResult.Success
-                        ? CreateState("RUNNING", "UPDATE_APP", "Actualizacion delegada al actualizador protegido")
+                        ? null
                         : CreateState("FAILED", "UPDATE_APP", "Actualizacion externa fallo. Revise los logs protegidos del servidor.");
                     return;
                 }
@@ -268,7 +310,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                         await StartApiServiceSafeAsync(CancellationToken.None);
                     }
 
-                    await _stateStore.SetAsync(finalState, CancellationToken.None);
+                    if (finalState is not null)
+                    {
+                        await _stateStore.SetAsync(finalState, CancellationToken.None);
+                    }
                 }
                 finally
                 {
@@ -782,24 +827,35 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
             return false;
         }
 
-        var watchdogInstallPath = Path.Combine(installPath, "watchdog");
-        return IsPathWithinRoot(AppContext.BaseDirectory, watchdogInstallPath);
+        return IsInstalledWatchdogLayout(installPath);
     }
 
-    private async Task<(bool Success, string? Error)> RunPackageUpdateViaHelperAsync(
+    private static bool IsInstalledWatchdogLayout(string installPath) =>
+        OperatingSystem.IsWindows() &&
+        IsPathWithinRoot(AppContext.BaseDirectory, Path.Combine(installPath, "watchdog"));
+
+    private static async Task StageElevatedUpdateRequestAsync(
         string packageRoot,
+        string packageZipPath,
         string installPath,
         CancellationToken cancellationToken)
     {
         var requestDirectory = Path.Combine(installPath, "updates", "requests");
         var requestPath = Path.Combine(requestDirectory, "pending-update.json");
+        var stagedZipPath = Path.Combine(requestDirectory, "pending-update.zip");
         Directory.CreateDirectory(requestDirectory);
+
+        // Copia propia del ZIP y su firma: la API los borra al recibir la
+        // respuesta. El runner elevado vuelve a verificar la firma sobre su
+        // copia protegida, asi que esta copia no necesita ser de confianza.
+        File.Copy(Path.GetFullPath(packageZipPath), stagedZipPath, overwrite: true);
+        File.Copy(Path.GetFullPath(packageZipPath) + ".sig", stagedZipPath + ".sig", overwrite: true);
+
         var request = new
         {
             PackageRoot = packageRoot,
-            PackageZipPath = Path.Combine(Path.GetDirectoryName(packageRoot)!, Path.GetFileName(packageRoot) + ".zip"),
-            InstallPath = installPath,
-            StateFilePath = WatchdogLogConfiguration.ResolveStateFilePath(_configuration)
+            PackageZipPath = stagedZipPath,
+            InstallPath = installPath
         };
         var temporaryPath = requestPath + $".{Guid.NewGuid():N}.tmp";
         try
@@ -814,7 +870,10 @@ public sealed class WatchdogOperationsService : IWatchdogOperationsService
                 File.Delete(temporaryPath);
             }
         }
+    }
 
+    private async Task<(bool Success, string? Error)> TriggerElevatedUpdateTaskAsync(CancellationToken cancellationToken)
+    {
         var schtasks = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe");
         if (!File.Exists(schtasks))
         {

@@ -73,6 +73,10 @@ export default function ExtractosPage() {
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ultimo mensaje puesto por la carga de filas (rango de fechas o fallo de la
+  // consulta). Permite limpiarlo al volver a cargar bien sin borrar errores de
+  // otras acciones (guardar celda, columnas...).
+  const rowsErrorRef = useRef<string | null>(null);
   const [cuentaFiltro, setCuentaFiltro] = useState<string>(() => asUuidOrEmpty(searchParams.get('cuentaId')));
   const [titularFiltro, setTitularFiltro] = useState<string>(() => asUuidOrEmpty(searchParams.get('titularId')));
   const [fechaDesde, setFechaDesde] = useState<string>(() => searchParams.get('fechaDesde') ?? '');
@@ -239,11 +243,17 @@ export default function ExtractosPage() {
       setAvailableExtraColumns([]);
       setTotalPages(1);
       setTotalRows(0);
-      setError('La fecha desde no puede ser posterior a la fecha hasta.');
+      rowsErrorRef.current = 'La fecha desde no puede ser posterior a la fecha hasta.';
+      setError(rowsErrorRef.current);
       return;
     }
 
     const data = rowsQuery.data;
+    if (data && !rowsQuery.error) {
+      const staleRowsError = rowsErrorRef.current;
+      rowsErrorRef.current = null;
+      setError((current) => (current !== null && current === staleRowsError ? null : current));
+    }
     if (data) {
       setRows(data.data ?? []);
       setAvailableExtraColumns(data.columnas_disponibles ?? []);
@@ -259,7 +269,8 @@ export default function ExtractosPage() {
 
   useEffect(() => {
     if (rowsQuery.error && !fechaRangoInvalido) {
-      setError(extractErrorMessage(rowsQuery.error, 'No se pudieron cargar extractos'));
+      rowsErrorRef.current = extractErrorMessage(rowsQuery.error, 'No se pudieron cargar extractos');
+      setError(rowsErrorRef.current);
       setRows([]);
       setAvailableExtraColumns([]);
       setTotalPages(1);

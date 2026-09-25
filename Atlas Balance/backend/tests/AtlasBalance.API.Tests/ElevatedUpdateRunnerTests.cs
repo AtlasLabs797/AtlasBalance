@@ -164,6 +164,36 @@ public sealed class ElevatedUpdateRunnerTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task RunAsync_Should_Persist_Failed_State_In_Configured_State_File()
+    {
+        // Watchdog deja RUNNING al disparar la tarea; el runner debe cerrar
+        // el estado con el resultado real para que /estado no se quede colgado.
+        var stateDirectory = Directory.CreateDirectory(Path.Combine(_installPath, "state"));
+        var stateFilePath = Path.Combine(stateDirectory.FullName, "watchdog-state.json");
+        File.WriteAllText(stateFilePath, JsonSerializer.Serialize(new { Estado = "RUNNING", Operacion = "UPDATE_APP" }));
+        File.WriteAllText(
+            Path.Combine(_installPath, "watchdog", "appsettings.Production.json"),
+            JsonSerializer.Serialize(new
+            {
+                WatchdogSettings = new { StateFilePath = stateFilePath },
+                UpdateSecurity = new { ReleaseSigningPublicKeyPem = _signingKey.ExportSubjectPublicKeyInfoPem() }
+            }));
+        var (zipPath, packageRoot) = CreateUpdatesLayout("V-99.05", scriptContent: "exit 0", writeSignature: false);
+
+        var exitCode = await InvokeRunAsync(new
+        {
+            PackageRoot = packageRoot,
+            PackageZipPath = zipPath,
+            InstallPath = _installPath
+        });
+
+        exitCode.Should().Be(4);
+        using var state = JsonDocument.Parse(File.ReadAllText(stateFilePath));
+        state.RootElement.GetProperty("Estado").GetString().Should().Be("FAILED");
+        state.RootElement.GetProperty("Operacion").GetString().Should().Be("UPDATE_APP");
+    }
+
     private (string ZipPath, string PackageRoot) CreateUpdatesLayout(string version, string? scriptContent, bool writeSignature)
     {
         var updatesRoot = Path.Combine(_installPath, "updates");

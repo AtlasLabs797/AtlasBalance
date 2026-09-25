@@ -324,3 +324,31 @@ test('una sesión nueva no consume el refresh pendiente de la sesión anterior',
   assert.equal(refreshCalls, 2);
   coordinator.close();
 });
+
+test('una pestaña inactiva recibe el payload del refresh de otra pestaña', async () => {
+  const bus = new FakeChannelBus();
+  const lockManager = new SerialLockManager();
+  const activeTab = createRefreshCoordinator({
+    channelFactory: () => bus.createChannel(),
+    lockManager,
+    storage: null,
+    tabId: 'tab-a',
+  });
+  const idleTab = createRefreshCoordinator({
+    channelFactory: () => bus.createChannel(),
+    lockManager,
+    storage: null,
+    tabId: 'tab-b',
+  });
+  const idleReceived: Array<{ payload: RefreshSessionPayload; sessionKey: string }> = [];
+  const activeReceived: RefreshSessionPayload[] = [];
+  idleTab.subscribeToPeerSuccess((received, sessionKey) => idleReceived.push({ payload: received, sessionKey }));
+  activeTab.subscribeToPeerSuccess((received) => activeReceived.push(received));
+
+  await activeTab.refresh(async () => payload, 'user-1');
+
+  assert.deepEqual(idleReceived, [{ payload, sessionKey: 'user-1' }]);
+  assert.equal(activeReceived.length, 0);
+  activeTab.close();
+  idleTab.close();
+});

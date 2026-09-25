@@ -779,6 +779,17 @@ function Update-ProductionConfigDefaults {
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "RequireHealthCheckAfterUpdate" -Value $true) -or $watchdogChanged
         $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "ApiHealthUrl" -Value $apiFunctionalHealthUrl) -or $watchdogChanged
         $watchdogChanged = (Update-JsonHealthUrlToFunctional -Object $watchdogConfig.WatchdogSettings) -or $watchdogChanged
+        # V-03.01: con la cuenta dedicada, la raiz de instalacion y
+        # %ProgramData% no son escribibles por el Watchdog. Logs y estado van
+        # a los directorios propios que prepara Protect-AtlasInstallTree.
+        $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.WatchdogSettings -Name "LogDirectory" -Value (Join-Path $InstallPath "watchdog\logs")) -or $watchdogChanged
+        $newStateFile = Join-Path $InstallPath "state\watchdog-state.json"
+        $legacyStateFile = Join-Path $InstallPath "watchdog-state.json"
+        $currentStateFile = [string](Get-ConfigValue -Object $watchdogConfig.WatchdogSettings -Name "StateFilePath")
+        if ([string]::IsNullOrWhiteSpace($currentStateFile) -or [string]::Equals($currentStateFile, $legacyStateFile, [StringComparison]::OrdinalIgnoreCase)) {
+            $watchdogConfig.WatchdogSettings | Add-Member -NotePropertyName "StateFilePath" -NotePropertyValue $newStateFile -Force
+            $watchdogChanged = $true
+        }
         if (-not [string]::IsNullOrWhiteSpace($publicKey)) {
             $watchdogChanged = (Set-JsonDefault -Object $watchdogConfig.UpdateSecurity -Name "ReleaseSigningPublicKeyPem" -Value $publicKey -ReplaceBlank) -or $watchdogChanged
         }

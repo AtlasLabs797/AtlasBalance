@@ -74,6 +74,22 @@ sessionRefreshCoordinator.subscribeToFailure(() => {
   redirectToLogin();
 });
 
+// Otra pestaña renovó la sesión y rotó la cookie CSRF compartida. Esta pestaña
+// adopta el token nuevo aunque no estuviera esperando el refresh, siempre que
+// el resultado pertenezca al mismo usuario que tiene cargado.
+sessionRefreshCoordinator.subscribeToPeerSuccess((data, sessionKey) => {
+  const currentUserId = useAuthStore.getState().usuario?.id ?? null;
+  if (currentUserId === null || currentUserId !== sessionKey) {
+    return;
+  }
+
+  syncSessionState(
+    data.usuario as Usuario | null | undefined,
+    data.csrf_token ?? null,
+    data.permisos as PermisoUsuario[] | null | undefined,
+  );
+});
+
 api.interceptors.request.use((config) => {
   const csrfToken = useAuthStore.getState().csrfToken;
   const method = (config.method ?? 'get').toLowerCase();
