@@ -2,6 +2,39 @@
 
 ## Objetivo
 
+## 2026-09-25 - V-03.01 - Publicacion del paquete release en GitHub
+
+### Trabajo realizado
+
+- Paquete firmado `AtlasBalance-V-03.01-win-x64.zip` (+ `.sig`) generado y
+  publicado por el workflow `Release` desde la rama `V-03.01` (commit
+  `935eac3`). La clave de firma solo existe como secreto del entorno
+  `release-signing`, por eso no se empaqueta en local.
+- Release `V-03.01-win-x64` creada y marcada como Latest:
+  https://github.com/AtlasLabs797/AtlasBalance/releases/tag/V-03.01-win-x64
+
+### Archivos tocados
+
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- `gh pr checks 36` (todo en verde antes de publicar)
+- `gh workflow run release.yml --ref V-03.01 -f version=V-03.01 -f runtime=win-x64`
+- `gh run watch 36142771224 --exit-status`
+- `gh release view V-03.01-win-x64`
+
+### Verificacion
+
+- Run 36142771224: `Build, test, and audit` y `Package and publish latest`
+  en `success` (incluye tests Postgres con Testcontainers, auditorias npm y
+  NuGet, escaneo de secretos, lint, tests unitarios y build frontend).
+- Assets publicados: ZIP (105.823.466 bytes) y firma (512 bytes).
+
+### Pendientes
+
+- PR 36 (`V-03.01` -> `main`) sigue abierto; mergear cuando se apruebe.
+
 ## 2026-09-25 - V-03.01 - Hallazgos de la review de Codex en el PR 36
 
 ### Trabajo realizado
