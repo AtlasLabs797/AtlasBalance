@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>AtlasBalance.API</RootNamespace>
@@ -17,18 +17,19 @@
 
   <ItemGroup>
     <!-- Windows Service -->
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
 
     <!-- Authentication -->
     <!-- V-02.07: 8.0.11 arrastraba Microsoft.IdentityModel.* 7.1.2, en desuso
          (Legacy + CriticalBugs). 8.0.29 sube el minimo transitivo a 7.7.3,
          que no esta deprecada. Salto de parche dentro de la linea 8.0.x. -->
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.29" />
+    <!-- V-03.01: migracion a .NET 10, linea 10.0.x. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
 
     <!-- Entity Framework Core + PostgreSQL -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.29" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.29">
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
@@ -37,9 +38,10 @@
          PrivateAssets=all y no fluye a los proyectos de test, que se quedaban en
          el 8.0.11 de Npgsql y rompian la compilacion con CS1705. Se declara
          explicito para que toda la solucion resuelva la misma version. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.29" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
-    <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
+    <!-- V-03.01: migracion a .NET 10, linea 10.0.x. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
 
     <!-- Background Jobs -->
     <PackageReference Include="Hangfire.AspNetCore" Version="1.8.24" />
@@ -55,14 +57,19 @@
     <PackageReference Include="ClosedXML" Version="0.105.1" />
 
     <!-- Logging -->
-    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <!-- V-03.01: Serilog.AspNetCore sigue la linea del hosting de ASP.NET Core;
+         se sube a 10.0.0 junto con el resto de la migracion a .NET 10. -->
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <!-- V-03.01: Serilog.AspNetCore 10.0.0 exige Serilog.Sinks.File >= 7.0.0
+         (downgrade detectado en restore si se deja en 6.0.0). -->
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <!-- V-02.07: espejo de eventos de seguridad al Windows Event Log
          (SecurityEventLog). Llegaba de forma transitiva por
          Microsoft.Extensions.Hosting.WindowsServices; se declara explicito
          porque el codigo depende de el directamente. -->
-    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.2" />
+    <!-- V-03.01: migracion a .NET 10, linea 10.0.x. -->
+    <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>

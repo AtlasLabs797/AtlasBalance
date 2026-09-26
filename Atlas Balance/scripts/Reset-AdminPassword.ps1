@@ -194,7 +194,7 @@ $securityStamp = [Guid]::NewGuid().ToString("N")
 
 # PostgreSQL ya dispone de pgcrypto desde la migracion inicial. Generar aqui el
 # hash bcrypt evita cargar desde Windows PowerShell 5.1 una DLL compilada para
-# .NET 8, combinacion que falla con FileLoadException/ReflectionTypeLoadException.
+# .NET 10, combinacion que falla con FileLoadException/ReflectionTypeLoadException.
 # La password viaja por stdin dentro del SQL, nunca como argumento de psql.
 $sql = @"
 WITH target_user AS (

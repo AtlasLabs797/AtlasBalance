@@ -988,7 +988,9 @@ static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguratio
                 throw new InvalidOperationException($"ForwardedHeaders:KnownNetworks contiene una red CIDR invalida: {rawNetwork}");
             }
 
-            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLength));
+            // V-03.01: KnownNetworks/Microsoft.AspNetCore.HttpOverrides.IPNetwork quedaron
+            // obsoletos (ASPDEPR005) en .NET 10 a favor de KnownIPNetworks/System.Net.IPNetwork.
+            options.KnownIPNetworks.Add(new System.Net.IPNetwork(prefix, prefixLength));
         }
     });
 }

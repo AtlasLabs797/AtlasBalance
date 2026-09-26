@@ -2,6 +2,108 @@
 
 ## Objetivo
 
+## 2026-09-26 - V-03.01 - Migracion del backend de .NET 8 a .NET 10 LTS
+
+### Trabajo realizado
+
+- `TargetFramework` de los 4 proyectos backend (`AtlasBalance.API`,
+  `AtlasBalance.Watchdog`, `AtlasBalance.API.Tests`, `AtlasBalance.Caching.Tests`)
+  de `net8.0` a `net10.0`.
+- `global.json`: SDK `10.0.100` con `rollForward: latestFeature`.
+- Paquetes subidos a la ultima linea estable 10.x: EF Core (`Microsoft.EntityFrameworkCore`,
+  `.Design`, `.Relational`, `.InMemory`) a 10.0.12; `Npgsql.EntityFrameworkCore.PostgreSQL`
+  a 10.0.3; `EFCore.NamingConventions` a 10.0.1; `Microsoft.AspNetCore.Authentication.JwtBearer`
+  a 10.0.12; `Microsoft.Extensions.Hosting.WindowsServices` y `System.Diagnostics.EventLog`
+  a 10.0.12; `System.Diagnostics.DiagnosticSource` (tests) a 10.0.12; `Serilog.AspNetCore`
+  a 10.0.0 (arrastra `Serilog.Sinks.File` a 7.0.0 por downgrade detectado en restore).
+  `FluentAssertions` se mantiene en 6.12.2 (licencia Apache-2.0) y `Hangfire.*`,
+  `System.Security.AccessControl`, `Testcontainers.PostgreSql`, `xunit.v3` y `SSH.NET`
+  sin cambios (compatibles con Npgsql/.NET 10 segun sus nuspec).
+- `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x elimino `UseXminAsConcurrencyToken()`;
+  se inlinea su implementacion original (`Property<uint>("xmin").HasColumnType("xid").IsRowVersion()`)
+  en los 5 sitios de `AppDbContext.cs` que la usaban.
+- `ForwardedHeadersOptions.KnownNetworks`/`Microsoft.AspNetCore.HttpOverrides.IPNetwork`
+  quedaron obsoletos (ASPDEPR005) en favor de `KnownIPNetworks`/`System.Net.IPNetwork`;
+  actualizado en `Program.cs`.
+- EF Core 9+ convierte `PendingModelChangesWarning` en excepcion al llamar
+  `Migrate()`. Se investigo `dotnet ef migrations has-pending-model-changes`: hay
+  drift real y preexistente (no causado por esta migracion) entre el modelo C#
+  y el snapshot de EF, mantenido a proposito con SQL manuscrito en migraciones
+  anteriores (`AddSoftDeleteToImportacionFilaColumnaExtraRevision`,
+  `AlignConciliacionEstadosAndSnapshot`) precisamente para no chocar con columnas
+  e indices que un scaffold de EF recrearia mal (verificado generando el scaffold
+  y aplicandolo contra un Postgres limpio: intenta re-crear columnas ya
+  existentes y borrar indices que ya no existen con ese nombre). Se opto por
+  ignorar especificamente ese warning en `AppDbContext.OnConfiguring`
+  (`ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))`)
+  en vez de generar una migracion nueva, que hubiera sido incorrecta contra el
+  esquema real.
+- Scripts y docs con referencias a .NET 8 actualizadas a .NET 10:
+  `Atlas Balance/scripts/Build-Release.ps1` (csproj embebido del firmador),
+  `Start-LocalDev.ps1` y `Start-BackendDev.ps1` (rutas `bin\Debug\net8.0` ->
+  `net10.0`), `Reset-AdminPassword.ps1` (comentario de estado actual, no
+  historico), `README.md` ("Requisitos: .NET 8 SDK" -> ".NET 10 SDK"),
+  `AGENTS.md` (secciones 3 y 10: "ASP.NET Core 8"/"Entity Framework Core 8" ->
+  10). No se toco `.github/workflows/*.yml` (usan `global-json-file`, sin
+  version explicita) ni comentarios historicos que describen bugs pasados
+  (p.ej. V-02.07 sobre `System.Text.Json` en .NET 8).
+
+### Archivos tocados
+
+- `global.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/packages.lock.json`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/packages.lock.json`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/packages.lock.json`
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj`
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/packages.lock.json`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Reset-AdminPassword.ps1`
+- `Atlas Balance/scripts/Start-BackendDev.ps1`
+- `Atlas Balance/scripts/Start-LocalDev.ps1`
+- `README.md`
+- `AGENTS.md`
+
+### Comandos ejecutados
+
+- `dotnet restore <4 csproj> --force-evaluate [-r win-x64]`: OK.
+- `dotnet restore <4 csproj> --locked-mode [-r win-x64]`: OK, igual que CI.
+- `dotnet build "Atlas Balance/backend/AtlasBalance.sln" -c Release`: 0 errores,
+  709 warnings (dominados por `xUnit1051`, preexistente; sin `SYSLIB*`/`ASPDEPR*`
+  ni warnings nuevos de analizadores EF/Npgsql tras las correcciones).
+- `dotnet test AtlasBalance.API.Tests -- --filter-not-trait "Category=Postgres"`:
+  940/942 OK, 1 skipped (requiere PowerShell Windows), 1 fallo preexistente
+  (`FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida`,
+  bug de aritmetica de fechas dependiente del reloj del sistema, no causado por
+  esta migracion; reportado como tarea aparte).
+- `dotnet test AtlasBalance.API.Tests -- --filter-trait "Category=Postgres"`:
+  25/25 OK (Testcontainers).
+- `dotnet test AtlasBalance.Caching.Tests`: 15/15 OK.
+- `dotnet list <4 csproj> package --vulnerable --include-transitive`: sin
+  vulnerabilidades en ninguno de los 4 proyectos.
+
+### Verificacion
+
+- Build en Release sin errores para los 4 proyectos y la solucion completa.
+- Restore en `--locked-mode` verificado para los 4 proyectos, igual que
+  `.github/workflows/ci.yml`.
+- Suite completa de tests backend en verde salvo el fallo preexistente descrito
+  arriba (no atribuible a esta migracion).
+
+### Pendientes
+
+- El fallo dependiente de fecha en `FinancialToolsServiceTests` queda fuera de
+  alcance de esta migracion; reportado como tarea de seguimiento.
+- El drift preexistente entre el modelo EF y su snapshot (documentado arriba)
+  sigue existiendo; se maneja igual que antes (SQL manuscrito + warning
+  ignorado), no se fuerza su alineacion dentro de esta tarea.
+
+---
+
 ## 2026-09-25 - V-03.01 - Publicacion del paquete release en GitHub
 
 ### Trabajo realizado

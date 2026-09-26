@@ -69,7 +69,7 @@ La IA está desactivada por defecto y queda sujeta a permisos, límites de uso, 
 
 ## Desarrollo local
 
-Requisitos: .NET 8 SDK, Node.js compatible con `.node-version`, Docker Desktop y PostgreSQL de desarrollo mediante Docker.
+Requisitos: .NET 10 SDK, Node.js compatible con `.node-version`, Docker Desktop y PostgreSQL de desarrollo mediante Docker.
 
 ```powershell
 Set-Location '.\Atlas Balance'

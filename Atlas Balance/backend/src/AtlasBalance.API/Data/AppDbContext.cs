@@ -2,12 +2,22 @@
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace AtlasBalance.API.Data;
 
 public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    // V-03.01: EF Core 9+ lanza excepcion en Migrate() si el modelo difiere del
+    // snapshot. La deriva es previa (migraciones SQL manuscritas con IF NOT EXISTS
+    // que no actualizan el snapshot) y un scaffold la recrearia contra el esquema
+    // real. Se ignora solo este warning, igual que se comportaba EF 8.
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+    }
 
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<UsuarioEmail> UsuarioEmails => Set<UsuarioEmail>();
@@ -165,7 +175,10 @@ public class AppDbContext : DbContext
             // V-02-05 (HIGH-6): xmin como token de concurrencia. RenovarAsync y
             // ProcesarVencimientosAsync colisionaban silenciosamente (last-write-wins).
             // El handler global DbUpdateConcurrencyException -> 409 ya existe en Program.cs.
-            entity.UseXminAsConcurrencyToken();
+            // V-03.01: equivalente a UseXminAsConcurrencyToken(), eliminado en Npgsql EF 10.
+            entity.Property<uint>("xmin")
+                .HasColumnType("xid")
+                .IsRowVersion();
             entity.Property(e => e.InteresPrevisto).HasPrecision(18, 2);
             entity.HasIndex(e => e.CuentaId)
                 .IsUnique()
@@ -194,7 +207,10 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             // V-02-03 (H6): concurrencia optimista via xmin de Postgres.
             // Devuelve 409 DbUpdateConcurrencyException ante updates perdidos.
-            entity.UseXminAsConcurrencyToken();
+            // V-03.01: equivalente a UseXminAsConcurrencyToken(), eliminado en Npgsql EF 10.
+            entity.Property<uint>("xmin")
+                .HasColumnType("xid")
+                .IsRowVersion();
             entity.Property(e => e.Monto).HasPrecision(18, 4);
             entity.Property(e => e.Saldo).HasPrecision(18, 4);
             entity.Property(e => e.ImportacionFingerprint).HasMaxLength(64);
@@ -307,7 +323,10 @@ public class AppDbContext : DbContext
             entity.ToTable("REVISION_EXTRACTO_ESTADOS");
             entity.HasKey(e => e.Id);
             // V-02-03 (H6): concurrencia optimista xmin.
-            entity.UseXminAsConcurrencyToken();
+            // V-03.01: equivalente a UseXminAsConcurrencyToken(), eliminado en Npgsql EF 10.
+            entity.Property<uint>("xmin")
+                .HasColumnType("xid")
+                .IsRowVersion();
             entity.Property(e => e.Tipo).HasMaxLength(24).IsRequired();
             entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
             // V-02-05 (MED-22): ISoftDelete.
@@ -477,7 +496,10 @@ public class AppDbContext : DbContext
             entity.ToTable("MOVIMIENTOS_ESPERADOS");
             entity.HasKey(e => e.Id);
             // V-02-03 (H6): concurrencia optimista xmin.
-            entity.UseXminAsConcurrencyToken();
+            // V-03.01: equivalente a UseXminAsConcurrencyToken(), eliminado en Npgsql EF 10.
+            entity.Property<uint>("xmin")
+                .HasColumnType("xid")
+                .IsRowVersion();
             entity.Property(e => e.Monto).HasPrecision(18, 4);
             entity.Property(e => e.Divisa).HasMaxLength(8).IsRequired();
             entity.Property(e => e.Referencia).HasMaxLength(128);
@@ -502,7 +524,10 @@ public class AppDbContext : DbContext
             entity.ToTable("CONCILIACIONES");
             entity.HasKey(e => e.Id);
             // V-02-03 (H6): concurrencia optimista xmin.
-            entity.UseXminAsConcurrencyToken();
+            // V-03.01: equivalente a UseXminAsConcurrencyToken(), eliminado en Npgsql EF 10.
+            entity.Property<uint>("xmin")
+                .HasColumnType("xid")
+                .IsRowVersion();
             entity.Property(e => e.Estado).HasMaxLength(24).IsRequired();
             entity.Property(e => e.Regla).HasMaxLength(64).IsRequired();
             entity.Property(e => e.ReferenciaNormalizada).HasMaxLength(256);
