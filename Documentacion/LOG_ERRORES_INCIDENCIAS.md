@@ -1,5 +1,78 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-26 - V-03.01 - 500 "HMAC invalido" al arrancar tras migrar de .NET 8 a .NET 10 (CORREGIDO)
+
+- **Sintoma:** una instalacion que ya tenia secretos protegidos (`enc:v2:...`,
+  p. ej. el TOTP de MFA de un usuario) devuelve 500 en `/api/auth/login` con
+  "HMAC invalido. Revise las claves de Data Protection." al pasar del build de
+  .NET 8 al de .NET 10 sobre la misma BD y el mismo directorio de claves.
+- **Causa:** `DataProtectionSecretProtector.DeriveHmacKey`
+  (`Services/SecretProtector.cs`) derivaba la clave HMAC de
+  `provider.GetType().AssemblyQualifiedName`, que incluye la version del
+  ensamblado `Microsoft.AspNetCore.DataProtection` (`8.0.0.0` bajo .NET 8,
+  `10.0.0.0` bajo .NET 10). Al cambiar de major de .NET cambia esa version y,
+  con ella, la clave HMAC: todo secreto guardado con la version anterior deja
+  de validar.
+- **Solucion:** reconstruir el mismo formato de string pero fijando la
+  version del ensamblado a `8.0.0.0` (la que tenian todas las instalaciones
+  existentes), reproduciendo el AssemblyQualifiedName original byte a byte.
+  La clave no es secreta, solo detecta manipulacion del ciphertext, asi que
+  fijarla es seguro y estable ante futuros upgrades de .NET.
+- **Test de regresion:** `DataProtectionSecretProtectorTests.cs` (nuevo).
+  Verificado ademas con una instalacion real simulada (build de .NET 8 sobre
+  Postgres desechable, alta de MFA, luego build de .NET 10 corregido sobre la
+  misma BD/claves: login ya no da 500, MFA verifica con un TOTP nuevo).
+
+## 2026-09-26 - V-03.01 - `UseXminAsConcurrencyToken()` eliminado en Npgsql EF 10 (CORREGIDO)
+
+- **Sintoma:** al subir `Npgsql.EntityFrameworkCore.PostgreSQL` de 8.x a
+  10.0.3 (migracion a .NET 10), `AppDbContext.cs` no compila: el metodo de
+  extension `UseXminAsConcurrencyToken()` ya no existe en el paquete.
+- **Causa:** Npgsql EF 10 quito ese helper de conveniencia.
+- **Solucion:** se inlinea su implementacion original en los 5 sitios que lo
+  usaban: `Property<uint>("xmin").HasColumnType("xid").IsRowVersion()`.
+  Cambio equivalente a nivel de modelo, no afecta al esquema en BD.
+
+## 2026-09-26 - V-03.01 - `PendingModelChangesWarning` pasa a excepcion en `Migrate()` con EF 9+ (CORREGIDO - mitigado)
+
+- **Sintoma:** al migrar a EF Core 10, `Migrate()` lanzaria una excepcion en
+  vez del warning informativo de siempre, porque EF Core 9+ eleva
+  `PendingModelChangesWarning` a nivel de error cuando detecta diferencias
+  entre el modelo C# y el snapshot guardado.
+- **Causa:** hay un drift real y preexistente (no introducido por esta
+  migracion) entre el modelo y el snapshot: el snapshot solo tiene el mapeo
+  de `xmin` en 4 tablas, el modelo lo tiene en 5 (falta `PLAZOS_FIJOS`). El
+  drift viene de migraciones anteriores escritas a mano con SQL
+  `IF NOT EXISTS` que nunca actualizaron el snapshot.
+- **Decision:** se probo generar la migracion pendiente con scaffold de EF y
+  aplicarla contra un Postgres real: fallaron 24 de 25 tests de la suite
+  Postgres (intentaba recrear columnas ya existentes y tocar indices con
+  nombres que ya no existen), asi que se descarto por incorrecta. Se opto por
+  ignorar especificamente ese warning en `AppDbContext.OnConfiguring`
+  (`ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))`),
+  que es el mismo comportamiento (silencioso) que tenia el proyecto en .NET 8.
+- **Pendiente:** realinear el snapshot con el modelo mediante una migracion
+  "solo snapshot" (sin cambios de esquema) para poder reactivar el chequeo.
+  Ver `REGISTRO_BUGS.md`.
+
+## 2026-09-26 - V-03.01 - SDK .NET 8.0.1xx de `apt` no compila expresiones de coleccion en `string.Split` (no es bug de codigo)
+
+- **Sintoma:** al compilar la linea base en .NET 8 para comparar contra la
+  migracion, el SDK `8.0.131` instalado por `apt` de Ubuntu falla en
+  expresiones de coleccion (`[...]`) usadas como argumento de
+  `string.Split`, en codigo que no cambio.
+- **Causa:** es un problema de toolchain, no del codigo: el compilador C#
+  que trae el SDK `8.0.131` de `apt` es mas viejo que el que fija el repo
+  (`global.json` -> `8.0.419` antes de esta migracion) y no soporta esa
+  sintaxis en ese contexto.
+- **Solucion / mitigacion:** para compilar y comparar contra la linea base en
+  este entorno (donde los CDN de Microsoft estan bloqueados y solo hay SDKs
+  de `apt`), se uso el SDK 10 (`10.0.112`) apuntando el `TargetFramework` a
+  `net8.0`, en vez del SDK 8 de `apt`. En cualquier entorno con acceso a los
+  instaladores oficiales de Microsoft, usar el SDK 10 (post-migracion) o el
+  8.0.4xx que fijaba el repo (pre-migracion); no instalar el SDK 8 desde
+  `apt` para este proyecto.
+
 ## 2026-09-25 - V-03.01 - Review de Codex en el PR 36 (CORREGIDO)
 
 - **CSRF viejo en pestañas inactivas.** Causa: el coordinador de refresh solo

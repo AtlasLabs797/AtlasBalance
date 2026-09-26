@@ -2,6 +2,85 @@
 
 ## Vigencia documental: V-03.01
 
+### 2026-09-26 - Migracion del backend de .NET 8 a .NET 10 LTS
+
+El backend corre sobre ASP.NET Core 10 / Entity Framework Core 10 (antes 8).
+`global.json` fija el SDK `10.0.100` con `rollForward: latestFeature`. Los 4
+proyectos backend (`AtlasBalance.API`, `AtlasBalance.Watchdog`,
+`AtlasBalance.API.Tests`, `AtlasBalance.Caching.Tests`) apuntan a
+`net10.0`.
+
+**Que cambio y por que.**
+
+- Paquetes subidos a su ultima linea 10.x: `Microsoft.EntityFrameworkCore`
+  (+ `.Design`/`.Relational`/`.InMemory`) 8.0.29 -> 10.0.12,
+  `Npgsql.EntityFrameworkCore.PostgreSQL` 8.0.11 -> 10.0.3,
+  `EFCore.NamingConventions` 8.0.3 -> 10.0.1,
+  `Microsoft.AspNetCore.Authentication.JwtBearer` 8.0.29 -> 10.0.12,
+  `Microsoft.Extensions.Hosting.WindowsServices` 8.0.1 -> 10.0.12,
+  `Serilog.AspNetCore` 8.0.3 -> 10.0.0 (exige `Serilog.Sinks.File` >= 7.0.0).
+  `FluentAssertions` se queda en 6.12.2 a proposito: 7.x y 8.x son de
+  licencia comercial. `Hangfire.*`, `Testcontainers.PostgreSql`, `xunit.v3`
+  y `SSH.NET` sin cambios.
+- Pins quitados (no actualizados, eliminados): `System.Diagnostics.EventLog`
+  (API), `System.Security.AccessControl` (Watchdog y tests) y
+  `System.Diagnostics.DiagnosticSource` (tests). En `net10.0` esos tres
+  paquetes vienen en el framework compartido; NuGet los poda (pruning) y
+  mantener el `PackageReference` solo generaba el aviso `NU1510`.
+- **`xmin` como token de concurrencia.** Npgsql EF 10 elimino el helper
+  `UseXminAsConcurrencyToken()`. Se reemplazo, en los 5 sitios de
+  `AppDbContext.cs` que lo usaban, por su implementacion equivalente:
+  `Property<uint>("xmin").HasColumnType("xid").IsRowVersion()`. Mismo
+  comportamiento de concurrencia optimista, mismo tipo de columna en BD.
+- **`KnownIPNetworks`.** `ForwardedHeadersOptions.KnownNetworks` (tipo
+  `Microsoft.AspNetCore.HttpOverrides.IPNetwork`) quedo obsoleto (aviso
+  `ASPDEPR005`) a favor de `KnownIPNetworks` (tipo `System.Net.IPNetwork`).
+  Actualizado en `Program.cs`.
+- **`PendingModelChangesWarning` ignorado a proposito.** Desde EF Core 9,
+  `Migrate()` lanza una excepcion (antes solo emitia un warning) cuando
+  detecta diferencias entre el modelo C# y el snapshot guardado. Aqui hay un
+  drift real y **preexistente** a esta migracion: el snapshot tiene el
+  mapeo de `xmin` en 4 tablas, el modelo actual en 5 (falta `PLAZOS_FIJOS`
+  en el snapshot), porque migraciones anteriores se escribieron a mano con
+  SQL `IF NOT EXISTS` sin actualizar el snapshot. Se probo generar la
+  migracion pendiente con scaffold de EF y aplicarla contra un Postgres
+  real: fallaron 24 de 25 tests de la suite Postgres (intentaba recrear
+  columnas ya existentes y tocar indices con nombres que ya no existen), asi
+  que se descarto por incorrecta. Se opto por ignorar especificamente ese
+  warning en `AppDbContext.OnConfiguring`
+  (`ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))`),
+  igual que el comportamiento silencioso que ya tenia el proyecto en .NET 8.
+  Pendiente (fuera de alcance, ver `REGISTRO_BUGS.md`): una migracion
+  "solo snapshot" que realinee el snapshot con el modelo para poder
+  reactivar el chequeo.
+- **Regla de estabilidad de la clave HMAC de `SecretProtector`.** La
+  migracion expuso que `DataProtectionSecretProtector.DeriveHmacKey` derivaba
+  la clave HMAC de `provider.GetType().AssemblyQualifiedName`, que incluye
+  la version del ensamblado `Microsoft.AspNetCore.DataProtection`
+  (`8.0.0.0` en .NET 8, `10.0.0.0` en .NET 10). Cualquier salto de version
+  mayor del ensamblado invalidaba todos los secretos ya guardados
+  (`enc:v2:...`, p. ej. el TOTP de MFA), con 500 "HMAC invalido" al login.
+  Se corrigio fijando la version del `AssemblyQualifiedName` reconstruido a
+  `8.0.0.0`. **Regla a respetar de ahora en adelante:** la derivacion de la
+  clave HMAC de `SecretProtector` no debe depender de la version del
+  runtime ni del ensamblado en uso; cualquier cambio a `DeriveHmacKey` tiene
+  que mantener compatibilidad hacia atras con los secretos ya cifrados en
+  produccion. Detalle en `LOG_ERRORES_INCIDENCIAS.md`.
+
+**Verificacion.** Build 0 errores; mismos codigos de warning que la linea
+base en .NET 8 (`CA1416`, `CS0618`, `CS8766`, `CS8767`, `xUnit1051`), sin
+`SYSLIB*`/`ASPDEPR*`/`NU*` nuevos. Tests backend: 943 passed / 1 fallo
+preexistente y dependiente de fecha / 1 skipped (945 total) + 25/25 Postgres
++ 15/15 Caching. `dotnet list package --vulnerable --include-transitive`
+limpio en los 4 proyectos. Instalacion de prueba en Linux (self-contained
+`win-x64`, sin VM Windows disponible): instalacion limpia 52/52 migraciones,
+health OK, login + MFA OK; actualizacion .NET 8 -> .NET 10 sobre la misma
+BD/claves: 0 migraciones nuevas, sin `PendingModelChangesWarning`, y (tras
+el fix de HMAC) login + verificacion MFA OK. No verificado en este entorno:
+instalacion/actualizacion real en Windows Server, `Build-Release.ps1` de
+punta a punta con firma real. Detalle completo en `DOCUMENTACION_CAMBIOS.md`
+y `LOG_ERRORES_INCIDENCIAS.md`.
+
 ### 2026-09-25 - Correcciones de la review de Codex (PR 36)
 
 **Refresh entre pestañas.** `createRefreshCoordinator` expone
