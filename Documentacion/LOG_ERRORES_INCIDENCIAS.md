@@ -1,5 +1,28 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-26 - V-03.01 - Tests de anomalias que fallaban segun el dia del mes (CORREGIDO)
+
+- **Sintoma:** `FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida`
+  fallaba en `main` el 2026-09-26 (`Expected result.Data! {empty} to have an item
+  matching (a.Tipo == "SALDO_EN_CAIDA")`).
+- **Causa:** fechas sembradas con `hoy.AddMonths(-k).AddDays(5)`. A final de mes
+  sumar 5 dias cruza de mes: el 26/09, `-3` da 07-01 y `-2` da 07-31. Dos
+  extractos en julio, solo 2 meses distintos, y la regla necesita 3.
+  Mismo fallo de fondo en `Gasto_Nuevo` y `Concepto_Recurrente` con
+  `hoy.AddDays(-2)`/`hoy.AddDays(-1)` como "mes en curso": los dias 1-2 caen en
+  el mes anterior (el primero fallaba; el segundo pasaba sin comprobar nada).
+- **Solucion:** anclar al dia 1 del mes en curso
+  (`new DateOnly(hoy.Year, hoy.Month, 1)`); meses previos con
+  `.AddMonths(-k).AddDays(4)`. Servicio sin cambios.
+- **Regla reutilizable:** en tests que dependen de meses naturales no derivar
+  fechas de `hoy` con `AddDays`; partir del dia 1 del mes.
+- **Entorno Linux sin SDK 8.0.4xx:** `builds.dotnet.microsoft.com` bloqueado por
+  el proxy; apt da SDK 8.0.131, cuyo Roslyn ve ambiguo `Split([' ', ...], ...)`
+  (CS0121). Workaround sin tocar el repo: compilar desde fuera del repo (para no
+  leer `global.json`) con `Microsoft.Net.Compilers.Toolset` 4.12 descargado de
+  NuGet y `-p:CscToolPath=<bincore> -p:CscToolExe=csc` (script que hace
+  `dotnet exec csc.dll`), `-p:UseSharedCompilation=false`.
+
 ## 2026-09-25 - V-03.01 - Review de Codex en el PR 36 (CORREGIDO)
 
 - **CSRF viejo en pestañas inactivas.** Causa: el coordinador de refresh solo

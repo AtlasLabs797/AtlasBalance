@@ -400,11 +400,14 @@ public class FinancialToolsServiceTests
         // 3 meses consecutivos con un patron decreciente.
         var cuentaId = db.Cuentas.First().Id;
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        // Anclado al dia 1 del mes en curso: hoy.AddMonths(-k).AddDays(5)
+        // cruzaba de mes a final de mes y metia dos extractos en el mismo.
+        var inicioMes = new DateOnly(hoy.Year, hoy.Month, 1);
         var mesesAtras = new[]
         {
-            hoy.AddMonths(-3).AddDays(5), // mes -3: saldo cae poco
-            hoy.AddMonths(-2).AddDays(5), // mes -2: cae mas
-            hoy.AddMonths(-1).AddDays(5)  // mes -1: cae mucho
+            inicioMes.AddMonths(-3).AddDays(4), // mes -3: saldo cae poco
+            inicioMes.AddMonths(-2).AddDays(4), // mes -2: cae mas
+            inicioMes.AddMonths(-1).AddDays(4)  // mes -1: cae mucho
         };
         // Limpiamos los extractos sembrados por SeedAsync.
         db.Extractos.RemoveRange(db.Extractos);
@@ -474,7 +477,7 @@ public class FinancialToolsServiceTests
         {
             Id = Guid.NewGuid(),
             CuentaId = cuentaId,
-            Fecha = hoy.AddDays(-2),
+            Fecha = new DateOnly(hoy.Year, hoy.Month, 1), // dia 1: siempre en el mes en curso
             Concepto = "Adobe Creative Cloud",
             Monto = -55m,
             Saldo = 933m,
@@ -539,7 +542,7 @@ public class FinancialToolsServiceTests
         {
             Id = Guid.NewGuid(),
             CuentaId = cuentaId,
-            Fecha = hoy.AddDays(-1),
+            Fecha = new DateOnly(hoy.Year, hoy.Month, 1), // dia 1: siempre en el mes en curso
             Concepto = "Spotify",
             Monto = -10m,
             Saldo = 990m,
