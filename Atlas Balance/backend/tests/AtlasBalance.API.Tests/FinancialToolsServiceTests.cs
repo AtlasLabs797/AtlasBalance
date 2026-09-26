@@ -400,11 +400,14 @@ public class FinancialToolsServiceTests
         // 3 meses consecutivos con un patron decreciente.
         var cuentaId = db.Cuentas.First().Id;
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        // Dia 5 del mes objetivo: AddMonths(-n).AddDays(5) podia saltar al
+        // mes siguiente en meses cortos y juntar dos fechas en el mismo mes.
+        var dia5MesActual = new DateOnly(hoy.Year, hoy.Month, 5);
         var mesesAtras = new[]
         {
-            hoy.AddMonths(-3).AddDays(5), // mes -3: saldo cae poco
-            hoy.AddMonths(-2).AddDays(5), // mes -2: cae mas
-            hoy.AddMonths(-1).AddDays(5)  // mes -1: cae mucho
+            dia5MesActual.AddMonths(-3), // mes -3: saldo cae poco
+            dia5MesActual.AddMonths(-2), // mes -2: cae mas
+            dia5MesActual.AddMonths(-1)  // mes -1: cae mucho
         };
         // Limpiamos los extractos sembrados por SeedAsync.
         db.Extractos.RemoveRange(db.Extractos);

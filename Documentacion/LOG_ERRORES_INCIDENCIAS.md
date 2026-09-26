@@ -1,5 +1,18 @@
 ﻿# Log de errores e incidencias
 
+## 2026-09-26 - V-03.01 - Test `DetectAnomalies_Debe_Detectar_Saldo_En_Caida` dependiente del calendario (CORREGIDO)
+
+- **Sintoma:** el test falla segun el dia en que se ejecuta (reproducido el
+  2026-09-26: la anomalia `SALDO_EN_CAIDA` no se detecta).
+- **Causa:** el test sembraba `hoy.AddMonths(-n).AddDays(5)`. Si el mes
+  intermedio es corto, `+5` salta al mes siguiente y dos fechas caen en el
+  mismo mes (2026-09-26 -> 2026-07-01 y 2026-07-31), o la de `-1` cae en el
+  mes actual, que el servicio excluye. El servicio agrupa por mes natural y
+  exige 3 meses cerrados. Afectaba a ~19% de los dias (dias 24-31).
+- **Solucion:** sembrar el dia 5 de cada mes objetivo
+  (`new DateOnly(hoy.Year, hoy.Month, 5).AddMonths(-n)`). Solo cambia el test;
+  el codigo de produccion es correcto.
+
 ## 2026-09-25 - V-03.01 - Review de Codex en el PR 36 (CORREGIDO)
 
 - **CSRF viejo en pestañas inactivas.** Causa: el coordinador de refresh solo

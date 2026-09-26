@@ -2,6 +2,39 @@
 
 ## Objetivo
 
+## 2026-09-26 - V-03.01 - Test de `SALDO_EN_CAIDA` robusto al calendario
+
+### Trabajo realizado
+
+- `DetectAnomalies_Debe_Detectar_Saldo_En_Caida` siembra el dia 5 de los
+  meses -3, -2 y -1 en lugar de `hoy.AddMonths(-n).AddDays(5)`, que colapsaba
+  dos fechas en el mismo mes en finales de mes. Detalle en
+  `LOG_ERRORES_INCIDENCIAS.md`.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/FinancialToolsServiceTests.cs`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+
+### Comandos ejecutados
+
+- Script Python que replica `DateOnly.AddMonths` y la logica del servicio
+  (3 meses distintos, ninguno el actual, dentro de los 6 meses de historial)
+  para todos los dias entre 2024-01-01 y 2031-12-31.
+
+### Verificacion
+
+- Formula antigua: 564 de 2922 dias fallan (incluidos 2026-06-26..30 y
+  2026-09-26). Formula nueva: 0 fallos.
+- NO ejecutado `dotnet test`: el entorno de la sesion no tiene SDK de .NET y
+  el proxy bloquea su descarga.
+
+### Pendientes
+
+- Ejecutar `dotnet test` de `AtlasBalance.API.Tests` (sin `Category=Postgres`)
+  para confirmar en local o en CI.
+
 ## 2026-09-25 - V-03.01 - Publicacion del paquete release en GitHub
 
 ### Trabajo realizado
