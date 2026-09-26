@@ -29,18 +29,6 @@
           "BouncyCastle.Cryptography": "2.7.0"
         }
       },
-      "System.Diagnostics.DiagnosticSource": {
-        "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "CRZTWYO0rzEcJN/6SuN1kMvQOJT7vyHZ64CCkQs0RRWTj7kH2KMkaMalbsbSI/eg5dS5JAQfQFFuuWgn+XRMsQ=="
-      },
-      "System.Security.AccessControl": {
-        "type": "Direct",
-        "requested": "[6.0.1, )",
-        "resolved": "6.0.1",
-        "contentHash": "IQ4NXP/B3Ayzvw0rDQzVTYsCKyy0Jp9KI6aYcK7UnGVlR9+Awz++TIPCQtPYfLJfOpm8ajowMR09V7quD3sEHw=="
-      },
       "Testcontainers.PostgreSql": {
         "type": "Direct",
         "requested": "[4.13.0, )",

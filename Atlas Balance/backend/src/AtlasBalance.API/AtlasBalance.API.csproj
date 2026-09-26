@@ -64,12 +64,9 @@
     <!-- V-03.01: Serilog.AspNetCore 10.0.0 exige Serilog.Sinks.File >= 7.0.0
          (downgrade detectado en restore si se deja en 6.0.0). -->
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
-    <!-- V-02.07: espejo de eventos de seguridad al Windows Event Log
-         (SecurityEventLog). Llegaba de forma transitiva por
-         Microsoft.Extensions.Hosting.WindowsServices; se declara explicito
-         porque el codigo depende de el directamente. -->
-    <!-- V-03.01: migracion a .NET 10, linea 10.0.x. -->
-    <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.12" />
+    <!-- V-03.01: System.Diagnostics.EventLog, System.Security.AccessControl y
+         System.Diagnostics.DiagnosticSource vienen en el framework de .NET 10;
+         NuGet los poda y sus pins daban NU1510. Se eliminan en toda la solucion. -->
   </ItemGroup>
 
   <ItemGroup>
