@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -20,16 +20,9 @@
     <!-- FluentAssertions se queda en la linea 6.x a proposito: 7.x y 8.x
          cambiaron a licencia comercial de Xceed. 6.x sigue siendo Apache-2.0. -->
     <PackageReference Include="FluentAssertions" Version="6.12.2" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.29" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.13.0" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <!-- La cadena de Microsoft Testing Platform que arrastra xunit v3 trae
-         shims de la era .NET 5 marcados en desuso (via ApplicationInsights y
-         Win32.Registry). Se fijan a la version moderna, que ademas ya no
-         depende de Microsoft.NETCore.Platforms. Mismo patron que el pin de
-         Newtonsoft.Json en la API. -->
-    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
-    <PackageReference Include="System.Security.AccessControl" Version="6.0.1" />
     <!-- Testcontainers arrastra SSH.NET 2025.1.0, afectado por GHSA-q939-rpr3-3284
          (escritura arbitraria de ficheros via ScpClient recursivo). Se fija a la
          primera version parcheada para que pase el audit de NuGet del CI. -->

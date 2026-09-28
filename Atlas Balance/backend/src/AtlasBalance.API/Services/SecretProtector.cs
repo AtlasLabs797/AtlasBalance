@@ -137,8 +137,20 @@ public sealed class DataProtectionSecretProtector : ISecretProtector
         // del tipo + salt. Esto NO es una clave criptografica ideal pero
         // es suficiente para detectar tampering con el ciphertext (un
         // atacante no puede generar un HMAC valido sin acceso al codigo).
+        //
+        // V-03.01: NO usar AssemblyQualifiedName directamente. Incluye la
+        // version del ensamblado Microsoft.AspNetCore.DataProtection, que
+        // cambia con cada major de .NET (8.0.0.0, 10.0.0.0, ...). Como la
+        // clave no es secreta (solo detecta manipulacion del ciphertext),
+        // fijamos la version en 8.0.0.0 -- la que tenian todas las
+        // instalaciones existentes -- para reconstruir el mismo AQN de forma
+        // estable y no invalidar los secretos ya guardados en cada upgrade.
+        var type = provider.GetType();
+        var assemblyName = type.Assembly.GetName();
+        assemblyName.Version = new Version(8, 0, 0, 0);
+        var stableAqn = $"{type.FullName}, {assemblyName.FullName}";
         using var sha = SHA256.Create();
-        return sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"{provider.GetType().AssemblyQualifiedName}|{salt}"));
+        return sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"{stableAqn}|{salt}"));
     }
 
     private static bool FixedTimeEquals(string a, string b)

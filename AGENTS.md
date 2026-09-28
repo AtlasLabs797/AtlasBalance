@@ -97,10 +97,10 @@ Pertenece a la empresa Atlas Labs y la aplicacion se llama Atlas Balance.
 Aplicacion web on-premise para gestion de tesoreria multi-banco, multi-titular, multi-divisa. Corre en Windows Server, accesible por 4-8 usuarios en red local via navegador.
 
 **Stack:**
-- Backend: ASP.NET Core 8 (C#) -> Windows Service, HTTPS (Kestrel)
+- Backend: ASP.NET Core 10 (C#) -> Windows Service, HTTPS (Kestrel)
 - Frontend: React 19 + TypeScript + Vite 8 -> servido como estaticos por el backend
 - BD: PostgreSQL 16+ (Docker en desarrollo, local en produccion)
-- ORM: Entity Framework Core 8 + Npgsql
+- ORM: Entity Framework Core 10 + Npgsql
 - Router: react-router 8 (el paquete `react-router-dom` desaparece en v8)
 - State: Zustand 5
 - Charts: Recharts 3
@@ -204,7 +204,7 @@ Este equipo tiene antimalware y antivirus activos. Trabaja de forma que no parez
 ### Backend (C#)
 
 - Usar `System.Text.Json` (NO Newtonsoft.Json)
-- Entity Framework Core 8 con migrations
+- Entity Framework Core 10 con migrations
 - Soft delete universal: `deleted_at` + `deleted_by_id` en todas las entidades
 - Todos los endpoints paginados devuelven: `{ data, total, page, pageSize, totalPages }`
 - Ordenacion: `?sortBy=campo&sortDir=asc|desc`
