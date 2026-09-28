@@ -48,7 +48,10 @@ public sealed class DataProtectionSecretProtectorTests
     [Fact]
     public void UnprotectFromStorage_Should_Accept_Value_Written_By_Net8_Build()
     {
-        var keysDir = Directory.CreateTempSubdirectory("atlas-dp-test-");
+        // Directorio unico dentro del workspace (bin del test), no en el temp del SO.
+        var testRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "dp-test-keys"));
+        var keysDir = new DirectoryInfo(Path.Combine(testRoot, Guid.NewGuid().ToString("N")));
+        keysDir.Create();
         try
         {
             // Mismo tipo de provider que en produccion (key ring en disco).
@@ -70,7 +73,11 @@ public sealed class DataProtectionSecretProtectorTests
         }
         finally
         {
-            keysDir.Delete(recursive: true);
+            var resolved = Path.GetFullPath(keysDir.FullName);
+            if (resolved.StartsWith(testRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                keysDir.Delete(recursive: true);
+            }
         }
     }
 }

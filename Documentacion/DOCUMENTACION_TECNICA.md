@@ -5,7 +5,7 @@
 ### 2026-09-26 - Migracion del backend de .NET 8 a .NET 10 LTS
 
 El backend corre sobre ASP.NET Core 10 / Entity Framework Core 10 (antes 8).
-`global.json` fija el SDK `10.0.100` con `rollForward: latestFeature`. Los 4
+`global.json` fija el SDK `10.0.112` con `rollForward: latestFeature`. Los 4
 proyectos backend (`AtlasBalance.API`, `AtlasBalance.Watchdog`,
 `AtlasBalance.API.Tests`, `AtlasBalance.Caching.Tests`) apuntan a
 `net10.0`.

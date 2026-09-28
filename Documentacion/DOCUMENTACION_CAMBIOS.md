@@ -2,6 +2,29 @@
 
 ## Objetivo
 
+## 2026-09-28 - V-03.01 - Review de Codex en el PR 39
+
+### Trabajo realizado
+
+- `global.json`: SDK `10.0.100` a `10.0.112`. `actions/setup-dotnet` instala la
+  version de `global-json-file`, y con `10.0.100` el release self-contained
+  empaquetaba el runtime GA 10.0.0 sin parches posteriores.
+- `Program.cs` (`ConfigureForwardedHeaders`): las redes de
+  `ForwardedHeaders:KnownNetworks` se normalizan a la direccion base
+  (`MaskToNetworkAddress`). `System.Net.IPNetwork` lanza `ArgumentException` si
+  hay bits de host (p. ej. `10.0.0.5/24`), que el `IPNetwork` antiguo aceptaba.
+- `DataProtectionSecretProtectorTests`: el key ring del test vive en un
+  directorio unico bajo el `bin` del test y solo se borra si su ruta resuelta
+  esta dentro de esa raiz (AGENTS.md, seccion 8), no en el temp del SO.
+
+### Verificacion
+
+- `dotnet test AtlasBalance.API.Tests` (sin Postgres): 944 OK, 0 fallos, 1 omitido.
+
+### Pendientes
+
+- Ninguno.
+
 ## 2026-09-26 - V-03.01 - Tests de anomalias dependientes de la fecha
 
 ### Trabajo realizado
