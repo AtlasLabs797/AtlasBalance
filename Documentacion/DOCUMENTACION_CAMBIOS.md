@@ -2,6 +2,49 @@
 
 ## Objetivo
 
+## 2026-09-26 - V-03.01 - Tests de anomalias dependientes de la fecha
+
+### Trabajo realizado
+
+- `DetectAnomalies_Debe_Detectar_Saldo_En_Caida` fallaba a final de mes (p. ej.
+  2026-09-26): `hoy.AddMonths(-k).AddDays(5)` metia dos extractos en el mismo
+  mes (07-01 y 07-31) y SALDO_EN_CAIDA no tenia 3 meses. Ahora las fechas se
+  anclan al dia 1 del mes en curso: `inicioMes.AddMonths(-k).AddDays(4)`.
+- Mismo patron en el resto del archivo: `DetectAnomalies_Debe_Detectar_Gasto_Nuevo`
+  (`hoy.AddDays(-2)`) y `DetectAnomalies_Concepto_Recurrente_No_Marca_Gasto_Nuevo`
+  (`hoy.AddDays(-1)`) usaban esas fechas como "mes en curso"; los dias 1-2 caian
+  en el mes anterior. El primero fallaba y el segundo pasaba en vacio. Ahora
+  usan el dia 1 del mes en curso.
+- Solo tests; `FinancialToolsService` no se toca.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/FinancialToolsServiceTests.cs`
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- `Documentacion/LOG_ERRORES_INCIDENCIAS.md`
+- `Documentacion/Versiones/v-03.01.md`
+
+### Comandos ejecutados
+
+- `dotnet test <csproj> -- --filter-not-trait "Category=Postgres"` (desde
+  fuera del repo; entorno Linux con SDK 8.0.131 y compilador
+  `Microsoft.Net.Compilers.Toolset` 4.12 via `-p:CscToolPath`, ver log de
+  errores).
+- `faketime -f "@<fecha>" dotnet exec AtlasBalance.API.Tests.dll -class
+  AtlasBalance.API.Tests.FinancialToolsServiceTests` con varias fechas.
+
+### Verificacion
+
+- Antes del cambio, el 2026-09-26: 940 OK, 1 fallo (`Saldo_En_Caida`), 1 omitido.
+- Despues: 941 OK, 0 fallos, 1 omitido (el test de `powershell.exe`, solo Windows).
+- Con reloj falso, la clase pasa 18/18 el 2026-09-26, 2026-08-31, 2026-03-01,
+  2026-03-02, 2026-01-01 y 2024-02-29. Con el codigo anterior, el 2026-03-01 y
+  el 2026-03-02 fallaba `Gasto_Nuevo` (confirma que el reloj falso afecta a .NET).
+
+### Pendientes
+
+- Ninguno.
+
 ## 2026-09-25 - V-03.01 - Publicacion del paquete release en GitHub
 
 ### Trabajo realizado
