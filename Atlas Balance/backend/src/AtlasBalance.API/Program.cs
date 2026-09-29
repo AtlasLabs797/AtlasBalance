@@ -988,9 +988,25 @@ static void ConfigureForwardedHeaders(IServiceCollection services, IConfiguratio
                 throw new InvalidOperationException($"ForwardedHeaders:KnownNetworks contiene una red CIDR invalida: {rawNetwork}");
             }
 
-            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLength));
+            // V-03.01: KnownNetworks/Microsoft.AspNetCore.HttpOverrides.IPNetwork quedaron
+            // obsoletos (ASPDEPR005) en .NET 10 a favor de KnownIPNetworks/System.Net.IPNetwork.
+            // System.Net.IPNetwork exige los bits de host a cero; el IPNetwork antiguo aceptaba
+            // p. ej. 10.0.0.5/24, asi que se normaliza a la direccion base de la red.
+            options.KnownIPNetworks.Add(new System.Net.IPNetwork(MaskToNetworkAddress(prefix, prefixLength), prefixLength));
         }
     });
+}
+
+static IPAddress MaskToNetworkAddress(IPAddress address, int prefixLength)
+{
+    var bytes = address.GetAddressBytes();
+    for (var i = 0; i < bytes.Length; i++)
+    {
+        var bitsInByte = Math.Clamp(prefixLength - (i * 8), 0, 8);
+        bytes[i] &= (byte)(0xFF << (8 - bitsInByte));
+    }
+
+    return new IPAddress(bytes);
 }
 
 static bool IsValidPrefixLength(IPAddress prefix, int prefixLength)

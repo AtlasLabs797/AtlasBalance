@@ -2,6 +2,43 @@
 
 ## Abiertos
 
+### 2026-09-26 - V-03.01 - Abierto - `FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida` falla en fechas concretas
+
+- **Contexto:** detectado al verificar la migracion a .NET 10 (no lo causa
+  la migracion: falla igual en `main`, commit `ce020c5`, con el codigo sin
+  tocar).
+- **Descripcion:** el test construye fechas con
+  `hoy.AddMonths(-k).AddDays(5)`; en dias como 2026-09-26 dos extractos caen
+  en el mismo mes y la logica de deteccion de anomalias (caida de saldo) dan
+  el resultado equivocado. Es un bug de aritmetica de fechas dependiente del
+  dia en que corre el test, no del codigo de produccion migrado.
+- **Por que sigue abierto:** fuera de alcance de la migracion a .NET 10;
+  reportado aqui para que se corrija por separado (fijar las fechas de
+  entrada del test en vez de derivarlas de `hoy`, o revisar la logica de
+  deteccion para que no dependa de en que mes caen los extractos).
+
+### 2026-09-26 - V-03.01 - Abierto - Snapshot de EF desalineado con el modelo (falta `PLAZOS_FIJOS` con `xmin`)
+
+- **Contexto:** detectado al migrar a EF Core 10 (Npgsql EF 10 elimino
+  `UseXminAsConcurrencyToken()`, ver `DOCUMENTACION_CAMBIOS.md` y
+  `DOCUMENTACION_TECNICA.md`). El drift es preexistente, no lo introduce la
+  migracion.
+- **Descripcion:** `AppDbContextModelSnapshot` tiene el mapeo de `xmin` como
+  token de concurrencia en 4 tablas; el modelo C# actual lo tiene en 5 (falta
+  `PLAZOS_FIJOS` en el snapshot). Viene de migraciones anteriores escritas a
+  mano con SQL `IF NOT EXISTS` que nunca actualizaron el snapshot. Por esto
+  `AppDbContext.OnConfiguring` ignora explicitamente
+  `RelationalEventId.PendingModelChangesWarning` (EF Core 9+ lo convierte en
+  excepcion al llamar `Migrate()`).
+- **Intento descartado:** generar la migracion pendiente con scaffold de EF y
+  aplicarla contra un Postgres real fallo 24 de 25 tests de la suite
+  Postgres (intentaba recrear columnas existentes y tocar indices con
+  nombres que ya no existen).
+- **Por que sigue abierto:** requiere una migracion "solo snapshot" (sin
+  cambios de esquema real) escrita y probada con cuidado contra una base ya
+  migrada, para poder reactivar el chequeo de `PendingModelChangesWarning`;
+  no se hizo dentro de la migracion a .NET 10 para no mezclar riesgos.
+
 ### 2026-09-25 - V-03.01 - Cerrado - Revision 2026-09-24: escalada en actualizador elevado, actualizacion desde V-02.09 bloqueada y privacidad IA
 
 - **Contexto:** correccion de los 8 hallazgos de

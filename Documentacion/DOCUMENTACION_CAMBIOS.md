@@ -2,6 +2,29 @@
 
 ## Objetivo
 
+## 2026-09-28 - V-03.01 - Review de Codex en el PR 39
+
+### Trabajo realizado
+
+- `global.json`: SDK `10.0.100` a `10.0.112`. `actions/setup-dotnet` instala la
+  version de `global-json-file`, y con `10.0.100` el release self-contained
+  empaquetaba el runtime GA 10.0.0 sin parches posteriores.
+- `Program.cs` (`ConfigureForwardedHeaders`): las redes de
+  `ForwardedHeaders:KnownNetworks` se normalizan a la direccion base
+  (`MaskToNetworkAddress`). `System.Net.IPNetwork` lanza `ArgumentException` si
+  hay bits de host (p. ej. `10.0.0.5/24`), que el `IPNetwork` antiguo aceptaba.
+- `DataProtectionSecretProtectorTests`: el key ring del test vive en un
+  directorio unico bajo el `bin` del test y solo se borra si su ruta resuelta
+  esta dentro de esa raiz (AGENTS.md, seccion 8), no en el temp del SO.
+
+### Verificacion
+
+- `dotnet test AtlasBalance.API.Tests` (sin Postgres): 944 OK, 0 fallos, 1 omitido.
+
+### Pendientes
+
+- Ninguno.
+
 ## 2026-09-26 - V-03.01 - Tests de anomalias dependientes de la fecha
 
 ### Trabajo realizado
@@ -44,6 +67,206 @@
 ### Pendientes
 
 - Ninguno.
+
+## 2026-09-26 - V-03.01 - Regresion post-migracion: HMAC de secretos invalido tras pasar de .NET 8 a .NET 10
+
+### Trabajo realizado
+
+- Bug: tras la migracion a .NET 10 (ver entrada anterior), una instalacion
+  existente que ya tenia secretos protegidos (`enc:v2:...`, p. ej. el TOTP de
+  MFA) empezaba a fallar con 500 "HMAC invalido. Revise las claves de Data
+  Protection." al arrancar sobre el mismo directorio de claves y la misma BD.
+  Causa: `DataProtectionSecretProtector.DeriveHmacKey`
+  (`Services/SecretProtector.cs`) derivaba la clave HMAC de
+  `provider.GetType().AssemblyQualifiedName`, que incluye la version del
+  ensamblado `Microsoft.AspNetCore.DataProtection` (`8.0.0.0` en .NET 8,
+  `10.0.0.0` en .NET 10). Cada mayor de .NET cambia esa version y por tanto la
+  clave HMAC, invalidando todo secreto ya guardado.
+- Solucion: se reconstruye el mismo string (`FullName + ", " + FullName del
+  ensamblado`) pero fijando la version del ensamblado a `8.0.0.0` (la que
+  tenian todas las instalaciones existentes), reproduciendo el
+  AssemblyQualifiedName original byte a byte. La clave no es secreta (solo
+  detecta manipulacion del ciphertext), asi que fijar la version es seguro y
+  estable ante futuros upgrades de .NET.
+- Test de regresion nuevo:
+  `Atlas Balance/backend/tests/AtlasBalance.API.Tests/DataProtectionSecretProtectorTests.cs`
+  (round-trip, MAC alterado lanza excepcion, y un valor `enc:v2:` simulado
+  como si lo hubiera escrito el build de .NET 8 se sigue aceptando).
+- Verificado con una instalacion real simulada: build original de .NET 8
+  (commit `ce020c5`, worktree con `global.json` fijado a SDK `10.0.100`)
+  contra Postgres 16 desechable con roles `atlas_balance_owner`/`atlas_balance_app`,
+  login + alta de MFA con TOTP real; luego el build de .NET 10 corregido
+  contra la misma BD y el mismo directorio de claves: login devuelve el reto
+  de MFA (no 500) y la verificacion con un TOTP nuevo responde 200.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/Services/SecretProtector.cs`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/DataProtectionSecretProtectorTests.cs` (nuevo)
+
+### Comandos ejecutados
+
+- `dotnet build -c Release` (0 errores)
+- `dotnet test "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" -c Release -- --filter-not-trait "Category=Postgres"`
+  (943 passed, 1 skipped, 1 failed: `DetectAnomalies_Debe_Detectar_Saldo_En_Caida`,
+  fallo preexistente dependiente de fecha, no relacionado)
+- Idem con `--filter-trait "Category=Postgres"` (25 passed)
+- `dotnet test AtlasBalance.Caching.Tests.csproj -c Release` (15 passed)
+- Prueba end-to-end de upgrade real descrita arriba (contenedor Postgres
+  desechable + worktree temporal de .NET 8 + build de .NET 10 con el fix,
+  limpiados al terminar)
+
+### Pendientes
+
+- Ninguno.
+
+## 2026-09-26 - V-03.01 - Migracion del backend de .NET 8 a .NET 10 LTS
+
+### Trabajo realizado
+
+- `TargetFramework` de los 4 proyectos backend (`AtlasBalance.API`,
+  `AtlasBalance.Watchdog`, `AtlasBalance.API.Tests`, `AtlasBalance.Caching.Tests`)
+  de `net8.0` a `net10.0`.
+- `global.json`: SDK `8.0.419` a `10.0.100`, `rollForward: latestFeature`.
+- Paquetes subidos a la ultima linea estable 10.x (commit `66844bb`):
+  `Microsoft.EntityFrameworkCore` (+ `.Design`, `.Relational`, `.InMemory`)
+  8.0.29 -> 10.0.12; `Npgsql.EntityFrameworkCore.PostgreSQL` 8.0.11 -> 10.0.3;
+  `EFCore.NamingConventions` 8.0.3 -> 10.0.1; `Microsoft.AspNetCore.Authentication.JwtBearer`
+  8.0.29 -> 10.0.12; `Microsoft.Extensions.Hosting.WindowsServices` 8.0.1 -> 10.0.12;
+  `Serilog.AspNetCore` 8.0.3 -> 10.0.0, que exige subir `Serilog.Sinks.File`
+  6.0.0 -> 7.0.0 (downgrade detectado en restore si se queda en 6.0.0).
+  `FluentAssertions` se mantiene deliberadamente en 6.12.2: las series 7.x y
+  8.x pasaron a licencia comercial. `Hangfire.*`, `Testcontainers.PostgreSql`,
+  `xunit.v3` y `SSH.NET` sin cambios.
+- Commit `8d648a9` (posterior): se quitan los `PackageReference` explicitos de
+  `System.Diagnostics.EventLog` (API), `System.Security.AccessControl`
+  (Watchdog y tests) y `System.Diagnostics.DiagnosticSource` (tests). En
+  `net10.0` esos paquetes ya vienen en el framework compartido y NuGet los
+  poda (pruning); mantener el pin solo generaba el aviso `NU1510`. No son
+  paquetes "actualizados a 10.x", son paquetes eliminados del proyecto.
+- `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x elimino `UseXminAsConcurrencyToken()`;
+  se inlinea su implementacion original (`Property<uint>("xmin").HasColumnType("xid").IsRowVersion()`)
+  en los 5 sitios de `AppDbContext.cs` que la usaban. Cambio equivalente a
+  nivel de modelo (mismo tipo de columna, mismo comportamiento de
+  concurrencia), no afecta al esquema en BD.
+- `ForwardedHeadersOptions.KnownNetworks`/`Microsoft.AspNetCore.HttpOverrides.IPNetwork`
+  quedaron obsoletos (ASPDEPR005) en favor de `KnownIPNetworks`/`System.Net.IPNetwork`;
+  actualizado en `Program.cs`.
+- EF Core 9+ convierte `PendingModelChangesWarning` en excepcion al llamar
+  `Migrate()`. Se investigo `dotnet ef migrations has-pending-model-changes`: hay
+  drift real y preexistente (no causado por esta migracion) entre el modelo C#
+  y el snapshot de EF. Ejemplo concreto: el snapshot tiene el mapeo de `xmin`
+  (ver punto anterior) en 4 tablas, pero el modelo actual lo tiene en 5
+  (falta `PLAZOS_FIJOS` en el snapshot). El drift viene de migraciones
+  anteriores escritas a mano con SQL `IF NOT EXISTS` que no actualizaron el
+  snapshot. Se genero un scaffold de la migracion pendiente y se probo contra
+  un Postgres real: fallo 24 de 25 tests de la suite Postgres (intentaba
+  re-crear columnas ya existentes y tocar indices con nombres que ya no
+  existen), asi que se descarto. Se opto por ignorar especificamente ese
+  warning en `AppDbContext.OnConfiguring`
+  (`ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))`)
+  en vez de forzar una migracion incorrecta contra el esquema real. Pendiente
+  (preexistente, fuera de alcance): realinear el snapshot con el modelo
+  mediante una migracion "solo snapshot" para poder volver a activar el
+  chequeo.
+- Scripts y docs con referencias a .NET 8 actualizadas a .NET 10:
+  `Atlas Balance/scripts/Build-Release.ps1` (csproj embebido del firmador),
+  `Start-LocalDev.ps1` y `Start-BackendDev.ps1` (rutas `bin\Debug\net8.0` ->
+  `net10.0`), `Reset-AdminPassword.ps1` (comentario de estado actual, no
+  historico), `README.md` ("Requisitos: .NET 8 SDK" -> ".NET 10 SDK"),
+  `AGENTS.md` (secciones 3 y 10: "ASP.NET Core 8"/"Entity Framework Core 8" ->
+  10). No se toco `.github/workflows/*.yml` (usan `global-json-file`, sin
+  version explicita) ni comentarios historicos que describen bugs pasados
+  (p.ej. V-02.07 sobre `System.Text.Json` en .NET 8).
+
+### Archivos tocados
+
+- `global.json`
+- `Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.API/Data/AppDbContext.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/Program.cs`
+- `Atlas Balance/backend/src/AtlasBalance.API/packages.lock.json`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj`
+- `Atlas Balance/backend/src/AtlasBalance.Watchdog/packages.lock.json`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj`
+- `Atlas Balance/backend/tests/AtlasBalance.API.Tests/packages.lock.json`
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj`
+- `Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/packages.lock.json`
+- `Atlas Balance/scripts/Build-Release.ps1`
+- `Atlas Balance/scripts/Reset-AdminPassword.ps1`
+- `Atlas Balance/scripts/Start-BackendDev.ps1`
+- `Atlas Balance/scripts/Start-LocalDev.ps1`
+- `README.md`
+- `AGENTS.md`
+
+### Comandos ejecutados
+
+Entorno de verificacion: SDK `10.0.112` instalado via `apt` de Ubuntu (los
+CDN de Microsoft estan bloqueados en este entorno); CI usa el SDK fijado en
+`global.json` a traves de `setup-dotnet`. La linea base en .NET 8 se compilo
+con el SDK 10 apuntando a `net8.0`, porque el SDK `8.0.131` de `apt` trae un
+compilador mas viejo que falla en expresiones de coleccion dentro de
+`string.Split` (el repo fija `8.0.419`, mas nuevo).
+
+- Linea base (codigo pre-migracion, `net8.0`, compilado con SDK 10):
+  API.Tests fuera de Postgres 940 passed / 1 failed / 1 skipped; Postgres
+  25/25; Caching 15/15.
+- `dotnet restore <4 csproj> --force-evaluate [-r win-x64]`: OK.
+- `dotnet restore <4 csproj> --locked-mode [-r win-x64]`: OK, igual que CI.
+- `dotnet build "Atlas Balance/backend/AtlasBalance.sln" -c Release`: 0 errores;
+  codigos de warning identicos a la linea base (`CA1416`, `CS0618`, `CS8766`,
+  `CS8767`, `xUnit1051`), sin `SYSLIB*`, `ASPDEPR*` ni `NU*` nuevos.
+- Tras la migracion (commits `66844bb` + `8d648a9`): mismos resultados que la
+  linea base (940/1/1, 25/25, 15/15) porque estos commits no tocan tests; el
+  fallo es preexistente y depende de la fecha del sistema
+  (`FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida`,
+  ver `REGISTRO_BUGS.md`).
+- `dotnet list <4 csproj> package --vulnerable --include-transitive`: sin
+  vulnerabilidades en ninguno de los 4 proyectos.
+- `Check-VersionAlignment.ps1`: OK. `Test-AtlasSecrets.ps1`: sin hallazgos.
+
+### Verificacion
+
+- Build en Release sin errores para los 4 proyectos y la solucion completa.
+- Restore en `--locked-mode` verificado para los 4 proyectos, igual que
+  `.github/workflows/ci.yml`.
+- Suite completa de tests backend en verde salvo el fallo preexistente descrito
+  arriba (no atribuible a esta migracion; ver tambien la entrada de la
+  regresion HMAC arriba, que se detecto en la instalacion de prueba
+  posterior a estos dos commits y se corrigio en `c25bca5`).
+- Tests de scripts PowerShell con `pwsh` 7.6 en Linux:
+  `Installer-SecretPreservation`, `Mfa-Totp` y `ServiceSecurity` OK.
+  `Smoke-Test-AtlasBalance.Tests` (usa `Get-Acl`) y
+  `Sync-AtlasDirectory.Tests` (usa `$env:TEMP`) no son ejecutables en Linux
+  (dependen de Windows). `Test-AtlasSecrets.Tests` falla igual en `main`
+  (`ce020c5`) en este entorno; no lo causa esta migracion.
+- Instalacion de prueba (Linux, sin VM Windows disponible): publish
+  self-contained `win-x64` de API y Watchdog OK (ejecutables PE32+, runtime
+  10.0.12 empaquetado, frontend en `wwwroot`, sin `appsettings.Development`
+  ni plantillas en la salida). Instalacion limpia sobre Postgres 16 con los
+  roles del instalador (`atlas_balance_owner` con `BYPASSRLS`,
+  `atlas_balance_app`): 52/52 migraciones aplicadas, `/api/health`, `/ready`
+  y `/functional` responden 200, login y alta de MFA OK. Camino de
+  actualizacion: build .NET 8 crea la BD y un admin con MFA, luego el build
+  .NET 10 sobre la misma BD/claves aplica 0 migraciones nuevas y no lanza
+  `PendingModelChangesWarning` (health 200); el login con MFA fallaba con 500
+  antes del fix de HMAC (ver entrada de arriba) y responde bien despues.
+
+### Pendientes
+
+- El fallo dependiente de fecha en `FinancialToolsServiceTests` queda fuera de
+  alcance de esta migracion (registrado en `REGISTRO_BUGS.md`).
+- El drift preexistente entre el modelo EF y su snapshot (documentado arriba,
+  `PLAZOS_FIJOS` sin `xmin` en el snapshot) sigue existiendo; se maneja igual
+  que antes (SQL manuscrito + warning ignorado). Registrado en
+  `REGISTRO_BUGS.md` como tarea de realineacion.
+- No verificado en este entorno (requiere Windows): instalacion real en
+  Windows Server con `Instalar-AtlasBalance.ps1` (servicios de Windows, ACLs,
+  certificado HTTPS, Event Log); `Build-Release.ps1` de punta a punta y la
+  firma del release (requiere la clave de firma); actualizacion desde
+  "Actualizar Atlas Balance.cmd" en Windows.
+
+---
 
 ## 2026-09-25 - V-03.01 - Publicacion del paquete release en GitHub
 
