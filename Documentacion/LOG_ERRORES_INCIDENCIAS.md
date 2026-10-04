@@ -1,5 +1,22 @@
 ﻿# Log de errores e incidencias
 
+## 2026-10-05 - V-03.02 - Falso Sin acceso con dimensiones vacias (CORREGIDO EN CODIGO)
+
+- **Causa:** API omite ids nullable con `WhenWritingNull`, mientras el store
+  solo reconocia `=== null` como dimension sin restriccion. El mismo problema
+  convertia reglas de columnas omitidas en una lista sin columnas.
+- **Solucion:** `permisosStore.setPermisos` normaliza ids y reglas de columnas
+  omitidos a `null`. Conserva ids concretos, listas explicitas y acciones;
+  no concede lectura sin `Ver cuentas` ni acceso con una matriz vacia.
+- **Regresion:** `tests/permisosStore.test.ts` ejecuta store/Zustand reales con
+  auth aislado. Antes: 11 fallos/16 casos; despues: 16/16 OK. Casos global,
+  pais, titular, interseccion, cuenta, gerente/empleado, sin lectura, reemplazo
+  de sesion, varias filas, columnas y ADMIN.
+- **Verificacion:** `npm.cmd run test:unit` 92/92; lint y build OK. Vite
+  mantiene el aviso preexistente sobre `__dirname`.
+- **Pendiente:** despliegue y sesion del gerente afectado. Sin cambios de datos
+  ni backend/RLS. Diagnostico: `DIAGNOSTICO_PERMISOS_CUENTAS_2026-10-05.md`.
+
 ## 2026-09-26 - V-03.01 - Tests de anomalias que fallaban segun el dia del mes (CORREGIDO)
 
 - **Sintoma:** `FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida`

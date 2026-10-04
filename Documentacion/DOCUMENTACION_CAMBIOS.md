@@ -1,5 +1,45 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
+## 2026-10-05 - V-03.02 - Correccion de lectura de cuentas para no administradores
+
+### Trabajo realizado
+
+- Normalizados ids y reglas de columnas omitidos por API en el setter comun.
+  Conservadas acciones, ids concretos y listas vacias.
+- Anadidas 16 regresiones a `test:unit`, con store/Zustand reales, auth aislado
+  y payloads que omiten null. Cerrado el defecto en codigo.
+- Decisiones visuales: ninguna; las vistas existentes vuelven a reconocer los
+  permisos. Sin pendientes de diseno nuevos.
+
+### Archivos tocados
+
+- Frontend: `src/stores/permisosStore.ts`, `tests/permisosStore.test.ts` y
+  `package.json` (incorporar prueba al script).
+- Documentacion: diagnostico, documentos tecnico/usuario, log de errores,
+  registro de bugs, esta bitacora y `Versiones/v-03.02.md`.
+
+### Comandos ejecutados y verificacion
+
+- `npm.cmd ci --offline --ignore-scripts --no-audit --no-fund`: 258 paquetes
+  desde cache local; sin cambios del lockfile ni scripts de instalacion.
+- `npm.cmd exec -- tsc -p tsconfig.test.v2.json`: primer intento encontro el
+  reexport de stores en `types/index.ts` y `Object.hasOwn` fuera de ES2020;
+  test ajustado a payload estructural y `hasOwnProperty`, compilacion OK.
+- `node --test --test-force-exit .test-dist/tests/permisosStore.test.js` antes
+  del fix: 11 fallos/16 casos, reproduciendo el defecto.
+- `npm.cmd run test:unit`: 92/92 OK, incluidas las 16 regresiones.
+- `npm.cmd run lint`: OK. `npm.cmd run build`: OK; aviso preexistente de Vite
+  sobre `__dirname` en su configuracion.
+- `git diff --check`: OK.
+- `Check-VersionAlignment.ps1 -ExpectedVersion V-03.02`: OK (`3.2.0`).
+
+### Pendientes
+
+- Desplegar frontend y verificar navegador con el gerente afectado. No se
+  afirma validacion visual ni de PostgreSQL. Backend/datos sin cambios.
+- WIP previo conservado, sin commit ni push.
+
+
 ## Objetivo
 
 ## 2026-09-28 - V-03.01 - Review de Codex en el PR 39

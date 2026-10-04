@@ -2,6 +2,14 @@
 
 ## Abiertos
 
+### 2026-10-05 - V-03.02 - Cerrado en codigo - Permisos globales o parciales bloqueados por ids omitidos en auth
+
+- **Causa comprobada:** API omite `null` con `WhenWritingNull`; `permisosStore.getMatchingPermisos` requiere `=== null` como comodin y `setPermisos` no normaliza campos ausentes.
+- **Impacto:** GERENTE/EMPLEADO pueden recibir «Sin acceso» en cuentas y detalle aunque el backend reconozca lectura. ADMIN evita la comprobacion. Afecta tambien a filas por pais/titular con otra dimension omitida.
+- **Solucion y verificacion:** normalizacion aplicada en `setPermisos`; detalle en `LOG_ERRORES_INCIDENCIAS.md`. Las 16 regresiones nuevas pasan con store/Zustand reales y auth aislado; suite 92/92, lint y build OK.
+- **Pendiente de instalacion:** desplegar el frontend corregido y comprobar la sesion del gerente afectado. Sin cambios de permisos persistidos ni backend/RLS.
+- **Detalle:** `Documentacion/DIAGNOSTICO_PERMISOS_CUENTAS_2026-10-05.md`.
+
 ### 2026-09-26 - V-03.01 - Abierto - `FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida` falla en fechas concretas
 
 - **Contexto:** detectado al verificar la migracion a .NET 10 (no lo causa

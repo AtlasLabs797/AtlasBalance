@@ -1,6 +1,20 @@
 # Documentacion tecnica
 
-## Vigencia documental: V-03.01
+## Vigencia documental: V-03.02
+
+### 2026-10-05 - Contrato de permisos nullable en el frontend
+
+`permisosStore.setPermisos` normaliza a `null` los ids de pais, titular y cuenta
+omitidos por la API (`WhenWritingNull`), antes de evaluar la matriz. Tambien
+normaliza las reglas de columnas omitidas: `null` conserva «sin restriccion» y
+una lista vacia explicita sigue siendo vacia. Conserva acciones e ids concretos.
+Login, restauracion y refresh ya pasan por este setter.
+
+La lectura global sigue requiriendo `puede_ver_cuentas`; una matriz vacia no
+concede acceso. Sin cambios de backend, RLS, roles ni datos. Regresiones en
+`frontend/tests/permisosStore.test.ts`: store/Zustand reales con auth aislado,
+payloads que omiten null, ambos roles no administradores y limites de alcance.
+Suite 92/92, lint y build OK; pendiente sesion de la instalacion afectada.
 
 ### 2026-09-26 - Migracion del backend de .NET 8 a .NET 10 LTS
 

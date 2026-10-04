@@ -1,6 +1,6 @@
 # Documentacion de usuario
 
-Documento vigente para `V-03.01`. Las menciones `Desde V-XX.YY` conservan la
+Documento vigente para `V-03.02`. Las menciones `Desde V-XX.YY` conservan la
 version en la que se introdujo cada comportamiento; no son una referencia a una
 version anterior instalada.
 
@@ -461,6 +461,13 @@ Si una cuenta se asigna acompanada de titular o pais distintos al real, el backe
 Si envias dos o mas filas con los mismos flags y una cubre a la otra en todas las dimensiones, el backend devuelve `409 Conflict` con la lista de redundancias y no guarda nada. Quita las restrictivas o ampla las generales antes de reintentar.
 
 Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
+
+Desde V-03.02 se corrige el falso «Sin acceso» de permisos globales o con
+cuenta en blanco. Para dar lectura de todas las cuentas a un gerente o empleado,
+deja pais y titular en «Todos», cuenta en blanco y marca `Ver cuentas`.
+Un pais o titular concreto limita las cuentas visibles a ese alcance.
+El cambio requiere instalar el frontend actualizado; no hace falta enumerar
+todas las cuentas ni cambiar el rol a Admin.
 
 Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas visibles en `Extractos` no concede permiso de edicion; la edicion de columnas se decide por los permisos configurados en `Usuarios`.
 

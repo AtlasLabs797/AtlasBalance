@@ -70,7 +70,17 @@ const mergeColumnRules = (
 export const usePermisosStore = create<PermisosState>((set, get) => ({
   permisos: [],
 
-  setPermisos: (permisos) => set({ permisos }),
+  setPermisos: (permisos) => set({
+    // La API omite los null: restaurar los comodines antes de evaluar el alcance.
+    permisos: permisos.map((permiso) => ({
+      ...permiso,
+      pais_id: permiso.pais_id ?? null,
+      titular_id: permiso.titular_id ?? null,
+      cuenta_id: permiso.cuenta_id ?? null,
+      columnas_visibles: permiso.columnas_visibles ?? null,
+      columnas_editables: permiso.columnas_editables ?? null,
+    })),
+  }),
   clear: () => set({ permisos: [] }),
 
   canViewCuenta: (cuentaId, titularId, paisId) => {
