@@ -2,6 +2,20 @@
 
 ## Abiertos
 
+### 2026-10-05 - V-03.02 - Abierto - `PlazoFijoVencimientoJob` falla al consultar notificaciones JSONB
+
+- **Sintoma:** durante el arranque del backend de desarrollo, Hangfire reintenta
+  `PlazoFijoVencimientoJob` tras recibir PostgreSQL `42883: operator does not
+  exist: jsonb ~~ jsonb` desde `PlazoFijoService.TryAddAdminNotificationAsync`.
+- **Causa probable:** la consulta usa `Contains` sobre `DetallesJson`, mapeado
+  como `jsonb`; la operación LIKE (`~~`) no está definida para `jsonb`.
+- **Impacto:** el job de vencimientos no pudo comprobar/crear notificaciones en
+  los casos ejecutados. El health HTTP de la API sigue respondiendo 200.
+- **Pendiente:** cambiar la consulta a una operación compatible con JSONB o a
+  texto y verificarla con una prueba PostgreSQL. No se cambió código en esta
+  sesión.
+
+
 ### 2026-10-05 - V-03.02 - Cerrado en codigo - Permisos globales o parciales bloqueados por ids omitidos en auth
 
 - **Causa comprobada:** API omite `null` con `WhenWritingNull`; `permisosStore.getMatchingPermisos` requiere `=== null` como comodin y `setPermisos` no normaliza campos ausentes.
@@ -944,6 +958,20 @@
   `canSubmitPlazoFijo` a que `cuentaId` tenga valor.
 
 ## Abiertos
+
+### 2026-10-05 - V-03.02 - Abierto - `PlazoFijoVencimientoJob` falla al consultar notificaciones JSONB
+
+- **Sintoma:** durante el arranque del backend de desarrollo, Hangfire reintenta
+  `PlazoFijoVencimientoJob` tras recibir PostgreSQL `42883: operator does not
+  exist: jsonb ~~ jsonb` desde `PlazoFijoService.TryAddAdminNotificationAsync`.
+- **Causa probable:** la consulta usa `Contains` sobre `DetallesJson`, mapeado
+  como `jsonb`; la operación LIKE (`~~`) no está definida para `jsonb`.
+- **Impacto:** el job de vencimientos no pudo comprobar/crear notificaciones en
+  los casos ejecutados. El health HTTP de la API sigue respondiendo 200.
+- **Pendiente:** cambiar la consulta a una operación compatible con JSONB o a
+  texto y verificarla con una prueba PostgreSQL. No se cambió código en esta
+  sesión.
+
 
 ### 2026-07-28 - V-02.07 - Cerrado - Lista de contrasenas comunes 93% inefectiva (severidad BAJA)
 

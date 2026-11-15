@@ -149,9 +149,9 @@ public static class SeedData
             // el operador esta ejecutando. Mantener una version atras provoca que el
             // default de versiones y el campo "app_version" que reportan
             // servicios como ActualizacionService.Invoke o SettingsTray queden
-            // una version atras del runtime real. Se actualiza a V-03.01, que
+            // una version atras del runtime real. Se actualiza a V-03.02, que
             // es el InformationalVersion declarado en Directory.Build.props.
-            ["app_version"] = ("V-03.01", "string", "Version instalada"),
+            ["app_version"] = ("V-03.02", "string", "Version instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["app_update_auto_enabled"] = ("false", "bool", "Aplicar automaticamente releases firmados de GitHub"),
             ["app_update_auto_hour_utc"] = ("3", "int", "Hora UTC minima para la comprobacion automatica diaria"),

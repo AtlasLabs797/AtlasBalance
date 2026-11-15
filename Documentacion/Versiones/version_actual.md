@@ -1,17 +1,17 @@
 # Version actual
 
-Version actual del proyecto: `V-03.01`
+Version actual del proyecto: `V-03.02`
 
-Fecha de registro: 2026-09-16
+Fecha de registro: 2026-10-04
 
 ## Fuentes de version
 
-- Runtime backend: `Atlas Balance/Directory.Build.props` (`3.1.0` / `V-03.01`)
-- Runtime frontend: `Atlas Balance/frontend/package.json` (`3.1.0` / `V-03.01`)
-- Trazabilidad de paquete: `Atlas Balance/VERSION` (`V-03.01`)
-- Documentacion de version: `Documentacion/Versiones/v-03.01.md`
+- Runtime backend: `Atlas Balance/Directory.Build.props` (`3.2.0` / `V-03.02`)
+- Runtime frontend: `Atlas Balance/frontend/package.json` (`3.2.0` / `V-03.02`)
+- Trazabilidad de paquete: `Atlas Balance/VERSION` (`V-03.02`)
+- Documentacion de version: `Documentacion/Versiones/v-03.02.md`
 
-Los tres archivos runtime estan **alineados** en `V-03.01` / `3.1.0`.
+Los tres archivos runtime estan alineados en `V-03.02` / `3.2.0`.
 
 El script `Atlas Balance/scripts/Check-VersionAlignment.ps1` verifica
 ademas `frontend/package-lock.json`, `backend/.../Data/SeedData.cs`,
@@ -20,25 +20,20 @@ ademas `frontend/package-lock.json`, `backend/.../Data/SeedData.cs`,
 
 ## Base anterior
 
-- Version de trabajo previa: `V-02.09`
-- Documentacion historica: `Documentacion/Versiones/v-02.09.md`
+- Version anterior: `V-03.01`
+- Documentacion historica: `Documentacion/Versiones/v-03.01.md`
 
 ## Reglas
 
-- Toda modificacion debe registrarse bajo la version actual.
+- Toda modificacion se registra bajo la version actual.
 - Antes de implementar cambios, revisar los archivos de esta carpeta cuyo nombre empiece por `v` o `version`.
 - Si se crea una version nueva, actualizar este archivo antes de cerrar la tarea.
 - Si se pide subir a GitHub, crear una rama con el nombre de esta version y hacer push a esa rama.
 
-## Historial de la decision de version
+## Origen de la version
 
-El 2026-08-25 se adopto `V-02.09` como version vigente, alineando los
-tres archivos runtime con la documentacion. Esa version permanecio
-vigente hasta el 2026-09-16, cuando se cerro `V-02.09` y se abrio
-`V-03.01` partiendo del HEAD de `main` (`main` apuntaba a
-`e670749` y mantenia `V-02.09` como base del hotfix
-`hotfix/V-02.09-actualizador-sonda-funcional`, ya mergeado).
-
-El bump a `V-03.01` cubre solo alineacion de fuentes; el contenido
-funcional del nuevo ciclo se documentara en `v-03.01.md` a medida que
-se implemente. `v-02.09.md` permanece como historico sin tocar.
+La rama `V-03.02` se crea desde `main` actualizado el 2026-10-04, en el
+commit `fa8abef` (`Merge pull request #39 from AtlasLabs797/claude/eager-turing-01qoda`).
+El cambio inicial de esta version alinea las fuentes runtime y la configuracion
+de release en `V-03.02` / `3.2.0`; el trabajo funcional se documentara en
+`v-03.02.md`.

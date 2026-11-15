@@ -1,5 +1,13 @@
 ﻿# Log de errores e incidencias
 
+## 2026-10-05 - V-03.02 - 500 en login de desarrollo por clave Data Protection ausente (RESUELTO EN DESARROLLO)
+
+- **Sintoma:** el navegador muestra `Error interno del servidor` al enviar el login; `/api/health` sigue respondiendo 200.
+- **Causa confirmada:** `AuthService.LoginAsync` llega a `CreateMfaChallenge`, pero `DataProtectionSecretProtector.UnprotectFromStorage` no puede descifrar el secreto TOTP almacenado: la clave requerida no está en `backend/src/AtlasBalance.API/.dataprotection-keys`. Ese anillo solo contiene la clave generada por el arranque actual. En ese momento, la cuenta tenía MFA habilitado y el secreto cifrado.
+- **No relacionado:** el log también contiene `42883: jsonb ~~ jsonb` de un job de Hangfire; no es la excepción del login.
+- **Corrección aplicada en desarrollo:** tras autorización expresa, se desactivó MFA y se eliminó únicamente el secreto TOTP irrecuperable del administrador local de desarrollo. Debe volver a configurarse al entrar. La instalación real no se tocó.
+- **Alcance:** diagnóstico limitado al entorno de desarrollo; no se ejecutaron operaciones sobre la instalación real.
+
 ## 2026-10-05 - V-03.02 - Falso Sin acceso con dimensiones vacias (CORREGIDO EN CODIGO)
 
 - **Causa:** API omite ids nullable con `WhenWritingNull`, mientras el store

@@ -1,5 +1,47 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
+## 2026-10-05 - V-03.02 - Arranque del entorno de desarrollo aislado
+
+### Trabajo realizado
+
+- API de desarrollo iniciada en `http://localhost:5002` (PID 3200) con
+  `Start-BackendDev.ps1`; compilada en `tools/dotnet-build/api`.
+- Vite ya estaba activo en `http://localhost:5173` (Node PID 26320); se dejó
+  intacto. Su proxy `/api` responde desde la API de desarrollo.
+- PostgreSQL ya estaba activo en Docker. Las etiquetas identifican el proyecto
+  `atlasbalance` y el compose de este checkout; usa el volumen
+  `atlasbalance_pgdata`.
+- El arranque ejecutó migraciones, instalación de Hangfire, permisos de BD,
+  seed y protección de configuración solo contra la BD de desarrollo. También
+  corrieron tareas de limpieza; no se conectó a la instalación real.
+- Sin cambios en código de la aplicación ni en los servicios de producción.
+
+### Archivos tocados
+
+- `Documentacion/DOCUMENTACION_CAMBIOS.md` y `Documentacion/REGISTRO_BUGS.md`.
+- Archivos locales ignorados: artefactos en `tools/dotnet-build/api`, logs/PID
+  en `Atlas Balance/logs/dev` y claves locales en `.dataprotection-keys`.
+
+### Comandos ejecutados
+
+- `Start-BackendDev.ps1 -TimeoutSeconds 60 -ApiPort 5002`: restauración y
+  compilación correctas; un aviso CS0618 por sobrecarga obsoleta.
+- `pg_isready` dentro del contenedor de desarrollo: aceptando conexiones.
+- Los logs registran fallos de tareas programadas: `PlazoFijoVencimientoJob`
+  devuelve PostgreSQL `42883` en `PlazoFijoService.cs:197`; el backup no encuentra
+  `pg_dump.exe` configurado y la sincronización de tipos requiere su clave API.
+  El fallo JSONB quedó abierto en `REGISTRO_BUGS.md`.
+- `Invoke-WebRequest` a `http://localhost:5002/api/health`,
+  `http://localhost:5173` y `http://localhost:5173/api/health`: HTTP 200.
+- Primer intento de restauración dentro del sandbox bloqueado por `NU1301`;
+  segundo intento con acceso de red aprobado completado correctamente.
+
+### Pendientes
+
+- No se hizo prueba visual ni de inicio de sesión. API y frontend permanecen
+  activos; la API responde al health, pero las tareas indicadas siguen pendientes.
+
+
 ## 2026-10-05 - V-03.02 - Correccion de lectura de cuentas para no administradores
 
 ### Trabajo realizado
@@ -39,6 +81,54 @@
   afirma validacion visual ni de PostgreSQL. Backend/datos sin cambios.
 - WIP previo conservado, sin commit ni push.
 
+## 2026-10-05 - V-03.02 - Diagnostico de lectura de cuentas para no administradores
+
+### Trabajo realizado
+
+- Revisado el flujo formulario, guardado, auth, store, vistas, servicio backend y SQL RLS del repo.
+- Reproducido que ids omitidos por `WhenWritingNull` bloquean permisos globales/por pais/titular en el frontend, que exige `=== null`.
+- Informe con causa, ocho casos, limites y correccion recomendada; bug abierto. Sin cambios funcionales ni de datos.
+
+### Archivos tocados
+
+- `Documentacion/DIAGNOSTICO_PERMISOS_CUENTAS_2026-10-05.md`, `REGISTRO_BUGS.md`, `DOCUMENTACION_CAMBIOS.md` y `Versiones/v-03.02.md`.
+
+### Comandos ejecutados
+
+- `git status --short`, `git branch --show-current`, `rg` y `Get-Content` sobre instrucciones, documentacion y fuentes.
+- `node` via stdin: primer intento con TypeScript externo bloqueado por `MODULE_NOT_FOUND`; alternativa con `stripTypeScriptTypes` incorporado y `vm`, ocho comprobaciones OK.
+- `dotnet test <AtlasBalance.API.Tests.csproj> --no-restore -p:UseAppHost=false -p:UseArtifactsOutput=true -p:ArtifactsPath=<workspace>/tools/dotnet-build/diagnostico-permisos -- --filter-class '*UserAccess*' --timeout 60s`: bloqueado por `NETSDK1004`, faltan assets NuGet.
+- `git diff --check` sobre documentos de la sesion: OK.
+
+### Resultado de verificacion y pendientes
+
+- Verificado el defecto ejecutando helpers del store con adaptadores de estado/auth; no es validacion visual ni de BD real.
+- Pendientes: correccion, regresiones, permisos guardados y HTTP del gerente concreto, navegador autenticado y PostgreSQL. Conservado el WIP previo de inicio de version.
+
+## 2026-10-04 - V-03.02 - Inicio de version
+
+### Trabajo realizado
+
+- Actualizado `main` desde `origin` y creada la rama `V-03.02` desde su HEAD.
+- Alineadas las versiones runtime en `V-03.02` / `3.2.0` y los valores de release e instalacion.
+- Actualizados `version_actual.md` y creado `v-03.02.md`.
+
+### Archivos tocados
+
+- `Atlas Balance/VERSION`, `Atlas Balance/Directory.Build.props`, frontend `package.json` y `package-lock.json`, `SeedData.cs`, `.github/workflows/release.yml`, scripts de release/instalacion y documentos de version.
+
+### Comandos ejecutados
+
+- `git fetch origin main`
+- `git pull --ff-only origin main`
+- `git switch -c V-03.02`
+- `Check-VersionAlignment.ps1 -ExpectedVersion V-03.02`: OK. `git diff --check`: OK.
+
+### Resultado de verificacion y pendientes
+
+- Pull: `main` ya estaba actualizado respecto a `origin/main`.
+- La version runtime y los defaults de release quedan alineados en `V-03.02` / `3.2.0`.
+- No se ha hecho push.
 
 ## Objetivo
 
@@ -27590,3 +27680,76 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
   confirmó `border-radius: 11px`.
 
 ---
+
+## 2026-10-05 - V-03.02 - Arranque parcial del entorno de desarrollo
+
+### Trabajo realizado
+
+- Se inició Vite del checkout en `http://localhost:5173` (PID 14748).
+- El backend no se inició: Docker no está disponible, PostgreSQL no escucha en
+  `5433` y no hay `appsettings.Development.json` ni cadena de conexión local.
+  `appsettings.json` mantiene `DefaultConnection` vacío; no se conectó a la BD real.
+
+### Archivos tocados
+
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`
+- Logs locales ignorados: `Atlas Balance/frontend/logs/dev/vite-dev.out.log` y
+  `vite-dev.err.log`.
+
+### Comandos ejecutados
+
+- Inspección de procesos/puertos, configuración y artefactos locales.
+- Inicio de `npm.cmd run dev -- --host 127.0.0.1 --port 5173 --strictPort`.
+- `Invoke-WebRequest http://localhost:5173`: HTTP 200.
+
+### Verificación y pendientes
+
+- Frontend responde por HTTP 200 en el puerto de desarrollo.
+- API en `5002` y PostgreSQL de desarrollo en `5433` no están activos.
+- Pendiente configurar/arrancar Docker PostgreSQL local y cadena de conexión de
+  desarrollo; después iniciar API en `5002` y comprobar `/api/health`.
+
+---
+
+## 2026-10-05 - V-03.02 - Acceso del administrador local de desarrollo
+
+### Trabajo realizado
+
+- Restablecida la contraseña de la cuenta administradora en la base local de desarrollo (`atlas_balance_db`, puerto 5433, volumen `atlasbalance_pgdata`).
+- La cuenta quedó activa y desbloqueada; se conservaron MFA y el estado de primer acceso. Se rotó el sello de seguridad y no quedaron sesiones de refresco activas.
+- El valor de la contraseña no se registra. No se ejecutó ninguna operación contra la instalación real.
+
+### Archivos y comandos
+
+- Archivo actualizado: `Documentacion/DOCUMENTACION_CAMBIOS.md`.
+- Base de datos local: actualización de la cuenta admin y revocación de tokens de refresco vigentes.
+- Inspección acotada de `atlas_balance_db` y consultas SQL de estado; contraseña y hash omitidos.
+- Comprobación HTTP de `http://localhost:5002/api/health` y del proxy de `http://localhost:5173/api/health`.
+
+### Verificación y pendiente
+
+- La consulta de base de datos confirmó cuenta activa, desbloqueada, MFA conservado, bcrypt con coste 12, cero fallos y cero tokens vigentes.
+- API y frontend respondieron HTTP 200 en sus puertos de desarrollo (5002 y 5173).
+- Pendiente: iniciar sesión manualmente en la pestaña del navegador.
+
+---
+
+## 2026-10-05 - V-03.02 - Diagnóstico del error 500 de login en desarrollo
+
+### Trabajo realizado
+
+- Se correlacionó el mensaje visible del login con el log del backend: falla al descifrar el secreto MFA porque falta la clave de Data Protection que lo protegía.
+- Se comprobó que el anillo local del checkout contiene solo la clave nueva. Tras autorización expresa, se eliminó el secreto MFA irrecuperable únicamente de la cuenta de desarrollo; la API permanece sana en `/api/health`.
+- El MFA se restableció únicamente en desarrollo tras autorización expresa. La instalación real no se tocó.
+
+### Archivos y comandos
+
+- Archivos actualizados: `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y `Documentacion/DOCUMENTACION_CAMBIOS.md`.
+- Inspección de logs y código de login/Data Protection; lectura de nombres de claves, sin abrir ni copiar su contenido; consulta de solo lectura del estado MFA.
+- No se enviaron credenciales desde el navegador ni se ejecutaron tests.
+
+### Verificación y pendiente
+
+- Confirmada la excepción `CryptographicException` de Data Protection durante la creación del reto MFA; el 500 no es el error JSONB de Hangfire.
+- Verificación posterior: MFA desactivado y secreto anterior eliminado; cuenta activa, contraseña intacta, sin bloqueos ni tokens de refresco vigentes.
+- Pendiente: iniciar sesión manualmente en la pestaña y completar la nueva configuración de MFA.

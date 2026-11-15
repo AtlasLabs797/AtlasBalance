@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, for example V-03.01"
+        description: "Version to publish, for example V-03.02"
         required: true
-        default: "V-03-01"
+        default: "V-03-02"
       runtime:
         description: "Runtime identifier"
         required: true
@@ -41,8 +41,8 @@ jobs:
       - name: Validate release inputs
         shell: pwsh
         run: |
-          if ("${{ github.ref }}" -ne "refs/heads/V-03.01") {
-            throw "Release workflow must run from refs/heads/V-03.01, not '${{ github.ref }}'."
+          if ("${{ github.ref }}" -ne "refs/heads/V-03.02") {
+            throw "Release workflow must run from refs/heads/V-03.02, not '${{ github.ref }}'."
           }
           if ("${{ inputs.version }}" -notmatch '^V-\d{2}[-.]\d{2}$') {
             throw "Invalid version '${{ inputs.version }}'."

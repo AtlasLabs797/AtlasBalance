@@ -32,7 +32,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$AppVersion = "V-03.01"
+$AppVersion = "V-03.02"
 $ApiServiceName = "AtlasBalance.API"
 $WatchdogServiceName = "AtlasBalance.Watchdog"
 $ApiServiceAccountPrincipal = ""
