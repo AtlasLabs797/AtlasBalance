@@ -5709,3 +5709,8 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 ## 2026-11-16 - Comprobacion de permisos del buscador
 
 `dotnet test --filter` fue ignorado por Microsoft Testing Platform; se interrumpio y se ejecuto el runner xUnit directamente con `-class`: 19 pruebas correctas. `UseAppHost=false` es incompatible con este proyecto xUnit v3. La herramienta de navegador no pudo identificar la URL con seguridad y detuvo la comprobacion visual.
+
+## 2026-11-16 - V-03.02 - Healthcheck local con host equivocado
+
+- Durante la validacion, el primer reinicio consulto `127.0.0.1:5002/api/health` y trato la API iniciada como no disponible. El servicio respondio por `localhost:5002`; tras corregir la comprobacion y reiniciar, API y proxy frontend devuelven HTTP 200. No se cambio el codigo de la aplicacion.
+- La suite completa de backend no termino en cinco minutos y se interrumpio; prueba PostgreSQL dirigida 1/1. El control de Chrome devolvio `GetCursorPos` acceso denegado tras el reinicio, por lo que la validacion autenticada completa sigue pendiente.

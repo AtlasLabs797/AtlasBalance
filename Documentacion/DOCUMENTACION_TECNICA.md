@@ -2,6 +2,10 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-16 - Modos de la tabla de cuenta
+
+`CuentaDetailPage` inicia en revision y restringe edicion de celdas, alerta, desglose, insercion y seleccion para acciones masivas al modo de edicion avanzada, conservando las comprobaciones de permisos. Al volver a revision limpia la seleccion.
+
 ### 2026-11-16 - Columnas y tabla compartida de extractos
 
 `ExtractosController.Listar` descubre nombres extra no vacios en movimientos autorizados del ambito, independientemente de los filtros y la pagina. `orden_columnas` es JSONB independiente de `columnas_visibles` en `PREFERENCIAS_USUARIO_CUENTA`; la migracion debe aplicarse al desplegar. Las rutas de permisos preservan el orden existente. Los controles serializan guardados y la tabla compartida excluye cuenta, banco y titular en el detalle de cuenta, manteniendo acciones masivas sobre filas filtradas. Las preferencias previas no distinguen una columna extra nueva de una ocultada: se muestran una vez y la siguiente preferencia guarda todas las columnas conocidas.

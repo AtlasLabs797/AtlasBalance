@@ -126,6 +126,10 @@ test('detalle de cuenta: columnas, filtros y preferencias persistidas', async ({
   await expect(grid.getByText('Cobro proveedor')).toHaveCount(0);
   await page.getByRole('searchbox', { name: /Buscar por concepto o comentario/i }).fill('');
   await expect(grid.getByText('Cobro proveedor')).toBeVisible();
+  await expect(grid.getByRole('checkbox', { name: /Marcar fila 60 con alerta/ })).toBeDisabled();
+  await expect(grid.getByRole('checkbox', { name: 'Seleccionar movimiento 59' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edición avanzada' }).click();
+  await expect(grid.getByRole('checkbox', { name: /Marcar fila 60 con alerta/ })).toBeEnabled();
   const selected = grid.getByRole('checkbox', { name: 'Seleccionar movimiento 59' });
   await selected.check();
   await expect(selected).toBeChecked();
@@ -134,6 +138,12 @@ test('detalle de cuenta: columnas, filtros y preferencias persistidas', async ({
   await expect(grid.getByText('Cobro proveedor')).toBeVisible();
   await grid.getByLabel('Filtrar por Concepto').fill('');
   await expect(grid.getByText('Pago alquiler')).toBeVisible();
+  await expect(grid.getByRole('checkbox', { name: 'Seleccionar movimiento 59' })).not.toBeChecked();
+  await grid.getByRole('checkbox', { name: 'Seleccionar movimiento 59' }).check();
+  await page.getByRole('button', { name: 'Revisión', exact: true }).click();
+  await expect(grid.getByRole('checkbox', { name: /Marcar fila 60 con alerta/ })).toBeDisabled();
+  await expect(grid.getByRole('checkbox', { name: 'Seleccionar movimiento 59' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edición avanzada' }).click();
   await expect(grid.getByRole('checkbox', { name: 'Seleccionar movimiento 59' })).not.toBeChecked();
   const top = page.getByRole('region', { name: 'Desplazamiento horizontal superior de extractos' });
   await top.evaluate((element) => { element.scrollLeft = 200; });

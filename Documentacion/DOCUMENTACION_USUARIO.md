@@ -1,6 +1,6 @@
 # Documentacion de usuario
 
-En Extractos y en el detalle de cuenta, las filas con alerta tienen fondo amarillo y se pueden desplazar las columnas desde las barras superior e inferior. En «Columnas» se puede mostrar u ocultar cada columna y cambiar su posicion con las flechas; la aplicacion guarda la preferencia para el usuario y el ambito. La primera vez tras actualizar, las columnas adicionales con datos pueden volver a aparecer aunque antes estuvieran ocultas; puedes ocultarlas de nuevo. El detalle incluye busqueda por concepto o comentarios y fechas; los filtros bajo las cabeceras actuan sobre la pagina cargada.
+En Extractos y en el detalle de cuenta, las filas con alerta tienen fondo amarillo y se pueden desplazar las columnas desde las barras superior e inferior. En «Columnas» se puede mostrar u ocultar cada columna y cambiar su posicion con las flechas; la aplicacion guarda la preferencia para el usuario y el ambito. La primera vez tras actualizar, las columnas adicionales con datos pueden volver a aparecer aunque antes estuvieran ocultas; puedes ocultarlas de nuevo. El detalle incluye busqueda por concepto o comentarios y fechas; los filtros bajo las cabeceras actuan sobre la pagina cargada. La tabla de cuenta comienza en «Revision»; usa «Edicion avanzada» para modificar movimientos si tienes permiso. Al volver a revision se deshace la seleccion de movimientos.
 
 Documento vigente para `V-03.02`. Las menciones `Desde V-XX.YY` conservan la
 version en la que se introdujo cada comportamiento; no son una referencia a una

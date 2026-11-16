@@ -28029,3 +28029,20 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 - Archivos: `frontend/src/components/layout/CommandPalette.tsx`, bitacora, log y version. Decision visual: se mantiene la paleta; sin cambios de diseno.
 - Verificacion: build en `.search-build`, ESLint de componentes, 19 pruebas de `UserAccessServiceTests` y `UserAccessScopeMatrixTests`; Vite en 127.0.0.1:5173 entrega los componentes actualizados. La inspeccion visual del navegador se bloqueo por identificacion insegura de URL. Pendiente recargar pagina y probar con usuarios y permisos reales.
 - Comandos: `npm run build` con `VITE_BUILD_OUT_DIR=.search-build`, `npx eslint` sobre ambos componentes, `dotnet` ejecutando el runner xUnit con filtros de clase, consulta HTTP local a componentes de Vite.
+
+## 2026-11-16 - V-03.02 - Validacion de migracion y entorno demo
+
+- Trabajo: comprobacion de la aplicacion en Chrome, migracion en PostgreSQL aislado y en la BD demo, reinicio de la API local con binario Release y comprobaciones de salud. No se despliega ni publica release.
+- Archivos: este registro, `Versiones/v-03.02.md` y log de incidencias. Se creo y elimino el script temporal de reinicio; logs de validacion en `Atlas Balance/logs/dev`.
+- Comandos: `docker ps`, consultas `psql` de esquema e historial, `dotnet test ... -c Release --no-restore`, test xUnit dirigido de concurrencia en PostgreSQL/Testcontainers, `Check-VersionAlignment.ps1`, healthchecks HTTP locales, `git diff --check`.
+- Resultado: alineacion OK; test PostgreSQL 1/1 con `Database.MigrateAsync`; columna e historial de migracion presentes en demo; API y proxy HTTP 200. Chrome mostro filas y selector de columnas; despues el control de ventana devolvio acceso denegado. Suite completa interrumpida tras cinco minutos sin resultado, no se considera aprobada.
+- Incidencia: el primer reinicio consulto salud por 127.0.0.1, no por localhost, y dio falso negativo; el segundo arranco la API y verifico salud por localhost. Clave de firma ausente en el entorno del proceso.
+- Pendientes: completar suite de backend con Docker, validar funcionalmente en Chrome autenticado contra la API actualizada y preparar release firmado. No declarar lista la publicacion hasta cerrar estos puntos.
+
+## 2026-11-16 - V-03.02 - Modos de revision y edicion en cuenta
+
+- Trabajo: selector de revision y edicion avanzada en el desglose de cuenta. La revision es inicial, bloquea las acciones de movimiento y limpia la seleccion al volver; edicion avanzada respeta los permisos existentes.
+- Archivos: `Atlas Balance/frontend/src/pages/CuentaDetailPage.tsx`, `Atlas Balance/frontend/e2e/visual/extractos-comportamiento.spec.ts`, `Documentacion/Versiones/v-03.02.md`, documentacion tecnica, de usuario y esta bitacora.
+- Comandos: `npx tsc --noEmit`, `npx eslint` sobre los dos archivos, `npm run build`, compilacion de unitarios con `tsc -p tsconfig.test.v2.json` a `.test-dist-modo-cuenta` y `node --test`, Playwright del caso `detalle de cuenta` con API simulada y Vite existente, `git diff --check`.
+- Verificacion: TypeScript, ESLint y build correctos; 104/104 unitarios y prueba de navegador 1/1, incluyendo bloqueo, desbloqueo y limpieza de seleccion. No se comprobo en sesion autenticada real.
+- Decision visual: se reutiliza el selector y estilos de Extractos, situado junto al desglose de cuenta. Sin pendientes de diseno conocidos; pendiente comprobacion manual autenticada y gates de release previamente registrados.

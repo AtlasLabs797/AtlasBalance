@@ -110,6 +110,7 @@ export default function CuentaDetailPage() {
   const [rows, setRows] = useState<Extracto[]>([]);
   const [rowsPage, setRowsPage] = useState(1);
   const [rowsPageSize, setRowsPageSize] = useState(200);
+  const [modo, setModo] = useState<'revision' | 'edicion'>('revision');
   const [search, setSearch] = useState('');
   const searchDebounced = useDebouncedValue(search, 250);
   const [fechaDesde, setFechaDesde] = useState('');
@@ -174,7 +175,7 @@ export default function CuentaDetailPage() {
 
   const canEditCell = useCallback(
     (column: string) => {
-      if (!cuentaId || !summary) {
+      if (modo !== 'edicion' || !cuentaId || !summary) {
         return false;
       }
 
@@ -185,10 +186,10 @@ export default function CuentaDetailPage() {
       const editableColumns = getColumnasEditables(cuentaId, summary.titular_id, summary.pais_id);
       return editableColumns === null || editableColumns.includes(column);
     },
-    [canEditCuenta, cuentaId, getColumnasEditables, summary]
+    [canEditCuenta, cuentaId, getColumnasEditables, modo, summary]
   );
   const canFlagRows = canEditCell('flagged');
-  const canSelectRows = canDeleteRows || canFlagRows;
+  const canSelectRows = modo === 'edicion' && (canDeleteRows || canFlagRows);
 
   const loadCuentaDataRequestIdRef = useRef(0);
   const queryClient = useQueryClient();
@@ -994,6 +995,14 @@ export default function CuentaDetailPage() {
             {summary.ultima_actualizacion ? formatDateTime(summary.ultima_actualizacion) : 'Sin movimientos'}
           </span>
         </header>
+        <div className="extractos-mode-toggle" role="group" aria-label="Modo de extractos">
+          <button type="button" className={modo === 'revision' ? 'active' : ''} disabled={actionLoading} onClick={() => { setModo('revision'); setSelectedRowIds(new Set()); }}>
+            Revisión
+          </button>
+          <button type="button" className={modo === 'edicion' ? 'active' : ''} disabled={actionLoading} onClick={() => setModo('edicion')}>
+            Edición avanzada
+          </button>
+        </div>
         <div className="extractos-filters">
           <label>Buscar por concepto o comentario<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setRowsPage(1); setSelectedRowIds(new Set()); }} /></label>
           <DatePickerField label="Desde" ariaLabel="Fecha desde" value={fechaDesde} onChange={(value) => { setFechaDesde(value); setRowsPage(1); setSelectedRowIds(new Set()); }} />
@@ -1096,9 +1105,9 @@ export default function CuentaDetailPage() {
           onInsertRow={insertRow}
           onOpenAudit={(row, column) => void openAudit(row, column)}
           onOpenDesglose={(row) => void openDesglose(row)}
-          canAddRow={() => canAddRows && !actionLoading}
+          canAddRow={() => modo === 'edicion' && canAddRows && !actionLoading}
           canEditCell={(_row, column) => canEditCell(column) && !actionLoading}
-          inlineInsertEnabled={canAddRows}
+          inlineInsertEnabled={modo === 'edicion' && canAddRows}
           onClearFilters={() => { setSearch(''); setFechaDesde(''); setFechaHasta(''); setRowsPage(1); setSelectedRowIds(new Set()); }}
           hasExternalFilters={Boolean(search || fechaDesde || fechaHasta)}
           selectedRowIds={selectionEnabled ? selectedRowIds : undefined}
