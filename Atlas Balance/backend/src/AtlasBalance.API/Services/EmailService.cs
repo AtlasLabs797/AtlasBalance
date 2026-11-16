@@ -40,6 +40,18 @@ public interface IEmailService
         string resumen,
         IReadOnlyList<string> detalles,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Aviso al titular de que su cuenta se ha bloqueado por intentos fallidos.
+    /// Sin enlaces a proposito: no hay flujo de reset por correo y un enlace en
+    /// un aviso de seguridad es justo lo que usaria un phishing.
+    /// </summary>
+    Task SendAccountLockedAsync(
+        IReadOnlyList<string> recipients,
+        DateTime lockedAtUtc,
+        int lockMinutes,
+        string? ipSummary,
+        CancellationToken cancellationToken);
 }
 
 public sealed class EmailService : IEmailService
@@ -206,6 +218,53 @@ public sealed class EmailService : IEmailService
         }.ToMessageBody();
 
         await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+    }
+
+    public async Task SendAccountLockedAsync(
+        IReadOnlyList<string> recipients,
+        DateTime lockedAtUtc,
+        int lockMinutes,
+        string? ipSummary,
+        CancellationToken cancellationToken)
+    {
+        if (recipients.Count == 0)
+        {
+            return;
+        }
+
+        var smtp = await LoadSmtpConfigAsync("smtp_host no configurado para aviso de bloqueo de cuenta.", cancellationToken);
+        ValidateEmailAddress(smtp.From, "smtp_from");
+
+        var message = new MimeMessage();
+        message.From.Add(MailboxAddress.Parse(smtp.From));
+        foreach (var recipient in recipients)
+        {
+            message.To.Add(MailboxAddress.Parse(recipient));
+        }
+
+        message.Subject = "[Atlas Balance] Tu cuenta se ha bloqueado temporalmente";
+        message.Body = new BodyBuilder
+        {
+            HtmlBody = BuildAccountLockedHtml(lockedAtUtc, lockMinutes, ipSummary)
+        }.ToMessageBody();
+
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+    }
+
+    internal static string BuildAccountLockedHtml(DateTime lockedAtUtc, int lockMinutes, string? ipSummary)
+    {
+        var utc = DateTime.SpecifyKind(lockedAtUtc, DateTimeKind.Utc);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.Local);
+        var ipTexto = string.IsNullOrWhiteSpace(ipSummary) ? "desconocida" : ipSummary;
+
+        return
+            "<h2>Cuenta bloqueada temporalmente</h2>" +
+            "<p>Tu cuenta se ha bloqueado por demasiados intentos fallidos de acceso.</p>" +
+            $"<p><strong>Hora (UTC):</strong> {utc:dd/MM/yyyy HH:mm:ss}</p>" +
+            $"<p><strong>Hora (servidor):</strong> {local:dd/MM/yyyy HH:mm:ss}</p>" +
+            $"<p><strong>IP del último intento:</strong> {EscapeHtml(ipTexto)}</p>" +
+            $"<p>El bloqueo se levanta solo a los {lockMinutes} minutos.</p>" +
+            "<p>Si no fuiste tú, avisa al administrador.</p>";
     }
 
     private async Task<string?> GetConfigValueAsync(string key, CancellationToken cancellationToken)

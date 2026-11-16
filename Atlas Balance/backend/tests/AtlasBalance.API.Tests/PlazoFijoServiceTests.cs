@@ -185,6 +185,9 @@ public sealed class PlazoFijoServiceTests
 
     private sealed class RecordingEmailService : IEmailService
     {
+        public Task SendAccountLockedAsync(IReadOnlyList<string> recipients, DateTime lockedAtUtc, int lockMinutes, string? ipSummary, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public List<PlazoEmailMessage> PlazoMessages { get; } = [];
         public bool FailPlazo { get; set; }
 

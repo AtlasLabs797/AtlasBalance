@@ -74,6 +74,7 @@ public sealed class AuthService : IAuthService
     private readonly ICacheService _cacheService;
     private readonly CachingOptions _cachingOptions;
     private readonly RateLimitingOptions _rateLimitingOptions;
+    private readonly IAccountLockoutNotifier? _lockoutNotifier;
 
     public AuthService(
         AppDbContext dbContext,
@@ -83,8 +84,10 @@ public sealed class AuthService : IAuthService
         ICacheService cacheService,
         IOptions<CachingOptions> cachingOptions,
         IOptions<RateLimitingOptions> rateLimitingOptions,
-        IMemoryCache? cache = null)
+        IMemoryCache? cache = null,
+        IAccountLockoutNotifier? lockoutNotifier = null)
     {
+        _lockoutNotifier = lockoutNotifier;
         _dbContext = dbContext;
         _configuration = configuration;
         _auditService = auditService;
@@ -242,6 +245,7 @@ _secretProtector = secretProtector;
 
             if (lockTriggered)
             {
+                NotifyLockout(usuario.Id, now, ipAddress);
                 throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
             }
 
@@ -424,6 +428,7 @@ _secretProtector = secretProtector;
                         locked_until = usuario.LockedUntil
                     }),
                     cancellationToken);
+                NotifyLockout(usuario.Id, now, ipAddress);
             }
 
             throw new AuthException("Codigo MFA invalido", StatusCodes.Status401Unauthorized);
@@ -856,6 +861,7 @@ _secretProtector = secretProtector;
                         locked_until = usuario.LockedUntil
                     }),
                     cancellationToken);
+                NotifyLockout(userId, now, ipAddress);
             }
 
             throw new AuthException("Contraseña actual incorrecta", StatusCodes.Status400BadRequest);
@@ -1442,7 +1448,10 @@ _secretProtector = secretProtector;
         return TruncateForStorage(userAgent, 256);
     }
 
-    private static string? SummarizeIp(string? ipAddress)
+    private void NotifyLockout(Guid userId, DateTime lockedAtUtc, string? ipAddress) =>
+        _lockoutNotifier?.NotifyLocked(userId, lockedAtUtc, _rateLimitingOptions.LoginLockDuration, ipAddress);
+
+    internal static string? SummarizeIp(string? ipAddress)
     {
         return TruncateForStorage(ipAddress, 128);
     }

@@ -12,6 +12,17 @@ const packageJson = JSON.parse(
 ) as { version?: string; appVersion?: string };
 const injectAppVersion = packageJson.appVersion ?? packageJson.version ?? 'desarrollo';
 
+// V-03.02 (M-4): el <meta> CSP de index.html ya no admite 'unsafe-inline' en estilos.
+// El servidor de desarrollo de Vite inyecta el CSS como elementos <style>, asi que
+// solo en `serve` se relaja esa directiva; el build de produccion no se toca.
+function relaxStyleCspInDev(): Plugin {
+  return {
+    name: 'atlas-dev-style-csp',
+    apply: 'serve',
+    transformIndexHtml: (html) => html.replace("style-src 'self';", "style-src 'self' 'unsafe-inline';"),
+  };
+}
+
 const baseLogger = createLogger();
 
 const sensitiveLogPatterns: Array<[RegExp, string]> = [
@@ -134,7 +145,7 @@ const openInEditorGuard = (root: string): Plugin => ({
 
 export default defineConfig({
   customLogger: redactingLogger,
-  plugins: [openInEditorGuard(__dirname), react()],
+  plugins: [openInEditorGuard(__dirname), relaxStyleCspInDev(), react()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

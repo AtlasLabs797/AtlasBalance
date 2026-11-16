@@ -224,8 +224,17 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
 
         var redactConfigValor = ShouldRedactConfiguracionValor(entry.OriginalValues) ||
                                 ShouldRedactConfiguracionValor(entry.CurrentValues);
-        var oldValues = entry.State == EntityState.Added ? null : CapturarValores(entry.OriginalValues, redactConfigValor);
-        var newValues = entry.State == EntityState.Deleted ? null : CapturarValores(entry.CurrentValues, redactConfigValor);
+        var maskCuentaPii = entry.Entity is Cuenta;
+        var oldValues = entry.State == EntityState.Added ? null : CapturarValores(entry.OriginalValues, redactConfigValor, maskCuentaPii);
+        var newValues = entry.State == EntityState.Deleted ? null : CapturarValores(entry.CurrentValues, redactConfigValor, maskCuentaPii);
+
+        // El IBAN va enmascarado en el detalle; si cambia se deja una marca para
+        // no perder el hecho del cambio sin revelar el valor.
+        if (maskCuentaPii && entry.State == EntityState.Modified && newValues is not null &&
+            !string.Equals(entry.OriginalValues[nameof(Cuenta.Iban)] as string, entry.CurrentValues[nameof(Cuenta.Iban)] as string, StringComparison.Ordinal))
+        {
+            newValues["IbanCambiado"] = true;
+        }
 
         var detalles = new
         {
@@ -267,11 +276,22 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
         return idProp.CurrentValue is Guid g ? g : null;
     }
 
-    private static Dictionary<string, object?> CapturarValores(PropertyValues values, bool redactConfigValor)
+    private static Dictionary<string, object?> CapturarValores(PropertyValues values, bool redactConfigValor, bool maskCuentaPii = false)
     {
         var dict = new Dictionary<string, object?>();
         foreach (var name in values.Properties.Select(p => p.Name))
         {
+            if (maskCuentaPii && (name == nameof(Cuenta.Iban) || name == nameof(Cuenta.NumeroCuenta)))
+            {
+                var masked = name == nameof(Cuenta.Iban)
+                    ? PiiMasking.MaskIban(values[name] as string)
+                    : PiiMasking.MaskNumeroCuenta(values[name] as string);
+                if (!string.IsNullOrEmpty(masked))
+                {
+                    dict[name] = masked;
+                }
+                continue;
+            }
             if (ColumnasSecretas.Contains(name))
             {
                 dict[name] = "[REDACTED]";

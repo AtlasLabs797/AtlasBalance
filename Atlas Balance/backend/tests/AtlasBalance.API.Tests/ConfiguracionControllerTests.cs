@@ -510,6 +510,9 @@ public sealed class ConfiguracionControllerTests
 
     private sealed class NoOpEmailService : IEmailService
     {
+        public Task SendAccountLockedAsync(IReadOnlyList<string> recipients, DateTime lockedAtUtc, int lockMinutes, string? ipSummary, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public Task SendSaldoBajoAlertAsync(
             IReadOnlyList<string> recipients,
             string titularNombre,

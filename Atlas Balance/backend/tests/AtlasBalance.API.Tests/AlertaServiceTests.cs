@@ -434,6 +434,9 @@ public class AlertaServiceTests
 
     private sealed class RecordingEmailService : IEmailService
     {
+        public Task SendAccountLockedAsync(IReadOnlyList<string> recipients, DateTime lockedAtUtc, int lockMinutes, string? ipSummary, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public List<EmailMessage> Messages { get; } = [];
         public bool FailSaldoBajo { get; init; }
 

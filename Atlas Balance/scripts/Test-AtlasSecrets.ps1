@@ -130,6 +130,66 @@ function Get-AtlasScanFiles {
     return ,$collected
 }
 
+function Get-AtlasGitFiles {
+    # Devuelve los ficheros tracked + untracked-no-ignorados si RootPath es un repo git.
+    # Devuelve $null si no es repo git o si git falla (el llamador cae al recorrido completo).
+    param([string]$RootPath)
+
+    if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    $previousPreference = $ErrorActionPreference
+    $previousEncoding = [Console]::OutputEncoding
+    try {
+        $ErrorActionPreference = "Continue"
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+        $inside = (& git -C $RootPath rev-parse --is-inside-work-tree 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $inside -ne 'true') {
+            return $null
+        }
+
+        # Solo si RootPath es la raiz del repo: en una subcarpeta (p.ej. un paquete de
+        # release ignorado por git) `git ls-files` devolveria vacio y el scan pasaria
+        # sin mirar nada. En ese caso se hace el recorrido completo.
+        $top = (& git -C $RootPath rev-parse --show-toplevel 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($top)) {
+            return $null
+        }
+        $topFull = [System.IO.Path]::GetFullPath($top).TrimEnd('\', '/')
+        $rootFull = [System.IO.Path]::GetFullPath($RootPath).TrimEnd('\', '/')
+        if (-not [string]::Equals($topFull, $rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $null
+        }
+
+        $raw = (& git -C $RootPath -c core.quotepath=false ls-files -z --cached --others --exclude-standard 2>$null | Out-String)
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+
+        $result = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($entry in $raw.Split([char]0)) {
+            $rel = $entry.Trim("`r", "`n")
+            if ([string]::IsNullOrEmpty($rel)) { continue }
+            $full = Join-Path $RootPath $rel
+            # Tracked pero borrado del working tree: no hay nada que escanear.
+            $item = Get-Item -LiteralPath $full -Force -ErrorAction SilentlyContinue
+            if ($null -ne $item -and -not $item.PSIsContainer) {
+                $result.Add($item)
+            }
+        }
+        return ,$result
+    }
+    catch {
+        return $null
+    }
+    finally {
+        [Console]::OutputEncoding = $previousEncoding
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $maxSeconds = 60
 $filesScanned = 0
@@ -146,20 +206,29 @@ try {
         (Join-Path $rootPath "Documentacion")
     ) | Where-Object { Test-Path -LiteralPath $_ }
 
-    $files = New-Object 'System.Collections.Generic.List[object]'
+    # En un repo git el universo es tracked + untracked-no-ignorados (los ficheros
+    # ignorados, p.ej. appsettings.Development.json, nunca llegan a CI ni al repo).
+    # Sin git (gate sobre el ZIP de release) o si git falla: recorrido completo.
+    $files = Get-AtlasGitFiles -RootPath $rootPath
+    if ($null -ne $files) {
+        Write-Host "Scanner: universo = ficheros de git (tracked + untracked no ignorados)."
+    }
+    else {
+        $files = New-Object 'System.Collections.Generic.List[object]'
 
-    foreach ($fileRoot in @($rootPath, (Join-Path $rootPath "Atlas Balance"), (Join-Path $rootPath "Atlas Balance/backend"), (Join-Path $rootPath "Atlas Balance/frontend"))) {
-        if (Test-Path -LiteralPath $fileRoot) {
-            foreach ($item in (Get-ChildItem -LiteralPath $fileRoot -File -Force -ErrorAction SilentlyContinue)) {
-                $files.Add($item)
+        foreach ($fileRoot in @($rootPath, (Join-Path $rootPath "Atlas Balance"), (Join-Path $rootPath "Atlas Balance/backend"), (Join-Path $rootPath "Atlas Balance/frontend"))) {
+            if (Test-Path -LiteralPath $fileRoot) {
+                foreach ($item in (Get-ChildItem -LiteralPath $fileRoot -File -Force -ErrorAction SilentlyContinue)) {
+                    $files.Add($item)
+                }
             }
         }
-    }
 
-    foreach ($scanRoot in $recursiveScanRoots) {
-        $collected = Get-AtlasScanFiles -StartPath $scanRoot -RootPath $rootPath -ExcludedSegmentNames $excludedSegmentNames -Stopwatch $stopwatch -MaxSeconds $maxSeconds
-        foreach ($item in $collected) {
-            $files.Add($item)
+        foreach ($scanRoot in $recursiveScanRoots) {
+            $collected = Get-AtlasScanFiles -StartPath $scanRoot -RootPath $rootPath -ExcludedSegmentNames $excludedSegmentNames -Stopwatch $stopwatch -MaxSeconds $maxSeconds
+            foreach ($item in $collected) {
+                $files.Add($item)
+            }
         }
     }
 

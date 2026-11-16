@@ -92,6 +92,53 @@ public sealed class AuditSaveChangesInterceptorTests
     }
 
     [Fact]
+    public async Task SaveChanges_Should_Mask_Cuenta_Iban_And_NumeroCuenta_Keeping_Signature_Valid()
+    {
+        const string ibanViejo = "ES9121000418450200051332";
+        const string ibanNuevo = "DE89370400440532013000";
+        const string numeroCuenta = "0200051332998877";
+        var signer = new AuditSigner(new AuditSigningKey("clave-de-firma-de-pruebas-de-32-caracteres"));
+        var interceptor = new AuditSaveChangesInterceptor(
+            new HttpContextAccessor(),
+            NullLogger<AuditSaveChangesInterceptor>.Instance,
+            signer);
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using var db = new AppDbContext(options);
+        var cuenta = new Cuenta
+        {
+            Id = Guid.NewGuid(),
+            TitularId = Guid.NewGuid(),
+            Nombre = "Cuenta principal",
+            Iban = ibanViejo,
+            NumeroCuenta = numeroCuenta
+        };
+        db.Cuentas.Add(cuenta);
+        await db.SaveChangesAsync();
+
+        cuenta.Iban = ibanNuevo;
+        await db.SaveChangesAsync();
+
+        var audits = await db.Auditorias.ToListAsync();
+        audits.Should().HaveCount(2);
+        foreach (var audit in audits)
+        {
+            audit.DetallesJson.Should().NotContain(ibanViejo);
+            audit.DetallesJson.Should().NotContain(ibanNuevo);
+            audit.DetallesJson.Should().NotContain(numeroCuenta);
+            audit.DetallesJson.Should().Contain(PiiMasking.MaskIban(ibanViejo)![^4..]);
+            signer.Verificar(audit).Should().BeTrue();
+        }
+
+        var update = audits.Single(a => a.TipoAccion == "entity_update_Cuenta");
+        update.DetallesJson.Should().Contain("\"IbanCambiado\":true");
+        audits.Single(a => a.TipoAccion == "entity_insert_Cuenta").DetallesJson.Should().NotContain("IbanCambiado");
+    }
+
+    [Fact]
     public async Task SaveChanges_Should_Mark_Origen_As_Job_Without_HttpContext()
     {
         // Los jobs de Hangfire y el seed no tienen peticion. Marcarlos como UI

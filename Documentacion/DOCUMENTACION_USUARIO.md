@@ -937,3 +937,11 @@ resto se agrupa en "Otros", con el numero de entidades agrupadas.
 Reporta la **pantalla exacta, el tema (claro u oscuro) y el tamano de ventana**,
 con captura si puedes. Un aviso de "se ve raro" sin esos tres datos no se puede
 reproducir ni corregir.
+
+## Cambios de seguridad visibles (V-03.02)
+
+- **Contrasenas:** siguen pidiendo 12 caracteres como minimo. Ahora tambien se rechazan las que aparecen en listas de contrasenas filtradas conocidas, con el mensaje "La contrasena es demasiado comun". Elige una frase larga que solo conozcas tu.
+- **Aviso de bloqueo:** si tu cuenta se bloquea por demasiados intentos fallidos, recibiras un correo con la hora y la IP aproximada del intento. El bloqueo se levanta solo pasado el tiempo indicado; si no fuiste tu, avisa al administrador. El correo no incluye enlaces.
+- **IBAN de las cuentas:** solo el administrador ve el IBAN completo al abrir el detalle o al editar una cuenta. El resto de usuarios lo ve enmascarado, y tampoco puede buscar cuentas por IBAN. El numero de cuenta todavia no ha cambiado.
+- **Registro de auditoria:** los registros nuevos ya no guardan el IBAN completo; si un cambio afecta al IBAN, el registro lo indica. Los registros anteriores no se modifican y caducan a su plazo normal.
+- **Limpieza automatica:** cada dia se borran los dispositivos de confianza de MFA caducados o revocados. En las importaciones cerradas hace mas de 180 dias (plazo configurable) se vacian las filas intermedias del archivo; los movimientos ya confirmados no se tocan.

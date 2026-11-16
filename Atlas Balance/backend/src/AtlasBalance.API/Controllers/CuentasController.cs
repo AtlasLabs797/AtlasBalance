@@ -110,7 +110,8 @@ public sealed class CuentasController : ControllerBase
                 c.Nombre.ToLower().Contains(term) ||
                 (c.BancoNombre != null && c.BancoNombre.ToLower().Contains(term)) ||
                 (c.NumeroCuenta != null && c.NumeroCuenta.ToLower().Contains(term)) ||
-                (c.Iban != null && c.Iban.ToLower().Contains(term)) ||
+                // Solo ADMIN busca por IBAN completo; si no, la busqueda seria un oraculo del valor enmascarado.
+                (scope.IsAdmin && c.Iban != null && c.Iban.ToLower().Contains(term)) ||
                 (c.PaisId != null && _dbContext.Paises.IgnoreQueryFilters().Any(p => p.Id == c.PaisId && p.Nombre.ToLower().Contains(term))) ||
                 (c.Notas != null && c.Notas.ToLower().Contains(term)));
         }
@@ -212,7 +213,7 @@ public sealed class CuentasController : ControllerBase
             TitularTipo = titular?.Tipo.ToString() ?? string.Empty,
             Nombre = cuenta.Nombre,
             NumeroCuenta = cuenta.NumeroCuenta,
-            Iban = cuenta.Iban,
+            Iban = scope.IsAdmin ? cuenta.Iban : PiiMasking.MaskIban(cuenta.Iban),
             BancoNombre = cuenta.BancoNombre,
             Divisa = cuenta.Divisa,
             FormatoId = cuenta.FormatoId,
@@ -422,6 +423,14 @@ public sealed class CuentasController : ControllerBase
             return NotFound(new { error = "Cuenta no encontrada" });
         }
 
+        // Un IBAN enmascarado (contiene '*') significa "sin cambio": se conserva el
+        // guardado y no se valida ni se sobrescribe.
+        var ibanEnmascarado = request.Iban?.Contains('*') == true;
+        if (ibanEnmascarado)
+        {
+            request.Iban = null;
+        }
+
         var validation = await ValidateCuentaRequestAsync(request, id, cancellationToken);
         if (validation.Error is not null)
         {
@@ -437,7 +446,10 @@ public sealed class CuentasController : ControllerBase
         cuenta.TitularId = request.TitularId;
         cuenta.Nombre = request.Nombre.Trim();
         cuenta.NumeroCuenta = validation.NumeroCuenta;
-        cuenta.Iban = validation.Iban;
+        if (!(ibanEnmascarado && validation.TipoCuenta == TipoCuenta.NORMAL))
+        {
+            cuenta.Iban = validation.Iban;
+        }
         cuenta.BancoNombre = validation.BancoNombre;
         cuenta.Divisa = validation.Divisa!;
         cuenta.FormatoId = SupportsFormatoImportacion(validation.TipoCuenta) ? request.FormatoId : null;

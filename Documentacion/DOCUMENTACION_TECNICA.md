@@ -7172,3 +7172,30 @@ Verificacion: lint OK, build frontend OK con el aviso preexistente de Vite sobre
 autenticado, `Sabadell` mostro una unica cuenta coincidente y `Laura` un unico
 titular coincidente; la inspeccion visual y del DOM confirmo un popup rectangular
 con `border-radius: 11px` y sin burbuja eliptica.
+
+## V-03.02 - Correcciones de la auditoria del checklist de seguridad (2026-11-16)
+
+Origen: `AUDITORIA_CHECKLIST_SEGURIDAD_RENDIMIENTO_2026-11-16.md`. Cambios y motivos:
+
+- **Dependencias (P0-1/P0-2).** `axios` 1.19.0 -> 1.21.1 (arrastra `follow-redirects` 1.16.3) y `npm audit fix` sin `--force` (vite, brace-expansion, source-map-js, zod): 0 high/critical, quedan 7 moderate sin correccion no mayor. `MailKit`/`MimeKit` 4.17.0 -> 4.18.2, que declara `System.Security.Cryptography.Pkcs` 10.0.13; lockfiles regenerados con los flags de CI y `--locked-mode` verificado. `follow-redirects` no aparece en el bundle.
+- **RLS por enumeracion (M-1).** `RowLevelSecurityTests` enumera todas las tablas ordinarias de `public` y exige RLS forzada y politica, salvo 8 excepciones documentadas (identidad/configuracion, deuda diferida a V-02.07). Una tabla nueva sin RLS rompe CI. Verificada con una tabla temporal en un contenedor efimero.
+- **Aviso de bloqueo de cuenta (M-2).** `IAccountLockoutNotifier` (singleton) envia un unico email por bloqueo en `LoginAsync`, `VerifyMfaAsync` y `ChangePasswordAsync`, en segundo plano (`Task.Run` + scope propio + `SystemContextScope`) para no romper la igualacion de latencia del login. Nuevo `IEmailService.SendAccountLockedAsync`; cuerpo sin enlaces. Un fallo de SMTP solo se registra. Probado con EmailService falso (InMemory); no con SMTP ni RLS reales.
+- **Lista de contrasenas (M-3).** Recurso embebido `Resources/common-passwords-12plus.txt` (~29.700 entradas de 12+ caracteres derivadas de SecLists Pwdb_top-1000000, licencia MIT) unido a la lista existente. Carga perezosa y fail-closed si falta el recurso.
+- **CSP (M-4).** `style-src 'self'` sin `'unsafe-inline'`, en `Program.cs` y en el `<meta>` de `frontend/index.html` (ambos: el navegador aplica la interseccion). 0 violaciones en 24 rutas con API mockeada; login servido por la API real sin violaciones. El servidor de desarrollo de Vite inyecta CSS como `<style>`, asi que `vite.config.ts` incluye el plugin `atlas-dev-style-csp` (`apply: 'serve'`) que relaja solo ese meta en desarrollo; el build conserva `style-src 'self'` (comprobado en `index.html` generado).
+- **Nivel de log de HttpClient (M-5).** `SerilogHttpClientLoggingTests` falla si el override `System.Net.Http.HttpClient` baja de Warning en `appsettings.json` y plantillas. No se movio la clave de exchangerate a cabecera (no verificable sin clave real).
+- **Inventario de datos personales (M-6).** `INVENTARIO_DATOS_PERSONALES_V-03.02.md`.
+- **Escaner de secretos (M-7).** En un repo git escanea `git ls-files --cached --others --exclude-standard`; sin git (ZIP de release) conserva el recorrido completo.
+- **Auditoria semanal (M-8).** `.github/workflows/dependency-audit.yml` (lunes 06:00 UTC y manual). Un `schedule` solo dispara desde `main`: sin verificar hasta mergear.
+
+## V-03.02 - Retencion de MFA e importacion, IBAN solo para ADMIN y auditoria (2026-11-16)
+
+Origen: bitacora de este mismo dia en `DOCUMENTACION_CAMBIOS.md`. Cambios y motivos:
+
+- **Dispositivos MFA de confianza (`LimpiezaMfaTrustedDevicesJob`).** Job diario `limpieza-mfa-trusted-devices`, registrado en `Program.cs` con `AddOrUpdate`. Hard delete de `MFA_TRUSTED_DEVICES` con dispositivos caducados o con `revoked_at` de mas de 1 dia. Cubierto por `RowLevelSecurityRetentionJobsTests` en Postgres real con RLS FORCE.
+- **Lotes de importacion (`LimpiezaImportacionLotesJob`).** Job diario `limpieza-importacion-lotes`. Pone `datos_json = '{}'` en las filas de lotes cerrados (confirmado, revertido, error) con mas de `importacion_contenido_retention_days` (180 por defecto). No borra filas. Excluidos a proposito: lotes abiertos (validado, validado_con_errores), porque confirmar reconstruye desde `datos_json`; filas soft-deleted, porque la policy RLS de update exige `deleted_at IS NULL` y cambiarlo requiere migracion; `errores_json` y `advertencias_json`.
+- **IBAN en `GET /api/cuentas/{id}` (`CuentasController`).** Solo ADMIN recibe el IBAN completo; el resto recibe `PiiMasking.MaskIban`. El `PUT` con IBAN que contiene `*` no cambia el IBAN: es el contrato con el frontend, que envia `*` si no se edita. La busqueda por IBAN queda restringida a ADMIN. `NumeroCuenta` no cambia (pendiente).
+- **Interceptor de auditoria (`AuditSaveChangesInterceptor.CapturarValores`).** `Cuenta.Iban` y `NumeroCuenta` se enmascaran antes de serializar y firmar, asi `detalles_json` no guarda el valor completo en filas nuevas. En UPDATE con cambio de IBAN se anade `IbanCambiado: true`. Nombre y concepto siguen completos (decision de producto). Las filas anteriores no se tocan: cambiarlas invalida la firma que comprueba `AuditIntegrityService`.
+- **Proveedor de IA.** Sin cambios. `AtlasAiService` ya envia `zdr=true` y `data_collection=deny` a OpenRouter. OpenAI y MiniMax no tienen equivalente en codigo; es un pendiente contractual.
+- **Backup local y xlsx.** Sin cifrado a nivel de aplicacion; decision de dejarlo a BitLocker.
+
+Verificacion: AtlasBalance.API.Tests 994/994 y AtlasBalance.Caching.Tests 15/15 (`dotnet test -c Release`); `tsc` y lint del frontend. `vitest` no ejecutado; sin prueba en la app autenticada (MFA).

@@ -253,6 +253,7 @@ export default function CuentasPage() {
   const [form, setForm] = useState<CuentaFormState>(emptyForm);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const formBaselineRef = useRef<string | null>(null);
+  const loadedIbanRef = useRef<string | null>(null);
   const { confirm: confirmDiscard, dialogProps: discardDialogProps } = useConfirmDialog();
   const isFormDirty = isFormModalOpen && formBaselineRef.current !== null && JSON.stringify(form) !== formBaselineRef.current;
   useUnsavedChanges(isFormDirty);
@@ -480,6 +481,7 @@ export default function CuentasPage() {
         plazo_fijo_notas: data.plazo_fijo?.notas ?? '',
       };
       setForm(loadedForm);
+      loadedIbanRef.current = loadedForm.iban;
       formBaselineRef.current = JSON.stringify(loadedForm);
       setIsFormModalOpen(true);
     } catch (err) {
@@ -522,7 +524,11 @@ export default function CuentasPage() {
       titular_id: form.titular_id,
       nombre: form.nombre.trim(),
       numero_cuenta: form.numero_cuenta.trim() || null,
-      iban: form.iban.trim() || null,
+      // En edicion, un IBAN sin cambios se envia enmascarado ("sin cambio" para el backend)
+      // para no reenviar el valor completo; vaciarlo sigue enviando null.
+      iban: editingId && form.iban.trim() && form.iban.trim() === loadedIbanRef.current?.trim()
+        ? '*'
+        : (form.iban.trim() || null),
       banco_nombre: form.banco_nombre.trim() || null,
       divisa: form.divisa,
       formato_id: form.tipo_cuenta === 'PLAZO_FIJO' ? null : (form.formato_id || null),

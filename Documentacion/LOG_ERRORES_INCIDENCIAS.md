@@ -5672,3 +5672,15 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 - **Verificación:** lint focalizado OK; suite frontend configurada `61/61`;
   regresiones de storage/cambio de usuario/generación async `3/3`; no se
   modificaron `services/api.ts`, `package.json` ni `tsconfig*`.
+
+## 2026-11-16 - V-03.02 - EPERM en `node_modules`, `dist` y `.test-dist` del frontend
+
+- **Sintoma:** `npm audit fix --dry-run` fallaba al borrar `node_modules\.package-lock.json`; `vite build` a `dist` y `tsc -p tsconfig.test.v2.json` a `.test-dist` daban `EPERM`.
+- **Causa probable:** ficheros creados por otra cuenta de sandbox con ACL que impide borrarlos/sobrescribirlos. No hay proceso de Node reteniendolos.
+- **Solucion aplicada:** se movio `node_modules` a `node_modules.blocked-20261116` (patron ya ignorado por git; no se pudo borrar) y se reinstalo con `npm ci`. Builds y tests con otro directorio de salida (`--outDir .tmp-build`, `.test-dist-v2`), borrados al terminar.
+- **Pendiente:** borrar `node_modules.blocked-20261116`, `dist` y `.test-dist` con una cuenta que tenga permisos.
+
+## 2026-11-16 - V-03.02 - Escaner de secretos con git en subcarpetas
+
+- **Riesgo detectado en revision:** `git rev-parse --is-inside-work-tree` es verdadero en subcarpetas del repo ignoradas por git; usar `git ls-files` ahi escanearia 0 ficheros y pasaria en falso.
+- **Solucion:** `Get-AtlasGitFiles` solo se usa si `-Root` es la raiz del repo (`--show-toplevel`); si no, recorrido completo. Comprobado: subcarpeta ignorada no activa el universo git. Falta un fixture dedicado en `Test-AtlasSecrets.Tests.ps1`.

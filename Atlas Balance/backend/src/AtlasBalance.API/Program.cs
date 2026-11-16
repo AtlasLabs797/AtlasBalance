@@ -412,6 +412,7 @@ builder.Services.AddScoped<IImportacionService, ImportacionService>();
 builder.Services.AddScoped<IConciliacionService, ConciliacionService>();
 builder.Services.AddScoped<IUserAccessService, UserAccessService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddSingleton<IAccountLockoutNotifier, AccountLockoutNotifier>();
 builder.Services.AddScoped<IAlertaService, AlertaService>();
 builder.Services.AddScoped<IPlazoFijoService, PlazoFijoService>();
 builder.Services.AddScoped<IRevisionService, RevisionService>();
@@ -440,6 +441,8 @@ builder.Services.AddScoped<SyncTiposCambioJob>();
 builder.Services.AddScoped<LimpiezaRefreshTokensJob>();
 builder.Services.AddScoped<LimpiezaAuditoriaJob>();
 builder.Services.AddScoped<LimpiezaExportacionesJob>();
+builder.Services.AddScoped<LimpiezaMfaTrustedDevicesJob>();
+builder.Services.AddScoped<LimpiezaImportacionLotesJob>();
 builder.Services.AddScoped<BackupWeeklyJob>();
 builder.Services.AddScoped<BackupSchedulerJob>();
 builder.Services.AddScoped<ExportMensualJob>();
@@ -501,6 +504,16 @@ using (var scope = app.Services.CreateScope())
 
     recurringJobManager.AddOrUpdate<LimpiezaExportacionesJob>(
         "limpieza-exportaciones",
+        job => job.ExecuteAsync(),
+        Cron.Daily());
+
+    recurringJobManager.AddOrUpdate<LimpiezaMfaTrustedDevicesJob>(
+        "limpieza-mfa-trusted-devices",
+        job => job.ExecuteAsync(),
+        Cron.Daily());
+
+    recurringJobManager.AddOrUpdate<LimpiezaImportacionLotesJob>(
+        "limpieza-importacion-lotes",
         job => job.ExecuteAsync(),
         Cron.Daily());
 
@@ -660,7 +673,11 @@ app.Use(async (context, next) =>
             "img-src 'self' data: blob:; " +
             "object-src 'none'; " +
             "script-src 'self'; " +
-            "style-src 'self' 'unsafe-inline'; " +
+            // V-03.02 (M-4): sin 'unsafe-inline'. React aplica style={{}} por CSSOM,
+            // que la CSP no bloquea; verificado sin violaciones en 24 rutas (ver
+            // AUDITORIA_CHECKLIST_SEGURIDAD_RENDIMIENTO_2026-11-16.md). Si una libreria
+            // futura inyecta <style> o setAttribute('style'), aparecera como violacion CSP.
+            "style-src 'self'; " +
             cspUpgrade;
 
         return Task.CompletedTask;

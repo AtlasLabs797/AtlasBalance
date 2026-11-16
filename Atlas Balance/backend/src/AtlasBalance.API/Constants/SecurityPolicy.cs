@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace AtlasBalance.API.Constants;
@@ -84,13 +85,47 @@ public static class SecurityPolicy
         "finanzas", "balance", "sysadmin", "superadmin"
     };
 
+    internal const string EmbeddedCommonPasswordsResource = "AtlasBalance.API.Resources.common-passwords-12plus.txt";
+
+    // Union de la lista curada de arriba y la lista embebida (SecLists, 12+ caracteres).
+    // Carga perezosa y thread-safe. Si el recurso falta lanza InvalidOperationException
+    // (fail-closed): Lazy cachea la excepcion, asi que nunca se acepta una contrasena
+    // comun en silencio por una lista vacia.
+    private static readonly Lazy<HashSet<string>> AllCommonPasswords = new(() =>
+    {
+        var all = new HashSet<string>(CommonPasswords, StringComparer.OrdinalIgnoreCase);
+        all.UnionWith(LoadEmbeddedList(typeof(SecurityPolicy).Assembly, EmbeddedCommonPasswordsResource));
+        return all;
+    });
+
+    internal static IEnumerable<string> LoadEmbeddedList(Assembly assembly, string resourceName)
+    {
+        using var stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
+                $"Falta el recurso embebido '{resourceName}' con la lista de contrasenas comunes; no se puede validar la contrasena.");
+        using var reader = new StreamReader(stream);
+        var entries = new List<string>();
+        while (reader.ReadLine() is { } line)
+        {
+            if (line.Length == 0 || line[0] == '#')
+            {
+                continue;
+            }
+
+            entries.Add(line);
+        }
+
+        return entries;
+    }
+
     /// <summary>
-    /// Vista de solo lectura para que los tests puedan comprobar la invariante de
-    /// longitud. Se expone la vista y no el <see cref="HashSet{T}"/> directamente:
-    /// un campo mutable visible para todo el ensamblado permitiria que codigo futuro
-    /// hiciera <c>Clear()</c> y desactivara la blocklist en silencio para el proceso.
+    /// Vista de solo lectura (lista curada + lista embebida) para que los tests puedan
+    /// comprobar la invariante de longitud. Se expone la vista y no el
+    /// <see cref="HashSet{T}"/> directamente: un campo mutable visible para todo el
+    /// ensamblado permitiria que codigo futuro hiciera <c>Clear()</c> y desactivara la
+    /// blocklist en silencio para el proceso.
     /// </summary>
-    internal static IReadOnlySet<string> CommonPasswordsView => CommonPasswords;
+    internal static IReadOnlySet<string> CommonPasswordsView => AllCommonPasswords.Value;
 
     public static bool TryValidatePassword(string? password, out string error, string? userEmail = null, string? userFullName = null)
     {
@@ -101,7 +136,7 @@ public static class SecurityPolicy
         }
 
         var normalized = password.Trim();
-        if (CommonPasswords.Contains(normalized))
+        if (AllCommonPasswords.Value.Contains(normalized))
         {
             error = "La contraseña es demasiado comun";
             return false;

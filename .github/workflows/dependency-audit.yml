@@ -1,0 +1,89 @@
+name: Dependency audit
+
+# Auditoria semanal de dependencias: detecta advisories publicados despues del
+# ultimo push (CI solo audita cuando hay actividad). No abre issues ni usa
+# secretos; un fallo se ve como run en rojo en la pestana Actions.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit npm and NuGet
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          global-json-file: global.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: ".node-version"
+          cache: npm
+          cache-dependency-path: "Atlas Balance/frontend/package-lock.json"
+
+      - name: Install frontend dependencies
+        working-directory: "Atlas Balance/frontend"
+        run: npm ci
+
+      - name: Audit npm vulnerabilities
+        working-directory: "Atlas Balance/frontend"
+        shell: pwsh
+        # Misma logica que ci.yml: falla ante cualquier advisory high/critical
+        # que no este en $allowed. $allowed vacio a proposito; no anadir
+        # entradas sin justificar y fechar la revision.
+        run: |
+          $allowed = @()
+          $report = npm audit --json | ConvertFrom-Json
+          $blocking = @()
+          foreach ($entry in $report.vulnerabilities.PSObject.Properties) {
+            foreach ($via in $entry.Value.via) {
+              if ($via -isnot [string] -and $via.severity -in @('high', 'critical')) {
+                $id = ($via.url -split '/')[-1]
+                if ($id -notin $allowed) {
+                  $blocking += "$($entry.Name): $id ($($via.severity)) - $($via.title)"
+                }
+              }
+            }
+          }
+          if ($blocking.Count -gt 0) {
+            $blocking | Sort-Object -Unique | ForEach-Object { Write-Host $_ }
+            Write-Host 'npm audit: advisories high/critical no documentados.'
+            exit 1
+          }
+          Write-Host 'npm audit OK: sin advisories high/critical fuera de la lista de excepciones.'
+          exit 0
+
+      - name: Restore backend
+        run: |
+          dotnet restore "./Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj" --locked-mode -r win-x64
+          dotnet restore "./Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj" --locked-mode -r win-x64
+          dotnet restore "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj" --locked-mode
+          dotnet restore "./Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj" --locked-mode
+
+      - name: Audit NuGet vulnerabilities
+        shell: pwsh
+        run: |
+          $projects = @(
+            "./Atlas Balance/backend/src/AtlasBalance.API/AtlasBalance.API.csproj",
+            "./Atlas Balance/backend/src/AtlasBalance.Watchdog/AtlasBalance.Watchdog.csproj",
+            "./Atlas Balance/backend/tests/AtlasBalance.API.Tests/AtlasBalance.API.Tests.csproj",
+            "./Atlas Balance/backend/tests/AtlasBalance.Caching.Tests/AtlasBalance.Caching.Tests.csproj"
+          )
+          $output = foreach ($project in $projects) {
+            dotnet list $project package --vulnerable --include-transitive
+          }
+          $output
+          if ($output -match 'has the following vulnerable packages|tiene los paquetes vulnerables') {
+            throw 'NuGet vulnerability audit failed.'
+          }

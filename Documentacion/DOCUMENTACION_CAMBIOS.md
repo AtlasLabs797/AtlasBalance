@@ -1,5 +1,109 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
+## 2026-11-16 - V-03.02 - Retencion de MFA e importacion, IBAN solo para ADMIN y auditoria
+
+### Trabajo realizado
+
+- **Dispositivos MFA de confianza:** nuevo job `LimpiezaMfaTrustedDevicesJob` (diario, id `limpieza-mfa-trusted-devices`, registrado en `Program.cs`). Borra de `MFA_TRUSTED_DEVICES` los dispositivos caducados o revocados hace mas de 1 dia.
+- **Retencion de lotes de importacion:** nuevo job `LimpiezaImportacionLotesJob` (diario, id `limpieza-importacion-lotes`). Pone `datos_json` a `'{}'` en las filas de lotes CERRADOS (confirmado, revertido o error) con mas de `importacion_contenido_retention_days` (180 por defecto). No borra filas.
+  - Limites: los lotes abiertos (validado, validado_con_errores) no se purgan porque confirmar reconstruye desde `datos_json`. Las filas soft-deleted no se tocan: la policy RLS de update exige `deleted_at IS NULL`, y cambiarlo requeriria migracion. `errores_json` y `advertencias_json` no se vacian.
+- **IBAN en `GET /api/cuentas/{id}`:** el IBAN completo solo sale a ADMIN; el resto recibe `PiiMasking.MaskIban`. Un `PUT` con IBAN que contiene `*` se trata como sin cambio (el frontend envia `*` cuando no se edita el IBAN). La busqueda por IBAN queda solo para ADMIN. `NumeroCuenta` sigue completo y buscable para no-ADMIN (no pedido, pendiente).
+- **Auditoria (`AuditSaveChangesInterceptor.CapturarValores`):** enmascara `Cuenta.Iban` y `NumeroCuenta` antes de serializar y firmar. En UPDATE con cambio de IBAN anade `IbanCambiado: true`. Decision del usuario: solo IBAN (no nombre ni concepto). Las filas antiguas NO se tocan: siguen con IBAN en claro hasta su caducidad de 365 dias, porque modificarlas rompe la firma de integridad.
+- **Proveedor de IA:** sin cambios de codigo. OpenRouter ya recibe `zdr=true` y `data_collection=deny` (`AtlasAiService`). OpenAI y MiniMax no tienen clausula equivalente en codigo. Queda pendiente contractual (DPA y politica de retencion con el proveedor elegido).
+- **Cifrado de backup local y xlsx:** no implementado. Decision del usuario: dejarlo a BitLocker (gate operativo abierto desde la auditoria de 2026-08-04).
+
+### Archivos tocados
+
+- Backend: `Atlas Balance/backend/src/AtlasBalance.API/Jobs/LimpiezaMfaTrustedDevicesJob.cs` (nuevo), `Jobs/LimpiezaImportacionLotesJob.cs` (nuevo), `Program.cs` (registro DI y `AddOrUpdate` de ambos jobs), `Controllers/CuentasController.cs`, `Data/AuditSaveChangesInterceptor.cs`.
+- Tests: `backend/tests/AtlasBalance.API.Tests/RowLevelSecurityRetentionJobsTests.cs` (nuevo, Postgres real con RLS FORCE), `CuentasControllerTests.cs` (3 tests nuevos), `AuditSaveChangesInterceptorTests.cs` (1 test nuevo).
+- Frontend: `Atlas Balance/frontend/src/pages/CuentasPage.tsx` (en el mismo lote; envia `*` cuando no se edita el IBAN).
+- Documentacion: `DOCUMENTACION_CAMBIOS.md`, `DOCUMENTACION_TECNICA.md`, `DOCUMENTACION_USUARIO.md`, `Versiones/v-03.02.md`, `INVENTARIO_DATOS_PERSONALES_V-03.02.md`, `AUDITORIA_CHECKLIST_SEGURIDAD_RENDIMIENTO_2026-11-16.md`.
+
+### Comandos ejecutados
+
+- `dotnet test -c Release` en `Atlas Balance/backend` (AtlasBalance.API.Tests y AtlasBalance.Caching.Tests).
+- Frontend: `tsc` y `npm run lint`.
+
+### Resultado de verificacion
+
+- Backend: AtlasBalance.API.Tests 994/994 y AtlasBalance.Caching.Tests 15/15.
+- Frontend: `tsc` y lint limpios. `vitest` no ejecutado en este lote.
+- No se probo en la app de desarrollo autenticada (MFA obligatorio).
+
+### Pendientes
+
+- `NumeroCuenta` sigue completo y buscable para no-ADMIN (no pedido).
+- Proveedor de IA (OpenAI, MiniMax): DPA y politica de retencion. Contractual, no de codigo.
+- Cifrado de backup local y xlsx: BitLocker, gate operativo abierto desde la auditoria de 2026-08-04.
+- Filas de auditoria anteriores al cambio: IBAN en claro hasta caducar (365 dias).
+- Purga de importacion: lotes abiertos, filas soft-deleted, `errores_json` y `advertencias_json` quedan fuera.
+- Prueba manual autenticada tras desplegar, y `vitest`.
+
+
+## 2026-11-16 - V-03.02 - Correccion de los hallazgos de la auditoria del checklist de seguridad
+
+### Trabajo realizado
+
+Cuatro lotes orquestados con subagentes Sonnet y verificacion propia tras cada uno. Detalle tecnico en `DOCUMENTACION_TECNICA.md` ("V-03.02 - Correcciones de la auditoria del checklist").
+
+- **Lote 1:** P0-1 axios/follow-redirects + `npm audit fix` (0 high); P0-2 MailKit/MimeKit 4.18.2 (Pkcs corregido) con lockfiles.
+- **Lote 2:** M-1 test RLS que enumera todas las tablas; M-2 aviso por email al bloquear una cuenta.
+- **Lote 3:** M-3 lista de contrasenas (SecLists, 12+); M-5 test de nivel de log de HttpClient; M-7 escaner de secretos coherente con git; M-8 workflow de auditoria semanal.
+- **Lote 4:** M-4 CSP `style-src 'self'` (cabecera y `<meta>`); M-6 inventario de datos personales.
+- Entorno: el `node_modules` del frontend tenia ficheros con ACL que daban `EPERM`; se movio a `node_modules.blocked-20261116` (ignorado por git, no se pudo borrar) y se reinstalo con `npm ci`.
+
+### Archivos tocados
+
+Frontend: `package.json`, `package-lock.json`, `index.html`, `vite.config.ts` (plugin que relaja el meta CSP solo en `vite serve`). Backend: `AtlasBalance.API.csproj`, 3 `packages.lock.json` (+ Watchdog solo por fin de linea), `Program.cs`, `Constants/SecurityPolicy.cs`, `Services/AuthService.cs`, `Services/EmailService.cs`, `Services/AccountLockoutNotifier.cs` (nuevo), `Resources/common-passwords-12plus.txt` (nuevo); tests: `RowLevelSecurityTests`, `SecurityPolicyTests`, `AccountLockoutNotificationTests` (nuevo), `SerilogHttpClientLoggingTests` (nuevo) y 3 fakes de email. Scripts/CI: `Test-AtlasSecrets.ps1` y su test, `.github/workflows/dependency-audit.yml` (nuevo). Docs: informe de auditoria, inventario de datos personales, tecnica, usuario, esta bitacora y `v-03.02.md`.
+
+### Comandos ejecutados
+
+`npm audit` / `npm audit fix` / `npm ci`, `eslint`, `tsc --noEmit`, tests unitarios frontend (104/104, outDir alterno), `vite build`; `dotnet restore --force-evaluate` y `--locked-mode`, `dotnet list package --vulnerable --include-transitive` (0 en los 4 proyectos), `dotnet build AtlasBalance.sln -c Release`, `dotnet test` de API.Tests completo (986) y Caching.Tests (15); `curl` de `Pwdb_top-1000000.txt` de SecLists (raw.githubusercontent.com, ~8,7 MB, descargado como texto con autorizacion del usuario y filtrado a 12+ caracteres); Playwright con API mockeada para CSP; arranque de la API de desarrollo con `Start-BackendDev.ps1`, `/api/health`, `/ready` y `/functional` (200) y carga de `/login` en el navegador integrado.
+
+### Resultado de verificacion
+
+- Backend: 986/986 correctos (incluye Postgres/Testcontainers). Linea base previa: exit 0.
+- Frontend: lint, `tsc`, 104/104 y build OK. `npm audit`: 0 high/critical, 7 moderate.
+- CSP: cabecera real con `style-src 'self'`; login sin violaciones. Paginas autenticadas: solo con API mockeada (24 rutas, 0 violaciones).
+- Escaner de secretos: 0 hallazgos en el repo; secreto sembrado en un directorio sin git se detecta.
+
+### Bloqueado / no verificado
+
+- Login real en la app de desarrollo: bloqueado por MFA obligatorio; no se altero la configuracion ni se inscribio TOTP en la BD de desarrollo.
+- Email de bloqueo con SMTP real, y `SystemContextScope` del notificador contra RLS real (tests InMemory).
+- `dependency-audit.yml` (schedule solo desde `main`) y los tests del escaner bajo `pwsh` en ubuntu.
+- `npm audit` sigue con 7 moderate (cadena `typescript-eslint`, requiere salto mayor).
+- Caching.Tests y Watchdog no se ejecutaron (solo build de la solucion).
+
+### Pendientes
+
+Smoke manual autenticado tras desplegar (paginas con graficos con la CSP nueva, envio de correo de prueba desde Configuracion tras MailKit 4.18.2); mergear para activar el workflow semanal; el bug abierto de `PlazoFijoVencimientoJob` (jsonb) sigue sin tocar; ver hallazgos nuevos del inventario de datos personales.
+
+
+## 2026-11-16 - V-03.02 - Auditoria del checklist de seguridad/rendimiento (solo informe)
+
+### Trabajo realizado
+
+- Contraste de cada punto de `Securituy app.txt` con el codigo. Informe: `Documentacion/AUDITORIA_CHECKLIST_SEGURIDAD_RENDIMIENTO_2026-11-16.md` (estado por punto, evidencia, mejoras priorizadas P0/P1/P2, que no aplica y por que). Uso del advisor para validar el alcance.
+- Hallazgos nuevos frente a la auditoria de 2026-08-04: `npm audit` con 2 high (axios, follow-redirects) y NuGet con 1 transitiva high (`System.Security.Cryptography.Pkcs 10.0.0`, via MailKit/MimeKit). Los gates de CI fallarian con el arbol actual.
+- Mejoras de endurecimiento propuestas: test RLS por tabla, aviso de bloqueo de cuenta, blocklist local ampliada, inventario de PII, scanner de secretos coherente con CI.
+
+### Archivos tocados
+
+Solo documentacion: el informe nuevo y esta bitacora. Sin cambios de codigo ni de dependencias.
+
+### Comandos ejecutados
+
+`npm audit --omit=dev`, `dotnet list package --vulnerable --include-transitive`, `dotnet nuget why`, `Test-AtlasSecrets.ps1 -Root .`, `git log --all` sobre `.env`/`appsettings.*`/`.pfx`/`.pem`/`.key`, lecturas y busquedas estaticas.
+
+### Resultado de verificacion
+
+Verificado: auditorias de dependencias, scanner de secretos (1 hallazgo local en `appsettings.Development.json`, ignorado por git, no esta en CI) y lectura de los ficheros citados. Bloqueado/no ejecutado: tests, API en marcha, ZIP de release, servidor real.
+
+### Pendientes
+
+P0-1 y P0-2 (dependencias), M-1 a M-8 del informe. Informe interno con vulnerabilidades abiertas: no publicar hasta cerrar P0.
+
 ## 2026-11-16 - V-03.02 - Correccion de los hallazgos del informe Impeccable (F1-F10)
 
 ### Trabajo realizado
