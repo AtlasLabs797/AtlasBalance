@@ -700,7 +700,7 @@ export default function BackupsPage() {
 
         {!loading && rows.length > 0 ? (
           <>
-            <div className="users-table-scroll">
+            <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de backups">
               <table>
                 <thead>
                   <tr>

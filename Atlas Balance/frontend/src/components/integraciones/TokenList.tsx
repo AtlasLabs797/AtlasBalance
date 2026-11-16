@@ -76,7 +76,7 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
 
   return (
     <>
-    <div className="users-table-scroll">
+    <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de tokens de integración">
       <table>
         <thead>
           <tr>

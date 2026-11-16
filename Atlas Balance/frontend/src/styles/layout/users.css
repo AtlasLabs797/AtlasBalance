@@ -32,7 +32,8 @@
 }
 
 .users-primary-button:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
@@ -338,6 +339,15 @@
 .users-check-grid {
   display: grid;
   gap: var(--space-2);
+}
+
+/* reset del fieldset que agrupa checkboxes para no alterar el aspecto */
+fieldset.users-check-row,
+fieldset.users-check-grid {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
 }
 
 .users-check-row {

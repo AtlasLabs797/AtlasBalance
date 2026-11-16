@@ -2,6 +2,18 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-16 - Accesibilidad y tema (hallazgos Modern Web Guidance)
+
+- **Foco:** `--focus-outline`, `--focus-outline-color` y `--focus-outline-offset` en `elevation.css`; `base.css` y los selectores de foco de `global.css`, `auth.css` y `layout/*.css` usan `outline` y conservan `box-shadow` como halo. `@media (forced-colors: active)` pinta el foco con `Highlight` (y la celda activa del grid de extractos).
+- **Contraste:** `--text-secondary-light`/`--text-tertiary-light` y `--border-control`/`--border-control-hover` en `semantic.css`/`themes.css`; `variables.css` los usa en `--text-secondary`, `--control-border` y `--color-button-secondary-border`.
+- **Tema:** `resolveInitialTheme(stored, prefersDark)` en `src/utils/theme.ts` (con `applyThemeToDocument`) lo comparten `main.tsx` y `uiStore`; `public/theme-init.js` lo replica en JS plano y se carga sincrono en `<head>` porque la CSP es `script-src 'self'`. Un solo `<meta name="theme-color">` que se actualiza al alternar; `<meta name="color-scheme" content="light dark">`. Solo el toggle manual guarda en `localStorage`.
+- **Titulos:** `useDocumentTitle` (efecto sobre `document.title`, no el `<title>` de React 19) con mapa ruta-titulo en `Layout.tsx`; Login y Cambio de contrasena lo llaman directamente.
+- **Texto:** `html` sin `font-size`; `typography.css` en `rem` (valor/16); `<meta name="text-scale" content="scale">` (Limited availability, se ignora donde no existe). Las filas del grid virtualizado siguen en px por el estimador de `@tanstack/react-virtual`.
+- **Movimiento:** sin bloque universal en `reduce`; las animaciones `infinite` viven bajo `no-preference`; `motion.css` solo anula `--duration-normal/slow/deliberate` en `reduce`; `system-coherence.css` cubre skeleton, hoja inferior movil y modal de importacion.
+- **Importes:** `parseStrictDecimal` (un unico separador, siempre decimal; sin miles; negativos y basura = `null`) para los campos que antes eran `type="number"`. `parseEuropeanNumber` no se modifica. La configuracion usa un `DecimalField` local que propaga el numero ya parseado a `config`.
+- **Pestanas:** botones `role="tab"` con `tabIndex` itinerante y flechas; Paises navega con `replace: true`.
+- **Tests:** `tests/theme.test.ts` y `tests/parseEuropeanNumber.test.ts` (incluye `parseStrictDecimal`), registrados en `test:unit` y `tsconfig.test.v2.json`. `eslint.config.js` ignora `public/`.
+
 ### 2026-10-05 - Contrato de permisos nullable en el frontend
 
 `permisosStore.setPermisos` normaliza a `null` los ids de pais, titular y cuenta

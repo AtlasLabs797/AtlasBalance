@@ -529,7 +529,7 @@
 
 .dashboard-kpi p {
   font: var(--type-mono-lg);
-  font-size: clamp(20px, 9cqi, 34px);
+  font-size: clamp(1.25rem, 9cqi, 2.125rem);
   letter-spacing: var(--tracking-heading);
   font-variant-numeric: tabular-nums;
   max-width: 100%;
@@ -547,13 +547,13 @@
 
 .dashboard-kpi--featured p {
   font: var(--type-kpi);
-  font-size: clamp(24px, 11cqi, 44px);
+  font-size: clamp(1.5rem, 11cqi, 2.75rem);
   letter-spacing: var(--tracking-display);
 }
 
 .dashboard-kpi-grid--overview .dashboard-kpi--featured p {
   font: var(--type-kpi);
-  font-size: clamp(24px, 11cqi, 44px);
+  font-size: clamp(1.5rem, 11cqi, 2.75rem);
   letter-spacing: var(--tracking-display);
 }
 

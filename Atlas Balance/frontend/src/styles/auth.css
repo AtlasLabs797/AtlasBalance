@@ -11,7 +11,7 @@
   --auth-card-border: var(--border-default);
   --auth-card-shadow: none;
   --auth-control-bg: var(--surface-muted);
-  --auth-control-border: var(--border-default);
+  --auth-control-border: var(--border-control);
   --auth-control-text: var(--text-primary);
   --auth-placeholder: var(--text-tertiary);
   --auth-accent: var(--accent-solid);
@@ -279,7 +279,8 @@
 }
 
 .auth-input:focus {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   border-color: var(--auth-accent);
   box-shadow: var(--ring-focus);
 }
@@ -492,5 +493,21 @@
 
   .auth-card {
     padding: var(--space-5);
+  }
+}
+
+/* Tactil: casilla de 24px (WCAG 2.5.8) y fila con objetivo de 44px */
+@media (hover: none), (pointer: coarse) {
+  .auth-checkbox,
+  .auth-checkbox-label > input[type="checkbox"] {
+    width: 1.5rem;
+    height: 1.5rem;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
+  }
+
+  .auth-checkbox-row,
+  .auth-checkbox-label {
+    min-height: var(--control-height);
   }
 }

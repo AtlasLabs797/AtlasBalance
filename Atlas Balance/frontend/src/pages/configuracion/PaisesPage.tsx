@@ -245,6 +245,11 @@ export default function PaisesPage() {
       <div className="phase2-filters">
         <input
           type="search"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
           aria-label="Buscar país"
           placeholder="Buscar por nombre o código ISO2"
           value={search}
@@ -288,7 +293,7 @@ export default function PaisesPage() {
             />
           ) : null}
           {!loading && items.length > 0 ? (
-            <div className="users-table-scroll">
+            <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de países">
               <table className="users-table paises-table">
                 <thead>
                   <tr>

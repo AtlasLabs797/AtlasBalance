@@ -8,17 +8,17 @@
 --accent-soft-border:color-mix(in srgb,var(--accent-500) 22%,var(--surface-card));
 --accent-ring:color-mix(in srgb,var(--accent-500) 28%,transparent);
 /* Text */
---text-primary:var(--gray-900);--text-secondary:var(--gray-600);--text-tertiary:var(--gray-500);--text-disabled:var(--gray-400);--text-inverse:var(--white);--text-link:var(--accent-text);
+--text-primary:var(--gray-900);--text-secondary-light:#58585C;--text-tertiary-light:#68686D;--text-secondary:var(--text-secondary-light);--text-tertiary:var(--text-tertiary-light);--text-disabled:var(--gray-400);--text-inverse:var(--white);--text-link:var(--accent-text);
 /* Surfaces */
 --surface-page:var(--parchment);--surface-card:var(--white);--surface-raised:var(--white);--surface-sunken:var(--gray-100);--surface-muted:var(--pearl);--surface-hover:var(--alpha-ink-04);--surface-active:var(--alpha-ink-08);--surface-inverse:var(--tile-1);--surface-tile:var(--tile-1);--surface-tile-2:var(--tile-2);--surface-tile-3:var(--tile-3);--surface-void:var(--black);--surface-overlay:color-mix(in srgb,var(--white) 86%,transparent);
 /* Borders */
---border-subtle:var(--divider-soft);--border-default:var(--hairline);--border-strong:var(--gray-300);--border-inverse:var(--alpha-white-12);
+--border-subtle:var(--divider-soft);--border-default:var(--hairline);--border-strong:var(--gray-300);--border-control:var(--gray-500);--border-control-hover:var(--text-tertiary-light);--border-inverse:var(--alpha-white-12);
 /* Status */
 --status-success-text:var(--green-600);--status-success-bg:var(--green-50);--status-success-border:var(--green-100);--status-success-solid:var(--green-500);
 --status-warning-text:var(--amber-600);--status-warning-bg:var(--amber-50);--status-warning-border:var(--amber-100);--status-warning-solid:var(--amber-500);
 --status-danger-text:var(--crimson-600);--status-danger-bg:var(--crimson-50);--status-danger-border:var(--crimson-100);--status-danger-solid:var(--crimson-500);
 --status-info-text:var(--action-700);--status-info-bg:var(--action-50);--status-info-border:var(--action-100);--status-info-solid:var(--action-600);
---status-neutral-text:var(--gray-600);--status-neutral-bg:var(--gray-100);--status-neutral-border:var(--gray-200);--status-neutral-solid:var(--gray-500);
+--status-neutral-text:var(--text-secondary-light);--status-neutral-bg:var(--gray-100);--status-neutral-border:var(--gray-200);--status-neutral-solid:var(--gray-500);
 /* Money & deltas — always mono, always signed */
 --amount-positive:var(--green-600);--amount-negative:var(--crimson-600);--amount-neutral:var(--text-primary);--amount-muted:var(--text-tertiary);
 /* AI channel — violet, never the app accent, so AI surfaces read the same in every Atlas app */

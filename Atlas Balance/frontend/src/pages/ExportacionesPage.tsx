@@ -238,7 +238,7 @@ export default function ExportacionesPage() {
 
         {!loading && rows.length > 0 ? (
           <>
-            <div className="users-table-scroll">
+            <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de exportaciones">
               <table>
                 <thead>
                   <tr>

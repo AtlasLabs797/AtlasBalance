@@ -4,6 +4,16 @@ Documento vigente para `V-03.02`. Las menciones `Desde V-XX.YY` conservan la
 version en la que se introdujo cada comportamiento; no son una referencia a una
 version anterior instalada.
 
+## Novedades de accesibilidad y uso (V-03.02)
+
+- **Tema:** la primera vez, la aplicacion usa el modo claro u oscuro de tu sistema. Si lo cambias con el boton de la barra superior, se recuerda tu eleccion.
+- **Tamano de texto:** respeta el tamano de letra de tu navegador. Si lo aumentas, la aplicacion crece con el.
+- **Foco con teclado:** al navegar con Tab se ve un contorno azul alrededor del elemento activo, tambien en Alto Contraste de Windows.
+- **Titulos de pestana:** la pestana del navegador muestra la pantalla en la que estas (por ejemplo, `Extractos | Atlas Balance`).
+- **Importes y tasas:** en saldo minimo, tasa manual, interes previsto y presupuestos de IA puedes escribir `1,085` o `1.085` (un solo separador cuenta como decimal). Los importes con miles, como `1.234,50`, no se aceptan en estos campos: escribe `1234,50`.
+- **Pestanas con teclado:** en Importacion y Configuracion usa las flechas izquierda/derecha, Inicio y Fin.
+- **Tablas anchas:** puedes enfocarlas con Tab y desplazarlas con las flechas.
+
 ## Ubicacion principal
 
 La aplicacion esta en la carpeta `Atlas Balance`.

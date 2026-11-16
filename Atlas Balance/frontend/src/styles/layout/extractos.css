@@ -1004,6 +1004,12 @@
     --sheet-head-height: 48px;
   }
 
+  /* Fila de filtros a 44px; el virtualizador solo estima filas */
+  .extracto-table-section,
+  .extracto-table-section--compact {
+    --sheet-filter-height: var(--control-height);
+  }
+
   .extractos-date-field .date-picker-trigger,
   .extractos-clear-period,
   .extracto-table-actions > button,
@@ -1200,8 +1206,7 @@
 .extractos-filters .app-select-trigger,
 .extractos-filters .date-picker-trigger {
   min-height: var(--control-height);
-  height: var(--control-height);
-  border-color: var(--border-strong);
+  border-color: var(--border-control);
   background: var(--surface-card);
   font: var(--type-body-sm);
 }
@@ -1216,10 +1221,9 @@
   width: 100%;
   min-width: 0;
   min-height: var(--control-height);
-  height: var(--control-height);
   gap: var(--space-2);
   padding: 0 var(--space-4);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-control);
   background: var(--surface-card);
   color: var(--text-primary);
@@ -1228,6 +1232,7 @@
 
 .searchable-select-control:hover {
   background: var(--surface-hover);
+  border-color: var(--border-control-hover);
 }
 
 .searchable-select-control:focus-within {
@@ -1687,5 +1692,15 @@
   .extractos-page > .users-pagination {
     margin-top: calc(var(--space-7) * -1 + var(--space-4));
     flex-wrap: wrap;
+  }
+}
+
+/* Alto Contraste: el inset box-shadow de la celda activa desaparece; se pinta con outline del sistema */
+@media (forced-colors: active) {
+  .cell:focus,
+  .cell:focus-within,
+  .cell[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 }

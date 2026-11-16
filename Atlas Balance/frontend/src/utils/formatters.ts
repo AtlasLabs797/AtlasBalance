@@ -14,6 +14,19 @@ export function toSafeNumber(value: unknown): number {
   return 0;
 }
 
+// Decimal estricto para campos de formulario que antes eran type="number"
+// (tasas, importes minimos, intereses): un unico separador, coma o punto, que
+// SIEMPRE es decimal. "1.085" vale 1,085 (no 1085). Sin separador de miles:
+// cualquier otro formato devuelve null para que el formulario muestre el error.
+export function parseStrictDecimal(value: string | null | undefined): number | null {
+  const text = (value ?? '').trim();
+  if (!/^\d+(?:[.,]\d+)?$/.test(text)) {
+    return null;
+  }
+  const parsed = Number(text.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function parseEuropeanNumber(value: string | number | null | undefined): number | null {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : null;

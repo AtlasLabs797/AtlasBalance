@@ -1,7 +1,7 @@
-﻿import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Coins, Globe, KeyRound, Mail, ServerCog } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
@@ -23,7 +23,7 @@ import {
   normalizeAiProvider,
 } from '@/utils/aiModels';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatDateTime as formatDateTimeValue } from '@/utils/formatters';
+import { formatDateTime as formatDateTimeValue, parseStrictDecimal } from '@/utils/formatters';
 import type {
   ConfiguracionSistema,
   DivisaActiva,
@@ -61,8 +61,70 @@ function formatOptionalDateTime(value: string | null) {
   return formatDateTimeValue(value);
 }
 
+// Importe decimal no negativo: vacio = 0; invalido/negativo = null.
+function parseDecimalInput(raw: string): number | null {
+  if (!raw.trim()) {
+    return 0;
+  }
+  const parsed = parseStrictDecimal(raw);
+  return parsed === null || parsed < 0 ? null : parsed;
+}
+
+// toFixed evita la notacion cientifica (1e-7); se recortan ceros sobrantes.
+function decimalToInput(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '';
+  }
+  return value.toFixed(8).replace(/\.?0+$/, '').replace('.', ',');
+}
+
+interface DecimalFieldProps {
+  fieldKey: string;
+  value: number;
+  onValue: (next: number) => void;
+  onValidity: (fieldKey: string, valid: boolean) => void;
+}
+
+// Campo de importe con texto local (admite coma europea) que propaga el numero
+// ya parseado al estado de configuracion; si el texto no es valido avisa por
+// onValidity para bloquear el guardado.
+function DecimalField({ fieldKey, value, onValue, onValidity }: DecimalFieldProps) {
+  const [text, setText] = useState(() => decimalToInput(value));
+
+  useEffect(() => {
+    // Sincroniza cuando el valor externo cambia (carga/guardado) y ya no coincide con el texto
+    if (parseDecimalInput(text) !== value) {
+      setText(decimalToInput(value));
+      onValidity(fieldKey, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo reacciona al valor externo
+  }, [value]);
+
+  useEffect(() => () => onValidity(fieldKey, true), [fieldKey, onValidity]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      value={text}
+      aria-invalid={parseDecimalInput(text) === null}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const parsed = parseDecimalInput(raw);
+        onValidity(fieldKey, parsed !== null);
+        if (parsed !== null) {
+          onValue(parsed);
+        }
+      }}
+    />
+  );
+}
+
 export default function ConfiguracionPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const onPaisesSubroute = location.pathname.startsWith('/configuracion/paises');
   const [tab, setTab] = useState<TabKey>('general');
   const [loading, setLoading] = useState(true);
@@ -126,6 +188,15 @@ export default function ConfiguracionPage() {
     },
   });
   const [smtpTo, setSmtpTo] = useState('');
+  // Campos decimales con texto invalido (bloquean el guardado de configuracion)
+  const invalidDecimalsRef = useRef<Set<string>>(new Set());
+  const handleDecimalValidity = useCallback((fieldKey: string, valid: boolean) => {
+    if (valid) {
+      invalidDecimalsRef.current.delete(fieldKey);
+    } else {
+      invalidDecimalsRef.current.add(fieldKey);
+    }
+  }, []);
   // Snapshot de la configuracion cargada para avisar de cambios sin guardar al
   // refrescar/cerrar el navegador. Los tabs son render condicional sobre este
   // estado, asi que cambiar de pestana NO pierde datos (no necesita guardia).
@@ -306,6 +377,9 @@ export default function ConfiguracionPage() {
   }, [config.ia.provider, config.ia.model]);
 
   const saveConfig = async (message: string) => {
+    if (invalidDecimalsRef.current.size > 0) {
+      throw new Error('Hay importes con formato inválido (presupuestos, costes o importe mínimo). Corrígelos antes de guardar.');
+    }
     const aiProvider = normalizeAiProvider(config.ia.provider);
     const payload: ConfiguracionSistema = {
       ...config,
@@ -465,8 +539,8 @@ export default function ConfiguracionPage() {
       setError('Selecciona dos divisas activas distintas.');
       return;
     }
-    const tasa = Number(manualRate.tasa);
-    if (!Number.isFinite(tasa) || tasa <= 0) {
+    const tasa = parseStrictDecimal(manualRate.tasa);
+    if (tasa === null || tasa <= 0) {
       setError('Tasa inválida.');
       return;
     }
@@ -669,6 +743,20 @@ export default function ConfiguracionPage() {
     window.setTimeout(() => document.getElementById(`config-tab-${nextTab}`)?.focus(), 0);
   };
 
+  // Activa una pestana: 'paises' es una subruta; las demas vuelven a /configuracion si se esta en ella
+  const activateTab = (key: TabKey) => {
+    if (key === 'paises') {
+      if (!onPaisesSubroute) {
+        navigate('/configuracion/paises', { replace: true });
+      }
+      return;
+    }
+    setTab(key);
+    if (onPaisesSubroute) {
+      navigate('/configuracion', { replace: true });
+    }
+  };
+
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, key: TabKey) => {
     const currentIndex = tabs.findIndex((item) => item.key === key);
     if (currentIndex < 0) {
@@ -678,7 +766,7 @@ export default function ConfiguracionPage() {
     const moveTo = (nextIndex: number) => {
       const nextTab = tabs[(nextIndex + tabs.length) % tabs.length].key;
       event.preventDefault();
-      setTab(nextTab);
+      activateTab(nextTab);
       focusConfigTab(nextTab);
     };
 
@@ -725,24 +813,6 @@ export default function ConfiguracionPage() {
       <div className="config-tabs config-tabs--settings" role="tablist" aria-label="Secciones de configuración">
         {tabs.map(({ key, label, Icon }) => {
           const isActive = key === 'paises' ? onPaisesSubroute : tab === key;
-          if (key === 'paises') {
-            return (
-              <NavLink
-                key={key}
-                id={`config-tab-${key}`}
-                to="/configuracion/paises"
-                className={isActive ? 'config-tab config-tab--active' : 'config-tab'}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`config-panel-${key}`}
-              >
-                <span className="config-tab-icon" aria-hidden="true">
-                  <Icon size={18} strokeWidth={1.9} />
-                </span>
-                <span>{label}</span>
-              </NavLink>
-            );
-          }
           return (
             <button
               key={key}
@@ -751,9 +821,8 @@ export default function ConfiguracionPage() {
               className={isActive ? 'config-tab config-tab--active' : 'config-tab'}
               role="tab"
               aria-selected={isActive}
-              aria-controls={`config-panel-${key}`}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => setTab(key)}
+              onClick={() => activateTab(key)}
               onKeyDown={(event) => handleTabKeyDown(event, key)}
             >
               <span className="config-tab-icon" aria-hidden="true">
@@ -941,15 +1010,14 @@ export default function ConfiguracionPage() {
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Importe mínimo comisión</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <DecimalField
+                    fieldKey="comisiones_importe_minimo"
                     value={config.revision.comisiones_importe_minimo}
-                    onChange={(e) =>
+                    onValidity={handleDecimalValidity}
+                    onValue={(next) =>
                       setConfig((p) => ({
                         ...p,
-                        revision: { ...p.revision, comisiones_importe_minimo: Number(e.target.value) || 0 },
+                        revision: { ...p.revision, comisiones_importe_minimo: next },
                       }))
                     }
                   />
@@ -1101,15 +1169,15 @@ export default function ConfiguracionPage() {
                 </label>
                 <label className="config-field">
                   <span>Presupuesto mensual EUR</span>
-                  <input type="number" min="0" step="0.01" value={config.ia.presupuesto_mensual_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="presupuesto_mensual_eur" value={config.ia.presupuesto_mensual_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Presupuesto mensual usuario EUR</span>
-                  <input type="number" min="0" step="0.01" value={config.ia.presupuesto_mensual_usuario_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_usuario_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="presupuesto_mensual_usuario_eur" value={config.ia.presupuesto_mensual_usuario_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_usuario_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Presupuesto total EUR</span>
-                  <input type="number" min="0" step="0.01" value={config.ia.presupuesto_total_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_total_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="presupuesto_total_eur" value={config.ia.presupuesto_total_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_total_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Aviso presupuesto %</span>
@@ -1117,11 +1185,11 @@ export default function ConfiguracionPage() {
                 </label>
                 <label className="config-field">
                   <span>Coste entrada / 1 M tokens</span>
-                  <input type="number" min="0" step="0.000001" value={config.ia.input_cost_per_million_tokens_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, input_cost_per_million_tokens_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="input_cost_per_million_tokens_eur" value={config.ia.input_cost_per_million_tokens_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, input_cost_per_million_tokens_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Coste salida / 1 M tokens</span>
-                  <input type="number" min="0" step="0.000001" value={config.ia.output_cost_per_million_tokens_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, output_cost_per_million_tokens_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="output_cost_per_million_tokens_eur" value={config.ia.output_cost_per_million_tokens_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, output_cost_per_million_tokens_eur: next } }))} />
                 </label>
               </div>
               <p className="config-note">
@@ -1273,7 +1341,7 @@ export default function ConfiguracionPage() {
                       .map((code) => ({ value: code, label: code }))}
                 onChange={(next) => setManualRate((p) => ({ ...p, destino: next }))}
               />
-              <label>Tasa<input type="number" step="0.00000001" value={manualRate.tasa} onChange={(e) => setManualRate((p) => ({ ...p, tasa: e.target.value }))} /></label>
+              <label>Tasa<input type="text" inputMode="decimal" autoComplete="off" value={manualRate.tasa} onChange={(e) => setManualRate((p) => ({ ...p, tasa: e.target.value }))} /></label>
               <button type="submit" disabled={busy || !canEditRates}>Guardar tasa</button>
             </form>
             {!canEditRates ? <p className="import-muted">Necesitas al menos dos divisas activas para editar una tasa manual.</p> : null}
@@ -1336,6 +1404,9 @@ export default function ConfiguracionPage() {
               <input
                 type="url"
                 placeholder="https://github.com/AtlasLabs797/AtlasBalance"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={config.general.app_update_check_url}
                 onChange={(e) => setConfig((p) => ({ ...p, general: { ...p.general, app_update_check_url: e.target.value } }))}
               />

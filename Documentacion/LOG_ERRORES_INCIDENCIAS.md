@@ -1,5 +1,14 @@
 ﻿# Log de errores e incidencias
 
+## 2026-11-16 - V-03.02 - Correccion de campos de importe y pestanas (CORREGIDO EN CODIGO)
+
+- **Tasas y importes con coma:** los campos `type="number"` no admiten coma de forma fiable y los estados se leian con `Number()`. Se migraron a texto con `inputMode="decimal"` y `parseStrictDecimal`.
+- **Error evitado durante la correccion:** usar `parseEuropeanNumber` en esos campos habria convertido `1.085` (tasa EUR/USD) en `1085` (un punto con tres decimales se interpreta como millar). Por eso se creo `parseStrictDecimal`. Lo detecto la revision del advisor; los tests nuevos lo fijan.
+- **Latente, sin tocar:** `parseEuropeanNumber('0.001')` devuelve `1` y `('0.920')` devuelve `920` (parte entera 0 con tres decimales tratada como millar). Afecta a extractos e importacion; alinear con el parser de backend (`ImportacionService`) antes de cambiarlo.
+- **Pestanas de Configuracion:** desde `/configuracion/paises`, un clic en otra pestana cambiaba el panel pero `Paises` seguia activa. `activateTab` navega ahora a `/configuracion` (con `replace`).
+- **Bloqueo del entorno:** `npm run test:unit` falla con `EPERM` al escribir en `.test-dist` (carpeta antigua con permisos heredados). Se verifico con otro `outDir`; el script canonico queda pendiente de limpiar esa carpeta.
+- **Foco:** el agente que aplico el cambio dejo 9 reglas de `layout/*.css` que anulaban el outline con `outline: none`; corregidas en la revision.
+
 ## 2026-10-05 - V-03.02 - 500 en login de desarrollo por clave Data Protection ausente (RESUELTO EN DESARROLLO)
 
 - **Sintoma:** el navegador muestra `Error interno del servidor` al enviar el login; `/api/health` sigue respondiendo 200.

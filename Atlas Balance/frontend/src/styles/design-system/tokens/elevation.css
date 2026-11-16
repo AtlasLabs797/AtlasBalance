@@ -13,6 +13,10 @@
 /* The one true shadow: product imagery resting on a surface. Never on cards, buttons or text. */
 --shadow-product:rgba(0,0,0,.22) 3px 5px 30px 0;
 --ring-focus:0 0 0 3px var(--accent-ring);
+/* Anillo de foco por outline (visible en Alto Contraste, contraste >=3:1) */
+--focus-outline-color:var(--accent-600);
+--focus-outline:2px solid var(--focus-outline-color);
+--focus-outline-offset:2px;
 --ring-danger:0 0 0 3px color-mix(in srgb,var(--crimson-500) 26%,transparent);
 --scrim:rgba(0,0,0,.48);
 --blur-overlay:blur(4px);
@@ -21,3 +25,4 @@
 --glass-surface:color-mix(in srgb,var(--surface-card) 55%,transparent);
 --glass-blur:saturate(200%) blur(24px);
 }
+[data-theme="dark"]{--focus-outline-color:var(--accent-300)}

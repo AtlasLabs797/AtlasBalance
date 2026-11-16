@@ -1,5 +1,73 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
+## 2026-11-16 - V-03.02 - Correccion de los hallazgos del informe Modern Web Guidance
+
+### Trabajo realizado
+
+Se aplicaron los hallazgos de `Documentacion/Diseno/INFORME_MODERN_WEB_GUIDANCE_V-03.02.md` en cinco lotes, orquestados con subagentes (Sonnet y Haiku, con archivos disjuntos por agente) y revisados con el advisor.
+
+- **A, accesibilidad base:** foco con `outline` + regla `forced-colors` (tokens `--focus-outline*`); titulo de pagina por ruta (`useDocumentTitle`); pestanas de Importacion y Configuracion con teclado de pestana (la de Paises ya no es un `NavLink`, navega con `replace`); 9 tablas con scroll con `tabIndex`, `role="region"` y nombre.
+- **B, color y tema:** `--text-tertiary` #68686D y `--text-secondary` #58585C (claro); token nuevo `--border-control` para bordes de controles (3:1); tema inicial = guardado o sistema, `<meta name="color-scheme">`, un solo `theme-color` dinamico y `public/theme-init.js` sincrono (la CSP prohibe inline).
+- **C, escala de texto:** raiz sin `font-size: 16px`, escala `--text-*` en `rem` (identidad a 16 px comprobada por script), `<meta name="text-scale">`, `height` a `min-height` solo en 4 controles con texto.
+- **D, movimiento, scrollbar y formularios:** se elimino el reset global `*` de movimiento reducido (casos concretos en `reduce`, infinitas bajo `no-preference`); `scrollbar-color` estandar solo donde no existe `::-webkit-scrollbar`; 12 importes/tasas pasan de `type="number"` a texto con `inputMode="decimal"` y `parseStrictDecimal`; atributos de teclado en login/busquedas; `fieldset`+`legend` sr-only en permisos; objetivos tactiles de 44 px solo en `pointer: coarse`.
+- **No se hizo, con motivo (informe seccion 6):** migrar modales a `<dialog>` (sin bug demostrado), `@layer`, container queries.
+
+### Archivos tocados
+
+Frontend (`Atlas Balance/frontend`): `index.html`, `public/theme-init.js` (nuevo), `eslint.config.js` (ignora `public`), `package.json` y `tsconfig.test.v2.json` (tests nuevos), `src/hooks/useDocumentTitle.ts` y `src/utils/theme.ts` (nuevos), `src/main.tsx`, `src/stores/uiStore.ts`, `src/utils/formatters.ts` (`parseStrictDecimal`), `Layout.tsx`, `LoginPage`, `ChangePasswordPage`, `ImportacionPage`, `ConfiguracionPage`, `AlertasPage`, `CuentasPage`, `TitularesPage`, `UsuariosPage`, `FormatosImportacionPage`, `PaisesPage`, `CommandPalette`, `UsuarioModal`, `CreateTokenModal`, 7 paginas/componentes con tablas, `tests/theme.test.ts` y `tests/parseEuropeanNumber.test.ts` (nuevos) y 20 hojas CSS de `src/styles` (tokens, global, auth y layout).
+
+### Comandos ejecutados
+
+`tsc --noEmit`, `npm run lint`, `tsc -p tsconfig.test.v2.json` con `--outDir` alternativo y `node --test` sobre ese directorio, `vite build` a un directorio temporal del workspace (borrado despues), `git diff --check`. Contrastes calculados con scripts Node de una linea.
+
+### Resultado de verificacion
+
+- **Verificado:** `tsc` limpio; lint con `--max-warnings 0` limpio; 101/101 tests unitarios (hay 2 archivos de test nuevos); `vite build` correcto y `theme-init.js` sale en el build; `git diff --check` sin errores; contrastes por script (foco 5,85:1 claro y 7,33:1 oscuro; terciario >= 4,74:1 sobre las 4 superficies; bordes de control >= 3,10:1 claro y >= 4,86:1 oscuro).
+- **Bloqueado:** `npm run test:unit` falla con `EPERM` al escribir en el antiguo `.test-dist` (carpeta de octubre con permisos heredados). Se ejecuto la misma suite con otro `outDir`. Release no se ha tocado.
+- **No verificado (sin validacion visual ni axe):** Alto Contraste de Windows, teclado real, escalado de texto al 200 %, recorte del outline en contenedores con `overflow`, indicador de foco en `.app-palette-input`, contraste de `--sheet-selected`, `tabpanel` en Importacion, movil/tactil (popup de IA, filtros de extractos), tema oscuro completo, `scrollbar-color` en Firefox.
+
+### Decisiones visuales
+
+- Contraste mas alto en toda la app: `--text-secondary` pasa a #58585C y `--text-tertiary` a #68686D (revertir: `semantic.css`, `--text-secondary-light` y `--text-tertiary-light`).
+- Los bordes de controles (inputs, selects, checkbox, botones del shell, toggles) usan `--border-control` (#86868B claro; blanco 50 % oscuro). Revertir: `--border-control` y `--control-border` en `variables.css`.
+- Tema por defecto = sistema (antes siempre claro). Revertir: `resolveInitialTheme` y `public/theme-init.js`.
+- Foco: outline de 2 px en acento mas halo existente.
+
+### Pendientes
+
+- **Comprobacion manual por pantalla (orden de riesgo):** (1) raiz sin 16 px + `text-scale`: dashboard, extractos (filas del grid) y modales al 100/150/200 %; (2) foco con Tab en claro/oscuro y en Alto Contraste; (3) bordes y texto terciario en claro/oscuro; (4) formularios con importes: escribir `1,085`, `1.085` y `1.234,50` en tasa manual, saldo minimo e interes; (5) pestanas de Importacion/Configuracion con flechas y boton Atras; (6) movil/tactil.
+- Politica de navegadores en `AGENTS.md` (condiciona los fallback).
+- `legacy-scan` no ejecutado; axe/Playwright pendiente.
+- Latente, sin tocar: `parseEuropeanNumber('0.001')` devuelve 1 (punto con tres decimales y parte entera 0 se toma como millar) en extractos/importacion; el backend tiene su propio parser en `ImportacionService`. Decidir si se alinean.
+
+## 2026-11-16 - V-03.02 - Informe Modern Web Guidance del frontend
+
+### Trabajo realizado
+
+- Auditoria estatica del frontend contra las guias de Modern Web Guidance.
+  Resultado en `Documentacion/Diseno/INFORME_MODERN_WEB_GUIDANCE_V-03.02.md`.
+- Sin cambios de codigo.
+
+### Archivos tocados
+
+- `Documentacion/Diseno/INFORME_MODERN_WEB_GUIDANCE_V-03.02.md` (nuevo), `Documentacion/Versiones/v-03.02.md` y este archivo.
+
+### Comandos ejecutados
+
+- Lecturas y greps sobre `frontend/src`; guias leidas desde disco. Contrastes calculados con un script de Node de una sola linea (sin ficheros). `legacy-scan` via npx denegado por el sandbox: no ejecutado.
+
+### Resultado de verificacion
+
+- No hubo validacion visual ni axe/Lighthouse; los hallazgos son estaticos.
+
+### Pendientes
+
+- Decisiones de diseno abiertas: contraste de bordes de control (3:1), tema por defecto del sistema, politica de navegadores en `AGENTS.md`, escala tipografica en `rem`.
+- Hallazgos P1 pendientes de implementar: focus ring con `outline`/`forced-colors`, titulo de pagina por ruta, pestanas de Importacion con teclado de pestana. Texto terciario y bordes de control a AA quedan como decision de diseno.
+- Dialogos propios: fragiles pero sin bug demostrado (Escape apilado analizado por lectura, no en runtime); no se recomienda migrar a `<dialog>`.
+- Nota: esta entrada ya existia sin commitear al empezar la sesion, escrita antes que el informe; se completo y corrigio aqui. Se anadio tambien la entrada en `Documentacion/Versiones/v-03.02.md`.
+- Pendientes de verificacion: axe/Playwright, Alto Contraste de Windows, escalado al 200 %, `legacy-scan` si se autoriza.
+
 ## 2026-10-05 - V-03.02 - Arranque del entorno de desarrollo aislado
 
 ### Trabajo realizado

@@ -157,10 +157,11 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
             </label>
             <span aria-hidden="true" />
           </div>
-          <div className="users-check-row">
+          <fieldset className="users-check-row">
+            <legend className="sr-only">Permisos generales del token</legend>
             <label><input type="checkbox" checked={tokenLectura} onChange={(event) => setTokenLectura(event.target.checked)} /> Lectura</label>
             <label><input type="checkbox" checked={tokenEscritura} onChange={(event) => setTokenEscritura(event.target.checked)} /> Escritura</label>
-          </div>
+          </fieldset>
           <p className="import-muted">
             La integración OpenClaw es de solo lectura por ahora: los endpoints disponibles
             solo consultan datos. El permiso de escritura no habilita ninguna operación todavía.

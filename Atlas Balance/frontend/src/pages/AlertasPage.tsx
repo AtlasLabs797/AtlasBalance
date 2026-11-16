@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { TipoTitular } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDateTime } from '@/utils/formatters';
+import { formatCurrency, formatDateTime, parseStrictDecimal } from '@/utils/formatters';
 
 interface AlertaContextoCuenta {
   id: string;
@@ -65,6 +65,21 @@ const EMPTY_FORM: SaveAlertaPayload = {
   destinatario_usuario_ids: [],
 };
 
+// Importe de saldo minimo en texto (coma decimal) <-> numero. Vacio = 0.
+function saldoToInput(value: number): string {
+  return String(value).replace('.', ',');
+}
+
+function parseSaldoInput(raw: string): number | null {
+  if (!raw.trim()) {
+    return 0;
+  }
+  const parsed = parseStrictDecimal(raw);
+  return parsed === null || parsed < 0 ? null : parsed;
+}
+
+const SALDO_INVALIDO = 'El saldo mínimo debe ser un importe válido mayor o igual que 0.';
+
 export default function AlertasPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const isAdmin = usuario?.rol === 'ADMIN';
@@ -84,6 +99,10 @@ export default function AlertasPage() {
   const [globalForm, setGlobalForm] = useState<SaveAlertaPayload>(EMPTY_FORM);
   const [cuentaForm, setCuentaForm] = useState<SaveAlertaPayload>(EMPTY_FORM);
   const [tipoForm, setTipoForm] = useState<SaveAlertaPayload>({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+  // Saldo minimo como texto para admitir coma decimal; se parsea al guardar
+  const [globalSaldo, setGlobalSaldo] = useState('0');
+  const [cuentaSaldo, setCuentaSaldo] = useState('0');
+  const [tipoSaldo, setTipoSaldo] = useState('0');
   const [editingCuentaAlertId, setEditingCuentaAlertId] = useState<string | null>(null);
   const [editingTipoAlertId, setEditingTipoAlertId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AlertaItem | null>(null);
@@ -123,8 +142,10 @@ export default function AlertasPage() {
         activa: global.activa,
         destinatario_usuario_ids: global.destinatarios.map((d) => d.usuario_id),
       });
+      setGlobalSaldo(saldoToInput(global.saldo_minimo));
     } else {
       setGlobalForm({ ...EMPTY_FORM, cuenta_id: null });
+      setGlobalSaldo('0');
     }
   };
 
@@ -174,15 +195,22 @@ export default function AlertasPage() {
 
   const saveGlobalAlert = async (event: FormEvent) => {
     event.preventDefault();
+    const saldoMinimo = parseSaldoInput(globalSaldo);
+    if (saldoMinimo === null) {
+      setError(SALDO_INVALIDO);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setFeedback(null);
 
     try {
+      const payload = { ...globalForm, saldo_minimo: saldoMinimo };
       if (onlyGlobalAlert) {
-        await api.put(`/alertas/${onlyGlobalAlert.id}`, globalForm);
+        await api.put(`/alertas/${onlyGlobalAlert.id}`, payload);
       } else {
-        await api.post('/alertas', globalForm);
+        await api.post('/alertas', payload);
       }
 
       setFeedback('Alerta global guardada.');
@@ -202,12 +230,18 @@ export default function AlertasPage() {
       return;
     }
 
+    const saldoMinimo = parseSaldoInput(cuentaSaldo);
+    if (saldoMinimo === null) {
+      setError(SALDO_INVALIDO);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setFeedback(null);
 
     try {
-      const payload = { ...cuentaForm, tipo_titular: null };
+      const payload = { ...cuentaForm, tipo_titular: null, saldo_minimo: saldoMinimo };
       if (editingCuentaAlertId) {
         await api.put(`/alertas/${editingCuentaAlertId}`, payload);
       } else {
@@ -217,6 +251,7 @@ export default function AlertasPage() {
       setFeedback(editingCuentaAlertId ? 'Alerta de cuenta actualizada.' : 'Alerta de cuenta creada.');
       setEditingCuentaAlertId(null);
       setCuentaForm(EMPTY_FORM);
+      setCuentaSaldo('0');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (saveError: unknown) {
@@ -233,12 +268,18 @@ export default function AlertasPage() {
       return;
     }
 
+    const saldoMinimo = parseSaldoInput(tipoSaldo);
+    if (saldoMinimo === null) {
+      setError(SALDO_INVALIDO);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setFeedback(null);
 
     try {
-      const payload = { ...tipoForm, cuenta_id: null };
+      const payload = { ...tipoForm, cuenta_id: null, saldo_minimo: saldoMinimo };
       if (editingTipoAlertId) {
         await api.put(`/alertas/${editingTipoAlertId}`, payload);
       } else {
@@ -248,6 +289,7 @@ export default function AlertasPage() {
       setFeedback(editingTipoAlertId ? 'Alerta por tipo actualizada.' : 'Alerta por tipo creada.');
       setEditingTipoAlertId(null);
       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+      setTipoSaldo('0');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (saveError: unknown) {
@@ -266,6 +308,7 @@ export default function AlertasPage() {
       activa: item.activa,
       destinatario_usuario_ids: item.destinatarios.map((d) => d.usuario_id),
     });
+    setCuentaSaldo(saldoToInput(item.saldo_minimo));
     setFeedback(null);
     setError(null);
   };
@@ -279,6 +322,7 @@ export default function AlertasPage() {
       activa: item.activa,
       destinatario_usuario_ids: item.destinatarios.map((d) => d.usuario_id),
     });
+    setTipoSaldo(saldoToInput(item.saldo_minimo));
     setFeedback(null);
     setError(null);
   };
@@ -293,10 +337,12 @@ export default function AlertasPage() {
       if (editingCuentaAlertId === alertId) {
         setEditingCuentaAlertId(null);
         setCuentaForm(EMPTY_FORM);
+        setCuentaSaldo('0');
       }
       if (editingTipoAlertId === alertId) {
         setEditingTipoAlertId(null);
         setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+        setTipoSaldo('0');
       }
 
       setFeedback('Alerta eliminada.');
@@ -423,13 +469,11 @@ export default function AlertasPage() {
               <label>
                 Saldo mínimo global
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={globalForm.saldo_minimo}
-                  onChange={(event) =>
-                    setGlobalForm({ ...globalForm, saldo_minimo: Number(event.target.value || '0') })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={globalSaldo}
+                  onChange={(event) => setGlobalSaldo(event.target.value)}
                 />
               </label>
               <label className="config-check">
@@ -472,13 +516,11 @@ export default function AlertasPage() {
               <label>
                 Saldo mínimo
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={tipoForm.saldo_minimo}
-                  onChange={(event) =>
-                    setTipoForm({ ...tipoForm, saldo_minimo: Number(event.target.value || '0') })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={tipoSaldo}
+                  onChange={(event) => setTipoSaldo(event.target.value)}
                 />
               </label>
               <label className="config-check">
@@ -512,6 +554,7 @@ export default function AlertasPage() {
                     onClick={() => {
                       setEditingTipoAlertId(null);
                       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+                      setTipoSaldo('0');
                     }}
                   >
                     Cancelar edición
@@ -545,13 +588,11 @@ export default function AlertasPage() {
               <label>
                 Saldo mínimo
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={cuentaForm.saldo_minimo}
-                  onChange={(event) =>
-                    setCuentaForm({ ...cuentaForm, saldo_minimo: Number(event.target.value || '0') })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={cuentaSaldo}
+                  onChange={(event) => setCuentaSaldo(event.target.value)}
                 />
               </label>
               <label className="config-check">
@@ -585,6 +626,7 @@ export default function AlertasPage() {
                     onClick={() => {
                       setEditingCuentaAlertId(null);
                       setCuentaForm(EMPTY_FORM);
+                      setCuentaSaldo('0');
                     }}
                   >
                     Cancelar edición

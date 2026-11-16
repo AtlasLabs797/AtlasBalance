@@ -1,5 +1,6 @@
 ﻿import { AxiosError } from 'axios';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -42,6 +43,12 @@ const VALIDATION_PAGE_SIZE = 200;
 
 type ImportStep = 1 | 2;
 type ImportTab = 'nueva' | 'historial' | 'lote';
+
+const importTabs: Array<{ key: ImportTab; label: string }> = [
+  { key: 'nueva', label: 'Nueva' },
+  { key: 'historial', label: 'Historial' },
+  { key: 'lote', label: 'Lote' },
+];
 type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
 type ImportValidationRow = ImportValidationResult['filas'][number];
 
@@ -715,6 +722,33 @@ export default function ImportacionPage() {
     );
   }
 
+  // Pestanas navegables: se omite 'lote' mientras no haya lote cargado (boton deshabilitado)
+  const enabledImportTabs = importTabs.filter((item) => item.key !== 'lote' || currentLote);
+
+  const handleImportTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, key: ImportTab) => {
+    const currentIndex = enabledImportTabs.findIndex((item) => item.key === key);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const moveTo = (nextIndex: number) => {
+      const nextTab = enabledImportTabs[(nextIndex + enabledImportTabs.length) % enabledImportTabs.length].key;
+      event.preventDefault();
+      setActiveTab(nextTab);
+      window.setTimeout(() => document.getElementById(`import-tab-${nextTab}`)?.focus(), 0);
+    };
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      moveTo(currentIndex + 1);
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      moveTo(currentIndex - 1);
+    } else if (event.key === 'Home') {
+      moveTo(0);
+    } else if (event.key === 'End') {
+      moveTo(enabledImportTabs.length - 1);
+    }
+  };
+
   return (
     <section className="import-page">
       <header className="import-header">
@@ -728,34 +762,25 @@ export default function ImportacionPage() {
       </header>
 
       <div className="import-tabs" role="tablist" aria-label="Secciones de importación">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'nueva'}
-          className={activeTab === 'nueva' ? 'active' : ''}
-          onClick={() => setActiveTab('nueva')}
-        >
-          Nueva
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'historial'}
-          className={activeTab === 'historial' ? 'active' : ''}
-          onClick={() => setActiveTab('historial')}
-        >
-          Historial
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'lote'}
-          className={activeTab === 'lote' ? 'active' : ''}
-          disabled={!currentLote}
-          onClick={() => setActiveTab('lote')}
-        >
-          Lote
-        </button>
+        {importTabs.map(({ key, label }) => {
+          const isActive = activeTab === key;
+          return (
+            <button
+              key={key}
+              id={`import-tab-${key}`}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              className={isActive ? 'active' : ''}
+              tabIndex={isActive ? 0 : -1}
+              disabled={key === 'lote' && !currentLote}
+              onClick={() => setActiveTab(key)}
+              onKeyDown={(event) => handleImportTabKeyDown(event, key)}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {activeTab !== 'historial' && (

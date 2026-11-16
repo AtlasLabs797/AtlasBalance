@@ -125,6 +125,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             ref={inputRef}
             className="app-palette-input"
             type="text"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="search"
             value={query}
             placeholder="Buscar pantalla..."
             aria-label="Buscar pantalla"

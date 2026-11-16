@@ -14,9 +14,8 @@
 --press-scale-surface:.99;
 --lift-hover:0px;
 }
+/* Reduce: se anulan las duraciones de movimiento; instant/fast (cambios de color/borde de controles) se mantienen */
 @media (prefers-reduced-motion:reduce){:root{
---duration-instant:1ms;
---duration-fast:1ms;
 --duration-normal:1ms;
 --duration-slow:1ms;
 --duration-deliberate:1ms;

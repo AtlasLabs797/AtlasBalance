@@ -292,7 +292,7 @@
   width: 100%;
   min-width: 0;
   padding: var(--space-2) var(--control-padding-x, var(--space-3));
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
   background: var(--bg-surface-soft);
   color: var(--text-primary);
@@ -302,7 +302,8 @@
 }
 
 .app-combobox-input:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   border-color: color-mix(in srgb, var(--accent-primary) 36%, var(--border-soft));
   background: var(--bg-surface);
 }
@@ -484,12 +485,14 @@
 }
 
 .titular-open-button:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
 .cuenta-open-button:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
@@ -734,7 +737,8 @@
 }
 
 .titulares-balance-row:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
@@ -860,7 +864,8 @@
 }
 
 .cuentas-balance-row:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 

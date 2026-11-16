@@ -1,12 +1,22 @@
 import { create } from 'zustand';
 import { getBrowserStorage } from '@/utils/sessionScope';
+import {
+  applyThemeToDocument,
+  resolveInitialTheme,
+  systemPrefersDark,
+  type Theme,
+} from '@/utils/theme';
 
 const MAX_TOASTS = 5;
 
-type Theme = 'light' | 'dark';
-
-function normalizeTheme(value: string | null): Theme {
-  return value === 'dark' || value === 'light' ? value : 'light';
+function initialTheme(): Theme {
+  let stored: string | null;
+  try {
+    stored = getBrowserStorage('localStorage')?.getItem('theme') ?? null;
+  } catch {
+    stored = null;
+  }
+  return resolveInitialTheme(stored, systemPrefersDark());
 }
 
 interface Toast {
@@ -39,7 +49,7 @@ interface UiState {
 const storage = () => getBrowserStorage('localStorage');
 
 export const useUiStore = create<UiState>((set) => ({
-  theme: normalizeTheme(storage()?.getItem('theme') ?? null),
+  theme: initialTheme(),
   sidebarCollapsed: false,
   activeModal: null,
   blockingOverlayCount: 0,
@@ -49,13 +59,13 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => {
       const newTheme = state.theme === 'light' ? 'dark' : 'light';
       storage()?.setItem('theme', newTheme);
-      document.documentElement.setAttribute('data-theme', newTheme);
+      applyThemeToDocument(newTheme);
       return { theme: newTheme };
     }),
 
   setTheme: (theme) => {
     storage()?.setItem('theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
+    applyThemeToDocument(theme);
     set({ theme });
   },
 

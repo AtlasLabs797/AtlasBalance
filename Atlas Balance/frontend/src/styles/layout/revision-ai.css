@@ -335,7 +335,6 @@ button.revision-status:active:not(:disabled) {
   position: absolute;
   inset: -1px;
   border-radius: var(--radius-full);
-  animation: ai-face-halo 3.2s var(--ease-premium) infinite;
 }
 
 .ai-chat-face svg {
@@ -347,12 +346,19 @@ button.revision-status:active:not(:disabled) {
   background: var(--ai-soft);
 }
 
-.ai-chat-face--thinking::after {
-  animation-duration: 1.2s;
-}
+/* Halo y pulso ambientales: solo sin preferencia de movimiento reducido */
+@media (prefers-reduced-motion: no-preference) {
+  .ai-chat-face::after {
+    animation: ai-face-halo 3.2s var(--ease-premium) infinite;
+  }
 
-.ai-chat-face--thinking svg {
-  animation: ai-face-pulse 1.2s var(--ease-premium) infinite;
+  .ai-chat-face--thinking::after {
+    animation-duration: 1.2s;
+  }
+
+  .ai-chat-face--thinking svg {
+    animation: ai-face-pulse 1.2s var(--ease-premium) infinite;
+  }
 }
 
 
@@ -920,18 +926,26 @@ button.revision-status:active:not(:disabled) {
   height: 5px;
   border-radius: var(--radius-full);
   background: currentColor;
-  opacity: 0.3;
-  animation: ai-dot-bounce 1.4s ease-in-out infinite;
+  opacity: 0.65;
   text-transform: none;
   letter-spacing: 0;
 }
 
-.ai-chat-loading-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
+/* Rebote ambiental: solo sin preferencia de movimiento reducido.
+   Estado estatico por defecto: puntos visibles sin desplazamiento. */
+@media (prefers-reduced-motion: no-preference) {
+  .ai-chat-loading-dots span {
+    opacity: 0.3;
+    animation: ai-dot-bounce 1.4s ease-in-out infinite;
+  }
 
-.ai-chat-loading-dots span:nth-child(3) {
-  animation-delay: 0.4s;
+  .ai-chat-loading-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .ai-chat-loading-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
 }
 
 @keyframes ai-dot-bounce {
@@ -945,17 +959,10 @@ button.revision-status:active:not(:disabled) {
   }
 }
 
+/* Movimiento reducido: el chat flotante entra sin desplazamiento */
 @media (prefers-reduced-motion: reduce) {
-  .ai-floating-chat,
-  .ai-chat-loading-dots span,
-  .ai-chat-face::after,
-  .ai-chat-face--thinking svg {
-    animation: none !important;
-  }
-
-  .ai-chat-loading-dots span {
-    opacity: 0.65;
-    transform: none;
+  .ai-floating-chat {
+    animation: none;
   }
 }
 
@@ -1432,15 +1439,19 @@ button.revision-status:active:not(:disabled) {
   will-change: transform, border-radius, width, height, top, left, right;
 }
 
-.atl-face--idle .atl-face__shape { animation: atl-face-sway 9s ease-in-out infinite; }
-.atl-face--idle .atl-face__eye--l { animation: atl-face-idle-l 14s var(--ease-standard) infinite; }
-.atl-face--idle .atl-face__eye--r { animation: atl-face-idle-r 14s var(--ease-standard) infinite; }
-.atl-face--listening .atl-face__shape { animation: atl-face-listen-shape 7s ease-in-out infinite; }
-.atl-face--listening .atl-face__eye--l { animation: atl-face-listen-l 7s var(--ease-standard) infinite; }
-.atl-face--listening .atl-face__eye--r { animation: atl-face-listen-r 7s var(--ease-standard) infinite; }
-.atl-face--thinking .atl-face__shape { animation: atl-face-morph 2.8s linear infinite; }
-.atl-face--thinking .atl-face__eye--l { animation: atl-face-think-l 5.2s var(--ease-standard) infinite; }
-.atl-face--thinking .atl-face__eye--r { animation: atl-face-think-r 5.2s var(--ease-standard) infinite; }
+/* Animacion ambiental: solo sin preferencia de movimiento reducido.
+   Estado estatico por defecto: ojos visibles con las medidas base. */
+@media (prefers-reduced-motion: no-preference) {
+  .atl-face--idle .atl-face__shape { animation: atl-face-sway 9s ease-in-out infinite; }
+  .atl-face--idle .atl-face__eye--l { animation: atl-face-idle-l 14s var(--ease-standard) infinite; }
+  .atl-face--idle .atl-face__eye--r { animation: atl-face-idle-r 14s var(--ease-standard) infinite; }
+  .atl-face--listening .atl-face__shape { animation: atl-face-listen-shape 7s ease-in-out infinite; }
+  .atl-face--listening .atl-face__eye--l { animation: atl-face-listen-l 7s var(--ease-standard) infinite; }
+  .atl-face--listening .atl-face__eye--r { animation: atl-face-listen-r 7s var(--ease-standard) infinite; }
+  .atl-face--thinking .atl-face__shape { animation: atl-face-morph 2.8s linear infinite; }
+  .atl-face--thinking .atl-face__eye--l { animation: atl-face-think-l 5.2s var(--ease-standard) infinite; }
+  .atl-face--thinking .atl-face__eye--r { animation: atl-face-think-r 5.2s var(--ease-standard) infinite; }
+}
 
 @keyframes atl-face-sway {
   0%, 100% { transform: translateX(0) rotate(0deg); }
@@ -1535,12 +1546,6 @@ button.revision-status:active:not(:disabled) {
   92%, 100% { width: 15%; height: 20%; top: 38%; border-radius: 999px; transform: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .atl-face__shape,
-  .atl-face__eye {
-    animation: none !important;
-  }
-}
 
 @media (max-width: 767.98px) {
   .ai-chat-header {
@@ -1767,7 +1772,13 @@ button.revision-status:active:not(:disabled) {
   align-items: center;
   font: var(--type-label);
   color: var(--ai-solid);
-  animation: ai-thinking-label 1.5s ease-in-out infinite;
+}
+
+/* Parpadeo ambiental: solo si el usuario no pidio movimiento reducido */
+@media (prefers-reduced-motion: no-preference) {
+  .ai-chat-loading-label {
+    animation: ai-thinking-label 1.5s ease-in-out infinite;
+  }
 }
 
 @keyframes ai-thinking-label {
@@ -2012,9 +2023,22 @@ button.revision-status:active:not(:disabled) {
   }
 }
 
+/* Movimiento reducido: el popover entra sin desplazamiento ni escala */
 @media (prefers-reduced-motion: reduce) {
-  .ai-chat-tool-popover,
-  .ai-chat-loading-label {
+  .ai-chat-tool-popover {
     animation: none;
+  }
+}
+
+/* Tactil: controles pequenos del chat de IA a 44px. Va al final para ganar a
+   las reglas base de 28-30px; usa min-height (no height) para no tocar el popup. */
+@media (hover: none), (pointer: coarse) {
+  .ai-chat-suggestions button,
+  .ai-chat-error .button-secondary,
+  .ai-chat-tool,
+  .ai-chat-tool-option,
+  .ai-chat-composer-trigger .app-select-trigger,
+  .ai-chat-composer-static {
+    min-height: var(--control-height);
   }
 }

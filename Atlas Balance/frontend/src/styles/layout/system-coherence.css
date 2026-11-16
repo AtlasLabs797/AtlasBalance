@@ -234,7 +234,7 @@
 }
 
 .config-tab:hover:not(:disabled) {
-  border-color: var(--surface-border-hover);
+  border-color: var(--border-control-hover);
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -273,7 +273,7 @@
 .logout-button:hover,
 .bottom-nav-link:hover,
 .bottom-nav-sheet-link:hover {
-  border-color: var(--surface-border-hover);
+  border-color: var(--border-control-hover);
   background: var(--bg-hover);
 }
 
@@ -566,4 +566,16 @@ tbody tr:hover {
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--text-tertiary);
+}
+
+/* Movimiento reducido: animaciones sin cubrir en otras hojas (shimmer de skeleton,
+   hoja inferior movil, modal de importacion). Sin animacion quedan en su estado final. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line,
+  .bottom-nav-sheet-backdrop,
+  .bottom-nav-sheet,
+  .import-modal-backdrop,
+  .import-modal {
+    animation: none;
+  }
 }

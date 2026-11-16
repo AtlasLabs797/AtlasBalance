@@ -275,6 +275,11 @@ export default function UsuariosPage() {
       <div className="users-filters">
         <input
           type="search"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
           aria-label="Buscar usuarios por nombre o email"
           placeholder="Buscar por nombre o email"
           value={search}
@@ -307,7 +312,7 @@ export default function UsuariosPage() {
             <p>Ajusta los filtros o crea un usuario nuevo.</p>
           </div>
         ) : (
-          <div className="users-table-scroll">
+          <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de usuarios">
             <table>
             <thead>
               <tr>

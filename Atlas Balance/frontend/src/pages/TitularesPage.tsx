@@ -444,6 +444,11 @@ export default function TitularesPage() {
       <div className="phase2-filters">
         <input
           type="search"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
           aria-label="Buscar titular"
           placeholder="Buscar titular"
           value={search}

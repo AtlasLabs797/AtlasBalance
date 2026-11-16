@@ -10,8 +10,8 @@
 --font-ui:"Geist","SF Pro Text",system-ui,-apple-system,"Helvetica Neue",sans-serif;
 --font-display:"Geist","SF Pro Display",system-ui,-apple-system,"Helvetica Neue",sans-serif;
 --font-mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
---text-10:10px;--text-11:11px;--text-12:12px;--text-13:13px;--text-14:14px;--text-17:17px;--text-18:18px;--text-21:21px;--text-24:24px;--text-28:28px;--text-34:34px;--text-40:40px;--text-48:48px;--text-56:56px;
---text-kpi:clamp(22px,3.2vw,44px);
+--text-10:0.625rem;--text-11:0.6875rem;--text-12:0.75rem;--text-13:0.8125rem;--text-14:0.875rem;--text-17:1.0625rem;--text-18:1.125rem;--text-21:1.3125rem;--text-24:1.5rem;--text-28:1.75rem;--text-34:2.125rem;--text-40:2.5rem;--text-48:3rem;--text-56:3.5rem;
+--text-kpi:clamp(1.375rem,3.2vw,2.75rem);
 /* legacy aliases kept so nothing breaks; both resolve into the new ladder */
 --text-16:var(--text-17);--text-20:var(--text-21);--text-32:var(--text-34);
 --leading-tight:1.07;--leading-snug:1.19;--leading-normal:1.47;--leading-relaxed:1.6;--leading-dense-link:2.41;

@@ -542,6 +542,9 @@ export default function UsuarioModal({
                   <span>Email</span>
                   <input
                     type="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder="usuario@atlasbalance.local"
                     value={form.email}
                     onChange={(event) =>
@@ -593,7 +596,8 @@ export default function UsuarioModal({
                 </label>
               </div>
 
-              <div className="users-check-row">
+              <fieldset className="users-check-row">
+                <legend className="sr-only">Opciones del usuario</legend>
                 <label>
                   <input
                     type="checkbox"
@@ -633,7 +637,7 @@ export default function UsuarioModal({
                   />
                   Puede usar IA
                 </label>
-              </div>
+              </fieldset>
             </section>
 
             <section className="users-modal-section users-notifications-section">
@@ -842,7 +846,8 @@ export default function UsuarioModal({
                         </div>
                       )}
 
-                      <div className="users-check-grid">
+                      <fieldset className="users-check-grid">
+                        <legend className="sr-only">Permisos de {scopeLabel}</legend>
                         <label className="users-check-danger">
                           <input
                             type="checkbox"
@@ -921,7 +926,7 @@ export default function UsuarioModal({
                           />
                           Ver dashboard
                         </label>
-                      </div>
+                      </fieldset>
                     </div>
                   );
                 })}

@@ -7,11 +7,15 @@
 }
 
 html {
-  font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  scroll-behavior: smooth;
   color-scheme: light;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 html[data-theme="dark"] {
@@ -19,7 +23,8 @@ html[data-theme="dark"] {
 }
 
 :focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
@@ -78,7 +83,7 @@ input, textarea, select, button {
 
 input, textarea, select {
   background: var(--control-bg);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
   padding: var(--pad-field-y) var(--pad-field-x);
   font: var(--type-body);
@@ -93,7 +98,7 @@ input, textarea, select {
 input:hover:not(:disabled),
 textarea:hover:not(:disabled),
 select:hover:not(:disabled) {
-  border-color: var(--surface-border-hover);
+  border-color: var(--border-control-hover);
 }
 
 select {
@@ -197,14 +202,15 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 .date-picker-trigger:hover:not(:disabled) {
-  border-color: var(--surface-border-hover);
+  border-color: var(--border-control-hover);
   background: var(--control-bg);
   transform: none;
 }
 
 .date-picker-trigger:focus-visible,
 .date-picker-field:has(.date-picker-popover) .date-picker-trigger {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   border-color: var(--color-border-focus);
   box-shadow: var(--shadow-focus);
 }
@@ -346,7 +352,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 .date-picker-grid button:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   border-color: var(--color-border-focus);
   box-shadow: var(--shadow-focus);
 }
@@ -395,7 +402,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 input:focus, textarea:focus, select:focus {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   border-color: var(--accent-500);
   box-shadow: var(--ring-focus);
 }
@@ -410,7 +418,7 @@ input[type='checkbox'] {
   place-content: center;
   flex: 0 0 auto;
   padding: 0;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--border-control);
   border-radius: var(--radius-xs);
   background: var(--bg-surface);
   color: var(--text-inverse);
@@ -454,7 +462,8 @@ input[type='checkbox']:checked::before {
 }
 
 input[type='checkbox']:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
@@ -491,7 +500,8 @@ button:not([class]):hover:not(:disabled) {
 }
 
 button:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
@@ -752,7 +762,7 @@ th {
 }
 
 .close-icon-button:hover:not(:disabled) {
-  border-color: var(--surface-border-hover);
+  border-color: var(--border-control-hover);
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -781,7 +791,7 @@ th {
   min-height: var(--control-height);
   justify-content: space-between;
   gap: var(--space-3);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-control);
   background: var(--bg-surface);
   color: var(--text-primary);
   font: var(--type-body);
@@ -792,12 +802,13 @@ th {
 }
 
 .app-select-trigger:hover:not(:disabled) {
-  border-color: var(--border-strong);
+  border-color: var(--border-control-hover);
   background: var(--bg-surface);
 }
 
 .app-select-trigger:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   border-color: var(--accent-500);
   box-shadow: var(--ring-focus);
 }
@@ -934,14 +945,10 @@ th {
   }
 }
 
+/* Movimiento reducido: sin reset global; entradas sin desplazamiento ni escala */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-duration: 1ms !important;
+  .app-select-popover {
+    animation: none;
   }
 }
 
@@ -979,10 +986,10 @@ th {
   }
 
   input[type='checkbox'] {
-    width: 1.25rem;
-    height: 1.25rem;
-    min-width: 1.25rem;
-    min-height: 1.25rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
   }
 
   label:has(> input[type='checkbox']),

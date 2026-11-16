@@ -438,6 +438,11 @@ export default function FormatosImportacionPage() {
       <div className="phase2-filters">
         <input
           type="search"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
           aria-label="Buscar formatos por nombre, banco o divisa"
           placeholder="Buscar por nombre/banco/divisa"
           value={search}
@@ -481,7 +486,7 @@ export default function FormatosImportacionPage() {
             />
           ) : null}
           {!loading && items.length > 0 && (
-            <div className="users-table-scroll">
+            <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de formatos de importación">
             <table>
               <colgroup>
                 <col className="formatos-col-banco" />

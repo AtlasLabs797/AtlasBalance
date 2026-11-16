@@ -47,7 +47,7 @@
   --border-focus: var(--accent-solid);
 
   --text-primary: var(--gray-900); /* colisiona de nombre con el token nuevo: ver override dark abajo */
-  --text-secondary: var(--gray-600); /* idem */
+  --text-secondary: var(--text-secondary-light); /* idem; gris AA 6:1 sobre sunken. Dark lo sobreescribe abajo */
   --text-muted: var(--text-tertiary);
   --text-inverse: var(--white); /* idem */
   --text-link: var(--accent-text); /* idem */
@@ -102,7 +102,7 @@
 
   --color-button-secondary-bg: var(--bg-surface-soft);
   --color-button-secondary-hover: var(--bg-surface-muted);
-  --color-button-secondary-border: var(--border-strong);
+  --color-button-secondary-border: var(--border-control);
   --color-button-secondary-text: var(--text-primary);
 
   --color-bg-sidebar: var(--bg-surface);
@@ -207,7 +207,7 @@
 
   --control-height-compact: 36px;
   --control-padding-x: var(--space-7);
-  --control-border: var(--border-strong);
+  --control-border: var(--border-control);
   --control-bg: var(--bg-input);
   --control-bg-hover: var(--bg-hover);
   --control-ring: var(--ring-focus);

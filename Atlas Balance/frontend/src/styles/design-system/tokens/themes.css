@@ -7,7 +7,7 @@
 [data-theme="dark"]{
 --text-primary:#F5F5F7;--text-secondary:#CCCCCC;--text-tertiary:#A1A1A6;--text-disabled:#6E6E73;--text-inverse:var(--gray-950);--text-link:var(--accent-300);
 --surface-page:#000000;--surface-card:#1D1D1F;--surface-raised:#272729;--surface-sunken:#151517;--surface-muted:#252527;--surface-hover:var(--alpha-white-08);--surface-active:var(--alpha-white-12);--surface-inverse:var(--gray-25);--surface-overlay:color-mix(in srgb,#1D1D1F 88%,transparent);
---border-subtle:rgba(255,255,255,.07);--border-default:rgba(255,255,255,.12);--border-strong:rgba(255,255,255,.2);--border-inverse:var(--alpha-ink-12);
+--border-subtle:rgba(255,255,255,.07);--border-default:rgba(255,255,255,.12);--border-strong:rgba(255,255,255,.2);--border-control:rgba(255,255,255,.5);--border-control-hover:rgba(255,255,255,.7);--border-inverse:var(--alpha-ink-12);
 --accent-solid:var(--accent-500);--accent-solid-hover:var(--accent-400);--accent-solid-active:var(--accent-600);--accent-text:var(--cobalt-300);--accent-on-solid:var(--white);
 --accent-soft:color-mix(in srgb,var(--accent-500) 16%,var(--surface-card));--accent-soft-strong:color-mix(in srgb,var(--accent-500) 24%,var(--surface-card));--accent-soft-border:color-mix(in srgb,var(--accent-500) 34%,var(--surface-card));
 --shadow-inset-top:none;--shadow-xs:none;--shadow-sm:none;--shadow-card:none;--shadow-md:none;--shadow-control:none;

@@ -33,7 +33,7 @@ import type {
   Titular,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency, formatDate, parseStrictDecimal } from '@/utils/formatters';
 
 const EvolucionChart = lazy(() =>
   import('@/components/dashboard/EvolucionChart').then((module) => ({ default: module.EvolucionChart }))
@@ -473,7 +473,7 @@ export default function CuentasPage() {
         notas: data.notas ?? '',
         fecha_inicio: data.plazo_fijo?.fecha_inicio ?? '',
         fecha_vencimiento: data.plazo_fijo?.fecha_vencimiento ?? '',
-        interes_previsto: data.plazo_fijo?.interes_previsto?.toString() ?? '',
+        interes_previsto: data.plazo_fijo?.interes_previsto != null ? String(data.plazo_fijo.interes_previsto).replace('.', ',') : '',
         renovable: data.plazo_fijo?.renovable ?? false,
         cuenta_referencia_id: data.plazo_fijo?.cuenta_referencia_id ?? '',
         plazo_fijo_notas: data.plazo_fijo?.notas ?? '',
@@ -505,6 +505,16 @@ export default function CuentasPage() {
       return;
     }
 
+    // Interes previsto: texto con coma europea; vacio = sin interes (null)
+    let interesPrevisto: number | null = null;
+    if ((form.tipo_cuenta === 'PLAZO_FIJO' || renewingId) && form.interes_previsto.trim()) {
+      interesPrevisto = parseStrictDecimal(form.interes_previsto);
+      if (interesPrevisto === null || interesPrevisto < 0) {
+        setFormError('El interés previsto debe ser un número válido mayor o igual que 0.');
+        return;
+      }
+    }
+
     setSaving(true);
     setFormError(null);
     const payload = {
@@ -523,7 +533,7 @@ export default function CuentasPage() {
       plazo_fijo: form.tipo_cuenta === 'PLAZO_FIJO' ? {
         fecha_inicio: form.fecha_inicio,
         fecha_vencimiento: form.fecha_vencimiento,
-        interes_previsto: form.interes_previsto ? Number(form.interes_previsto) : null,
+        interes_previsto: interesPrevisto,
         renovable: form.renovable,
         cuenta_referencia_id: form.cuenta_referencia_id || null,
         notas: form.plazo_fijo_notas.trim() || null,
@@ -535,7 +545,7 @@ export default function CuentasPage() {
         await api.post(`/cuentas/${renewingId}/plazo-fijo/renovar`, {
           nueva_fecha_inicio: form.fecha_inicio,
           nueva_fecha_vencimiento: form.fecha_vencimiento,
-          interes_previsto: form.interes_previsto ? Number(form.interes_previsto) : null,
+          interes_previsto: interesPrevisto,
           renovable: form.renovable,
           notas: form.plazo_fijo_notas.trim() || null,
         });
@@ -725,6 +735,10 @@ export default function CuentasPage() {
       <div className="phase2-filters">
         <input
           type="search"
+          enterKeyHint="search"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           aria-label="Buscar cuentas por cuenta, banco o IBAN"
           placeholder="Buscar por cuenta, banco, IBAN..."
           value={search}
@@ -1082,7 +1096,7 @@ export default function CuentasPage() {
                     </div>
                     <label>
                       <span>Interés previsto</span>
-                      <input type="number" step="0.01" min="0" value={form.interes_previsto} onChange={(e) => setForm((f) => ({ ...f, interes_previsto: e.target.value }))} />
+                      <input type="text" inputMode="decimal" autoComplete="off" value={form.interes_previsto} onChange={(e) => setForm((f) => ({ ...f, interes_previsto: e.target.value }))} />
                     </label>
                     <AppSelect
                       label="Cuenta de referencia"

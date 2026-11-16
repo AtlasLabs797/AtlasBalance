@@ -163,7 +163,8 @@
 }
 
 .alertas-notif-action:focus-visible {
-  outline: none;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
