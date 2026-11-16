@@ -245,97 +245,124 @@ export default function ConfiguracionPage() {
   const canEditRates = divisasActivas.length >= 2;
   const exchangeApiConfigured = config.exchange.api_key_configurada;
 
+  // A-8: un recargador por seccion. Ninguno activa el loading global (el
+  // skeleton de pagina completa): las acciones menores recargan solo la
+  // seccion que modifican, para no perder lo escrito sin guardar.
+  const loadConfiguracion = async () => {
+    const cfg = await api.get<ConfiguracionSistema>('/configuracion');
+    const fallbackIa: ConfiguracionSistema['ia'] = {
+      provider: 'OPENROUTER',
+      openrouter_api_key: '',
+      openrouter_api_key_configurada: false,
+      openai_api_key: '',
+      openai_api_key_configurada: false,
+      minimax_api_key: '',
+      minimax_api_key_configurada: false,
+      model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
+      habilitada: false,
+      usuario_puede_usar: false,
+      configurada: false,
+      mensaje_estado: 'La IA está desactivada globalmente.',
+      permite_retencion_datos: false,
+      requests_por_minuto: 6,
+      requests_por_hora: 30,
+      requests_por_dia: 60,
+      requests_globales_por_dia: 300,
+      presupuesto_mensual_eur: 0,
+      presupuesto_mensual_usuario_eur: 0,
+      presupuesto_total_eur: 0,
+      coste_mes_estimado_eur: 0,
+      coste_mes_usuario_estimado_eur: 0,
+      coste_total_estimado_eur: 0,
+      requests_mes_usuario: 0,
+      tokens_entrada_mes_usuario: 0,
+      tokens_salida_mes_usuario: 0,
+      porcentaje_aviso_presupuesto: 80,
+      input_cost_per_million_tokens_eur: 0,
+      output_cost_per_million_tokens_eur: 0,
+      max_input_tokens: 6000,
+      max_output_tokens: 700,
+      max_context_rows: 80,
+    };
+    const loadedIa = cfg.data.ia ?? fallbackIa;
+    const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
+    const nextConfig: ConfiguracionSistema = {
+      ...cfg.data,
+      general: {
+        ...cfg.data.general,
+        mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? true,
+        mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
+        require_mfa_for_non_admin_users: cfg.data.general?.require_mfa_for_non_admin_users ?? true,
+      },
+      // V-02.07: el backend ya no envia api_key ni smtp.password en el GET
+      // (los DTO de respuesta no declaran esos campos). Los inicializamos
+      // aqui a '' igual que las claves de IA, porque son estado del
+      // formulario: sin esto el input pasaria a no controlado.
+      smtp: { ...cfg.data.smtp, password: '' },
+      exchange: {
+        api_key: '',
+        api_key_configurada: cfg.data.exchange?.api_key_configurada ?? false,
+      },
+      revision: cfg.data.revision ?? { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
+      ia: {
+        ...loadedIa,
+        provider: loadedIaProvider,
+        model: normalizeAiModel(loadedIaProvider, loadedIa.model),
+        openrouter_api_key: '',
+        openai_api_key: '',
+        minimax_api_key: '',
+      },
+    };
+    setConfig(nextConfig);
+    configBaselineRef.current = JSON.stringify(nextConfig);
+    setSmtpTo(cfg.data.smtp.from);
+  };
+
+  // A-8: recarga solo los tipos de cambio.
+  const loadTiposCambio = async () => {
+    const tiposRes = await api.get<TipoCambio[]>('/tipos-cambio');
+    setTipos(tiposRes.data ?? []);
+  };
+
+  // A-8: recarga solo las divisas; la divisa base se deriva de es_base.
+  const loadDivisas = async () => {
+    const divisasRes = await api.get<DivisaActiva[]>('/divisas');
+    const nextDivisas = divisasRes.data ?? [];
+    const activeCodes = nextDivisas.filter((item) => item.activa).map((item) => item.codigo);
+    const baseDivisa = nextDivisas.find((d) => d.es_base)?.codigo ?? activeCodes[0] ?? 'EUR';
+    setDivisas(nextDivisas);
+    setDivisaPorDefecto(baseDivisa);
+    setManualRate((prev) => {
+      const origen = activeCodes.includes(prev.origen) ? prev.origen : (activeCodes[0] ?? '');
+      const destinosDisponibles = activeCodes.filter((code) => code !== origen);
+      const destino = destinosDisponibles.includes(prev.destino) ? prev.destino : (destinosDisponibles[0] ?? '');
+      return { ...prev, origen, destino };
+    });
+  };
+
+  // A-8: recarga solo los tokens de integracion.
+  const loadTokens = async () => {
+    const tokensRes = await api.get<PaginatedResponse<IntegrationTokenListItem>>('/integraciones/tokens', { params: { page: 1, pageSize: 100 } });
+    setTokens(tokensRes.data.data ?? []);
+  };
+
+  // A-8: el catalogo de permisos solo se necesita en la carga inicial.
+  const loadCatalogos = async () => {
+    const catalogosRes = await api.get<CatalogoPermisos>('/usuarios/catalogos-permisos');
+    setCatalogos(catalogosRes.data);
+  };
+
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [cfg, tiposRes, divisasRes, tokensRes, catalogosRes] = await Promise.all([
-        api.get<ConfiguracionSistema>('/configuracion'),
-        api.get<TipoCambio[]>('/tipos-cambio'),
-        api.get<DivisaActiva[]>('/divisas'),
-        api.get<PaginatedResponse<IntegrationTokenListItem>>('/integraciones/tokens', { params: { page: 1, pageSize: 100 } }),
-        api.get<CatalogoPermisos>('/usuarios/catalogos-permisos'),
+      await Promise.all([
+        loadConfiguracion(),
+        loadTiposCambio(),
+        loadDivisas(),
+        loadTokens(),
+        loadCatalogos(),
       ]);
-      const nextDivisas = divisasRes.data ?? [];
-      const activeCodes = nextDivisas.filter((item) => item.activa).map((item) => item.codigo);
-      const baseDivisa = nextDivisas.find((d) => d.es_base)?.codigo ?? activeCodes[0] ?? 'EUR';
-      const fallbackIa: ConfiguracionSistema['ia'] = {
-        provider: 'OPENROUTER',
-        openrouter_api_key: '',
-        openrouter_api_key_configurada: false,
-        openai_api_key: '',
-        openai_api_key_configurada: false,
-        minimax_api_key: '',
-        minimax_api_key_configurada: false,
-        model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
-        habilitada: false,
-        usuario_puede_usar: false,
-        configurada: false,
-        mensaje_estado: 'La IA está desactivada globalmente.',
-        permite_retencion_datos: false,
-        requests_por_minuto: 6,
-        requests_por_hora: 30,
-        requests_por_dia: 60,
-        requests_globales_por_dia: 300,
-        presupuesto_mensual_eur: 0,
-        presupuesto_mensual_usuario_eur: 0,
-        presupuesto_total_eur: 0,
-        coste_mes_estimado_eur: 0,
-        coste_mes_usuario_estimado_eur: 0,
-        coste_total_estimado_eur: 0,
-        requests_mes_usuario: 0,
-        tokens_entrada_mes_usuario: 0,
-        tokens_salida_mes_usuario: 0,
-        porcentaje_aviso_presupuesto: 80,
-        input_cost_per_million_tokens_eur: 0,
-        output_cost_per_million_tokens_eur: 0,
-        max_input_tokens: 6000,
-        max_output_tokens: 700,
-        max_context_rows: 80,
-      };
-      const loadedIa = cfg.data.ia ?? fallbackIa;
-      const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
-      const nextConfig: ConfiguracionSistema = {
-        ...cfg.data,
-        general: {
-          ...cfg.data.general,
-          mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? true,
-          mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
-          require_mfa_for_non_admin_users: cfg.data.general?.require_mfa_for_non_admin_users ?? true,
-        },
-        // V-02.07: el backend ya no envia api_key ni smtp.password en el GET
-        // (los DTO de respuesta no declaran esos campos). Los inicializamos
-        // aqui a '' igual que las claves de IA, porque son estado del
-        // formulario: sin esto el input pasaria a no controlado.
-        smtp: { ...cfg.data.smtp, password: '' },
-        exchange: {
-          api_key: '',
-          api_key_configurada: cfg.data.exchange?.api_key_configurada ?? false,
-        },
-        revision: cfg.data.revision ?? { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
-        ia: {
-          ...loadedIa,
-          provider: loadedIaProvider,
-          model: normalizeAiModel(loadedIaProvider, loadedIa.model),
-          openrouter_api_key: '',
-          openai_api_key: '',
-          minimax_api_key: '',
-        },
-      };
-      setConfig(nextConfig);
-      configBaselineRef.current = JSON.stringify(nextConfig);
-      setSmtpTo(cfg.data.smtp.from);
-      setTipos(tiposRes.data ?? []);
-      setDivisas(nextDivisas);
-      setDivisaPorDefecto(baseDivisa);
-      setTokens(tokensRes.data.data ?? []);
-      setCatalogos(catalogosRes.data);
-      setManualRate((prev) => {
-        const origen = activeCodes.includes(prev.origen) ? prev.origen : (activeCodes[0] ?? '');
-        const destinosDisponibles = activeCodes.filter((code) => code !== origen);
-        const destino = destinosDisponibles.includes(prev.destino) ? prev.destino : (destinosDisponibles[0] ?? '');
-        return { ...prev, origen, destino };
-      });
       await checkUpdate(true);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo cargar configuración.'));
@@ -551,7 +578,7 @@ export default function ConfiguracionPage() {
     try {
       await api.put(`/tipos-cambio/${manualRate.origen}/${manualRate.destino}`, { tasa });
       setFeedback('Tipo de cambio actualizado.');
-      await load();
+      await loadTiposCambio();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo actualizar tipo de cambio.'));
     } finally {
@@ -566,7 +593,7 @@ export default function ConfiguracionPage() {
     try {
       await api.post('/tipos-cambio/sincronizar');
       setFeedback('Tipos de cambio sincronizados.');
-      await load();
+      await loadTiposCambio();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo sincronizar tipos de cambio.'));
     } finally {
@@ -620,7 +647,7 @@ export default function ConfiguracionPage() {
         es_base: divisa.es_base,
       });
       setFeedback(`Divisa ${codigo} actualizada.`);
-      await load();
+      await loadDivisas();
     } catch (err) {
       setError(extractErrorMessage(err, `No se pudo actualizar la divisa ${codigo}.`));
     } finally {
@@ -646,7 +673,7 @@ export default function ConfiguracionPage() {
       });
       setFeedback('Divisa creada.');
       setNuevaDivisa({ codigo: '', nombre: '', simbolo: '' });
-      await load();
+      await loadDivisas();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo crear divisa.'));
     } finally {
@@ -662,7 +689,7 @@ export default function ConfiguracionPage() {
     try {
       await api.post(`/integraciones/tokens/${id}/revocar`);
       setFeedback('Token revocado.');
-      await load();
+      await loadTokens();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo revocar token.'));
     } finally {
@@ -688,7 +715,7 @@ export default function ConfiguracionPage() {
       const { data } = await api.post<{ token_plano: string }>(`/integraciones/tokens/${id}/rotar`, {});
       setTokenPlano(data.token_plano);
       setFeedback('Token rotado. Copia el nuevo valor ahora.');
-      await load();
+      await loadTokens();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo rotar token.'));
     } finally {
@@ -704,7 +731,7 @@ export default function ConfiguracionPage() {
     try {
       await api.delete(`/integraciones/tokens/${id}`);
       setFeedback('Token eliminado.');
-      await load();
+      await loadTokens();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo eliminar token.'));
     } finally {
@@ -719,7 +746,9 @@ export default function ConfiguracionPage() {
     try {
       await api.post('/divisas/establecer-por-defecto', { codigo: divisaPorDefecto });
       setFeedback(`Divisa por defecto establecida en ${divisaPorDefecto}.`);
-      await load();
+      // A-8: la divisa base solo se expone en GET /divisas (es_base); GET
+      // /configuracion no la devuelve y recargarla tiraria lo sin guardar.
+      await loadDivisas();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo guardar divisa por defecto.'));
     } finally {
@@ -1493,7 +1522,7 @@ export default function ConfiguracionPage() {
         onClose={() => setShowCreateTokenModal(false)}
         onCreated={async (plain) => {
           setTokenPlano(plain);
-          await load();
+          await loadTokens();
         }}
         onError={setError}
       />

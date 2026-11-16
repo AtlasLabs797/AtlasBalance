@@ -47,14 +47,14 @@ export default function AuditCellModal({ open, column, data, loading, error, onC
                 <td>{formatDateTime(item.timestamp)}</td>
                 <td>{item.celda_referencia ?? '-'}</td>
                 <td>
-                  {isAmountColumn && item.valor_anterior !== null ? (
+                  {isAmountColumn && item.valor_anterior != null ? (
                     <SignedAmount value={item.valor_anterior}>{item.valor_anterior}</SignedAmount>
                   ) : (
                     item.valor_anterior ?? '-'
                   )}
                 </td>
                 <td>
-                  {isAmountColumn && item.valor_nuevo !== null ? (
+                  {isAmountColumn && item.valor_nuevo != null ? (
                     <SignedAmount value={item.valor_nuevo}>{item.valor_nuevo}</SignedAmount>
                   ) : (
                     item.valor_nuevo ?? '-'

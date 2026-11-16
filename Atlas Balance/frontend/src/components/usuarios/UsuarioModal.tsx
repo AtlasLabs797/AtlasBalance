@@ -9,14 +9,19 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import {
+  buildPermisosPayload,
   computeAlcance,
   computeCoherence,
   computeCuentasParaPermiso,
   computeTitularesParaPermiso,
   corregirTitularYPaisDesdeCuenta,
   cuentaDropdownPlaceholder,
+  isPermisoRowBlank,
+  mapPermisoApiRow,
   paisDropdownPlaceholder,
   titularDropdownPlaceholder,
+  type PermisoApiRow,
+  type PermisoFormRow,
 } from '@/utils/permisosFormUtils';
 
 export interface CatalogTitular {
@@ -39,21 +44,6 @@ export interface CatalogPais {
   codigo_iso2: string | null;
 }
 
-interface PermisoFormRow {
-  key: string;
-  pais_id: string;
-  titular_id: string;
-  cuenta_id: string;
-  puede_ver_cuentas: boolean;
-  puede_agregar_lineas: boolean;
-  puede_editar_lineas: boolean;
-  puede_eliminar_lineas: boolean;
-  puede_importar: boolean;
-  puede_ver_dashboard: boolean;
-  columnas_visibles: string;
-  columnas_editables: string;
-}
-
 interface UserFormState {
   email: string;
   nombre_completo: string;
@@ -64,20 +54,6 @@ interface UserFormState {
   password: string;
   emails: string;
   permisos: PermisoFormRow[];
-}
-
-interface PermisoApiRow {
-  pais_id?: string | null;
-  titular_id?: string | null;
-  cuenta_id?: string | null;
-  puede_ver_cuentas?: boolean;
-  puede_agregar_lineas?: boolean;
-  puede_editar_lineas?: boolean;
-  puede_eliminar_lineas?: boolean;
-  puede_importar?: boolean;
-  puede_ver_dashboard?: boolean;
-  columnas_visibles?: string[];
-  columnas_editables?: string[];
 }
 
 interface UsuarioDetalleResponse {
@@ -114,6 +90,10 @@ const emptyPermiso = (): PermisoFormRow => ({
   puede_eliminar_lineas: false,
   puede_importar: false,
   puede_ver_dashboard: false,
+  puede_revisar_lineas: false,
+  puede_aprobar_importaciones: false,
+  puede_conciliar: false,
+  puede_cerrar_conciliacion: false,
   columnas_visibles: '',
   columnas_editables: '',
 });
@@ -266,20 +246,9 @@ export default function UsuarioModal({
 
         if (cancelled) return;
 
-        const mappedPermisos: PermisoFormRow[] = (data.permisos ?? []).map((permiso) => ({
-          key: crypto.randomUUID(),
-          pais_id: permiso.pais_id ?? '',
-          titular_id: permiso.titular_id ?? '',
-          cuenta_id: permiso.cuenta_id ?? '',
-          puede_ver_cuentas: permiso.puede_ver_cuentas ?? false,
-          puede_agregar_lineas: permiso.puede_agregar_lineas ?? false,
-          puede_editar_lineas: permiso.puede_editar_lineas ?? false,
-          puede_eliminar_lineas: permiso.puede_eliminar_lineas ?? false,
-          puede_importar: permiso.puede_importar ?? false,
-          puede_ver_dashboard: permiso.puede_ver_dashboard ?? false,
-          columnas_visibles: (permiso.columnas_visibles ?? []).join(', '),
-          columnas_editables: (permiso.columnas_editables ?? []).join(', '),
-        }));
+        const mappedPermisos: PermisoFormRow[] = (data.permisos ?? []).map((permiso) =>
+          mapPermisoApiRow(permiso, crypto.randomUUID())
+        );
 
         const loadedForm: UserFormState = {
           email: data.usuario.email,
@@ -318,48 +287,6 @@ export default function UsuarioModal({
       .map((item) => item.trim())
       .filter(Boolean);
 
-  const parseColumns = (value: string): string[] | undefined => {
-    const parsed = value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    return parsed.length > 0 ? parsed : undefined;
-  };
-
-  const buildPermisosPayload = () =>
-    form.permisos
-      .map((permiso) => {
-        const columnasVisibles = parseColumns(permiso.columnas_visibles);
-        const columnasEditables = parseColumns(permiso.columnas_editables);
-        const hasFlags =
-          permiso.puede_ver_cuentas ||
-          permiso.puede_agregar_lineas ||
-          permiso.puede_editar_lineas ||
-          permiso.puede_eliminar_lineas ||
-          permiso.puede_importar ||
-          permiso.puede_ver_dashboard;
-        const hasScope = !!permiso.cuenta_id || !!permiso.titular_id || !!permiso.pais_id;
-
-        if (!hasFlags && !hasScope && !columnasVisibles && !columnasEditables) {
-          return null;
-        }
-
-        return {
-          cuenta_id: permiso.cuenta_id || null,
-          titular_id: permiso.titular_id || null,
-          pais_id: permiso.pais_id || null,
-          puede_ver_cuentas: permiso.puede_ver_cuentas,
-          puede_agregar_lineas: permiso.puede_agregar_lineas,
-          puede_editar_lineas: permiso.puede_editar_lineas,
-          puede_eliminar_lineas: permiso.puede_eliminar_lineas,
-          puede_importar: permiso.puede_importar,
-          puede_ver_dashboard: permiso.puede_ver_dashboard,
-          columnas_visibles: columnasVisibles,
-          columnas_editables: columnasEditables,
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => !!item);
-
   const updatePermiso = (key: string, patch: Partial<PermisoFormRow>) => {
     setForm((prev) => ({
       ...prev,
@@ -393,19 +320,7 @@ export default function UsuarioModal({
         };
       }
 
-      const hasOnlyBlankRow =
-        prev.permisos.length === 1 &&
-        !prev.permisos[0].titular_id &&
-        !prev.permisos[0].pais_id &&
-        !prev.permisos[0].cuenta_id &&
-        !prev.permisos[0].puede_ver_cuentas &&
-        !prev.permisos[0].puede_agregar_lineas &&
-        !prev.permisos[0].puede_editar_lineas &&
-        !prev.permisos[0].puede_eliminar_lineas &&
-        !prev.permisos[0].puede_importar &&
-        !prev.permisos[0].puede_ver_dashboard &&
-        !prev.permisos[0].columnas_visibles &&
-        !prev.permisos[0].columnas_editables;
+      const hasOnlyBlankRow = prev.permisos.length === 1 && isPermisoRowBlank(prev.permisos[0]);
 
       return {
         ...prev,
@@ -472,7 +387,7 @@ export default function UsuarioModal({
       password: form.password,
       password_nueva: form.password || undefined,
       emails: parseEmails(form.emails),
-      permisos: buildPermisosPayload(),
+      permisos: buildPermisosPayload(form.permisos),
     };
 
     try {
@@ -926,6 +841,58 @@ export default function UsuarioModal({
                             }
                           />
                           Ver dashboard
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            className="users-check-input"
+                            checked={permiso.puede_revisar_lineas}
+                            onChange={(event) =>
+                              updatePermiso(permiso.key, {
+                                puede_revisar_lineas: event.target.checked,
+                              })
+                            }
+                          />
+                          Revisar movimientos
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            className="users-check-input"
+                            checked={permiso.puede_aprobar_importaciones}
+                            onChange={(event) =>
+                              updatePermiso(permiso.key, {
+                                puede_aprobar_importaciones: event.target.checked,
+                              })
+                            }
+                          />
+                          Aprobar importaciones
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            className="users-check-input"
+                            checked={permiso.puede_conciliar}
+                            onChange={(event) =>
+                              updatePermiso(permiso.key, {
+                                puede_conciliar: event.target.checked,
+                              })
+                            }
+                          />
+                          Conciliar cuentas
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            className="users-check-input"
+                            checked={permiso.puede_cerrar_conciliacion}
+                            onChange={(event) =>
+                              updatePermiso(permiso.key, {
+                                puede_cerrar_conciliacion: event.target.checked,
+                              })
+                            }
+                          />
+                          Cerrar conciliación
                         </label>
                       </fieldset>
                     </div>

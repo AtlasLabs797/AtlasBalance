@@ -24,6 +24,12 @@ version anterior instalada.
 - **Pestanas con teclado:** en Importacion y Configuracion usa las flechas izquierda/derecha, Inicio y Fin.
 - **Tablas anchas:** puedes enfocarlas con Tab y desplazarlas con las flechas.
 
+## Permisos de usuario y Configuracion (V-03.02)
+
+- **Permisos de un usuario:** al editar un usuario, cada fila de permisos tiene ahora diez casillas. Las cuatro nuevas son "Revisar movimientos", "Aprobar importaciones", "Conciliar cuentas" y "Cerrar conciliacion". Antes no se podian marcar y, al guardar el usuario, se perdian: si un gerente necesitaba conciliar o revisar, habia que volver a concederselo cada vez que se editaba el usuario.
+- **Configuracion:** guardar una tasa, sincronizar los tipos de cambio, crear o modificar una divisa, o revocar, rotar o borrar un token ya no recarga la pagina entera. Solo se actualiza la seccion afectada, asi que lo que tengas escrito en otra seccion (por ejemplo la clave SMTP o el proveedor de IA) ya no se borra al guardar otra cosa. La pantalla tampoco se queda en blanco esqueleto mientras recarga.
+- **Auditoria:** cuando un movimiento no tiene valor anterior o nuevo, la celda muestra "Sin valor" o "-" en lugar de un importe en blanco.
+
 ## Ubicacion principal
 
 La aplicacion esta en la carpeta `Atlas Balance`.

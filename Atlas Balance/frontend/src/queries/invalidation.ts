@@ -52,6 +52,8 @@ export function invalidateConfiguracionFamilia(qc: QueryClientApi): Promise<void
 
 export const mutationInvalidation = {
   // Importaciones y extractos: la operacion toca casi todo.
+  // Crear un lote solo cambia catalogos (y el historial), no los agregados.
+  importacionLoteCrear: (qc: QueryClientApi) => qc.invalidateQueries({ queryKey: catalogoPrefixes }),
   importarConfirmar: invalidateExtractosFamilia,
   importarRevertir: invalidateExtractosFamilia,
   extractoCreate: invalidateExtractosFamilia,

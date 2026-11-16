@@ -526,7 +526,7 @@ export default function ImportacionPage() {
       // Crear lote solo escribe en IMPORTACION_LOTES (no en EXTRACTOS); los
       // catalogos y el historial cambian, los agregados no. Invalidamos el
       // catalogo para que la cuenta aparezca ya en el selector.
-      await invalidate('catalogo' as never);
+      await invalidate('importacionLoteCrear');
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, 'No se pudo validar la importación'));
     } finally {

@@ -158,8 +158,8 @@ export interface AuditCellEntry {
   tipo_accion: string;
   celda_referencia: string | null;
   columna_nombre: string | null;
-  valor_anterior: string | null;
-  valor_nuevo: string | null;
+  valor_anterior?: string | null;
+  valor_nuevo?: string | null;
   timestamp: string;
   usuario_id: string | null;
 }
@@ -212,8 +212,8 @@ export interface Auditoria {
   entidad_id: string | null;
   celda_referencia: string | null;
   columna_nombre: string | null;
-  valor_anterior: string | null;
-  valor_nuevo: string | null;
+  valor_anterior?: string | null;
+  valor_nuevo?: string | null;
   timestamp: string;
   ip_address: string | null;
   detalles_json: Record<string, unknown> | null;
@@ -233,8 +233,8 @@ export interface AuditoriaListItem {
   titular_nombre: string | null;
   celda_referencia: string | null;
   columna_nombre: string | null;
-  valor_anterior: string | null;
-  valor_nuevo: string | null;
+  valor_anterior?: string | null;
+  valor_nuevo?: string | null;
   ip_address: string | null;
   detalles_json: string | null;
 }

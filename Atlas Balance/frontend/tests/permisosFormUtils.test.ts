@@ -1,13 +1,51 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildPermisosPayload,
   computeAlcance,
   computeCoherence,
   computeCuentasParaPermiso,
   computeTitularesParaPermiso,
   corregirTitularYPaisDesdeCuenta,
+  isPermisoRowBlank,
+  mapPermisoApiRow,
   titularDropdownPlaceholder,
+  type PermisoApiRow,
+  type PermisoFormRow,
+  type PermisoPayloadRow,
 } from '../src/utils/permisosFormUtils.js';
+
+// Fila del formulario con los diez flags de permiso.
+interface FilaPermiso extends PermisoFormRow {
+  puede_revisar_lineas: boolean;
+  puede_aprobar_importaciones: boolean;
+  puede_conciliar: boolean;
+  puede_cerrar_conciliacion: boolean;
+}
+
+type PayloadPermiso = PermisoPayloadRow & Pick<
+  FilaPermiso,
+  'puede_revisar_lineas' | 'puede_aprobar_importaciones' | 'puede_conciliar' | 'puede_cerrar_conciliacion'
+>;
+
+const filaVacia = (): FilaPermiso => ({
+  key: 'fila-1',
+  pais_id: '',
+  titular_id: '',
+  cuenta_id: '',
+  puede_ver_cuentas: false,
+  puede_agregar_lineas: false,
+  puede_editar_lineas: false,
+  puede_eliminar_lineas: false,
+  puede_importar: false,
+  puede_ver_dashboard: false,
+  puede_revisar_lineas: false,
+  puede_aprobar_importaciones: false,
+  puede_conciliar: false,
+  puede_cerrar_conciliacion: false,
+  columnas_visibles: '',
+  columnas_editables: '',
+});
 
 const paisA = { id: 'pais-a', nombre: 'Pais A', codigo_iso2: 'A1' };
 const paisB = { id: 'pais-b', nombre: 'Pais B', codigo_iso2: 'B1' };
@@ -201,4 +239,95 @@ test('titularDropdownPlaceholder cambia segun si hay pais', () => {
 test('paisDropdownPlaceholder es estable', () => {
   // sanity: el placeholder del dropdown de pais no depende de nada externo
   assert.equal(titularDropdownPlaceholder(false), 'Todos los titulares');
+});
+
+test('buildPermisosPayload envia los diez flags de una fila completa', () => {
+  const fila: FilaPermiso = {
+    ...filaVacia(),
+    puede_ver_cuentas: true,
+    puede_agregar_lineas: true,
+    puede_editar_lineas: true,
+    puede_eliminar_lineas: true,
+    puede_importar: true,
+    puede_ver_dashboard: true,
+    puede_revisar_lineas: true,
+    puede_aprobar_importaciones: true,
+    puede_conciliar: true,
+    puede_cerrar_conciliacion: true,
+  };
+
+  const payload = buildPermisosPayload([fila]);
+
+  assert.equal(payload.length, 1);
+  assert.deepEqual(payload[0] as PayloadPermiso, {
+    cuenta_id: null,
+    titular_id: null,
+    pais_id: null,
+    puede_ver_cuentas: true,
+    puede_agregar_lineas: true,
+    puede_editar_lineas: true,
+    puede_eliminar_lineas: true,
+    puede_importar: true,
+    puede_ver_dashboard: true,
+    puede_revisar_lineas: true,
+    puede_aprobar_importaciones: true,
+    puede_conciliar: true,
+    puede_cerrar_conciliacion: true,
+    columnas_visibles: undefined,
+    columnas_editables: undefined,
+  });
+});
+
+test('buildPermisosPayload no descarta una fila con solo los flags nuevos', () => {
+  const fila: FilaPermiso = {
+    ...filaVacia(),
+    puede_revisar_lineas: true,
+    puede_aprobar_importaciones: true,
+    puede_conciliar: true,
+    puede_cerrar_conciliacion: true,
+  };
+
+  const payload = buildPermisosPayload([fila]);
+
+  assert.equal(payload.length, 1);
+  const row = payload[0] as PayloadPermiso;
+  assert.equal(row.puede_revisar_lineas, true);
+  assert.equal(row.puede_aprobar_importaciones, true);
+  assert.equal(row.puede_conciliar, true);
+  assert.equal(row.puede_cerrar_conciliacion, true);
+  assert.equal(row.puede_ver_cuentas, false);
+  assert.equal(row.puede_ver_dashboard, false);
+});
+
+test('buildPermisosPayload descarta una fila totalmente vacia', () => {
+  const payload = buildPermisosPayload([filaVacia()]);
+
+  assert.equal(payload.length, 0);
+});
+
+test('mapPermisoApiRow lee los flags nuevos que devuelve el backend', () => {
+  const api = {
+    cuenta_id: 'cuenta-1',
+    puede_ver_cuentas: true,
+    puede_conciliar: true,
+  } as PermisoApiRow;
+
+  const mapped = mapPermisoApiRow(api, 'fila-1') as FilaPermiso;
+
+  assert.equal(mapped.cuenta_id, 'cuenta-1');
+  assert.equal(mapped.puede_ver_cuentas, true);
+  assert.equal(mapped.puede_conciliar, true);
+  // los flags que no llegan se leen como false
+  assert.equal(mapped.puede_revisar_lineas, false);
+  assert.equal(mapped.puede_aprobar_importaciones, false);
+  assert.equal(mapped.puede_cerrar_conciliacion, false);
+});
+
+test('isPermisoRowBlank no marca como vacia una fila con solo puede_conciliar', () => {
+  const fila: FilaPermiso = {
+    ...filaVacia(),
+    puede_conciliar: true,
+  };
+
+  assert.equal(isPermisoRowBlank(fila), false);
 });

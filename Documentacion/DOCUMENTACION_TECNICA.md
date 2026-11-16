@@ -2,6 +2,17 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-16 - Lote 1 del informe de revision integral (A-1, A-7, A-8, B-12, F-3)
+
+Alcance: los cinco IDs del lote 1 de `INFORME_REVISION_INTEGRAL_2026-11-16.md`. Ningun otro ID tocado.
+
+- **A-1 (permisos de usuario):** el payload de permisos se construye ahora en codigo puro (`frontend/src/utils/permisosFormUtils.ts`: `mapPermisoApiRow`, `parsePermisoColumns`, `permisoHasFlags`, `buildPermisosPayload`, `isPermisoRowBlank`) y `UsuarioModal.tsx` lo consume. Se anaden al contrato completo del backend (`SavePermisoUsuarioRequest`) los cuatro flags que faltaban: `puede_revisar_lineas`, `puede_aprobar_importaciones`, `puede_conciliar` y `puede_cerrar_conciliacion`. El backend reemplaza la matriz de permisos con lo que llega (`UsuariosController.cs:317-320`), asi que dejar de enviarlos era equivalente a revocarlos en cada guardado. La API los devuelve en `PermisoUsuarioResponse`; el frontend los lee con `?? false` porque pueden venir omitidos.
+- **A-7 (invalidacion de catalogo):** `mutationInvalidation` gana la clave `importacionLoteCrear`, que invalida el prefijo `catalogo` (catalogos e historial de lotes). `ImportacionPage.tsx` la usa sin `as never`: antes la clave no existia, la funcion era `undefined` y la llamada lanzaba `TypeError`, que el `catch` mostraba como error de validacion.
+- **A-8 (Configuracion):** `ConfiguracionPage.tsx` separa `load()` en cinco recargadores por seccion (`loadConfiguracion`, `loadTiposCambio`, `loadDivisas`, `loadTokens`, `loadCatalogos`). `load()` sigue siendo la carga inicial y la unica que activa el esqueleto de pagina; las acciones menores recargan solo su seccion, con lo que ya no se pisa lo escrito sin guardar en otra seccion. `guardarDivisaPorDefecto` recarga `divisas` y no `configuracion` porque la divisa base solo se expone en `GET /divisas` (`es_base`).
+- **B-12 (rate limit de SMTP):** `SmtpTestRateLimit.TryAcquireAsync` marca `allowed = true` en la rama de alta de `AddOrUpdate`. Antes el primer intento de cada usuario devolvia `false` y el controlador respondia 429. Limite (5 por minuto y usuario) y ventana sin cambios.
+- **F-3 (nulos en auditoria):** la API serializa con `DefaultIgnoreCondition = WhenWritingNull`, asi que un `null` llega al navegador como `undefined`. `AuditoriaPage.tsx` y `AuditCellModal.tsx` comparan con `!= null` y `types/index.ts` declara `valor_anterior`/`valor_nuevo` como opcionales en `AuditCellEntry`, `Auditoria` y `AuditoriaListItem`.
+- **Tests:** `tests/permisosFormUtils.test.ts` (A-1), `tests/invalidation.test.ts` (A-7), `tests/configuracionSecciones.test.ts` (A-8), `tests/auditoriaValores.test.ts` (F-3) y `backend/tests/AtlasBalance.API.Tests/SmtpTestRateLimitTests.cs` (B-12). Los dos ficheros nuevos del frontend estan registrados en el script `test:unit` de `package.json`. Los tests de A-8 y F-3 son comprobaciones estaticas sobre el fuente (AST y API del compilador), sin DOM: el repositorio no tiene infraestructura de pruebas de componentes.
+
 ### 2026-11-16 - Modos de la tabla de cuenta
 
 `CuentaDetailPage` inicia en revision y restringe edicion de celdas, alerta, desglose, insercion y seleccion para acciones masivas al modo de edicion avanzada, conservando las comprobaciones de permisos. Al volver a revision limpia la seleccion.

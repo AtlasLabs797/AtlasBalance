@@ -1,5 +1,69 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
+## 2026-11-16 - V-03.02 - Correccion del LOTE 1 del informe de revision integral (A-1, A-7, A-8, B-12, F-3)
+
+### Trabajo realizado
+
+- **Alcance:** los cinco IDs del LOTE 1 de `INFORME_REVISION_INTEGRAL_2026-11-16.md`: A-1, A-7, A-8, B-12 y F-3. Ningun otro ID tocado, sin commit ni push, sin cambio de version.
+- **Metodo:** el orquestador verifico cada premisa leyendo el codigo cited antes de encargar el arreglo (A-1, A-7 y B-12 confirmados leyendo el codigo; el resto, leyendo las lineas citadas). Cuatro subagentes implementadores, uno por ID y con ficheros disjuntos, escribieron el test que falla, el arreglo y el test en verde; el orquestador reviso cada diff y ejecuto las suites completas.
+- **A-1:** `UsuarioModal` no cargaba ni enviaba `puede_revisar_lineas`, `puede_aprobar_importaciones`, `puede_conciliar` ni `puede_cerrar_conciliacion`, y el backend reemplaza la matriz de permisos con lo que llega, asi que cada guardado los revocaba. El payload de permisos se movio a codigo puro en `utils/permisosFormUtils.ts` (`mapPermisoApiRow`, `buildPermisosPayload`, `permisoHasFlags`, `isPermisoRowBlank`) y se anadieron los cuatro flags a la fila, al inicializador, a la carga, al payload y a la interfaz (un checkbox por flag, con las clases existentes).
+- **A-7:** `invalidate('catalogo' as never)` apuntaba a una clave inexistente: `mutationInvalidation['catalogo']` era `undefined` y la llamada lanzaba `TypeError`, que el `catch` mostraba como "No se pudo validar la importacion". Nueva clave real `importacionLoteCrear` (invalida el prefijo `catalogo`) y uso sin cast.
+- **A-8:** las acciones menores de Configuracion llamaban a `load()`, que ponia la pagina en esqueleto y recargaba cinco endpoints, pisando lo no guardado. `ConfiguracionPage` tiene ahora un recargador por seccion (configuracion, tipos de cambio, divisas, tokens, catalogos); `load()` los compone y sigue siendo la carga inicial. `guardarDivisaPorDefecto` recarga divisas (la divisa base solo sale de `GET /divisas`) y no configuracion, que es lo que evita perder lo escrito.
+- **B-12:** la rama de alta de `SmtpTestRateLimit.TryAcquireAsync` no marcaba `allowed`, de modo que el primer intento de cada usuario devolvia `false` y el controlador respondia 429. La rama marca ahora `allowed = true`; limite de 5 por minuto y usuario sin cambios.
+- **F-3:** el backend omite los `null` (`WhenWritingNull`), asi que el campo llega `undefined` y `!== null` era true. Comparacion con `!= null` en `AuditoriaPage` y `AuditCellModal`, y `valor_anterior`/`valor_nuevo` opcionales en `AuditCellEntry`, `Auditoria` y `AuditoriaListItem`.
+
+### Archivos tocados
+
+- Backend: `src/AtlasBalance.API/Services/SmtpTestRateLimit.cs`; nuevo `tests/AtlasBalance.API.Tests/SmtpTestRateLimitTests.cs`.
+- Frontend: `src/components/usuarios/UsuarioModal.tsx`, `src/utils/permisosFormUtils.ts`, `src/queries/invalidation.ts`, `src/pages/ImportacionPage.tsx`, `src/pages/ConfiguracionPage.tsx`, `src/pages/AuditoriaPage.tsx`, `src/components/extractos/AuditCellModal.tsx`, `src/types/index.ts`, `tests/permisosFormUtils.test.ts`, `tests/invalidation.test.ts`, nuevos `tests/auditoriaValores.test.ts` y `tests/configuracionSecciones.test.ts`, `package.json` (registro de los dos tests nuevos en `test:unit`).
+- Documentacion: `INFORME_REVISION_INTEGRAL_2026-11-16.md` (estado por ID y seccion 12), `LOG_ERRORES_INCIDENCIAS.md`, `DOCUMENTACION_TECNICA.md`, `DOCUMENTACION_USUARIO.md`, `Versiones/v-03.02.md` y este fichero.
+
+### Comandos ejecutados
+
+- Backend: `dotnet test -c Release --artifacts-path ...\.artifacts\full` (el canonico `dotnet test -c Release` falla porque una API de desarrollo viva, PID 17816, bloquea `bin\Release\net10.0\AtlasBalance.API.dll`).
+- Frontend: `npx eslint src tests --max-warnings 0`, `npx tsc --noEmit`, `npx tsc -p tsconfig.test.tmp-verify.json` + `node --test` sobre los 17 ficheros de test, `npx vite build --outDir dist-verify`.
+- `npm run lint`, `npm run test:unit` y `npm run build` canonicos: fallan por permisos heredados de `.test-dist/`, `.test-dist-v2/` y `dist/` (ficheros de otra cuenta de sandbox); es el problema ya anotado en el log de incidencias y como M-10 del informe. Las mismas comprobaciones pasaron con carpetas de salida nuevas.
+
+### Resultado de verificacion
+
+- **Verificado:** `AtlasBalance.API.Tests` 1002/1002 y `AtlasBalance.Caching.Tests` 15/15; `eslint src tests` 0 errores; `tsc --noEmit` 0 errores; 123/123 pruebas unitarias del frontend (104 previas + 19 nuevas); build de Vite correcto (2.671 modulos). Cada ID con su propio test en rojo antes del arreglo y en verde despues.
+- **Bloqueado:** los tres comandos canonicos del frontend por el problema de permisos descrito; `dotnet test -c Release` canonico por el bloqueo del binario de la API viva. Sin validacion visual en navegador, sin ejecucion de la app y sin PostgreSQL.
+- **Pendiente / no tocado (fuera de LOTE 1):** `SmtpTestRateLimit` puede invocar el delegado de `AddOrUpdate` mas de una vez y esquivar el limite con concurrencia extrema; los permisos que el backend omite (`WhenWritingNull`) siguen siendo opcionales en los tipos, lo que deja `undefined` como valor de hecho en los registros de auditoria; la carpeta `.test-dist-v2/` sin trackear (M-10) y `.test-dist/` con permisos ajenos siguen pendiente de limpieza.
+
+### Decisiones visuales
+
+- Ninguna. Los cuatro checkbox de A-1 reutilizan el patron y las clases (`users-check-input`) de los seis ya existentes; no se toco ninguna hoja de estilo. A-8 y F-3 no cambian el aspecto, solo el dato que se pinta.
+
+## 2026-11-16 - V-03.02 - Revision integral de la app (solo informe)
+
+### Trabajo realizado
+
+- Revision integral de backend, frontend, diseno, seguridad, rendimiento y codigo muerto. Informe en `Documentacion/INFORME_REVISION_INTEGRAL_2026-11-16.md`: 9 hallazgos altos, 44 medios, 38 bajos o sospechas y 29 de codigo muerto, mantenibilidad, CI y tests, con orden de trabajo propuesto.
+- Metodo: siete subagentes en solo lectura, uno por area (auth y superficie de seguridad; controladores y permisos; servicios, jobs y datos; IA e integraciones; logica del frontend; diseno y UX; codigo muerto e higiene). El orquestador releyo el codigo citado de los 9 altos y de unos 25 medios y bajos; el informe marca cada hallazgo como verificado (V), reportado por subagente (S) o sospecha (?).
+- Hallazgos principales: guardar un usuario revoca cuatro permisos (`UsuarioModal` no envia `puede_revisar_lineas`, `puede_aprobar_importaciones`, `puede_conciliar`, `puede_cerrar_conciliacion`); bloqueo de cuenta indefinido (el contador de fallos no se reinicia al caducar el bloqueo); un backup en `PENDING` detiene los automaticos; backups `AUTO` del mismo dia comparten fichero; el planificador semantico de IA no envia `zdr`/`data_collection=deny`; la IA ignora el filtro por concepto; validar una importacion muestra un error falso (`invalidate('catalogo' as never)`).
+- **Sin cambios de codigo de aplicacion.**
+
+### Archivos tocados
+
+- `Documentacion/INFORME_REVISION_INTEGRAL_2026-11-16.md` (nuevo).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`, `Documentacion/Versiones/v-03.02.md`.
+
+### Comandos ejecutados
+
+- Solo lectura: `git ls-files`, `git check-ignore`, `grep`, `sed -n`, `wc`. Ningun build, test, servidor ni script.
+
+### Resultado de verificacion
+
+- Verificado: lectura estatica del codigo citado.
+- Bloqueado: nada se ejecuto (sin build, tests, app ni PostgreSQL) y no hubo validacion visual. Tres subagentes se cortaron por limite de uso y se reanudaron.
+
+### Pendientes
+
+- Ningun hallazgo esta corregido ni dado de alta en `REGISTRO_BUGS.md`; falta decidir cuales se registran.
+- Sin revisar: scripts PowerShell de instalacion y actualizacion y sus ACL, politicas RLS y migraciones, `GoogleDriveBackupService` a fondo.
+- Las sospechas del informe necesitan ejecucion (`EXPLAIN`, routing con barra final, orden de pegado en importacion, idempotencia de confirmar lote).
+- Decisiones visuales: ninguna tomada. Pendientes de diseno abiertos en la seccion 7 del informe (estados de carga, `formatPercent`, breakpoints, `system-coherence.css`, tokens sin uso).
+
 ## 2026-11-16 - V-03.02 - Arranque del stack de desarrollo (API 5002 + Vite 5173)
 
 ### Trabajo realizado

@@ -1,5 +1,51 @@
 ﻿# Log de errores e incidencias
 
+## 2026-11-16 - V-03.02 - LOTE 1 del informe de revision integral: A-1, A-7, A-8, B-12 y F-3 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 1 (A-1, A-7, A-8, B-12, F-3). Ningun otro ID tocado. Sin commit ni push.
+
+### A-1 - Guardar un usuario revocaba cuatro permisos
+
+- **Sintoma:** al editar un usuario y guardar, `puede_revisar_lineas`, `puede_aprobar_importaciones`, `puede_conciliar` y `puede_cerrar_conciliacion` quedaban en `false` aunque estuvieran concedidos, y la interfaz no permitia concederlos.
+- **Causa:** `frontend/src/components/usuarios/UsuarioModal.tsx` manejaba solo seis flags en la fila del formulario, en el mapeo de carga de la API, en el payload y en la comprobacion de fila vacia. El backend (`SavePermisoUsuarioRequest`, `UsuariosController.cs:317-320`) **reemplaza la matriz entera** con lo que llega, asi que los cuatro flags no enviados valian `false` en cada guardado. El `as never` no era el problema: el DTO si los tiene.
+- **Solucion:** la construccion del payload, el mapeo de la fila de API y la deteccion de fila vacia se movieron a codigo puro en `frontend/src/utils/permisosFormUtils.ts` (`mapPermisoApiRow`, `buildPermisosPayload`, `permisoHasFlags`, `isPermisoRowBlank`) y el componente los usa. Los cuatro flags se anaden a la fila, al inicializador, a la carga, al payload y a la interfaz (checkbox por flag con las clases existentes).
+- **Regresion:** `tests/permisosFormUtils.test.ts` pasa de 4 fallos (payload sin los cuatro flags, fila con solo `puede_conciliar` descartada por el filtro, `mapPermisoApiRow` sin leerlos, `isPermisoRowBlank` marcandola como vacia) a 25/25.
+- **Verificacion:** `AtlasBalance.API.Tests` 1002/1002, `AtlasBalance.Caching.Tests` 15/15, `eslint src tests` y `tsc --noEmit` sin errores, 123/123 pruebas unitarias del frontend. Sin validacion visual en navegador.
+
+### A-7 - Validar una importacion mostraba un error falso
+
+- **Sintoma:** al validar un lote de importacion se mostraba "No se pudo validar la importacion" aunque la validacion fuera correcta.
+- **Causa:** `frontend/src/pages/ImportacionPage.tsx:529` llamaba `invalidate('catalogo' as never)`. `useInvalidateAfterMutation` indexa `mutationInvalidation[kind]`, y en `frontend/src/queries/invalidation.ts` no existe ninguna clave `catalogo` (solo el prefijo interno): la funcion era `undefined` y la llamada lanzaba `TypeError`, que el `catch` de la pagina convertia en mensaje de error.
+- **Solucion:** nueva clave real `importacionLoteCrear` en `mutationInvalidation`, que invalida el prefijo `catalogo` (que es lo que cambia al crear un lote: catalogos e historial, no los agregados), y uso `invalidate('importacionLoteCrear')` sin cast.
+- **Regresion:** `tests/invalidation.test.ts` pasa de 3 fallos a 5/5 (la clave debe existir, debe invalidar `catalogo` y la pagina no debe usar `as never`).
+
+### A-8 - Configuracion perdia lo escrito sin guardar
+
+- **Sintoma:** cualquier accion menor de Configuracion (guardar una tasa, sincronizar, crear o actualizar una divisa, revocar/rotar/borrar un token, establecer la divisa por defecto) recargaba la pagina entera.
+- **Causa:** todas llamaban a `load()`, que activa `setLoading(true)` (esqueleto de pagina completa), pide cinco endpoints en paralelo y vuelca todo el estado: lo escrito sin guardar en otra seccion se pisaba.
+- **Solucion:** `frontend/src/pages/ConfiguracionPage.tsx` tiene ahora un recargador por seccion (`loadConfiguracion`, `loadTiposCambio`, `loadDivisas`, `loadTokens`, `loadCatalogos`). `load()` los compone y sigue siendo la carga inicial, con esqueleto. Cada accion menor llama solo a su seccion y ninguna activa el `loading` global. `guardarDivisaPorDefecto` recarga divisas y no configuracion: `GET /configuracion` no expone la divisa base (solo `es_base` en `GET /divisas`), y recargar configuracion tiraria lo escrito sin guardar, que es justo el bug.
+- **Regresion:** `tests/configuracionSecciones.test.ts` (comprobacion estatica sobre el AST del componente, sin DOM) pasa de 5 fallos a 7/7.
+
+### B-12 - La primera prueba SMTP de cada usuario devolvia 429
+
+- **Sintoma:** el primer envio de prueba de SMTP de cada usuario se rechazaba siempre con 429, aunque el limite de 5 por minuto no estuviera agotado.
+- **Causa:** `backend/src/AtlasBalance.API/Services/SmtpTestRateLimit.cs`, rama de alta de `AddOrUpdate` (`_ => (1, now)`): no asignaba `allowed = true`, que se quedaba en `false` y se devolvia como resultado. El llamador (`ConfiguracionController.cs:314`) trata `false` como 429. Las ramas de actualizacion si marcaban el flag.
+- **Solucion:** la rama de alta marca `allowed = true` antes de devolver `(1, now)`. Limite (5 por minuto y usuario), ventana y demas ramas sin tocar.
+- **Regresion:** `tests/AtlasBalance.API.Tests/SmtpTestRateLimitTests.cs` (xUnit + FluentAssertions) pasa de 3 fallos (`expected true, got false`) a 4/4: primer intento permitido, cinco permitidos y el sexto bloqueado, otro usuario permitido, `userId` nulo permitido.
+- **Observacion que queda abierta (no corregida, fuera de LOTE 1):** `ConcurrentDictionary.AddOrUpdate` puede invocar el delegado mas de una vez bajo concurrencia, con lo que un mismo usuario podria esquivar el limite en un caso limite (cinco peticiones simultaneas en la misma ventana). Correccion posible con `TryGetValue` + `TryUpdate` en bucle.
+
+### F-3 - Importes de auditoria vacios por comparar con `!== null`
+
+- **Sintoma:** en Auditoria y en el historial de una celda, un importe sin valor anterior o nuevo aparecia en blanco en lugar del texto "Sin valor" o "-".
+- **Causa:** el backend serializa con `WhenWritingNull` (`Program.cs:339-340`), asi que los `null` no llegan al navegador: el campo llega `undefined`. El frontend comparaba con `!== null` y `undefined !== null` es `true`, de modo que pintaba el componente de importe con un valor inexistente. Mismo tipo de fallo que el de permisos de octubre de 2026.
+- **Solucion:** `!= null` en `frontend/src/pages/AuditoriaPage.tsx` y `frontend/src/components/extractos/AuditCellModal.tsx`, y `valor_anterior`/`valor_nuevo` como opcionales (`string | null` opcional) en `AuditCellEntry`, `Auditoria` y `AuditoriaListItem` de `frontend/src/types/index.ts`.
+- **Regresion:** `tests/auditoriaValores.test.ts` pasa de 3 fallos (los tres tipos obligatorios y las comparaciones con `!== null`) a 4/4. El resultado en pantalla se comprobo leyendo el JSX final: con el campo ausente la celda muestra "Sin valor" (Auditoria) o "-" (AuditCellModal) y no un importe.
+
+### Bloqueos de entorno (no son fallos del codigo corregido)
+
+- `npm run lint`, `npm run test:unit` y `npm run build` canonicos fallan en esta maquina con `EPERM`: las carpetas `.test-dist/`, `.test-dist-v2/` y `dist/` contienen ficheros de otra cuenta de sandbox con permisos que este usuario no tiene (el mismo problema ya anotado el 2026-11-16 en este log y como M-10 del informe). Las mismas comprobaciones pasaron usando carpetas de salida nuevas: `eslint src tests` 0 errores, `tsc --noEmit` 0 errores, 123/123 pruebas unitarias y build de Vite correcto.
+- `dotnet test -c Release` canonico falla porque una API de desarrollo viva (PID 17816) bloquea `bin/Release/net10.0/AtlasBalance.API.dll`. La suite se ejecutio con `--artifacts-path` propio: 1002/1002 y 15/15. El filtro `--filter` de VSTest se ignora con Microsoft.Testing.Platform (MTP0001); el filtro efectivo es `-class`/`-method` del runner.
+
 ## 2026-11-16 - V-03.02 - La API no arrancaba por ausencia de `wwwroot` (RESUELTO EN DESARROLLO)
 
 - **Sintoma:** `Start-Dev.ps1` compila bien y luego la API muere nada mas arrancar: `System.IO.DirectoryNotFoundException: ...\backend\src\AtlasBalance.API\wwwroot\` en `StaticWebAssetsLoader.UseStaticWebAssetsCore`, con `Application started` nunca alcanzado. El healthcheck falla y `Start-Dev.ps1` aborta antes de levantar el frontend.
