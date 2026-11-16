@@ -9,6 +9,7 @@ import {
   YAxis,
 } from 'recharts';
 import { formatCompactCurrency, formatCurrency } from '@/utils/formatters';
+import { DashboardTooltip } from './DashboardTooltip';
 
 export interface TitularSaldoBarChartRow {
   titular_id: string;
@@ -48,14 +49,16 @@ export default function TitularSaldoBarChart({ rows, divisa }: TitularSaldoBarCh
               tickFormatter={(value) => formatCompactCurrency(Number(value), divisa)}
             />
             <Tooltip
-              formatter={(value) => formatCurrency(Number(value ?? 0), divisa)}
-              labelFormatter={(value) => `Titular: ${value}`}
+              content={(props) => (
+                <DashboardTooltip {...props} divisa={divisa} signed formatLabel={(label) => `Titular: ${String(label)}`} />
+              )}
+              cursor={{ fill: 'var(--chart-grid)', opacity: 0.4 }}
             />
-            <Bar dataKey="total_convertido" name={`Saldo total (${divisa})`}>
+            <Bar dataKey="total_convertido" name="Saldo total" fill="var(--accent-solid)">
               {rows.map((item) => (
                 <Cell
                   key={item.titular_id}
-                  fill={item.total_convertido >= 0 ? 'var(--color-success)' : 'var(--color-danger)'}
+                  fill={item.total_convertido >= 0 ? 'var(--status-success-text)' : 'var(--status-danger-text)'}
                 />
               ))}
             </Bar>
@@ -66,8 +69,8 @@ export default function TitularSaldoBarChart({ rows, divisa }: TitularSaldoBarCh
         <caption>Saldos por titular en {divisa}</caption>
         <thead>
           <tr>
-            <th>Titular</th>
-            <th>Saldo</th>
+            <th scope="col">Titular</th>
+            <th scope="col">Saldo</th>
           </tr>
         </thead>
         <tbody>

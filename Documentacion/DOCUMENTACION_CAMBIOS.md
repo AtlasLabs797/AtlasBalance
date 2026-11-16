@@ -1,5 +1,46 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
+## 2026-11-16 - V-03.02 - Correccion de los hallazgos del informe Impeccable (F1-F10)
+
+### Trabajo realizado
+
+Aplicados en cuatro lotes con subagentes (Sonnet y Haiku, archivos disjuntos por agente) y verificados por el orquestador tras cada lote. Detalle tecnico en `DOCUMENTACION_TECNICA.md` (misma fecha) y estado por hallazgo en `Diseno/INFORME_IMPECCABLE_CRITIQUE_AUDIT_V-03.02.md` sec. 10.
+
+- **Lote 1:** Dashboard con estado por bloque, reintento y jerarquia en dos niveles (F2, F4, F7); boton primario oscuro (F1); densidad Comodo/Compacto, h1 a 28 px y tracking -0.011em (F3); reloj del sidebar fuera (F10).
+- **Lote 2:** `Modal` unico y un solo backdrop (F5): 5 modales migrados, 8 no migrados con motivo.
+- **Lote 3:** `scope="col"` en 150 cabeceras, tablas apiladas en movil y desborde de Backups/Usuarios (F6); tres niveles de confirmacion (F9).
+- **Lote 4:** 95 alias legacy puros migrados (1.700 usos, capas de compatibilidad intactas); 6 de 34 `uppercase` quitados (F10).
+- **Defecto previo hallado por el arnes de estados:** doble confirmacion al Revocar/Eliminar token (`TokenList` y `ConfiguracionPage.revokeToken` pedian confirm). Corregido quitando la confirmacion de la pagina; Rotar conserva la suya. Test `1f` lo cubre.
+- **No aplicado:** F11 (division del CSS de IA) por ganancia (~8 KB gzip) menor que el riesgo de orden con `system-coherence.css`.
+- **Arnes visual** nuevo en `frontend/e2e/visual/` (API mockeada, sin backend).
+
+### Archivos tocados
+
+Frontend: ~55 archivos en `src/` (tokens, `global.css`, `layout/*.css`, Dashboard, `ExtractoTable`, modales, paginas con tablas), `public/theme-init.js`, `package.json` (test de densidad), `tests/density.test.ts`, `src/utils/density.ts`, `components/common/Modal.tsx`, `components/dashboard/DashboardBlockStatus.tsx` y `DashboardTooltip.tsx`, `e2e/visual/*`. Docs: `DESIGN.md`, informe, tecnica, usuario, log de errores, esta bitacora, `v-03.02.md`.
+
+### Comandos ejecutados
+
+`tsc --noEmit`, `npm run lint`, `tsc -p tsconfig.test.v2.json` con `outDir` dentro de `frontend` + `node --test` (104/104), `vite build` a directorio temporal (borrado), Playwright con API mockeada (capturas de 9 rutas, claro/oscuro, 1440/390), comparacion de capturas por hash tras la migracion de alias (32/36 identicas; las 4 restantes son no deterministas entre ejecuciones iguales).
+
+### Resultado de verificacion
+
+- **Verificado:** tsc y lint limpios, 104/104 tests, build, capturas de dashboard (normal y con fallo forzado de un endpoint), extractos con el selector de densidad, configuracion, backups y usuarios a 390 px, modal de titular a 390 px.
+- **Bloqueado:** backend local (falta PostgreSQL portatil y credenciales), `impeccable detect` (descarga de binario).
+- **No verificado visualmente (a menos que el apartado de estados del informe diga lo contrario):** `Modal.tsx` y los modales migrados, los tres niveles de `ConfirmDialog`, densidad compacta con scroll virtualizado, tablas apiladas en movil y semantica de tabla, estado `setup` del Dashboard, contraste real del boton oscuro.
+- Nada esta commiteado. El trabajo staged previo (accesibilidad, 35 archivos) queda intacto; este trabajo esta sin `git add`.
+
+### Decisiones visuales
+
+Cuerpo 17/14 px se mantiene; titulos de pantalla de trabajo a 28 px; densidad Comodo (44 px, por defecto) y Compacto (36 px, solo grid de Extractos); boton primario oscuro un peldano mas claro; Dashboard en dos niveles; confirmaciones en tres niveles (icono + texto, no solo color).
+
+### Pendientes
+
+- Validacion visual de lo "No verificado" con datos reales o el arnes de estados.
+- Confirmar con el usuario si la densidad Compacto debe llegar a mas tablas.
+- Migrar a `Modal` los 8 modales con logica de cierre propia (Titulares, Cuentas, Paises, Usuario, Usuarios, CuentaDetail, Backups, SessionTimeout).
+- Alias legacy diferidos (valor propio, `color-mix`, redefinidos por tema).
+- Semantica de tabla en tablas apiladas si el arnes confirma que se pierde.
+
 ## 2026-11-16 - V-03.02 - Correccion de los hallazgos del informe Modern Web Guidance
 
 ### Trabajo realizado

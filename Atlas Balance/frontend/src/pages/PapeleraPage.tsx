@@ -209,20 +209,20 @@ export default function PapeleraPage() {
         ) : null}
         {!loading && rows.length > 0 ? (
           <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de elementos eliminados">
-            <table>
+            <table className="table-stack-mobile">
               <thead>
                 <tr>
-                  <th>Elemento</th>
-                  <th>Detalle</th>
-                  <th>Eliminado en</th>
-                  <th>Acciones</th>
+                  <th scope="col">Elemento</th>
+                  <th scope="col">Detalle</th>
+                  <th scope="col">Eliminado en</th>
+                  <th scope="col">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td>{row.titulo}</td>
-                    <td>
+                    <td data-label="Elemento">{row.titulo}</td>
+                    <td data-label="Detalle">
                       {row.monto !== undefined ? (
                         <>
                           {row.subtitulo} · <SignedAmount value={row.monto}>{formatCurrency(row.monto, 'EUR')}</SignedAmount>
@@ -231,8 +231,8 @@ export default function PapeleraPage() {
                         row.subtitulo
                       )}
                     </td>
-                    <td>{formatDateTime(row.deleted_at)}</td>
-                    <td className="users-row-actions">
+                    <td data-label="Eliminado en">{formatDateTime(row.deleted_at)}</td>
+                    <td className="users-row-actions" data-label="Acciones">
                       <button
                         type="button"
                         onClick={() => void restore(row.id)}

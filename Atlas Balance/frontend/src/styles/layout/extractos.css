@@ -23,13 +23,13 @@
 }
 
 .extractos-heading h1 {
-  font-size: var(--font-size-2xl);
+  font-size: var(--text-28);
   font-weight: var(--font-weight-heavy);
 }
 
 .extractos-heading p {
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .extractos-mode-toggle {
@@ -70,9 +70,9 @@
   max-width: min(100%, 68rem);
   justify-self: end;
   padding: var(--space-3);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 82%, transparent);
 }
 
 .extractos-date-field {
@@ -83,8 +83,8 @@
 
 .extractos-date-field > span {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
 }
 
 .extractos-date-field .date-picker-trigger {
@@ -103,24 +103,24 @@
 }
 
 .add-row-field > span {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .extracto-table-section {
-  --sheet-grid: color-mix(in srgb, var(--border-soft) 78%, var(--text-secondary) 22%);
-  --sheet-grid-strong: color-mix(in srgb, var(--border-soft) 55%, var(--text-secondary) 45%);
-  --sheet-head-bg: color-mix(in srgb, var(--surface-bg-sunken) 88%, var(--bg-surface) 12%);
-  --sheet-row-hover: var(--bg-hover);
+  --sheet-grid: color-mix(in srgb, var(--border-default) 78%, var(--text-secondary) 22%);
+  --sheet-grid-strong: color-mix(in srgb, var(--border-default) 55%, var(--text-secondary) 45%);
+  --sheet-head-bg: color-mix(in srgb, var(--surface-sunken) 88%, var(--surface-card) 12%);
+  --sheet-row-hover: var(--surface-hover);
   --sheet-selected: var(--accent-solid);
   --sheet-row-height: 56px;
   --sheet-head-height: 48px;
   --sheet-filter-height: 40px;
   --extracto-sheet-width: 100%;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   min-width: 0;
   overflow: hidden;
 }
@@ -133,7 +133,7 @@
   min-height: 3.5rem;
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--sheet-grid-strong);
-  background: var(--bg-surface);
+  background: var(--surface-card);
 }
 
 .extracto-table-toolbar > div:first-child {
@@ -143,14 +143,14 @@
 
 .extracto-table-toolbar strong {
   color: var(--text-primary);
-  font-family: var(--font-family-heading);
-  font-size: var(--font-size-md);
+  font-family: var(--font-display);
+  font-size: var(--text-17);
   font-weight: var(--font-weight-heavy);
 }
 
 .extracto-table-toolbar span {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
 }
 
 .extracto-table-actions {
@@ -197,7 +197,7 @@
   align-items: center;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--sheet-grid-strong);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
 }
 
 .column-visibility-panel-actions {
@@ -211,7 +211,7 @@
 .column-visibility-panel-actions button {
   min-height: 2.25rem;
   border-radius: var(--radius-control);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .column-visibility-panel label {
@@ -220,10 +220,10 @@
   gap: var(--space-1);
   min-height: 2.75rem;
   padding: 0 var(--space-2);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-primary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   text-transform: none;
   cursor: pointer;
   border-radius: var(--radius-control);
@@ -231,12 +231,12 @@
 }
 
 .column-visibility-panel label:hover {
-  background: var(--bg-hover);
+  background: var(--surface-hover);
 }
 
 .column-visibility-panel label.column-visibility-panel-fixed {
   color: var(--text-secondary);
-  background: color-mix(in srgb, var(--bg-surface-soft) 82%, var(--bg-surface));
+  background: color-mix(in srgb, var(--surface-muted) 82%, var(--surface-card));
   cursor: default;
 }
 
@@ -248,7 +248,7 @@
   height: min(560px, calc(100dvh - var(--topbar-height) - 14rem));
   overflow: auto;
   position: relative;
-  background: var(--bg-surface);
+  background: var(--surface-card);
   scrollbar-gutter: stable;
 }
 
@@ -279,7 +279,7 @@
   height: var(--sheet-filter-height);
   min-height: var(--sheet-filter-height);
   padding: 0 var(--space-2);
-  background: var(--bg-surface);
+  background: var(--surface-card);
 }
 
 .extracto-filter-search {
@@ -292,13 +292,13 @@
   padding: 0 var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-full);
-  background: var(--control-bg);
+  background: var(--surface-card);
   color: var(--text-secondary);
 }
 
 .extracto-filter-search:focus-within {
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-solid);
+  box-shadow: var(--ring-focus);
 }
 
 .extracto-filter-search input {
@@ -311,7 +311,7 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .extracto-filter-search input:focus {
@@ -337,7 +337,7 @@
   height: 1.8rem;
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .extracto-table-filter-row .date-picker-trigger svg {
@@ -360,9 +360,9 @@
   min-height: 2.5rem;
   padding: 0 var(--space-4);
   border-top: 1px solid var(--sheet-grid-strong);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .extracto-table-spacer {
@@ -397,7 +397,7 @@
   grid-template-columns: repeat(7, 120px);
   align-items: stretch;
   height: var(--sheet-row-height);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   transition: background-color var(--transition-fast);
 }
 
@@ -479,7 +479,7 @@
 .cell.head button small {
   color: var(--text-link);
   font-size: var(--text-10);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 .extracto-column-label {
@@ -496,14 +496,14 @@
   width: 100%;
   min-height: 1.85rem;
   border-radius: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .cell-edit-button {
   width: 100%;
   text-align: left;
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -538,16 +538,16 @@
 
 .cell-save-state {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
   line-height: 1;
 }
 
 .cell-save-state--ok {
-  color: var(--success-text);
+  color: var(--status-success-text);
 }
 
 .cell-save-state--error {
-  color: var(--danger-text);
+  color: var(--status-danger-text);
 }
 
 .cell-audit-button {
@@ -561,9 +561,9 @@
   padding: 0 var(--space-1);
   border: 1px solid var(--sheet-grid-strong);
   border-radius: var(--radius-control);
-  background: var(--surface-bg-raised);
+  background: var(--surface-raised);
   color: var(--text-link);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
   transition:
     opacity var(--transition-fast),
     transform var(--transition-fast);
@@ -581,11 +581,13 @@
 .cell--saldo {
   justify-content: flex-end;
   text-align: right;
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
 }
 
 .cell--fecha {
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
 }
 
 .cell--comentarios .cell-edit-button {
@@ -599,8 +601,8 @@
   overflow: visible;
   background: var(--sheet-head-bg);
   box-shadow: 1px 0 0 var(--sheet-grid-strong);
-  font-family: var(--font-family-mono);
-  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   justify-content: flex-end;
 }
@@ -610,11 +612,11 @@
 }
 
 .cell-edit-button.signed-amount--positive {
-  color: var(--color-amount-positive);
+  color: var(--amount-positive);
 }
 
 .cell-edit-button.signed-amount--negative {
-  color: var(--color-amount-negative);
+  color: var(--amount-negative);
 }
 
 .flag-cell {
@@ -638,9 +640,9 @@
   height: 1.45rem;
   min-height: 1.45rem;
   padding: 0;
-  border-color: color-mix(in srgb, var(--accent-primary) 30%, var(--border-soft));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent-primary) 8%);
+  border-color: color-mix(in srgb, var(--accent-solid) 30%, var(--border-default));
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface-card) 92%, var(--accent-solid) 8%);
   color: var(--text-link);
   opacity: 0.38;
   pointer-events: auto;
@@ -653,8 +655,8 @@
 }
 
 .extracto-row-insert-trigger:hover:not(:disabled) {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
   color: var(--text-inverse);
 }
 
@@ -680,7 +682,7 @@
   gap: var(--space-3);
   padding: var(--space-3);
   border-bottom: 1px solid var(--sheet-grid-strong);
-  background: color-mix(in srgb, var(--accent-primary) 5%, var(--bg-surface));
+  background: color-mix(in srgb, var(--accent-solid) 5%, var(--surface-card));
 }
 
 .extracto-insert-grid {
@@ -717,9 +719,9 @@
   padding: 0 var(--space-2);
   border: 1px solid var(--sheet-grid-strong);
   border-radius: var(--radius-control);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .desglose-cell-button span,
@@ -730,13 +732,13 @@
 }
 
 .desglose-cell-button--cuadrado {
-  border-color: color-mix(in srgb, var(--success-text) 34%, var(--sheet-grid-strong));
-  color: var(--success-text);
+  border-color: color-mix(in srgb, var(--status-success-text) 34%, var(--sheet-grid-strong));
+  color: var(--status-success-text);
 }
 
 .desglose-cell-button--descuadrado {
-  border-color: color-mix(in srgb, var(--danger-text) 34%, var(--sheet-grid-strong));
-  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--status-danger-text) 34%, var(--sheet-grid-strong));
+  color: var(--status-danger-text);
 }
 
 .extracto-table-section--compact {
@@ -770,13 +772,13 @@
 .extracto-table-section .cell > input:not([type="checkbox"]):focus,
 .extracto-table-section .cell .flag-cell input:not([type="checkbox"]):focus {
   border-color: transparent;
-  background: var(--bg-surface);
+  background: var(--surface-card);
   box-shadow: inset 0 0 0 2px var(--sheet-selected);
 }
 
 .extracto-empty {
   padding: var(--space-4);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .extracto-empty .page-placeholder {
@@ -793,59 +795,132 @@
   z-index: var(--z-modal-backdrop);
   display: grid;
   place-items: center;
+  animation: modal-backdrop-in var(--duration-fast) var(--ease-premium);
 }
 
-.audit-modal {
-  width: min(960px, 95vw);
-  max-height: 80vh;
-  overflow: auto;
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-modal);
-  box-shadow: var(--shadow-xl);
+/* Modificadores del backdrop unico. --padded deja aire alrededor del panel;
+   --stack-top lo sube por encima de otros modales abiertos (importacion);
+   --fullscreen-mobile hace que el panel ocupe toda la pantalla en movil. */
+.modal-backdrop--padded {
   padding: var(--space-3);
 }
 
-.audit-modal-header {
+.modal-backdrop--stack-top {
+  z-index: calc(var(--z-modal-backdrop) + 2);
+}
+
+@media (max-width: 720px) {
+  .modal-backdrop--fullscreen-mobile {
+    place-items: stretch;
+    padding: 0;
+  }
+}
+
+/* Modal comun (components/common/Modal.tsx): panel con cabecera, cuerpo con
+   scroll y pie. Los modales con estructura propia siguen usando sus clases. */
+.modal-panel {
+  --modal-width: 640px;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--modal-width), 96vw);
+  max-height: min(90dvh, 1000px);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-xl);
+  overscroll-behavior: contain;
+}
+
+.modal-panel--sm { --modal-width: 440px; }
+.modal-panel--md { --modal-width: 640px; }
+.modal-panel--lg { --modal-width: 1040px; }
+
+.modal-panel__header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
 }
 
-.audit-modal table {
-  min-width: 640px;
-}
-
-.audit-modal td {
+.modal-panel__title {
+  margin: 0;
+  font: var(--type-title-3);
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
-.desglose-modal {
-  width: min(1040px, 96vw);
-  max-height: 86vh;
-  overflow: auto;
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-modal);
-  box-shadow: var(--shadow-xl);
-  padding: var(--space-3);
-}
-
-.desglose-modal-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.desglose-modal-header h3 {
-  margin: 0;
-}
-
-.desglose-modal-header p {
+.modal-panel__subtitle {
   margin: var(--space-1) 0 0;
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.modal-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+}
+
+.modal-panel__body > :first-child { margin-top: 0; }
+.modal-panel__body > :last-child { margin-bottom: 0; }
+
+.modal-panel__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+.modal-panel__footer > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+}
+
+/* Accion secundaria alineada a la izquierda del pie (p. ej. "Anadir linea"). */
+.modal-panel__footer > .modal-panel__footer-start {
+  margin-right: auto;
+}
+
+@media (max-width: 720px) {
+  .modal-panel__header,
+  .modal-panel__footer {
+    padding: var(--space-3);
+  }
+
+  .modal-panel__body {
+    padding: var(--space-3);
+  }
+
+  /* Pie apilado a ancho completo: accion principal arriba, 44px de alto cada una. */
+  .modal-panel__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+
+  .modal-panel__footer > .modal-panel__footer-start {
+    margin-right: 0;
+  }
+
+  .modal-panel__footer > button {
+    width: 100%;
+    height: var(--control-height);
+  }
+}
+
+.modal-panel__body > table {
+  min-width: 640px;
+}
+
+.modal-panel__body td {
   overflow-wrap: anywhere;
 }
 
@@ -855,8 +930,8 @@
   gap: var(--space-2);
   padding: var(--space-2);
   margin-bottom: var(--space-3);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-surface-soft);
+  border: 1px solid var(--border-default);
+  background: var(--surface-muted);
 }
 
 .desglose-summary span {
@@ -867,15 +942,15 @@
 .desglose-summary strong {
   display: block;
   color: var(--text-primary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
 }
 
 .desglose-summary--cuadrado {
-  border-color: color-mix(in srgb, var(--success-text) 30%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--status-success-text) 30%, var(--border-default));
 }
 
 .desglose-summary--descuadrado {
-  border-color: color-mix(in srgb, var(--danger-text) 34%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--status-danger-text) 34%, var(--border-default));
 }
 
 .desglose-lines {
@@ -892,8 +967,8 @@
 
 .desglose-line--head {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
 }
 
@@ -910,8 +985,8 @@
 .desglose-field > span {
   display: none;
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
 }
 
 .desglose-field input {
@@ -929,20 +1004,6 @@
   padding: 0;
   display: grid;
   place-items: center;
-}
-
-.desglose-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.desglose-modal-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
 }
 
 @media (max-width: 1200px) {
@@ -965,7 +1026,7 @@
   .desglose-line {
     grid-template-columns: 1fr;
     padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-default);
   }
 
   .desglose-line--head {
@@ -1042,7 +1103,7 @@
 
   .cell-audit-button::before {
     content: "Hist.";
-    font-size: var(--font-size-xs);
+    font-size: var(--text-12);
   }
 
   .extracto-row-insert-trigger {
@@ -1094,7 +1155,7 @@
 .extractos-heading h1 {
   margin: 0;
   color: var(--text-primary);
-  font: var(--type-title-1);
+  font: var(--type-title-2);
   letter-spacing: var(--tracking-display);
 }
 
@@ -1277,7 +1338,7 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--surface-card);
-  box-shadow: var(--shadow-overlay);
+  box-shadow: var(--shadow-xl);
 }
 
 .extractos-searchable-select-option {
@@ -1301,7 +1362,7 @@
 
 .extractos-searchable-select-option[aria-selected='true'] {
   color: var(--accent-text);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 .extractos-searchable-select-empty {
@@ -1574,6 +1635,53 @@
 .extracto-table-section--compact .cell.head button,
 .extracto-table-section--compact .extracto-column-label {
   min-height: 40px;
+}
+
+/* Densidad de la tabla (uiStore.density -> <html data-density>).
+   "comodo" (por defecto) = valores de .extracto-table-section--compact: filas 44px.
+   "compacto" = filas 36px; la celda sigue siendo --type-body-sm (14px).
+   Mantener 44/36 sincronizado con src/utils/density.ts (virtualizador). */
+:root[data-density="compacto"] .extracto-table-section--compact {
+  --sheet-row-height: 36px;
+  --sheet-head-height: 36px;
+  --sheet-filter-height: 32px;
+}
+
+:root[data-density="compacto"] .extracto-table-section--compact .cell.head,
+:root[data-density="compacto"] .extracto-table-section--compact .cell.head button,
+:root[data-density="compacto"] .extracto-table-section--compact .extracto-column-label {
+  min-height: var(--sheet-head-height);
+}
+
+/* En 36px, boton (20px de texto) + etiqueta Guardando/Guardado (12px) deben caber
+   sin recorte: el boton pierde su min-height solo mientras hay etiqueta. */
+:root[data-density="compacto"] .cell-edit-shell:has(.cell-save-state) .cell-edit-button {
+  min-height: 0;
+}
+
+:root[data-density="compacto"] .cell-save-state:not(.cell-save-state--error) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Objetivos tactiles: en puntero grueso el modo compacto no baja de 44px. */
+@media (hover: none), (pointer: coarse) {
+  :root[data-density="compacto"] .extracto-table-section--compact {
+    --sheet-row-height: var(--row-height-compact);
+    --sheet-head-height: 48px;
+    --sheet-filter-height: var(--control-height);
+  }
+
+  :root[data-density="compacto"] .extracto-table-section--compact .cell.head,
+  :root[data-density="compacto"] .extracto-table-section--compact .cell.head button,
+  :root[data-density="compacto"] .extracto-table-section--compact .extracto-column-label {
+    min-height: 44px;
+  }
+
+  :root[data-density="compacto"] .cell-edit-shell:has(.cell-save-state) .cell-edit-button {
+    min-height: calc(var(--sheet-row-height) - 2px);
+  }
 }
 
 .extracto-table-footer {

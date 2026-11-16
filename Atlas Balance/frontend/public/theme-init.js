@@ -24,4 +24,15 @@
   document.documentElement.setAttribute('data-theme', theme);
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', theme === 'dark' ? '#000000' : '#F5F5F7');
+
+  // Densidad de la tabla de Extractos (data-density). Replica en JS plano
+  // resolveInitialDensity de src/utils/density.ts: si se cambia una, cambiar
+  // la otra. Solo 'compacto' es valido; cualquier otra cosa es 'comodo'.
+  var density = 'comodo';
+  try {
+    if (window.localStorage.getItem('density') === 'compacto') density = 'compacto';
+  } catch (e) {
+    density = 'comodo';
+  }
+  document.documentElement.setAttribute('data-density', density);
 })();

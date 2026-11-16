@@ -557,7 +557,8 @@ export default function ImportacionPage() {
     const confirmed = await confirm({
       title: 'Confirmar importación',
       message: `Se importarán ${selectedValidRowsCount} ${selectedValidRowsCount === 1 ? 'fila' : 'filas'} a la cuenta seleccionada. Esta acción escribe movimientos en el extracto. ¿Continuar?`,
-      confirmLabel: 'Importar',
+      confirmLabel: 'Importar filas',
+      tone: 'normal',
     });
     if (!confirmed) {
       return;
@@ -816,13 +817,13 @@ export default function ImportacionPage() {
               <table className="import-validation-table">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Cuenta</th>
-                    <th>Origen</th>
-                    <th>Estado</th>
-                    <th>Filas</th>
-                    <th>SHA-256</th>
-                    <th>Acción</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Cuenta</th>
+                    <th scope="col">Origen</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Filas</th>
+                    <th scope="col">SHA-256</th>
+                    <th scope="col">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1070,17 +1071,17 @@ export default function ImportacionPage() {
               <table className="import-validation-table">
                 <thead>
                   <tr>
-                    <th>Importar</th>
-                    <th>Fila</th>
-                    <th>Estado</th>
-                    <th>Fecha</th>
-                    <th>Concepto</th>
-                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th>Ingreso</th>}
-                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th>Egreso</th>}
-                    {selectedMapeo?.tipo_monto === 'tres_columnas' && <th>Monto banco</th>}
-                    <th>Monto</th>
-                    <th>Saldo</th>
-                    <th>Errores / avisos</th>
+                    <th scope="col">Importar</th>
+                    <th scope="col">Fila</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Concepto</th>
+                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th scope="col">Ingreso</th>}
+                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th scope="col">Egreso</th>}
+                    {selectedMapeo?.tipo_monto === 'tres_columnas' && <th scope="col">Monto banco</th>}
+                    <th scope="col">Monto</th>
+                    <th scope="col">Saldo</th>
+                    <th scope="col">Errores / avisos</th>
                   </tr>
                 </thead>
                 <tbody>

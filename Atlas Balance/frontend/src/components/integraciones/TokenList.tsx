@@ -80,15 +80,15 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
       <table>
         <thead>
           <tr>
-            <th>Nombre</th>
-            <th>Estado</th>
-            <th>Expira</th>
-            <th>Último uso</th>
-            <th>Scopes</th>
-            <th>Peticiones</th>
-            <th>Exito</th>
-            <th>Tiempo medio (ms)</th>
-            <th>Acciones</th>
+            <th scope="col">Nombre</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Expira</th>
+            <th scope="col">Último uso</th>
+            <th scope="col">Scopes</th>
+            <th scope="col">Peticiones</th>
+            <th scope="col">Exito</th>
+            <th scope="col">Tiempo medio (ms)</th>
+            <th scope="col">Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -157,6 +157,7 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
           : ''
       }
       confirmLabel={confirmTarget?.action === 'revocar' ? 'Revocar token' : 'Eliminar token'}
+      tone="irreversible"
       loadingLabel={confirmTarget?.action === 'revocar' ? 'Revocando...' : 'Eliminando...'}
       loading={busy}
       onCancel={() => setConfirmTarget(null)}

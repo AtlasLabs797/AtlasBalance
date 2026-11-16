@@ -12,7 +12,7 @@
   background: none;
   color: inherit;
   font: inherit;
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -41,13 +41,13 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-2);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
 }
 
 .cuenta-plazo-summary strong {
-  color: var(--color-text-primary);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
 }
 
 .kpi-grid {
@@ -58,6 +58,7 @@
 
 .phase2-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
@@ -98,16 +99,16 @@
 
 .formatos-page .phase2-filters {
   padding: var(--space-3);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg-surface-soft) 84%, var(--bg-surface) 16%);
+  background: color-mix(in srgb, var(--surface-muted) 84%, var(--surface-card) 16%);
 }
 
 .formatos-page .users-table-card,
 .formatos-page .users-form-card {
-  border-color: var(--border-soft);
+  border-color: var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  background: var(--surface-card);
 }
 
 .formatos-page .users-table-scroll table {
@@ -117,8 +118,8 @@
 }
 
 .formatos-page .users-table-scroll th {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -159,7 +160,7 @@
 
 .formatos-page .users-table-scroll td:nth-child(2),
 .formatos-page .users-table-scroll td:nth-child(3) {
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -178,12 +179,12 @@
   align-items: center;
   min-height: 1.45rem;
   padding: 0.1rem 0.45rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-soft);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-muted);
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
 }
 
 .formatos-row-actions {
@@ -207,15 +208,15 @@
 .formatos-page .users-form-card h2 {
   margin: 0;
   color: var(--text-primary);
-  font-size: var(--font-size-lg);
+  font-size: var(--text-21);
   font-weight: var(--font-weight-heavy);
   letter-spacing: 0;
 }
 
 .formatos-page .users-form-card fieldset {
-  border-color: var(--border-soft);
+  border-color: var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
 }
 
 .formatos-page .users-form-card legend {
@@ -227,7 +228,7 @@
 .formatos-fieldset-help {
   margin-bottom: var(--space-2);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
 }
 
 .formatos-column-list {
@@ -237,9 +238,9 @@
 
 .formatos-page .extra-col-row {
   padding: var(--space-2);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-field);
-  background: var(--bg-surface);
+  background: var(--surface-card);
 }
 
 .formatos-column-name {
@@ -252,8 +253,8 @@
 .formatos-column-index {
   min-width: 2.25rem;
   color: var(--text-secondary);
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
   text-align: center;
 }
 
@@ -274,7 +275,7 @@
   min-width: var(--control-height-compact);
   min-height: var(--control-height-compact);
   border-radius: var(--radius-control);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
 }
 
 .formatos-add-column {
@@ -291,10 +292,10 @@
 .app-combobox-input {
   width: 100%;
   min-width: 0;
-  padding: var(--space-2) var(--control-padding-x, var(--space-3));
+  padding: var(--space-2) var(--space-7, var(--space-3));
   border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
   color: var(--text-primary);
   font-family: inherit;
   font-size: inherit;
@@ -304,8 +305,8 @@
 .app-combobox-input:focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-offset);
-  border-color: color-mix(in srgb, var(--accent-primary) 36%, var(--border-soft));
-  background: var(--bg-surface);
+  border-color: color-mix(in srgb, var(--accent-solid) 36%, var(--border-default));
+  background: var(--surface-card);
 }
 
 .app-combobox-input:disabled {
@@ -324,9 +325,9 @@
   margin: 0;
   padding: var(--space-1);
   list-style: none;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   box-shadow: var(--shadow-lg);
 }
 
@@ -340,12 +341,12 @@
 
 .app-combobox-option--active,
 .app-combobox-option:hover {
-  background: color-mix(in srgb, var(--accent-primary) 14%, var(--bg-surface));
+  background: color-mix(in srgb, var(--accent-solid) 14%, var(--surface-card));
 }
 
 .app-combobox-hint {
   padding: var(--space-2);
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--border-default);
   margin-top: var(--space-1);
   color: var(--text-secondary);
   font-style: italic;
@@ -396,13 +397,13 @@
 .phase2-modal-actions {
   justify-content: flex-end;
   padding-top: var(--space-2);
-  border-top: 1px solid var(--color-border-primary);
+  border-top: 1px solid var(--border-default);
 }
 
 .titular-card {
-  border: 1px solid var(--color-border-primary);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--color-bg-primary);
+  background: var(--surface-card);
   padding: var(--space-4);
   display: grid;
   gap: var(--space-3);
@@ -446,10 +447,10 @@
   flex: 0 0 auto;
   border-radius: var(--radius-full);
   padding: 2px 10px;
-  font-size: var(--font-size-xs);
-  border: 1px solid var(--color-border-primary);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-secondary);
+  font-size: var(--text-12);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  background: var(--surface-page);
 }
 
 .phase2-row-actions {
@@ -459,29 +460,29 @@
   flex-wrap: wrap;
   margin-top: var(--space-1);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border-primary);
+  border-top: 1px solid var(--border-default);
 }
 
 .titular-open-button {
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
+  background: var(--accent-solid);
+  color: var(--text-inverse);
   border: 1px solid transparent;
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 .cuenta-open-button {
-  background: var(--color-accent);
-  color: var(--color-text-inverse);
+  background: var(--accent-solid);
+  color: var(--text-inverse);
   border: 1px solid transparent;
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 .titular-open-button:hover {
-  background: var(--color-accent-hover);
+  background: var(--accent-solid-hover);
 }
 
 .cuenta-open-button:hover {
-  background: var(--color-accent-hover);
+  background: var(--accent-solid-hover);
 }
 
 .titular-open-button:focus-visible {
@@ -502,7 +503,7 @@
 }
 
 .cuenta-card .titular-card-title h3 {
-  font-size: var(--font-size-md);
+  font-size: var(--text-17);
   line-height: 1.15;
 }
 
@@ -530,7 +531,7 @@
 
 .cuenta-card .pill {
   padding: 1px 8px;
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .cuenta-card-meta {
@@ -577,14 +578,14 @@
 }
 
 .cuenta-card-meta-label {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
   line-height: 1.05;
 }
 
 .cuenta-card-meta-value {
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-size: var(--text-13);
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -612,9 +613,9 @@
   grid-row: 1 / span 2;
   align-self: start;
   padding: var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
+  border: 1px solid color-mix(in srgb, var(--accent-solid) 20%, var(--border-default));
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface));
+  background: color-mix(in srgb, var(--accent-solid) 6%, var(--surface-card));
 }
 
 .cuenta-card-notes {
@@ -633,14 +634,14 @@
 
 .cuenta-card-balance .signed-amount,
 .titular-card-balance .signed-amount {
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
   font-weight: var(--font-weight-heavy);
   line-height: 1.2;
   white-space: nowrap;
 }
 
 .cuentas-page .cuenta-card-balance .signed-amount {
-  font-size: var(--font-size-base);
+  font-size: var(--text-17);
 }
 
 .cuenta-card .phase2-row-actions {
@@ -679,9 +680,9 @@
   display: grid;
   gap: var(--space-1);
   overflow: hidden;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
   padding: var(--space-2);
 }
 
@@ -695,9 +696,9 @@
 
 .titulares-balance-heading {
   padding: var(--space-1) var(--space-3);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -715,7 +716,7 @@
   padding: var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
   color: var(--text-primary);
   text-decoration: none;
   transition:
@@ -726,8 +727,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .titulares-balance-row:hover {
-    border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
-    background: var(--bg-surface);
+    border-color: color-mix(in srgb, var(--accent-solid) 20%, var(--border-default));
+    background: var(--surface-card);
     text-decoration: none;
   }
 }
@@ -757,9 +758,9 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-control);
-  background: var(--accent-primary-soft);
+  background: var(--accent-soft);
   color: var(--text-link);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
   font-weight: var(--font-weight-heavy);
 }
 
@@ -767,14 +768,14 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-primary);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--weight-bold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .titulares-balance-row > .signed-amount {
   justify-self: end;
-  font-size: var(--font-size-md);
+  font-size: var(--text-17);
   font-weight: var(--font-weight-heavy);
   line-height: 1.1;
   white-space: nowrap;
@@ -788,9 +789,9 @@
   justify-self: end;
   gap: var(--space-1);
   border-radius: var(--radius-control);
-  background: var(--accent-primary-soft);
+  background: var(--accent-soft);
   color: var(--text-link);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
   padding: 0 var(--space-3);
   transition:
     background-color var(--transition-fast),
@@ -800,7 +801,7 @@
 @media (hover: hover) and (pointer: fine) {
   .titulares-balance-row:hover .titulares-balance-avatar,
   .titulares-balance-row:hover .titulares-balance-open {
-    background: var(--accent-primary);
+    background: var(--accent-solid);
     color: var(--text-inverse);
   }
 }
@@ -809,9 +810,9 @@
   display: grid;
   gap: var(--space-1);
   overflow: hidden;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
   padding: var(--space-2);
 }
 
@@ -825,9 +826,9 @@
 
 .cuentas-balance-heading {
   padding: var(--space-1) var(--space-3);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -842,7 +843,7 @@
   padding: var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
   color: var(--text-primary);
   text-decoration: none;
   transition:
@@ -853,8 +854,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .cuentas-balance-row:hover {
-    border-color: color-mix(in srgb, var(--accent-primary) 20%, var(--border-soft));
-    background: var(--bg-surface);
+    border-color: color-mix(in srgb, var(--accent-solid) 20%, var(--border-default));
+    background: var(--surface-card);
     text-decoration: none;
   }
 }
@@ -884,9 +885,9 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-control);
-  background: var(--accent-primary-soft);
+  background: var(--accent-soft);
   color: var(--text-link);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
   font-weight: var(--font-weight-heavy);
 }
 
@@ -908,27 +909,27 @@
 
 .cuentas-balance-name {
   color: var(--text-primary);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--weight-bold);
 }
 
 .cuentas-balance-bank,
 .cuentas-balance-owner {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
 }
 
 .cuentas-balance-currency {
   justify-self: start;
   color: var(--text-primary);
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
   font-weight: var(--font-weight-heavy);
 }
 
 .cuentas-balance-row > .signed-amount {
   justify-self: end;
-  font-size: var(--font-size-md);
+  font-size: var(--text-17);
   font-weight: var(--font-weight-heavy);
   line-height: 1.1;
   white-space: nowrap;
@@ -941,9 +942,9 @@
   justify-content: center;
   justify-self: end;
   border-radius: var(--radius-control);
-  background: var(--accent-primary-soft);
+  background: var(--accent-soft);
   color: var(--text-link);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
   padding: 0 var(--space-3);
   transition:
     background-color var(--transition-fast),
@@ -953,14 +954,14 @@
 @media (hover: hover) and (pointer: fine) {
   .cuentas-balance-row:hover .cuentas-balance-avatar,
   .cuentas-balance-row:hover .cuentas-balance-open {
-    background: var(--accent-primary);
+    background: var(--accent-solid);
     color: var(--text-inverse);
   }
 }
 
 .titulares-evolucion-card {
-  border-color: var(--border-soft);
-  background: color-mix(in srgb, var(--surface-bg-sunken) 70%, var(--bg-surface) 30%);
+  border-color: var(--border-default);
+  background: color-mix(in srgb, var(--surface-sunken) 70%, var(--surface-card) 30%);
   box-shadow: none;
   padding: var(--space-4);
 }
@@ -978,20 +979,20 @@
 .dashboard-mini-card {
   display: grid;
   gap: var(--space-1);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   padding: var(--space-3);
 }
 
 .dashboard-mini-card span,
 .dashboard-mini-card small {
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
 }
 
 .dashboard-mini-card strong {
-  font-size: var(--font-size-base);
+  font-size: var(--text-17);
 }
 
 .extra-col-row {
@@ -1008,7 +1009,7 @@
   min-height: 2rem;
   min-width: 2rem;
   padding: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
   line-height: 1;
 }
 

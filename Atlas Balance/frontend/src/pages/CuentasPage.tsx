@@ -404,6 +404,7 @@ export default function CuentasPage() {
         title: 'Descartar cambios',
         message: 'Tienes cambios sin guardar en esta cuenta. Si cierras, se perderán. ¿Descartar?',
         confirmLabel: 'Descartar',
+        tone: 'reversible',
         cancelLabel: 'Seguir editando',
       });
       if (!discard) {
@@ -929,7 +930,7 @@ export default function CuentasPage() {
       </div>
 
       {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeFormModal()}>
+        <div className="modal-backdrop modal-backdrop--fullscreen-mobile" onClick={() => void closeFormModal()}>
           <div
             ref={formDialogRef}
             className="users-modal phase2-form-modal phase2-form-modal--wide"
@@ -1146,6 +1147,7 @@ export default function CuentasPage() {
             : ''
         }
         confirmLabel="Confirmar eliminación"
+        tone="reversible"
         loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}

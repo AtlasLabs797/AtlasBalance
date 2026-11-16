@@ -283,13 +283,13 @@ function ComisionesTable({
       <table className="revision-table">
         <thead>
           <tr>
-            <th>Titular</th>
-            <th>Cuenta</th>
-            <th>Fecha</th>
-            <th>Monto</th>
-            <th>Concepto</th>
-            <th>Devolución</th>
-            <th>Revisión</th>
+            <th scope="col">Titular</th>
+            <th scope="col">Cuenta</th>
+            <th scope="col">Fecha</th>
+            <th scope="col">Monto</th>
+            <th scope="col">Concepto</th>
+            <th scope="col">Devolución</th>
+            <th scope="col">Revisión</th>
           </tr>
         </thead>
         <tbody>
@@ -342,12 +342,12 @@ function SegurosTable({
       <table className="revision-table">
         <thead>
           <tr>
-            <th>Titular</th>
-            <th>Cuenta</th>
-            <th>Fecha</th>
-            <th>Importe</th>
-            <th>Concepto</th>
-            <th>Estado</th>
+            <th scope="col">Titular</th>
+            <th scope="col">Cuenta</th>
+            <th scope="col">Fecha</th>
+            <th scope="col">Importe</th>
+            <th scope="col">Concepto</th>
+            <th scope="col">Estado</th>
           </tr>
         </thead>
         <tbody>

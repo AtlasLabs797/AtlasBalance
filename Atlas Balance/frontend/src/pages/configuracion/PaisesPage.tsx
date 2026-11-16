@@ -118,6 +118,7 @@ export default function PaisesPage() {
         title: 'Descartar cambios',
         message: 'Tienes cambios sin guardar en este pais. Si cierras, se perderan. ¿Descartar?',
         confirmLabel: 'Descartar',
+        tone: 'reversible',
         cancelLabel: 'Seguir editando',
       });
       if (!discard) {
@@ -370,7 +371,7 @@ export default function PaisesPage() {
       </div>
 
       {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeFormModal()}>
+        <div className="modal-backdrop modal-backdrop--fullscreen-mobile" onClick={() => void closeFormModal()}>
           <div
             ref={formDialogRef}
             className="users-modal phase2-form-modal"
@@ -462,6 +463,7 @@ export default function PaisesPage() {
             : ''
         }
         confirmLabel="Confirmar eliminacion"
+        tone="reversible"
         loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}

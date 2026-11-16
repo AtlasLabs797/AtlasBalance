@@ -1,10 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
+import type { ConfirmTone } from '@/components/common/ConfirmDialog';
 
 export interface ConfirmOptions {
   title: string;
   message: string;
   confirmLabel: string;
   cancelLabel?: string;
+  /** Nivel de la accion. Por defecto 'normal'. */
+  tone?: ConfirmTone;
 }
 
 interface DialogState extends ConfirmOptions {
@@ -54,6 +57,7 @@ export function useConfirmDialog() {
     title: state.title,
     message: state.message,
     confirmLabel: state.confirmLabel,
+    tone: state.tone ?? 'normal',
     cancelLabel: state.cancelLabel,
     onConfirm: () => settle(true),
     onCancel: () => settle(false),

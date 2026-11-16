@@ -16,7 +16,7 @@ import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { EmptyState } from '@/components/common/EmptyState';
 import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
 import { KpiCard } from '@/components/dashboard/KpiCard';
-import { PageSkeleton } from '@/components/common/PageSkeleton';
+import { DashboardBlockError, DashboardBlockSkeleton, DashboardStaleNotice } from '@/components/dashboard/DashboardBlockStatus';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { SignedAmount } from '@/components/common/SignedAmount';
@@ -82,12 +82,22 @@ export default function DashboardTitularPage() {
   const titular = titularQuery.data ?? null;
   const evolucion = evolucionQuery.data ?? null;
   const saldosDivisa = saldosDivisaQuery.data ?? null;
-  const loading = titularQuery.isLoading || evolucionQuery.isLoading || saldosDivisaQuery.isLoading;
-  const error =
-    titularQuery.error ? extractErrorMessage(titularQuery.error, 'No se pudo cargar el dashboard del titular.') :
-    evolucionQuery.error ? extractErrorMessage(evolucionQuery.error, 'No se pudo cargar el dashboard del titular.') :
-    saldosDivisaQuery.error ? extractErrorMessage(saldosDivisaQuery.error, 'No se pudo cargar el dashboard del titular.') :
-    null;
+  const titularError = titularQuery.isError && !titular;
+  const evolucionError = evolucionQuery.isError && !evolucion;
+  const saldosDivisaError = saldosDivisaQuery.isError && !saldosDivisa;
+  const refreshFailed =
+    (titularQuery.isError && Boolean(titular)) ||
+    (evolucionQuery.isError && Boolean(evolucion)) ||
+    (saldosDivisaQuery.isError && Boolean(saldosDivisa));
+  const updatedAt = Math.min(
+    ...[titularQuery.dataUpdatedAt, evolucionQuery.dataUpdatedAt, saldosDivisaQuery.dataUpdatedAt].filter((value) => value > 0),
+  );
+  const retryAll = () => {
+    if (titularQuery.isError) void titularQuery.refetch();
+    if (evolucionQuery.isError) void evolucionQuery.refetch();
+    if (saldosDivisaQuery.isError) void saldosDivisaQuery.refetch();
+  };
+  const errorMsg = (query: { error: unknown }) => extractErrorMessage(query.error, 'No se pudo cargar el dashboard del titular.');
 
   const divisaOptions = useMemo(() => {
     const options = new Set<string>();
@@ -159,101 +169,138 @@ export default function DashboardTitularPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (loading) {
-    return <PageSkeleton rows={4} />;
-  }
-
-  if (error || !titular || !evolucion || !saldosDivisa) {
-    return (
-      <div className="page-placeholder">
-        <h1>Dashboard Titular</h1>
-        <p>{error ?? 'Carga cuentas o extractos para ver el dashboard de este titular.'}</p>
-      </div>
-    );
-  }
+  const currency = titular?.divisa_principal ?? divisaPrincipal;
 
   return (
     <section className="dashboard-page">
       <header className="dashboard-toolbar">
         <div>
-          <h1>{titular.titular_nombre}</h1>
+          <h1>{titular?.titular_nombre ?? 'Dashboard titular'}</h1>
           <p className="dashboard-subtitle">Dashboard por titular</p>
         </div>
         <div className="dashboard-toolbar-actions">
-          <button type="button" onClick={() => navigate(`/dashboard?periodo=${periodo}&divisa=${titular.divisa_principal}`)}>
+          <button type="button" onClick={() => navigate(`/dashboard?periodo=${periodo}&divisa=${currency}`)}>
             Volver
           </button>
           <PeriodoSelector value={periodo} onChange={setPeriodo} />
-          <DivisaSelector value={titular.divisa_principal} options={divisaOptions} onChange={setDivisaPrincipal} />
+          <DivisaSelector value={currency} options={divisaOptions} onChange={setDivisaPrincipal} />
         </div>
       </header>
 
-      <div className="dashboard-kpi-grid">
-        <KpiCard
-          title="Saldo total"
-          value={
-            <SignedAmount value={titular.total_convertido}>
-              {formatCurrency(titular.total_convertido, titular.divisa_principal)}
-            </SignedAmount>
-          }
-          helper={variacionPct !== null ? (
-            <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-              {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}% vs. inicio del período
-            </span>
-          ) : undefined}
+      <DashboardStaleNotice updatedAt={updatedAt} failed={refreshFailed} onRetry={retryAll} />
+
+      {titularQuery.isLoading ? (
+        <DashboardBlockSkeleton label="resumen del titular" rows={3} />
+      ) : titularError ? (
+        <DashboardBlockError
+          title="No se pudo cargar el resumen del titular."
+          message={errorMsg(titularQuery)}
+          onRetry={() => void titularQuery.refetch()}
+          retrying={titularQuery.isFetching}
         />
-        <KpiCard
-          title="Ingresos período"
-          value={
-            <SignedAmount value={periodTotals.ingresos}>
-              {formatCurrency(periodTotals.ingresos, titular.divisa_principal)}
-            </SignedAmount>
-          }
-          helper={variacionIngPct !== null ? (
-            <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-              {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}% vs. anterior
-            </span>
-          ) : undefined}
-        />
-        <KpiCard
-          title="Egresos período"
-          value={
-            <SignedAmount value={periodTotals.egresos} tone="negative">
-              {formatCurrency(periodTotals.egresos, titular.divisa_principal)}
-            </SignedAmount>
-          }
-          helper={variacionEgrPct !== null ? (
-            <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-              {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}% vs. anterior
-            </span>
-          ) : undefined}
-        />
-      </div>
+      ) : titular ? (
+        <div className="dashboard-kpi-grid">
+          <KpiCard
+            title="Saldo total"
+            featured
+            value={
+              <SignedAmount value={titular.total_convertido}>
+                {formatCurrency(titular.total_convertido, titular.divisa_principal)}
+              </SignedAmount>
+            }
+            helper={variacionPct !== null ? (
+              <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}% vs. inicio del período
+              </span>
+            ) : undefined}
+          />
+          {evolucionQuery.isLoading ? (
+            <DashboardBlockSkeleton label="ingresos y egresos" rows={2} />
+          ) : evolucionError ? (
+            <DashboardBlockError
+              title="No se pudieron cargar ingresos y egresos."
+              message={errorMsg(evolucionQuery)}
+              onRetry={() => void evolucionQuery.refetch()}
+              retrying={evolucionQuery.isFetching}
+            />
+          ) : (
+            <>
+              <KpiCard
+                title="Ingresos período"
+                value={
+                  <SignedAmount value={periodTotals.ingresos}>
+                    {formatCurrency(periodTotals.ingresos, titular.divisa_principal)}
+                  </SignedAmount>
+                }
+                helper={variacionIngPct !== null ? (
+                  <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                    {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}% vs. anterior
+                  </span>
+                ) : undefined}
+              />
+              <KpiCard
+                title="Egresos período"
+                value={
+                  <SignedAmount value={periodTotals.egresos} tone="negative">
+                    {formatCurrency(periodTotals.egresos, titular.divisa_principal)}
+                  </SignedAmount>
+                }
+                helper={variacionEgrPct !== null ? (
+                  <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                    {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}% vs. anterior
+                  </span>
+                ) : undefined}
+              />
+            </>
+          )}
+        </div>
+      ) : null}
 
       <div className="dashboard-grid">
-        <SaldoPorDivisaCard items={saldosDivisa.divisas} divisaPrincipal={saldosDivisa.divisa_principal} />
+        {saldosDivisaQuery.isLoading ? (
+          <DashboardBlockSkeleton label="saldos por divisa" rows={3} />
+        ) : saldosDivisaError ? (
+          <DashboardBlockError
+            title="No se pudieron cargar los saldos por divisa."
+            message={errorMsg(saldosDivisaQuery)}
+            onRetry={() => void saldosDivisaQuery.refetch()}
+            retrying={saldosDivisaQuery.isFetching}
+          />
+        ) : saldosDivisa ? (
+          <SaldoPorDivisaCard items={saldosDivisa.divisas} divisaPrincipal={saldosDivisa.divisa_principal} />
+        ) : null}
 
-        <section className="dashboard-card">
+        <section className="dashboard-section">
           <header className="dashboard-card-header">
             <h2>Desglose por cuenta</h2>
           </header>
 
-          {titular.saldos_por_cuenta.length === 0 ? (
+          {titularQuery.isLoading ? (
+            <DashboardBlockSkeleton label="desglose por cuenta" rows={4} />
+          ) : titularError ? (
+            <DashboardBlockError
+              title="No se pudo cargar el desglose por cuenta."
+              message={errorMsg(titularQuery)}
+              onRetry={() => void titularQuery.refetch()}
+              retrying={titularQuery.isFetching}
+            />
+          ) : titular && titular.saldos_por_cuenta.length === 0 ? (
             <EmptyState
+              variant="setup"
               title="Este titular no tiene cuentas visibles."
               subtitle="Asigna una cuenta o revisa tus permisos para ver el desglose."
             />
-          ) : (
+          ) : titular ? (
             <div className="dashboard-table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Cuenta</th>
-                    <th>País</th>
-                    <th>Tipo</th>
-                    <th>Saldo ({titular.divisa_principal})</th>
-                    <th>Saldo original</th>
-                    <th>Abrir</th>
+                    <th scope="col">Cuenta</th>
+                    <th scope="col">País</th>
+                    <th scope="col">Tipo</th>
+                    <th scope="col">Saldo ({titular.divisa_principal})</th>
+                    <th scope="col">Saldo original</th>
+                    <th scope="col">Abrir</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -290,19 +337,30 @@ export default function DashboardTitularPage() {
                 </tbody>
               </table>
             </div>
-          )}
+          ) : null}
         </section>
       </div>
 
-      <section className="dashboard-card">
+      <section className="dashboard-section">
         <header className="dashboard-card-header">
           <h2>Evolución</h2>
         </header>
-        <EvolucionChart
-          points={evolucion.puntos}
-          divisa={titular.divisa_principal}
-          colors={titular.chart_colors}
-        />
+        {evolucionQuery.isLoading ? (
+          <DashboardBlockSkeleton label="evolución" rows={5} tall />
+        ) : evolucionError ? (
+          <DashboardBlockError
+            title="No se pudo cargar la evolución."
+            message={errorMsg(evolucionQuery)}
+            onRetry={() => void evolucionQuery.refetch()}
+            retrying={evolucionQuery.isFetching}
+          />
+        ) : evolucion && titular ? (
+          <EvolucionChart
+            points={evolucion.puntos}
+            divisa={titular.divisa_principal}
+            colors={titular.chart_colors}
+          />
+        ) : null}
       </section>
     </section>
   );

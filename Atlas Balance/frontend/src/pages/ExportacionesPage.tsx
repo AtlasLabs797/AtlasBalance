@@ -239,30 +239,30 @@ export default function ExportacionesPage() {
         {!loading && rows.length > 0 ? (
           <>
             <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de exportaciones">
-              <table>
+              <table className="table-stack-mobile">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Cuenta</th>
-                    <th>Titular</th>
-                    <th>Estado</th>
-                    <th>Tipo</th>
-                    <th>Tamaño</th>
-                    <th>Iniciado por</th>
-                    <th>Acciones</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Cuenta</th>
+                    <th scope="col">Titular</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Tipo</th>
+                    <th scope="col">Tamaño</th>
+                    <th scope="col">Iniciado por</th>
+                    <th scope="col">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{formatDateTime(row.fecha_exportacion)}</td>
-                      <td>{row.cuenta_nombre}</td>
-                      <td>{row.titular_nombre}</td>
-                      <td>{formatEstadoExportacion(row.estado)}</td>
-                      <td>{formatTipoExportacion(row.tipo)}</td>
-                      <td>{formatBytes(row.tamanio_bytes)}</td>
-                      <td>{row.iniciado_por_nombre ?? 'Sistema'}</td>
-                      <td className="users-row-actions">
+                      <td data-label="Fecha">{formatDateTime(row.fecha_exportacion)}</td>
+                      <td data-label="Cuenta">{row.cuenta_nombre}</td>
+                      <td data-label="Titular">{row.titular_nombre}</td>
+                      <td data-label="Estado">{formatEstadoExportacion(row.estado)}</td>
+                      <td data-label="Tipo">{formatTipoExportacion(row.tipo)}</td>
+                      <td data-label="Tamaño">{formatBytes(row.tamanio_bytes)}</td>
+                      <td data-label="Iniciado por">{row.iniciado_por_nombre ?? 'Sistema'}</td>
+                      <td className="users-row-actions" data-label="Acciones">
                         <button type="button" onClick={() => void downloadExport(row.id)} disabled={row.estado !== 'SUCCESS'}>
                           Descargar XLSX
                         </button>

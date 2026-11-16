@@ -85,7 +85,7 @@ Valores canónicos. Nunca escribir un hex en un componente: siempre `var(--*)`.
 
 **Neutros** — `--gray-25 #FDFDFD` · `50 #F5F5F7` · `100 #EDEDEF` · `200 #E0E0E2` · `300 #D2D2D7` · `400 #A1A1A6` · `500 #86868B` · `600 #6E6E73` · `700 #48484A` · `800 #333336` · `900 #1D1D1F` · `950 #0B0B0C`. Tinta `--ink #1D1D1F`, pergamino `--parchment #F5F5F7`, perla `--pearl #FAFAFC`, capilar `--hairline #E0E0E0`, divisor `--divider-soft #F0F0F0`. Bandas oscuras `--tile-1 #272729` · `--tile-2 #2A2A2C` · `--tile-3 #252527`.
 
-**Acento (cobalto de tesorería)** — `--cobalt-600 #285BD9` sólido, hover `--cobalt-500 #3A72E6`, activo `--cobalt-700 #214CAD`, sobre oscuro `--cobalt-300 #8AABEF`. Se consume siempre por el canal semántico: `--accent-solid`, `--accent-solid-hover`, `--accent-solid-active`, `--accent-text`, `--accent-soft`, `--accent-soft-strong`, `--accent-soft-border`, `--accent-ring`, `--accent-on-solid`.
+**Acento (cobalto de tesorería)** — `--cobalt-600 #285BD9` sólido, hover `--cobalt-500 #3A72E6`, activo `--cobalt-700 #214CAD`, sobre oscuro `--cobalt-300 #8AABEF`. **En oscuro el relleno sólido pasa a claro con texto oscuro** (`--accent-solid` = `--cobalt-400`, hover `--cobalt-300`, activo `--cobalt-400`, `--accent-on-solid` = `--text-inverse`): los tres estados superan 4,5:1 (6,00 / 8,57 / 6,00). Se consume siempre por el canal semántico: `--accent-solid`, `--accent-solid-hover`, `--accent-solid-active`, `--accent-text`, `--accent-soft`, `--accent-soft-strong`, `--accent-soft-border`, `--accent-ring`, `--accent-on-solid`.
 
 **Superficies** — `--surface-page` (pergamino) · `--surface-card` (blanco) · `--surface-muted` (perla) · `--surface-sunken` · `--surface-hover` (`rgba(29,29,31,.04)`) · `--surface-active` (`.08`) · `--surface-tile{,-2,-3}`.
 
@@ -111,7 +111,9 @@ Pesos **300 / 400 / 600 / 700**. El **500 no existe**: donde el repo use `--font
 
 Alias heredados que siguen resolviendo dentro de la escala nueva: `--text-16 → --text-17`, `--text-20 → --text-21`, `--text-32 → --text-34`. No escribirlos en código nuevo.
 
-Tracking: `-0.005em` display · `-0.011em` heading · **`-0.022em` cuerpo** · `-0.016em` label · `+0.08em` overline.
+Tracking: `-0.005em` display · `-0.011em` heading · **`-0.011em` cuerpo** (antes `-0.022em`: demasiado apretado para texto corrido y tablas) · `-0.016em` label · `+0.08em` overline. Las cifras y fechas en mono (celdas de importes y saldos) van a `0`.
+
+**Títulos de pantalla de trabajo**: el `h1` es de **28px** (`--type-title-2`) en todas las pantallas de trabajo (dashboard, extractos, usuarios, administración...). `--type-title-1` (40) queda para marca y bandas editoriales (login, `.auth-branding h1`), no para pantallas donde se opera. Cuerpo **17px**; **14px** en celdas densas, etiquetas y pies.
 
 Roles compuestos (usar el shorthand, no reconstruirlo): `--type-hero` 56/1.07 600 · `--type-title-1` 40 · `--type-title-2` 28 · `--type-title-3` 21 · `--type-lead` 28/400 · `--type-lead-airy` 24/300 · `--type-subhead` 17/600 · **`--type-body` 17/1.47 400** · `--type-body-sm` 14 · `--type-label` 14/600 · `--type-caption` 14/400 · `--type-overline` 12/600 + caps + `--tracking-caps` · `--type-fine` 12 · `--type-micro` 10 · `--type-mono` 14 · `--type-mono-lg` 21 · `--type-kpi` mono 600.
 
@@ -123,7 +125,7 @@ Padding: tarjeta 24 (compacta 20), campo 12×20, modal 32, banda 80. Margen de p
 
 Cromo: sidebar **264px** (raíl 72, navegación inferior por debajo de 720px), topbar **64px**, contenido máx **1440** (980 en superficies de texto), drawer 560, panel de IA 420.
 
-Alturas: fila **56 / 44 compacta**; control **44** (sm 32, lg 52).
+Alturas: fila **56** estándar; la tabla de Extractos tiene **selector de densidad por usuario** (control segmentado «Cómodo / Compacto» en su barra de herramientas): **Cómodo (por defecto) = filas 44px**, **Compacto = filas 36px** (celdas a 14px `--type-body-sm`, cabecera 36, fila de filtros 32). Se guarda en `localStorage` (`density`) y se aplica como `data-density` en `<html>` (prepintado en `public/theme-init.js`); solo afecta a Extractos. En puntero grueso (`hover: none` / `pointer: coarse`) el modo compacto **no baja de 44px**. Control **44** (sm 32, lg 52).
 
 Rejillas sancionadas: `--grid-kpi` (`2fr 1fr 1fr`), `--split`, `--detail`, `--2/3/4`. Vía clases: `.atl-grid--kpi|split|detail|2|3|4`.
 
@@ -265,13 +267,15 @@ Los `.jsx` de `components/` son la implementación de referencia (props en el `.
 | `dashboard/ConcentracionDonutCharts.tsx` | Receta `.atl-donut` (`__ring`, `__track`, `__hole`, `__value`, `__label`) |
 | `dashboard/PeriodoSelector.tsx`, `DivisaSelector.tsx` | `SegmentedControl` · `.atl-seg`, `.atl-seg__btn--on` |
 
+**Nota 2026-11-16 (Impeccable):** el Dashboard dejó de ser una pared de `StatCard`. Nivel 1 = hero (saldo consolidado + disponible + inmovilizado, `dl.dashboard-hero-liquidez`); nivel 2 = secciones planas `.dashboard-section` (regla fina + cabecera, sin caja) para titulares, plazos, países y concentración; ingresos/egresos del periodo como cifras planas. `KpiCard` queda para las cifras secundarias y para la página de titular (`Saldo total` featured). Cada bloque tiene estado propio (`DashboardBlockStatus.tsx`).
+
 Los gráficos **no son componentes**: son tokens y recetas CSS/SVG. Los patrones exactos están en `guidelines/charts-*.card.html`. No se añade ninguna librería.
 
 ### 5.3 Extractos e importación
 
 | Repo | Sistema |
 | --- | --- |
-| `extractos/ExtractoTable.tsx` | `DataGrid` · `.atl-datagrid` (`__bar`, `__tools`, `__table--compact`, `__frow`, `__foot`). Filas 44 compactas, cifras a la derecha en mono |
+| `extractos/ExtractoTable.tsx` | `DataGrid` · `.atl-datagrid` (`__bar`, `__tools`, `__table--compact`, `__frow`, `__foot`). Filas 44 (cómodo) o 36 (compacto) según la densidad elegida; cifras a la derecha en mono con tracking 0 |
 | `extractos/EditableCell.tsx` | **`EditableCell`** · `.atl-cell`, `__input`, `__button`, `--locked`, `--right`, `__state--ok/--error` |
 | `extractos/DesgloseModal.tsx`, `AuditCellModal.tsx` | `Dialog` · `.atl-dialog` (radio 18, `--shadow-xl`, velo 48%) |
 | `pages/ImportacionPage.tsx`, `FormatosImportacionPage.tsx` | **`ImportMapper`** · `.atl-mapper__row`, `__source`, `__arrow`, `__name`, `__sample`, `__status` + `Stepper` |
@@ -344,7 +348,10 @@ Los estados de fila marcada (`--row-flagged-*`) pasan al triplete de aviso: **ba
 - [ ] Ninguna tarjeta, botón, campo, KPI ni fila tiene `box-shadow`.
 - [ ] Ningún hover mueve nada de sitio.
 - [ ] Todo control tiene `scale(.95)` al pulsar y anillo cobalto de 3px al enfocar.
-- [ ] Cuerpo a 17px; 14px solo en celdas densas, etiquetas y pies.
+- [ ] Cuerpo a 17px con tracking `-0.011em`; 14px solo en celdas densas, etiquetas y pies.
+- [ ] `h1` de pantallas de trabajo a 28px (40 solo en marca/login).
+- [ ] Extractos: filas de 44px en «Cómodo» y 36px en «Compacto»; en táctil nunca por debajo de 44px; el selector de densidad es accesible por teclado (`radiogroup`).
+- [ ] Botón primario en oscuro (reposo, hover y pulsado) con contraste de texto ≥ 4,5:1.
 - [ ] Ningún `font-weight: 500` en el árbol.
 - [ ] Todas las tarjetas y modales a 18px; todos los botones son píldora salvo el oscuro de utilidad.
 - [ ] Cero hex literales en `src/`; todo `var(--*)`.
@@ -374,3 +381,7 @@ Los estados de fila marcada (`--row-flagged-*`) pasan al triplete de aviso: **ba
 | `README.md` | La guía completa del sistema (voz, fundamentos, iconografía, sustituciones). |
 
 **Sustituciones pendientes de material real:** Geist sustituye a una tipografía de marca que no existe; Lucide sustituye a un set de iconos que no se entregó; el logotipo es un glifo PNG más wordmark tipográfico. Si Atlas Balance tiene `woff2` o un SVG de marca, entran en `assets/` con un `tokens/fonts.css` y no cambia nada más.
+
+---
+
+**Decisión 2026-11-16 (V-03.02, informe Impeccable F1/F3):** se prefiere operar sobre la escala «Apple» pura: tracking de cuerpo a `-0.011em`, `h1` de trabajo a 28px, filas de Extractos con densidad Cómodo (44) / Compacto (36) elegible por usuario, y primario oscuro con relleno `--cobalt-400` y texto oscuro.

@@ -135,18 +135,18 @@
 .auth-brand-eyebrow {
   width: fit-content;
   padding: 0.28rem var(--space-2);
-  border: 1px solid var(--color-sidebar-border);
-  border-radius: var(--radius-pill);
-  color: var(--color-sidebar-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
 }
 
 .auth-brand-copy strong {
   max-width: 14ch;
   color: var(--auth-heading);
-  font-family: var(--font-family-heading);
+  font-family: var(--font-display);
   font-size: clamp(2.35rem, 2.8vw, 2.65rem);
   font-weight: var(--font-weight-heavy);
   line-height: 1.08;
@@ -174,11 +174,11 @@
   min-height: 1.25rem;
   padding: 0.14rem 0.55rem;
   border: 1px solid var(--auth-tag-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-full);
   background: var(--auth-tag-bg);
   color: var(--auth-tag-text);
   font-size: var(--text-12);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 
@@ -201,7 +201,7 @@
 
 .auth-brand-footer strong {
   color: var(--auth-heading);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--weight-bold);
 }
 
 .auth-main-panel {
@@ -259,7 +259,7 @@
 .auth-label {
   color: var(--auth-heading);
   font-size: var(--text-14);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 .auth-input {
@@ -271,7 +271,7 @@
   color: var(--auth-control-text);
   padding: var(--pad-field-y) var(--pad-field-x);
   font-size: var(--text-17);
-  font-weight: var(--font-weight-normal);
+  font-weight: var(--weight-regular);
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
@@ -336,21 +336,21 @@
   padding: var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-card);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .auth-error {
-  background: var(--danger-bg);
-  border-color: color-mix(in srgb, var(--danger-text) 24%, transparent);
-  color: var(--danger-text);
+  background: var(--status-danger-bg);
+  border-color: color-mix(in srgb, var(--status-danger-text) 24%, transparent);
+  color: var(--status-danger-text);
 }
 
 .auth-success {
-  background: var(--success-bg);
-  border-color: color-mix(in srgb, var(--success-text) 24%, transparent);
-  color: var(--success-text);
+  background: var(--status-success-bg);
+  border-color: color-mix(in srgb, var(--status-success-text) 24%, transparent);
+  color: var(--status-success-text);
 }
 
 .auth-mfa-setup {
@@ -369,8 +369,8 @@
   border-radius: var(--radius-md);
   background: var(--auth-control-bg);
   color: var(--auth-control-text);
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
   line-height: 1.5;
   user-select: all;
 }
@@ -416,7 +416,7 @@
   background: var(--auth-accent);
   color: var(--auth-button-text);
   font-size: var(--text-17);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
   box-shadow: none;
   transition:
     background-color var(--transition-fast),
@@ -439,14 +439,14 @@
   padding: 0.35rem;
   border: none;
   background: none;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
   text-decoration: underline;
   cursor: pointer;
 }
 
 .auth-link-button:hover {
-  color: var(--color-text-primary);
+  color: var(--text-primary);
 }
 
 @media (max-width: 860px) {

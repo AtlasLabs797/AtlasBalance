@@ -249,6 +249,7 @@ export default function TitularesPage() {
         title: 'Descartar cambios',
         message: 'Tienes cambios sin guardar en este titular. Si cierras, se perderán. ¿Descartar?',
         confirmLabel: 'Descartar',
+        tone: 'reversible',
         cancelLabel: 'Seguir editando',
       });
       if (!discard) {
@@ -575,7 +576,7 @@ export default function TitularesPage() {
       </div>
 
       {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeFormModal()}>
+        <div className="modal-backdrop modal-backdrop--fullscreen-mobile" onClick={() => void closeFormModal()}>
           <div
             ref={formDialogRef}
             className="users-modal phase2-form-modal"
@@ -651,6 +652,7 @@ export default function TitularesPage() {
             : ''
         }
         confirmLabel="Confirmar eliminación"
+        tone="reversible"
         loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}

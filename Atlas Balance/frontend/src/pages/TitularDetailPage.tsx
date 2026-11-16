@@ -54,12 +54,12 @@ export default function TitularDetailPage() {
         <table className="titular-detail-table">
         <thead>
           <tr>
-            <th>Cuenta</th>
-            <th>Divisa</th>
-            <th>Saldo</th>
-            <th>Ingresos período</th>
-            <th>Egresos período</th>
-            <th>Últ. Actualización</th>
+            <th scope="col">Cuenta</th>
+            <th scope="col">Divisa</th>
+            <th scope="col">Saldo</th>
+            <th scope="col">Ingresos período</th>
+            <th scope="col">Egresos período</th>
+            <th scope="col">Últ. Actualización</th>
           </tr>
         </thead>
         <tbody>

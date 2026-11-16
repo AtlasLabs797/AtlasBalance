@@ -157,7 +157,8 @@ export default function ConciliacionPage() {
       const confirmed = await confirm({
         title: 'Conciliar movimiento',
         message: 'Vas a conciliar este movimiento con su extracto. Es una acción de cierre contable. ¿Continuar?',
-        confirmLabel: 'Conciliar',
+        confirmLabel: 'Conciliar movimiento',
+        tone: 'normal',
       });
       if (!confirmed) {
         return;
@@ -282,12 +283,12 @@ export default function ConciliacionPage() {
           <table className="import-validation-table">
             <thead>
               <tr>
-                <th>Estado</th>
-                <th>Score</th>
-                <th>Esperado</th>
-                <th>Extracto</th>
-                <th>Días</th>
-                <th>Acciones</th>
+                <th scope="col">Estado</th>
+                <th scope="col">Score</th>
+                <th scope="col">Esperado</th>
+                <th scope="col">Extracto</th>
+                <th scope="col">Días</th>
+                <th scope="col">Acciones</th>
               </tr>
             </thead>
             <tbody>

@@ -460,6 +460,7 @@ export default function ConfiguracionPage() {
         message:
           'Los gerentes y empleados podran iniciar sesion solo con contrasena. Los administradores seguiran obligados a usar Authenticator. El cambio se aplica al siguiente inicio de sesion y queda registrado en auditoria.',
         confirmLabel: 'Desactivar para no administradores',
+        tone: 'reversible',
       });
       if (!confirmed) {
         return;
@@ -489,7 +490,8 @@ export default function ConfiguracionPage() {
     const confirmed = await confirm({
       title: 'Actualizar ahora',
       message: 'Se instalará la nueva versión y la aplicación se reiniciará. Tu sesión se cerrará y el servicio no estará disponible unos minutos. Esta acción no se puede deshacer. ¿Continuar?',
-      confirmLabel: 'Actualizar',
+      confirmLabel: 'Actualizar ahora',
+      tone: 'reversible',
     });
     if (!confirmed) {
       return;
@@ -599,7 +601,8 @@ export default function ConfiguracionPage() {
         message: divisa.es_base
           ? `Vas a fijar ${codigo} como divisa base. Todas las conversiones y totales pasarán a calcularse en ${codigo}. ¿Continuar?`
           : `Vas a desactivar la divisa ${codigo}. Dejará de estar disponible en la aplicación. ¿Continuar?`,
-        confirmLabel: divisa.es_base ? 'Fijar como base' : 'Desactivar',
+        confirmLabel: divisa.es_base ? 'Fijar como base' : 'Desactivar divisa',
+        tone: 'reversible',
       });
       if (!confirmed) {
         return;
@@ -652,15 +655,7 @@ export default function ConfiguracionPage() {
   };
 
   const revokeToken = async (id: string) => {
-    const confirmed = await confirm({
-      title: 'Revocar token',
-      message: 'El token dejará de funcionar de inmediato y cualquier integración que lo use dejará de tener acceso. ¿Revocar?',
-      confirmLabel: 'Revocar',
-    });
-    if (!confirmed) {
-      return;
-    }
-
+    // La confirmacion (nivel irreversible) la pide TokenList antes de llamar aqui.
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -679,7 +674,8 @@ export default function ConfiguracionPage() {
     const confirmed = await confirm({
       title: 'Rotar token',
       message: 'Se generará un token nuevo y el actual dejará de funcionar. Las integraciones que usen el valor anterior deberán actualizarse. ¿Rotar?',
-      confirmLabel: 'Rotar',
+      confirmLabel: 'Rotar token',
+      tone: 'irreversible',
     });
     if (!confirmed) {
       return;
@@ -701,15 +697,7 @@ export default function ConfiguracionPage() {
   };
 
   const deleteToken = async (id: string) => {
-    const confirmed = await confirm({
-      title: 'Eliminar token',
-      message: 'El token se eliminará de forma permanente y cualquier integración que lo use dejará de tener acceso. ¿Eliminar?',
-      confirmLabel: 'Eliminar',
-    });
-    if (!confirmed) {
-      return;
-    }
-
+    // La confirmacion (nivel irreversible) la pide TokenList antes de llamar aqui.
     setBusy(true);
     setError(null);
     setFeedback(null);
@@ -1364,11 +1352,11 @@ export default function ConfiguracionPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Origen</th>
-                      <th>Destino</th>
-                      <th>Tasa</th>
-                      <th>Fuente</th>
-                      <th>Actualización</th>
+                      <th scope="col">Origen</th>
+                      <th scope="col">Destino</th>
+                      <th scope="col">Tasa</th>
+                      <th scope="col">Fuente</th>
+                      <th scope="col">Actualización</th>
                     </tr>
                   </thead>
                   <tbody>

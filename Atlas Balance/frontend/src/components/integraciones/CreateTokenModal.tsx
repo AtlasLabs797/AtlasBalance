@@ -1,8 +1,8 @@
 import { FormEvent, useId, useState } from 'react';
+import Modal from '@/components/common/Modal';
 import api from '@/services/api';
 import type { CreateIntegrationTokenResponse } from '@/types';
 import { TokenPermissionsEditor, type TokenPermisoDraft } from '@/components/integraciones/TokenPermissionsEditor';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { extractErrorMessage } from '@/utils/errorMessage';
 
 // Scopes marcados por defecto al abrir el modal.
@@ -41,15 +41,12 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   const [tokenPermisos, setTokenPermisos] = useState<TokenPermisoDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const formErrorId = useId();
+  const formId = useId();
 
   const closeModal = () => {
     setFormError(null);
     onClose();
   };
-
-  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    onEscape: busy || submitting ? undefined : closeModal,
-  });
 
   if (!open) {
     return null;
@@ -130,87 +127,84 @@ export function CreateTokenModal({ open, busy, catalogos, onClose, onCreated, on
   };
 
   return (
-    <div className="config-modal-backdrop" role="presentation" onClick={busy || submitting ? undefined : closeModal}>
-      <div
-        ref={dialogRef}
-        className="config-modal-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-token-modal-title"
-        aria-describedby={formError ? formErrorId : undefined}
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="config-modal-header">
-          <h3 id="create-token-modal-title">Crear token OpenClaw</h3>
-        </header>
-        <form onSubmit={submit}>
-          {formError ? <p id={formErrorId} className="auth-error" role="alert">{formError}</p> : null}
-          <div className="config-grid-3">
-            <label>
-              Nombre
-              <input value={tokenNombre} onChange={(event) => setTokenNombre(event.target.value)} />
-            </label>
-            <label>
-              Descripción
-              <input value={tokenDescripcion} onChange={(event) => setTokenDescripcion(event.target.value)} />
-            </label>
-            <span aria-hidden="true" />
-          </div>
-          <fieldset className="users-check-row">
-            <legend className="sr-only">Permisos generales del token</legend>
-            <label><input type="checkbox" checked={tokenLectura} onChange={(event) => setTokenLectura(event.target.checked)} /> Lectura</label>
-            <label><input type="checkbox" checked={tokenEscritura} onChange={(event) => setTokenEscritura(event.target.checked)} /> Escritura</label>
-          </fieldset>
-          <p className="import-muted">
-            La integración OpenClaw es de solo lectura por ahora: los endpoints disponibles
-            solo consultan datos. El permiso de escritura no habilita ninguna operación todavía.
-          </p>
-          <div className="config-grid-3">
-            <label>
-              Expira el
-              <input
-                type="date"
-                value={tokenExpiracion}
-                disabled={sinExpiracion}
-                onChange={(event) => setTokenExpiracion(event.target.value)}
-              />
-            </label>
-            <label className="users-check-row">
+    <Modal
+      open={open}
+      onClose={closeModal}
+      titleId="create-token-modal-title"
+      title="Crear token OpenClaw"
+      descriptionId={formError ? formErrorId : undefined}
+      size="lg"
+      busy={busy || submitting}
+      showCloseButton={false}
+      footer={
+        <>
+          <button type="button" className="button-secondary" onClick={closeModal} disabled={busy || submitting}>Cancelar</button>
+          <button type="submit" form={formId} className="button-primary" disabled={busy || submitting}>{submitting ? 'Creando...' : 'Crear token'}</button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={submit}>
+        {formError ? <p id={formErrorId} className="auth-error" role="alert">{formError}</p> : null}
+        <div className="config-grid-3">
+          <label>
+            Nombre
+            <input value={tokenNombre} onChange={(event) => setTokenNombre(event.target.value)} />
+          </label>
+          <label>
+            Descripción
+            <input value={tokenDescripcion} onChange={(event) => setTokenDescripcion(event.target.value)} />
+          </label>
+          <span aria-hidden="true" />
+        </div>
+        <fieldset className="users-check-row">
+          <legend className="sr-only">Permisos generales del token</legend>
+          <label><input type="checkbox" checked={tokenLectura} onChange={(event) => setTokenLectura(event.target.checked)} /> Lectura</label>
+          <label><input type="checkbox" checked={tokenEscritura} onChange={(event) => setTokenEscritura(event.target.checked)} /> Escritura</label>
+        </fieldset>
+        <p className="import-muted">
+          La integración OpenClaw es de solo lectura por ahora: los endpoints disponibles
+          solo consultan datos. El permiso de escritura no habilita ninguna operación todavía.
+        </p>
+        <div className="config-grid-3">
+          <label>
+            Expira el
+            <input
+              type="date"
+              value={tokenExpiracion}
+              disabled={sinExpiracion}
+              onChange={(event) => setTokenExpiracion(event.target.value)}
+            />
+          </label>
+          <label className="users-check-row">
+            <input
+              type="checkbox"
+              checked={sinExpiracion}
+              onChange={(event) => setSinExpiracion(event.target.checked)}
+            />
+            Sin expiracion
+          </label>
+          <p className="import-muted">Si no eliges fecha, la API usa 90 días.</p>
+        </div>
+        <fieldset className="config-token-scopes">
+          <legend>Scopes OpenClaw</legend>
+          {OPENCLAW_SCOPES.map((scope) => (
+            <label key={scope}>
               <input
                 type="checkbox"
-                checked={sinExpiracion}
-                onChange={(event) => setSinExpiracion(event.target.checked)}
+                checked={tokenScopes.includes(scope)}
+                onChange={(event) => {
+                  setTokenScopes((current) =>
+                    event.target.checked
+                      ? [...new Set([...current, scope])]
+                      : current.filter((item) => item !== scope));
+                }}
               />
-              Sin expiracion
+              {scope}
             </label>
-            <p className="import-muted">Si no eliges fecha, la API usa 90 días.</p>
-          </div>
-          <fieldset className="config-token-scopes">
-            <legend>Scopes OpenClaw</legend>
-            {OPENCLAW_SCOPES.map((scope) => (
-              <label key={scope}>
-                <input
-                  type="checkbox"
-                  checked={tokenScopes.includes(scope)}
-                  onChange={(event) => {
-                    setTokenScopes((current) =>
-                      event.target.checked
-                        ? [...new Set([...current, scope])]
-                        : current.filter((item) => item !== scope));
-                  }}
-                />
-                {scope}
-              </label>
-            ))}
-          </fieldset>
-          <TokenPermissionsEditor permisos={tokenPermisos} onChange={setTokenPermisos} catalogos={catalogos} />
-          <div className="import-actions">
-            <button type="button" className="button-secondary" onClick={closeModal} disabled={busy || submitting}>Cancelar</button>
-            <button type="submit" className="button-primary" disabled={busy || submitting}>{submitting ? 'Creando...' : 'Crear token'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+          ))}
+        </fieldset>
+        <TokenPermissionsEditor permisos={tokenPermisos} onChange={setTokenPermisos} catalogos={catalogos} />
+      </form>
+    </Modal>
   );
 }

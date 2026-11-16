@@ -335,14 +335,14 @@ export default function AuditoriaPage() {
                   <table>
                     <thead>
                       <tr>
-                        <th />
-                        <th>Fecha</th>
-                        <th>Usuario</th>
-                        <th>Acción</th>
-                        <th>Cuenta</th>
-                        <th>Celda</th>
-                        <th>Columna</th>
-                        <th>IP</th>
+                        <th scope="col" />
+                        <th scope="col">Fecha</th>
+                        <th scope="col">Usuario</th>
+                        <th scope="col">Acción</th>
+                        <th scope="col">Cuenta</th>
+                        <th scope="col">Celda</th>
+                        <th scope="col">Columna</th>
+                        <th scope="col">IP</th>
                       </tr>
                     </thead>
                     <tbody>

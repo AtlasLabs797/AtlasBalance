@@ -29,12 +29,12 @@ html[data-theme="dark"] {
 }
 
 body {
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-normal);
+  font-family: var(--font-ui);
+  font-size: var(--text-17);
+  line-height: var(--leading-normal);
   letter-spacing: var(--tracking-body);
-  color: var(--color-text-primary);
-  background: var(--bg-app);
+  color: var(--text-primary);
+  background: var(--surface-page);
   min-width: 0;
   overflow-x: clip;
   transition: background-color var(--transition-normal), color var(--transition-normal);
@@ -49,22 +49,22 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-family-heading);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-tight);
-  color: var(--color-text-primary);
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  color: var(--text-primary);
   text-wrap: balance;
 }
 
-h1 { font-size: var(--font-size-2xl); }
-h2 { font-size: var(--font-size-xl); }
-h3 { font-size: var(--font-size-lg); }
-h4 { font-size: var(--font-size-md); }
-h5 { font-size: var(--font-size-base); }
-h6 { font-size: var(--font-size-sm); }
+h1 { font-size: var(--text-28); }
+h2 { font-size: var(--text-28); }
+h3 { font-size: var(--text-21); }
+h4 { font-size: var(--text-17); }
+h5 { font-size: var(--text-17); }
+h6 { font-size: var(--text-13); }
 
 a {
-  color: var(--color-text-link);
+  color: var(--text-link);
   text-decoration: none;
   text-underline-offset: 0.18em;
 }
@@ -82,12 +82,12 @@ input, textarea, select, button {
 }
 
 input, textarea, select {
-  background: var(--control-bg);
+  background: var(--surface-card);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
   padding: var(--pad-field-y) var(--pad-field-x);
   font: var(--type-body);
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   min-height: var(--control-height);
   transition:
     background-color var(--transition-fast),
@@ -115,7 +115,7 @@ select {
 }
 
 select option {
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-primary);
 }
 
@@ -144,7 +144,7 @@ input[type='date']::-webkit-calendar-picker-indicator {
   margin-right: -0.35rem;
   padding: 0.42rem;
   border-radius: var(--radius-full);
-  background-color: var(--accent-primary-soft);
+  background-color: var(--accent-soft);
   cursor: pointer;
   opacity: 0.78;
   transition:
@@ -155,7 +155,7 @@ input[type='date']::-webkit-calendar-picker-indicator {
 
 input[type='date']:hover::-webkit-calendar-picker-indicator,
 input[type='date']:focus::-webkit-calendar-picker-indicator {
-  background-color: color-mix(in srgb, var(--accent-primary) 14%, var(--accent-primary-soft));
+  background-color: color-mix(in srgb, var(--accent-solid) 14%, var(--accent-soft));
   opacity: 1;
 }
 
@@ -180,7 +180,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 .date-field > span {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font: var(--type-label);
 }
 
@@ -191,19 +191,19 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   gap: var(--space-2);
   width: 100%;
   min-height: var(--control-height);
-  padding: var(--space-2) var(--control-padding-x);
-  border: 1px solid var(--control-border);
+  padding: var(--space-2) var(--space-7);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
-  background: var(--control-bg);
-  color: var(--color-text-primary);
+  background: var(--surface-card);
+  color: var(--text-primary);
   text-align: left;
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--weight-medium);
   box-shadow: none;
 }
 
 .date-picker-trigger:hover:not(:disabled) {
   border-color: var(--border-control-hover);
-  background: var(--control-bg);
+  background: var(--surface-card);
   transform: none;
 }
 
@@ -211,8 +211,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 .date-picker-field:has(.date-picker-popover) .date-picker-trigger {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-offset);
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-solid);
+  box-shadow: var(--ring-focus);
 }
 
 .date-picker-trigger svg {
@@ -221,12 +221,12 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   height: 2.1rem;
   padding: 0.42rem;
   border-radius: var(--radius-full);
-  background: var(--accent-primary-soft);
-  color: var(--color-text-primary);
+  background: var(--accent-soft);
+  color: var(--text-primary);
 }
 
 .date-picker-trigger--empty {
-  color: var(--color-text-muted);
+  color: var(--text-tertiary);
 }
 
 .date-picker-native-row {
@@ -253,11 +253,11 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   z-index: var(--z-dropdown);
   width: min(19.5rem, calc(100dvw - 2rem));
   padding: var(--space-3);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
-  color: var(--color-text-primary);
-  box-shadow: var(--shadow-overlay);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xl);
   transform-origin: top left;
   animation: date-picker-popover-in var(--transition-fast) var(--ease-premium);
 }
@@ -289,16 +289,16 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 .date-picker-header strong {
   text-align: center;
   text-transform: capitalize;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .date-picker-header button,
 .date-picker-footer button {
   min-height: 2.5rem;
   padding: 0;
-  border-color: var(--border-soft);
-  background: var(--bg-surface-soft);
+  border-color: var(--border-default);
+  background: var(--surface-muted);
 }
 
 .date-picker-header button {
@@ -309,7 +309,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 .date-picker-header button:hover,
 .date-picker-footer button:hover {
   border-color: var(--border-strong);
-  background: var(--accent-primary-soft);
+  background: var(--accent-soft);
 }
 
 .date-picker-weekdays,
@@ -321,9 +321,9 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-picker-weekdays {
   margin-bottom: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   text-align: center;
 }
 
@@ -339,34 +339,34 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   padding: 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .date-picker-grid button:hover {
-  border-color: var(--border-soft);
-  background: var(--bg-surface-soft);
+  border-color: var(--border-default);
+  background: var(--surface-muted);
   transform: none;
 }
 
 .date-picker-grid button:focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-offset);
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-solid);
+  box-shadow: var(--ring-focus);
 }
 
 .date-picker-day--today {
-  color: var(--color-text-link) !important;
-  background: color-mix(in srgb, var(--accent-primary) 8%, transparent) !important;
+  color: var(--text-link) !important;
+  background: color-mix(in srgb, var(--accent-solid) 8%, transparent) !important;
 }
 
 .date-picker-day--selected {
-  border-color: var(--accent-primary) !important;
-  background: var(--accent-primary) !important;
-  color: var(--color-text-inverse) !important;
+  border-color: var(--accent-solid) !important;
+  background: var(--accent-solid) !important;
+  color: var(--text-inverse) !important;
 }
 
 .date-picker-footer {
@@ -375,13 +375,13 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   gap: var(--space-2);
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--border-default);
 }
 
 .date-picker-footer button {
   flex: 1;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 @keyframes date-picker-popover-in {
@@ -420,7 +420,7 @@ input[type='checkbox'] {
   padding: 0;
   border: 1.5px solid var(--border-control);
   border-radius: var(--radius-xs);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-inverse);
   vertical-align: middle;
   cursor: pointer;
@@ -447,13 +447,13 @@ input[type='checkbox']::before {
 }
 
 input[type='checkbox']:hover:not(:disabled) {
-  border-color: var(--accent-primary);
-  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-surface));
+  border-color: var(--accent-solid);
+  background: color-mix(in srgb, var(--accent-solid) 8%, var(--surface-card));
 }
 
 input[type='checkbox']:checked {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
 }
 
 input[type='checkbox']:checked::before {
@@ -479,13 +479,13 @@ input[type='checkbox']:disabled {
 button {
   cursor: pointer;
   touch-action: manipulation;
-  border: 1px solid var(--color-button-secondary-border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-control);
-  background: var(--color-button-secondary-bg);
-  color: var(--color-button-secondary-text);
+  background: var(--surface-muted);
+  color: var(--text-primary);
   padding: var(--space-2) var(--space-4);
   min-height: var(--control-height);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--weight-medium);
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
@@ -495,7 +495,7 @@ button {
 }
 
 button:not([class]):hover:not(:disabled) {
-  background: var(--color-button-secondary-hover);
+  background: var(--surface-sunken);
   border-color: var(--border-strong);
 }
 
@@ -524,7 +524,7 @@ table {
 th, td {
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border-primary);
+  border-bottom: 1px solid var(--border-default);
 }
 
 td {
@@ -535,14 +535,14 @@ td {
 }
 
 tr:hover td {
-  background-color: var(--bg-hover);
+  background-color: var(--surface-hover);
 }
 
 th {
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-secondary);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+  background: var(--surface-page);
 }
 
 .button,
@@ -572,13 +572,13 @@ th {
 }
 
 .button-primary {
-  background: var(--accent-primary);
+  background: var(--accent-solid);
   color: var(--text-inverse);
-  border-color: color-mix(in srgb, var(--accent-primary-hover) 36%, var(--accent-primary));
+  border-color: color-mix(in srgb, var(--accent-solid-hover) 36%, var(--accent-solid));
 }
 
 .button-primary:hover {
-  background: var(--accent-primary-hover);
+  background: var(--accent-solid-hover);
   text-decoration: none;
 }
 
@@ -608,31 +608,31 @@ th {
 }
 
 .button-tertiary:hover {
-  background: var(--accent-primary-soft);
+  background: var(--accent-soft);
   text-decoration: none;
 }
 
 .button-warning {
-  background: var(--warning-bg);
-  border-color: color-mix(in srgb, var(--warning-text) 32%, transparent);
-  color: var(--warning-text);
+  background: var(--status-warning-bg);
+  border-color: color-mix(in srgb, var(--status-warning-text) 32%, transparent);
+  color: var(--status-warning-text);
 }
 
 .button-warning:hover {
-  background: color-mix(in srgb, var(--warning-bg) 72%, var(--warning-text) 28%);
-  border-color: var(--warning-text);
-  color: var(--warning-text);
+  background: color-mix(in srgb, var(--status-warning-bg) 72%, var(--status-warning-text) 28%);
+  border-color: var(--status-warning-text);
+  color: var(--status-warning-text);
   text-decoration: none;
 }
 
 .button-danger {
-  background: var(--danger-bg);
-  border-color: color-mix(in srgb, var(--danger-text) 30%, transparent);
-  color: var(--danger-text);
+  background: var(--status-danger-bg);
+  border-color: color-mix(in srgb, var(--status-danger-text) 30%, transparent);
+  color: var(--status-danger-text);
 }
 
 .button-danger:hover {
-  background: var(--danger-text);
+  background: var(--status-danger-text);
   color: var(--text-inverse);
   text-decoration: none;
 }
@@ -642,38 +642,61 @@ th {
   padding: 0;
 }
 
+/* Confirmaciones: tres niveles distinguibles por forma e icono, no solo color. */
+.confirm-action {
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.confirm-action-reversible {
+  border-width: 2px;
+  border-color: var(--status-warning-text);
+}
+
+.confirm-dialog-irreversible {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--status-danger-text);
+  border-radius: var(--radius-control);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
 .ab-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 1.65rem;
   padding: 0 var(--space-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-soft);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   line-height: 1;
   white-space: nowrap;
 }
 
 .ab-badge--info {
-  border-color: color-mix(in srgb, var(--info-text) 28%, transparent);
-  background: var(--info-bg);
-  color: var(--info-text);
+  border-color: color-mix(in srgb, var(--status-info-text) 28%, transparent);
+  background: var(--status-info-bg);
+  color: var(--status-info-text);
 }
 
 .ab-badge--success {
-  border-color: color-mix(in srgb, var(--success-text) 28%, transparent);
-  background: var(--success-bg);
-  color: var(--success-text);
+  border-color: color-mix(in srgb, var(--status-success-text) 28%, transparent);
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
 }
 
 .ab-badge--warning {
-  border-color: color-mix(in srgb, var(--warning-text) 28%, transparent);
-  background: var(--warning-bg);
-  color: var(--warning-text);
+  border-color: color-mix(in srgb, var(--status-warning-text) 28%, transparent);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
 }
 
 .ab-tabs {
@@ -682,9 +705,9 @@ th {
   gap: 0.2rem;
   min-height: var(--control-height);
   padding: 0.2rem;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
 }
 
 .ab-tab {
@@ -693,16 +716,16 @@ th {
   border: 1px solid transparent;
   border-radius: calc(var(--radius-control) - 3px);
   background: transparent;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .ab-tab[aria-pressed="true"],
 .ab-tab[aria-checked="true"],
 .ab-tab--active {
-  border-color: var(--border-soft);
-  background: var(--bg-surface);
+  border-color: var(--border-default);
+  background: var(--surface-card);
   color: var(--text-primary);
 }
 
@@ -714,7 +737,7 @@ th {
 
 .ab-field > span,
 .ab-label {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font: var(--type-label);
 }
 
@@ -731,8 +754,8 @@ th {
   padding: var(--space-5);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-card);
-  background: var(--bg-surface-soft);
-  color: var(--color-text-secondary);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
 }
 
 .ab-button--block {
@@ -755,15 +778,15 @@ th {
   height: var(--control-height);
   min-height: var(--control-height);
   padding: 0;
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-control);
-  background: var(--surface-bg-raised);
+  background: var(--surface-raised);
   color: var(--text-secondary);
 }
 
 .close-icon-button:hover:not(:disabled) {
   border-color: var(--border-control-hover);
-  background: var(--bg-hover);
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
@@ -792,7 +815,7 @@ th {
   justify-content: space-between;
   gap: var(--space-3);
   border: 1px solid var(--border-control);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-primary);
   font: var(--type-body);
   padding: var(--pad-field-y) var(--pad-field-x);
@@ -803,7 +826,7 @@ th {
 
 .app-select-trigger:hover:not(:disabled) {
   border-color: var(--border-control-hover);
-  background: var(--bg-surface);
+  background: var(--surface-card);
 }
 
 .app-select-trigger:focus-visible {
@@ -875,8 +898,8 @@ th {
   padding: var(--space-1);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-overlay);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-xl);
   transform-origin: top left;
   animation: app-select-pop 160ms var(--ease-premium);
 }
@@ -890,12 +913,12 @@ th {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
+  background: var(--surface-page);
 }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-primary) 22%, transparent);
   border-radius: var(--radius-full);
-  border: 2px solid var(--color-bg-secondary);
+  border: 2px solid var(--surface-page);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--text-primary) 38%, transparent);
@@ -922,15 +945,15 @@ th {
 
 .signed-amount {
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
 }
 
 .signed-amount--positive {
-  color: var(--color-amount-positive);
+  color: var(--amount-positive);
 }
 
 .signed-amount--negative {
-  color: var(--color-amount-negative);
+  color: var(--amount-negative);
 }
 
 @keyframes app-select-pop {

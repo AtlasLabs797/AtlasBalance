@@ -9,7 +9,9 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import EditableCell from '@/components/extractos/EditableCell';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useUiStore } from '@/stores/uiStore';
 import type { Extracto } from '@/types';
+import { densityRowHeight, isCoarsePointer, type Density } from '@/utils/density';
 import { formatCurrency, formatDate, getAmountTone, parseEuropeanNumber } from '@/utils/formatters';
 
 export interface InsertExtractoDraftPayload {
@@ -154,12 +156,17 @@ export default function ExtractoTable({
   const focusedCellValue =
     focusedRow && focusedColumn ? getDisplayCellValue(focusedRow, focusedColumn) : '';
 
+  const density = useUiStore((state) => state.density);
+  const setDensity = useUiStore((state) => state.setDensity);
+  // Alto de fila: 44 comodo / 36 compacto (44 en puntero grueso). Debe coincidir
+  // con --sheet-row-height de extractos.css.
+  const rowHeight = densityRowHeight(density, isCoarsePointer());
   const headerOffset = 80;
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
-      const baseSize = 44;
+      const baseSize = rowHeight;
       return insertDraft?.afterRowId === filteredRows[index]?.id ? baseSize + 214 : baseSize;
     },
     overscan: 15,
@@ -170,7 +177,7 @@ export default function ExtractoTable({
 
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [insertDraft?.afterRowId, rowVirtualizer]);
+  }, [insertDraft?.afterRowId, rowHeight, rowVirtualizer]);
 
   useEffect(() => {
     setFocusedCell((current) => ({
@@ -289,7 +296,7 @@ export default function ExtractoTable({
 
     const pageSize = Math.max(
       1,
-      Math.floor((parentRef.current?.clientHeight ?? 420) / 44),
+      Math.floor((parentRef.current?.clientHeight ?? 420) / rowHeight),
     );
 
     switch (event.key) {
@@ -366,6 +373,7 @@ export default function ExtractoTable({
           )}
         </div>
         <div className="extracto-table-actions">
+          <DensityToggle density={density} onChange={setDensity} />
           <button
             type="button"
             className="extracto-clear-filters"
@@ -1002,4 +1010,57 @@ function getColumnLabel(column: string): string {
     default:
       return column.replace(/_/g, ' ');
   }
+}
+
+const DENSITY_OPTIONS: ReadonlyArray<{ value: Density; label: string }> = [
+  { value: 'comodo', label: 'Cómodo' },
+  { value: 'compacto', label: 'Compacto' },
+];
+
+function DensityToggle({
+  density,
+  onChange,
+}: {
+  density: Density;
+  onChange: (density: Density) => void;
+}) {
+  const select = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number, step: number) => {
+    event.preventDefault();
+    const next = DENSITY_OPTIONS[(index + step + DENSITY_OPTIONS.length) % DENSITY_OPTIONS.length];
+    onChange(next.value);
+    const group = event.currentTarget.parentElement;
+    requestAnimationFrame(() => {
+      group?.querySelector<HTMLButtonElement>(`[data-density-option="${next.value}"]`)?.focus();
+    });
+  };
+
+  return (
+    <div
+      className="extractos-mode-toggle extracto-density-toggle"
+      role="radiogroup"
+      aria-label="Densidad de la tabla"
+    >
+      {DENSITY_OPTIONS.map((option, index) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          data-density-option={option.value}
+          aria-checked={density === option.value}
+          tabIndex={density === option.value ? 0 : -1}
+          className={density === option.value ? 'active' : ''}
+          onClick={() => onChange(option.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              select(event, index, 1);
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              select(event, index, -1);
+            }
+          }}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
 }

@@ -1083,7 +1083,7 @@ export default function CuentaDetailPage() {
               <thead>
                 <tr>
                   {canSelectRows ? (
-                    <th className="account-selection-header">
+                    <th scope="col" className="account-selection-header">
                       <input
                         type="checkbox"
                         checked={allRowsSelected}
@@ -1093,17 +1093,17 @@ export default function CuentaDetailPage() {
                       />
                     </th>
                   ) : null}
-                  <th className="account-row-header">Nº Fila</th>
-                  <th>Revisado</th>
-                  <th>Fecha</th>
-                  <th>Concepto</th>
-                  <th>Comentarios</th>
-                  <th>Ingreso ({summary.divisa})</th>
-                  <th>Egreso ({summary.divisa})</th>
-                  <th>Importe ({summary.divisa})</th>
-                  <th>Saldo ({summary.divisa})</th>
+                  <th scope="col" className="account-row-header">Nº Fila</th>
+                  <th scope="col">Revisado</th>
+                  <th scope="col">Fecha</th>
+                  <th scope="col">Concepto</th>
+                  <th scope="col">Comentarios</th>
+                  <th scope="col">Ingreso ({summary.divisa})</th>
+                  <th scope="col">Egreso ({summary.divisa})</th>
+                  <th scope="col">Importe ({summary.divisa})</th>
+                  <th scope="col">Saldo ({summary.divisa})</th>
                   {extraColumns.map((column) => (
-                    <th key={column}>{column}</th>
+                    <th scope="col" key={column}>{column}</th>
                   ))}
                 </tr>
               </thead>
@@ -1339,7 +1339,7 @@ export default function CuentaDetailPage() {
       </section>
 
       {isImportModalOpen && (
-        <div className="modal-backdrop import-modal-backdrop" role="presentation" onClick={closeImportModal}>
+        <div className="modal-backdrop modal-backdrop--stack-top" role="presentation" onClick={closeImportModal}>
           <div
             ref={importDialogRef}
             className="import-modal"
@@ -1382,6 +1382,7 @@ export default function CuentaDetailPage() {
             : ''
         }
         confirmLabel={bulkDeleteConfirmLabel}
+        tone="reversible"
         loading={actionLoading}
         onCancel={() => setBulkDeleteOpen(false)}
         onConfirm={confirmDeleteSelectedRows}

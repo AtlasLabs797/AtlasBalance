@@ -432,7 +432,8 @@ export default function UsuarioModal({
       const discard = await confirm({
         title: 'Descartar cambios',
         message: 'Tienes cambios sin guardar en este usuario. Si cierras, se perderán. ¿Descartar?',
-        confirmLabel: 'Descartar',
+        confirmLabel: 'Descartar cambios',
+        tone: 'reversible',
         cancelLabel: 'Seguir editando',
       });
       if (!discard) {
@@ -500,7 +501,7 @@ export default function UsuarioModal({
   }
 
   return (
-    <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeModal()}>
+    <div className="modal-backdrop modal-backdrop--fullscreen-mobile" onClick={() => void closeModal()}>
       <div
         ref={dialogRef}
         className="users-modal"

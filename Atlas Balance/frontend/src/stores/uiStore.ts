@@ -6,6 +6,12 @@ import {
   systemPrefersDark,
   type Theme,
 } from '@/utils/theme';
+import {
+  applyDensityToDocument,
+  DENSITY_STORAGE_KEY,
+  resolveInitialDensity,
+  type Density,
+} from '@/utils/density';
 
 const MAX_TOASTS = 5;
 
@@ -19,6 +25,16 @@ function initialTheme(): Theme {
   return resolveInitialTheme(stored, systemPrefersDark());
 }
 
+function initialDensity(): Density {
+  let stored: string | null;
+  try {
+    stored = getBrowserStorage('localStorage')?.getItem(DENSITY_STORAGE_KEY) ?? null;
+  } catch {
+    stored = null;
+  }
+  return resolveInitialDensity(stored);
+}
+
 interface Toast {
   id: string;
   type: 'success' | 'error' | 'warning' | 'info';
@@ -27,6 +43,7 @@ interface Toast {
 
 interface UiState {
   theme: Theme;
+  density: Density;
   sidebarCollapsed: boolean;
   activeModal: string | null;
   blockingOverlayCount: number;
@@ -35,6 +52,7 @@ interface UiState {
   // Actions
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
+  setDensity: (density: Density) => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   openModal: (modalId: string) => void;
@@ -50,6 +68,7 @@ const storage = () => getBrowserStorage('localStorage');
 
 export const useUiStore = create<UiState>((set) => ({
   theme: initialTheme(),
+  density: initialDensity(),
   sidebarCollapsed: false,
   activeModal: null,
   blockingOverlayCount: 0,
@@ -67,6 +86,16 @@ export const useUiStore = create<UiState>((set) => ({
     storage()?.setItem('theme', theme);
     applyThemeToDocument(theme);
     set({ theme });
+  },
+
+  setDensity: (density) => {
+    try {
+      storage()?.setItem(DENSITY_STORAGE_KEY, density);
+    } catch {
+      // Sin almacenamiento: la densidad solo dura la sesion.
+    }
+    applyDensityToDocument(density);
+    set({ density });
   },
 
   toggleSidebar: () =>

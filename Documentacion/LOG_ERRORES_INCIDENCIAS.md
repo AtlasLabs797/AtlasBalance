@@ -1,5 +1,15 @@
 ﻿# Log de errores e incidencias
 
+## 2026-11-16 - V-03.02 - Incidencias durante la correccion del informe Impeccable (CORREGIDO)
+
+- **`TokenCreatedModal.tsx` roto por un subagente:** al migrarlo a `Modal` se perdieron el `useEffect` de autocierre a 60 s, `copyToken`, `masked` y el `return null` sin token (tsc: `')' expected`). Causa: reescritura de cabecera del archivo en vez de Edit puntual. Corregido restaurando el bloque desde `HEAD`. Leccion: los briefs de subagentes exigen Edit puntual y el orquestador corre tsc/lint tras cada lote.
+- **`Start-LocalDev.ps1` no arranca:** falta `.dotnet` y el PostgreSQL portatil (`tools/pgsql`) en el workspace; no hay credenciales de prueba. Se uso un arnes Playwright con API mockeada (`frontend/e2e/visual`).
+- **Playwright pide Chromium 1234 y hay 1248:** `capture.spec.ts` fija `executablePath` al headless shell mas reciente (`VISUAL_CHROMIUM` lo fuerza).
+- **`node --test` fallaba con el `outDir` en el scratchpad:** el JS compilado fuera del workspace no resuelve `node_modules`/alias. Usar un `outDir` dentro de `frontend` (p. ej. `.test-dist-tmp`) y borrarlo despues.
+- **Doble confirmacion al revocar/eliminar token (previo a esta version, CORREGIDO):** `TokenList.tsx` abre su `ConfirmDialog` y `ConfiguracionPage.revokeToken`/`deleteToken` pedian otra confirmacion con los mismos ids. Detectado por `e2e/visual/states.spec.ts` (test 1f). Se elimino la confirmacion duplicada de la pagina.
+- **Falsa afirmacion de irreversibilidad:** el primer F9 dejaba `ConfirmDialog` sin `tone` como irreversible, y 7 usos directos (enviar a papelera) habrian mostrado "no se puede deshacer". Default cambiado a `normal` y niveles declarados explicitamente.
+- **Informe F1 inicial equivocado:** el boton primario oscuro usa texto casi negro (no blanco); contrastes reales 4,43 / 6,00 / 3,36. Corregido en el informe y en `themes.css`.
+
 ## 2026-11-16 - V-03.02 - Correccion de campos de importe y pestanas (CORREGIDO EN CODIGO)
 
 - **Tasas y importes con coma:** los campos `type="number"` no admiten coma de forma fiable y los estados se leian con `Number()`. Se migraron a texto con `inputMode="decimal"` y `parseStrictDecimal`.

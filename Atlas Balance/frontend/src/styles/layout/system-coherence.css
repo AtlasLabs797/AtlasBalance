@@ -40,7 +40,7 @@
 .trash-header,
 .alertas-page > header {
   padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .dashboard-toolbar h1,
@@ -106,17 +106,15 @@
 .config-section-panel,
 .config-status-grid article,
 .config-divisa-card {
-  border-color: var(--surface-border);
-  background: var(--surface-bg-raised);
+  border-color: var(--border-default);
+  background: var(--surface-raised);
 }
 
 .users-modal,
-.users-confirm-modal,
-.audit-modal,
-.config-modal-card {
-  border-color: var(--surface-border);
-  background: var(--surface-bg-raised);
-  box-shadow: var(--shadow-overlay);
+.users-confirm-modal {
+  border-color: var(--border-default);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xl);
 }
 
 .users-table-card,
@@ -161,7 +159,7 @@
   .config-divisa-card:hover,
   .dashboard-divisa-item:hover,
   .dashboard-titular-item:hover {
-    border-color: var(--surface-border-hover);
+    border-color: var(--border-strong);
   }
 }
 
@@ -176,9 +174,9 @@
   width: 100%;
   max-width: 100%;
   padding: var(--space-2);
-  border: 1px solid var(--surface-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--surface-bg-sunken) 82%, var(--bg-surface) 18%);
+  background: color-mix(in srgb, var(--surface-sunken) 82%, var(--surface-card) 18%);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -203,7 +201,7 @@
   background: transparent;
   color: var(--text-secondary);
   box-shadow: none;
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
   text-align: left;
   transition:
     background-color var(--transition-fast),
@@ -235,14 +233,14 @@
 
 .config-tab:hover:not(:disabled) {
   border-color: var(--border-control-hover);
-  background: var(--bg-hover);
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
 .config-tab--active {
-  border-color: color-mix(in srgb, var(--accent-primary) 24%, var(--surface-border));
-  background: var(--color-sidebar-active-bg);
-  color: var(--color-sidebar-active-text);
+  border-color: color-mix(in srgb, var(--accent-solid) 24%, var(--border-default));
+  background: var(--accent-soft);
+  color: var(--text-link);
 }
 
 .config-tab:active:not(:disabled) {
@@ -250,7 +248,7 @@
 }
 
 .app-nav-link--active .app-nav-icon {
-  color: var(--color-sidebar-active-text);
+  color: var(--text-link);
   transform: scale(1.04);
 }
 
@@ -259,8 +257,8 @@
 .logout-button,
 .bottom-nav-link,
 .bottom-nav-sheet-link {
-  border-color: var(--control-border);
-  background: var(--surface-bg-raised);
+  border-color: var(--border-control);
+  background: var(--surface-raised);
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
@@ -274,7 +272,7 @@
 .bottom-nav-link:hover,
 .bottom-nav-sheet-link:hover {
   border-color: var(--border-control-hover);
-  background: var(--bg-hover);
+  background: var(--surface-hover);
 }
 
 .sidebar-toggle:active:not(:disabled),
@@ -291,8 +289,8 @@ label,
 .auditoria-filtros label,
 .exportaciones-toolbar label {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .users-table-scroll th,
@@ -304,7 +302,7 @@ label,
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface-bg-sunken);
+  background: var(--surface-sunken);
   color: var(--text-secondary);
   letter-spacing: 0.02em;
 }
@@ -329,7 +327,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: var(--surface-highlight);
+  background: var(--accent-soft);
 }
 
 .pill,
@@ -339,7 +337,7 @@ tbody tr:hover {
 
 .dashboard-row-delete,
 .button-danger {
-  border-color: color-mix(in srgb, var(--danger-text) 28%, transparent);
+  border-color: color-mix(in srgb, var(--status-danger-text) 28%, transparent);
 }
 
 @media (max-width: 767.98px) {
@@ -462,18 +460,12 @@ tbody tr:hover {
   }
 }
 
-.modal-backdrop,
-.config-modal-backdrop {
-  animation: modal-backdrop-in var(--duration-fast) var(--ease-premium);
-}
-
+.modal-panel,
 .users-confirm-modal,
 .users-modal,
-.audit-modal,
-.config-modal-card,
 .phase2-form-modal,
 .phase2-form-modal--wide {
-  animation: modal-surface-in var(--duration-base) var(--ease-premium) both;
+  animation: modal-surface-in var(--duration-slow) var(--ease-premium) both;
 }
 
 /* Cards: entrada escalonada */
@@ -491,7 +483,7 @@ tbody tr:hover {
 .dashboard-kpi-grid .dashboard-kpi,
 .phase2-cards > *:not(.empty-state):not(.users-pagination),
 .users-summary-grid > * {
-  animation: card-entrance var(--duration-base) var(--ease-premium) both;
+  animation: card-entrance var(--duration-slow) var(--ease-premium) both;
 }
 
 .dashboard-kpi-grid .dashboard-kpi:nth-child(1),
@@ -523,17 +515,15 @@ tbody tr:hover {
 }
 
 .empty-state {
-  animation: empty-state-in var(--duration-base) var(--ease-premium) both;
+  animation: empty-state-in var(--duration-slow) var(--ease-premium) both;
 }
 
 /* Prefers-reduced-motion: deshabilitar todas las animaciones nuevas */
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop,
-  .config-modal-backdrop,
+  .modal-panel,
   .users-confirm-modal,
   .users-modal,
-  .audit-modal,
-  .config-modal-card,
   .phase2-form-modal,
   .phase2-form-modal--wide,
   .dashboard-kpi-grid .dashboard-kpi,
@@ -555,7 +545,7 @@ tbody tr:hover {
    carga la ultima, asi que normaliza sin tocar 30 reglas por archivo. */
 .app-content h1 {
   font-size: var(--text-28);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 /* Cabeceras de tabla: overline de 12/600 en mayusculas, como .atl-table th y
@@ -574,7 +564,6 @@ tbody tr:hover {
   .skeleton-line,
   .bottom-nav-sheet-backdrop,
   .bottom-nav-sheet,
-  .import-modal-backdrop,
   .import-modal {
     animation: none;
   }

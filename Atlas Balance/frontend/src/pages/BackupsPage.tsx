@@ -267,7 +267,8 @@ export default function BackupsPage() {
     const confirmed = await confirm({
       title: 'Desvincular Google Drive',
       message: 'Se cerrará la conexión con Google Drive. Las copias dejarán de subirse a la nube hasta que vuelvas a vincular la cuenta. ¿Continuar?',
-      confirmLabel: 'Desvincular',
+      confirmLabel: 'Desvincular Google Drive',
+      tone: 'reversible',
     });
     if (!confirmed) {
       return;
@@ -704,13 +705,13 @@ export default function BackupsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Estado</th>
-                    <th>Tipo</th>
-                    <th>Tamano</th>
-                    <th>Nube</th>
-                    <th>Archivo</th>
-                    <th>Acciones</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Tipo</th>
+                    <th scope="col">Tamano</th>
+                    <th scope="col">Nube</th>
+                    <th scope="col">Archivo</th>
+                    <th scope="col">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -785,6 +786,7 @@ export default function BackupsPage() {
         title="Restaurar copia"
         message={confirmTarget ? `Vas a restaurar la copia del ${formatDateTime(confirmTarget.fecha_creacion)}.` : 'Confirma que copia quieres restaurar.'}
         confirmLabel="Revisar restauración"
+        tone="reversible"
         onCancel={() => {
           setConfirmOpen(false);
           setConfirmTarget(null);
@@ -800,6 +802,7 @@ export default function BackupsPage() {
         title="Última confirmación"
         message="Esto reemplazará toda la base de datos y cerrará tu sesión. No sigas si no tienes claro que esta copia es la correcta."
         confirmLabel="Restaurar base de datos"
+        tone="irreversible"
         loadingLabel="Restaurando..."
         loading={restoring}
         onCancel={() => {

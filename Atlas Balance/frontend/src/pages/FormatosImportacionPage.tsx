@@ -498,12 +498,12 @@ export default function FormatosImportacionPage() {
               </colgroup>
               <thead>
                 <tr>
-                  <th>Banco</th>
-                  <th>Divisa</th>
-                  <th>Columnas base</th>
-                  <th>Extra</th>
-                  <th>Estado</th>
-                  {isAdmin && <th>Acciones</th>}
+                  <th scope="col">Banco</th>
+                  <th scope="col">Divisa</th>
+                  <th scope="col">Columnas base</th>
+                  <th scope="col">Extra</th>
+                  <th scope="col">Estado</th>
+                  {isAdmin && <th scope="col">Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -690,6 +690,7 @@ export default function FormatosImportacionPage() {
             : ''
         }
         confirmLabel="Confirmar eliminación"
+        tone="reversible"
         loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}

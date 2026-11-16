@@ -17,7 +17,7 @@
 --leading-tight:1.07;--leading-snug:1.19;--leading-normal:1.47;--leading-relaxed:1.6;--leading-dense-link:2.41;
 /* Ladder is 300 / 400 / 600 / 700. Weight 500 is deliberately absent — mid-weight reads at 600. */
 --weight-light:300;--weight-regular:400;--weight-medium:600;--weight-semibold:600;--weight-bold:700;
---tracking-display:-0.005em;--tracking-heading:-0.011em;--tracking-body:-0.022em;--tracking-label:-0.016em;--tracking-caps:0.08em;
+--tracking-display:-0.005em;--tracking-heading:-0.011em;--tracking-body:-0.011em;--tracking-label:-0.016em;--tracking-caps:0.08em;
 --type-hero:var(--weight-semibold) var(--text-56)/1.07 var(--font-display);
 --type-display:var(--weight-semibold) var(--text-56)/1.07 var(--font-display);
 --type-title-1:var(--weight-semibold) var(--text-40)/1.1 var(--font-display);

@@ -4,6 +4,14 @@ Documento vigente para `V-03.02`. Las menciones `Desde V-XX.YY` conservan la
 version en la que se introdujo cada comportamiento; no son una referencia a una
 version anterior instalada.
 
+## Novedades de uso (Impeccable, V-03.02)
+
+- **Densidad de la tabla de Extractos:** arriba de la tabla hay un selector "Comodo / Compacto". Compacto muestra mas filas a la vez. Se recuerda por usuario. En pantallas tactiles las filas mantienen un tamano comodo.
+- **Dashboard:** si falla una parte (por ejemplo la evolucion), el resto sigue visible y esa tarjeta ofrece "Reintentar". Los vencimientos de plazos fijos a 7 dias o menos aparecen como aviso arriba.
+- **Confirmaciones:** las acciones se distinguen por nivel: normales, reversibles (borde de aviso) e irreversibles (boton rojo y la frase "Esta accion no se puede deshacer").
+- **Movil:** Copias, Usuarios, Alertas, Exportaciones y Papelera caben en 390 px; las listas se muestran como tarjetas.
+- El reloj del menu lateral se ha quitado.
+
 ## Novedades de accesibilidad y uso (V-03.02)
 
 - **Tema:** la primera vez, la aplicacion usa el modo claro u oscuro de tu sistema. Si lo cambias con el boton de la barra superior, se recuerda tu eleccion.

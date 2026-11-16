@@ -646,26 +646,26 @@ export default function AlertasPage() {
 
             {tipoAlerts.length > 0 ? (
               <div className="config-table-wrap">
-                <table>
+                <table className="table-stack-mobile">
                   <thead>
                     <tr>
-                      <th>Alcance</th>
-                      <th>Mínimo</th>
-                      <th>Activa</th>
-                      <th>Destinatarios</th>
-                      <th>Última alerta</th>
-                      <th>Acciones</th>
+                      <th scope="col">Alcance</th>
+                      <th scope="col">Mínimo</th>
+                      <th scope="col">Activa</th>
+                      <th scope="col">Destinatarios</th>
+                      <th scope="col">Última alerta</th>
+                      <th scope="col">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tipoAlerts.map((item) => (
                       <tr key={item.id}>
-                        <td>Tipo: {item.tipo_titular}</td>
-                        <td><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
-                        <td>{item.activa ? 'Sí' : 'No'}</td>
-                        <td>{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
-                        <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
-                        <td>
+                        <td data-label="Alcance">Tipo: {item.tipo_titular}</td>
+                        <td data-label="Mínimo"><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
+                        <td data-label="Activa">{item.activa ? 'Sí' : 'No'}</td>
+                        <td data-label="Destinatarios">{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
+                        <td data-label="Última alerta">{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
+                        <td data-label="Acciones">
                           <div className="users-row-actions">
                             <button type="button" onClick={() => editTipoAlert(item)} aria-label={`Editar alerta por tipo ${item.tipo_titular}`}>
                               Editar
@@ -693,30 +693,30 @@ export default function AlertasPage() {
 
             {cuentaAlerts.length > 0 ? (
               <div className="config-table-wrap">
-                <table>
+                <table className="table-stack-mobile">
                   <thead>
                   <tr>
-                    <th>Titular</th>
-                    <th>Cuenta</th>
-                    <th>Divisa</th>
-                    <th>Mínimo</th>
-                    <th>Activa</th>
-                    <th>Destinatarios</th>
-                      <th>Última alerta</th>
-                    <th>Acciones</th>
+                    <th scope="col">Titular</th>
+                    <th scope="col">Cuenta</th>
+                    <th scope="col">Divisa</th>
+                    <th scope="col">Mínimo</th>
+                    <th scope="col">Activa</th>
+                    <th scope="col">Destinatarios</th>
+                      <th scope="col">Última alerta</th>
+                    <th scope="col">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {cuentaAlerts.map((item) => (
                     <tr key={item.id}>
-                        <td>{item.titular_nombre ?? '—'}</td>
-                        <td>{item.cuenta_nombre ?? '—'}</td>
-                        <td>{item.divisa ?? '—'}</td>
-                        <td><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
-                        <td>{item.activa ? 'Sí' : 'No'}</td>
-                        <td>{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
-                        <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
-                        <td>
+                        <td data-label="Titular">{item.titular_nombre ?? '—'}</td>
+                        <td data-label="Cuenta">{item.cuenta_nombre ?? '—'}</td>
+                        <td data-label="Divisa">{item.divisa ?? '—'}</td>
+                        <td data-label="Mínimo"><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
+                        <td data-label="Activa">{item.activa ? 'Sí' : 'No'}</td>
+                        <td data-label="Destinatarios">{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
+                        <td data-label="Última alerta">{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
+                        <td data-label="Acciones">
                           <div className="users-row-actions">
                             <button type="button" onClick={() => editCuentaAlert(item)} aria-label={`Editar alerta de cuenta ${item.cuenta_nombre ?? 'sin nombre'}`}>
                               Editar
@@ -747,6 +747,7 @@ export default function AlertasPage() {
               : 'Vas a eliminar la alerta global.'
         }
         confirmLabel="Eliminar alerta"
+        tone="reversible"
         loadingLabel="Eliminando..."
         loading={saving}
         onCancel={() => setDeleteTarget(null)}

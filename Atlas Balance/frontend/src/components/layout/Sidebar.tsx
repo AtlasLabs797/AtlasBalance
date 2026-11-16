@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router';
 import { PaisScopeSelect } from '@/components/layout/PaisScopeSelect';
 import { getVisibleNavigationItems, navigationGroups, type NavigationGroup } from '@/utils/navigation';
@@ -28,13 +27,6 @@ function getUserInitials(name?: string | null) {
   return initials || 'AB';
 }
 
-function formatSidebarClock(value: Date) {
-  return new Intl.DateTimeFormat('es-ES', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(value);
-}
-
 export function Sidebar() {
   const usuario = useAuthStore((state) => state.usuario);
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
@@ -43,7 +35,6 @@ export function Sidebar() {
   const updateAvailable = useUpdateStore((state) => state.available);
   const aiAvailable = useIaAvailabilityStore((state) => state.available);
   const canViewDashboard = usePermisosStore((state) => state.canViewDashboard());
-  const [now, setNow] = useState(() => new Date());
 
   // Suscripcion a caches de TanStack Query (notificaciones, version).
   // El refetchOnMount:'always' del hook de update garantiza la primera
@@ -51,11 +42,6 @@ export function Sidebar() {
   // staleTime + refetchOnWindowFocus.
   useNotificacionesAdminQuery();
   useUpdateCheckQuery(false);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const visibleNavItems = getVisibleNavigationItems(usuario?.rol, {
     aiAvailable,
@@ -150,7 +136,6 @@ export function Sidebar() {
       </div>
       <div className="app-sidebar-footer" aria-hidden={sidebarCollapsed}>
         <span>{APP_VERSION_LABEL}</span>
-        <time dateTime={now.toISOString()}>{formatSidebarClock(now)}</time>
       </div>
     </aside>
   );

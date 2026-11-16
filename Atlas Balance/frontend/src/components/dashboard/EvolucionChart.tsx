@@ -10,12 +10,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-// recharts 3: los tooltips custom se tipan con TooltipContentProps.
-// TooltipProps ya no expone payload/label, que se leen del contexto.
-import type { TooltipContentProps } from 'recharts';
-import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import type { DashboardChartColors, DashboardPuntoEvolucion } from '@/types';
 import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
+import { DashboardTooltip } from './DashboardTooltip';
 
 interface EvolucionChartProps {
   points: DashboardPuntoEvolucion[];
@@ -32,15 +29,15 @@ const EVOLUTION_AXIS_PADDING = 14;
 const EVOLUTION_AXIS_TICK_MARGIN = 8;
 const EVOLUTION_DOMAIN_PADDING_RATIO = 0.04;
 const EVOLUTION_AXIS_TICK_STYLE = {
-  fill: 'var(--color-text-secondary)',
-  fontFamily: 'var(--font-family-mono)',
+  fill: 'var(--text-secondary)',
+  fontFamily: 'var(--font-mono)',
   fontSize: 12,
   fontVariantNumeric: 'tabular-nums',
 } as const;
 const LEGACY_CHART_COLOR_TOKENS: Record<string, string> = {
-  '#43b430': 'var(--chart-ingresos)',
-  '#ff4757': 'var(--chart-egresos)',
-  '#7b7b7b': 'var(--chart-saldo)',
+  '#43b430': 'var(--chart-5)',
+  '#ff4757': 'var(--chart-7)',
+  '#7b7b7b': 'var(--chart-1)',
 };
 
 export function EvolucionChart({
@@ -60,11 +57,14 @@ export function EvolucionChart({
   const axisWidth = getEvolutionAxisWidth(points, divisa, yDomain);
   const saldoAreaAxisWidth = getEvolutionAxisWidthCompact(yDomain);
   const chartColors = {
-    ingresos: resolveChartColor(colors.ingresos, 'var(--chart-ingresos)'),
-    egresos: resolveChartColor(colors.egresos, 'var(--chart-egresos)'),
-    saldo: resolveChartColor(colors.saldo, 'var(--chart-saldo)'),
+    ingresos: resolveChartColor(colors.ingresos, 'var(--chart-5)'),
+    egresos: resolveChartColor(colors.egresos, 'var(--chart-7)'),
+    saldo: resolveChartColor(colors.saldo, 'var(--chart-1)'),
   };
-  const tickFormatter = xAxisMode === 'month' ? formatMonthTick : formatDate;
+  const monthMode = xAxisMode === 'month';
+  const withYear = monthMode && spansSeveralYears(points);
+  const tickFormatter = monthMode ? (value: string) => formatMonthTick(value, withYear) : formatDate;
+  const xTicks = monthMode ? getMonthTicks(points) : undefined;
 
   if (variant === 'saldoArea') {
     return (
@@ -89,6 +89,7 @@ export function EvolucionChart({
             <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
             <XAxis
               dataKey="fecha"
+              ticks={xTicks}
               tickFormatter={tickFormatter}
               padding={{ left: 8, right: 8 }}
               axisLine={false}
@@ -164,6 +165,7 @@ export function EvolucionChart({
           <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="fecha"
+            ticks={xTicks}
             tickFormatter={tickFormatter}
             padding={{ left: 8, right: 8 }}
             axisLine={false}
@@ -222,10 +224,10 @@ function EvolutionDataTable({ points, divisa }: Pick<EvolucionChartProps, 'point
       <caption>Datos de evolución por fecha</caption>
       <thead>
         <tr>
-          <th>Fecha</th>
-          <th>Ingresos</th>
-          <th>Egresos</th>
-          <th>Saldo</th>
+          <th scope="col">Fecha</th>
+          <th scope="col">Ingresos</th>
+          <th scope="col">Egresos</th>
+          <th scope="col">Saldo</th>
         </tr>
       </thead>
       <tbody>
@@ -242,14 +244,15 @@ function EvolutionDataTable({ points, divisa }: Pick<EvolucionChartProps, 'point
   );
 }
 
-function formatMonthTick(value: string): string {
+function formatMonthTick(value: string, withYear = false): string {
   const match = /^(\d{4})-(\d{2})/.exec(value);
   const date = match ? new Date(Number(match[1]), Number(match[2]) - 1, 1) : new Date(value);
   if (Number.isNaN(date.getTime())) {
     return formatDate(value);
   }
 
-  return date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+  const month = date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+  return withYear ? `${month} ${String(date.getFullYear()).slice(2)}` : month;
 }
 
 function resolveChartColor(value: string | undefined, fallback: string): string {
@@ -337,20 +340,20 @@ function getAxisCharWidth(char: string): number {
   return 6.8;
 }
 
-function DashboardTooltip({ active, payload, label, divisa }: TooltipContentProps<ValueType, NameType> & { divisa: string }) {
-  if (!active || !payload?.length) {
-    return null;
+/** Un tick por mes (primer punto de cada mes), para que no se repitan etiquetas. */
+function getMonthTicks(points: DashboardPuntoEvolucion[]): string[] {
+  const seen = new Set<string>();
+  const ticks: string[] = [];
+  for (const point of points) {
+    const key = point.fecha.slice(0, 7);
+    if (!seen.has(key)) {
+      seen.add(key);
+      ticks.push(point.fecha);
+    }
   }
+  return ticks;
+}
 
-  return (
-    <div className="dashboard-chart-tooltip">
-      <strong>{formatDate(String(label))}</strong>
-      {payload.map((item) => (
-        <span key={String(item.dataKey)}>
-          <i style={{ background: item.color }} />
-          {item.name}: {formatCurrency(Number(item.value ?? 0), divisa)}
-        </span>
-      ))}
-    </div>
-  );
+function spansSeveralYears(points: DashboardPuntoEvolucion[]): boolean {
+  return new Set(points.map((point) => point.fecha.slice(0, 4))).size > 1;
 }

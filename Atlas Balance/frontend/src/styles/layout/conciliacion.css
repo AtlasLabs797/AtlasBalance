@@ -26,15 +26,15 @@
 .conciliacion-panel {
   display: grid;
   gap: var(--space-3);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   padding: var(--space-4);
 }
 
 .conciliacion-panel h2 {
   margin: 0;
-  font-size: var(--font-size-lg);
+  font-size: var(--text-21);
 }
 
 .conciliacion-form {
@@ -49,7 +49,7 @@
   display: grid;
   gap: var(--space-1);
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
 }
 
 .conciliacion-days input {

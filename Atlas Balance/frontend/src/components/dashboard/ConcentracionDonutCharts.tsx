@@ -10,13 +10,13 @@ import { formatCompactCurrency, formatCurrency } from '@/utils/formatters';
 // La referencia visual limita cada donut a cuatro partes visibles; el resto se
 // agrupa en "Otros", que va siempre en --chart-8 (via --chart-series-other).
 const DONUT_COLORS = [
-  'var(--chart-series-1)',
-  'var(--chart-series-2)',
-  'var(--chart-series-3)',
-  'var(--chart-series-4)',
-  'var(--chart-series-5)',
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
 ];
-const OTROS_COLOR = 'var(--chart-series-other)';
+const OTROS_COLOR = 'var(--chart-8)';
 const SMALL_SLICE_THRESHOLD = 1.5;
 const MAX_SLICES = 3;
 
@@ -209,7 +209,7 @@ function DonutTooltip({
         <i style={{ background: String(item.payload.fill ?? item.color) }} />
         {formatCurrency(entry.value, divisa)}
       </span>
-      <span style={{ color: 'var(--color-text-secondary)' }}>
+      <span style={{ color: 'var(--text-secondary)' }}>
         {entry.porcentaje.toFixed(1)}% del total
       </span>
     </div>

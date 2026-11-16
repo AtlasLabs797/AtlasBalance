@@ -316,14 +316,14 @@ export default function UsuariosPage() {
             <table>
             <thead>
               <tr>
-                <th>Email</th>
-                <th>Nombre</th>
-                <th>Rol</th>
-                <th>Estado</th>
-                <th>Cambio inicial</th>
-                <th>IA</th>
-                <th>Authenticator</th>
-                <th>Acciones</th>
+                <th scope="col">Email</th>
+                <th scope="col">Nombre</th>
+                <th scope="col">Rol</th>
+                <th scope="col">Estado</th>
+                <th scope="col">Cambio inicial</th>
+                <th scope="col">IA</th>
+                <th scope="col">Authenticator</th>
+                <th scope="col">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -429,7 +429,7 @@ export default function UsuariosPage() {
 
       {deleteCandidate && (
         <div
-          className="modal-backdrop users-modal-backdrop"
+          className="modal-backdrop modal-backdrop--fullscreen-mobile"
           onClick={() => setDeleteCandidate(null)}
         >
           <div
@@ -464,7 +464,7 @@ export default function UsuariosPage() {
 
       {mfaCandidate && (
         <div
-          className="modal-backdrop users-modal-backdrop"
+          className="modal-backdrop modal-backdrop--fullscreen-mobile"
           onClick={() => setMfaCandidate(null)}
         >
           <div

@@ -89,13 +89,13 @@ export function IntegrationAuditTable() {
               <table>
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Token</th>
-                    <th>Método</th>
-                    <th>Endpoint</th>
-                    <th>Código</th>
-                    <th>Tiempo (ms)</th>
-                    <th>IP</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Token</th>
+                    <th scope="col">Método</th>
+                    <th scope="col">Endpoint</th>
+                    <th scope="col">Código</th>
+                    <th scope="col">Tiempo (ms)</th>
+                    <th scope="col">IP</th>
                   </tr>
                 </thead>
                 <tbody>
