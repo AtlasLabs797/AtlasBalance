@@ -222,6 +222,10 @@ public sealed class SaveColumnasVisiblesRequest
     [JsonPropertyName("columnas_visibles")]
     [MaxLength(ExtractoLimits.ColumnasVisiblesMaxEntries)]
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
+
+    [JsonPropertyName("orden_columnas")]
+    [MaxLength(ExtractoLimits.ColumnasVisiblesMaxEntries)]
+    public IReadOnlyList<string>? OrdenColumnas { get; set; }
 }
 
 public sealed class LenientNullableGuidJsonConverter : System.Text.Json.Serialization.JsonConverter<Guid?>

@@ -340,7 +340,8 @@ public sealed class UsuariosController : ControllerBase
         _dbContext.PreferenciasUsuarioCuenta.RemoveRange(existingPreference);
 
         await AddPermisoAsync(id, normalizedRequest);
-        AddPreferencia(id, normalizedRequest.PaisId, normalizedRequest.TitularId, normalizedRequest.CuentaId, normalizedRequest.ColumnasVisibles, normalizedRequest.ColumnasEditables);
+        var previousOrder = existingPreference.FirstOrDefault(p => p.PaisId == normalizedRequest.PaisId && p.TitularId == normalizedRequest.TitularId)?.OrdenColumnas;
+        AddPreferencia(id, normalizedRequest.PaisId, normalizedRequest.TitularId, normalizedRequest.CuentaId, normalizedRequest.ColumnasVisibles, normalizedRequest.ColumnasEditables, previousOrder);
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -1237,7 +1238,16 @@ public sealed class UsuariosController : ControllerBase
                      .GroupBy(x => new { x.PaisId, x.TitularId, x.CuentaId })
                      .Select(x => x.Last()))
         {
-            AddPreferencia(usuarioId, item.PaisId, item.TitularId, item.CuentaId, item.ColumnasVisibles, item.ColumnasEditables);
+            var previous = existingPreferences.FirstOrDefault(p => p.PaisId == item.PaisId && p.TitularId == item.TitularId && p.CuentaId == item.CuentaId);
+            AddPreferencia(usuarioId, item.PaisId, item.TitularId, item.CuentaId, item.ColumnasVisibles, item.ColumnasEditables, previous?.OrdenColumnas);
+        }
+
+        foreach (var previous in existingPreferences.Where(p => p.OrdenColumnas is not null && !permisos.Any(item =>
+                     (item.ColumnasVisibles is not null || item.ColumnasEditables is not null) &&
+                     p.PaisId == item.PaisId && p.TitularId == item.TitularId && p.CuentaId == item.CuentaId)))
+        {
+            AddPreferencia(usuarioId, previous.PaisId, previous.TitularId, previous.CuentaId,
+                ParseJsonArray(previous.ColumnasVisibles), null, previous.OrdenColumnas);
         }
     }
 
@@ -1265,7 +1275,7 @@ public sealed class UsuariosController : ControllerBase
         return Task.CompletedTask;
     }
 
-    private void AddPreferencia(Guid usuarioId, Guid? paisId, Guid? titularId, Guid? cuentaId, IReadOnlyList<string>? columnasVisibles, IReadOnlyList<string>? columnasEditables)
+    private void AddPreferencia(Guid usuarioId, Guid? paisId, Guid? titularId, Guid? cuentaId, IReadOnlyList<string>? columnasVisibles, IReadOnlyList<string>? columnasEditables, string? ordenColumnas = null)
     {
         _dbContext.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
         {
@@ -1275,6 +1285,7 @@ public sealed class UsuariosController : ControllerBase
             TitularId = titularId,
             CuentaId = cuentaId,
             ColumnasVisibles = columnasVisibles is null ? null : JsonSerializer.Serialize(columnasVisibles),
+            OrdenColumnas = ordenColumnas,
             ColumnasEditables = columnasEditables is null ? null : JsonSerializer.Serialize(columnasEditables),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow

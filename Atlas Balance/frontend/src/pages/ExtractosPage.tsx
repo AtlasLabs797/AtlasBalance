@@ -9,6 +9,7 @@ import AuditCellModal from '@/components/extractos/AuditCellModal';
 import DesgloseModal from '@/components/extractos/DesgloseModal';
 import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
 import ExtractoTable from '@/components/extractos/ExtractoTable';
+import { BASE_COLUMNS } from '@/components/extractos/extractoColumns';
 import type { InsertExtractoDraftPayload } from '@/components/extractos/ExtractoTable';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -84,6 +85,10 @@ export default function ExtractosPage() {
   const [modo, setModo] = useState<'revision' | 'edicion'>('revision');
   const [titularesResumen, setTitularesResumen] = useState<TitularConCuentas[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[] | null>(null);
+  const [columnOrder, setColumnOrder] = useState<string[] | null>(null);
+  const [columnPreferencesSaving, setColumnPreferencesSaving] = useState(false);
+  const columnPreferencesSavingRef = useRef(false);
+  const columnScopeRef = useRef('');
   const [availableExtraColumns, setAvailableExtraColumns] = useState<string[]>([]);
 
   const [auditOpen, setAuditOpen] = useState(false);
@@ -207,11 +212,12 @@ export default function ExtractosPage() {
     }),
     [usuarioId, cuentaFiltro, selectedCuenta, titularFiltro, selectedPaisId]
   );
+  columnScopeRef.current = JSON.stringify(columnasVisiblesParams);
 
   const visibleColumnsQuery = useQuery({
     queryKey: queryKeys.extractos.columnasVisibles(columnasVisiblesParams),
     queryFn: () =>
-      api.get<{ columnas_visibles: string[] | null }>('/extractos/columnas-visibles', {
+      api.get<{ columnas_visibles: string[] | null; orden_columnas: string[] | null }>('/extractos/columnas-visibles', {
         params: {
           cuentaId: columnasVisiblesParams.cuentaId ?? undefined,
           titularId: columnasVisiblesParams.titularId ?? undefined,
@@ -291,16 +297,20 @@ export default function ExtractosPage() {
   }, [rowsQuery.isLoading, rowsQuery.isFetching]);
 
   useEffect(() => {
+    if (columnPreferencesSaving) return;
     if (visibleColumnsQuery.data) {
       setVisibleColumns(visibleColumnsQuery.data.columnas_visibles ?? null);
+      setColumnOrder(visibleColumnsQuery.data.orden_columnas ?? null);
     } else if (!visibleColumnsQuery.isLoading && !visibleColumnsQuery.error) {
       setVisibleColumns(null);
+      setColumnOrder(null);
     }
-  }, [visibleColumnsQuery.data, visibleColumnsQuery.isLoading, visibleColumnsQuery.error]);
+  }, [visibleColumnsQuery.data, visibleColumnsQuery.isLoading, visibleColumnsQuery.error, columnPreferencesSaving]);
 
   useEffect(() => {
     if (visibleColumnsQuery.error) {
       setVisibleColumns(null);
+      setColumnOrder(null);
       setError(extractErrorMessage(visibleColumnsQuery.error, 'No se pudieron cargar las preferencias de columnas.'));
     }
   }, [visibleColumnsQuery.error]);
@@ -370,8 +380,13 @@ export default function ExtractosPage() {
     }
   };
 
-  const saveVisibleColumns = async (next: string[]) => {
+  const saveVisibleColumns = async (next: string[], nextOrder: string[]) => {
+    if (columnPreferencesSavingRef.current || visibleColumnsQuery.isLoading || visibleColumnsQuery.error) return;
+    columnPreferencesSavingRef.current = true;
+    setColumnPreferencesSaving(true);
+    const scope = columnScopeRef.current;
     setVisibleColumns(next);
+    setColumnOrder(nextOrder);
     setError(null);
     try {
       const payload: {
@@ -379,8 +394,10 @@ export default function ExtractosPage() {
         titular_id?: string;
         pais_id?: string;
         columnas_visibles: string[];
+        orden_columnas: string[];
       } = {
-        columnas_visibles: next
+        columnas_visibles: next,
+        orden_columnas: nextOrder
       };
       const safeCuentaId = asUuidOrUndefined(cuentaFiltro);
       if (safeCuentaId) {
@@ -398,25 +415,37 @@ export default function ExtractosPage() {
       await api.put('/extractos/columnas-visibles', payload);
       await invalidate('extractoColumnasVisibles');
     } catch (err) {
-      setVisibleColumns(visibleColumns);
+      if (scope === columnScopeRef.current) {
+        setVisibleColumns(visibleColumns);
+        setColumnOrder(columnOrder);
+      }
       setError(extractErrorMessage(err, 'No se pudieron guardar las columnas visibles.'));
+    } finally {
+      columnPreferencesSavingRef.current = false;
+      setColumnPreferencesSaving(false);
     }
   };
 
   const onToggleColumn = async (column: string, availableColumns: string[]) => {
-    const availableSet = new Set(availableColumns);
-    const current = (visibleColumns ?? availableColumns).filter((item) => availableSet.has(item));
-    if (current.includes(column) && current.length <= 1) {
+    const known = new Set<string>(columnOrder ?? BASE_COLUMNS);
+    const current = visibleColumns === null ? [...availableColumns] : [...visibleColumns, ...availableColumns.filter((item) => !known.has(item) && !visibleColumns.includes(item))];
+    if (current.includes(column) && availableColumns.filter((item) => current.includes(item)).length <= 1) {
       setError('Debe quedar al menos una columna visible.');
       return;
     }
 
     const next = current.includes(column) ? current.filter((c) => c !== column) : [...current, column];
-    await saveVisibleColumns(next);
+    await saveVisibleColumns(next, [...availableColumns, ...(columnOrder ?? []).filter((item) => !availableColumns.includes(item))]);
   };
 
   const onShowAllColumns = async (availableColumns: string[]) => {
-    await saveVisibleColumns(availableColumns);
+    await saveVisibleColumns([...new Set([...(visibleColumns ?? []), ...availableColumns])], [...availableColumns, ...(columnOrder ?? []).filter((item) => !availableColumns.includes(item))]);
+  };
+
+  const onReorderColumns = async (nextOrder: string[]) => {
+    const known = new Set<string>(columnOrder ?? BASE_COLUMNS);
+    const visible = visibleColumns === null ? nextOrder : [...visibleColumns, ...nextOrder.filter((item) => !known.has(item) && !visibleColumns.includes(item))];
+    await saveVisibleColumns(visible, [...nextOrder, ...(columnOrder ?? []).filter((item) => !nextOrder.includes(item))]);
   };
 
   const onSaveCell = async (row: Extracto, column: string, value: string) => {
@@ -777,10 +806,13 @@ export default function ExtractosPage() {
         sortBy={sortBy}
         sortDir={sortDir}
         visibleColumns={visibleColumns}
+        columnOrder={columnOrder}
+        columnPreferencesSaving={columnPreferencesSaving}
         availableExtraColumns={availableExtraColumns}
         onSort={onSort}
         onToggleColumn={(column, availableColumns) => void onToggleColumn(column, availableColumns)}
         onShowAllColumns={(availableColumns) => void onShowAllColumns(availableColumns)}
+        onReorderColumns={(columns) => void onReorderColumns(columns)}
         onSaveCell={onSaveCell}
         onToggleCheck={onToggleCheck}
         onToggleFlag={onToggleFlag}

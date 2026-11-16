@@ -308,6 +308,7 @@ public class PreferenciaUsuarioCuenta
     public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
     public string? ColumnasVisibles { get; set; }
+    public string? OrdenColumnas { get; set; }
     public string? ColumnasEditables { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

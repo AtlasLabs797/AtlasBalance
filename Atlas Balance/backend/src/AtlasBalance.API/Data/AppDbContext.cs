@@ -370,6 +370,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.UsuarioId);
             entity.HasIndex(e => new { e.UsuarioId, e.PaisId, e.TitularId, e.CuentaId });
             entity.Property(e => e.ColumnasVisibles).HasColumnType("jsonb");
+            entity.Property(e => e.OrdenColumnas).HasColumnType("jsonb");
             entity.Property(e => e.ColumnasEditables).HasColumnType("jsonb");
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);

@@ -214,6 +214,17 @@
   font-size: var(--text-12);
 }
 
+.column-visibility-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.column-visibility-item button {
+  min-width: 2rem;
+  min-height: 2rem;
+}
+
 .column-visibility-panel label {
   display: inline-flex;
   align-items: center;
@@ -242,6 +253,12 @@
 
 .column-visibility-panel label input:disabled {
   cursor: not-allowed;
+}
+
+.extracto-top-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
 }
 
 .extracto-table-viewport {
@@ -403,6 +420,11 @@
 
 .extracto-row:hover {
   background: var(--sheet-row-hover);
+}
+
+.extracto-row.flagged,
+.extracto-row.flagged:hover {
+  background: var(--status-warning-bg);
 }
 
 .extracto-row.flagged .cell--flagged::before {

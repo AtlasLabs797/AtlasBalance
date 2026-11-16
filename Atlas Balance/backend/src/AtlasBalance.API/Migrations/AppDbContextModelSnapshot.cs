@@ -2187,6 +2187,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("columnas_visibles");
 
+                    b.Property<string>("OrdenColumnas")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("orden_columnas");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

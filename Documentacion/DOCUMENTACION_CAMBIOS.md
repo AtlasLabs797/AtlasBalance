@@ -1,5 +1,37 @@
 ﻿# DOCUMENTACION DE CAMBIOS
 
+## 2026-11-16 - V-03.02 - Arranque del stack de desarrollo (API 5002 + Vite 5173)
+
+### Trabajo realizado
+
+- **Arranque del entorno de desarrollo:** PostgreSQL en Docker (`atlas_balance_db`, 127.0.0.1:5433), API en `http://localhost:5002` y frontend Vite en `http://localhost:5173`, con el proxy `/api` de Vite apuntando a la API.
+- **`wwwroot` del API:** la carpeta `backend/src/AtlasBalance.API/wwwroot` es generada (su contenido esta en `.gitignore`: `index.html`, `assets/`, `fonts/`, `logos/`). En este checkout no existia y la API moria al arrancar con `DirectoryNotFoundException` en `StaticWebAssetsLoader`. Se creo `wwwroot/index.html` como placeholder que redirige al frontend de Vite; el contenido real lo sigue poniendo `npm run build` + `Build-Release.ps1`.
+- **Sin cambios de codigo de aplicacion.** No se toco `Program.cs`, controllers ni frontend.
+
+### Archivos tocados
+
+- `Atlas Balance/backend/src/AtlasBalance.API/wwwroot/index.html` (nuevo; el path esta en `.gitignore`, no aparece en `git status`).
+- `Documentacion/DOCUMENTACION_CAMBIOS.md`, `Documentacion/LOG_ERRORES_INCIDENCIAS.md`.
+
+### Comandos ejecutados
+
+- `scripts/Start-Dev.ps1 -TimeoutSeconds 120` (backend con build en `tools/dotnet-build/api`, frontend con `npm run dev`).
+- Verificaciones HTTP contra 5002 y 5173.
+
+### Resultado de verificacion
+
+- `GET http://localhost:5002/api/health` -> 200 `{"status":"healthy"}`.
+- `GET http://localhost:5173` -> 200; `GET http://localhost:5173/api/health` (proxy) -> 200 `{"status":"healthy"}`.
+- Vite transforma `src/main.tsx` y `src/App.tsx` sin error (200).
+- `POST http://localhost:5002/api/auth/login` con `{}` -> 400 de validacion (la ruta existe; no es 404).
+- Hangfire instalado contra PostgreSQL (`Host: localhost, DB: atlas_balance, Schema: hangfire`), sin migraciones pendientes en el log de arranque.
+
+### Pendientes
+
+- **Login autenticado no probado:** no hay credenciales de desarrollo y MFA esta activo (ver `LOG_ERRORES_INCIDENCIAS.md` 2026-10-05, clave de Data Protection).
+- **`42883: jsonb ~~ jsonb` sigue presente** en el job de Hangfire `PlazoFijoVencimientoJob` -> `PlazoFijoService.TryAddAdminNotificationAsync` (`DetallesJson.Contains(...)` sobre una columna `jsonb`). Es un defecto real de codigo, ya registrado como "no relacionado" el 2026-10-05, y sigue sin corregir.
+- `Start-Dev.ps1` lanza el frontend sin redirigir stdout/stderr: el hijo hereda los handles del shell y la tarea que lo invoca no termina nunca. `Start-LocalDev.ps1` si redirige, pero exige `.dotnet` y PostgreSQL portatil en el workspace, que este checkout no tiene.
+
 ## 2026-11-16 - V-03.02 - Retencion de MFA e importacion, IBAN solo para ADMIN y auditoria
 
 ### Trabajo realizado
@@ -27966,3 +27998,34 @@ Con confirmacion del operador, los secretos de desarrollo salen del arbol:
 - Confirmada la excepción `CryptographicException` de Data Protection durante la creación del reto MFA; el 500 no es el error JSONB de Hangfire.
 - Verificación posterior: MFA desactivado y secreto anterior eliminado; cuenta activa, contraseña intacta, sin bloqueos ni tokens de refresco vigentes.
 - Pendiente: iniciar sesión manualmente en la pestaña y completar la nueva configuración de MFA.
+
+## 2026-11-16 - V-03.02 - Extractos: avance parcial
+
+- Trabajo: resaltado de filas con alerta en extractos y cuenta; barra horizontal superior sincronizada en extractos. La tabla de cuenta sigue siendo independiente.
+- Archivos: `frontend/src/components/extractos/ExtractoTable.tsx`, `frontend/src/styles/layout/extractos.css`, `frontend/src/styles/layout/dashboard.css`, documentacion tecnica, de usuario, de version y esta bitacora.
+- Comandos: `npx tsc --noEmit`, `npm run lint`, `npx eslint src --max-warnings 0`, `git diff --check`.
+- Verificacion: TypeScript y ESLint de `src` correctos. Lint general falla por 29 errores en `.test-dist-v2`, carpeta generada preexistente. Sin validacion visual ni funcional autenticada.
+- Decisiones visuales: fondo con token de aviso existente; barra superior adicional. Pendiente validar contraste y sincronizacion en navegador.
+- Pendientes: visibilidad de columnas con datos, orden persistente de visibles y ocultas, tabla compartida con filtros y acciones en cuenta y scroll superior en cuenta. No se considera finalizada la tarea.
+# 2026-11-16 - V-03.02 - Busqueda global de titulares y cuentas
+
+- Trabajo: busqueda diferida en los listados existentes, con pais activo y permisos del servidor; acceso directo al detalle con raton o teclado. Se mantienen los grupos y estilo de la paleta; se identifican las cuentas por titular. Limite: diez resultados por categoria, sin paginacion en la paleta.
+- Archivos: `frontend/src/components/layout/CommandPalette.tsx`, `TopBar.tsx`, documentos tecnico, usuario, version y bitacora.
+- Comandos: `npx tsc --noEmit`, compilacion de tests con `tsconfig.test.v2.json` hacia `.test-dist-v2` y `node --test --test-force-exit .test-dist-v2/tests/*.test.js`, `npm run lint`, `npx eslint . --max-warnings 0 --ignore-pattern '.test-dist-v2/**'`, `git diff --check`.
+- Resultado: TypeScript y 104 tests correctos. `npm run lint` incluye los JS generados preexistentes de `.test-dist-v2` y falla; ESLint excluyendo esa carpeta pasa. `git diff --check` pasa. Sin prueba visual ni sesion autenticada. Pendiente comprobar busqueda real con distintos permisos y paises.
+
+## 2026-11-16 - V-03.02 - Finalizacion de columnas y tabla de extractos
+
+- Trabajo: columnas extra con datos disponibles en el ambito autorizado; orden y visibilidad persistentes; tabla compartida en detalle de cuenta con seleccion masiva, busqueda, fechas, filtros, alerta amarilla y barras horizontales sincronizadas. Las tres columnas de contexto se excluyen de la cuenta. Se bloquean guardados simultaneos de preferencias.
+- Archivos: `backend/src/AtlasBalance.API/Controllers/ExtractosController.cs`, `UsuariosController.cs`, `DTOs/ExtractosDtos.cs`, `Data/AppDbContext.cs`, `Models/Entities.cs`, `Migrations/AppDbContextModelSnapshot.cs`, `Migrations/20261116090000_AddOrdenColumnasPreferencias.cs`, tests de ExtractosController y UsuariosController; `frontend/src/components/extractos/ExtractoTable.tsx`, `extractoColumns.ts`, `pages/ExtractosPage.tsx`, `pages/CuentaDetailPage.tsx`, estilos de extractos y dashboard, `e2e/visual/extractos-comportamiento.spec.ts`; version y documentacion tecnica, de usuario y de incidencias.
+- Comandos: `npx tsc --noEmit`, `npx eslint . --max-warnings 0 --ignore-pattern .test-dist-v2`, `npm run test:unit`, `npx tsc -p tsconfig.test.v2.json --outDir .test-dist-atlas-columnas --tsBuildInfoFile .test-dist-atlas-columnas/tsconfig.tsbuildinfo`, `node --test --test-force-exit` sobre tests compilados, `npm run build`, compilacion backend y tests xUnit dirigidos, Playwright de `e2e/visual/extractos-comportamiento.spec.ts` con servidor existente y API simulada, `docker info`, `git diff --check`.
+- Resultado: TypeScript y ESLint con exclusion de artefactos previos correctos; 104/104 tests unitarios frontend en salida alternativa; backend compilado y pruebas dirigidas de extractos 2/2 y permisos 4/4; Playwright 3/3 y 2/2 de guardado lento con API simulada. El comando normal de tests frontend falla por EPERM en `.test-dist` existente; lint sin exclusion falla por `.test-dist-v2` preexistente. Docker no se pudo verificar por acceso denegado a su configuracion.
+- Decisiones visuales: fondo de aviso existente para alerta en ambos temas; barra horizontal arriba y abajo; flechas accesibles para ordenar. Sin pendientes de diseno identificados en pruebas simuladas.
+- Pendientes: validar migracion y persistencia real en PostgreSQL, pruebas autenticadas y despliegue. El filtro por columna se aplica solo a la pagina cargada. Las preferencias antiguas muestran una vez todas las columnas extra con datos, incluso las que antes se ocultaron, porque no se distinguian de las nuevas.
+
+## 2026-11-16 - V-03.02 - Buscador y permisos
+
+- Se ocultan resultados de cache mientras se revalidan o falla la consulta, para no mostrar coincidencias anteriores tras cambios de permisos. El servidor sigue filtrando titulares y cuentas por alcance, y el detalle comprueba acceso. No se modifican permisos.
+- Archivos: `frontend/src/components/layout/CommandPalette.tsx`, bitacora, log y version. Decision visual: se mantiene la paleta; sin cambios de diseno.
+- Verificacion: build en `.search-build`, ESLint de componentes, 19 pruebas de `UserAccessServiceTests` y `UserAccessScopeMatrixTests`; Vite en 127.0.0.1:5173 entrega los componentes actualizados. La inspeccion visual del navegador se bloqueo por identificacion insegura de URL. Pendiente recargar pagina y probar con usuarios y permisos reales.
+- Comandos: `npm run build` con `VITE_BUILD_OUT_DIR=.search-build`, `npx eslint` sobre ambos componentes, `dotnet` ejecutando el runner xUnit con filtros de clase, consulta HTTP local a componentes de Vite.

@@ -1366,8 +1366,11 @@
   flex-wrap: wrap;
 }
 
-/* DESIGN.md §6: una fila marcada se senala con un punto de aviso en la primera
-   celda, nunca tinendo la fila entera. */
+.account-excel-table tbody tr.dashboard-row-flagged > td,
+.account-excel-table tbody tr[data-flagged="true"] > td {
+  background: var(--status-warning-bg);
+}
+
 .dashboard-table-wrap tbody tr.dashboard-row-flagged > td:first-child,
 .dashboard-table-wrap tbody tr[data-flagged="true"] > td:first-child {
   position: relative;

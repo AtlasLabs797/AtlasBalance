@@ -102,10 +102,10 @@ export function TopBar() {
           type="button"
           className="app-search"
           onClick={() => setPaletteOpen(true)}
-          aria-label="Buscar pantalla"
-          title="Buscar pantalla"
+          aria-label="Buscar pantalla, titular o cuenta"
+          title="Buscar pantalla, titular o cuenta"
         >
-          <span>Buscar pantalla...</span>
+          <span>Buscar pantalla, titular o cuenta...</span>
           <kbd className="app-kbd app-search-hint">{shortcutLabel}</kbd>
         </button>
         <div className="app-topbar-actions">

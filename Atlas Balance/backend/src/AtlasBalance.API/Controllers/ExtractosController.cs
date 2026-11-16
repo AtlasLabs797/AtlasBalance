@@ -87,6 +87,7 @@ public sealed class ExtractosController : ControllerBase
             var cuentasTitular = await _db.Cuentas.Where(c => c.TitularId == titularId).Select(c => c.Id).ToListAsync(ct);
             q = q.Where(x => cuentasTitular.Contains(x.CuentaId));
         }
+        var scopeQuery = q;
         if (fechaDesde.HasValue) q = q.Where(x => x.Fecha >= fechaDesde);
         if (fechaHasta.HasValue) q = q.Where(x => x.Fecha <= fechaHasta);
         if (checkedValue.HasValue) q = q.Where(x => x.Checked == checkedValue);
@@ -98,8 +99,6 @@ public sealed class ExtractosController : ControllerBase
                 (x.Concepto ?? "").ToLower().Contains(term) ||
                 (x.Comentarios ?? "").ToLower().Contains(term));
         }
-
-        var filteredQuery = q;
 
         q = (sortBy.ToLowerInvariant(), desc) switch
         {
@@ -122,8 +121,8 @@ public sealed class ExtractosController : ControllerBase
         var total = await q.CountAsync(ct);
         var columnasDisponibles = await (
                 from extra in _db.ExtractosColumnasExtra
-                join extracto in filteredQuery on extra.ExtractoId equals extracto.Id
-                where extra.NombreColumna != ""
+                join extracto in scopeQuery on extra.ExtractoId equals extracto.Id
+                where extra.NombreColumna != "" && extra.Valor != null && extra.Valor.Trim() != ""
                 select extra.NombreColumna)
             .Distinct()
             .OrderBy(nombre => nombre)
@@ -760,7 +759,7 @@ public sealed class ExtractosController : ControllerBase
 
         var pref = await QueryPreferenciaUsuarioCuenta(actor.Id, scope).FirstOrDefaultAsync(ct);
 
-        return Ok(new { columnas_visibles = ParseArray(pref?.ColumnasVisibles) });
+        return Ok(new { columnas_visibles = ParseArray(pref?.ColumnasVisibles), orden_columnas = ParseArray(pref?.OrdenColumnas) });
     }
 
     [HttpPut("columnas-visibles")]
@@ -789,6 +788,8 @@ public sealed class ExtractosController : ControllerBase
         }
 
         pref.ColumnasVisibles = req.ColumnasVisibles is null ? null : JsonSerializer.Serialize(req.ColumnasVisibles);
+        if (req.OrdenColumnas is not null)
+            pref.OrdenColumnas = JsonSerializer.Serialize(req.OrdenColumnas);
         pref.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(new { message = "Preferencias guardadas" });

@@ -1,9 +1,8 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Fragment } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { AxiosError } from 'axios';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Flag, Plus, Trash2 } from 'lucide-react';
+import { Flag, Trash2 } from 'lucide-react';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
@@ -13,8 +12,14 @@ import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
-import EditableCell from '@/components/extractos/EditableCell';
+import ExtractoTable from '@/components/extractos/ExtractoTable';
+import { BASE_COLUMNS } from '@/components/extractos/extractoColumns';
+import type { InsertExtractoDraftPayload } from '@/components/extractos/ExtractoTable';
+import AuditCellModal from '@/components/extractos/AuditCellModal';
+import DesgloseModal from '@/components/extractos/DesgloseModal';
+import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
 import { QUERY_STALE_TIMES, QUERY_GC_TIMES } from '@/services/queryClient';
@@ -23,13 +28,12 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
-import type { CuentaResumenKpi, Extracto, PaginatedResponse, PeriodoDashboard } from '@/types';
+import type { AuditCellEntry, CuentaResumenKpi, Extracto, ExtractoDesgloseResumen, PaginatedResponse, PeriodoDashboard } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDate, formatDateTime, getAmountTone, parseEuropeanNumber } from '@/utils/formatters';
+import { formatCurrency, formatDate, formatDateTime, parseEuropeanNumber } from '@/utils/formatters';
 import { computeBulkFlagToggle } from '@/utils/bulkFlagToggle';
 
 const BULK_DELETE_PREVIEW_LIMIT = 6;
-const DEFAULT_ACCOUNT_CELL = { ref: 'A1', label: 'Celda', value: 'Selecciona una celda del desglose' };
 
 interface UpdateExtractoPayload {
   fecha?: string;
@@ -38,22 +42,6 @@ interface UpdateExtractoPayload {
   monto?: number;
   saldo?: number;
   columnas_extra?: Record<string, string>;
-}
-
-interface InsertRowDraft {
-  afterRowId: string;
-  insertBeforeFilaNumero: number;
-  fecha: string;
-  concepto: string;
-  comentarios: string;
-  monto: string;
-  saldo: string;
-  columnas_extra: Record<string, string>;
-}
-
-interface CreateExtractoResponse {
-  id: string;
-  fila_numero: number;
 }
 
 const PLAZO_ESTADO_LABELS: Record<string, string> = {
@@ -101,16 +89,6 @@ function formatIban(value: string | null | undefined): string {
   return normalized.replace(/(.{4})/g, '$1 ').trim();
 }
 
-function getAccountCellReference(filaNumero: number, columnIndex: number): string {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const index = Math.max(0, columnIndex);
-  const letter =
-    index < letters.length
-      ? letters[index]
-      : `${letters[Math.floor(index / letters.length) - 1] ?? 'Z'}${letters[index % letters.length]}`;
-  return `${letter}${filaNumero}`;
-}
-
 export default function CuentaDetailPage() {
   const { id } = useParams();
   const cuentaId = id ?? '';
@@ -132,19 +110,45 @@ export default function CuentaDetailPage() {
   const [rows, setRows] = useState<Extracto[]>([]);
   const [rowsPage, setRowsPage] = useState(1);
   const [rowsPageSize, setRowsPageSize] = useState(200);
+  const [search, setSearch] = useState('');
+  const searchDebounced = useDebouncedValue(search, 250);
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  const invalidRange = Boolean(fechaDesde && fechaHasta && fechaDesde > fechaHasta);
+  const [sortBy, setSortBy] = useState('fila_numero');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [visibleColumns, setVisibleColumns] = useState<string[] | null>(null);
+  const [columnOrder, setColumnOrder] = useState<string[] | null>(null);
+  const [columnPreferencesSaving, setColumnPreferencesSaving] = useState(false);
+  const columnPreferencesSavingRef = useRef(false);
+  const preferenceScopeRef = useRef(cuentaId);
+  useEffect(() => {
+    preferenceScopeRef.current = cuentaId;
+    setVisibleColumns(null);
+    setColumnOrder(null);
+  }, [cuentaId]);
+  const [auditColumn, setAuditColumn] = useState<string | null>(null);
+  const [auditData, setAuditData] = useState<AuditCellEntry[]>([]);
+  const auditAbortRef = useRef<AbortController | null>(null);
+  const desgloseAbortRef = useRef<AbortController | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [desgloseRow, setDesgloseRow] = useState<Extracto | null>(null);
+  const [desgloseData, setDesgloseData] = useState<ExtractoDesgloseResumen | null>(null);
+  const [desgloseLoading, setDesgloseLoading] = useState(false);
+  const [desgloseSaving, setDesgloseSaving] = useState(false);
+  const [desgloseError, setDesgloseError] = useState<string | null>(null);
   const [rowsTotal, setRowsTotal] = useState(0);
   const [rowsTotalPages, setRowsTotalPages] = useState(1);
   const [periodo, setPeriodo] = useState<PeriodoDashboard>('1m');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
-  const [insertDraft, setInsertDraft] = useState<InsertRowDraft | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [bulkActionStatus, setBulkActionStatus] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesStatus, setNotesStatus] = useState<string | null>(null);
-  const [selectedCell, setSelectedCell] = useState(DEFAULT_ACCOUNT_CELL);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // V-02.08: separa fallos de CARGA (queries iniciales) de errores de ACCION
@@ -190,6 +194,25 @@ export default function CuentaDetailPage() {
   const queryClient = useQueryClient();
   const usuarioId = usuario?.id ?? '';
 
+  const excludedColumns = useMemo(() => ['cuenta_nombre', 'banco_nombre', 'titular_nombre'], []);
+  const columnPreferencesQuery = useQuery({
+    queryKey: queryKeys.extractos.columnasVisibles({ usuarioId, cuentaId, titularId: summary?.titular_id ?? null, paisId: summary?.pais_id ?? selectedPaisId ?? null }),
+    queryFn: () => api.get<{ columnas_visibles: string[] | null; orden_columnas: string[] | null }>('/extractos/columnas-visibles', {
+      params: { cuentaId, titularId: summary?.titular_id, paisId: summary?.pais_id ?? (selectedPaisId || undefined) },
+    }).then((res) => res.data),
+    enabled: Boolean(usuarioId && cuentaId && summary?.cuenta_id === cuentaId),
+    staleTime: QUERY_STALE_TIMES.EXTRACTOS_MS,
+  });
+  useEffect(() => {
+    if (columnPreferencesQuery.data && !columnPreferencesSaving) {
+      setVisibleColumns(columnPreferencesQuery.data.columnas_visibles ?? null);
+      setColumnOrder(columnPreferencesQuery.data.orden_columnas ?? null);
+    }
+  }, [columnPreferencesQuery.data, columnPreferencesSaving]);
+  useEffect(() => {
+    if (columnPreferencesQuery.error) setError(extractErrorMessage(columnPreferencesQuery.error, 'No se pudieron cargar las preferencias de columnas.'));
+  }, [columnPreferencesQuery.error]);
+
   const summaryQuery = useQuery({
     queryKey: queryKeys.extractos.cuentaResumen({ usuarioId, cuentaId, periodo, paisId: selectedPaisId || null }),
     queryFn: ({ signal }) =>
@@ -208,8 +231,9 @@ export default function CuentaDetailPage() {
       paisId: selectedPaisId || null,
       page: rowsPage,
       pageSize: rowsPageSize,
-      sortBy: 'fila_numero',
-      sortDir: 'desc',
+      search: searchDebounced || null, fechaDesde: fechaDesde || null, fechaHasta: fechaHasta || null,
+      sortBy,
+      sortDir,
     }),
     queryFn: ({ signal }) =>
       api.get<PaginatedResponse<Extracto>>('/extractos', {
@@ -218,15 +242,18 @@ export default function CuentaDetailPage() {
           paisId: selectedPaisId || undefined,
           page: rowsPage,
           pageSize: rowsPageSize,
-          sortBy: 'fila_numero',
-          sortDir: 'desc',
+          search: searchDebounced || undefined, fechaDesde: fechaDesde || undefined, fechaHasta: fechaHasta || undefined,
+          sortBy,
+          sortDir,
         },
         signal,
       }).then((res) => res.data),
-    enabled: Boolean(allowedDashboard && id && usuarioId),
+    enabled: Boolean(allowedDashboard && id && usuarioId && !invalidRange),
     staleTime: QUERY_STALE_TIMES.EXTRACTOS_MS,
     gcTime: QUERY_GC_TIMES.EXTRACTOS_MS,
   });
+
+  const selectionEnabled = canSelectRows && search === searchDebounced && !rowsQuery.isFetching && !invalidRange;
 
   useEffect(() => {
     if (summaryQuery.error) {
@@ -295,12 +322,12 @@ export default function CuentaDetailPage() {
     try {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.extractos.cuentaResumen({ usuarioId, cuentaId, periodo, paisId: selectedPaisId || null }) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.extractos.list({ usuarioId, cuentaId, paisId: selectedPaisId || null, page: rowsPage, pageSize: rowsPageSize, sortBy: 'fila_numero', sortDir: 'desc' }) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.extractos.list({ usuarioId, cuentaId, paisId: selectedPaisId || null, page: rowsPage, pageSize: rowsPageSize, search: searchDebounced || null, fechaDesde: fechaDesde || null, fechaHasta: fechaHasta || null, sortBy, sortDir }) }),
       ]);
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo cargar la cuenta'));
     }
-  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId, queryClient, usuarioId, cuentaId]);
+  }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId, queryClient, usuarioId, cuentaId, sortBy, sortDir, searchDebounced, fechaDesde, fechaHasta]);
 
   useEffect(() => {
     if (!allowedDashboard || !id) {
@@ -349,12 +376,6 @@ export default function CuentaDetailPage() {
   }, [canSelectRows]);
 
   useEffect(() => {
-    if (!canAddRows) {
-      setInsertDraft(null);
-    }
-  }, [canAddRows]);
-
-  useEffect(() => {
     if (bulkDeleteOpen && rows.every((row) => !selectedRowIds.has(row.id))) {
       setBulkDeleteOpen(false);
     }
@@ -383,17 +404,11 @@ export default function CuentaDetailPage() {
     return () => window.removeEventListener('message', handleImportCompleted);
   }, [allowedDashboard, id, loadCuentaData]);
 
-  const extraColumns = useMemo(
-    () => [...new Set(rows.flatMap((row) => Object.keys(row.columnas_extra ?? {})))],
-    [rows]
-  );
-  const detailTableColumnCount = 9 + extraColumns.length + (canSelectRows ? 1 : 0);
   const selectedRows = useMemo(
     () => rows.filter((row) => selectedRowIds.has(row.id)),
     [rows, selectedRowIds]
   );
   const selectedRowsCount = selectedRows.length;
-  const allRowsSelected = rows.length > 0 && selectedRowsCount === rows.length;
   const bulkDeleteConfirmLabel = `Eliminar ${selectedRowsCount} ${selectedRowsCount === 1 ? 'movimiento' : 'movimientos'}`;
   const selectedRowsPreview = selectedRows.slice(0, BULK_DELETE_PREVIEW_LIMIT).map((row) => row.fila_numero).join(', ');
   const hiddenSelectedRows = Math.max(0, selectedRowsCount - BULK_DELETE_PREVIEW_LIMIT);
@@ -427,16 +442,6 @@ export default function CuentaDetailPage() {
       }
       return next;
     });
-  };
-
-  const toggleSelectAllRows = (selected: boolean) => {
-    setBulkActionStatus(null);
-    if (!selected) {
-      setSelectedRowIds(new Set());
-      return;
-    }
-
-    setSelectedRowIds(new Set(rows.map((row) => row.id)));
   };
 
   const confirmDeleteSelectedRows = async () => {
@@ -481,104 +486,6 @@ export default function CuentaDetailPage() {
         // recuperar el foco.
         await invalidate('extractoDelete');
       }
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const openInsertDraftBelow = (row: Extracto) => {
-    setInsertDraft({
-      afterRowId: row.id,
-      insertBeforeFilaNumero: row.fila_numero,
-      fecha: row.fecha ?? new Date().toISOString().slice(0, 10),
-      concepto: '',
-      comentarios: '',
-      monto: '0',
-      saldo: String(row.saldo ?? 0),
-      columnas_extra: Object.fromEntries(extraColumns.map((column) => [column, ''])),
-    });
-  };
-
-  const updateInsertDraft = (patch: Partial<InsertRowDraft>) => {
-    setInsertDraft((current) => (current ? { ...current, ...patch } : current));
-  };
-
-  const updateInsertDraftExtra = (column: string, value: string) => {
-    setInsertDraft((current) =>
-      current
-        ? {
-            ...current,
-            columnas_extra: { ...current.columnas_extra, [column]: value },
-          }
-        : current
-    );
-  };
-
-  const submitInsertDraft = async () => {
-    if (!summary || !insertDraft) {
-      return;
-    }
-
-    const monto = parseEuropeanNumber(insertDraft.monto);
-    const saldo = parseEuropeanNumber(insertDraft.saldo);
-    if (!insertDraft.fecha || monto === null || saldo === null) {
-      setError('Completa una fecha válida y usa formato 1.234,56 en Monto y Saldo.');
-      return;
-    }
-
-    setActionLoading(true);
-    setError(null);
-
-    try {
-      const { data } = await api.post<CreateExtractoResponse>('/extractos', {
-        cuenta_id: summary.cuenta_id,
-        insert_before_fila_numero: insertDraft.insertBeforeFilaNumero,
-        fecha: insertDraft.fecha,
-        concepto: insertDraft.concepto,
-        comentarios: insertDraft.comentarios,
-        monto,
-        saldo,
-        columnas_extra: insertDraft.columnas_extra,
-      });
-      const createdAt = new Date().toISOString();
-      const newRow: Extracto = {
-        id: data.id,
-        cuenta_id: summary.cuenta_id,
-        fecha: insertDraft.fecha,
-        concepto: insertDraft.concepto.trim() || null,
-        comentarios: insertDraft.comentarios.trim() || null,
-        monto,
-        saldo,
-        fila_numero: data.fila_numero,
-        checked: false,
-        checked_at: null,
-        checked_by_id: null,
-        flagged: false,
-        flagged_nota: null,
-        flagged_at: null,
-        flagged_by_id: null,
-        columnas_extra: insertDraft.columnas_extra,
-        fecha_creacion: createdAt,
-        fecha_modificacion: null,
-        cuenta_nombre: summary.cuenta_nombre,
-        titular_id: summary.titular_id,
-        titular_nombre: summary.titular_nombre,
-        divisa: summary.divisa,
-      };
-      setRows((current) =>
-        [...current.map((row) => (row.fila_numero >= data.fila_numero ? { ...row, fila_numero: row.fila_numero + 1 } : row)), newRow].sort(
-          (a, b) => b.fila_numero - a.fila_numero
-        )
-      );
-      setSummary((current) => (current ? { ...current, ultima_actualizacion: createdAt } : current));
-      setRowsTotal((current) => current + 1);
-      setRowsTotalPages((current) => Math.max(current, Math.ceil((rowsTotal + 1) / rowsPageSize)));
-      setInsertDraft(null);
-      // POST /extractos llama a EvaluateSaldoPostAsync: invalida
-      // extractos, dashboard, alertas, revision y conciliacion.
-      await invalidate('extractoCreate');
-    } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo insertar el movimiento.'));
     } finally {
       setActionLoading(false);
     }
@@ -745,6 +652,124 @@ export default function CuentaDetailPage() {
   const bulkFlagIntent = useMemo(() => computeBulkFlagToggle(selectedRows), [selectedRows]);
   const bulkFlagAction = bulkFlagIntent.targetIds.length === 0 ? null : bulkFlagIntent.action;
 
+  const saveColumnPreferences = async (nextVisible: string[] | null, nextOrder: string[] | null) => {
+    if (!summary || summary.cuenta_id !== cuentaId || !columnPreferencesQuery.data || columnPreferencesQuery.isLoading || columnPreferencesQuery.error || columnPreferencesSavingRef.current) return;
+    columnPreferencesSavingRef.current = true;
+    setColumnPreferencesSaving(true);
+    const savingScope = cuentaId;
+    const previousVisible = visibleColumns;
+    const previousOrder = columnOrder;
+    setVisibleColumns(nextVisible);
+    setColumnOrder(nextOrder);
+    try {
+      await api.put('/extractos/columnas-visibles', {
+        cuenta_id: cuentaId, titular_id: summary.titular_id, pais_id: summary.pais_id,
+        columnas_visibles: nextVisible, orden_columnas: nextOrder,
+      });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.extractos.columnasVisibles({ usuarioId, cuentaId, titularId: summary.titular_id, paisId: summary.pais_id ?? selectedPaisId ?? null }) });
+    } catch (err) {
+      if (preferenceScopeRef.current === savingScope) {
+        setVisibleColumns(previousVisible);
+        setColumnOrder(previousOrder);
+        setError(extractErrorMessage(err, 'No se pudieron guardar las preferencias de columnas.'));
+      }
+    } finally {
+      columnPreferencesSavingRef.current = false;
+      setColumnPreferencesSaving(false);
+    }
+  };
+
+  const completeOrder = (available: string[]) => [...new Set([...(columnOrder ?? BASE_COLUMNS), ...available])];
+  const currentVisibleColumns = (available: string[]) => {
+    const known = new Set(columnOrder ?? BASE_COLUMNS);
+    return visibleColumns === null
+      ? completeOrder(available)
+      : [...new Set([...visibleColumns, ...available.filter((column) => !known.has(column))])];
+  };
+  const toggleColumn = async (column: string, available: string[]) => {
+    const current = currentVisibleColumns(available);
+    const next = current.includes(column) ? current.filter((item) => item !== column) : [...current, column];
+    await saveColumnPreferences(next, completeOrder(available));
+  };
+  const showAllColumns = (available: string[]) => {
+    const current = currentVisibleColumns(available);
+    void saveColumnPreferences([...new Set([...current, ...available])], completeOrder(available));
+  };
+  const reorderColumns = (available: string[]) => {
+    const complete = completeOrder(available);
+    const remaining = [...available];
+    const availableSet = new Set(available);
+    const reordered = complete.map((column) => availableSet.has(column) ? remaining.shift()! : column);
+    void saveColumnPreferences(currentVisibleColumns(available), reordered);
+  };
+
+  const toggleSelectVisible = (ids: string[], selected: boolean) => {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      ids.forEach((item) => selected ? next.add(item) : next.delete(item));
+      return next;
+    });
+  };
+  const retainVisibleSelection = useCallback((ids: string[]) => {
+    const visible = new Set(ids);
+    setSelectedRowIds((current) => {
+      const next = new Set([...current].filter((item) => visible.has(item)));
+      return next.size === current.size ? current : next;
+    });
+  }, []);
+
+  const toggleFlag = async (row: Extracto, flagged: boolean, nota?: string) => {
+    try {
+      await api.patch(`/extractos/${row.id}/flag`, { flagged, nota: flagged ? nota : undefined });
+      setRows((current) => current.map((item) => item.id === row.id ? { ...item, flagged, flagged_nota: flagged ? nota ?? null : null } : item));
+      await invalidate('extractoFlag');
+    } catch (err) { setError(extractErrorMessage(err, 'No se pudo actualizar la alerta.')); }
+  };
+  const insertRow = async (_row: Extracto, payload: InsertExtractoDraftPayload) => {
+    try {
+      await api.post('/extractos', payload);
+      await invalidate('extractoCreate');
+      await loadCuentaData();
+    } catch (err) {
+      const message = extractErrorMessage(err, 'No se pudo insertar el movimiento.');
+      setError(message);
+      throw new Error(message, { cause: err });
+    }
+  };
+  const openAudit = async (row: Extracto, column: string) => {
+    auditAbortRef.current?.abort();
+    const controller = new AbortController();
+    auditAbortRef.current = controller;
+    setAuditColumn(column); setAuditData([]); setAuditError(null); setAuditLoading(true);
+    try {
+      const { data } = await api.get<AuditCellEntry[]>(`/extractos/${row.id}/audit-celda`, { params: { columna: column }, signal: controller.signal });
+      if (!controller.signal.aborted) setAuditData(data);
+    } catch (err) { if (!controller.signal.aborted) setAuditError(extractErrorMessage(err, 'No se pudo cargar la auditoría.')); }
+    finally { if (!controller.signal.aborted) setAuditLoading(false); }
+  };
+  const openDesglose = async (row: Extracto) => {
+    desgloseAbortRef.current?.abort();
+    const controller = new AbortController();
+    desgloseAbortRef.current = controller;
+    setDesgloseRow(row); setDesgloseData(null); setDesgloseError(null); setDesgloseLoading(true);
+    try {
+      const { data } = await api.get<ExtractoDesgloseResumen>(`/extractos/${row.id}/desglose`, { signal: controller.signal });
+      if (!controller.signal.aborted) setDesgloseData(data);
+    } catch (err) { if (!controller.signal.aborted) setDesgloseError(extractErrorMessage(err, 'No se pudo cargar el desglose.')); }
+    finally { if (!controller.signal.aborted) setDesgloseLoading(false); }
+  };
+  const saveDesglose = async (lineas: DesgloseDraftPayload[], version: string) => {
+    if (!desgloseRow) return;
+    setDesgloseSaving(true); setDesgloseError(null);
+    try {
+      const { data } = await api.put<ExtractoDesgloseResumen>(`/extractos/${desgloseRow.id}/desglose`, { lineas, version });
+      setDesgloseData(data);
+      setRows((current) => current.map((item) => item.id === desgloseRow.id ? { ...item, desglose_count: data.count, desglose_total: data.total, desglose_estado: data.estado } : item));
+      await invalidate('extractoDesglose');
+    } catch (err) { setDesgloseError(extractErrorMessage(err, 'No se pudo guardar el desglose.')); }
+    finally { setDesgloseSaving(false); }
+  };
+
   const saveGeneralNotes = async () => {
     if (!summary || !canEditAccountNotes) {
       return;
@@ -767,14 +792,6 @@ export default function CuentaDetailPage() {
     } finally {
       setNotesSaving(false);
     }
-  };
-
-  const selectAccountCell = (row: Extracto, columnIndex: number, label: string, value: string) => {
-    setSelectedCell({
-      ref: getAccountCellReference(row.fila_numero, columnIndex),
-      label,
-      value: value || '-',
-    });
   };
 
   if (!allowedDashboard) {
@@ -977,7 +994,14 @@ export default function CuentaDetailPage() {
             {summary.ultima_actualizacion ? formatDateTime(summary.ultima_actualizacion) : 'Sin movimientos'}
           </span>
         </header>
-        {canSelectRows && rows.length > 0 ? (
+        <div className="extractos-filters">
+          <label>Buscar por concepto o comentario<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setRowsPage(1); setSelectedRowIds(new Set()); }} /></label>
+          <DatePickerField label="Desde" ariaLabel="Fecha desde" value={fechaDesde} onChange={(value) => { setFechaDesde(value); setRowsPage(1); setSelectedRowIds(new Set()); }} />
+          <DatePickerField label="Hasta" ariaLabel="Fecha hasta" value={fechaHasta} onChange={(value) => { setFechaHasta(value); setRowsPage(1); setSelectedRowIds(new Set()); }} />
+        </div>
+        {invalidRange ? <p className="auth-error" role="alert">La fecha desde no puede ser posterior a la fecha hasta.</p> : null}
+        <p className="dashboard-subtitle">Los filtros de columna se aplican a la página actual. La selección se limpia cuando los movimientos dejan de estar visibles.</p>
+        {selectionEnabled && rows.length > 0 ? (
           <div className="dashboard-bulk-actions">
             <span className="dashboard-bulk-selection">
               {selectedRowsCount > 0
@@ -1026,7 +1050,7 @@ export default function CuentaDetailPage() {
               <button
                 type="button"
                 disabled={actionLoading || rowsPage <= 1}
-                onClick={() => setRowsPage((current) => Math.max(1, current - 1))}
+                onClick={() => { setSelectedRowIds(new Set()); setRowsPage((current) => Math.max(1, current - 1)); }}
               >
                 Anterior
               </button>
@@ -1034,7 +1058,7 @@ export default function CuentaDetailPage() {
               <button
                 type="button"
                 disabled={actionLoading || rowsPage >= rowsTotalPages}
-                onClick={() => setRowsPage((current) => Math.min(rowsTotalPages, current + 1))}
+                onClick={() => { setSelectedRowIds(new Set()); setRowsPage((current) => Math.min(rowsTotalPages, current + 1)); }}
               >
                 Siguiente
               </button>
@@ -1044,6 +1068,7 @@ export default function CuentaDetailPage() {
                 ariaLabel="Movimientos por página"
                 onChange={(next) => {
                   setRowsPageSize(next);
+                  setSelectedRowIds(new Set());
                   setRowsPage(1);
                 }}
               />
@@ -1051,291 +1076,36 @@ export default function CuentaDetailPage() {
           </div>
         ) : null}
 
-        {rows.length === 0 ? (
-          <EmptyState
-            title="Esta cuenta aún no tiene movimientos."
-            subtitle="Importa un extracto o añade un movimiento manual."
-          />
-        ) : (
-          <>
-          <div className="account-formula-bar" aria-live="polite">
-            <span className="account-formula-ref">{selectedCell.ref}</span>
-            <span className="account-formula-label">{selectedCell.label}</span>
-            <output>{selectedCell.value || '-'}</output>
-          </div>
-          <div className="dashboard-table-wrap account-excel-wrap">
-            <table className={canSelectRows ? 'account-excel-table account-excel-table--selectable' : 'account-excel-table'}>
-              <colgroup>
-                {canSelectRows ? <col className="account-col-select" /> : null}
-                <col className="account-col-row" />
-                <col className="account-col-check" />
-                <col className="account-col-date" />
-                <col className="account-col-text" />
-                <col className="account-col-text" />
-                <col className="account-col-money" />
-                <col className="account-col-money" />
-                <col className="account-col-money" />
-                <col className="account-col-money" />
-                {extraColumns.map((column) => (
-                  <col className="account-col-extra" key={column} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  {canSelectRows ? (
-                    <th scope="col" className="account-selection-header">
-                      <input
-                        type="checkbox"
-                        checked={allRowsSelected}
-                        disabled={actionLoading || rows.length === 0}
-                        aria-label={allRowsSelected ? 'Deseleccionar todos los movimientos' : 'Seleccionar todos los movimientos'}
-                        onChange={(event) => toggleSelectAllRows(event.target.checked)}
-                      />
-                    </th>
-                  ) : null}
-                  <th scope="col" className="account-row-header">Nº Fila</th>
-                  <th scope="col">Revisado</th>
-                  <th scope="col">Fecha</th>
-                  <th scope="col">Concepto</th>
-                  <th scope="col">Comentarios</th>
-                  <th scope="col">Ingreso ({summary.divisa})</th>
-                  <th scope="col">Egreso ({summary.divisa})</th>
-                  <th scope="col">Importe ({summary.divisa})</th>
-                  <th scope="col">Saldo ({summary.divisa})</th>
-                  {extraColumns.map((column) => (
-                    <th scope="col" key={column}>{column}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <Fragment key={row.id}>
-                    <tr
-                      className={`account-excel-row ${row.flagged ? 'dashboard-row-flagged' : ''}`.trim()}
-                      data-flagged={row.flagged ? 'true' : 'false'}
-                    >
-                      {canSelectRows ? (
-                        <td className="account-selection-cell">
-                          <input
-                            type="checkbox"
-                            checked={selectedRowIds.has(row.id)}
-                            disabled={actionLoading}
-                            aria-label={`Seleccionar movimiento ${row.fila_numero}`}
-                            onChange={(event) => toggleRowSelection(row.id, event.target.checked)}
-                          />
-                        </td>
-                      ) : null}
-                      <td
-                        className="account-cell-fixed account-row-anchor-cell"
-                        tabIndex={0}
-                        onClick={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
-                        onFocus={() => selectAccountCell(row, 0, 'Nº Fila', String(row.fila_numero))}
-                      >
-                        {row.fila_numero}
-                        {canAddRows ? (
-                          <button
-                            type="button"
-                            className="account-row-insert-trigger"
-                            disabled={actionLoading}
-                            aria-label={`Insertar movimiento debajo de ${row.fila_numero}`}
-                            title={`Insertar movimiento debajo de ${row.fila_numero}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openInsertDraftBelow(row);
-                            }}
-                          >
-                            <Plus size={14} aria-hidden="true" />
-                          </button>
-                        ) : null}
-                      </td>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={row.checked}
-                          disabled={!canEditCell('checked') || actionLoading}
-                          aria-label={`Marcar movimiento ${row.fila_numero} como revisado`}
-                          onChange={(event) => void toggleCheck(row, event.target.checked)}
-                        />
-                      </td>
-                      <td
-                        className="account-cell-date account-cell-fixed"
-                        onClick={() => selectAccountCell(row, 2, 'Fecha', row.fecha ? formatDate(row.fecha) : '')}
-                        onFocus={() => selectAccountCell(row, 2, 'Fecha', row.fecha ? formatDate(row.fecha) : '')}
-                      >
-                        <EditableCell
-                          value={row.fecha ?? ''}
-                          displayValue={row.fecha ? formatDate(row.fecha) : ''}
-                          editable={canEditCell('fecha') && !actionLoading}
-                          onSave={(value) => saveCell(row, 'fecha', value)}
-                        />
-                      </td>
-                      <td
-                        className="account-cell-text"
-                        onClick={() => selectAccountCell(row, 3, 'Concepto', row.concepto ?? '')}
-                        onFocus={() => selectAccountCell(row, 3, 'Concepto', row.concepto ?? '')}
-                      >
-                        <EditableCell
-                          value={row.concepto ?? ''}
-                          editable={canEditCell('concepto') && !actionLoading}
-                          onSave={(value) => saveCell(row, 'concepto', value)}
-                        />
-                      </td>
-                      <td
-                        className="account-cell-text"
-                        onClick={() => selectAccountCell(row, 4, 'Comentarios', row.comentarios ?? '')}
-                        onFocus={() => selectAccountCell(row, 4, 'Comentarios', row.comentarios ?? '')}
-                      >
-                        <EditableCell
-                          value={row.comentarios ?? ''}
-                          editable={canEditCell('comentarios') && !actionLoading}
-                          onSave={(value) => saveCell(row, 'comentarios', value)}
-                        />
-                      </td>
-                      <td
-                        className="account-cell-money account-cell-fixed"
-                        tabIndex={0}
-                        onClick={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
-                        onFocus={() => selectAccountCell(row, 5, 'Ingreso', row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '')}
-                      >
-                        <SignedAmount value={row.monto > 0 ? row.monto : 0}>
-                          {row.monto > 0 ? formatCurrency(row.monto, summary.divisa) : '-'}
-                        </SignedAmount>
-                      </td>
-                      <td
-                        className="account-cell-money account-cell-fixed"
-                        tabIndex={0}
-                        onClick={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
-                        onFocus={() => selectAccountCell(row, 6, 'Egreso', row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '')}
-                      >
-                        <SignedAmount value={row.monto < 0 ? row.monto : 0} tone="negative">
-                          {row.monto < 0 ? formatCurrency(Math.abs(row.monto), summary.divisa) : '-'}
-                        </SignedAmount>
-                      </td>
-                      <td
-                        className="account-cell-money account-cell-fixed"
-                        onClick={() => selectAccountCell(row, 7, 'Monto', formatCurrency(row.monto, summary.divisa))}
-                        onFocus={() => selectAccountCell(row, 7, 'Monto', formatCurrency(row.monto, summary.divisa))}
-                      >
-                        <EditableCell
-                          value={String(row.monto ?? '')}
-                          displayValue={formatCurrency(row.monto, summary.divisa)}
-                          editable={canEditCell('monto') && !actionLoading}
-                          displayClassName={`signed-amount--${getAmountTone(row.monto)}`}
-                          onSave={(value) => saveCell(row, 'monto', value)}
-                        />
-                      </td>
-                      <td
-                        className="account-cell-money account-cell-fixed"
-                        onClick={() => selectAccountCell(row, 8, 'Saldo', formatCurrency(row.saldo, summary.divisa))}
-                        onFocus={() => selectAccountCell(row, 8, 'Saldo', formatCurrency(row.saldo, summary.divisa))}
-                      >
-                        <EditableCell
-                          value={String(row.saldo ?? '')}
-                          displayValue={formatCurrency(row.saldo, summary.divisa)}
-                          editable={canEditCell('saldo') && !actionLoading}
-                          displayClassName={`signed-amount--${getAmountTone(row.saldo)}`}
-                          onSave={(value) => saveCell(row, 'saldo', value)}
-                        />
-                      </td>
-                      {extraColumns.map((column, extraIndex) => (
-                        <td
-                          key={`${row.id}-${column}`}
-                          className="account-cell-text"
-                          onClick={() => selectAccountCell(row, 9 + extraIndex, column, row.columnas_extra?.[column] ?? '')}
-                          onFocus={() => selectAccountCell(row, 9 + extraIndex, column, row.columnas_extra?.[column] ?? '')}
-                        >
-                          <EditableCell
-                            value={row.columnas_extra?.[column] ?? ''}
-                            editable={canEditCell(column) && !actionLoading}
-                            onSave={(value) => saveCell(row, column, value)}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                    {insertDraft?.afterRowId === row.id ? (
-                      <tr className="dashboard-insert-row">
-                        <td colSpan={detailTableColumnCount}>
-                          <form
-                            className="dashboard-insert-form"
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              void submitInsertDraft();
-                            }}
-                          >
-                            <div className="dashboard-insert-grid">
-                              <DatePickerField
-                                label="Fecha"
-                                ariaLabel="Fecha del nuevo movimiento"
-                                value={insertDraft.fecha}
-                                onChange={(value) => updateInsertDraft({ fecha: value })}
-                              />
-                              <label className="add-row-field">
-                                <span>Concepto</span>
-                                <input
-                                  value={insertDraft.concepto}
-                                  onChange={(event) => updateInsertDraft({ concepto: event.target.value })}
-                                />
-                              </label>
-                              <label className="add-row-field">
-                                <span>Comentarios</span>
-                                <input
-                                  value={insertDraft.comentarios}
-                                  onChange={(event) => updateInsertDraft({ comentarios: event.target.value })}
-                                />
-                              </label>
-                              <label className="add-row-field">
-                                <span>Importe ({summary.divisa})</span>
-                                <input
-                                  inputMode="decimal"
-                                  value={insertDraft.monto}
-                                  onChange={(event) => updateInsertDraft({ monto: event.target.value })}
-                                />
-                              </label>
-                              <label className="add-row-field">
-                                <span>Saldo ({summary.divisa})</span>
-                                <input
-                                  inputMode="decimal"
-                                  value={insertDraft.saldo}
-                                  onChange={(event) => updateInsertDraft({ saldo: event.target.value })}
-                                />
-                              </label>
-                              {extraColumns.map((column) => (
-                                <label className="add-row-field" key={column}>
-                                  <span>{column}</span>
-                                  <input
-                                    value={insertDraft.columnas_extra[column] ?? ''}
-                                    onChange={(event) => updateInsertDraftExtra(column, event.target.value)}
-                                  />
-                                </label>
-                              ))}
-                            </div>
-                            <div className="dashboard-insert-actions">
-                              <span className="dashboard-subtitle">Nuevo movimiento debajo de Nº {row.fila_numero}</span>
-                              <button
-                                type="button"
-                                disabled={actionLoading}
-                                onClick={() => setInsertDraft(null)}
-                              >
-                                Cancelar
-                              </button>
-                              <button
-                                type="submit"
-                                disabled={actionLoading || !insertDraft.fecha || insertDraft.monto === '' || insertDraft.saldo === ''}
-                              >
-                                {actionLoading ? 'Guardando...' : 'Guardar movimiento'}
-                              </button>
-                            </div>
-                          </form>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          </>
-        )}
+        <ExtractoTable
+          rows={invalidRange ? [] : rows}
+          loading={loading}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          visibleColumns={visibleColumns}
+          columnOrder={columnOrder}
+          columnPreferencesSaving={columnPreferencesSaving || !columnPreferencesQuery.data || columnPreferencesQuery.isLoading || Boolean(columnPreferencesQuery.error)}
+          excludedColumns={excludedColumns}
+          availableExtraColumns={rowsQuery.data?.columnas_disponibles ?? []}
+          onSort={(field) => { if (field === sortBy) setSortDir((dir) => dir === 'asc' ? 'desc' : 'asc'); else { setSortBy(field); setSortDir('asc'); } setRowsPage(1); setSelectedRowIds(new Set()); }}
+          onToggleColumn={(column, available) => void toggleColumn(column, available)}
+          onShowAllColumns={showAllColumns}
+          onReorderColumns={reorderColumns}
+          onSaveCell={saveCell}
+          onToggleCheck={toggleCheck}
+          onToggleFlag={toggleFlag}
+          onInsertRow={insertRow}
+          onOpenAudit={(row, column) => void openAudit(row, column)}
+          onOpenDesglose={(row) => void openDesglose(row)}
+          canAddRow={() => canAddRows && !actionLoading}
+          canEditCell={(_row, column) => canEditCell(column) && !actionLoading}
+          inlineInsertEnabled={canAddRows}
+          onClearFilters={() => { setSearch(''); setFechaDesde(''); setFechaHasta(''); setRowsPage(1); setSelectedRowIds(new Set()); }}
+          hasExternalFilters={Boolean(search || fechaDesde || fechaHasta)}
+          selectedRowIds={selectionEnabled ? selectedRowIds : undefined}
+          onSelectRow={selectionEnabled ? toggleRowSelection : undefined}
+          onSelectAllRows={selectionEnabled ? toggleSelectVisible : undefined}
+          onFilteredRowsChange={selectionEnabled ? retainVisibleSelection : undefined}
+        />
       </section>
 
       {isImportModalOpen && (
@@ -1373,6 +1143,8 @@ export default function CuentaDetailPage() {
         </div>
       )}
 
+      <AuditCellModal open={auditColumn !== null} column={auditColumn} data={auditData} loading={auditLoading} error={auditError} onClose={() => { auditAbortRef.current?.abort(); setAuditColumn(null); }} />
+      <DesgloseModal open={Boolean(desgloseRow)} row={desgloseRow} data={desgloseData} loading={desgloseLoading} saving={desgloseSaving} error={desgloseError} canEdit={canEditCell('desglose')} onClose={() => { if (!desgloseSaving) { desgloseAbortRef.current?.abort(); setDesgloseRow(null); } }} onSave={saveDesglose} />
       <ConfirmDialog
         open={bulkDeleteOpen}
         title="Eliminar movimientos seleccionados"

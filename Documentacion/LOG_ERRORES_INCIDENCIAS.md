@@ -1,5 +1,14 @@
 ﻿# Log de errores e incidencias
 
+## 2026-11-16 - V-03.02 - La API no arrancaba por ausencia de `wwwroot` (RESUELTO EN DESARROLLO)
+
+- **Sintoma:** `Start-Dev.ps1` compila bien y luego la API muere nada mas arrancar: `System.IO.DirectoryNotFoundException: ...\backend\src\AtlasBalance.API\wwwroot\` en `StaticWebAssetsLoader.UseStaticWebAssetsCore`, con `Application started` nunca alcanzado. El healthcheck falla y `Start-Dev.ps1` aborta antes de levantar el frontend.
+- **Causa:** `backend/src/AtlasBalance.API/wwwroot` es una carpeta generada, no versionada (`.gitignore` ignora `wwwroot/index.html`, `wwwroot/assets/`, `wwwroot/fonts/`, `wwwroot/logos/`). En un checkout limpio, o tras una limpieza de artefactos, la carpeta no existe; el SDK web genera igualmente el manifiesto de static web assets apuntando a `<contentRoot>/wwwroot`, y Kestrel revienta al construir el `PhysicalFileProvider`.
+- **Solucion aplicada en desarrollo:** se creo `backend/src/AtlasBalance.API/wwwroot/index.html` como placeholder (redirige a `http://localhost:5173/`). El contenido real lo pone `npm run build` + `Build-Release.ps1`. El path esta en `.gitignore`, asi que no ensucia el repo.
+- **Verificacion:** `GET /api/health` -> 200 `{"status":"healthy"}`; Hangfire arranca contra PostgreSQL; `POST /api/auth/login` con `{}` -> 400 de validacion (ruta viva).
+- **Mejora pendiente:** el arranque de dev no deberia depender de que exista una carpeta generada. Opciones: que `Start-BackendDev.ps1` cree `wwwroot` vacia si falta, o que `Program.cs` no registre static web assets en `Development`. Queda abierto.
+- **Relacionado:** `Start-Dev.ps1` lanza el frontend con `Start-Process powershell -NoExit` **sin** redirigir stdout/stderr, asi que el hijo hereda los handles del shell padre y la tarea que lo invoca se queda viva indefinidamente. `Start-LocalDev.ps1` si redirige a `logs/dev`, pero requiere `.dotnet` y PostgreSQL portatil (`tools/pgsql`) en el workspace.
+
 ## 2026-11-16 - V-03.02 - Incidencias durante la correccion del informe Impeccable (CORREGIDO)
 
 - **`TokenCreatedModal.tsx` roto por un subagente:** al migrarlo a `Modal` se perdieron el `useEffect` de autocierre a 60 s, `copyToken`, `masked` y el `return null` sin token (tsc: `')' expected`). Causa: reescritura de cabecera del archivo en vez de Edit puntual. Corregido restaurando el bloque desde `HEAD`. Leccion: los briefs de subagentes exigen Edit puntual y el orquestador corre tsc/lint tras cada lote.
@@ -5684,3 +5693,19 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 - **Riesgo detectado en revision:** `git rev-parse --is-inside-work-tree` es verdadero en subcarpetas del repo ignoradas por git; usar `git ls-files` ahi escanearia 0 ficheros y pasaria en falso.
 - **Solucion:** `Get-AtlasGitFiles` solo se usa si `-Root` es la raiz del repo (`--show-toplevel`); si no, recorrido completo. Comprobado: subcarpeta ignorada no activa el universo git. Falta un fixture dedicado en `Test-AtlasSecrets.Tests.ps1`.
+
+## 2026-11-16 - V-03.02 - Lint incluye artefactos previos de pruebas
+
+- `npm run lint` encuentra 29 errores en `frontend/.test-dist-v2`, carpeta generada preexistente. `npx eslint src --max-warnings 0` pasa. No se elimino la carpeta; queda pendiente corregir el alcance del lint o limpiar el artefacto cuando corresponda.
+
+## 2026-11-16 - Lint incluye salida alternativa de tests
+
+`npm run lint` incluye los JS generados en `.test-dist-v2` y falla; ESLint excluyendo esa carpeta pasa. La carpeta ya existia y no se elimino. Modern Web Guidance no estaba en la cache local (`ENOTCACHED`); no se aplicaron sus guias.
+
+## 2026-11-16 - V-03.02 - Guardados simultaneos de columnas
+
+- Los PUT simultaneos de orden o visibilidad podian completarse fuera de orden y sobrescribir el cambio mas reciente. Se deshabilitan los controles durante el guardado y se usa una guarda sincrona en ambas vistas. Playwright con respuestas demoradas y persistencia simulada: 2/2.
+
+## 2026-11-16 - Comprobacion de permisos del buscador
+
+`dotnet test --filter` fue ignorado por Microsoft Testing Platform; se interrumpio y se ejecuto el runner xUnit directamente con `-class`: 19 pruebas correctas. `UseAppHost=false` es incompatible con este proyecto xUnit v3. La herramienta de navegador no pudo identificar la URL con seguridad y detuvo la comprobacion visual.

@@ -8,6 +8,7 @@ import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import EditableCell from '@/components/extractos/EditableCell';
+import { BASE_COLUMNS } from '@/components/extractos/extractoColumns';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUiStore } from '@/stores/uiStore';
 import type { Extracto } from '@/types';
@@ -45,10 +46,18 @@ interface ExtractoTableProps {
   sortBy: string;
   sortDir: 'asc' | 'desc';
   visibleColumns: string[] | null;
+  columnOrder: string[] | null;
+  columnPreferencesSaving?: boolean;
+  excludedColumns?: string[];
   availableExtraColumns: string[];
   onSort: (field: string) => void;
   onToggleColumn: (column: string, availableColumns: string[]) => void;
   onShowAllColumns: (availableColumns: string[]) => void;
+  onReorderColumns: (columns: string[]) => void;
+  selectedRowIds?: Set<string>;
+  onSelectRow?: (rowId: string, selected: boolean) => void;
+  onSelectAllRows?: (rowIds: string[], selected: boolean) => void;
+  onFilteredRowsChange?: (rowIds: string[]) => void;
   onSaveCell: (row: Extracto, column: string, value: string) => Promise<void>;
   onToggleCheck: (row: Extracto, checked: boolean) => Promise<void>;
   onToggleFlag: (row: Extracto, flagged: boolean, nota?: string) => Promise<void>;
@@ -62,20 +71,6 @@ interface ExtractoTableProps {
   hasExternalFilters: boolean;
 }
 
-const BASE_COLUMNS = [
-  'fecha',
-  'cuenta_nombre',
-  'banco_nombre',
-  'titular_nombre',
-  'divisa',
-  'concepto',
-  'comentarios',
-  'monto',
-  'saldo',
-  'checked',
-  'flagged',
-  'desglose',
-] as const;
 const AMOUNT_COLUMNS = new Set(['monto', 'saldo']);
 const SORTABLE_COLUMNS = new Set<string>(['fila_numero', 'fecha', 'concepto', 'comentarios', 'monto', 'saldo', 'fecha_creacion']);
 const DEFAULT_FOCUSED_CELL = { rowIndex: 0, colIndex: 0 };
@@ -86,10 +81,18 @@ export default function ExtractoTable({
   sortBy,
   sortDir,
   visibleColumns,
+  columnOrder,
+  columnPreferencesSaving = false,
+  excludedColumns,
   availableExtraColumns,
   onSort,
   onToggleColumn,
   onShowAllColumns,
+  onReorderColumns,
+  selectedRowIds,
+  onSelectRow,
+  onSelectAllRows,
+  onFilteredRowsChange,
   onSaveCell,
   onToggleCheck,
   onToggleFlag,
@@ -114,6 +117,7 @@ export default function ExtractoTable({
   const [insertSaving, setInsertSaving] = useState(false);
   const [insertError, setInsertError] = useState<string | null>(null);
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
   const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const filtersId = useId();
   const columnsId = useId();
@@ -132,15 +136,20 @@ export default function ExtractoTable({
       .sort((a, b) => a.localeCompare(b));
   }, [availableExtraColumns, rows]);
 
-  const allColumns = useMemo(() => [...BASE_COLUMNS, ...extraColumns], [extraColumns]);
+  const allColumns = useMemo(() => {
+    const available = [...BASE_COLUMNS, ...extraColumns].filter((column) => !excludedColumns?.includes(column));
+    const set = new Set(available);
+    return [...(columnOrder ?? []).filter((column) => set.delete(column)), ...available.filter((column) => set.has(column))];
+  }, [extraColumns, excludedColumns, columnOrder]);
   const activeColumns = useMemo(() => {
     if (!visibleColumns) {
       return allColumns;
     }
     const selected = new Set(visibleColumns);
-    const next = allColumns.filter((col) => selected.has(col));
+    const known = new Set(columnOrder ?? BASE_COLUMNS);
+    const next = allColumns.filter((col) => selected.has(col) || !known.has(col));
     return next.length > 0 ? next : allColumns;
-  }, [allColumns, visibleColumns]);
+  }, [allColumns, visibleColumns, columnOrder]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
@@ -150,6 +159,10 @@ export default function ExtractoTable({
       });
     });
   }, [rows, debouncedFilters, activeColumns]);
+
+  useEffect(() => {
+    onFilteredRowsChange?.(filteredRows.map((row) => row.id));
+  }, [filteredRows, onFilteredRowsChange]);
 
   const focusedRow = filteredRows[focusedCell.rowIndex];
   const focusedColumn = activeColumns[focusedCell.colIndex];
@@ -193,8 +206,9 @@ export default function ExtractoTable({
     }
   }, [canAddRow, inlineInsertEnabled, insertDraft, rows]);
 
-  const gridTemplateColumns = activeColumns.length > 0 ? activeColumns.map(getColumnTrack).join(' ') : '1fr';
-  const sheetWidth = activeColumns.reduce((total, column) => total + getColumnWidth(column), 0);
+  const selectable = Boolean(onSelectRow && onSelectAllRows && selectedRowIds);
+  const gridTemplateColumns = `${selectable ? '48px ' : ''}${activeColumns.length > 0 ? activeColumns.map(getColumnTrack).join(' ') : '1fr'}`;
+  const sheetWidth = activeColumns.reduce((total, column) => total + getColumnWidth(column), selectable ? 48 : 0);
   const sheetRootStyle = {
     '--extracto-sheet-width': `${sheetWidth}px`,
   } as CSSProperties;
@@ -405,44 +419,69 @@ export default function ExtractoTable({
             <button
               type="button"
               onClick={() => onShowAllColumns(allColumns)}
-              disabled={activeColumns.length === allColumns.length}
+              disabled={columnPreferencesSaving || activeColumns.length === allColumns.length}
             >
               Mostrar todas
             </button>
           </div>
-          {allColumns.map((column) => {
+          {allColumns.map((column, index) => {
             const checked = visibleColumns ? activeColumns.includes(column) : true;
             const isLastVisibleColumn = checked && activeColumns.length <= 1 && activeColumns.includes(column);
 
             return (
-              <label
-                key={column}
-                title={isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}
-              >
+              <div key={column} className="column-visibility-item">
+              <label title={isLastVisibleColumn ? 'Debe quedar al menos una columna visible.' : undefined}>
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={isLastVisibleColumn}
+                  disabled={columnPreferencesSaving || isLastVisibleColumn}
                   onChange={() => onToggleColumn(column, allColumns)}
                 />
                 {getColumnLabel(column)}
               </label>
+              <button type="button" aria-label={`Subir ${getColumnLabel(column)}`} disabled={columnPreferencesSaving || index === 0} onClick={() => {
+                const next = [...allColumns];
+                [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                onReorderColumns(next);
+              }}>↑</button>
+              <button type="button" aria-label={`Bajar ${getColumnLabel(column)}`} disabled={columnPreferencesSaving || index === allColumns.length - 1} onClick={() => {
+                const next = [...allColumns];
+                [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                onReorderColumns(next);
+              }}>↓</button>
+              </div>
             );
           })}
         </div>
       ) : null}
 
       <div
+        ref={topScrollRef}
+        className="extracto-top-scroll"
+        role="region"
+        aria-label="Desplazamiento horizontal superior de extractos"
+        tabIndex={0}
+        onScroll={(event) => {
+          if (parentRef.current) parentRef.current.scrollLeft = event.currentTarget.scrollLeft;
+        }}
+      >
+        <div style={{ width: sheetWidth, height: 1 }} />
+      </div>
+      <div
         ref={parentRef}
         className="extracto-table-viewport"
+        onScroll={(event) => {
+          if (topScrollRef.current) topScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
+        }}
         style={sheetRootStyle}
         role="grid"
         aria-label="Extractos de la página actual en formato hoja editable"
         aria-rowcount={filteredRows.length + 2}
-        aria-colcount={activeColumns.length}
+        aria-colcount={activeColumns.length + (selectable ? 1 : 0)}
       >
         <div id={filtersId} className="extracto-table-head" role="rowgroup">
           <div className="extracto-table-head-row" style={sheetGridStyle} role="row" aria-rowindex={1}>
+            {selectable ? <div className="cell head" role="columnheader" aria-colindex={1}><input type="checkbox" aria-label="Seleccionar movimientos filtrados de esta página" checked={filteredRows.length > 0 && filteredRows.every((row) => selectedRowIds!.has(row.id))} onChange={(event) => onSelectAllRows!(filteredRows.map((row) => row.id), event.target.checked)} /></div> : null}
             {activeColumns.map((column, columnIndex) => {
               const isSortable = SORTABLE_COLUMNS.has(column);
               return (
@@ -450,7 +489,7 @@ export default function ExtractoTable({
                   key={column}
                   className={`cell head ${getColumnClassName(column)}`}
                   role="columnheader"
-                  aria-colindex={columnIndex + 1}
+                  aria-colindex={columnIndex + 1 + (selectable ? 1 : 0)}
                   aria-sort={isSortable ? (sortBy === column ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
                 >
                   {isSortable ? (
@@ -468,12 +507,13 @@ export default function ExtractoTable({
             })}
           </div>
           <div className="extracto-table-filter-row" style={sheetGridStyle} role="row" aria-rowindex={2}>
+            {selectable ? <div className="cell filter" role="columnheader" aria-colindex={1} /> : null}
             {activeColumns.map((column, columnIndex) => (
               <div
                 key={`filter-${column}`}
                 className={`cell filter ${getColumnClassName(column)}`}
                 role="columnheader"
-                aria-colindex={columnIndex + 1}
+                aria-colindex={columnIndex + 1 + (selectable ? 1 : 0)}
               >
                 {renderFilterControl(column, filters[column] ?? '', (value) => setFilters((prev) => ({ ...prev, [column]: value })))}
               </div>
@@ -520,6 +560,7 @@ export default function ExtractoTable({
                       role="row"
                       aria-rowindex={virtualRow.index + 3}
                     >
+                    {selectable ? <div className="cell" role="gridcell" aria-colindex={1}><input type="checkbox" aria-label={`Seleccionar movimiento ${row.fila_numero}`} checked={selectedRowIds!.has(row.id)} onChange={(event) => onSelectRow!(row.id, event.target.checked)} /></div> : null}
                     {activeColumns.map((column, columnIndex) => {
                       const isFocusedCell =
                         focusedCell.rowIndex === virtualRow.index && focusedCell.colIndex === columnIndex;
@@ -537,7 +578,7 @@ export default function ExtractoTable({
                         }}
                         className={`cell ${getColumnClassName(column)}`}
                         role="gridcell"
-                        aria-colindex={columnIndex + 1}
+                        aria-colindex={columnIndex + 1 + (selectable ? 1 : 0)}
                         aria-selected={isFocusedCell}
                         tabIndex={isFocusedCell ? 0 : -1}
                         onClick={(event) => {

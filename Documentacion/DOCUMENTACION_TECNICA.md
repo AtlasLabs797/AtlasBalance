@@ -2,6 +2,14 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-16 - Columnas y tabla compartida de extractos
+
+`ExtractosController.Listar` descubre nombres extra no vacios en movimientos autorizados del ambito, independientemente de los filtros y la pagina. `orden_columnas` es JSONB independiente de `columnas_visibles` en `PREFERENCIAS_USUARIO_CUENTA`; la migracion debe aplicarse al desplegar. Las rutas de permisos preservan el orden existente. Los controles serializan guardados y la tabla compartida excluye cuenta, banco y titular en el detalle de cuenta, manteniendo acciones masivas sobre filas filtradas. Las preferencias previas no distinguen una columna extra nueva de una ocultada: se muestran una vez y la siguiente preferencia guarda todas las columnas conocidas.
+
+### 2026-11-16 - Extractos: avance parcial
+
+Las filas marcadas usan `--status-warning-bg` en extractos y detalle de cuenta. La tabla de extractos tiene un segundo contenedor de scroll horizontal sincronizado con el viewport. Falta validar ambos cambios en navegador y completar columnas, orden persistente y tabla compartida de cuenta.
+
 ### 2026-11-16 - Correccion de los hallazgos del informe Impeccable (F1-F10)
 
 Informe origen: `Diseno/INFORME_IMPECCABLE_CRITIQUE_AUDIT_V-03.02.md`. Aplicado en cuatro lotes con subagentes (Sonnet y Haiku) y verificado por lote (tsc, lint, tests y capturas Playwright con API mockeada).
@@ -7199,3 +7207,6 @@ Origen: bitacora de este mismo dia en `DOCUMENTACION_CAMBIOS.md`. Cambios y moti
 - **Backup local y xlsx.** Sin cifrado a nivel de aplicacion; decision de dejarlo a BitLocker.
 
 Verificacion: AtlasBalance.API.Tests 994/994 y AtlasBalance.Caching.Tests 15/15 (`dotnet test -c Release`); `tsc` y lint del frontend. `vitest` no ejecutado; sin prueba en la app autenticada (MFA).
+# V-03.02 - Busqueda global de titulares y cuentas (2026-11-16)
+
+La paleta consulta los listados existentes de titulares y cuentas con el texto diferido 300 ms, pais activo y limite de diez por tipo. La API aplica el alcance y el filtrado existentes; las solicitudes se cancelan al cambiar de consulta. Los resultados abren sus rutas de detalle. La busqueda de entidades conserva las reglas de coincidencia de la API.
