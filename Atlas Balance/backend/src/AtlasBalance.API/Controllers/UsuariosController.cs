@@ -112,7 +112,9 @@ public sealed class UsuariosController : ControllerBase
                 MfaRequired = u.Rol == RolUsuario.ADMIN,
                 FechaCreacion = u.FechaCreacion,
                 FechaUltimaLogin = u.FechaUltimaLogin,
-                DeletedAt = u.DeletedAt
+                DeletedAt = u.DeletedAt,
+                BloqueadoHasta = u.LockedUntil,
+                IntentosFallidos = u.FailedLoginAttempts
             })
             .ToListAsync(cancellationToken);
 
@@ -162,7 +164,9 @@ public sealed class UsuariosController : ControllerBase
                 MfaRequired = usuario.Rol == RolUsuario.ADMIN,
                 FechaCreacion = usuario.FechaCreacion,
                 FechaUltimaLogin = usuario.FechaUltimaLogin,
-                DeletedAt = usuario.DeletedAt
+                DeletedAt = usuario.DeletedAt,
+                BloqueadoHasta = usuario.LockedUntil,
+                IntentosFallidos = usuario.FailedLoginAttempts
             },
             Emails = emails,
             Permisos = permisos
@@ -846,6 +850,40 @@ public sealed class UsuariosController : ControllerBase
             JsonSerializer.Serialize(new { before, after, refresh_tokens_revocados = revokedRefreshTokens }), cancellationToken);
 
         return Ok(new { message = "Usuario restaurado" });
+    }
+
+    // A-2: el bloqueo por intentos fallidos solo impide logins nuevos; las
+    // sesiones abiertas siguen vivas. El admin necesita poder liberarlo cuando
+    // el bloqueo se ha quedado pegado (contrasena cambiada por otra via, error
+    // de tecleo en bloque, etc.).
+    [HttpPost("{id:guid}/desbloquear")]
+    public async Task<IActionResult> Desbloquear(Guid id, CancellationToken cancellationToken)
+    {
+        var usuario = await _dbContext.Usuarios.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (usuario is null)
+        {
+            return NotFound(new { error = "Usuario no encontrado" });
+        }
+
+        if (!usuario.LockedUntil.HasValue)
+        {
+            return BadRequest(new { error = "El usuario no esta bloqueado" });
+        }
+
+        var before = new
+        {
+            usuario.FailedLoginAttempts,
+            usuario.LockedUntil
+        };
+
+        usuario.FailedLoginAttempts = 0;
+        usuario.LockedUntil = null;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync(GetCurrentUserId(), AuditActions.AccountUnlocked, "USUARIOS", usuario.Id, HttpContext,
+            JsonSerializer.Serialize(new { before, after = new { failed_login_attempts = 0, locked_until = (DateTime?)null } }), cancellationToken);
+
+        return Ok(new { message = "Usuario desbloqueado" });
     }
 
     [HttpPost("{id:guid}/mfa/revocar")]

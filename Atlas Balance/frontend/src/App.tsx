@@ -52,9 +52,14 @@ function getCsrfTokenFromCookie(): string | null {
   // que ocupa 44 caracteres (32 bytes + padding `=`). La regex anterior
   // rechazaba el valor porque no admitia '+', '/' ni '='. Se admite Base64
   // estandar (RFC 4648 §4), sigue siendo estricta (solo caracteres validos).
-  const tokenPair = cookies.find(
-    (item) => item.startsWith('csrf_token=') || item.startsWith('__Host-atlas-csrf-token=')
-  );
+  // S-14: en produccion el backend solo valida la cookie con prefijo
+  // __Host-. Si el navegador conserva la legacy csrf_token de una version
+  // anterior, hay que leer SIEMPRE la buena: mandar el valor de la legacy en
+  // el header X-CSRF-Token no coincide con la cookie que lee el backend y
+  // acaba en 403 en cada peticion que cambia datos.
+  const tokenPair =
+    cookies.find((item) => item.startsWith('__Host-atlas-csrf-token=')) ??
+    cookies.find((item) => item.startsWith('csrf_token='));
   if (!tokenPair) {
     return null;
   }

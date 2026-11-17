@@ -160,7 +160,10 @@ public sealed class CsrfMiddlewareTests
         // IRequestCookieCollection no expone Append; el middleware lee la
         // cookie via Request.Headers["Cookie"], asi que esa es la via
         // correcta para sembrar el valor en tests.
-        context.Request.Headers.Append("Cookie", "csrf_token=valid-token");
+        // S-14: en produccion la cookie de CSRF valida es la que lleva el
+        // prefijo __Host- (la que emite AuthController). La legacy sin Secure
+        // la puede fijar un atacante y no debe valer.
+        context.Request.Headers.Append("Cookie", "__Host-atlas-csrf-token=valid-token");
         context.Request.Headers.Append("X-CSRF-Token", "valid-token");
         var csrf = new AcceptingCsrfService();
 
@@ -258,7 +261,7 @@ public sealed class CsrfMiddlewareTests
         context.Request.Scheme = "https";
         context.Request.Host = new HostString("atlas.local");
         context.Request.Headers.Origin = "https://atlas.local";
-        context.Request.Headers.Append("Cookie", "csrf_token=valid-token");
+        context.Request.Headers.Append("Cookie", "__Host-atlas-csrf-token=valid-token");
         context.Request.Headers.Append("X-CSRF-Token", "valid-token");
 
         await middleware.InvokeAsync(context, new AcceptingCsrfService());
@@ -307,7 +310,7 @@ public sealed class CsrfMiddlewareTests
             new FakeWebHostEnvironment());
 
         var context = BuildContext("/api/usuarios", "POST", userAgent: "Mozilla/5.0");
-        context.Request.Headers.Append("Cookie", "csrf_token=valid-token");
+        context.Request.Headers.Append("Cookie", "__Host-atlas-csrf-token=valid-token");
         context.Request.Headers.Append("X-CSRF-Token", "valid-token");
 
         await middleware.InvokeAsync(context, new AcceptingCsrfService());
@@ -383,6 +386,79 @@ public sealed class CsrfMiddlewareTests
         await middleware.InvokeAsync(context, new RejectingCsrfService());
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        nextCalled.Should().BeTrue();
+    }
+
+    // S-14: la cookie de CSRF de produccion es "__Host-atlas-csrf-token"
+    // (Secure, Path=/, sin Domain). La legacy "csrf_token" la puede fijar
+    // un subdominio comprometido o un atacante en la LAN, asi que fuera de
+    // Development no puede servir como token valido.
+    [Fact]
+    public async Task InvokeAsync_Should_Return403_When_LegacyCsrfCookie_OutsideDevelopment()
+    {
+        var nextCalled = false;
+        var middleware = new CsrfMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            NullLogger<CsrfMiddleware>.Instance,
+            new FakeWebHostEnvironment());
+
+        var context = BuildContext("/api/usuarios", "POST", userAgent: "Mozilla/5.0");
+        context.Request.Headers.Append("Cookie", "csrf_token=valid-token");
+        context.Request.Headers.Append("X-CSRF-Token", "valid-token");
+
+        await middleware.InvokeAsync(context, new AcceptingCsrfService());
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        nextCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_CallNext_When_HostPrefixedCsrfCookie_OutsideDevelopment()
+    {
+        var nextCalled = false;
+        var middleware = new CsrfMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            NullLogger<CsrfMiddleware>.Instance,
+            new FakeWebHostEnvironment());
+
+        var context = BuildContext("/api/usuarios", "POST", userAgent: "Mozilla/5.0");
+        context.Request.Headers.Append("Cookie", "__Host-atlas-csrf-token=valid-token");
+        context.Request.Headers.Append("X-CSRF-Token", "valid-token");
+
+        await middleware.InvokeAsync(context, new AcceptingCsrfService());
+
+        nextCalled.Should().BeTrue();
+    }
+
+    // En Development el frontend corre en Vite sobre HTTP plano y las cookies
+    // se emiten sin el prefijo __Host-: las dos se aceptan.
+    [Fact]
+    public async Task InvokeAsync_Should_CallNext_When_LegacyCsrfCookie_InDevelopment()
+    {
+        var nextCalled = false;
+        var middleware = new CsrfMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            NullLogger<CsrfMiddleware>.Instance,
+            new FakeWebHostEnvironment("Development"));
+
+        var context = BuildContext("/api/usuarios", "POST", userAgent: "Mozilla/5.0");
+        context.Request.Headers.Append("Cookie", "csrf_token=valid-token");
+        context.Request.Headers.Append("X-CSRF-Token", "valid-token");
+
+        await middleware.InvokeAsync(context, new AcceptingCsrfService());
+
         nextCalled.Should().BeTrue();
     }
 

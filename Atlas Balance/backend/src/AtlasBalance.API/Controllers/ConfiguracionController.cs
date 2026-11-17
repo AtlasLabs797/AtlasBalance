@@ -62,7 +62,9 @@ public sealed class ConfiguracionController : ControllerBase
                 Host = GetValue(config, "smtp_host"),
                 Port = ParseInt(GetValue(config, "smtp_port"), 587),
                 User = GetValue(config, "smtp_user"),
-                From = GetValue(config, "smtp_from")
+                From = GetValue(config, "smtp_from"),
+                // S-17: modo TLS explicito. "auto" si no esta configurado.
+                TlsMode = GetValue(config, "smtp_tls_mode", "auto")
             },
             General = new GeneralConfigResponse
             {
@@ -119,6 +121,13 @@ public sealed class ConfiguracionController : ControllerBase
         if (request.Smtp.Port <= 0 || request.Smtp.Port > 65535)
         {
             return BadRequest(new { error = "Puerto SMTP inválido." });
+        }
+
+        // S-17: el modo TLS solo admite required | auto | none. Vacio o ausente
+        // significa "no especificado": no se toca el valor guardado.
+        if (!string.IsNullOrWhiteSpace(request.Smtp.TlsMode) && !IsValidSmtpTlsMode(request.Smtp.TlsMode))
+        {
+            return BadRequest(new { error = "Modo TLS SMTP inválido. Valores admitidos: required, auto, none." });
         }
 
         if (!string.IsNullOrWhiteSpace(request.General.AppBaseUrl) && !IsValidAppBaseUrl(request.General.AppBaseUrl))
@@ -201,6 +210,12 @@ public sealed class ConfiguracionController : ControllerBase
             Upsert(config, "smtp_password", request.Smtp.Password, userId, now);
         }
         Upsert(config, "smtp_from", request.Smtp.From.Trim(), userId, now);
+        // S-17: solo se guarda si viene informado, para que un cliente que
+        // todavia no conoce el campo no resetee el modo elegido.
+        if (!string.IsNullOrWhiteSpace(request.Smtp.TlsMode))
+        {
+            Upsert(config, "smtp_tls_mode", request.Smtp.TlsMode.Trim().ToLowerInvariant(), userId, now);
+        }
 
         Upsert(config, "app_base_url", request.General.AppBaseUrl.Trim(), userId, now);
         Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
@@ -406,6 +421,12 @@ public sealed class ConfiguracionController : ControllerBase
         item.EsSecreto = esSecreto;
         item.FechaModificacion = now;
         item.UsuarioModificacionId = userId;
+    }
+
+    private static bool IsValidSmtpTlsMode(string value)
+    {
+        var modo = value.Trim().ToLowerInvariant();
+        return modo is "required" or "auto" or "none";
     }
 
     private static string GetValue(IReadOnlyDictionary<string, string> map, string key, string defaultValue = "")

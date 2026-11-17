@@ -28,6 +28,8 @@
     "src/utils/bulkFlagToggle.ts",
     "src/utils/permisosFormUtils.ts",
     "src/utils/iaErrors.ts",
+    "src/utils/sessionErrors.ts",
+    "src/utils/usuarioBloqueo.ts",
     "src/utils/theme.ts",
     "src/utils/formatters.ts",
     "src/services/queryClient.ts",

@@ -23,6 +23,9 @@ public sealed class SmtpConfigResponse
     public int Port { get; set; } = 587;
     public string User { get; set; } = string.Empty;
     public string From { get; set; } = string.Empty;
+    // S-17: modo TLS del SMTP (required | auto | none). "auto" es el valor por
+    // defecto y equivale al comportamiento anterior.
+    public string TlsMode { get; set; } = "auto";
 }
 
 public sealed class GeneralConfigResponse
@@ -80,6 +83,13 @@ public sealed class UpdateSmtpConfigRequest
     public string Password { get; set; } = string.Empty;
     [MaxLength(254)]
     public string From { get; set; } = string.Empty;
+    // S-17: modo TLS del SMTP (required | auto | none). Null = no especificado
+    // = no se toca el valor guardado. Es deliberado: el PUT de configuracion
+    // manda la seccion SMTP completa, asi que un cliente que todavia no
+    // conoce este campo (o que lo omita) no debe resetear un modo "none"
+    // elegido por el administrador a "auto".
+    [MaxLength(16)]
+    public string? TlsMode { get; set; }
 }
 
 public sealed class UpdateGeneralConfigRequest

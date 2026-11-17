@@ -821,8 +821,11 @@ public class AuthServiceTests
         result.RefreshToken.Should().NotBeNullOrWhiteSpace();
     }
 
+    // A-2: el bloqueo por intentos fallidos solo impide logins nuevos. Una
+    // sesion ya abierta sigue viva aunque la cuenta se bloquee (si no, un
+    // fallo de contrasena desde otra pestana expulsaba al usuario de su sesion).
     [Fact]
-    public async Task RefreshToken_Should_Reject_Locked_User()
+    public async Task RefreshToken_Should_Not_Reject_A_Locked_User()
     {
         await using var db = BuildDbContext();
         var user = new Usuario
@@ -845,9 +848,10 @@ public class AuthServiceTests
         user.LockedUntil = DateTime.UtcNow.AddMinutes(30);
         await db.SaveChangesAsync();
 
-        Func<Task> action = () => sut.RefreshTokenAsync(login.RefreshToken!, "127.0.0.1", CancellationToken.None);
-        var exception = await action.Should().ThrowAsync<AuthException>();
-        exception.Which.StatusCode.Should().Be(StatusCodes.Status423Locked);
+        var refreshed = await sut.RefreshTokenAsync(login.RefreshToken!, "127.0.0.1", CancellationToken.None);
+
+        refreshed.AccessToken.Should().NotBeNullOrWhiteSpace();
+        refreshed.RefreshToken.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -940,7 +944,11 @@ public class AuthServiceTests
         db.Usuarios.Add(user);
         await db.SaveChangesAsync();
 
-        var sut = new AuthService(db, BuildConfig(), TestAuditService.Create(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions(), BuildRateLimitingOptions());
+        // S-15: este test fija el contrato anti-robo, asi que la ventana de
+        // gracia se desactiva (RefreshReuseGraceSeconds = 0). El reuso dentro
+        // de la ventana (dos pestanas) tiene su propio test en AuthLot2Tests.
+        var rateLimiting = BuildRateLimitingOptions(o => o.RefreshReuseGraceSeconds = 0);
+        var sut = new AuthService(db, BuildConfig(), TestAuditService.Create(db), new PlainTextSecretProtector(), BuildCacheService(db), BuildCachingOptions(), rateLimiting);
         var login = await sut.LoginAsync(user.Email, "Valid1234!Ab", "127.0.0.1", CancellationToken.None);
         var stampAfterLogin = (await db.Usuarios.SingleAsync(x => x.Id == user.Id)).SecurityStamp;
 

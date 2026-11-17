@@ -57,6 +57,12 @@ public class RefreshToken
     // JWT como claim `sid` y de ahi a AUDITORIAS.session_id.
     public string? SessionId { get; set; }
 
+    // S-13: ancla de la sesion. Se fija al abrir la sesion y se hereda en cada
+    // rotacion del refresh token, para que la vida maxima de la sesion no se
+    // reinicie eternamente al rotar el token. Los tokens previos a esta columna
+    // la tienen a null y no caducan por edad.
+    public DateTime? SesionIniEn { get; set; }
+
     public Usuario? Usuario { get; set; }
 }
 

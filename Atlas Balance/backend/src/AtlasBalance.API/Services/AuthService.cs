@@ -70,6 +70,17 @@ public sealed class AuthService : IAuthService
     private readonly IConfiguration _configuration;
     private readonly IAuditService _auditService;
     private readonly IMemoryCache _cache;
+
+    /// <summary>
+    /// S-11: cache del contador de fallos por IP contra cuentas existentes.
+    /// En produccion es el mismo <see cref="IMemoryCache"/> singleton que se
+    /// inyecta, asi que el limite es compartido por todo el proceso. Cuando no
+    /// se inyecta ninguna (tests), usa una instancia propia: el fallback
+    /// estatico de <see cref="_cache"/> es compartido por todo el proceso y un
+    /// contador por IP acabaria sumando los fallos de pruebas sin relacion
+    /// entre si.
+    /// </summary>
+    private readonly IMemoryCache _loginFailureExistingUserCache;
     private readonly ISecretProtector _secretProtector;
     private readonly ICacheService _cacheService;
     private readonly CachingOptions _cachingOptions;
@@ -92,6 +103,7 @@ public sealed class AuthService : IAuthService
         _configuration = configuration;
         _auditService = auditService;
         _cache = cache ?? FallbackMemoryCache;
+        _loginFailureExistingUserCache = cache ?? new MemoryCache(new MemoryCacheOptions());
         _cacheService = cacheService;
         _cachingOptions = cachingOptions.Value;
         _rateLimitingOptions = rateLimitingOptions.Value;
@@ -202,10 +214,34 @@ _secretProtector = secretProtector;
             throw new AuthException("Credenciales inválidas", StatusCodes.Status401Unauthorized);
         }
 
+        // S-11: el limite por IP tambien se aplica a las cuentas que SI existen.
+        // Sin esto, un spray de contrasenas contra cuentas reales desde una
+        // misma IP no estaba acotado. El umbral es propio (mas alto) porque la
+        // app es on-premise y detras de un proxy inverso toda la oficina
+        // comparte IP: con el umbral de cuentas inexistentes, un error de
+        // tecleo en bloque dejaria fuera a usuarios legitimos. El limite por
+        // (IP,email) sigue siendo el que protege cada cuenta individual.
+        if (IsLoginExistingUserClientThrottled(ipAddress))
+        {
+            await _auditService.LogAsync(
+                usuario.Id,
+                AuditActions.LoginFailed,
+                "USUARIOS",
+                usuario.Id,
+                ipAddress,
+                JsonSerializer.Serialize(new { email = normalizedEmail, motivo = "rate_limited" }),
+                cancellationToken);
+            throw new AuthException("Demasiados intentos. Espera unos minutos.", StatusCodes.Status429TooManyRequests, loginRetryAfterSeconds);
+        }
+
         if (!BCrypt.Net.BCrypt.Verify(password, usuario.PasswordHash))
         {
             var throttled = RecordLoginFailure(normalizedEmail, ipAddress);
-            usuario.FailedLoginAttempts += 1;
+            RecordLoginFailureForExistingUser(ipAddress);
+            // A-2 + S-11: incremento atomico en BD. Si el bloqueo anterior ya
+            // caduco, el contador vuelve a 0 antes de contar este fallo (si no,
+            // un solo fallo nuevo volveria a bloquear la cuenta).
+            await IncrementFailedLoginAttemptsAsync(usuario, now, cancellationToken);
             var lockTriggered = false;
             if (usuario.FailedLoginAttempts >= _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount)
             {
@@ -388,10 +424,24 @@ _secretProtector = secretProtector;
             var userMfaFailures = RecordMfaFailure(usuario.Id);
             challenge = challenge with { FailedAttempts = challenge.FailedAttempts + 1 };
             var lockTriggered = userMfaFailures >= MaxMfaFailuresPerUser;
+
+            // A-2: si el bloqueo anterior ya caduco, el contador vuelve a 0
+            // antes de contar este fallo (misma logica que en el login).
+            var lockExpired = usuario.LockedUntil.HasValue && usuario.LockedUntil.Value <= now;
+            if (lockExpired)
+            {
+                usuario.FailedLoginAttempts = 0;
+                usuario.LockedUntil = null;
+            }
+
             if (lockTriggered)
             {
                 usuario.FailedLoginAttempts = _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount;
                 usuario.LockedUntil = now.Add(_rateLimitingOptions.LoginLockDuration);
+            }
+
+            if (lockTriggered || lockExpired)
+            {
                 await _dbContext.SaveChangesAsync(cancellationToken);
             }
 
@@ -436,6 +486,16 @@ _secretProtector = secretProtector;
 
         if (challenge.SetupRequired)
         {
+            // S-10: si el usuario ya tiene MFA (desafio obsoleto o alta hecha
+            // por otra via), guardar aqui sobrescribiria el secreto de la
+            // victima. Se invalida el desafio y se responde como cualquier
+            // otro fallo, sin tocar nada.
+            if (usuario.MfaEnabled || !string.IsNullOrWhiteSpace(usuario.MfaSecret))
+            {
+                RemoveMfaChallenge(challengeId);
+                throw new AuthException("Codigo MFA invalido o expirado", StatusCodes.Status401Unauthorized);
+            }
+
             usuario.MfaSecret = _secretProtector.ProtectForStorage(secret);
             usuario.MfaEnabled = true;
             usuario.MfaEnabledAt = now;
@@ -525,6 +585,22 @@ _secretProtector = secretProtector;
             {
                 if (!string.IsNullOrWhiteSpace(storedToken.ReemplazadoPor))
                 {
+                    // S-15: dos pestanas que presentan el mismo token a la vez
+                    // (la respuesta de la primera todavia no se aplico) son un
+                    // reintento benigno, no un robo. Solo se trata como robo si
+                    // se sale de la ventana de gracia, si el token de reemplazo
+                    // ya se uso o si la IP no coincide.
+                    var benign = await TryHandleBenignRefreshReuseAsync(storedToken, now, ipAddress, cancellationToken);
+                    if (benign is not null)
+                    {
+                        if (tx is not null)
+                        {
+                            await tx.CommitAsync(cancellationToken);
+                        }
+
+                        return benign;
+                    }
+
                     await RevokeSessionsAfterRefreshReuseAsync(storedToken, now, ipAddress, cancellationToken);
                     if (tx is not null)
                     {
@@ -541,11 +617,9 @@ _secretProtector = secretProtector;
                 throw new AuthException("Usuario no válido", StatusCodes.Status401Unauthorized);
             }
 
-            if (usuario.LockedUntil.HasValue && usuario.LockedUntil.Value > now)
-            {
-                throw new AuthException("Usuario bloqueado temporalmente por intentos fallidos", StatusCodes.Status423Locked);
-            }
-
+            // A-2: el bloqueo por intentos fallidos solo impide logins nuevos.
+            // Una sesion ya abierta sigue viva: si no, un fallo de contrasena
+            // desde otra pestana expulsaria al usuario de su sesion.
             UserSessionState.EnsureSecurityStamp(usuario);
 
             if (!HasMatchingSecurityStamp(storedToken.SecurityStamp, usuario.SecurityStamp))
@@ -558,6 +632,34 @@ _secretProtector = secretProtector;
                 }
 
                 throw new AuthException("Refresh token inválido o expirado", StatusCodes.Status401Unauthorized);
+            }
+
+            // S-13: vida maxima de sesion. Sin este tope, cada rotacion del
+            // refresh token reiniciaba el reloj y la sesion no moria nunca (y la
+            // garantia MFA heredada vivia para siempre). Al caducar, el usuario
+            // tiene que volver a iniciar sesion (con MFA).
+            if (storedToken.SesionIniEn.HasValue && now - storedToken.SesionIniEn.Value > GetMaxSessionDuration())
+            {
+                await RevokeSessionTokensAsync(storedToken, now, cancellationToken);
+                await _auditService.LogAsync(
+                    usuario.Id,
+                    AuditActions.SessionExpired,
+                    "USUARIOS",
+                    usuario.Id,
+                    ipAddress,
+                    JsonSerializer.Serialize(new
+                    {
+                        refresh_token_id = storedToken.Id,
+                        sesion_ini_en = storedToken.SesionIniEn,
+                        vida_maxima_dias = GetMaxSessionDuration().TotalDays
+                    }),
+                    cancellationToken);
+                if (tx is not null)
+                {
+                    await tx.CommitAsync(cancellationToken);
+                }
+
+                throw new AuthException("La sesion ha caducado. Vuelve a iniciar sesion.", StatusCodes.Status401Unauthorized);
             }
 
             if (await RequiresMfaAsync(usuario, cancellationToken) && storedToken.MfaVerifiedAt is null)
@@ -615,7 +717,10 @@ _secretProtector = secretProtector;
                 CreadoEn = now,
                 MfaVerifiedAt = storedToken.MfaVerifiedAt,
                 IpAddress = ParseIpAddress(ipAddress),
-                SessionId = sessionId
+                SessionId = sessionId,
+                // S-13: el ancla de la sesion se hereda; la rotacion no reinicia
+                // la vida maxima de la sesion.
+                SesionIniEn = storedToken.SesionIniEn ?? storedToken.CreadoEn
             });
 
             var accessToken = GenerateAccessToken(usuario, sessionId, storedToken.MfaVerifiedAt);
@@ -826,7 +931,9 @@ _secretProtector = secretProtector;
 
         if (!BCrypt.Net.BCrypt.Verify(passwordActual, usuario.PasswordHash))
         {
-            usuario.FailedLoginAttempts += 1;
+            // A-2 + S-11: incremento atomico en BD y reinicio del contador si
+            // el bloqueo anterior ya caduco.
+            await IncrementFailedLoginAttemptsAsync(usuario, now, cancellationToken);
             var lockTriggered = usuario.FailedLoginAttempts >= _rateLimitingOptions.LoginMaxFailedAttemptsPerAccount;
             if (lockTriggered)
             {
@@ -907,7 +1014,9 @@ _secretProtector = secretProtector;
             CreadoEn = now,
             MfaVerifiedAt = currentSessionMfaVerifiedAt,
             IpAddress = ParseIpAddress(ipAddress),
-            SessionId = sessionId
+            SessionId = sessionId,
+            // S-13: el cambio de contrasena abre una sesion nueva.
+            SesionIniEn = now
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -1023,7 +1132,9 @@ _secretProtector = secretProtector;
             CreadoEn = now,
             MfaVerifiedAt = mfaVerifiedAt,
             IpAddress = ParseIpAddress(ipAddress),
-            SessionId = sessionId
+            SessionId = sessionId,
+            // S-13: aqui nace la sesion, asi que aqui se fija su ancla.
+            SesionIniEn = now
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -1261,6 +1372,95 @@ _secretProtector = secretProtector;
     {
         _cache.Remove(BuildLoginFailureCacheKey(normalizedEmail, ipAddress));
         _cache.Remove(BuildLoginClientFailureCacheKey(ipAddress));
+        _loginFailureExistingUserCache.Remove(BuildLoginExistingUserClientFailureCacheKey(ipAddress));
+    }
+
+    /// <summary>
+    /// S-11: consulta del limite por IP para cuentas EXISTENTES. Usa un
+    /// contador de cache SEPARADO del de cuentas inexistentes porque el umbral
+    /// es distinto: detras de un proxy inverso toda la oficina comparte IP y un
+    /// umbral bajo dejaria fuera a usuarios legitimos.
+    /// </summary>
+    private bool IsLoginExistingUserClientThrottled(string? ipAddress)
+    {
+        var clientKey = BuildLoginExistingUserClientFailureCacheKey(ipAddress);
+        lock (LoginRateLimitLock)
+        {
+            return _loginFailureExistingUserCache.TryGetValue<int>(clientKey, out var clientCount) &&
+                   clientCount >= _rateLimitingOptions.LoginMaxFailuresPerIpExistingUser;
+        }
+    }
+
+    private void RecordLoginFailureForExistingUser(string? ipAddress)
+    {
+        var clientKey = BuildLoginExistingUserClientFailureCacheKey(ipAddress);
+        lock (LoginRateLimitLock)
+        {
+            var clientCount = _loginFailureExistingUserCache.Get<int>(clientKey) + 1;
+            _loginFailureExistingUserCache.Set(clientKey, clientCount, _rateLimitingOptions.LoginFailureWindow);
+        }
+    }
+
+    private static string BuildLoginExistingUserClientFailureCacheKey(string? ipAddress)
+    {
+        var client = string.IsNullOrWhiteSpace(ipAddress) ? "unknown" : ipAddress.Trim();
+        return $"auth:login-failures-client-existing:{ComputeSha256(client)}";
+    }
+
+    /// <summary>
+    /// A-2 + S-11: incrementa el contador de fallos fallidos de la cuenta.
+    ///
+    /// En Postgres el incremento es UNA sola sentencia, de modo que una rafaga
+    /// de intentos en paralelo no pierde actualizaciones (la lectura-
+    /// modificacion-escritura sobre la entidad trackeada dejaba el contador
+    /// por debajo del real y permitia saltarse el bloqueo de cuenta). El valor
+    /// que devuelve es el de la BD y es el que decide si la cuenta se bloquea.
+    ///
+    /// El reinicio cuando el bloqueo anterior ya caduco va dentro de la misma
+    /// sentencia: si el contador se resetease aparte, un intento concurrente
+    /// podria borrar el incremento de otro.
+    /// </summary>
+    private async Task<int> IncrementFailedLoginAttemptsAsync(Usuario usuario, DateTime now, CancellationToken cancellationToken)
+    {
+        if (!_dbContext.Database.IsRelational())
+        {
+            // InMemory (tests): ExecuteUpdate no existe en este provider.
+            ResetExpiredLockCounter(usuario, now);
+            usuario.FailedLoginAttempts += 1;
+            return usuario.FailedLoginAttempts;
+        }
+
+        await _dbContext.Usuarios
+            .Where(u => u.Id == usuario.Id)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(
+                        u => u.FailedLoginAttempts,
+                        u => u.LockedUntil != null && u.LockedUntil <= now ? 1 : u.FailedLoginAttempts + 1)
+                    .SetProperty(
+                        u => u.LockedUntil,
+                        u => u.LockedUntil != null && u.LockedUntil <= now ? (DateTime?)null : u.LockedUntil),
+                cancellationToken);
+
+        // La entidad trackeada queda obsoleta tras el UPDATE: se recarga para que
+        // un SaveChanges posterior no reescriba el contador con el valor viejo
+        // (eso seria perder justo la actualizacion que el UPDATE atomico protege).
+        await _dbContext.Entry(usuario).ReloadAsync(cancellationToken);
+
+        return usuario.FailedLoginAttempts;
+    }
+
+    /// <summary>
+    /// A-2: cuando el bloqueo ya ha caducado, el contador de fallos vuelve a 0.
+    /// Sin esto, un unico fallo nuevo volvia a dejar la cuenta bloqueada.
+    /// </summary>
+    private static void ResetExpiredLockCounter(Usuario usuario, DateTime now)
+    {
+        if (usuario.LockedUntil.HasValue && usuario.LockedUntil.Value <= now)
+        {
+            usuario.FailedLoginAttempts = 0;
+            usuario.LockedUntil = null;
+        }
     }
 
     private static string BuildLoginFailureCacheKey(string normalizedEmail, string? ipAddress)
@@ -1273,6 +1473,136 @@ _secretProtector = secretProtector;
     {
         var client = string.IsNullOrWhiteSpace(ipAddress) ? "unknown" : ipAddress.Trim();
         return $"auth:login-failures-client:{ComputeSha256(client)}";
+    }
+
+    /// <summary>
+    /// S-15: reuso benigno de un refresh token ya rotado.
+    ///
+    /// Dos pestanas pueden presentar el mismo token a la vez porque la
+    /// respuesta de la primera todavia no se ha aplicado en el navegador. Eso no
+    /// es un robo y no puede cerrar todas las sesiones del usuario. Solo se
+    /// considera benigno si se cumple TODO lo siguiente:
+    ///   1. la revocacion del token es reciente (ventana de gracia);
+    ///   2. el token de reemplazo sigue vivo, es decir, nadie lo ha usado todavia;
+    ///   3. la IP de la peticion coincide con la del token emitido.
+    /// Devuelve null cuando no es un reintento benigno (eso se trata como robo).
+    /// </summary>
+    private async Task<AuthResult?> TryHandleBenignRefreshReuseAsync(
+        RefreshToken storedToken,
+        DateTime now,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var grace = TimeSpan.FromSeconds(_rateLimitingOptions.RefreshReuseGraceSeconds);
+        if (grace <= TimeSpan.Zero || !storedToken.RevocadoEn.HasValue)
+        {
+            return null;
+        }
+
+        if (now - storedToken.RevocadoEn.Value > grace)
+        {
+            return null;
+        }
+
+        var usuario = storedToken.Usuario;
+        if (usuario is null || !usuario.Activo || usuario.DeletedAt.HasValue)
+        {
+            return null;
+        }
+
+        UserSessionState.EnsureSecurityStamp(usuario);
+        if (!HasMatchingSecurityStamp(storedToken.SecurityStamp, usuario.SecurityStamp))
+        {
+            return null;
+        }
+
+        // Misma comprobacion que en la rotacion normal: si la politica MFA ha
+        // cambiado, el reuso no puede devolver un token sin garantia MFA.
+        if (await RequiresMfaAsync(usuario, cancellationToken) && storedToken.MfaVerifiedAt is null)
+        {
+            return null;
+        }
+
+        var replacement = await _dbContext.RefreshTokens
+            .FirstOrDefaultAsync(rt => rt.TokenHash == storedToken.ReemplazadoPor, cancellationToken);
+        if (replacement is null || replacement.RevocadoEn.HasValue)
+        {
+            return null;
+        }
+
+        var currentIp = ParseIpAddress(ipAddress);
+        if (storedToken.IpAddress is null || currentIp is null)
+        {
+            return null;
+        }
+
+        if (!NormalizeIpForComparison(storedToken.IpAddress).Equals(NormalizeIpForComparison(currentIp)))
+        {
+            return null;
+        }
+
+        // La peticion que presenta el token viejo es la que gana: se revoca el
+        // token de reemplazo (la otra pestana dejara de poder usarlo) y se emite
+        // uno nuevo de la MISMA sesion.
+        replacement.RevocadoEn = now;
+
+        var newToken = GenerateRefreshToken();
+        var newHash = ComputeSha256(newToken);
+        var sessionId = storedToken.SessionId ?? replacement.SessionId ?? GenerateSessionId();
+        var sessionAnchor = storedToken.SesionIniEn ?? replacement.SesionIniEn ?? storedToken.CreadoEn;
+
+        _dbContext.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = usuario.Id,
+            TokenHash = newHash,
+            SecurityStamp = usuario.SecurityStamp,
+            ExpiraEn = now.AddDays(GetRefreshTokenExpDays()),
+            CreadoEn = now,
+            MfaVerifiedAt = storedToken.MfaVerifiedAt,
+            IpAddress = currentIp,
+            SessionId = sessionId,
+            SesionIniEn = sessionAnchor
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync(
+            usuario.Id,
+            AuditActions.RefreshTokenReuseBenign,
+            "USUARIOS",
+            usuario.Id,
+            ipAddress,
+            JsonSerializer.Serialize(new
+            {
+                refresh_token_id = storedToken.Id,
+                sesion_id = sessionId
+            }),
+            cancellationToken);
+
+        var accessToken = GenerateAccessToken(usuario, sessionId, storedToken.MfaVerifiedAt);
+        return await BuildAuthResultAsync(usuario, accessToken, newToken, cancellationToken);
+    }
+
+    /// <summary>
+    /// S-13: revoca los refresh tokens vivos de la sesion que ha caducado.
+    /// </summary>
+    private async Task RevokeSessionTokensAsync(RefreshToken storedToken, DateTime now, CancellationToken cancellationToken)
+    {
+        var activeTokens = await _dbContext.RefreshTokens
+            .IgnoreQueryFilters()
+            .Where(rt => rt.UsuarioId == storedToken.UsuarioId &&
+                        rt.RevocadoEn == null &&
+                        rt.ExpiraEn > now &&
+                        (rt.SessionId == storedToken.SessionId || storedToken.SessionId == null))
+            .ToListAsync(cancellationToken);
+
+        foreach (var activeToken in activeTokens)
+        {
+            activeToken.RevocadoEn = now;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task RevokeSessionsAfterRefreshReuseAsync(
@@ -1354,6 +1684,13 @@ _secretProtector = secretProtector;
     private int GetAccessTokenExpMinutes() => _configuration.GetValue("JwtSettings:AccessTokenExpMinutes", 60);
 
     private int GetRefreshTokenExpDays() => _configuration.GetValue("JwtSettings:RefreshTokenExpDays", 7);
+
+    /// <summary>
+    /// S-13: vida maxima de la sesion. Cubre el tiempo total, no el tiempo
+    /// entre refreshes: por encima de este tope el usuario tiene que volver a
+    /// iniciar sesion (con MFA).
+    /// </summary>
+    private TimeSpan GetMaxSessionDuration() => TimeSpan.FromDays(_configuration.GetValue("JwtSettings:MaxSessionDays", 30));
 
     private async Task<bool> IsMfaRememberDeviceEnabledAsync(CancellationToken cancellationToken)
     {

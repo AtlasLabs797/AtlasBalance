@@ -170,6 +170,12 @@ if (!builder.Environment.IsDevelopment())
     }
 }
 
+// S-14: las cookies de sesion se emiten con el prefijo "__Host-" en
+// produccion. La legacy sin Secure la puede fijar un subdominio
+// comprometido o un atacante en la LAN, asi que solo se acepta como
+// credencial en Development (frontend de Vite sobre HTTP plano).
+var esEntornoDesarrollo = builder.Environment.IsDevelopment();
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -199,8 +205,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     return Task.CompletedTask;
                 }
 
-                context.Token = context.Request.Cookies["__Host-atlas-access-token"]
-                    ?? context.Request.Cookies["access_token"];
+                // S-14: en produccion solo vale la cookie con prefijo __Host-.
+                // En Development se aceptan las dos, porque el frontend de
+                // Vite trabaja en HTTP plano y las cookies no llevan el prefijo.
+                context.Token = esEntornoDesarrollo
+                    ? context.Request.Cookies["__Host-atlas-access-token"] ?? context.Request.Cookies["access_token"]
+                    : context.Request.Cookies["__Host-atlas-access-token"];
                 return Task.CompletedTask;
             }
         };
@@ -652,6 +662,10 @@ app.Use(async (context, next) =>
         headers["Cross-Origin-Resource-Policy"] = "same-origin";
         // V-02-05 (LOW-BE-1): quitar Server header que Kestrel envia por defecto.
         headers.Remove("Server");
+
+        // S-18: los datos de la API (saldos, extractos) no se cachean. Los
+        // estaticos de wwwroot no se tocan.
+        SecurityResponseHeaders.ApplyCacheControl(context);
 
         var connectSrc = app.Environment.IsDevelopment()
             ? "'self' http://localhost:5173 http://localhost:5002 https://localhost:5000 http://localhost:5000"

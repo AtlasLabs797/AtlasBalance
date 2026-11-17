@@ -1,4 +1,5 @@
 ﻿using AtlasBalance.API.Data;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using MailKit.Net.Smtp;
 using MailKit.Security;
@@ -114,7 +115,7 @@ public sealed class EmailService : IEmailService
                 $"<p><a href=\"{cuentaUrl}\">Abrir cuenta</a></p>"
         }.ToMessageBody();
 
-        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, smtp.TlsMode, cancellationToken);
     }
 
     public async Task SendPlazoFijoVencimientoAsync(
@@ -156,7 +157,7 @@ public sealed class EmailService : IEmailService
                 $"<p><a href=\"{cuentaUrl}\">Abrir cuenta</a></p>"
         }.ToMessageBody();
 
-        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, smtp.TlsMode, cancellationToken);
     }
 
     public async Task SendTestEmailAsync(string recipient, CancellationToken cancellationToken)
@@ -172,7 +173,7 @@ public sealed class EmailService : IEmailService
             HtmlBody = $"<p>SMTP configurado correctamente.</p><p>Fecha UTC: {DateTime.UtcNow:O}</p>"
         }.ToMessageBody();
 
-        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, smtp.TlsMode, cancellationToken);
     }
 
     public async Task SendSecurityAlertAsync(
@@ -217,7 +218,7 @@ public sealed class EmailService : IEmailService
                 $"<p>Detectada a las {DateTime.UtcNow:O} UTC. Revisa Auditoría en la aplicación.</p>"
         }.ToMessageBody();
 
-        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, smtp.TlsMode, cancellationToken);
     }
 
     public async Task SendAccountLockedAsync(
@@ -248,7 +249,7 @@ public sealed class EmailService : IEmailService
             HtmlBody = BuildAccountLockedHtml(lockedAtUtc, lockMinutes, ipSummary)
         }.ToMessageBody();
 
-        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, cancellationToken);
+        await SendMessageAsync(message, smtp.Host, smtp.Port, smtp.User, smtp.Password, smtp.TlsMode, cancellationToken);
     }
 
     internal static string BuildAccountLockedHtml(DateTime lockedAtUtc, int lockMinutes, string? ipSummary)
@@ -275,7 +276,7 @@ public sealed class EmailService : IEmailService
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private readonly record struct SmtpConfig(string Host, int Port, string? User, string? Password, string From);
+    private readonly record struct SmtpConfig(string Host, int Port, string? User, string? Password, string From, string TlsMode);
 
     private async Task<SmtpConfig> LoadSmtpConfigAsync(string missingHostMessage, CancellationToken cancellationToken)
     {
@@ -294,16 +295,53 @@ public sealed class EmailService : IEmailService
             smtpFrom = "noreply@atlasbalance.local";
         }
 
+        // S-17: el modo TLS es explicito y configurable (required | auto | none).
+        // Si no esta configurado, "auto" (comportamiento anterior).
+        var smtpTlsMode = await GetConfigValueAsync("smtp_tls_mode", cancellationToken);
+
         var smtpPort = int.TryParse(smtpPortRaw, out var parsedPort) ? parsedPort : 587;
-        return new SmtpConfig(smtpHost, smtpPort, smtpUser, smtpPassword, smtpFrom);
+        return new SmtpConfig(smtpHost, smtpPort, smtpUser, smtpPassword, smtpFrom, smtpTlsMode ?? string.Empty);
     }
 
-    private static async Task SendMessageAsync(
+    /// <summary>
+    /// S-17: decide como se cifra el canal SMTP segun el puerto y el modo
+    /// configurado (clave smtp_tls_mode).
+    /// - 465: SMTPS, TLS implicito, siempre (el modo no aplica).
+    /// - required: STARTTLS obligatorio; si el servidor no lo ofrece, el envio falla.
+    /// - auto: STARTTLS si el servidor lo ofrece; si no, se envia sin cifrar.
+    /// - none: sin cifrar, pedido explicito del operador (hay relays que no
+    ///   admiten TLS).
+    /// Un modo desconocido o ausente cae en "auto": un valor mal escrito no
+    /// puede abrir el canal en claro por accidente.
+    /// </summary>
+    internal static SecureSocketOptions ResolverSecureSocketOptions(int smtpPort, string? tlsMode)
+    {
+        if (smtpPort == 465)
+        {
+            return SecureSocketOptions.SslOnConnect;
+        }
+
+        return ModoTlsEfectivo(tlsMode) switch
+        {
+            "required" => SecureSocketOptions.StartTls,
+            "none" => SecureSocketOptions.None,
+            _ => SecureSocketOptions.StartTlsWhenAvailable
+        };
+    }
+
+    private static string ModoTlsEfectivo(string? tlsMode)
+    {
+        var modo = tlsMode?.Trim().ToLowerInvariant();
+        return modo is "required" or "auto" or "none" ? modo : "auto";
+    }
+
+    private async Task SendMessageAsync(
         MimeMessage message,
         string smtpHost,
         int smtpPort,
         string? smtpUser,
         string? smtpPassword,
+        string? tlsMode,
         CancellationToken cancellationToken)
     {
         using var client = new SmtpClient();
@@ -312,11 +350,10 @@ public sealed class EmailService : IEmailService
         client.Timeout = 15_000;
         var userName = smtpUser?.Trim();
         var hasCredentials = !string.IsNullOrWhiteSpace(userName);
-        var secureSocketOptions = smtpPort == 465
-            ? SecureSocketOptions.SslOnConnect
-            : hasCredentials
-                ? SecureSocketOptions.StartTls
-                : SecureSocketOptions.StartTlsWhenAvailable;
+        // S-17: el modo TLS configurado manda. Antes se deducía de si habia
+        // credenciales, y sin ellas el mensaje podia salir en claro sin que
+        // nadie lo hubiera pedido.
+        var secureSocketOptions = ResolverSecureSocketOptions(smtpPort, tlsMode);
 
         await client.ConnectAsync(smtpHost, smtpPort, secureSocketOptions, cancellationToken);
         if (hasCredentials)
@@ -324,8 +361,39 @@ public sealed class EmailService : IEmailService
             await client.AuthenticateAsync(userName!, smtpPassword ?? string.Empty, cancellationToken);
         }
 
+        // S-17: si el mensaje sale sin cifrar, se avisa en el log del servidor.
+        // Solo modo, puerto y host: nunca la contrasena ni el cuerpo.
+        if (!EsConexionCifrada(secureSocketOptions, client))
+        {
+            _logger.LogWarning(
+                "SMTP: mensaje enviado SIN cifrar. host={HostSafe} puerto={Port} modo_tls={TlsMode}",
+                LogScrubber.Scrub(smtpHost),
+                smtpPort,
+                ModoTlsEfectivo(tlsMode));
+        }
+
         await client.SendAsync(message, cancellationToken);
         await client.DisconnectAsync(true, cancellationToken);
+    }
+
+    /// <summary>
+    /// S-17: el servidor anuncia en su EHLO si admite STARTTLS. Con
+    /// StartTls/StartTlsWhenAvailable, si no lo anuncia, la conexion queda en
+    /// claro. Con SslOnConnect (465) el canal siempre va cifrado.
+    /// </summary>
+    private static bool EsConexionCifrada(SecureSocketOptions secureSocketOptions, SmtpClient client)
+    {
+        if (secureSocketOptions == SecureSocketOptions.SslOnConnect)
+        {
+            return true;
+        }
+
+        if (secureSocketOptions == SecureSocketOptions.None)
+        {
+            return false;
+        }
+
+        return client.Capabilities.HasFlag(SmtpCapabilities.StartTLS);
     }
 
     private static string EscapeHtml(string value)

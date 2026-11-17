@@ -30,7 +30,10 @@ Atlas Balance/backend/src/AtlasBalance.API/wwwroot/logos/
 Atlas Balance/frontend/node_modules/
 Atlas Balance/frontend/node_modules.blocked-*/
 Atlas Balance/frontend/dist/
+Atlas Balance/frontend/dist-*/
+Atlas Balance/frontend/.dist-*/
 Atlas Balance/frontend/.test-dist/
+Atlas Balance/frontend/.test-dist-*/
 
 # IDE
 .idea/
@@ -48,6 +51,7 @@ logs/
 # Temporary files
 .claude/
 artifacts/
+.artifacts/
 qa-artifacts/
 .codex-verify/
 .codex-logs/

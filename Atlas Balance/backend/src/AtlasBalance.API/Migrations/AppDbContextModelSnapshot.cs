@@ -2273,6 +2273,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("security_stamp");
 
+                    b.Property<DateTime?>("SesionIniEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sesion_ini_en");
+
                     b.Property<string>("SessionId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")

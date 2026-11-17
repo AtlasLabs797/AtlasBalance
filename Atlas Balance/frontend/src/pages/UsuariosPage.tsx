@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import UsuarioModal, {
@@ -12,8 +13,10 @@ import api from '@/services/api';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
 import { queryKeys } from '@/queries/queryKeys';
 import { useAuthStore } from '@/stores/authStore';
+import { useUiStore } from '@/stores/uiStore';
 import type { PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { formatearTiempoRestante, isUsuarioBloqueado } from '@/utils/usuarioBloqueo';
 
 interface UsuarioRow {
   id: string;
@@ -26,6 +29,10 @@ interface UsuarioRow {
   mfa_enabled: boolean;
   mfa_required: boolean;
   deleted_at: string | null;
+  // A-2: bloqueo por intentos fallidos de login (ISO-8601 UTC) e intentos
+  // acumulados queTodavia no han bloqueado la cuenta.
+  bloqueado_hasta: string | null;
+  intentos_fallidos: number;
 }
 
 function mfaLabel(row: UsuarioRow): string {
@@ -65,12 +72,14 @@ interface CatalogosPermisos {
 export default function UsuariosPage() {
   const usuarioId = useAuthStore((state) => state.usuario?.id ?? '');
   const invalidate = useInvalidateAfterMutation();
+  const addToast = useUiStore((state) => state.addToast);
   const [rows, setRows] = useState<UsuarioRow[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [incluirEliminados, setIncluirEliminados] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +90,7 @@ export default function UsuariosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
   const [mfaCandidate, setMfaCandidate] = useState<DeleteCandidate | null>(null);
+  const [unblockCandidate, setUnblockCandidate] = useState<DeleteCandidate | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const deleteDialogRef = useDialogFocus<HTMLDivElement>(Boolean(deleteCandidate), {
     onEscape: actionLoading ? undefined : () => setDeleteCandidate(null),
@@ -88,11 +98,17 @@ export default function UsuariosPage() {
   const mfaDialogRef = useDialogFocus<HTMLDivElement>(Boolean(mfaCandidate), {
     onEscape: actionLoading ? undefined : () => setMfaCandidate(null),
   });
+  const unblockDialogRef = useDialogFocus<HTMLDivElement>(Boolean(unblockCandidate), {
+    onEscape: actionLoading ? undefined : () => setUnblockCandidate(null),
+  });
 
   const activeCount = useMemo(
     () => rows.filter((row) => !row.deleted_at && row.activo).length,
     [rows]
   );
+
+  // A-2: instante de referencia para saber si el bloqueo sigue vigente.
+  const ahora = new Date();
 
   // V-03.01 (#8): catalogos-permisos y el listado paginado migran de
   // api.get en efectos a React Query (mismo patron que DashboardPage.tsx /
@@ -106,13 +122,13 @@ export default function UsuariosPage() {
   });
 
   const listQuery = useQuery<PaginatedResponse<UsuarioRow>>({
-    queryKey: queryKeys.usuarios.list({ usuarioId, page, pageSize, search: search || null, incluirEliminados }),
+    queryKey: queryKeys.usuarios.list({ usuarioId, page, pageSize, search: debouncedSearch || null, incluirEliminados }),
     queryFn: ({ signal }) =>
       api.get<PaginatedResponse<UsuarioRow>>('/usuarios', {
         params: {
           page,
           pageSize,
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           incluirEliminados,
           sortBy: 'fecha_creacion',
           sortDir: 'desc',
@@ -189,6 +205,11 @@ export default function UsuariosPage() {
     setMfaCandidate({ id: row.id, email: row.email });
   };
 
+  // A-2: accion de desbloqueo de una cuenta bloqueada por intentos fallidos.
+  const confirmUnblock = (row: UsuarioRow) => {
+    setUnblockCandidate({ id: row.id, email: row.email });
+  };
+
   const softDelete = async () => {
     if (!deleteCandidate) {
       return;
@@ -236,6 +257,32 @@ export default function UsuariosPage() {
       await loadData();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo revocar el Authenticator del usuario.'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // A-2: POST /usuarios/{id}/desbloquear. Si la API responde 400 ("El usuario no
+  // esta bloqueado") o 404, el mensaje del servidor se muestra como toast de
+  // error y el modal sigue abierto para no dejar al admin sin contexto.
+  const unblock = async () => {
+    if (!unblockCandidate) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError(null);
+
+    try {
+      const res = await api.post<{ message?: string }>(`/usuarios/${unblockCandidate.id}/desbloquear`);
+      setUnblockCandidate(null);
+      addToast({ type: 'success', message: res.data?.message || 'Usuario desbloqueado.' });
+      await loadData();
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: extractErrorMessage(err, 'No se pudo desbloquear el usuario.'),
+      });
     } finally {
       setActionLoading(false);
     }
@@ -320,6 +367,7 @@ export default function UsuariosPage() {
                 <th scope="col">Nombre</th>
                 <th scope="col">Rol</th>
                 <th scope="col">Estado</th>
+                <th scope="col">Bloqueo</th>
                 <th scope="col">Cambio inicial</th>
                 <th scope="col">IA</th>
                 <th scope="col">Authenticator</th>
@@ -337,6 +385,18 @@ export default function UsuariosPage() {
                       {row.deleted_at ? 'Eliminado' : row.activo ? 'Activo' : 'Inactivo'}
                     </span>
                   </td>
+                  <td>
+                    {isUsuarioBloqueado(row.bloqueado_hasta, ahora) ? (
+                      <span className="users-badge users-badge--danger">
+                        Bloqueado · {formatearTiempoRestante(row.bloqueado_hasta ?? '', ahora)}
+                      </span>
+                    ) : null}
+                    {row.intentos_fallidos > 0 ? (
+                      <span className="users-badge">
+                        {row.intentos_fallidos} {row.intentos_fallidos === 1 ? 'intento' : 'intentos'}
+                      </span>
+                    ) : null}
+                  </td>
                   <td>{row.primer_login ? 'Pendiente' : 'Completado'}</td>
                   <td>{row.puede_usar_ia ? 'Sí' : 'No'}</td>
                   <td>{mfaLabel(row)}</td>
@@ -349,6 +409,17 @@ export default function UsuariosPage() {
                     >
                       Editar
                     </button>
+                    {!row.deleted_at && isUsuarioBloqueado(row.bloqueado_hasta, ahora) && (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => confirmUnblock(row)}
+                        disabled={actionLoading}
+                        aria-label={`Desbloquear usuario ${row.email}`}
+                      >
+                        Desbloquear
+                      </button>
+                    )}
                     {!row.deleted_at ? (
                       <button
                         type="button"
@@ -496,6 +567,41 @@ export default function UsuariosPage() {
               </button>
               <button type="button" className="button-danger" onClick={() => void revokeMfa()} disabled={actionLoading}>
                 {actionLoading ? 'Revocando...' : 'Revocar Authenticator'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {unblockCandidate && (
+        <div
+          className="modal-backdrop modal-backdrop--fullscreen-mobile"
+          onClick={() => setUnblockCandidate(null)}
+        >
+          <div
+            ref={unblockDialogRef}
+            className="users-confirm-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unblock-user-title"
+            tabIndex={-1}
+          >
+            <h2 id="unblock-user-title">Desbloquear usuario</h2>
+            <p>
+              Vas a desbloquear a <strong>{unblockCandidate.email}</strong>.
+            </p>
+            <p>Se retirará el bloqueo por intentos fallidos y el usuario podrá volver a iniciar sesión.</p>
+            <div className="users-form-actions">
+              <button
+                type="button"
+                onClick={() => setUnblockCandidate(null)}
+                disabled={actionLoading}
+              >
+                Cancelar
+              </button>
+              <button type="button" className="button-secondary" onClick={() => void unblock()} disabled={actionLoading}>
+                {actionLoading ? 'Desbloqueando...' : 'Desbloquear'}
               </button>
             </div>
           </div>

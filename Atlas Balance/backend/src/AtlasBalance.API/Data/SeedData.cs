@@ -165,6 +165,7 @@ public static class SeedData
             ["smtp_user"] = ("", "string", "Usuario SMTP"),
             ["smtp_password"] = ("", "string", "Password SMTP cifrado"),
             ["smtp_from"] = ("noreply@empresa.com", "string", "Remitente SMTP"),
+            ["smtp_tls_mode"] = ("auto", "string", "Modo TLS del SMTP: required | auto | none"),
             ["exchange_rate_api_key"] = ("", "string", "Clave API para sincronizacion de tipos de cambio"),
             ["divisa_principal_default"] = ("EUR", "string", "Divisa principal para dashboards"),
             ["dashboard_color_ingresos"] = ("#43B430", "string", "Color linea ingresos dashboard"),

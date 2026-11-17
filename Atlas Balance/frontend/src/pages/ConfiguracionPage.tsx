@@ -6,6 +6,7 @@ import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -24,6 +25,8 @@ import {
 } from '@/utils/aiModels';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatDateTime as formatDateTimeValue, parseStrictDecimal } from '@/utils/formatters';
+import { parseOptionalNumberInput } from '@/utils/numberInput';
+import { createPollLifecycle, type PollLifecycle } from '@/utils/pollLifecycle';
 import type {
   ConfiguracionSistema,
   DivisaActiva,
@@ -37,6 +40,18 @@ import type {
 type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones' | 'paises';
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 const MFA_REMEMBER_DEVICE_DAYS = 90;
+
+// S-17: modo de cifrado del SMTP. "required" = STARTTLS obligatorio,
+// "auto" = se cifra si el servidor lo admite, "none" = sin cifrar.
+// El tipo compartido ConfiguracionSistema todavia no declara tls_mode, asi que
+// se amplia aqui sin tocar types/index.ts.
+type SmtpTlsMode = 'required' | 'auto' | 'none';
+type SmtpConfig = ConfiguracionSistema['smtp'] & { tls_mode?: SmtpTlsMode };
+type ConfiguracionConTls = Omit<ConfiguracionSistema, 'smtp'> & { smtp: SmtpConfig };
+
+function normalizarTlsMode(valor: string | null | undefined): SmtpTlsMode {
+  return valor === 'required' || valor === 'auto' || valor === 'none' ? valor : 'auto';
+}
 
 const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
   { key: 'general', label: 'General + SMTP', Icon: Mail },
@@ -122,6 +137,47 @@ function DecimalField({ fieldKey, value, onValue, onValidity }: DecimalFieldProp
   );
 }
 
+interface NumberFieldProps {
+  fieldKey: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onValue: (next: number) => void;
+}
+
+// F-8: campo numerico con texto local. Se puede vaciar (el campo queda vacio,
+// no 0) y un valor vacio no se convierte en 0 al guardar: si el campo esta
+// vacio se conserva el ultimo valor valido de la configuracion.
+function NumberField({ fieldKey, value, min, max, step, onValue }: NumberFieldProps) {
+  const [text, setText] = useState(() => String(value));
+
+  useEffect(() => {
+    // Sincroniza cuando el valor externo cambia (carga/guardado) y el texto
+    // local ya no representa ese valor. Un campo vacio se deja como esta.
+    setText((prev) => (parseOptionalNumberInput(prev) === value ? prev : String(value)));
+  }, [value]);
+
+  return (
+    <input
+      id={fieldKey}
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      value={text}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const parsed = parseOptionalNumberInput(raw);
+        if (parsed !== null) {
+          onValue(parsed);
+        }
+      }}
+    />
+  );
+}
+
 export default function ConfiguracionPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -133,8 +189,8 @@ export default function ConfiguracionPage() {
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const [config, setConfig] = useState<ConfiguracionSistema>({
-    smtp: { host: '', port: 587, user: '', password: '', from: '' },
+  const [config, setConfig] = useState<ConfiguracionConTls>({
+    smtp: { host: '', port: 587, user: '', password: '', from: '', tls_mode: 'auto' },
     general: {
       app_base_url: '',
       app_update_check_url: '',
@@ -216,6 +272,12 @@ export default function ConfiguracionPage() {
   const [showCreateTokenModal, setShowCreateTokenModal] = useState(false);
   const [tokenPlano, setTokenPlano] = useState<string | null>(null);
 
+  // R-6: la busqueda del campo "Modelo" pasa por el hook de debounce ya
+  // existente: antes se pedia /ia/modelos en cada pulsacion de tecla.
+  const debouncedModelSearch = useDebouncedValue(config.ia.model, 300);
+  // F-4: sondeo de la actualizacion; se detiene al desmontar la pagina.
+  const updatePollRef = useRef<PollLifecycle | null>(null);
+
   const logout = useAuthStore((state) => state.logout);
   const updateAvailable = useUpdateStore((state) => state.available);
   const updateInstallable = useUpdateStore((state) => state.installable);
@@ -249,7 +311,7 @@ export default function ConfiguracionPage() {
   // skeleton de pagina completa): las acciones menores recargan solo la
   // seccion que modifican, para no perder lo escrito sin guardar.
   const loadConfiguracion = async () => {
-    const cfg = await api.get<ConfiguracionSistema>('/configuracion');
+    const cfg = await api.get<ConfiguracionConTls>('/configuracion');
     const fallbackIa: ConfiguracionSistema['ia'] = {
       provider: 'OPENROUTER',
       openrouter_api_key: '',
@@ -286,7 +348,7 @@ export default function ConfiguracionPage() {
     };
     const loadedIa = cfg.data.ia ?? fallbackIa;
     const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
-    const nextConfig: ConfiguracionSistema = {
+    const nextConfig: ConfiguracionConTls = {
       ...cfg.data,
       general: {
         ...cfg.data.general,
@@ -298,7 +360,8 @@ export default function ConfiguracionPage() {
       // (los DTO de respuesta no declaran esos campos). Los inicializamos
       // aqui a '' igual que las claves de IA, porque son estado del
       // formulario: sin esto el input pasaria a no controlado.
-      smtp: { ...cfg.data.smtp, password: '' },
+      // S-17: tls_mode se conserva si el backend lo devuelve; si no, "auto".
+      smtp: { ...cfg.data.smtp, password: '', tls_mode: normalizarTlsMode(cfg.data.smtp?.tls_mode) },
       exchange: {
         api_key: '',
         api_key_configurada: cfg.data.exchange?.api_key_configurada ?? false,
@@ -376,6 +439,12 @@ export default function ConfiguracionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial explícita de configuración
   }, []);
 
+  // F-4: al desmontar la pagina el sondeo de la actualizacion se detiene:
+  // limpia el timer y no vuelve a consultar ni a tocar el estado.
+  useEffect(() => () => {
+    updatePollRef.current?.stop();
+  }, []);
+
   useEffect(() => {
     if (normalizeAiProvider(config.ia.provider) !== 'OPENROUTER') {
       return;
@@ -385,7 +454,7 @@ export default function ConfiguracionPage() {
     const loadModels = async () => {
       try {
         const { data } = await api.get<IaModel[]>('/ia/modelos', {
-          params: { provider: 'OPENROUTER', search: config.ia.model || undefined },
+          params: { provider: 'OPENROUTER', search: debouncedModelSearch || undefined },
         });
         if (mounted) {
           setOpenRouterModels(data ?? []);
@@ -401,15 +470,17 @@ export default function ConfiguracionPage() {
     return () => {
       mounted = false;
     };
-  }, [config.ia.provider, config.ia.model]);
+  }, [config.ia.provider, debouncedModelSearch]);
 
   const saveConfig = async (message: string) => {
     if (invalidDecimalsRef.current.size > 0) {
       throw new Error('Hay importes con formato inválido (presupuestos, costes o importe mínimo). Corrígelos antes de guardar.');
     }
     const aiProvider = normalizeAiProvider(config.ia.provider);
-    const payload: ConfiguracionSistema = {
+    const payload: ConfiguracionConTls = {
       ...config,
+      // S-17: el modo TLS viaja siempre en el objeto smtp del guardado.
+      smtp: { ...config.smtp, tls_mode: normalizarTlsMode(config.smtp.tls_mode) },
       ia: {
         ...config.ia,
         provider: aiProvider,
@@ -417,8 +488,8 @@ export default function ConfiguracionPage() {
       },
     };
     await api.put('/configuracion', payload);
-    const refreshed = await api.get<ConfiguracionSistema>('/configuracion');
-    const merged: ConfiguracionSistema = {
+    const refreshed = await api.get<ConfiguracionConTls>('/configuracion');
+    const merged: ConfiguracionConTls = {
       ...refreshed.data,
       general: {
         ...(refreshed.data.general ?? config.general),
@@ -439,7 +510,13 @@ export default function ConfiguracionPage() {
         openai_api_key: '',
         minimax_api_key: '',
       },
-      smtp: { ...(refreshed.data.smtp ?? config.smtp), password: '' },
+      smtp: {
+        ...(refreshed.data.smtp ?? config.smtp),
+        password: '',
+        // S-17: si el backend todavia no devuelve tls_mode, se mantiene el
+        // valor elegido en el formulario.
+        tls_mode: normalizarTlsMode(refreshed.data.smtp?.tls_mode ?? config.smtp.tls_mode),
+      },
     };
     setConfig(merged);
     // Tras guardar, la configuracion vuelve a estar limpia: reseteamos la linea base.
@@ -526,12 +603,22 @@ export default function ConfiguracionPage() {
 
     setBusy(true);
     setError(null);
+    // F-4: el sondeo se cancela al desmontar la pagina y pide el estado sin
+    // toast: durante una actualizacion real la API esta caida a proposito.
+    const poll = createPollLifecycle();
+    updatePollRef.current = poll;
     try {
       await api.post('/sistema/actualizar', {});
       const timeoutAt = Date.now() + 10 * 60 * 1000;
       while (Date.now() < timeoutAt) {
+        if (!poll.active) {
+          return;
+        }
         try {
-          const { data } = await api.get<WatchdogState>('/sistema/estado');
+          const { data } = await api.get<WatchdogState>('/sistema/estado', { skipErrorToast: true });
+          if (!poll.active) {
+            return;
+          }
           const state = (data.estado ?? '').toUpperCase();
           if (state === 'SUCCESS') {
             sessionStorage.setItem('atlas_balance_update_message', 'Aplicación actualizada correctamente.');
@@ -552,13 +639,27 @@ export default function ConfiguracionPage() {
           // Durante una actualizacion real la API se detiene y vuelve a arrancar.
           // No es fallo final mientras el timeout del watchdog siga abierto.
         }
-        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const continuar = await poll.wait(2500);
+        if (!continuar) {
+          return;
+        }
       }
-      setError('La actualización no confirmó el resultado dentro del tiempo esperado.');
+      if (poll.active) {
+        setError('La actualización no confirmó el resultado dentro del tiempo esperado.');
+      }
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo actualizar.'));
+      if (poll.active) {
+        setError(extractErrorMessage(err, 'No se pudo actualizar.'));
+      }
     } finally {
-      setBusy(false);
+      const cancelado = !poll.active;
+      poll.stop();
+      if (updatePollRef.current === poll) {
+        updatePollRef.current = null;
+      }
+      if (!cancelado) {
+        setBusy(false);
+      }
     }
   };
 
@@ -934,7 +1035,11 @@ export default function ConfiguracionPage() {
                 </label>
                 <label className="config-field">
                   <span>Puerto SMTP</span>
-                  <input type="number" value={config.smtp.port} onChange={(e) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, port: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="smtp_port"
+                    value={config.smtp.port}
+                    onValue={(next) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, port: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Usuario SMTP</span>
@@ -948,7 +1053,21 @@ export default function ConfiguracionPage() {
                   <span>Remitente</span>
                   <input value={config.smtp.from} onChange={(e) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, from: e.target.value } }))} />
                 </label>
+                <AppSelect
+                  label="Modo TLS"
+                  value={normalizarTlsMode(config.smtp.tls_mode)}
+                  options={[
+                    { value: 'required', label: 'Obligatorio (STARTTLS)' },
+                    { value: 'auto', label: 'Automático (si el servidor lo admite)' },
+                    { value: 'none', label: 'Sin cifrar (servidor sin TLS)' },
+                  ]}
+                  onChange={(next) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, tls_mode: normalizarTlsMode(next) } }))}
+                />
               </div>
+
+              <p className="config-note">
+                Si tu servidor SMTP no admite TLS, elige «Sin cifrar»: las alertas con saldos saldrán sin cifrar.
+              </p>
 
               <div className="config-inline-action">
                 <label className="config-field">
@@ -1041,15 +1160,15 @@ export default function ConfiguracionPage() {
                 </label>
                 <label className="config-field">
                   <span>Horas sin duplicar saldo bajo</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
+                  <NumberField
+                    fieldKey="saldo_bajo_cooldown_horas"
                     value={config.revision.saldo_bajo_cooldown_horas}
-                    onChange={(e) =>
+                    min={1}
+                    step={1}
+                    onValue={(next) =>
                       setConfig((p) => ({
                         ...p,
-                        revision: { ...p.revision, saldo_bajo_cooldown_horas: Number(e.target.value) || 24 },
+                        revision: { ...p.revision, saldo_bajo_cooldown_horas: next },
                       }))
                     }
                   />
@@ -1170,19 +1289,39 @@ export default function ConfiguracionPage() {
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Peticiones/min por usuario</span>
-                  <input type="number" min="0" value={config.ia.requests_por_minuto} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_minuto: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_por_minuto"
+                    value={config.ia.requests_por_minuto}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_minuto: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Peticiones/hora por usuario</span>
-                  <input type="number" min="0" value={config.ia.requests_por_hora} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_hora: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_por_hora"
+                    value={config.ia.requests_por_hora}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_hora: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Peticiones/día por usuario</span>
-                  <input type="number" min="0" value={config.ia.requests_por_dia} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_dia: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_por_dia"
+                    value={config.ia.requests_por_dia}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_dia: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Peticiones/día de la app</span>
-                  <input type="number" min="0" value={config.ia.requests_globales_por_dia} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_globales_por_dia: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_globales_por_dia"
+                    value={config.ia.requests_globales_por_dia}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_globales_por_dia: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Presupuesto mensual EUR</span>
@@ -1198,7 +1337,13 @@ export default function ConfiguracionPage() {
                 </label>
                 <label className="config-field">
                   <span>Aviso presupuesto %</span>
-                  <input type="number" min="1" max="100" value={config.ia.porcentaje_aviso_presupuesto} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, porcentaje_aviso_presupuesto: Number(e.target.value) || 80 } }))} />
+                  <NumberField
+                    fieldKey="porcentaje_aviso_presupuesto"
+                    value={config.ia.porcentaje_aviso_presupuesto}
+                    min={1}
+                    max={100}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, porcentaje_aviso_presupuesto: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Coste entrada / 1 M tokens</span>
@@ -1219,15 +1364,33 @@ export default function ConfiguracionPage() {
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Tokens entrada máx.</span>
-                  <input type="number" min="1000" max="50000" value={config.ia.max_input_tokens} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_input_tokens: Number(e.target.value) || 6000 } }))} />
+                  <NumberField
+                    fieldKey="max_input_tokens"
+                    value={config.ia.max_input_tokens}
+                    min={1000}
+                    max={50000}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_input_tokens: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Tokens salida máx.</span>
-                  <input type="number" min="64" max="4000" value={config.ia.max_output_tokens} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_output_tokens: Number(e.target.value) || 700 } }))} />
+                  <NumberField
+                    fieldKey="max_output_tokens"
+                    value={config.ia.max_output_tokens}
+                    min={64}
+                    max={4000}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_output_tokens: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Movimientos enviados máx.</span>
-                  <input type="number" min="0" max="500" value={config.ia.max_context_rows} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_context_rows: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="max_context_rows"
+                    value={config.ia.max_context_rows}
+                    min={0}
+                    max={500}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_context_rows: next } }))}
+                  />
                 </label>
               </div>
               <p className="config-note config-note--warning">
@@ -1430,17 +1593,17 @@ export default function ConfiguracionPage() {
             </label>
             <label>
               Hora UTC automática
-              <input
-                type="number"
-                min="0"
-                max="23"
+              <NumberField
+                fieldKey="app_update_auto_hour_utc"
                 value={config.general.app_update_auto_hour_utc}
-                onChange={(e) =>
+                min={0}
+                max={23}
+                onValue={(next) =>
                   setConfig((p) => ({
                     ...p,
                     general: {
                       ...p.general,
-                      app_update_auto_hour_utc: Math.max(0, Math.min(23, Number(e.target.value) || 0)),
+                      app_update_auto_hour_utc: Math.max(0, Math.min(23, next)),
                     },
                   }))
                 }

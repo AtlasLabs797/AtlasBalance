@@ -28,6 +28,12 @@ public sealed class UsuarioListItemResponse
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaUltimaLogin { get; set; }
     public DateTime? DeletedAt { get; set; }
+
+    // A-2: estado del bloqueo por intentos fallidos. El admin necesita ver
+    // cuando caduca el bloqueo y cuantos intentos lleva el usuario para
+    // decidir si lo desbloquea.
+    public DateTime? BloqueadoHasta { get; set; }
+    public int IntentosFallidos { get; set; }
 }
 
 public sealed class UsuarioDetalleResponse

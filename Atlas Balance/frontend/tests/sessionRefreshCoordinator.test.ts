@@ -161,7 +161,10 @@ test('un fallo de refresh se propaga a las pestañas relacionadas y no se convie
   });
 
   const firstRequest = firstTab.refresh(async () => {
-    throw new Error('refresh rechazado');
+    // V-03.02 (F-1): el fallo que invalida la sesion es el 401/403 del
+    // endpoint de refresh. Un error sin status (red, 5xx, 429, timeout) ya no
+    // se propaga como fallo de sesion: ver tests/sessionErrorHandling.test.ts.
+    throw Object.assign(new Error('refresh rechazado'), { response: { status: 401 } });
   });
   const secondRequest = secondTab.refresh(async () => {
     throw new Error('no debe reintentar el token');
