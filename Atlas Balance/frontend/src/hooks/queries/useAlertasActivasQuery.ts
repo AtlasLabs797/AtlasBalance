@@ -25,17 +25,16 @@ export function useAlertasActivasQuery() {
   });
 
   useEffect(() => {
-    const alertas = query.data ?? [];
-    useAlertasStore.setState({
-      alertasActivas: alertas,
+    // El store es el unico escritor del estado de alertas y del descarte del
+    // banner: aqui solo se le pasa lo que devuelve la query. Mientras la query
+    // aun no tiene datos no se toca el descarte, para que recargar o cambiar
+    // de pais no haga reaparecer un banner que el usuario ya oculto.
+    useAlertasStore.getState().syncAlertas(query.data, {
       loading: query.isLoading,
-      lastError: query.error
+      error: query.error
         ? extractErrorMessage(query.error, 'No se pudieron cargar las alertas activas.')
         : null,
     });
-    if (alertas.length === 0) {
-      useAlertasStore.getState().resetBanner();
-    }
   }, [query.data, query.error, query.isLoading]);
 
   return query;

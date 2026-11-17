@@ -36,6 +36,7 @@ public sealed class TitularesController : ControllerBase
         [FromQuery] TipoTitular? tipoTitular = null,
         [FromQuery] Guid? paisId = null,
         [FromQuery] bool incluirEliminados = false,
+        [FromQuery] bool soloEliminados = false,
         CancellationToken cancellationToken = default)
     {
         // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
@@ -49,15 +50,23 @@ public sealed class TitularesController : ControllerBase
         if (!scope.IsAdmin)
         {
             incluirEliminados = false;
+            soloEliminados = false;
         }
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
-        IQueryable<Titular> query = incluirEliminados
+        IQueryable<Titular> query = incluirEliminados || soloEliminados
             ? _dbContext.Titulares.IgnoreQueryFilters()
             : _dbContext.Titulares;
+
+        // F-2: el filtro de solo eliminados se aplica ANTES de contar y paginar,
+        // de modo que "total" y las paginas cubren unicamente la papelera.
+        if (soloEliminados)
+        {
+            query = query.Where(t => t.DeletedAt != null);
+        }
 
         query = _userAccessService.ApplyTitularScope(query, scope);
         var cuentasScope = _userAccessService

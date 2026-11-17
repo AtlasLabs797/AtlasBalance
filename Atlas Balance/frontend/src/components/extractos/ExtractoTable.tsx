@@ -12,8 +12,11 @@ import { BASE_COLUMNS } from '@/components/extractos/extractoColumns';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUiStore } from '@/stores/uiStore';
 import type { Extracto } from '@/types';
+import { createCanEditCellCache } from '@/utils/canEditCellCache';
 import { densityRowHeight, isCoarsePointer, type Density } from '@/utils/density';
 import { formatCurrency, formatDate, getAmountTone, parseEuropeanNumber } from '@/utils/formatters';
+import { hoy } from '@/utils/hoy';
+import { notaAlertaCambiada } from '@/utils/notaAlerta';
 
 export interface InsertExtractoDraftPayload {
   cuenta_id: string;
@@ -160,6 +163,11 @@ export default function ExtractoTable({
     });
   }, [rows, debouncedFilters, activeColumns]);
 
+  // R-5: los permisos se evaluaban tres veces por celda y en cada render (un
+  // cambio de foco re-renderiza la tabla entera). La cache se invalida sola
+  // cuando cambia la funcion de permisos o el objeto fila.
+  const canEditCellCached = useMemo(() => createCanEditCellCache(canEditCell), [canEditCell]);
+
   useEffect(() => {
     onFilteredRowsChange?.(filteredRows.map((row) => row.id));
   }, [filteredRows, onFilteredRowsChange]);
@@ -241,7 +249,7 @@ export default function ExtractoTable({
       insertBeforeFilaNumero: row.fila_numero,
       cuentaId: row.cuenta_id,
       cuentaNombre: row.cuenta_nombre,
-      fecha: row.fecha ?? new Date().toISOString().slice(0, 10),
+      fecha: row.fecha ?? hoy(),
       concepto: '',
       comentarios: '',
       monto: '0',
@@ -599,9 +607,9 @@ export default function ExtractoTable({
                         {renderCell({
                           row,
                           column,
-                          canEdit: canEditCell(row, column),
-                          canEditFlag: canEditCell(row, 'flagged'),
-                          canEditFlagNote: canEditCell(row, 'flagged_nota'),
+                          canEdit: canEditCellCached(row, column),
+                          canEditFlag: canEditCellCached(row, 'flagged'),
+                          canEditFlagNote: canEditCellCached(row, 'flagged_nota'),
                           amountClassName: getAmountClassName(row, column),
                           note: flagNotes[row.id] ?? row.flagged_nota ?? '',
                           onNoteChange: (next) => setFlagNotes((prev) => ({ ...prev, [row.id]: next })),
@@ -826,7 +834,7 @@ function renderCell({
           aria-label={`Nota de alerta para fila ${row.fila_numero}`}
           onChange={(e) => onNoteChange(e.target.value)}
           onBlur={() => {
-            if (canEditFlagNote && row.flagged) {
+            if (canEditFlagNote && row.flagged && notaAlertaCambiada(row.flagged_nota, note)) {
               void onToggleFlag(row, row.flagged, note);
             }
           }}

@@ -291,7 +291,7 @@ public class AuthLot2Tests
         await db.SaveChangesAsync();
 
         var controller = BuildUsuariosController(db);
-        var result = await controller.Listar(page: 1, pageSize: 20, sortBy: "fecha_creacion", sortDir: "desc", search: null, incluirEliminados: false, CancellationToken.None);
+        var result = await controller.Listar(page: 1, pageSize: 20, sortBy: "fecha_creacion", sortDir: "desc", search: null, incluirEliminados: false, soloEliminados: false, CancellationToken.None);
 
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
         var paginated = (PaginatedResponse<UsuarioListItemResponse>)ok.Value!;

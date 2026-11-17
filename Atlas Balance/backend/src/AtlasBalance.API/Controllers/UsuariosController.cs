@@ -70,6 +70,7 @@ public sealed class UsuariosController : ControllerBase
         [FromQuery] string sortDir = "desc",
         [FromQuery] string? search = null,
         [FromQuery] bool incluirEliminados = false,
+        [FromQuery] bool soloEliminados = false,
         CancellationToken cancellationToken = default)
     {
         // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
@@ -83,9 +84,18 @@ public sealed class UsuariosController : ControllerBase
         pageSize = Math.Clamp(pageSize, 1, 200);
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
-        IQueryable<Usuario> query = incluirEliminados
+        // El controlador entero es [Authorize(Roles = "ADMIN")]: solo un ADMIN
+        // llega aqui, asi que no hace falta un chequeo adicional por rol.
+        IQueryable<Usuario> query = incluirEliminados || soloEliminados
             ? _dbContext.Usuarios.IgnoreQueryFilters()
             : _dbContext.Usuarios;
+
+        // F-2: el filtro de solo eliminados se aplica ANTES de contar y paginar,
+        // de modo que "total" y las paginas cubren unicamente la papelera.
+        if (soloEliminados)
+        {
+            query = query.Where(u => u.DeletedAt != null);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {

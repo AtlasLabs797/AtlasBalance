@@ -32,6 +32,8 @@ import type { AuditCellEntry, CuentaResumenKpi, Extracto, ExtractoDesgloseResume
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate, formatDateTime, parseEuropeanNumber } from '@/utils/formatters';
 import { computeBulkFlagToggle } from '@/utils/bulkFlagToggle';
+import { ejecutarEnLote } from '@/utils/concurrencia';
+import { hoy } from '@/utils/hoy';
 
 const BULK_DELETE_PREVIEW_LIMIT = 6;
 
@@ -63,11 +65,11 @@ function parseDecimalInput(value: string, fieldLabel: string): number {
 
 function getDateOnlyDiffDays(value: string): number {
   const [year, month, day] = value.split('-').map(Number);
-  const target = new Date(year, month - 1, day);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // B-16: "hoy" viene del helper comun (fecha local), no de UTC: entre las
+  // 00:00 y las 02:00 en Espana la fecha en UTC es la del dia anterior.
+  const [hoyYear, hoyMonth, hoyDay] = hoy().split('-').map(Number);
 
-  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  return Math.round((Date.UTC(year, month - 1, day) - Date.UTC(hoyYear, hoyMonth - 1, hoyDay)) / 86_400_000);
 }
 
 function formatPlazoTiming(fechaVencimiento: string): string {
@@ -330,12 +332,14 @@ export default function CuentaDetailPage() {
     }
   }, [allowedDashboard, id, periodo, rowsPage, rowsPageSize, selectedPaisId, queryClient, usuarioId, cuentaId, sortBy, sortDir, searchDebounced, fechaDesde, fechaHasta]);
 
+  // R-4: cambiar de pagina o de periodo ya cambia la clave de la consulta,
+  // que se vuelve a pedir sola. Invalidar aqui (y recargar) pedia otra vez la
+  // consulta que la propia pagina tenia activa: una peticion duplicada en
+  // cada cambio de pagina o de periodo. Solo se limpian los avisos.
   useEffect(() => {
-    if (!allowedDashboard || !id) {
-      return;
-    }
-    void loadCuentaData();
-  }, [loadCuentaData, allowedDashboard, id]);
+    setError(null);
+    setForbidden(false);
+  }, [id, periodo, rowsPage, rowsPageSize, selectedPaisId, searchDebounced, fechaDesde, fechaHasta, sortBy, sortDir]);
 
   useEffect(() => {
     setRowsPage(1);
@@ -453,26 +457,17 @@ export default function CuentaDetailPage() {
     setActionLoading(true);
     setError(null);
 
-    let deletedCount = 0;
-
-    for (const row of selectedRows) {
-      try {
-        await api.delete(`/extractos/${row.id}`);
-        deletedCount += 1;
-      } catch (err) {
-        setError(
-          extractErrorMessage(
-            err,
-            `Se eliminaron ${deletedCount} de ${selectedRowsCount} movimientos. Revisa permisos o vuelve a intentarlo.`
-          )
-        );
-        break;
-      }
-    }
-
     try {
-      if (deletedCount > 0) {
-        const deletedIds = new Set(selectedRows.slice(0, deletedCount).map((row) => row.id));
+      // F-7: pool de cuatro peticiones en vez de una peticion por fila y en
+      // serie. Todas se intentan y cada fallo se reporta.
+      const resultados = await ejecutarEnLote(
+        selectedRows.map((row) => () => api.delete(`/extractos/${row.id}`))
+      );
+      const borrados = resultados.filter((resultado) => resultado.exito);
+      const fallidos = resultados.filter((resultado) => !resultado.exito);
+
+      if (borrados.length > 0) {
+        const deletedIds = new Set(borrados.map((resultado) => selectedRows[resultado.indice].id));
         setRows((current) => current.filter((row) => !deletedIds.has(row.id)));
         setRowsTotal((current) => Math.max(0, current - deletedIds.size));
         setSelectedRowIds((current) => {
@@ -486,6 +481,15 @@ export default function CuentaDetailPage() {
         // Alertas y Revision que estuvieran abiertas re-consulten al
         // recuperar el foco.
         await invalidate('extractoDelete');
+      }
+
+      if (fallidos.length > 0) {
+        setError(
+          extractErrorMessage(
+            fallidos[0].error,
+            `Se eliminaron ${borrados.length} de ${selectedRowsCount} movimientos. Fallaron ${fallidos.length}. Revisa permisos o vuelve a intentarlo.`
+          )
+        );
       }
     } finally {
       setActionLoading(false);
@@ -593,58 +597,66 @@ export default function CuentaDetailPage() {
     setError(null);
     setBulkActionStatus(null);
 
-    const processedIds = new Set<string>();
     const changedAt = new Date().toISOString();
     const isUnflag = action === 'unflag';
+    const objetivos = selectedRows.filter((row) => targetIds.includes(row.id));
 
     try {
-      for (const row of selectedRows) {
-        if (!targetIds.includes(row.id)) {
-          continue;
-        }
-        await api.patch(`/extractos/${row.id}/flag`, {
-          flagged: !isUnflag,
-          nota: isUnflag ? undefined : row.flagged_nota ?? undefined,
-        });
-        processedIds.add(row.id);
+      // F-7: pool de cuatro peticiones en vez de una peticion por fila y en
+      // serie. Todas se intentan y cada fallo se reporta.
+      const resultados = await ejecutarEnLote(
+        objetivos.map((row) => () =>
+          api.patch(`/extractos/${row.id}/flag`, {
+            flagged: !isUnflag,
+            nota: isUnflag ? undefined : row.flagged_nota ?? undefined,
+          })
+        )
+      );
+      const marcados = resultados.filter((resultado) => resultado.exito);
+      const fallidos = resultados.filter((resultado) => !resultado.exito);
+
+      if (marcados.length > 0) {
+        const marcadosIds = new Set(marcados.map((resultado) => objetivos[resultado.indice].id));
         setRows((current) =>
-          current.map((item) =>
-            item.id === row.id
-              ? isUnflag
-                ? {
-                    ...item,
-                    flagged: false,
-                    flagged_nota: null,
-                    flagged_at: null,
-                    flagged_by_id: null,
-                    fecha_modificacion: changedAt,
-                  }
-                : {
-                    ...item,
-                    flagged: true,
-                    flagged_at: changedAt,
-                    flagged_by_id: usuario?.id ?? item.flagged_by_id,
-                    fecha_modificacion: changedAt,
-                  }
-              : item
+          current.map((item) => {
+            if (!marcadosIds.has(item.id)) {
+              return item;
+            }
+
+            return isUnflag
+              ? {
+                  ...item,
+                  flagged: false,
+                  flagged_nota: null,
+                  flagged_at: null,
+                  flagged_by_id: null,
+                  fecha_modificacion: changedAt,
+                }
+              : {
+                  ...item,
+                  flagged: true,
+                  flagged_at: changedAt,
+                  flagged_by_id: usuario?.id ?? item.flagged_by_id,
+                  fecha_modificacion: changedAt,
+                };
+          })
+        );
+        setBulkActionStatus(
+          isUnflag
+            ? `Quitada la alerta de ${marcados.length} ${marcados.length === 1 ? 'movimiento' : 'movimientos'}.`
+            : `${marcados.length} ${marcados.length === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
+        );
+        await invalidate('extractoFlag');
+      }
+
+      if (fallidos.length > 0) {
+        setError(
+          extractErrorMessage(
+            fallidos[0].error,
+            `Se ${isUnflag ? 'quitó la alerta de' : 'marcaron'} ${marcados.length} de ${objetivos.length} movimientos seleccionados. Fallaron ${fallidos.length}.`
           )
         );
       }
-      setBulkActionStatus(
-        isUnflag
-          ? `Quitada la alerta de ${processedIds.size} ${processedIds.size === 1 ? 'movimiento' : 'movimientos'}.`
-          : `${processedIds.size} ${processedIds.size === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
-      );
-      await invalidate('extractoFlag');
-    } catch (err) {
-      setError(
-        extractErrorMessage(
-          err,
-          processedIds.size > 0
-            ? `Se ${isUnflag ? 'quitó la alerta de' : 'marcaron'} ${processedIds.size} de ${targetIds.length} movimientos seleccionados.`
-            : `No se pudo ${isUnflag ? 'quitar la alerta de' : 'marcar'} la selección.`
-        )
-      );
     } finally {
       setActionLoading(false);
     }

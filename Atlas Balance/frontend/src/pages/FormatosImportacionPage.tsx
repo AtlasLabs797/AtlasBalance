@@ -6,6 +6,7 @@ import type { ComboboxOption } from '@/components/common/Combobox';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { PaginatedResponse } from '@/types';
@@ -118,6 +119,7 @@ export default function FormatosImportacionPage() {
   const [pageSize, setPageSize] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [incluirEliminados, setIncluirEliminados] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +163,7 @@ export default function FormatosImportacionPage() {
         params: {
           page,
           pageSize,
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           incluirEliminados: incluirEliminados && isAdmin,
           sortBy: 'fecha_creacion',
           sortDir: 'desc',
@@ -186,7 +188,7 @@ export default function FormatosImportacionPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recarga controlada por filtros y paginación
-  }, [page, pageSize, search, incluirEliminados, isAdmin]);
+  }, [page, pageSize, debouncedSearch, incluirEliminados, isAdmin]);
 
   const resetForm = () => {
     setEditingId(null);

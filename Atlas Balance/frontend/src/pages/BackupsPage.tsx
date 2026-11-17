@@ -21,6 +21,7 @@ import type {
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatBytes, formatDateTime } from '@/utils/formatters';
+import { createPollLifecycle, type PollLifecycle } from '@/utils/pollLifecycle';
 
 const pageSizeOptions = [10, 20, 50];
 const dayOptions = [
@@ -129,6 +130,9 @@ export default function BackupsPage() {
   const restoreOverlayRef = useRef<HTMLDivElement | null>(null);
   useBlockingOverlay(overlayVisible);
 
+  // F-4: sondeo de las operaciones de backup; se detiene al desmontar la pagina.
+  const backupPollRef = useRef<PollLifecycle | null>(null);
+
   const logout = useAuthStore((state) => state.logout);
 
   const totalRowsText = useMemo(() => `${rows.length} copias en esta pagina`, [rows.length]);
@@ -206,7 +210,10 @@ export default function BackupsPage() {
     setError(null);
     try {
       const { data } = await api.post<{ operation_id: string }>('/backups/manual');
-      await pollBackupOperation(data.operation_id);
+      const terminado = await pollBackupOperation(data.operation_id);
+      if (!terminado) {
+        return;
+      }
       await fetchRows();
       await fetchConfig();
     } catch (err) {
@@ -310,7 +317,10 @@ export default function BackupsPage() {
     setError(null);
     try {
       const { data } = await api.post<{ operation_id: string }>('/backups/google-drive/import', { file_id: file.file_id });
-      await pollBackupOperation(data.operation_id);
+      const terminado = await pollBackupOperation(data.operation_id);
+      if (!terminado) {
+        return;
+      }
       await fetchRows();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo importar la copia desde Google Drive.'));
@@ -319,41 +329,64 @@ export default function BackupsPage() {
     }
   };
 
-  const pollBackupOperation = async (operationId: string, restore = false) => {
+  const pollBackupOperation = async (operationId: string, restore = false): Promise<boolean> => {
     setOverlayVisible(true);
     setOverlayMessage('No cierres esta ventana; al terminar volverás al inicio de sesión.');
     const timeoutAt = Date.now() + 10 * 60 * 1000;
+    // F-4: el sondeo se cancela al desmontar la pagina y pide el estado sin
+    // toast: durante una restauracion la API esta caida a proposito.
+    const poll = createPollLifecycle();
+    backupPollRef.current = poll;
 
-    while (Date.now() < timeoutAt) {
-      try {
-        const { data } = await api.get<{ status: string; error?: string }>(`/backups/operations/${operationId}`);
-        const state = (data.status ?? '').toUpperCase();
-        if (state === 'RUNNING') {
-          setOverlayMessage(restore ? 'Restauración en curso; no cierres esta ventana.' : 'Operación de backup en curso.');
-        } else if (state === 'SUCCESS') {
-          if (restore) {
-            setOverlayMessage('Restauración completada. Volverás al inicio de sesión.');
-            await new Promise((resolve) => setTimeout(resolve, 1200));
-            logout();
-            window.location.href = '/login';
-          } else {
-            setOverlayVisible(false);
-          }
-          return;
-        } else if (state === 'FAILED') {
-          setOverlayVisible(false);
-          setError(data.error || 'La operación falló. Revisa el estado del sistema antes de intentarlo de nuevo.');
-          return;
+    try {
+      while (Date.now() < timeoutAt) {
+        if (!poll.active) {
+          return false;
         }
-      } catch {
-        // Keep polling.
+        try {
+          const { data } = await api.get<{ status: string; error?: string }>(`/backups/operations/${operationId}`, { skipErrorToast: true });
+          if (!poll.active) {
+            return false;
+          }
+          const state = (data.status ?? '').toUpperCase();
+          if (state === 'RUNNING') {
+            setOverlayMessage(restore ? 'Restauración en curso; no cierres esta ventana.' : 'Operación de backup en curso.');
+          } else if (state === 'SUCCESS') {
+            if (restore) {
+              setOverlayMessage('Restauración completada. Volverás al inicio de sesión.');
+              await new Promise((resolve) => setTimeout(resolve, 1200));
+              logout();
+              window.location.href = '/login';
+            } else {
+              setOverlayVisible(false);
+            }
+            return true;
+          } else if (state === 'FAILED') {
+            setOverlayVisible(false);
+            setError(data.error || 'La operación falló. Revisa el estado del sistema antes de intentarlo de nuevo.');
+            return true;
+          }
+        } catch {
+          // Keep polling.
+        }
+
+        const continuar = await poll.wait(2500);
+        if (!continuar) {
+          return false;
+        }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2500));
+      if (poll.active) {
+        setOverlayVisible(false);
+        setError('La restauración está tardando más de lo esperado. Comprueba el estado antes de iniciar otra restauración.');
+      }
+      return true;
+    } finally {
+      poll.stop();
+      if (backupPollRef.current === poll) {
+        backupPollRef.current = null;
+      }
     }
-
-    setOverlayVisible(false);
-    setError('La restauración está tardando más de lo esperado. Comprueba el estado antes de iniciar otra restauración.');
   };
 
   const triggerRestore = async () => {
@@ -376,6 +409,12 @@ export default function BackupsPage() {
     fetchRows();
   }, [fetchRows]);
 
+  // F-4: al desmontar la pagina el sondeo de la operacion de backup se detiene:
+  // limpia el timer y no vuelve a consultar ni a tocar el estado.
+  useEffect(() => () => {
+    backupPollRef.current?.stop();
+  }, []);
+
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
@@ -388,7 +427,7 @@ export default function BackupsPage() {
 
     const poll = async () => {
       try {
-        const { data } = await api.get<GoogleDriveLinkStatus>(`/backups/google-drive/link/${linkStart.session_id}`);
+        const { data } = await api.get<GoogleDriveLinkStatus>(`/backups/google-drive/link/${linkStart.session_id}`, { skipErrorToast: true });
         if (cancelled) return;
         setLinkStatus(data);
         const state = (data.estado ?? '').toUpperCase();
