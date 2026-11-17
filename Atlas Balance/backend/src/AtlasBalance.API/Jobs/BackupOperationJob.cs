@@ -2,10 +2,16 @@ using System.Text.Json;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Jobs;
 
+// J-1: las operaciones de backup (manual o importacion desde Google Drive) no
+// pueden solaparse entre si: el volcado escribe en disco y el timeout de
+// 3600 s cubre el timeout interno de 30 minutos de pg_dump.
+[DisableConcurrentExecution(timeoutInSeconds: 3600)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class BackupOperationJob
 {
     private readonly AppDbContext _dbContext;

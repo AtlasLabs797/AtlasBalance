@@ -55,8 +55,14 @@ public sealed class PlazoFijoService : IPlazoFijoService
             }
 
             var estadoCambio = item.Plazo.Estado != nuevoEstado.Value;
+            // J-3: reintentar el aviso de "proximo a vencer" mientras no se haya
+            // entregado. FechaUltimaNotificacion solo se actualiza cuando el email
+            // y la notificacion de admin se completaron, asi que si sigue a null el
+            // aviso nunca salio y hay que reintentarlo (sin repetir el mismo dia).
             var debeNotificar = item.Plazo.FechaUltimaNotificacion != hoy &&
-                (estadoCambio || nuevoEstado.Value == EstadoPlazoFijo.VENCIDO);
+                (estadoCambio
+                 || nuevoEstado.Value == EstadoPlazoFijo.VENCIDO
+                 || (nuevoEstado.Value == EstadoPlazoFijo.PROXIMO_VENCER && item.Plazo.FechaUltimaNotificacion == null));
 
             item.Plazo.Estado = nuevoEstado.Value;
             item.Plazo.FechaModificacion = DateTime.UtcNow;
@@ -86,11 +92,19 @@ public sealed class PlazoFijoService : IPlazoFijoService
             var items = grupo
                 .Select(se => $"{se.Cuenta.Nombre} (vence {se.Plazo.FechaVencimiento:dd/MM/yyyy})")
                 .ToList();
-            var notificacionAdminCreada = await TryAddAdminNotificationAsync(
-                representante.Cuenta, representante.Titular, representante.Plazo, representante.NuevoEstado, cancellationToken);
+            // J-3: el admin necesita una notificacion por cada plazo del grupo, no
+            // solo para el representante. TryAddAdminNotificationAsync deduplica por
+            // cuenta + estado + vencimiento, asi que no duplica si ya existia.
+            var notificacionesAdminCreadas = true;
+            foreach (var se in grupo)
+            {
+                var creada = await TryAddAdminNotificationAsync(
+                    se.Cuenta, se.Titular, se.Plazo, se.NuevoEstado, cancellationToken);
+                notificacionesAdminCreadas = notificacionesAdminCreadas && creada;
+            }
             var emailEnviado = await TrySendDigestEmailAsync(
                 representante.Titular.Nombre, items, representante.NuevoEstado, cancellationToken);
-            if (notificacionAdminCreada && emailEnviado)
+            if (notificacionesAdminCreadas && emailEnviado)
             {
                 foreach (var se in grupo)
                 {

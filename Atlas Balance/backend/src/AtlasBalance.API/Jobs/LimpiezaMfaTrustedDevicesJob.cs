@@ -1,5 +1,6 @@
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Services;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Jobs;
@@ -10,6 +11,10 @@ namespace AtlasBalance.API.Jobs;
 // revocados hace mas de 1 dia. Los vigentes no se tocan. Se ignora el filtro
 // global (tambien limpia los soft-deleted caducados); la policy de DELETE solo
 // admite admin/system, de ahi el SystemContextScope.
+//
+// V-03.02 (J-1): bloqueo concurrente y reintento automatico.
+[DisableConcurrentExecution(timeoutInSeconds: 900)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class LimpiezaMfaTrustedDevicesJob
 {
     private readonly AppDbContext _dbContext;

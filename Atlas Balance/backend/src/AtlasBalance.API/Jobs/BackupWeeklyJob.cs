@@ -1,8 +1,14 @@
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
+using Hangfire;
 
 namespace AtlasBalance.API.Jobs;
 
+// J-1: el backup semanal no puede solaparse con otro backup (mismo fichero)
+// ni con los dos workers de Hangfire. El timeout de 3600 s cubre el timeout
+// interno de 30 minutos de pg_dump.
+[DisableConcurrentExecution(timeoutInSeconds: 3600)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class BackupWeeklyJob
 {
     private readonly IBackupService _backupService;

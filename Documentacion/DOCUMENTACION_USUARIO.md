@@ -30,6 +30,32 @@ version anterior instalada.
 - **Configuracion:** guardar una tasa, sincronizar los tipos de cambio, crear o modificar una divisa, o revocar, rotar o borrar un token ya no recarga la pagina entera. Solo se actualiza la seccion afectada, asi que lo que tengas escrito en otra seccion (por ejemplo la clave SMTP o el proveedor de IA) ya no se borra al guardar otra cosa. La pantalla tampoco se queda en blanco esqueleto mientras recarga.
 - **Auditoria:** cuando un movimiento no tiene valor anterior o nuevo, la celda muestra "Sin valor" o "-" en lugar de un importe en blanco.
 
+## Novedades de uso del LOTE 4 (IA e integraciones, V-03.02)
+
+- **El chat de IA respeta los filtros que le pides.** Si preguntas "¿cuanto he gastado en seguros?", la respuesta ya sale con el filtro de concepto aplicado; antes podia devolverte el total de todos los gastos sin avisar. Tambien se aplican los importes minimo y maximo, y se comparan por valor absoluto (un gasto de 120 EUR cuenta como 120, no como -120).
+- **Cuando la pregunta no se puede filtrar, la IA lo dice.** Si pides un saldo filtrado por concepto, o un pendiente por importe, el chat responde que no puede aplicar ese filtro en vez de mostrarte una cifra que no es la que preguntaste.
+- **Las cifras ya no mezclan divisas.** Las comparaciones entre periodos y los rankings (top de cuentas o titulares por gasto) se calculan por separado para cada divisa. Si la pregunta abarca mas de una divisa sin concretarla, el chat te pide que la concretes en vez de sumar euros y dolares juntos.
+- **Los pagos recurrentes ya no se marcan como duplicados.** Un cargo que se repite cada mes (una prima, una suscripcion) solo se avisa como posible duplicado si dos cargos del mismo concepto e importe estan a tres dias o menos.
+- **Los seguimientos mantienen los filtros.** Si preguntas "¿cuanto he gastado en seguros?" y despues "¿y el mes anterior?", la segunda respuesta tambien viene filtrada por seguros y por las cuentas y titulares de la primera.
+- **El chat de IA deja rastro.** Las respuestas que se resuelven en local (saldos, totales, rankings, sin llamar a ningun proveedor) ahora se auditan y cuentan contra tus limites de uso, igual que las que si llaman al proveedor. Repetir la misma pregunta hasta agotar el limite ya no sale gratis.
+- **Los dias y los meses se cuentan en hora local.** Entre las 00:00 y las 02:00 (verano) o la 01:00 (invierno), "hoy" y "este mes" ya no se refieren al dia anterior.
+- **Solo los administradores ven el presupuesto y el coste global de la IA.** El resto de usuarios ven su propio consumo (peticiones, tokens, coste estimado) y si pueden usar la IA. Si tu rol no es ADMIN, la pantalla de Configuracion sigue mostrando todo: ahi la informacion es para el administrador.
+- **Los tokens de integracion duran como maximo un ano.** Al crear o al editar un token no se puede pedir una caducidad de mas de 365 dias, ni una fecha ya pasada. Si editas un token y no cambias la fecha, **conserva la que tenia**: antes se renovaba sola a 90 dias.
+- **Rotar un token no resucita uno revocado.** Si el token esta revocado o ya ha caducado, «Rotar» responde con un error y no emite un token nuevo. Al rotar, el nuevo token hereda los permisos y los alcances del anterior: si el anterior no tenia ninguno, el nuevo tampoco.
+- **Los tokens nuevos ya no reciben por defecto los alcances "vencimientos" y "auditoria".** "Vencimientos" no abria ninguna direccion y "auditoria" permite ver el valor anterior y el nuevo de los movimientos modificados. Si un cliente los necesita, se piden a mano al crear el token. Los tokens que ya tenian esos alcances no cambian.
+
+## Novedades de uso del LOTE 2 (acceso, sesiones y correo, V-03.02)
+
+- **Una cuenta bloqueada ya no se queda fuera para siempre.** El bloqueo por contrasena incorrecta dura 30 minutos y, al cumplirse, el contador de intentos vuelve a cero: un fallo nuevo cuenta como uno, no como el sexto. Antes el contador se quedaba en cinco, de modo que cualquier fallo volvia a bloquear y el usuario podia quedarse fuera indefinidamente.
+- **El bloqueo ya no cierra las sesiones abiertas.** Mientras la cuenta esta bloqueada no se puede iniciar sesion ni completar el doble factor, pero las sesiones que ya tenias abiertas siguen funcionando. Asi, quien conozca un email no puede dejarte fuera de la aplicacion.
+- **Los administradores pueden desbloquear a un usuario.** En `Usuarios`, cada fila tiene ahora una columna "Bloqueo" con el estado de la cuenta y el numero de intentos fallidos. Cuando la cuenta esta bloqueada aparece el boton "Desbloquear", que pide confirmacion, retira el bloqueo y deja constancia en la auditoria.
+- **Las sesiones tienen una vida maxima de 30 dias.** Al renovarse, la sesion no reinicia su reloj: pasados 30 dias desde que la abriste, tienes que volver a iniciar sesion (con doble factor). El plazo se cambia con `JwtSettings:MaxSessionDays` en `appsettings.json`.
+- **Dos pestanas abiertas ya no cierran tu sesion.** Si dos pestanas renuevan el token a la vez, la segunda ya no se interpreta como un robo y no se cierran todas tus sesiones. El aviso de robo por reutilizacion sigue vigente si el intento llega desde otra IP o mas de 30 segundos despues de la renovacion.
+- **En produccion solo valen las cookies con prefijo `__Host-`.** Al actualizar la aplicacion, las sesiones abiertas que usaban las cookies antiguas dejan de valer: vuelve a iniciar sesion. Las cookies antiguas del navegador se ignoran mientras sigan ahi.
+- **Un fallo de red ya no cierra la sesion.** Si al renovar la sesion se cae la conexion, el backend no responde o hay demasiadas peticiones a la vez, la aplicacion te avisa y conserva la sesion. Solo se cierra cuando el servidor dice que la sesion ya no vale.
+- **Las respuestas de la aplicacion no se guardan en cache.** Los saldos y los extractos se piden siempre al servidor: un proxy o el navegador no pueden quedarse con una copia antigua.
+- **El cifrado del correo SMTP se decide de forma explicita.** En `Configuracion > General y SMTP > Servidor SMTP` hay un selector "Modo TLS" con tres opciones: "Obligatorio (STARTTLS)", "Automatico (si el servidor lo admite)" y "Sin cifrar (servidor sin TLS)". Elige "Sin cifrar" solo si tu servidor no admite TLS: en ese caso los correos (alertas de saldo, avisos de vencimientos y alertas de seguridad) viajan sin cifrar, y el servidor deja un aviso en el log. "Automatico" es el valor por defecto y equivale al comportamiento anterior: cifra si el servidor lo permite.
+- **El registro de auditoria de seguridad ya no se llena con un escaneo.** Los rechazos de acceso (401, 403) se agrupan por tipo, IP y usuario durante un minuto, en vez de escribir una linea por cada ruta intentada.
 ## Ubicacion principal
 
 La aplicacion esta en la carpeta `Atlas Balance`.
@@ -213,6 +239,10 @@ En `Sistema > Backups`, un administrador puede configurar:
 - Frecuencia: cada X horas, diaria, semanal o mensual.
 - Hora UTC, dia semanal, dia mensual o intervalo horario segun la frecuencia.
 - Destino: `Solo local` o `Local + Google Drive`.
+
+El nombre del fichero de copia lleva fecha y hora (`backup_AAAA-MM-DD_HHMMSS.dump`), de modo que dos copias automaticas del mismo dia nunca se pisan. La copia se escribe primero en un fichero temporal y solo se publica con su nombre definitivo cuando el volcado termina bien: si la copia se interrumpe, no queda un volcado a medias dando la sensacion de que la copia es buena. Ese temporal a medias se borra solo en la siguiente copia correcta.
+
+Si la copia automatica esta activa y el ultimo volcado correcto es mas viejo de lo que permite la frecuencia configurada, el administrador recibe un aviso en el panel de notificaciones: 1 dia con frecuencia horaria, 2 con diaria, 8 con semanal y 32 con mensual. Si no hay ninguna copia correcta registrada, el aviso tambien aparece. Con la copia automatica desactivada no hay avisos: esa decision es del administrador.
 
 La copia local sigue siendo el archivo restaurable principal. Si eliges `Local + Google Drive`, Atlas Balance crea la copia local y despues sube a Google Drive una version cifrada `.enc`.
 
@@ -412,7 +442,7 @@ Tambien puedes actualizar desde la propia app:
 4. Pulsa `Verificar actualizacion`.
 5. Si hay version nueva y el preflight dice `Instalable`, pulsa `Actualizar ahora`.
 
-Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
+Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia dentro de una ventana de madrugada en hora del servidor (01:00-05:00 por defecto) y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Si el servidor estaba apagado durante esa ventana, la actualizacion se aplaza al dia siguiente: la app no se reinicia nunca en horario laboral. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
 
 La app descarga el ZIP oficial `win-x64`, verifica digest y firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si falta ZIP, firma, digest, clave publica o Watchdog disponible, el boton queda bloqueado con el motivo. En `V-02-03`, `Actualizacion disponible` no significa `Instalable`; esa diferencia evita actualizaciones a medias.
 
@@ -526,6 +556,8 @@ En ese mismo dashboard de cuenta, dentro de `Desglose de la cuenta`, ahora puede
 - Confirma la accion para enviarlas a papelera.
 
 La renovacion de un plazo fijo es manual desde `Cuentas` con la accion `Renovar`. Atlas Balance no mueve dinero ni crea transferencias por ti. Bien: una app de tesoreria que inventa movimientos automaticamente es una bomba.
+
+Del aviso de vencimiento de un plazo fijo se ocupa el sistema, cada dia. Si el correo electronico no sale (servidor de correo caido, destinatario rejecting), el aviso **se reintenta al dia siguiente**: un plazo proximo a vencer no se queda sin avisar porque fallara un envio. El administrador recibe una notificacion por cada plazo afectado, no una sola por grupo de vencimientos.
 
 ## Alertas
 
@@ -834,6 +866,12 @@ Los seis avisos que existen:
 | Acceso desde un sitio nuevo | Un usuario ha entrado desde un equipo o red que nunca habia usado. Puede ser normal (teletrabajo, portatil nuevo) o no. |
 | Cambios de contrasena repetidos | Se ha cambiado la contrasena de la misma cuenta varias veces en pocos minutos. |
 | Muchos accesos denegados | Se estan rechazando muchas peticiones, muy por encima de lo habitual. |
+
+La vigilancia no se salta ningun tramo: cada comprobacion empieza donde termino
+la anterior, asi que un servidor parado o una tarea que se retrasa no dejan
+eventos sin mirar (antes se perdian justo los tramos con mas actividad). Por lo
+mismo, si el aviso llega con mas eventos de los habituales, es que se estaba
+acumulando actividad desde la ultima comprobacion.
 
 **Que hacer cuando llega un aviso.** Casi todos tienen explicacion inocente: un
 companero que ha olvidado la contrasena, alguien trabajando desde casa, una

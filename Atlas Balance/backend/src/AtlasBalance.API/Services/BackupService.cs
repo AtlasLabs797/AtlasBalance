@@ -20,11 +20,18 @@ public sealed class BackupService : IBackupService
 {
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(30);
 
+    // A-04: antiguedad a partir de la cual un temporal se considera huerfano.
+    private static readonly TimeSpan OrphanTempFileAge = TimeSpan.FromHours(2);
+
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly IAuditService _auditService;
     private readonly IGoogleDriveBackupService _googleDriveBackupService;
     private readonly ILogger<BackupService> _logger;
+
+    // A-04: costura de pruebas. Si es null se usa el volcado real (pg_dump);
+    // los tests inyectan un simulador para no ejecutar el proceso externo.
+    private readonly Func<string, CancellationToken, Task<(bool Success, string? ErrorMessage)>>? _dumpExecutor;
 
     public BackupService(
         AppDbContext dbContext,
@@ -32,12 +39,26 @@ public sealed class BackupService : IBackupService
         IAuditService auditService,
         IGoogleDriveBackupService googleDriveBackupService,
         ILogger<BackupService> logger)
+        : this(dbContext, configuration, auditService, googleDriveBackupService, logger, null)
+    {
+    }
+
+    // A-04: constructor de pruebas. El contenedor de DI solo ve el constructor
+    // publico de 5 argumentos, asi que el registro de Program.cs no cambia.
+    internal BackupService(
+        AppDbContext dbContext,
+        IConfiguration configuration,
+        IAuditService auditService,
+        IGoogleDriveBackupService googleDriveBackupService,
+        ILogger<BackupService> logger,
+        Func<string, CancellationToken, Task<(bool Success, string? ErrorMessage)>>? dumpExecutor)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _auditService = auditService;
         _googleDriveBackupService = googleDriveBackupService;
         _logger = logger;
+        _dumpExecutor = dumpExecutor;
     }
 
     public async Task<Backup> CreateBackupAsync(TipoProceso tipo, Guid? iniciadoPorId, CancellationToken cancellationToken)
@@ -47,10 +68,13 @@ public sealed class BackupService : IBackupService
         Directory.CreateDirectory(backupDirectory);
 
         var timestamp = DateTime.UtcNow;
-        var fileName = tipo == TipoProceso.AUTO
-            ? $"backup_{timestamp:yyyy-MM-dd}.dump"
-            : $"backup_{timestamp:yyyy-MM-dd_HHmmss}.dump";
+        var fileName = BuildDumpFileName(timestamp);
         var backupPath = Path.Combine(backupDirectory, fileName);
+
+        // A-04: el volcado se escribe en un temporal del MISMO directorio y
+        // solo se renombra cuando termina bien. Asi un volcado a medias no
+        // deja un dump corrupto en disco, y el rename es atomico (misma unidad).
+        var tempPath = $"{backupPath}.tmp";
 
         var backup = new Backup
         {
@@ -67,21 +91,31 @@ public sealed class BackupService : IBackupService
 
         try
         {
-            var result = await RunPgDumpAsync(backupPath, cancellationToken);
+            var result = _dumpExecutor is not null
+                ? await _dumpExecutor(tempPath, cancellationToken)
+                : await RunPgDumpAsync(tempPath, cancellationToken);
             if (!result.Success)
             {
                 backup.Estado = EstadoProceso.FAILED;
                 backup.Notas = "La herramienta de copia fallo. Revisa el diagnostico protegido del servidor.";
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                // A-03: con el token de la peticion (ya cancelado cuando el
+                // servicio se apaga o hay timeout) este estado no se guardaba
+                // y la fila se quedaba en PENDING para siempre.
+                await _dbContext.SaveChangesAsync(CancellationToken.None);
                 _logger.LogWarning("pg_dump fallo al crear backup {BackupId}: {ErrorSafe}", backup.Id, LogScrubber.Scrub(result.ErrorMessage));
                 throw new InvalidOperationException("No se pudo crear la copia de seguridad. Revisa la configuracion del servidor o avisa al administrador.");
             }
+
+            // A-04: el volcado solo se publica cuando ha terminado bien.
+            File.Move(tempPath, backupPath, overwrite: true);
 
             var fileInfo = new FileInfo(backupPath);
             backup.Estado = EstadoProceso.SUCCESS;
             backup.TamanioBytes = fileInfo.Exists ? fileInfo.Length : null;
             backup.Notas = null;
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            // A-03: el estado del backup no puede depender del token de la
+            // peticion: si viene cancelado, la fila se quedaria en PENDING.
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
 
             await _auditService.LogAsync(
                 iniciadoPorId,
@@ -116,14 +150,44 @@ public sealed class BackupService : IBackupService
         }
         catch
         {
+            // A-04: no puede quedar un volcado temporal a medias en el disco.
+            TryDeleteTempFile(tempPath);
+
             if (backup.Estado == EstadoProceso.PENDING)
             {
                 backup.Estado = EstadoProceso.FAILED;
                 backup.Notas = "No se pudo crear la copia de seguridad.";
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                // A-03: el token de la peticion puede venir ya cancelado (apagado
+                // del servicio o timeout). Con ese token el SaveChanges fallaba
+                // y la fila se quedaba en PENDING para siempre.
+                await _dbContext.SaveChangesAsync(CancellationToken.None);
             }
 
             throw;
+        }
+    }
+
+    // A-04: el nombre del volcado lleva siempre la hora, tanto en automatico
+    // como en manual. Con frecuencia horaria caben varios backups automaticos
+    // el mismo dia y todos escribian en `backup_yyyy-MM-dd.dump`: el segundo
+    // volcado a medias destruia el primero.
+    internal static string BuildDumpFileName(DateTime timestamp) =>
+        $"backup_{timestamp:yyyy-MM-dd_HHmmss}.dump";
+
+    // A-04: limpieza del volcado temporal. Nunca debe quedar un `.tmp` en el
+    // directorio de backups, pero si el borrado falla no puede tumbar el backup.
+    private void TryDeleteTempFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo borrar el volcado temporal {TempFile}", Path.GetFileName(tempPath));
         }
     }
 
@@ -202,6 +266,49 @@ public sealed class BackupService : IBackupService
         if (oldBackups.Count > 0)
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await LimpiarTemporalesHuerfanosAsync(backupDirectory);
+    }
+
+    // A-04: desde que el volcado se escribe en un temporal, un proceso que
+    // muere a mitad deja un "<nombre>.dump.tmp" en el directorio de backups con
+    // datos personales dentro. La retencion no lo toca (solo borra ficheros con
+    // extension ".dump"), asi que sin esta limpieza esos temporales se
+    // quedarian en disco para siempre. Se borran los que son mas viejos de 2 h:
+    // el timeout de pg_dump son 30 minutos, de modo que un temporal mas viejo
+    // no puede pertenecer a un volcado en curso.
+    private async Task LimpiarTemporalesHuerfanosAsync(string backupDirectory)
+    {
+        try
+        {
+            var cutoff = DateTime.UtcNow - OrphanTempFileAge;
+            var borrados = 0;
+
+            foreach (var path in Directory.EnumerateFiles(backupDirectory, "*.tmp"))
+            {
+                try
+                {
+                    if (new FileInfo(path).LastWriteTimeUtc < cutoff)
+                    {
+                        File.Delete(path);
+                        borrados++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "No se pudo borrar el volcado temporal {TempFile}", Path.GetFileName(path));
+                }
+            }
+
+            if (borrados > 0)
+            {
+                _logger.LogWarning("Se borraron {Count} volcados temporales huerfanos del directorio de backups", borrados);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudieron limpiar los volcados temporales huerfanos del directorio de backups");
         }
     }
 

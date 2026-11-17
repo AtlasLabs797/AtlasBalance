@@ -2,8 +2,10 @@ using System.Text;
 using ClosedXML.Excel;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.Logging;
 using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AtlasBalance.API.Services;
 
@@ -18,13 +20,19 @@ public sealed class ExportacionService : IExportacionService
     private const int DefaultMaxRowsPerExport = 50_000;
     private const int AbsoluteMaxRowsPerExport = 200_000;
 
+    // R-1: Ajustar el ancho de columna recorriendo 50.000 filas es carisimo.
+    // Se mide solo una cabecera de filas: el contenido del XLSX no cambia.
+    private const int MaxRowsForColumnWidth = 200;
+
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
+    private readonly ILogger<ExportacionService> _logger;
 
-    public ExportacionService(AppDbContext dbContext, IAuditService auditService)
+    public ExportacionService(AppDbContext dbContext, IAuditService auditService, ILogger<ExportacionService> logger)
     {
         _dbContext = dbContext;
         _auditService = auditService;
+        _logger = logger;
     }
 
     public async Task<Exportacion> ExportarCuentaAsync(Guid cuentaId, TipoProceso tipo, Guid? iniciadoPorId, CancellationToken cancellationToken)
@@ -90,13 +98,17 @@ public sealed class ExportacionService : IExportacionService
                     $"La exportacion contiene {extractoCount} filas y supera el limite configurado de {maxRows}. Filtra o divide la exportacion.");
             }
 
+            // R-1: AsNoTracking para no arrastrar el grafo de cambios de 50.000
+            // extractos en el ChangeTracker.
             var extractos = await _dbContext.Extractos
+                .AsNoTracking()
                 .Where(e => e.CuentaId == cuentaId)
                 .OrderByDescending(e => e.FilaNumero)
                 .ToListAsync(cancellationToken);
             var extractoIds = extractos.Select(e => e.Id).ToList();
 
             var extraRows = await _dbContext.ExtractosColumnasExtra
+                .AsNoTracking()
                 .Where(x => extractoIds.Contains(x.ExtractoId))
                 .ToListAsync(cancellationToken);
             var extrasByExtracto = extraRows
@@ -160,7 +172,11 @@ public sealed class ExportacionService : IExportacionService
                 row++;
             }
 
-            worksheet.Columns().AdjustToContents();
+            // R-1: el ancho se calcula solo sobre las primeras filas (la
+            // cabecera siempre entra). Medir las 50.000 filas era lo que
+            // convertia la exportacion mensual en una tarea interminable.
+            var widthLastRow = Math.Min(row - 1, MaxRowsForColumnWidth);
+            worksheet.Columns().AdjustToContents(1, widthLastRow);
             workbook.SaveAs(filePath);
 
             var fileInfo = new FileInfo(filePath);
@@ -225,6 +241,7 @@ public sealed class ExportacionService : IExportacionService
             .ToListAsync(cancellationToken);
 
         var success = 0;
+        var failures = 0;
         foreach (var cuentaId in cuentas)
         {
             try
@@ -232,11 +249,41 @@ public sealed class ExportacionService : IExportacionService
                 await ExportarCuentaAsync(cuentaId, TipoProceso.AUTO, null, cancellationToken);
                 success++;
             }
-            catch
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // Intentionally continue to avoid aborting whole monthly batch.
+                // J-2: una cancelacion no es un fallo de cuenta, se propaga.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // J-2: el fallo de una cuenta no aborta el lote, pero ya no se
+                // traga en silencio. Se registra la cuenta, el tipo de excepcion
+                // y el mensaje saneado (nunca datos sensibles).
+                failures++;
+                _logger.LogWarning(
+                    ex,
+                    "Exportacion mensual fallida para la cuenta {CuentaId}. Tipo de excepcion: {ExceptionType}. Detalle: {Detalle}",
+                    cuentaId,
+                    ex.GetType().Name,
+                    LogScrubber.Scrub(ex.Message));
+            }
+            finally
+            {
+                // R-1: el mismo DbContext recorre todas las cuentas del mes. Sin
+                // limpiar, cada cuenta arrastra el grafo de la anterior. Solo se
+                // limpia aqui: la exportacion se guarda con SaveChangesAsync
+                // antes de volver, asi que la fila de EXPORTACIONES ya esta
+                // persistida. El camino manual comparte DbContext con el
+                // controlador y no debe tocar lo que la peticion tenga
+                // rastreado.
+                _dbContext.ChangeTracker.Clear();
             }
         }
+
+        _logger.LogInformation(
+            "Exportacion mensual terminada: {Exitos} exportaciones correctas y {Fallos} fallos.",
+            success,
+            failures);
 
         return success;
     }

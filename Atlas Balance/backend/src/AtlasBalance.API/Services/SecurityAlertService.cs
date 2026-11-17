@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Data;
+using AtlasBalance.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -41,9 +42,28 @@ public interface ISecurityAlertService
 /// La deduplicacion consulta AUDITORIAS (no una cache en memoria) a proposito:
 /// asi sobrevive a un reinicio del servicio y no se puede perder por un reciclado
 /// del proceso justo cuando empieza un ataque.
+///
+/// V-03.02 (J-1): la ventana no es fija. La evaluacion arranca donde termino la
+/// anterior (marca en CONFIGURACION), no en "ahora menos la ventana": si el job
+/// se retrasa, el tramo intermedio se miraba nunca y sus eventos no disparaban
+/// ninguna alerta.
 /// </summary>
 public sealed class SecurityAlertService : ISecurityAlertService
 {
+    /// <summary>
+    /// Clave de CONFIGURACION con la marca de la ultima evaluacion correcta.
+    /// </summary>
+    private const string LastEvaluatedKey = "security_alerts_last_evaluated_utc";
+
+    /// <summary>
+    /// Cuantas veces la ventana nominal se admite como retraso antes de
+    /// recortar la evaluacion a la ventana actual. Con 5 minutos son 50
+    /// minutos: pasado ese tiempo (servidor caido mucho rato) se evalua solo
+    /// lo ultimo, que es lo que evita barrer de golpe una ventana enorme y
+    /// disparar alertas por todo lo acumulado.
+    /// </summary>
+    private const int MaxVentanasDeRetraso = 10;
+
     public static class Reglas
     {
         public const string LoginFallidosPorCuenta = "LOGIN_FALLIDOS_POR_CUENTA";
@@ -83,7 +103,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
 
         var ahora = _clock.UtcNow;
         var ventana = TimeSpan.FromMinutes(Math.Max(1, _options.VentanaMinutos));
-        var desde = ahora - ventana;
+        var desde = await ResolverDesdeAsync(ahora, ventana, cancellationToken);
 
         var eventos = await _dbContext.Auditorias
             .AsNoTracking()
@@ -100,15 +120,23 @@ public sealed class SecurityAlertService : ISecurityAlertService
             .ToListAsync(cancellationToken);
 
         var candidatas = new List<SecurityAlert>();
-        candidatas.AddRange(ReglaLoginFallidosPorCuenta(eventos));
-        candidatas.AddRange(ReglaIpMultiplesCuentas(eventos));
-        candidatas.AddRange(ReglaAccesoMasivo(eventos));
+        // El rango evaluado no siempre es la ventana nominal: si el job se
+        // retrasa, se mira todo lo acumulado desde la ultima pasada. Los
+        // mensajes dicen el rango real, no el configurado.
+        var minutosVentana = (int)Math.Round((ahora - desde).TotalMinutes);
+        candidatas.AddRange(ReglaLoginFallidosPorCuenta(eventos, minutosVentana));
+        candidatas.AddRange(ReglaIpMultiplesCuentas(eventos, minutosVentana));
+        candidatas.AddRange(ReglaAccesoMasivo(eventos, minutosVentana));
         candidatas.AddRange(await ReglaIpNuevaParaUsuarioAsync(eventos, desde, cancellationToken));
-        candidatas.AddRange(ReglaPasswordResetsRepetidos(eventos));
-        candidatas.AddRange(await ReglaErroresAuthSobreLineaBaseAsync(eventos, desde, ventana, cancellationToken));
+        candidatas.AddRange(ReglaPasswordResetsRepetidos(eventos, minutosVentana));
+        // La linea base se mide sobre ventanas del mismo tamano que el rango
+        // evaluado: si no, un job retrasado compararia una ventana de 45
+        // minutos contra una base de 5 y dispararia alertas por todo.
+        candidatas.AddRange(await ReglaErroresAuthSobreLineaBaseAsync(eventos, desde, ahora - desde, minutosVentana, cancellationToken));
 
         if (candidatas.Count == 0)
         {
+            await GuardarMarcaEvaluacionAsync(ahora, cancellationToken);
             return Array.Empty<SecurityAlert>();
         }
 
@@ -130,12 +158,83 @@ public sealed class SecurityAlertService : ISecurityAlertService
             notificadas.Add(alerta);
         }
 
+        // La marca solo avanza si la evaluacion ha terminado bien. Si el
+        // despacho falla, la siguiente pasada repite el mismo rango: no se
+        // pierde el aviso y no se duplica.
+        await GuardarMarcaEvaluacionAsync(ahora, cancellationToken);
+
         return notificadas;
+    }
+
+    // --- Ventana de evaluacion ---------------------------------------------
+
+    /// <summary>
+    /// Desde donde se evalua. La marca de la ultima evaluacion correcta es la
+    /// que encadena las pasadas: sin ella, un job retrasado deja sin mirar el
+    /// tramo intermedio y sus eventos no disparan ninguna alerta nunca.
+    /// </summary>
+    private async Task<DateTime> ResolverDesdeAsync(DateTime ahora, TimeSpan ventana, CancellationToken cancellationToken)
+    {
+        var marca = await LeerMarcaEvaluacionAsync(cancellationToken);
+
+        // Sin marca previa (primera vez) o con el reloj desfasado: la ventana
+        // nominal, como antes.
+        if (marca == default || marca > ahora)
+        {
+            return ahora - ventana;
+        }
+
+        // Techo de retraso: no se barre una ventana enorme de golpe.
+        var retrasoMaximo = ventana * MaxVentanasDeRetraso;
+        return marca < ahora - retrasoMaximo ? ahora - ventana : marca;
+    }
+
+    private async Task<DateTime> LeerMarcaEvaluacionAsync(CancellationToken cancellationToken)
+    {
+        var raw = await _dbContext.Configuraciones
+            .AsNoTracking()
+            .Where(c => c.Clave == LastEvaluatedKey)
+            .Select(c => c.Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return DateTime.TryParse(
+            raw,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var parsed)
+            ? parsed
+            : default;
+    }
+
+    private async Task GuardarMarcaEvaluacionAsync(DateTime ahora, CancellationToken cancellationToken)
+    {
+        var value = ahora.ToString("O", CultureInfo.InvariantCulture);
+        var row = await _dbContext.Configuraciones
+            .FirstOrDefaultAsync(c => c.Clave == LastEvaluatedKey, cancellationToken);
+
+        if (row is null)
+        {
+            _dbContext.Configuraciones.Add(new Configuracion
+            {
+                Clave = LastEvaluatedKey,
+                Valor = value,
+                Tipo = "datetime",
+                Descripcion = "Ultima evaluacion correcta de las alertas de seguridad",
+                FechaModificacion = ahora
+            });
+        }
+        else
+        {
+            row.Valor = value;
+            row.FechaModificacion = ahora;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     // --- Regla 1: mas de N fallos de login sobre una misma cuenta -------------
 
-    private IEnumerable<SecurityAlert> ReglaLoginFallidosPorCuenta(List<EventoVentana> eventos)
+    private IEnumerable<SecurityAlert> ReglaLoginFallidosPorCuenta(List<EventoVentana> eventos, int minutosVentana)
     {
         // Se agrupa por el email del detalle y no solo por usuario_id: los
         // intentos contra una cuenta inexistente (o antes de resolver el usuario)
@@ -156,7 +255,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
                 Reglas.LoginFallidosPorCuenta,
                 SeveridadAlta,
                 grupo.Key,
-                $"{grupo.Count()} intentos de login fallidos contra la cuenta {grupo.Key} en {_options.VentanaMinutos} minutos.",
+                $"{grupo.Count()} intentos de login fallidos contra la cuenta {grupo.Key} en {minutosVentana} minutos.",
                 new[]
                 {
                     $"Umbral: {_options.MaxLoginFallidosPorCuenta} intentos.",
@@ -168,7 +267,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
 
     // --- Regla 2: una IP tocando muchas cuentas distintas --------------------
 
-    private IEnumerable<SecurityAlert> ReglaIpMultiplesCuentas(List<EventoVentana> eventos)
+    private IEnumerable<SecurityAlert> ReglaIpMultiplesCuentas(List<EventoVentana> eventos, int minutosVentana)
     {
         var porIp = eventos
             .Where(e => e.Ip is not null)
@@ -194,7 +293,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
                 Reglas.IpMultiplesCuentas,
                 SeveridadAlta,
                 grupo.Key,
-                $"La IP {grupo.Key} ha tocado {cuentas.Count} cuentas distintas en {_options.VentanaMinutos} minutos.",
+                $"La IP {grupo.Key} ha tocado {cuentas.Count} cuentas distintas en {minutosVentana} minutos.",
                 new[]
                 {
                     $"Umbral: {_options.MaxCuentasPorIp} cuentas.",
@@ -206,7 +305,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
 
     // --- Regla 3: acceso masivo o secuencial rapido --------------------------
 
-    private IEnumerable<SecurityAlert> ReglaAccesoMasivo(List<EventoVentana> eventos)
+    private IEnumerable<SecurityAlert> ReglaAccesoMasivo(List<EventoVentana> eventos, int minutosVentana)
     {
         // 3a. Peticiones que pidieron mas filas que el umbral (las marca
         // SecurityAuditMiddleware).
@@ -220,7 +319,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
                 Reglas.AccesoMasivo,
                 SeveridadMedia,
                 $"bulk:{grupo.Key}",
-                $"{grupo.Count()} peticiones de lectura masiva de {grupo.Key} en {_options.VentanaMinutos} minutos.",
+                $"{grupo.Count()} peticiones de lectura masiva de {grupo.Key} en {minutosVentana} minutos.",
                 new[] { "Origen del evento: SecurityAuditMiddleware (pageSize por encima del umbral)." },
                 grupo.Select(e => e.UsuarioId).FirstOrDefault(id => id.HasValue));
         }
@@ -243,7 +342,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
                 Reglas.AccesoMasivo,
                 SeveridadMedia,
                 $"sesion:{grupo.Key}",
-                $"{grupo.Count()} acciones auditadas de una misma sesion en {_options.VentanaMinutos} minutos.",
+                $"{grupo.Count()} acciones auditadas de una misma sesion en {minutosVentana} minutos.",
                 new[]
                 {
                     $"Umbral: {_options.MaxPeticionesSecuenciales} acciones.",
@@ -330,7 +429,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
 
     // --- Regla 5: reinicios de password repetidos ----------------------------
 
-    private IEnumerable<SecurityAlert> ReglaPasswordResetsRepetidos(List<EventoVentana> eventos)
+    private IEnumerable<SecurityAlert> ReglaPasswordResetsRepetidos(List<EventoVentana> eventos, int minutosVentana)
     {
         var resets = eventos
             .Where(e => string.Equals(e.TipoAccion, AuditActions.PasswordReset, StringComparison.OrdinalIgnoreCase)
@@ -348,7 +447,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
                 Reglas.PasswordResetsRepetidos,
                 SeveridadAlta,
                 grupo.Key,
-                $"{grupo.Count()} cambios o reinicios de password sobre {grupo.Key} en {_options.VentanaMinutos} minutos.",
+                $"{grupo.Count()} cambios o reinicios de password sobre {grupo.Key} en {minutosVentana} minutos.",
                 new[] { $"Umbral: {_options.MaxPasswordResets}." },
                 grupo.Select(e => e.UsuarioId).FirstOrDefault(id => id.HasValue));
         }
@@ -359,7 +458,8 @@ public sealed class SecurityAlertService : ISecurityAlertService
     private async Task<IEnumerable<SecurityAlert>> ReglaErroresAuthSobreLineaBaseAsync(
         List<EventoVentana> eventos,
         DateTime desdeVentana,
-        TimeSpan ventana,
+        TimeSpan duracionVentana,
+        int minutosVentana,
         CancellationToken cancellationToken)
     {
         var actuales = eventos.Count(e =>
@@ -374,7 +474,11 @@ public sealed class SecurityAlertService : ISecurityAlertService
         }
 
         var ventanasBase = Math.Max(1, _options.VentanasLineaBase);
-        var inicioBase = desdeVentana - (ventana * ventanasBase);
+        // La linea base cubre ventanas del mismo tamano que el rango evaluado
+        // (no el nominal): si el job se retraso, comparar 45 minutos de
+        // errores contra una media por ventana de 5 dispararia la alerta
+        // siempre.
+        var inicioBase = desdeVentana - (duracionVentana * ventanasBase);
 
         var totalBase = await _dbContext.Auditorias
             .AsNoTracking()
@@ -398,7 +502,7 @@ public sealed class SecurityAlertService : ISecurityAlertService
                 Reglas.ErroresAuthSobreLineaBase,
                 SeveridadAlta,
                 "global",
-                $"{actuales} errores 401/403 en {_options.VentanaMinutos} minutos, frente a una media de {media.ToString("N1", CultureInfo.InvariantCulture)} por ventana.",
+                $"{actuales} errores 401/403 en {minutosVentana} minutos, frente a una media de {media.ToString("N1", CultureInfo.InvariantCulture)} por ventana.",
                 new[]
                 {
                     $"Linea base calculada sobre las {ventanasBase} ventanas anteriores.",

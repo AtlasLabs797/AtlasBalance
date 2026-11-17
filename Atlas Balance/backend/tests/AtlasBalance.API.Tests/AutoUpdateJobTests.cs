@@ -1,3 +1,4 @@
+using System.Globalization;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Jobs;
@@ -18,6 +19,7 @@ public sealed class AutoUpdateJobTests
         await using var db = BuildDbContext();
         db.Configuraciones.AddRange(
             CreateConfig("app_update_auto_enabled", "true"),
+            // J-6: la clave se conserva en la BD, pero ya no gobierna el job.
             CreateConfig("app_update_auto_hour_utc", "3"),
             CreateConfig("app_update_auto_last_checked_utc", "2026-05-16T04:00:00.0000000Z"));
         await db.SaveChangesAsync();
@@ -37,7 +39,7 @@ public sealed class AutoUpdateJobTests
         var job = new AutoUpdateJob(
             db,
             service,
-            new FakeClock(new DateTime(2026, 5, 17, 4, 0, 0, DateTimeKind.Utc)),
+            new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(2, 0))),
             NullLogger<AutoUpdateJob>.Instance);
 
         await job.ExecuteAsync();
@@ -61,7 +63,7 @@ public sealed class AutoUpdateJobTests
         var job = new AutoUpdateJob(
             db,
             service,
-            new FakeClock(new DateTime(2026, 5, 17, 4, 0, 0, DateTimeKind.Utc)),
+            new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(2, 0))),
             NullLogger<AutoUpdateJob>.Instance);
 
         await job.ExecuteAsync();
@@ -77,20 +79,136 @@ public sealed class AutoUpdateJobTests
         db.Configuraciones.AddRange(
             CreateConfig("app_update_auto_enabled", "true"),
             CreateConfig("app_update_auto_hour_utc", "3"),
-            CreateConfig("app_update_auto_last_checked_utc", "2026-05-17T03:20:00.0000000Z"));
+            // J-6: el dia se compara en hora LOCAL, no en UTC.
+            CreateConfig(
+                "app_update_auto_last_checked_utc",
+                UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(1, 30))
+                    .ToString("O", CultureInfo.InvariantCulture)));
         await db.SaveChangesAsync();
 
         var service = new FakeActualizacionService();
         var job = new AutoUpdateJob(
             db,
             service,
-            new FakeClock(new DateTime(2026, 5, 17, 8, 0, 0, DateTimeKind.Utc)),
+            new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(2, 0))),
             NullLogger<AutoUpdateJob>.Instance);
 
         await job.ExecuteAsync();
 
         service.CheckCalls.Should().Be(0);
         service.StartCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_Not_Do_Anything_When_Local_Time_Is_Outside_The_Window()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.AddRange(
+            CreateConfig("app_update_auto_enabled", "true"),
+            CreateConfig("app_update_auto_last_checked_utc", ""));
+        await db.SaveChangesAsync();
+
+        var service = new FakeActualizacionService();
+        var job = new AutoUpdateJob(
+            db,
+            service,
+            new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(11, 0))),
+            NullLogger<AutoUpdateJob>.Instance);
+
+        await job.ExecuteAsync();
+
+        service.CheckCalls.Should().Be(0);
+        service.StartCalls.Should().Be(0);
+        db.Configuraciones.Single(x => x.Clave == "app_update_auto_last_checked_utc").Valor
+            .Should().BeEmpty();
+        db.Configuraciones.Should().NotContain(x => x.Clave == "app_update_auto_last_result");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_Check_Version_When_Local_Time_Is_Inside_The_Window()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.Add(CreateConfig("app_update_auto_enabled", "true"));
+        await db.SaveChangesAsync();
+
+        var service = new FakeActualizacionService();
+        var job = new AutoUpdateJob(
+            db,
+            service,
+            new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(2, 0))),
+            NullLogger<AutoUpdateJob>.Instance);
+
+        await job.ExecuteAsync();
+
+        service.CheckCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_Use_The_Configured_Local_Window()
+    {
+        // 02:30 local: fuera de la ventana configurada 03:00-04:00.
+        await using (var db = BuildDbContext())
+        {
+            db.Configuraciones.AddRange(
+                CreateConfig("app_update_auto_enabled", "true"),
+                CreateConfig("app_update_auto_window_start_local", "03:00"),
+                CreateConfig("app_update_auto_window_end_local", "04:00"));
+            await db.SaveChangesAsync();
+
+            var service = new FakeActualizacionService();
+            var job = new AutoUpdateJob(
+                db,
+                service,
+                new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(2, 30))),
+                NullLogger<AutoUpdateJob>.Instance);
+
+            await job.ExecuteAsync();
+
+            service.CheckCalls.Should().Be(0);
+        }
+
+        // 03:30 local: dentro de la ventana configurada 03:00-04:00.
+        await using (var db = BuildDbContext())
+        {
+            db.Configuraciones.AddRange(
+                CreateConfig("app_update_auto_enabled", "true"),
+                CreateConfig("app_update_auto_window_start_local", "03:00"),
+                CreateConfig("app_update_auto_window_end_local", "04:00"));
+            await db.SaveChangesAsync();
+
+            var service = new FakeActualizacionService();
+            var job = new AutoUpdateJob(
+                db,
+                service,
+                new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(3, 30))),
+                NullLogger<AutoUpdateJob>.Instance);
+
+            await job.ExecuteAsync();
+
+            service.CheckCalls.Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_Use_The_Default_Window_When_Configuration_Is_Missing_Or_Invalid()
+    {
+        await using var db = BuildDbContext();
+        db.Configuraciones.AddRange(
+            CreateConfig("app_update_auto_enabled", "true"),
+            CreateConfig("app_update_auto_window_start_local", "no-es-una-hora"),
+            CreateConfig("app_update_auto_window_end_local", ""));
+        await db.SaveChangesAsync();
+
+        var service = new FakeActualizacionService();
+        var job = new AutoUpdateJob(
+            db,
+            service,
+            new FakeClock(UtcAtLocalTime(new DateTime(2026, 5, 17), new TimeOnly(2, 0))),
+            NullLogger<AutoUpdateJob>.Instance);
+
+        await job.ExecuteAsync();
+
+        service.CheckCalls.Should().Be(1);
     }
 
     private static AppDbContext BuildDbContext()
@@ -108,6 +226,16 @@ public sealed class AutoUpdateJobTests
             Clave = key,
             Valor = value
         };
+
+    // Instante UTC cuya hora local es la pedida, para no depender de la zona horaria del equipo.
+    private static DateTime UtcAtLocalTime(DateTime localDate, TimeOnly localTime)
+    {
+        var local = DateTime.SpecifyKind(
+            localDate.Date + localTime.ToTimeSpan(),
+            DateTimeKind.Unspecified);
+        var offset = TimeZoneInfo.Local.GetUtcOffset(local);
+        return DateTime.SpecifyKind(local - offset, DateTimeKind.Utc);
+    }
 
     private sealed class FakeClock : IClock
     {

@@ -1,6 +1,7 @@
 using System.Globalization;
 using AtlasBalance.API.Data;
 using AtlasBalance.API.Services;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtlasBalance.API.Jobs;
@@ -25,6 +26,10 @@ namespace AtlasBalance.API.Jobs;
 //    que con contenido_original vacio.
 //  - Las filas soft-deleted no se tocan: la policy RLS importacion_lote_filas_update
 //    exige deleted_at IS NULL tambien para el contexto system.
+//
+// V-03.02 (J-1): bloqueo concurrente y reintento automatico.
+[DisableConcurrentExecution(timeoutInSeconds: 900)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class LimpiezaImportacionLotesJob
 {
     private const int MinRetentionDays = 1;

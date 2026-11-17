@@ -1,4 +1,5 @@
 using AtlasBalance.API.Data;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
@@ -9,6 +10,12 @@ namespace AtlasBalance.API.Jobs;
 // de auditoria existen para trazar acciones pasadas, no para ser restauradas, y
 // conservarlas indefinidamente via soft delete las haria crecer sin limite. Se purgan
 // con hard delete tras la retencion configurada como politica deliberada.
+//
+// V-03.02 (J-1): bloqueo concurrente y reintento automatico. La purga llama a
+// funciones SECURITY DEFINER: si dos purgas corrieran a la vez, la segunda
+// podria fallar sin motivo y dejaria filas sin purgar.
+[DisableConcurrentExecution(timeoutInSeconds: 900)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class LimpiezaAuditoriaJob
 {
     /// <summary>

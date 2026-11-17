@@ -217,6 +217,75 @@ public sealed partial class RowLevelSecurityTests
         DatosJson = """{"concepto":"Cobro cliente","monto":100}"""
     };
 
+    // -----------------------------------------------------------------------
+    // V-03.02 (J-5): el borrado en bloque de los refresh tokens tiene que
+    // RESPETAR el IgnoreQueryFilters y el criterio de usuario con soft delete.
+    // El test de InMemory solo comprobaba que filas SELECCIONARIA la purga
+    // (el proveedor InMemory no soporta ExecuteDeleteAsync). Aqui, contra
+    // PostgreSQL real con RLS FORCE y el rol de runtime, se comprueba que los
+    // tokens desaparecen DE VERDAD y que el vivo de un usuario activo se
+    // respeta.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task LimpiezaRefreshTokensJob_ShouldDeleteTokensOfSoftDeletedUsers_KeepingLiveTokensOfActiveUsers_UnderForcedRls()
+    {
+        var (migrationConnection, runtimeConnection) = await PrepareRetentionDatabaseAsync();
+        var now = DateTime.UtcNow;
+
+        var usuarioActivoId = await SeedUsuarioAsync(migrationConnection);
+        var usuarioBorradoId = await SeedUsuarioBorradoAsync(migrationConnection, now.AddDays(-10));
+
+        var tokenVivoDeUsuarioActivo = NewRefreshToken(usuarioActivoId, now.AddDays(5));
+        var tokenVivoDeUsuarioBorrado = NewRefreshToken(usuarioBorradoId, now.AddDays(5));
+        var tokenCaducadoDeUsuarioActivo = NewRefreshToken(usuarioActivoId, now.AddMinutes(-5));
+
+        await SeedAsSystemAsync(migrationConnection, db => db.RefreshTokens.AddRange(
+            tokenVivoDeUsuarioActivo,
+            tokenVivoDeUsuarioBorrado,
+            tokenCaducadoDeUsuarioActivo));
+
+        await using (var jobDb = CreateRuntimeDbContext(runtimeConnection))
+        {
+            var job = new LimpiezaRefreshTokensJob(jobDb, NullLogger<LimpiezaRefreshTokensJob>.Instance);
+            await job.ExecuteAsync();
+        }
+
+        await using var verify = await OpenSystemConnectionAsync(migrationConnection);
+        (await CountByIdsAsync(verify, "REFRESH_TOKENS", tokenVivoDeUsuarioBorrado.Id))
+            .Should().Be(0, "el usuario tiene soft delete: su token no puede seguir vivo");
+        (await CountByIdsAsync(verify, "REFRESH_TOKENS", tokenCaducadoDeUsuarioActivo.Id))
+            .Should().Be(0, "token caducado de usuario activo");
+        (await CountByIdsAsync(verify, "REFRESH_TOKENS", tokenVivoDeUsuarioActivo.Id))
+            .Should().Be(1, "token vivo de usuario activo: no se toca");
+    }
+
+    private static async Task<Guid> SeedUsuarioBorradoAsync(string migrationConnectionString, DateTime deletedAt)
+    {
+        var usuarioId = Guid.NewGuid();
+        await SeedAsSystemAsync(migrationConnectionString, db => db.Usuarios.Add(new Usuario
+        {
+            Id = usuarioId,
+            Email = $"retencion-borrado-{Guid.NewGuid():N}@atlas.local",
+            NombreCompleto = "Retencion RLS borrado",
+            PasswordHash = "test",
+            Rol = RolUsuario.ADMIN,
+            Activo = false,
+            DeletedAt = deletedAt
+        }));
+        return usuarioId;
+    }
+
+    private static RefreshToken NewRefreshToken(Guid usuarioId, DateTime expiraEn) => new()
+    {
+        Id = Guid.NewGuid(),
+        UsuarioId = usuarioId,
+        TokenHash = Guid.NewGuid().ToString("N"),
+        SecurityStamp = "stamp",
+        ExpiraEn = expiraEn,
+        CreadoEn = expiraEn.AddDays(-7)
+    };
+
     private static async Task<string> DatosJsonAsync(NpgsqlConnection connection, Guid filaId)
         => await ExecuteScalarAsync<string>(connection, $"SELECT datos_json::text FROM \"IMPORTACION_LOTE_FILAS\" WHERE id = '{filaId}'");
 }

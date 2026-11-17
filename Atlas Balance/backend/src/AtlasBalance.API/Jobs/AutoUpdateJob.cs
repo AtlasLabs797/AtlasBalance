@@ -9,10 +9,15 @@ namespace AtlasBalance.API.Jobs;
 public sealed class AutoUpdateJob
 {
     private const string EnabledKey = "app_update_auto_enabled";
-    private const string HourUtcKey = "app_update_auto_hour_utc";
+    private const string WindowStartLocalKey = "app_update_auto_window_start_local";
+    private const string WindowEndLocalKey = "app_update_auto_window_end_local";
     private const string LastCheckedUtcKey = "app_update_auto_last_checked_utc";
     private const string LastStartedUtcKey = "app_update_auto_last_started_utc";
     private const string LastResultKey = "app_update_auto_last_result";
+
+    // J-6: ventana de madrugada por defecto, en HORA LOCAL DEL SERVIDOR.
+    private static readonly TimeOnly DefaultWindowStart = new(1, 0);
+    private static readonly TimeOnly DefaultWindowEnd = new(5, 0);
 
     private readonly AppDbContext _dbContext;
     private readonly IActualizacionService _actualizacionService;
@@ -44,14 +49,23 @@ public sealed class AutoUpdateJob
             return;
         }
 
-        var hourUtc = Math.Clamp(ParseInt(GetValue(config, HourUtcKey), 3), 0, 23);
-        if (now.Hour < hourUtc)
+        // J-6: la actualizacion automatica solo actua dentro de una ventana de madrugada en
+        // HORA LOCAL DEL SERVIDOR (por defecto 01:00-05:00). Fuera de la ventana no se hace
+        // nada ni se escribe nada: la comprobacion se aplaza al dia siguiente, de modo que
+        // un servidor que se levanta a media mañana no reinicia la app en horario laboral.
+        // La clave app_update_auto_hour_utc sigue existiendo en CONFIGURACIONES (y en la
+        // pantalla de Configuracion), pero J-6 la sustituye por esta ventana local.
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(now, TimeZoneInfo.Local);
+        var localTime = TimeOnly.FromTimeSpan(localNow.TimeOfDay);
+        var (windowStart, windowEnd) = ReadWindow(config);
+        if (localTime < windowStart || localTime >= windowEnd)
         {
             return;
         }
 
+        // J-6: "ya comprobado hoy" se mide en el dia LOCAL (la marca guardada es un instante UTC).
         if (TryParseUtc(GetValue(config, LastCheckedUtcKey), out var lastChecked) &&
-            lastChecked.Date == now.Date)
+            TimeZoneInfo.ConvertTimeFromUtc(lastChecked, TimeZoneInfo.Local).Date == localNow.Date)
         {
             return;
         }
@@ -193,9 +207,29 @@ public sealed class AutoUpdateJob
         return bool.TryParse(value, out var parsed) ? parsed : fallback;
     }
 
-    private static int ParseInt(string value, int fallback)
+    // J-6: la ventana se lee de CONFIGURACIONES; si falta o es invalida se usa la de por defecto.
+    private static (TimeOnly Start, TimeOnly End) ReadWindow(IEnumerable<Configuracion> config)
     {
-        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+        var start = ParseTime(GetValue(config, WindowStartLocalKey), DefaultWindowStart);
+        var end = ParseTime(GetValue(config, WindowEndLocalKey), DefaultWindowEnd);
+        if (start >= end)
+        {
+            // La ventana no cruza medianoche: un rango invertido no es valido.
+            start = DefaultWindowStart;
+            end = DefaultWindowEnd;
+        }
+
+        return (start, end);
+    }
+
+    private static TimeOnly ParseTime(string value, TimeOnly fallback)
+    {
+        return TimeOnly.TryParseExact(
+            value,
+            "HH:mm",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var parsed)
             ? parsed
             : fallback;
     }

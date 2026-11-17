@@ -3,7 +3,9 @@ using AtlasBalance.API.Jobs;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using FluentAssertions;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -48,6 +50,12 @@ public sealed class LimpiezaExportacionesJobTests
                 RutaArchivo = recentFilePath,
                 Estado = EstadoProceso.SUCCESS
             };
+            // V-03.02 (J-4): el job solo borra ficheros bajo la raiz de
+            // exportaciones configurada. El temporal del test actua como esa
+            // raiz; sin esta configuracion la ruta quedaria fuera de la raiz
+            // por defecto (C:\atlas-balance\exports) y el fichero no se
+            // borraria.
+            db.Configuraciones.Add(new Configuracion { Clave = "export_path", Valor = exportDirectory });
             db.Exportaciones.AddRange(oldExportacion, recentExportacion);
             await db.SaveChangesAsync();
 
@@ -180,6 +188,189 @@ public sealed class LimpiezaExportacionesJobTests
         reloaded.ContenidoOriginal.Should().Be("contenido reciente sin purgar");
     }
 
+    // -----------------------------------------------------------------------
+    // V-03.02 (J-4): el job solo purga la fila si el fichero fisico esta
+    // confirmado (borrado o ya no existia) y solo toca ficheros bajo la raiz
+    // de exportaciones configurada. Antes marcaba la fila siempre: un
+    // fichero bloqueado se quedaba en disco con sus datos personales sin que
+    // nadie supiera que seguia ahi.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ExecuteAsync_Should_Not_SoftDelete_Exportacion_When_The_File_Cannot_Be_Deleted()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-locked-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(exportDirectory);
+        var lockedFilePath = Path.Combine(exportDirectory, "locked-export.xlsx");
+        await File.WriteAllTextAsync(lockedFilePath, "locked");
+
+        try
+        {
+            db.Configuraciones.Add(new Configuracion { Clave = "export_path", Valor = exportDirectory });
+
+            var now = new DateTime(2026, 7, 30, 0, 0, 0, DateTimeKind.Utc);
+            var exportacion = new Exportacion
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = Guid.NewGuid(),
+                FechaExportacion = now.AddDays(-91),
+                RutaArchivo = lockedFilePath,
+                Estado = EstadoProceso.SUCCESS
+            };
+            db.Exportaciones.Add(exportacion);
+            await db.SaveChangesAsync();
+
+            // En Windows, con el fichero abierto en FileShare.None, File.Delete falla.
+            await using var bloqueo = new FileStream(lockedFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+            var job = new LimpiezaExportacionesJob(db, new FakeClock(now), NullLogger<LimpiezaExportacionesJob>.Instance);
+
+            await job.ExecuteAsync();
+
+            var reloaded = await db.Exportaciones.IgnoreQueryFilters().SingleAsync(e => e.Id == exportacion.Id);
+
+            reloaded.DeletedAt.Should().BeNull();
+            File.Exists(lockedFilePath).Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_Delete_File_And_SoftDelete_Exportacion_Inside_The_Export_Root()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-inside-test-{Guid.NewGuid():N}");
+        var subDirectory = Path.Combine(exportDirectory, "2026");
+        Directory.CreateDirectory(subDirectory);
+        var filePath = Path.Combine(subDirectory, "export.xlsx");
+        await File.WriteAllTextAsync(filePath, "contenido");
+
+        try
+        {
+            db.Configuraciones.Add(new Configuracion { Clave = "export_path", Valor = exportDirectory });
+
+            var now = new DateTime(2026, 7, 30, 0, 0, 0, DateTimeKind.Utc);
+            var exportacion = new Exportacion
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = Guid.NewGuid(),
+                FechaExportacion = now.AddDays(-91),
+                RutaArchivo = filePath,
+                Estado = EstadoProceso.SUCCESS
+            };
+            db.Exportaciones.Add(exportacion);
+            await db.SaveChangesAsync();
+
+            var job = new LimpiezaExportacionesJob(db, new FakeClock(now), NullLogger<LimpiezaExportacionesJob>.Instance);
+
+            await job.ExecuteAsync();
+
+            var reloaded = await db.Exportaciones.IgnoreQueryFilters().SingleAsync(e => e.Id == exportacion.Id);
+
+            reloaded.DeletedAt.Should().NotBeNull();
+            File.Exists(filePath).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_Not_Delete_Or_SoftDelete_Exportacion_Outside_The_Export_Root()
+    {
+        await using var db = BuildDbContext();
+        var baseDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-outside-test-{Guid.NewGuid():N}");
+        var exportDirectory = Path.Combine(baseDirectory, "exports");
+        var siblingDirectory = Path.Combine(baseDirectory, "exports-mal");
+        Directory.CreateDirectory(exportDirectory);
+        Directory.CreateDirectory(siblingDirectory);
+        var outsideFilePath = Path.Combine(siblingDirectory, "fuera.xlsx");
+        await File.WriteAllTextAsync(outsideFilePath, "fuera");
+
+        try
+        {
+            db.Configuraciones.Add(new Configuracion { Clave = "export_path", Valor = exportDirectory });
+
+            var now = new DateTime(2026, 7, 30, 0, 0, 0, DateTimeKind.Utc);
+            var exportacion = new Exportacion
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = Guid.NewGuid(),
+                FechaExportacion = now.AddDays(-91),
+                RutaArchivo = outsideFilePath,
+                Estado = EstadoProceso.SUCCESS
+            };
+            db.Exportaciones.Add(exportacion);
+            await db.SaveChangesAsync();
+
+            var logger = new CapturingLogger<LimpiezaExportacionesJob>();
+            var job = new LimpiezaExportacionesJob(db, new FakeClock(now), logger);
+
+            await job.ExecuteAsync();
+
+            var reloaded = await db.Exportaciones.IgnoreQueryFilters().SingleAsync(e => e.Id == exportacion.Id);
+
+            reloaded.DeletedAt.Should().BeNull();
+            File.Exists(outsideFilePath).Should().BeTrue();
+            logger.Warnings.Should().Contain(w => w.Contains("ruta fuera de la raiz permitida"));
+        }
+        finally
+        {
+            if (Directory.Exists(baseDirectory))
+            {
+                Directory.Delete(baseDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(@"C:\atlas-balance\exports\2026\export.xlsx", @"C:\atlas-balance\exports", true)]
+    [InlineData(@"C:\atlas-balance\exports-mal\export.xlsx", @"C:\atlas-balance\exports", false)]
+    [InlineData(@"C:\atlas-balance\exports2\export.xlsx", @"C:\atlas-balance\exports", false)]
+    [InlineData(@"C:\atlas-balance\otro\export.xlsx", @"C:\atlas-balance\exports", false)]
+    public void IsAllowedExportFile_Should_Only_Accept_Paths_Under_The_Export_Root(string ruta, string raiz, bool permitido)
+    {
+        LimpiezaExportacionesJob.IsAllowedExportFile(ruta, raiz).Should().Be(permitido);
+    }
+
+    // -----------------------------------------------------------------------
+    // V-03.02 (J-1): con 2 workers de Hangfire, el job no puede solaparse
+    // consigo mismo, y un fallo puntual (fichero bloqueado, base de datos
+    // reiniciandose) debe reintentarse solo.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Job_Should_Have_Hangfire_Concurrency_And_Retry_Attributes()
+    {
+        var concurrencia = typeof(LimpiezaExportacionesJob)
+            .GetCustomAttributes(typeof(DisableConcurrentExecutionAttribute), inherit: false)
+            .Cast<DisableConcurrentExecutionAttribute>()
+            .SingleOrDefault();
+
+        concurrencia.Should().NotBeNull();
+        concurrencia!.TimeoutSec.Should().Be(900);
+
+        var reintento = typeof(LimpiezaExportacionesJob)
+            .GetCustomAttributes(typeof(AutomaticRetryAttribute), inherit: false)
+            .Cast<AutomaticRetryAttribute>()
+            .SingleOrDefault();
+
+        reintento.Should().NotBeNull();
+        reintento!.Attempts.Should().Be(3);
+        reintento.DelaysInSeconds.Should().Equal(60, 300, 900);
+    }
+
     private static AppDbContext BuildDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -196,5 +387,22 @@ public sealed class LimpiezaExportacionesJobTests
         }
 
         public DateTime UtcNow { get; }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Warnings { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
+        }
     }
 }
