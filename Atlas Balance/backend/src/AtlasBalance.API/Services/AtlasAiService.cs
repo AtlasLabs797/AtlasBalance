@@ -30,6 +30,10 @@ public sealed class AtlasAiService : IAtlasAiService
     private static IReadOnlyList<IaModelResponse>? CachedOpenRouterModels;
     private static DateTime CachedOpenRouterModelsUntilUtc;
 
+    // B-11: serializa la actualizacion de los contadores de uso (ver
+    // UpdateUsageCountersAsync).
+    private static readonly SemaphoreSlim UsageCountersLock = new(1, 1);
+
     private readonly AppDbContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ISecretProtector _secretProtector;
@@ -94,7 +98,11 @@ public sealed class AtlasAiService : IAtlasAiService
 
     public async Task<IaConfigResponse> GetConfigAsync(UserAccessScope scope, CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
+        // B-16: "hoy" es el dia de la zona operativa (Europe/Madrid), no el dia
+        // UTC. Entre las 00:00 y la 01:00 (invierno) o las 02:00 (verano) el
+        // dia UTC es el anterior y el corte de mes de los contadores razonaba
+        // sobre el dia equivocado.
+        var now = FechasOperativas.AhoraLocal();
         var config = await LoadConfigAsync(cancellationToken);
         var state = BuildState(config, now);
         var userCanUse = scope.UserId != Guid.Empty && await CanUserUseIaAsync(scope.UserId, cancellationToken);
@@ -102,7 +110,7 @@ public sealed class AtlasAiService : IAtlasAiService
             ? IaUsageSnapshot.Empty
             : await LoadUserUsageSnapshotAsync(scope.UserId, UsageMonthKey(now), cancellationToken);
 
-        return BuildConfigResponse(state, userCanUse, state.UsageMonthCostEur, state.UsageTotalCostEur, userUsage);
+        return BuildConfigResponse(state, userCanUse, state.UsageMonthCostEur, state.UsageTotalCostEur, userUsage, scope.IsAdmin);
     }
 
     public async Task<IReadOnlyList<IaModelResponse>> GetModelsAsync(string? provider, string? search, CancellationToken cancellationToken)
@@ -183,7 +191,9 @@ public sealed class AtlasAiService : IAtlasAiService
             throw new IaConfigurationException($"La pregunta no puede superar {AiConfiguration.MaxQuestionLength} caracteres.");
         }
 
-        var now = DateTime.UtcNow;
+        // B-16: fecha operativa local (no UTC) para el corte de mes y los
+        // periodos de negocio.
+        var now = FechasOperativas.AhoraLocal();
         var config = await LoadConfigAsync(cancellationToken);
         var state = BuildState(config, now);
 
@@ -278,7 +288,15 @@ public sealed class AtlasAiService : IAtlasAiService
             normalizedThinkingMode = AiConfiguration.ThinkingModeAuto;
         }
 
-        var plannedAnswer = await TryAnswerPlannedAsync(scope, prompt, paisId, state, now, ipAddress, cancellationToken);
+        // R-2: el mapa de seudonimos se construye UNA vez por peticion. La
+        // construccion es perezosa a proposito (3 consultas que no se pagan
+        // cuando el nivel 1 ya resuelve la pregunta) pero la instancia es la
+        // misma para la factory del planificador y para la ruta del proveedor.
+        var pseudonimos = new Lazy<Task<AiPseudonymMap>>(
+            () => BuildPseudonymMapAsync(scope, paisId, cancellationToken),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+
+        var plannedAnswer = await TryAnswerPlannedAsync(scope, prompt, paisId, state, now, ipAddress, pseudonimos, cancellationToken);
         if (plannedAnswer is not null)
         {
             return plannedAnswer;
@@ -321,7 +339,9 @@ public sealed class AtlasAiService : IAtlasAiService
         // V-02-07: seudonimizacion reversible antes de salir hacia el proveedor de IA
         // externo. BuildFinancialContextAsync ya se ejecuto con el prompt real (busca en
         // BD por terminos de la pregunta); a partir de aqui solo se envia texto seudonimizado.
-        var pseudonyms = await BuildPseudonymMapAsync(scope, paisId, cancellationToken);
+        // R-2: reutiliza el mismo mapa de seudonimos que pudo construir el
+        // planificador en esta peticion.
+        var pseudonyms = await pseudonimos.Value;
         string safePrompt;
         string safeContext;
         try
@@ -729,9 +749,13 @@ public sealed class AtlasAiService : IAtlasAiService
                 ["stream"] = false,
                 ["messages"] = messages
             };
-            if (!AiConfiguration.IsOpenRouterFreeModel(runtimeModel))
+            // A-5: mismo constructor de privacidad que usa el planificador
+            // semantico (AiConfiguration.OpenRouterPrivacyProvider). Devuelve
+            // null para los modelos gratuitos, que no admiten ZDR/deny.
+            var privacy = AiConfiguration.OpenRouterPrivacyProvider(state.Provider, runtimeModel);
+            if (privacy is not null)
             {
-                payload["provider"] = OpenRouterPrivacyProvider();
+                payload["provider"] = privacy;
             }
 
             request.Content = JsonContent.Create(payload);
@@ -836,32 +860,29 @@ public sealed class AtlasAiService : IAtlasAiService
         return request;
     }
 
-    private static object OpenRouterPrivacyProvider()
-    {
-        return new
-        {
-            zdr = true,
-            data_collection = "deny"
-        };
-    }
-
     private async Task EnsureRequestLimitsAsync(Guid userId, IaGovernanceState state, DateTime now, string? ipAddress, CancellationToken cancellationToken)
     {
-        var minuteCount = await CountUsageSinceAsync(userId, now.AddMinutes(-1), cancellationToken);
+        // B-16: las ventanas de minutos y horas son tecnicas (se comparan con
+        // marcas de tiempo UTC de AUDITORIAS), asi que se calculan en UTC. El
+        // corte de dia si es de negocio: empieza a medianoche de la zona
+        // operativa, no a medianoche UTC.
+        var nowUtc = DateTime.UtcNow;
+        var dayStart = InicioDiaLocalEnUtc(DateOnly.FromDateTime(now));
+
+        var minuteCount = await CountUsageSinceAsync(userId, nowUtc.AddMinutes(-1), cancellationToken);
         if (minuteCount >= state.RequestsPerMinute)
         {
             await LogBlockedAsync(userId, "minute_limit", state, ipAddress, cancellationToken);
             throw new IaLimitExceededException("Demasiadas consultas de IA en un minuto. Espera antes de reintentar.");
         }
 
-        var hourCount = await CountUsageSinceAsync(userId, now.AddHours(-1), cancellationToken);
+        var hourCount = await CountUsageSinceAsync(userId, nowUtc.AddHours(-1), cancellationToken);
         if (hourCount >= state.RequestsPerHour)
         {
             await LogBlockedAsync(userId, "hour_limit", state, ipAddress, cancellationToken);
             throw new IaLimitExceededException("Limite horario de consultas de IA alcanzado.");
         }
 
-        var dayStart = now.Date;
         var dayCount = await CountUsageSinceAsync(userId, dayStart, cancellationToken);
         if (dayCount >= state.RequestsPerDay)
         {
@@ -880,6 +901,18 @@ public sealed class AtlasAiService : IAtlasAiService
             await LogBlockedAsync(userId, "global_day_limit", state, ipAddress, cancellationToken);
             throw new IaLimitExceededException("Limite global diario de IA alcanzado.");
         }
+    }
+
+    // B-16: instante UTC de la medianoche del dia operativo local.
+    // FechasOperativas no expone la conversion, asi que se usa el desfase entre
+    // la hora local operativa y UTC (mismo criterio que el helper). En los dos
+    // dias de cambio de hora de Espana el desfase puede variar en una hora
+    // respecto al de la medianoche.
+    private static DateTime InicioDiaLocalEnUtc(DateOnly diaLocal)
+    {
+        var desfase = FechasOperativas.AhoraLocal() - DateTime.UtcNow;
+        var inicio = diaLocal.ToDateTime(TimeOnly.MinValue) - desfase;
+        return DateTime.SpecifyKind(inicio, DateTimeKind.Utc);
     }
 
     private async Task EnsureBudgetAsync(Guid userId, IaGovernanceState state, DateTime now, decimal estimatedCost, string? ipAddress, CancellationToken cancellationToken)
@@ -936,12 +969,55 @@ public sealed class AtlasAiService : IAtlasAiService
         IaGovernanceState state,
         DateTime now,
         string? ipAddress,
+        Lazy<Task<AiPseudonymMap>> pseudonimos,
         CancellationToken cancellationToken)
     {
+        // S-6: toda respuesta devuelta por AskAsync (tambien la del
+        // planificador local) cuenta contra los limites y deja fila de
+        // auditoria con origen = "local". Sin esto, repetir "cual es mi saldo"
+        // no agotaba los limites ni dejaba rastro.
+        async Task<IaChatResponse> ResponderLocalAsync(IaChatResponse respuesta, IaUsageSnapshot? usoYaRegistrado)
+        {
+            IaUsageSnapshot usage;
+            if (usoYaRegistrado is null)
+            {
+                await EnsureRequestLimitsAsync(scope.UserId, state, now, ipAddress, cancellationToken);
+                usage = await UpdateUsageCountersAsync(scope.UserId, now, 0, 0, 0m, cancellationToken);
+            }
+            else
+            {
+                usage = usoYaRegistrado;
+            }
+
+            await _auditService.LogAsync(
+                scope.UserId,
+                AuditActions.IaConsulta,
+                "IA",
+                null,
+                ipAddress,
+                IaAuditEventFactory.Consulta("local", new Dictionary<string, object?>
+                {
+                    ["provider"] = respuesta.Provider,
+                    ["model"] = respuesta.Model,
+                    ["runtime_model"] = ProviderRuntimeModel(state),
+                    ["pais_id"] = paisId,
+                    ["movimientos_analizados"] = respuesta.MovimientosAnalizados,
+                    ["pregunta_caracteres"] = prompt.Length,
+                    ["tokens_entrada_estimados"] = 0,
+                    ["tokens_salida_estimados"] = 0,
+                    ["coste_estimado_eur"] = 0m,
+                    ["coste_mes_usuario_estimado_eur"] = Math.Round(usage.CosteEstimadoEur, 8),
+                    ["requests_mes_usuario"] = usage.Requests
+                }),
+                cancellationToken);
+
+            return respuesta;
+        }
+
         if (EsPreguntaDeAyuda(prompt))
         {
             var ayuda = _documentationHelp.Buscar(prompt, DocumentationHelpService.DefaultMaxSecciones);
-            return new IaChatResponse
+            return await ResponderLocalAsync(new IaChatResponse
             {
                 Respuesta = ayuda.Encontrado
                     ? string.Join("\n\n", ayuda.Secciones.Select(x => $"{x.Titulo}\n{x.Contenido}"))
@@ -949,7 +1025,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 Provider = "LOCAL",
                 Model = "documentacion",
                 Origen = "local"
-            };
+            }, null);
         }
 
         // V-02.08: memoria conversacional para heredar metrica/operacion/
@@ -963,9 +1039,14 @@ public sealed class AtlasAiService : IAtlasAiService
         // limites de tasa y presupuesto que el resto de llamadas a IA.
         var resolution = await _intentPlanner.ResolverAsync(
             prompt,
-            DateOnly.FromDateTime(DateTime.UtcNow),
+            // B-16: el ancla del planificador es la fecha operativa local.
+            FechasOperativas.HoyLocal(),
             cancellationToken,
-            pseudonymsFactory: ct => BuildPseudonymMapAsync(scope, paisId, ct),
+            // R-2: la factory y la ruta del proveedor consume la MISMA
+            // instancia perezosa del mapa de seudonimos (3 consultas que no se
+            // repiten). Sigue siendo perezosa: no se paga nada cuando el nivel
+            // 1 ya resuelve la pregunta.
+            pseudonymsFactory: ct => pseudonimos.Value,
             previousContext: previousContext,
             beforeSemanticDispatchAsync: ct => EnsureSemanticPlannerBudgetAsync(scope.UserId, prompt, state, now, ipAddress, ct));
 
@@ -978,18 +1059,20 @@ public sealed class AtlasAiService : IAtlasAiService
         // hacia el camino normal, que aplica sus propios limites/presupuesto y
         // audita la peticion al terminar: registrar aqui ademas duplicaria la
         // fila de auditoria y el contador mensual para la misma peticion.
-        async Task RegisterSemanticUsageIfAttemptedAsync()
+        async Task<IaUsageSnapshot?> RegisterSemanticUsageIfAttemptedAsync()
         {
             if (resolution.SemanticCallAttempted)
             {
-                await RegisterSemanticPlannerUsageAsync(scope.UserId, prompt, paisId, state, now, ipAddress, cancellationToken);
+                return await RegisterSemanticPlannerUsageAsync(scope.UserId, prompt, paisId, state, now, ipAddress, cancellationToken);
             }
+
+            return null;
         }
 
         if (resolution.Origen is PlanResolutionSource.Clarification)
         {
-            await RegisterSemanticUsageIfAttemptedAsync();
-            return new IaChatResponse
+            var usoSemantico = await RegisterSemanticUsageIfAttemptedAsync();
+            return await ResponderLocalAsync(new IaChatResponse
             {
                 Respuesta = resolution.Evaluacion.Motivo ?? "Necesito una aclaracion para continuar.",
                 Provider = "LOCAL",
@@ -998,7 +1081,7 @@ public sealed class AtlasAiService : IAtlasAiService
                 OpcionesAclaracion = resolution.Evaluacion.Opciones?
                     .Select(x => new IaClarificationOptionResponse { Etiqueta = x.Etiqueta, Valor = x.Valor })
                     .ToList()
-            };
+            }, usoSemantico);
         }
 
         if (resolution.Origen is PlanResolutionSource.Rejected)
@@ -1036,14 +1119,14 @@ public sealed class AtlasAiService : IAtlasAiService
             cancellationToken);
         if (!execution.Exito)
         {
-            await RegisterSemanticUsageIfAttemptedAsync();
-            return new IaChatResponse
+            var usoSemanticoFallo = await RegisterSemanticUsageIfAttemptedAsync();
+            return await ResponderLocalAsync(new IaChatResponse
             {
                 Respuesta = execution.Advertencia ?? "No se pudo completar la consulta local.",
                 Provider = "LOCAL",
                 Model = "planificador",
                 Origen = "local"
-            };
+            }, usoSemanticoFallo);
         }
 
         _conversationMemory.Actualizar(scope.UserId, paisId, context => context with
@@ -1052,11 +1135,17 @@ public sealed class AtlasAiService : IAtlasAiService
             UltimaOperacion = plan.Operacion.ToString(),
             UltimaMetrica = plan.Metrica.ToString(),
             UltimoPeriodo = FormatearPeriodo(plan.Filtros.Periodo),
-            UltimasDivisas = plan.Filtros.Divisas
+            UltimasDivisas = plan.Filtros.Divisas,
+            // B-10: sin guardar el concepto, las cuentas y los titulares, un
+            // seguimiento ("¿y el mes anterior?") perdia esos filtros y
+            // devolvia la cifra de todos los movimientos.
+            UltimoConcepto = plan.Filtros.Concepto,
+            UltimasCuentas = FormatearIds(plan.Filtros.CuentaIds),
+            UltimosTitulares = FormatearIds(plan.Filtros.TitularIds)
         });
 
-        await RegisterSemanticUsageIfAttemptedAsync();
-        return new IaChatResponse
+        var usoSemanticoRespuesta = await RegisterSemanticUsageIfAttemptedAsync();
+        return await ResponderLocalAsync(new IaChatResponse
         {
             // V-02.08: se formatean los datos estructurados devueltos por
             // las herramientas (saldos, importes, rankings...) en vez del
@@ -1067,7 +1156,7 @@ public sealed class AtlasAiService : IAtlasAiService
             Origen = "local",
             MovimientosAnalizados = execution.Pasos.Sum(x => x.FilasAnalizadas),
             Aviso = execution.Advertencia
-        };
+        }, usoSemanticoRespuesta);
     }
 
     // V-02.08: cost/limit gate para la llamada facturable del planificador
@@ -1088,7 +1177,7 @@ public sealed class AtlasAiService : IAtlasAiService
         await EnsureBudgetAsync(userId, state, now, preflightCost, ipAddress, cancellationToken);
     }
 
-    private async Task RegisterSemanticPlannerUsageAsync(
+    private async Task<IaUsageSnapshot> RegisterSemanticPlannerUsageAsync(
         Guid userId,
         string prompt,
         Guid? paisId,
@@ -1121,6 +1210,8 @@ public sealed class AtlasAiService : IAtlasAiService
                 requests_mes_usuario = userUsageAfter.Requests
             }),
             cancellationToken);
+
+        return userUsageAfter;
     }
 
     // V-02.08: formatea los Datos estructurados de cada paso del plan en
@@ -1353,6 +1444,12 @@ public sealed class AtlasAiService : IAtlasAiService
         : periodo.From is { } from && periodo.To is { } to
             ? $"{from:dd/MM/yyyy} - {to:dd/MM/yyyy}"
             : periodo.Tipo.ToString();
+
+    // B-10: la memoria conversacional guarda cuentas y titulares como texto
+    // (lista de strings). El seguimiento los restaura como ids solo si son
+    // GUIDs validos.
+    private static IReadOnlyList<string>? FormatearIds(IReadOnlyList<Guid>? ids) =>
+        ids is { Count: > 0 } ? ids.Select(x => x.ToString()).ToList() : null;
 
     private async Task<IaChatResponse?> TryAnswerDeterministicFinancialAsync(
         UserAccessScope scope,
@@ -1720,7 +1817,8 @@ public sealed class AtlasAiService : IAtlasAiService
         Guid? paisId,
         CancellationToken cancellationToken)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        // B-16: "hoy" es la fecha operativa local, no el dia UTC.
+        var today = FechasOperativas.HoyLocal();
         var monthStart = new DateOnly(today.Year, today.Month, 1);
         var previousMonthStart = monthStart.AddMonths(-1);
         var previousMonthEnd = monthStart.AddDays(-1);
@@ -1808,7 +1906,10 @@ public sealed class AtlasAiService : IAtlasAiService
         {
             builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, quarterStart, today, cancellationToken));
         }
-        if (ContainsAny(normalizedQuestion, "ano", "anual", "2026", "este ano"))
+        // B-16: el ano se calcula, no se escribe a mano. "ano"/"anual"/"este
+        // ano" ya cubren el caso; el ano en curso se mantiene para no
+        // cambiar el comportamiento de las preguntas que lo citan.
+        if (ContainsAny(normalizedQuestion, "ano", "anual", "este ano", today.Year.ToString(CultureInfo.InvariantCulture)))
         {
             builder.Append(await AppendPeriodSummaryAsync(cuentasQuery, yearStart, today, cancellationToken));
         }
@@ -2103,10 +2204,17 @@ public sealed class AtlasAiService : IAtlasAiService
                "\n[Contexto truncado por limite defensivo de privacidad y coste.]";
     }
 
-    private async Task<Dictionary<string, string>> LoadConfigAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyDictionary<string, string>> LoadConfigAsync(CancellationToken cancellationToken)
     {
-        return await _dbContext.Configuraciones
-            .ToDictionaryAsync(x => x.Clave, x => x.Valor, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        // R-2: snapshot por peticion (ver AiConfigSnapshot). El planificador
+        // semantico recibe el mismo contexto scoped, asi que la tabla
+        // CONFIGURACIONES se lee una sola vez por pregunta.
+        return await AiConfigSnapshot.GetAsync(
+            _dbContext,
+            async () => await _dbContext.Configuraciones
+                .AsNoTracking()
+                .ToDictionaryAsync(x => x.Clave, x => x.Valor, StringComparer.OrdinalIgnoreCase, cancellationToken),
+            cancellationToken);
     }
 
     private async Task<bool> CanUserUseIaAsync(Guid userId, CancellationToken cancellationToken)
@@ -2133,7 +2241,29 @@ public sealed class AtlasAiService : IAtlasAiService
 
     private async Task<IaUsageSnapshot> UpdateUsageCountersAsync(Guid userId, DateTime now, int inputTokens, int outputTokens, decimal cost, CancellationToken cancellationToken)
     {
+        // B-11: los contadores se actualizan con lectura-modificacion-escritura
+        // sobre CONFIGURACION e IA_USO_USUARIOS. Sin serializar, N peticiones
+        // concurrentes del mismo usuario perdian incrementos (la ultima
+        // escritura se-come las anteriores). La aplicacion es on-premise de
+        // una sola instancia, asi que un lock de proceso serializa la seccion
+        // critica. No se usa ExecuteUpdate porque los valores se guardan como
+        // texto en CONFIGURACION y porque el proveedor InMemory de los tests
+        // no lo soporta.
+        await UsageCountersLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await UpdateUsageCountersCoreAsync(userId, now, inputTokens, outputTokens, cost, cancellationToken);
+        }
+        finally
+        {
+            UsageCountersLock.Release();
+        }
+    }
+
+    private async Task<IaUsageSnapshot> UpdateUsageCountersCoreAsync(Guid userId, DateTime now, int inputTokens, int outputTokens, decimal cost, CancellationToken cancellationToken)
+    {
         var monthKey = UsageMonthKey(now);
+        var nowUtc = DateTime.UtcNow;
         var rows = await _dbContext.Configuraciones
             .Where(x => x.Clave == "ai_usage_month_key" ||
                         x.Clave == "ai_usage_month_cost_eur" ||
@@ -2150,12 +2280,12 @@ public sealed class AtlasAiService : IAtlasAiService
         var totalCost = ParseDecimal(GetConfigRowValue(rows, "ai_usage_total_cost_eur"), 0m);
         var totalRequests = ParseInt(GetConfigRowValue(rows, "ai_usage_total_requests"), 0);
 
-        UpsertUsageConfig(rows, "ai_usage_month_key", monthKey, "string", "Mes contable actual de uso IA", now, userId);
-        UpsertUsageConfig(rows, "ai_usage_month_cost_eur", Math.Round(currentMonthCost + cost, 8).ToString(CultureInfo.InvariantCulture), "decimal", "Coste estimado de IA acumulado en el mes actual", now, userId);
-        UpsertUsageConfig(rows, "ai_usage_total_cost_eur", Math.Round(totalCost + cost, 8).ToString(CultureInfo.InvariantCulture), "decimal", "Coste estimado total acumulado de IA", now, userId);
-        UpsertUsageConfig(rows, "ai_usage_total_requests", (totalRequests + 1).ToString(CultureInfo.InvariantCulture), "int", "Consultas totales de IA registradas", now, userId);
-        UpsertUsageConfig(rows, "ai_usage_last_user_id", userId.ToString(), "string", "Ultimo usuario que uso IA", now, userId);
-        UpsertUsageConfig(rows, "ai_usage_last_at_utc", now.ToString("O", CultureInfo.InvariantCulture), "datetime", "Ultimo uso de IA en UTC", now, userId);
+        UpsertUsageConfig(rows, "ai_usage_month_key", monthKey, "string", "Mes contable actual de uso IA", nowUtc, userId);
+        UpsertUsageConfig(rows, "ai_usage_month_cost_eur", Math.Round(currentMonthCost + cost, 8).ToString(CultureInfo.InvariantCulture), "decimal", "Coste estimado de IA acumulado en el mes actual", nowUtc, userId);
+        UpsertUsageConfig(rows, "ai_usage_total_cost_eur", Math.Round(totalCost + cost, 8).ToString(CultureInfo.InvariantCulture), "decimal", "Coste estimado total acumulado de IA", nowUtc, userId);
+        UpsertUsageConfig(rows, "ai_usage_total_requests", (totalRequests + 1).ToString(CultureInfo.InvariantCulture), "int", "Consultas totales de IA registradas", nowUtc, userId);
+        UpsertUsageConfig(rows, "ai_usage_last_user_id", userId.ToString(), "string", "Ultimo usuario que uso IA", nowUtc, userId);
+        UpsertUsageConfig(rows, "ai_usage_last_at_utc", nowUtc.ToString("O", CultureInfo.InvariantCulture), "datetime", "Ultimo uso de IA en UTC", nowUtc, userId);
 
         var userUsage = await _dbContext.IaUsoUsuarios
             .SingleOrDefaultAsync(x => x.UsuarioId == userId && x.MonthKey == monthKey, cancellationToken);
@@ -2174,8 +2304,8 @@ public sealed class AtlasAiService : IAtlasAiService
         userUsage.InputTokens += Math.Max(0, inputTokens);
         userUsage.OutputTokens += Math.Max(0, outputTokens);
         userUsage.CosteEstimadoEur = Math.Round(userUsage.CosteEstimadoEur + cost, 8);
-        userUsage.FechaUltimoUsoUtc = now;
-        userUsage.FechaModificacion = now;
+        userUsage.FechaUltimoUsoUtc = nowUtc;
+        userUsage.FechaModificacion = nowUtc;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return IaUsageSnapshot.From(userUsage);
@@ -2306,7 +2436,8 @@ public sealed class AtlasAiService : IAtlasAiService
         bool userCanUse,
         decimal monthCost,
         decimal totalCost,
-        IaUsageSnapshot userUsage)
+        IaUsageSnapshot userUsage,
+        bool esAdmin)
     {
         var openRouterConfigured = state.Provider == "OPENROUTER" &&
                                    state.HasOpenRouterKey &&
@@ -2322,7 +2453,7 @@ public sealed class AtlasAiService : IAtlasAiService
                                 !string.IsNullOrWhiteSpace(state.Model) &&
                                 AiConfiguration.IsAllowedMiniMaxModel(state.Model);
 
-        return new IaConfigResponse
+        var response = new IaConfigResponse
         {
             Provider = state.Provider,
             Model = state.Model,
@@ -2358,6 +2489,33 @@ public sealed class AtlasAiService : IAtlasAiService
                 .Select(value => new IaThinkingModeOption { Value = value, Label = HumanizeThinkingMode(value) })
                 .ToArray()
         };
+
+        if (!esAdmin)
+        {
+            // S-4: a un usuario que no es ADMIN solo se le da su propio uso y
+            // si puede usar la IA. Los campos globales se OMITEN (null -> la
+            // politica de nulls de la API los quita del JSON), no se ponen a 0
+            // (0 seria informacion falsa).
+            response.OpenRouterApiKeyConfigurada = null;
+            response.OpenAiApiKeyConfigurada = null;
+            response.MiniMaxApiKeyConfigurada = null;
+            response.RequestsPorMinuto = null;
+            response.RequestsPorHora = null;
+            response.RequestsPorDia = null;
+            response.RequestsGlobalesPorDia = null;
+            response.PresupuestoMensualEur = null;
+            response.PresupuestoTotalEur = null;
+            response.CosteMesEstimadoEur = null;
+            response.CosteTotalEstimadoEur = null;
+            response.PorcentajeAvisoPresupuesto = null;
+            response.InputCostPerMillionTokensEur = null;
+            response.OutputCostPerMillionTokensEur = null;
+            response.MaxInputTokens = null;
+            response.MaxOutputTokens = null;
+            response.MaxContextRows = null;
+        }
+
+        return response;
     }
 
     // P4 V-03.01: catalogo de modelos que el usuario actual puede elegir en el

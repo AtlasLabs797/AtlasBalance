@@ -89,6 +89,10 @@ public sealed class IntegrationTokenService : IIntegrationTokenService
 
     public const string NoExpirationConfirmationPhrase = "NO_EXPIRAR";
 
+    // S-23: tope de vigencia. Un token de integracion no puede vivir mas de 365
+    // dias: los tokens de larga vida son el peor escenario si se filtran.
+    public const int MaxExpirationDays = 365;
+
     public DateTime? ResolveExpiration(
         DateTime? requestedExpiration,
         bool noExpirationConfirmed,
@@ -96,9 +100,23 @@ public sealed class IntegrationTokenService : IIntegrationTokenService
     {
         if (requestedExpiration.HasValue)
         {
-            return requestedExpiration.Value.Kind == DateTimeKind.Unspecified
+            var value = requestedExpiration.Value.Kind == DateTimeKind.Unspecified
                 ? DateTime.SpecifyKind(requestedExpiration.Value, DateTimeKind.Utc)
                 : requestedExpiration.Value.ToUniversalTime();
+
+            // S-23: no se admiten fechas pasadas ni vigencias por encima del tope.
+            if (value <= _clock.UtcNow)
+            {
+                throw new ArgumentException("La fecha de expiracion no puede estar en el pasado.");
+            }
+
+            if (value > _clock.UtcNow.AddDays(MaxExpirationDays))
+            {
+                throw new ArgumentException(
+                    $"La vigencia maxima de un token de integracion es de {MaxExpirationDays} dias.");
+            }
+
+            return value;
         }
 
         if (noExpirationConfirmed)

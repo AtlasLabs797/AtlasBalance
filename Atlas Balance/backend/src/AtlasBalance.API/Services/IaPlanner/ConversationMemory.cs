@@ -36,6 +36,10 @@ public sealed record ConversationContext
     public IReadOnlyList<string>? UltimosTitulares { get; init; }
     public IReadOnlyList<string>? UltimasCategorias { get; init; }
     public IReadOnlyList<string>? UltimasDivisas { get; init; }
+    // B-10: el concepto de la ultima consulta tambien forma parte del
+    // contexto: sin el, un seguimiento ("¿y el mes anterior?") perdia el
+    // filtro por concepto y devolvia la cifra de todos los movimientos.
+    public string? UltimoConcepto { get; init; }
     public bool ComparacionActiva { get; init; }
     public DateTime UltimaActividadUtc { get; init; } = DateTime.UtcNow;
 }

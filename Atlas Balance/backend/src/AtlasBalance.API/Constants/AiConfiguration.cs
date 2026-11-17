@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace AtlasBalance.API.Constants;
 
 public static class AiConfiguration
@@ -239,6 +241,28 @@ public static class AiConfiguration
                normalized.EndsWith(":free", StringComparison.OrdinalIgnoreCase);
     }
 
+    // A-5: bloque de privacidad de OpenRouter (retencion cero de datos y
+    // rechazo de la recogida de datos). Vive aqui para que TODAS las llamadas
+    // a OpenRouter usen el MISMO constructor: la del servicio principal y la
+    // del planificador semantico.
+    // Devuelve null cuando el modelo en/runtime es gratuito: los endpoints
+    // `openrouter/free` y `*:free` no garantizan rutas compatibles con
+    // ZDR/data_collection=deny y OpenRouter responde 404 (LOG_ERRORES_INCIDENCIAS,
+    // entrada 2026-09-21 "OpenRouter gratuito rechazado por restricciones ZDR").
+    public static IReadOnlyDictionary<string, object?>? OpenRouterPrivacyProvider(string? provider, string? runtimeModel)
+    {
+        if (NormalizeProvider(provider) != "OPENROUTER" || IsOpenRouterFreeModel(runtimeModel))
+        {
+            return null;
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["zdr"] = true,
+            ["data_collection"] = "deny"
+        };
+    }
+
     public static string NormalizeProvider(string? provider)
     {
         var normalized = provider?.Trim().ToUpperInvariant();
@@ -264,5 +288,50 @@ public static class AiConfiguration
         return normalized.All(ch =>
             char.IsAsciiLetterOrDigit(ch) ||
             ch is '/' or '-' or '_' or '.' or ':' or '+');
+    }
+}
+
+// R-2: snapshot de CONFIGURACIONES compartido dentro de la misma peticion.
+//
+// Se cachea por instancia del DbContext (scoped): AtlasAiService y
+// SemanticPlannerClient reciben el MISMO contexto scoped, asi que la tabla
+// CONFIGURACIONES se lee una sola vez por pregunta en vez de dos.
+//
+// Se eligio el snapshot por contexto y no un cache de proceso con TTL porque
+// el TTL dejaria una ventana de configuracion obsoleta (el admin cambia el
+// modelo y el servicio sigue sirviendo el anterior hasta que caduque). Aqui
+// el snapshot caduca con el scope: no hay contenido obsoleto posible.
+public static class AiConfigSnapshot
+{
+    private sealed class Holder
+    {
+        public readonly SemaphoreSlim Gate = new(1, 1);
+        public IReadOnlyDictionary<string, string>? Valores;
+    }
+
+    private static readonly ConditionalWeakTable<object, Holder> Holders = new();
+
+    public static async Task<IReadOnlyDictionary<string, string>> GetAsync(
+        object cacheKey,
+        Func<Task<IReadOnlyDictionary<string, string>>> loader,
+        CancellationToken cancellationToken)
+    {
+        var holder = Holders.GetValue(cacheKey, _ => new Holder());
+        await holder.Gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (holder.Valores is not null)
+            {
+                return holder.Valores;
+            }
+
+            var valores = await loader();
+            holder.Valores = valores;
+            return valores;
+        }
+        finally
+        {
+            holder.Gate.Release();
+        }
     }
 }

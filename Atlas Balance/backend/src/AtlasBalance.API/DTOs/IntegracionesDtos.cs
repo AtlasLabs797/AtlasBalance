@@ -64,6 +64,8 @@ public sealed class SaveIntegrationTokenRequest
     public string? Descripcion { get; set; }
     public bool PermisoLectura { get; set; } = true;
     public bool PermisoEscritura { get; set; }
+    // S-23: null significa "no cambiar la caducidad actual". Si se informa, la
+    // fecha no puede estar en el pasado ni pasar de 365 dias.
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
     public string? SinExpiracionTextoConfirmacion { get; set; }
@@ -90,6 +92,8 @@ public sealed class CreateIntegrationTokenResponse
 
 public sealed class RotarIntegrationTokenRequest
 {
+    // S-23: null significa "heredar la caducidad del token anterior". Si se
+    // informa, la fecha no puede estar en el pasado ni pasar de 365 dias.
     public DateTime? FechaExpiracion { get; set; }
     public bool SinExpiracionConfirmada { get; set; }
     public string? SinExpiracionTextoConfirmacion { get; set; }

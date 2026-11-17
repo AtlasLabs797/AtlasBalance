@@ -9,12 +9,16 @@ public sealed class IaConfigResponse
     public string Model { get; set; } = string.Empty;
     public bool Habilitada { get; set; }
     public bool UsuarioPuedeUsar { get; set; }
+    // S-4: los campos globales son nulables. Para un usuario que no es ADMIN
+    // se devuelven en null y la API los OMITE del JSON (DefaultIgnoreCondition
+    // = WhenWritingNull). Para ADMIN se devuelven con su valor, igual que
+    // hasta ahora.
     [JsonPropertyName("openrouter_api_key_configurada")]
-    public bool OpenRouterApiKeyConfigurada { get; set; }
+    public bool? OpenRouterApiKeyConfigurada { get; set; }
     [JsonPropertyName("openai_api_key_configurada")]
-    public bool OpenAiApiKeyConfigurada { get; set; }
+    public bool? OpenAiApiKeyConfigurada { get; set; }
     [JsonPropertyName("minimax_api_key_configurada")]
-    public bool MiniMaxApiKeyConfigurada { get; set; }
+    public bool? MiniMaxApiKeyConfigurada { get; set; }
     public bool Configurada { get; set; }
     public string MensajeEstado { get; set; } = string.Empty;
     // P2 V-03.01: opt-in explicito del admin para permitir modelos gratuitos de
@@ -23,25 +27,25 @@ public sealed class IaConfigResponse
     // P4 V-03.01: modelos que el usuario actual puede elegir en el selector del chat
     // (el configurado por el admin, mas los gratuitos si PermiteRetencionDatos = true).
     public IReadOnlyList<string> ModelosPermitidos { get; set; } = Array.Empty<string>();
-    public int RequestsPorMinuto { get; set; } = AiConfigurationDefaults.RequestsPerMinute;
-    public int RequestsPorHora { get; set; } = AiConfigurationDefaults.RequestsPerHour;
-    public int RequestsPorDia { get; set; } = AiConfigurationDefaults.RequestsPerDay;
-    public int RequestsGlobalesPorDia { get; set; } = AiConfigurationDefaults.GlobalRequestsPerDay;
-    public decimal PresupuestoMensualEur { get; set; }
-    public decimal PresupuestoMensualUsuarioEur { get; set; }
-    public decimal PresupuestoTotalEur { get; set; }
-    public decimal CosteMesEstimadoEur { get; set; }
+    public int? RequestsPorMinuto { get; set; }
+    public int? RequestsPorHora { get; set; }
+    public int? RequestsPorDia { get; set; }
+    public int? RequestsGlobalesPorDia { get; set; }
+    public decimal? PresupuestoMensualEur { get; set; }
+    public decimal? PresupuestoMensualUsuarioEur { get; set; }
+    public decimal? PresupuestoTotalEur { get; set; }
+    public decimal? CosteMesEstimadoEur { get; set; }
     public decimal CosteMesUsuarioEstimadoEur { get; set; }
-    public decimal CosteTotalEstimadoEur { get; set; }
+    public decimal? CosteTotalEstimadoEur { get; set; }
     public int RequestsMesUsuario { get; set; }
     public long TokensEntradaMesUsuario { get; set; }
     public long TokensSalidaMesUsuario { get; set; }
-    public int PorcentajeAvisoPresupuesto { get; set; } = AiConfigurationDefaults.BudgetWarningPercent;
-    public decimal InputCostPerMillionTokensEur { get; set; }
-    public decimal OutputCostPerMillionTokensEur { get; set; }
-    public int MaxInputTokens { get; set; } = AiConfigurationDefaults.MaxInputTokens;
-    public int MaxOutputTokens { get; set; } = AiConfigurationDefaults.MaxOutputTokens;
-    public int MaxContextRows { get; set; } = AiConfigurationDefaults.MaxContextRows;
+    public int? PorcentajeAvisoPresupuesto { get; set; }
+    public decimal? InputCostPerMillionTokensEur { get; set; }
+    public decimal? OutputCostPerMillionTokensEur { get; set; }
+    public int? MaxInputTokens { get; set; }
+    public int? MaxOutputTokens { get; set; }
+    public int? MaxContextRows { get; set; }
     // V-02.09 (Fase UI): modos de pensamiento que admite el provider
     // configurado. El frontend los usa para pintar el selector del composer.
     [JsonPropertyName("thinking_modes")]

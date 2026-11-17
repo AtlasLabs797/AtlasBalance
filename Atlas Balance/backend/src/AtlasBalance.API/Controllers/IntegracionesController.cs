@@ -18,15 +18,23 @@ namespace AtlasBalance.API.Controllers;
 public sealed class IntegracionesController : ControllerBase
 {
     // Scopes concedidos cuando el caller OMITE el campo `scopes` (null).
+    //
+    // S-24: se quitan `vencimientos` y `auditoria` de los defaults.
+    // - `vencimientos` no abre nada: no existe ningun endpoint bajo
+    //   /api/integration/openclaw con ese segmento, asi que era un scope
+    //   concedible que no daba acceso a nada.
+    // - `auditoria` devuelve `valor_anterior` y `valor_nuevo`, es decir el
+    //   contenido de las celdas modificadas (importes, saldos, conceptos): es un
+    //   dato sensible y no debe concederse por omision.
+    // Los tokens ya guardados NO cambian: esto solo afecta a los que se crean a
+    // partir de ahora (no hay migracion).
     private static readonly string[] DefaultOpenClawScopes =
     [
         "titulares",
         "saldos",
         "extractos",
         "evolucion",
-        "alertas",
-        "vencimientos",
-        "auditoria"
+        "alertas"
     ];
 
     // V-02.07: universo de scopes VALIDOS, que no es lo mismo que los concedidos
@@ -41,11 +49,27 @@ public sealed class IntegracionesController : ControllerBase
     // `resolver-nombres` queda deliberadamente FUERA de los defaults: deshace la
     // pseudonimizacion de nombres (re-identificacion), asi que se concede solo
     // marcandolo de forma explicita, nunca por omision del campo.
+    //
+    // S-24: `auditoria` sigue siendo concedible de forma explicita (lo puede
+    // pedir quien lo necesite), pero ya no se concede por omision. `vencimientos`
+    // desaparece de aqui: al no existir ningun endpoint que lo use, concederia
+    // una capacidad inexistente.
     private static readonly string[] KnownOpenClawScopes =
     [
-        .. DefaultOpenClawScopes,
+        "titulares",
+        "saldos",
+        "extractos",
+        "evolucion",
+        "alertas",
+        "auditoria",
         "resolver-nombres"
     ];
+
+    // PENDIENTE (S-24): `PermisoEscritura` no concede nada hoy. No existe ningun
+    // endpoint de escritura bajo /api/integration/openclaw (todos son GET, salvo
+    // resolver-nombres, que es de lectura) y el flag no se consulta en runtime.
+    // Se deja el contrato como esta hasta que el usuario decida: quitarlo
+    // cambiaria el contrato de la API sin sustituto.
 
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
@@ -154,7 +178,17 @@ public sealed class IntegracionesController : ControllerBase
         }
 
         var tokenPlano = _integrationTokenService.GeneratePlainToken();
-        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada, request.SinExpiracionTextoConfirmacion);
+        DateTime? expiration;
+        try
+        {
+            expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada, request.SinExpiracionTextoConfirmacion);
+        }
+        catch (ArgumentException ex)
+        {
+            // S-23: caducidad invalida (pasada o por encima del tope de 365 dias).
+            return BadRequest(new { error = ex.Message });
+        }
+
         var scopes = NormalizeEndpointScopes(request.Scopes);
         var token = new IntegrationToken
         {
@@ -243,7 +277,17 @@ public sealed class IntegracionesController : ControllerBase
             token.EndpointScopesJson
         };
 
-        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada, request.SinExpiracionTextoConfirmacion);
+        DateTime? expiration;
+        try
+        {
+            expiration = ResolveExpirationForUpdate(request, token);
+        }
+        catch (ArgumentException ex)
+        {
+            // S-23: caducidad invalida (pasada o por encima del tope de 365 dias).
+            return BadRequest(new { error = ex.Message });
+        }
+
         var scopes = NormalizeEndpointScopes(request.Scopes);
         token.Nombre = request.Nombre.Trim();
         token.Descripcion = request.Descripcion?.Trim();
@@ -309,6 +353,19 @@ public sealed class IntegracionesController : ControllerBase
             return NotFound(new { error = "Token no encontrado" });
         }
 
+        // S-23: rotar un token revocado resucitaba su material (el token nuevo
+        // heredaba scopes y permisos del revocado). Un token no activo no se
+        // rota: no se emite ningun token nuevo.
+        if (oldToken.Estado != EstadoTokenIntegracion.Activo)
+        {
+            return BadRequest(new { error = "El token esta revocado: no se puede rotar." });
+        }
+
+        if (oldToken.FechaExpiracion.HasValue && oldToken.FechaExpiracion.Value <= DateTime.UtcNow)
+        {
+            return BadRequest(new { error = "El token ya ha caducado: no se puede rotar." });
+        }
+
         var creatorId = GetCurrentUserId();
         if (!creatorId.HasValue)
         {
@@ -316,7 +373,17 @@ public sealed class IntegracionesController : ControllerBase
         }
 
         var tokenPlano = _integrationTokenService.GeneratePlainToken();
-        var expiration = _integrationTokenService.ResolveExpiration(request.FechaExpiracion, request.SinExpiracionConfirmada, request.SinExpiracionTextoConfirmacion);
+        DateTime? expiration;
+        try
+        {
+            expiration = ResolveExpirationForRotation(request, oldToken);
+        }
+        catch (ArgumentException ex)
+        {
+            // S-23: caducidad invalida (pasada o por encima del tope de 365 dias).
+            return BadRequest(new { error = ex.Message });
+        }
+
         var now = DateTime.UtcNow;
         oldToken.Estado = EstadoTokenIntegracion.Revocado;
         oldToken.FechaRevocacion = now;
@@ -334,8 +401,11 @@ public sealed class IntegracionesController : ControllerBase
             FechaCreacion = now,
             FechaExpiracion = expiration,
             RotatedFromTokenId = oldToken.Id,
+            // S-23: los scopes se heredan TAL CUAL. Antes, un token sin scopes
+            // (deny-all) caia a DefaultOpenClawScopes y el token nuevo acababa
+            // con TODOS los scopes concedidos.
             EndpointScopesJson = string.IsNullOrWhiteSpace(oldToken.EndpointScopesJson)
-                ? JsonSerializer.Serialize(DefaultOpenClawScopes)
+                ? "[]"
                 : oldToken.EndpointScopesJson,
             UsuarioCreadorId = creatorId.Value
         };
@@ -538,6 +608,43 @@ public sealed class IntegracionesController : ControllerBase
             PageSize = pageSize,
             TotalPages = (int)Math.Ceiling(total / (double)pageSize)
         });
+    }
+
+    /// <summary>
+    /// S-23: en el PUT, `FechaExpiracion` null significa "no cambiar". Antes, un
+    /// PUT que solo renombraba el token le renovaba la caducidad a 90 dias sin
+    /// que el admin hubiera pedido nada. Solo se toca la caducidad si el request
+    /// la informa o si confirma explicitamente que el token no caduca.
+    /// </summary>
+    private DateTime? ResolveExpirationForUpdate(SaveIntegrationTokenRequest request, IntegrationToken token)
+    {
+        if (request.SinExpiracionConfirmada || request.FechaExpiracion.HasValue)
+        {
+            return _integrationTokenService.ResolveExpiration(
+                request.FechaExpiracion,
+                request.SinExpiracionConfirmada,
+                request.SinExpiracionTextoConfirmacion);
+        }
+
+        return token.FechaExpiracion;
+    }
+
+    /// <summary>
+    /// S-23: al rotar, la caducidad del token nuevo se hereda de la del anterior
+    /// salvo que el request traiga una nueva. El caller ya ha comprobado que el
+    /// token anterior no esta caducado.
+    /// </summary>
+    private DateTime? ResolveExpirationForRotation(RotarIntegrationTokenRequest request, IntegrationToken oldToken)
+    {
+        if (request.SinExpiracionConfirmada || request.FechaExpiracion.HasValue)
+        {
+            return _integrationTokenService.ResolveExpiration(
+                request.FechaExpiracion,
+                request.SinExpiracionConfirmada,
+                request.SinExpiracionTextoConfirmacion);
+        }
+
+        return oldToken.FechaExpiracion;
     }
 
     private async Task<string?> ValidatePermissionsAsync(

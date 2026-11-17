@@ -406,9 +406,11 @@ export interface RevisionSeguroItem {
 
 export interface IaConfig {
   provider: string;
-  openrouter_api_key_configurada: boolean;
-  openai_api_key_configurada: boolean;
-  minimax_api_key_configurada: boolean;
+  // S-04 (LOTE 4): el backend solo expone a ADMIN la configuracion global.
+  // Para el resto de usuarios estas propiedades no vienen en la respuesta.
+  openrouter_api_key_configurada?: boolean;
+  openai_api_key_configurada?: boolean;
+  minimax_api_key_configurada?: boolean;
   model: string;
   habilitada: boolean;
   usuario_puede_usar: boolean;
@@ -420,25 +422,25 @@ export interface IaConfig {
   // P4 V-03.01: modelos que el usuario actual puede elegir en el selector del
   // chat (el configurado por el admin, mas los gratuitos si esta permitido).
   modelos_permitidos: string[];
-  requests_por_minuto: number;
-  requests_por_hora: number;
-  requests_por_dia: number;
-  requests_globales_por_dia: number;
-  presupuesto_mensual_eur: number;
+  requests_por_minuto?: number;
+  requests_por_hora?: number;
+  requests_por_dia?: number;
+  requests_globales_por_dia?: number;
+  presupuesto_mensual_eur?: number;
   presupuesto_mensual_usuario_eur: number;
-  presupuesto_total_eur: number;
-  coste_mes_estimado_eur: number;
+  presupuesto_total_eur?: number;
+  coste_mes_estimado_eur?: number;
   coste_mes_usuario_estimado_eur: number;
-  coste_total_estimado_eur: number;
+  coste_total_estimado_eur?: number;
   requests_mes_usuario: number;
   tokens_entrada_mes_usuario: number;
   tokens_salida_mes_usuario: number;
-  porcentaje_aviso_presupuesto: number;
-  input_cost_per_million_tokens_eur: number;
-  output_cost_per_million_tokens_eur: number;
-  max_input_tokens: number;
-  max_output_tokens: number;
-  max_context_rows: number;
+  porcentaje_aviso_presupuesto?: number;
+  input_cost_per_million_tokens_eur?: number;
+  output_cost_per_million_tokens_eur?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  max_context_rows?: number;
   // V-02.09 (Fase UI): lista de modos de pensamiento disponibles segun el
   // provider. Si el backend no la envia (versiones anteriores) el frontend
   // usa el fallback local de `getThinkingModeOptions`.

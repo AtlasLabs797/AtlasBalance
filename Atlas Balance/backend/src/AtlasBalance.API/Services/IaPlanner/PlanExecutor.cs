@@ -44,7 +44,11 @@ public sealed record PlanStepResult(
     int FilasAnalizadas,
     TimeSpan Duracion,
     string? Advertencia,
-    object? Datos);
+    object? Datos,
+    // A-6/B-10: la herramienta no pudo atender el plan (filtro no
+    // aplicable o comparacion entre divisas). El ejecutor lo convierte
+    // en un rechazo con motivo visible, sin devolver cifras.
+    bool Rechazo = false);
 
 public sealed record CompoundPlanResult
 {
@@ -119,7 +123,7 @@ public sealed class PlanExecutor : IPlanExecutor
         // plan intenta una operacion de escritura, la rechazamos.
         foreach (var paso in plan.Pasos)
         {
-            var validado = IaPlanValidator.Validar(paso.Plan, DateOnly.FromDateTime(DateTime.UtcNow));
+            var validado = IaPlanValidator.Validar(paso.Plan, FechasOperativas.HoyLocal());
             if (validado.Estado is not FinancialPlanStatus.Ok || validado.Plan is null)
             {
                 return new CompoundPlanResult
@@ -156,7 +160,7 @@ public sealed class PlanExecutor : IPlanExecutor
 
             timeoutCts.Token.ThrowIfCancellationRequested();
             var paso = plan.Pasos[i];
-            var validado = IaPlanValidator.Validar(paso.Plan, DateOnly.FromDateTime(DateTime.UtcNow));
+            var validado = IaPlanValidator.Validar(paso.Plan, FechasOperativas.HoyLocal());
             paso = paso with { Plan = validado.Plan! };
             // Las referencias son una barrera de orden, no una plantilla de
             // interpolacion: ningun dato de un paso se convierte en instrucciones
@@ -175,6 +179,19 @@ public sealed class PlanExecutor : IPlanExecutor
             try
             {
                 var resultado = await EjecutarPasoAsync(scope, paso, tools, timeoutCts.Token);
+                if (resultado.Rechazo)
+                {
+                    // A-6/B-10: la herramienta no pudo aplicar el plan.
+                    // No se devuelve ninguna cifra: el usuario recibe el
+                    // motivo del rechazo.
+                    return new CompoundPlanResult
+                    {
+                        Exito = false,
+                        Pasos = resultados,
+                        Advertencia = resultado.Advertencia ?? "El filtro pedido no se puede aplicar a esta consulta.",
+                        DuracionTotal = cronometro.Elapsed
+                    };
+                }
                 resultados.Add(new PlanStepResult(
                     paso.Indice,
                     paso.Nombre,
@@ -183,7 +200,8 @@ public sealed class PlanExecutor : IPlanExecutor
                     resultado.FilasAnalizadas,
                     stepCronometro.Elapsed,
                     resultado.Advertencia,
-                    resultado.Datos));
+                    resultado.Datos,
+                    resultado.Rechazo));
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
@@ -234,7 +252,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
             case FinancialOperation.List:
                 if (plan.Metrica is FinancialMetric.Saldo)
@@ -246,7 +265,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
                 if (plan.Filtros.Estados is { Count: > 0 })
                 {
@@ -261,7 +281,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
                 goto case FinancialOperation.Sum;
             case FinancialOperation.Sum:
@@ -275,7 +296,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
             case FinancialOperation.Trend:
                 {
@@ -286,7 +308,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
             case FinancialOperation.Ranking:
                 {
@@ -297,7 +320,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
             case FinancialOperation.Compare:
                 {
@@ -310,7 +334,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
             case FinancialOperation.Search:
                 {
@@ -321,7 +346,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
             case FinancialOperation.Anomalies:
                 {
@@ -332,7 +358,8 @@ public sealed class PlanExecutor : IPlanExecutor
                         FilasAnalizadas: r.FilasAnalizadas,
                         Duracion: TimeSpan.Zero,
                         Advertencia: r.Advertencia,
-                        Datos: r.Data);
+                        Datos: r.Data,
+                        Rechazo: r.Rechazo);
                 }
             default:
                 throw new NotSupportedException($"Operacion no soportada por el ejecutor: {plan.Operacion}.");

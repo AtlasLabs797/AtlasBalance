@@ -290,6 +290,48 @@ public sealed class IntentPlanner : IIntentPlanner
                 SemanticCallAttempted = true
             };
         }
+        catch (TimeoutException ex)
+        {
+            // B-11: el timeout del proveedor es un fallo controlado, no
+            // un 500. La llamada ya fue facturada: se contabiliza.
+            _logger.LogWarning("Planificador semantico agoto el tiempo de espera: {Message}", ex.Message);
+            return new PlanResolution
+            {
+                Evaluacion = new FinancialPlanEvaluation
+                {
+                    Estado = FinancialPlanStatus.Rechazado,
+                    Motivo = "El proveedor no respondio a tiempo. Reintenta en unos segundos."
+                },
+                Origen = PlanResolutionSource.Rejected,
+                TextoOriginal = pregunta,
+                TextoNormalizado = normalizado,
+                SemanticCallAttempted = true
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // B-11: cancelacion real del llamante: se propaga para que la
+            // peticion HTTP se cancele bien.
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            // B-11: TaskCanceledException que no viene del cancela del
+            // llamante es, en la practica, un timeout del proveedor.
+            _logger.LogWarning("Planificador semantico cancelado: {Message}", ex.Message);
+            return new PlanResolution
+            {
+                Evaluacion = new FinancialPlanEvaluation
+                {
+                    Estado = FinancialPlanStatus.Rechazado,
+                    Motivo = "El proveedor no respondio a tiempo. Reintenta en unos segundos."
+                },
+                Origen = PlanResolutionSource.Rejected,
+                TextoOriginal = pregunta,
+                TextoNormalizado = normalizado,
+                SemanticCallAttempted = true
+            };
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning("Planificador semantico fallo: {Message}", ex.Message);
@@ -357,10 +399,32 @@ public sealed class IntentPlanner : IIntentPlanner
             Filtros = new FinancialFilters
             {
                 Periodo = new FinancialPeriod { Tipo = periodo.Value, Anchor = anchor },
-                Divisas = previous.UltimasDivisas is { Count: > 0 } ? previous.UltimasDivisas : null
+                Divisas = previous.UltimasDivisas is { Count: > 0 } ? previous.UltimasDivisas : null,
+                // B-10: el seguimiento heredaba solo periodo y divisas y
+                // perdia el resto de filtros de la pregunta anterior.
+                Concepto = string.IsNullOrWhiteSpace(previous.UltimoConcepto) ? null : previous.UltimoConcepto.Trim(),
+                CuentaIds = ParsearIds(previous.UltimasCuentas),
+                TitularIds = ParsearIds(previous.UltimosTitulares)
             },
             Limite = 50
         };
+    }
+
+    // Las cuentas y titulares se guardan en el contexto como texto. Solo
+    // se restauran si son GUIDs (los filtros de cuenta/titular son ids);
+    // cualquier otro valor no es un filtro aplicable.
+    private static IReadOnlyList<Guid>? ParsearIds(IReadOnlyList<string>? valores)
+    {
+        if (valores is null || valores.Count == 0)
+        {
+            return null;
+        }
+        var ids = valores
+            .Select(x => Guid.TryParse(x, out var id) ? id : (Guid?)null)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .ToList();
+        return ids.Count > 0 ? ids : null;
     }
 
     private static bool RegexMatchFollowUp(string normalizado, string nucleo) =>
@@ -565,7 +629,7 @@ public sealed class IntentPlanner : IIntentPlanner
             return new FinancialFilters();
         }
 
-        if (f.EnumerateObject().Any(x => x.Name is not ("divisas" or "concepto" or "periodo")))
+        if (f.EnumerateObject().Any(x => x.Name is not ("divisas" or "concepto" or "periodo" or "importe_minimo" or "importe_maximo")))
         {
             return null;
         }
@@ -594,12 +658,49 @@ public sealed class IntentPlanner : IIntentPlanner
             if (periodo is null) return null;
         }
 
+        // A-6: el rango de importes llega del planificador semantico para
+        // que "gastos entre 100 y 500" sea una consulta real. Los valores
+        // negativos los rechaza despues IaPlanValidator (son magnitudes).
+        decimal? importeMinimo = null;
+        if (f.TryGetProperty("importe_minimo", out var im) && im.ValueKind != JsonValueKind.Null)
+        {
+            if (!TryParseDecimal(im, out var valor)) return null;
+            importeMinimo = valor;
+        }
+
+        decimal? importeMaximo = null;
+        if (f.TryGetProperty("importe_maximo", out var ix) && ix.ValueKind != JsonValueKind.Null)
+        {
+            if (!TryParseDecimal(ix, out var valor)) return null;
+            importeMaximo = valor;
+        }
+
         return new FinancialFilters
         {
             Divisas = divisas,
             Concepto = concepto,
-            Periodo = periodo
+            Periodo = periodo,
+            ImporteMinimo = importeMinimo,
+            ImporteMaximo = importeMaximo
         };
+    }
+
+    // A-6: los importes son decimales no negativos. Se aceptan como
+    // numero JSON o como texto numerico (el modelo puede devolver
+    // "100.50"); cualquier otra cosa invalida el plan.
+    private static bool TryParseDecimal(JsonElement element, out decimal valor)
+    {
+        valor = 0m;
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out valor))
+        {
+            return true;
+        }
+        if (element.ValueKind == JsonValueKind.String
+            && decimal.TryParse(element.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out valor))
+        {
+            return true;
+        }
+        return false;
     }
 
     // V-02.08: traduce el periodo devuelto por el planificador semantico

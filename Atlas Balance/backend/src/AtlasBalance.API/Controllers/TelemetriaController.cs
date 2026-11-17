@@ -45,7 +45,10 @@ public sealed class TelemetriaController : ControllerBase
             return NoContent();
         }
 
-        _logger.LogError(
+        // S-25: Warning, no Error. Un fallo de render del frontend no es un
+        // error del servidor: a nivel Error satura el log de errores con ruido
+        // que no indica ningun problema de la API.
+        _logger.LogWarning(
             "Error no controlado en el frontend: mensaje={MensajeSafe} path={PathSafe} timestamp={TimestampSafe} ip={IpSafe} stack={StackSafe} componentStack={ComponentStackSafe}",
             Recortar(request.Mensaje, MaxMensaje),
             Recortar(request.Path, MaxPath),
