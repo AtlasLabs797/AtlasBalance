@@ -58,6 +58,7 @@ public sealed class CuentasController : ControllerBase
         [FromQuery] TipoTitular? tipoTitular = null,
         [FromQuery] TipoCuenta? tipoCuenta = null,
         [FromQuery] bool incluirEliminados = false,
+        [FromQuery] bool soloEliminados = false,
         CancellationToken cancellationToken = default)
     {
         // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
@@ -71,15 +72,23 @@ public sealed class CuentasController : ControllerBase
         if (!scope.IsAdmin)
         {
             incluirEliminados = false;
+            soloEliminados = false;
         }
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
-        IQueryable<Cuenta> query = incluirEliminados
+        IQueryable<Cuenta> query = incluirEliminados || soloEliminados
             ? _dbContext.Cuentas.IgnoreQueryFilters()
             : _dbContext.Cuentas;
+
+        // F-2: el filtro de solo eliminados se aplica ANTES de contar y paginar,
+        // de modo que "total" y las paginas cubren unicamente la papelera.
+        if (soloEliminados)
+        {
+            query = query.Where(c => c.DeletedAt != null);
+        }
 
         query = _userAccessService.ApplyCuentaScope(query, scope);
 
@@ -441,6 +450,18 @@ public sealed class CuentasController : ControllerBase
         if (previousTipoCuenta == TipoCuenta.PLAZO_FIJO && validation.TipoCuenta != TipoCuenta.PLAZO_FIJO)
         {
             return BadRequest(new { error = "No se puede convertir una cuenta de plazo fijo a otro tipo; crea una cuenta nueva" });
+        }
+
+        // B-14: los extractos no guardan divisa propia, asi que cambiar la de la
+        // cuenta reinterpreta todos sus importes en otra moneda. Si la cuenta
+        // tiene extractos vivos (no borrados) el cambio se rechaza con 409.
+        if (!string.Equals(cuenta.Divisa, validation.Divisa, StringComparison.OrdinalIgnoreCase))
+        {
+            var tieneExtractos = await _dbContext.Extractos.AnyAsync(e => e.CuentaId == cuenta.Id, cancellationToken);
+            if (tieneExtractos)
+            {
+                return Conflict(new { error = "La cuenta tiene extractos: no se puede cambiar su divisa. Crea una cuenta nueva o elimina los extractos de esta cuenta antes de cambiarla." });
+            }
         }
 
         cuenta.TitularId = request.TitularId;

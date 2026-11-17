@@ -193,6 +193,14 @@ public sealed class IntegrationOpenClawController : ControllerBase
             }
         }
 
+        // Lote 5 (B-1): las divisas sin tipo de cambio utilizable no aportan al
+        // total convertido. El total no cambia; se listan para que el
+        // consumidor sepa que el total no las incluye.
+        var divisasSinTipoCambio = await ResolveDivisasSinTipoCambioAsync(
+            principalCurrency,
+            cuentas.Select(x => x.Divisa),
+            cancellationToken);
+
         var totalesPorDivisa = cuentas
             .GroupBy(x => x.Divisa)
             .ToDictionary(
@@ -209,7 +217,8 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 {
                     divisa = principalCurrency,
                     monto = Decimal.Round(totalConvertido, 2)
-                }
+                },
+                divisas_sin_tipo_cambio = divisasSinTipoCambio
             }));
         }
 
@@ -221,6 +230,7 @@ public sealed class IntegrationOpenClawController : ControllerBase
                 divisa_principal = principalCurrency,
                 monto = Decimal.Round(totalConvertido, 2)
             },
+            divisas_sin_tipo_cambio = divisasSinTipoCambio,
             tipo_cambio = rateSnapshot,
             cuentas = cuentasData,
             generado_en = DateTime.UtcNow
@@ -1148,6 +1158,41 @@ public sealed class IntegrationOpenClawController : ControllerBase
 
         rates["fecha_actualizacion"] = rateRows.Count == 0 ? null : rateRows.Max(x => x.FechaActualizacion);
         return rates;
+    }
+
+    /// <summary>
+    /// Lote 5 (B-1): codigos de divisa del ambito que no tienen tipo de cambio
+    /// utilizable hacia la divisa principal. Esas divisas no aportan al total
+    /// convertido, asi que se listan para que el consumidor sepa que el total
+    /// no las incluye. Solo se consultan las divisas de las cuentas visibles
+    /// para el token: no se filtra por mas datos de los que permite el scope.
+    /// </summary>
+    private async Task<List<string>> ResolveDivisasSinTipoCambioAsync(
+        string principalCurrency,
+        IEnumerable<string> currencies,
+        CancellationToken cancellationToken)
+    {
+        var distinctCurrencies = currencies
+            .Select(NormalizeDivisa)
+            .Where(x => !string.IsNullOrWhiteSpace(x) && !x.Equals(principalCurrency, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Cast<string>()
+            .ToList();
+
+        if (distinctCurrencies.Count == 0)
+        {
+            return [];
+        }
+
+        // Sonda de 1m por divisa: el resultado es la propia tasa hacia la
+        // divisa principal. Sin tasa, BulkConvertAsync devuelve null.
+        var probe = distinctCurrencies.ToDictionary(c => c, _ => 1m, StringComparer.OrdinalIgnoreCase);
+        var bulk = await _tiposCambioService.BulkConvertAsync(probe, principalCurrency, cancellationToken);
+
+        return distinctCurrencies
+            .Where(c => !bulk.TryGetValue(c, out var rate) || !rate.HasValue || rate.Value <= 0m)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private async Task<decimal> ConvertSaldoTotalAsync(

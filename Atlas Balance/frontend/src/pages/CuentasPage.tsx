@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
 import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -9,6 +10,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
+import { DivisasSinTipoCambioAviso } from '@/components/dashboard/DivisasSinTipoCambioAviso';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
@@ -565,7 +567,13 @@ export default function CuentasPage() {
       setIsFormModalOpen(false);
       await loadData();
     } catch (err) {
-      setFormError(extractErrorMessage(err, 'No se pudo guardar cuenta'));
+      // B-14: 409 = conflicto de dominio (p. ej. cuenta con extractos y cambio
+      // de divisa). El mensaje del backend se muestra tal cual; el texto de
+      // reserva solo aparece si la respuesta no trae mensaje.
+      const fallback = axios.isAxiosError(err) && err.response?.status === 409
+        ? 'No se pudo guardar la cuenta: el cambio entra en conflicto con el estado actual.'
+        : 'No se pudo guardar cuenta';
+      setFormError(extractErrorMessage(err, fallback));
     } finally {
       setSaving(false);
     }
@@ -730,9 +738,12 @@ export default function CuentasPage() {
               </div>
 
               {saldosDivisa ? (
-                <div className="titulares-divisa-banners">
-                  <SaldoPorDivisaCard items={saldosDivisa.divisas} divisaPrincipal={saldosDivisa.divisa_principal} />
-                </div>
+                <>
+                  <div className="titulares-divisa-banners">
+                    <SaldoPorDivisaCard items={saldosDivisa.divisas} divisaPrincipal={saldosDivisa.divisa_principal} />
+                  </div>
+                  <DivisasSinTipoCambioAviso divisas={saldosDivisa.divisas_sin_tipo_cambio} />
+                </>
               ) : null}
             </>
           ) : null}
@@ -986,15 +997,22 @@ export default function CuentasPage() {
                     <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} />
                   </label>
 
-                  <AppSelect
-                    label="Divisa"
-                    value={form.divisa}
-                    options={divisas.map((divisa) => ({
-                      value: divisa.codigo,
-                      label: `${divisa.codigo} ${divisa.nombre ? `- ${divisa.nombre}` : ''}`,
-                    }))}
-                    onChange={(next) => setForm((f) => ({ ...f, divisa: next }))}
-                  />
+                  <div className="users-form-full">
+                    <AppSelect
+                      label="Divisa"
+                      value={form.divisa}
+                      options={divisas.map((divisa) => ({
+                        value: divisa.codigo,
+                        label: `${divisa.codigo} ${divisa.nombre ? `- ${divisa.nombre}` : ''}`,
+                      }))}
+                      onChange={(next) => setForm((f) => ({ ...f, divisa: next }))}
+                    />
+                    {editingId && !renewingId ? (
+                      <p className="users-field-help">
+                        La divisa no se puede cambiar si la cuenta ya tiene extractos: crea una cuenta nueva.
+                      </p>
+                    ) : null}
+                  </div>
 
                   <AppSelect
                     label="País"

@@ -7,6 +7,9 @@ public sealed class DashboardPrincipalResponse
     public decimal IngresosMes { get; set; }
     public decimal EgresosMes { get; set; }
     public decimal TotalConvertido { get; set; }
+    // Lote 5 (B-1): codigos de divisa que no tienen tipo de cambio utilizable
+    // hacia la divisa principal. Esas divisas no aportan al total convertido.
+    public IReadOnlyList<string> DivisasSinTipoCambio { get; set; } = [];
     public DashboardPlazosFijosResumenResponse PlazosFijos { get; set; } = new();
     public IReadOnlyList<DashboardSaldoTitularResponse> SaldosPorTitular { get; set; } = [];
     public IReadOnlyList<DashboardSaldoCuentaResponse> SaldosPorCuenta { get; set; } = [];
@@ -33,6 +36,9 @@ public sealed class DashboardTitularResponse
     public decimal IngresosMes { get; set; }
     public decimal EgresosMes { get; set; }
     public decimal TotalConvertido { get; set; }
+    // Lote 5 (B-1): codigos de divisa que no tienen tipo de cambio utilizable
+    // hacia la divisa principal. Esas divisas no aportan al total convertido.
+    public IReadOnlyList<string> DivisasSinTipoCambio { get; set; } = [];
     public IReadOnlyList<DashboardSaldoCuentaResponse> SaldosPorCuenta { get; set; } = [];
     public IReadOnlyList<DashboardSaldoPaisResponse> SaldosPorPais { get; set; } = [];
     public DashboardChartColorsResponse ChartColors { get; set; } = new();
@@ -79,6 +85,9 @@ public sealed class DashboardSaldosDivisaResponse
     public string DivisaPrincipal { get; set; } = "EUR";
     public IReadOnlyList<DashboardSaldoDivisaResponse> Divisas { get; set; } = [];
     public decimal TotalConvertido { get; set; }
+    // Lote 5 (B-1): codigos de divisa que no tienen tipo de cambio utilizable
+    // hacia la divisa principal. Esas divisas no aportan al total convertido.
+    public IReadOnlyList<string> DivisasSinTipoCambio { get; set; } = [];
 }
 
 public sealed class DashboardSaldoDivisaResponse

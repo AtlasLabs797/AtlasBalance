@@ -45,7 +45,7 @@ Rutas abreviadas: `API/` = `Atlas Balance/backend/src/AtlasBalance.API/`, `FE/` 
 | A-6 | **La IA ignora el filtro por concepto en los totales.** El planificador acepta `filtros.concepto`, pero totales, ranking, tendencia y último movimiento no lo aplican (tampoco importe mínimo o máximo). «¿Cuánto he gastado en seguros?» puede devolver el total de todos los gastos, sin aviso. | `API/Services/IaPlanner/FinancialToolsService.cs:294-384`, `:482-554`, `:636-680` (solo `Search`, `:779`, filtra) | Aplicar los filtros en todas las herramientas; hasta entonces, rechazar el plan cuando traiga concepto y la operación no sea búsqueda. | V - **CORREGIDO** (LOTE 4, 2026-11-16) |
 | A-7 | **Validar una importación muestra un error falso.** `invalidate('catalogo' as never)`: la clave no existe en `mutationInvalidation`, se lanza `TypeError` y el `catch` muestra «No se pudo validar la importación» cuando la validación fue bien. | `FE/pages/ImportacionPage.tsx:529`; `FE/queries/invalidation.ts` | Usar una clave real y quitar el `as never`. | V - **CORREGIDO** (LOTE 1, 2026-11-16) |
 | A-8 | **Configuración pierde lo escrito sin guardar.** Cualquier acción menor (tipo de cambio, sincronizar, divisas, tokens) llama a `load()`, que pone la página en skeleton y recarga todo el estado. | `FE/pages/ConfiguracionPage.tsx:554,569,623,772` | Recargar solo la sección afectada. | V - **CORREGIDO** (LOTE 1, 2026-11-16) |
-| A-9 | **El job de vencimientos de plazo fijo falla en PostgreSQL** (ya conocido, sigue abierto). `Contains` sobre una columna `jsonb` genera `jsonb ~~ jsonb` (42883). Como el cambio de estado ya se guardó antes, al reintentar el aviso de «próximo a vencer» se pierde para siempre. | `API/Services/PlazoFijoService.cs:196-203`, `:48-62` | `EF.Functions.JsonContains` con test contra PostgreSQL real; no usar el cambio de estado como disparador. | V |
+| A-9 | **El job de vencimientos de plazo fijo falla en PostgreSQL** (ya conocido, sigue abierto). `Contains` sobre una columna `jsonb` genera `jsonb ~~ jsonb` (42883). Como el cambio de estado ya se guardó antes, al reintentar el aviso de «próximo a vencer» se pierde para siempre. | `API/Services/PlazoFijoService.cs:196-203`, `:48-62` | `EF.Functions.JsonContains` con test contra PostgreSQL real; no usar el cambio de estado como disparador. | V - **CORREGIDO** (LOTE 5, 2026-11-17) |
 
 ## 4. Seguridad
 
@@ -95,23 +95,23 @@ Rutas abreviadas: `API/` = `Atlas Balance/backend/src/AtlasBalance.API/`, `FE/` 
 
 | ID | Sev. | Qué pasa | Dónde | Estado |
 |---|---|---|---|---|
-| B-1 | Media | Totales en divisa: una cuenta sin tipo de cambio aporta 0 y la respuesta no lo marca. Igual en `total_convertido` de OpenClaw. | `API/Services/DashboardService.cs:560-564`; `API/Controllers/IntegrationOpenClawController.cs:190-193` | V |
-| B-2 | Media | La sincronización de tipos de cambio pisa las tasas manuales cada 12 h. Un fallo de sincronización solo queda en un `Warning`. | `API/Services/TiposCambioService.cs:443-468` | V |
-| B-3 | Media | Tras revertir un lote no se puede reimportar: la deduplicación cuenta las filas borradas y el índice único de huella no filtra `deleted_at`. | `API/Services/ImportacionService.cs:787-794`; `API/Data/AppDbContext.cs:221-224` | V |
-| B-4 | Media | `RevertirLote` no es atómico: borra extractos fuera de transacción y después guarda el lote. No valida el estado ni invalida conciliaciones. | `API/Services/ImportacionService.cs:637-688` | S |
-| B-5 | Media | Conciliación: el score no impone el tope de importe por movimiento. Un esperado de 50 € puede sugerirse contra un extracto de 900 € si otro movimiento del lote es grande. | `API/Services/ConciliacionService.cs:446-456` | V |
-| B-6 | Media | Conciliación: un mismo extracto puede conciliarse dos veces y `SetEstado` acepta cualquier transición. `FirstAsync` da 500 si el movimiento ya no existe. | `API/Services/ConciliacionService.cs:212-280`, `:325-349` | S |
-| B-7 | Media | `PUT /api/extractos/{id}` devuelve 500 si falla la evaluación de alertas, con el cambio ya guardado. `Crear` sí lo protege. | `API/Controllers/ExtractosController.cs:383-385` | V |
-| B-8 | Media | Alerta de saldo: `pg_advisory_xact_lock` sin transacción explícita se libera al instante; dos importaciones simultáneas envían el email doble. | `API/Services/AlertaService.cs:98-105` | V |
-| B-9 | Media | El saldo anterior de un movimiento de plazo fijo se calcula incluyendo filas borradas. | `API/Services/ImportacionService.cs:988-994` | S |
+| B-1 | Media | Totales en divisa: una cuenta sin tipo de cambio aporta 0 y la respuesta no lo marca. Igual en `total_convertido` de OpenClaw. | `API/Services/DashboardService.cs:560-564`; `API/Controllers/IntegrationOpenClawController.cs:190-193` | V - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-2 | Media | La sincronización de tipos de cambio pisa las tasas manuales cada 12 h. Un fallo de sincronización solo queda en un `Warning`. | `API/Services/TiposCambioService.cs:443-468` | V - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-3 | Media | Tras revertir un lote no se puede reimportar: la deduplicación cuenta las filas borradas y el índice único de huella no filtra `deleted_at`. | `API/Services/ImportacionService.cs:787-794`; `API/Data/AppDbContext.cs:221-224` | V - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-4 | Media | `RevertirLote` no es atómico: borra extractos fuera de transacción y después guarda el lote. No valida el estado ni invalida conciliaciones. | `API/Services/ImportacionService.cs:637-688` | S - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-5 | Media | Conciliación: el score no impone el tope de importe por movimiento. Un esperado de 50 € puede sugerirse contra un extracto de 900 € si otro movimiento del lote es grande. | `API/Services/ConciliacionService.cs:446-456` | V - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-6 | Media | Conciliación: un mismo extracto puede conciliarse dos veces y `SetEstado` acepta cualquier transición. `FirstAsync` da 500 si el movimiento ya no existe. | `API/Services/ConciliacionService.cs:212-280`, `:325-349` | S - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-7 | Media | `PUT /api/extractos/{id}` devuelve 500 si falla la evaluación de alertas, con el cambio ya guardado. `Crear` sí lo protege. | `API/Controllers/ExtractosController.cs:383-385` | V - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-8 | Media | Alerta de saldo: `pg_advisory_xact_lock` sin transacción explícita se libera al instante; dos importaciones simultáneas envían el email doble. | `API/Services/AlertaService.cs:98-105` | V - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-9 | Media | El saldo anterior de un movimiento de plazo fijo se calcula incluyendo filas borradas. | `API/Services/ImportacionService.cs:988-994` | S - **CORREGIDO** (LOTE 5, 2026-11-17) |
 | B-10 | Media | IA: agregados que suman o comparan divisas distintas; «duplicado probable» marca pagos recurrentes legítimos; los seguimientos («¿y el mes anterior?») pierden los filtros. | `API/Services/IaPlanner/FinancialToolsService.cs:948-973`, `:1100-1112` | S - **CORREGIDO** (LOTE 4, 2026-11-16) |
 | B-11 | Media | IA: el timeout del planificador escapa como 500 y la llamada facturada no se contabiliza. Los contadores de coste se actualizan sin concurrencia. | `API/Services/IaPlanner/IntentPlanner.cs:293`; `API/Services/AtlasAiService.cs:2147-2158` | V - **CORREGIDO** (LOTE 4, 2026-11-16) |
 | B-12 | Baja | La primera prueba SMTP de cada usuario devuelve siempre 429. | `API/Services/SmtpTestRateLimit.cs:25-29` | V - **CORREGIDO** (LOTE 1, 2026-11-16) |
-| B-13 | Baja | El importe «0,500» se interpreta como 500 (backend y frontend). | `API/Services/ImportacionService.cs:2239-2253`; `FE/utils/formatters.ts:30-100` | S |
-| B-14 | Baja | Cambiar la divisa de una cuenta con extractos no se bloquea. | `API/Controllers/CuentasController.cs:454` | S |
-| B-15 | Baja | Paginación sin desempate (`ThenBy Id`): filas duplicadas u omitidas entre páginas al ordenar por importe o concepto. | `API/Controllers/ExtractosController.cs:104-120`; `AuditoriaController.cs:119` | S |
-| B-16 | Baja | «Hoy» en UTC: entre las 00:00 y las 02:00 de España el mes o el día actual es el anterior. El año `2026` está escrito a mano en el detector de resumen anual de la IA. | `API/Services/AtlasAiService.cs:1811`; `FE/components/extractos/ExtractoTable.tsx:230` | S - **CORREGIDO** (LOTE 4, 2026-11-16) |
-| B-17 | ? | El saldo actual es el de la fila con mayor `FilaNumero`. Si un banco exporta en orden ascendente, el saldo «actual» sería el más antiguo. No hay validación de continuidad de saldos. | `API/Services/ImportacionService.cs:771-772`; `API/Services/DashboardService.cs:512-521` | ? |
+| B-13 | Baja | El importe «0,500» se interpreta como 500 (backend y frontend). | `API/Services/ImportacionService.cs:2239-2253`; `FE/utils/formatters.ts:30-100` | S - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-14 | Baja | Cambiar la divisa de una cuenta con extractos no se bloquea. | `API/Controllers/CuentasController.cs:454` | S - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-15 | Baja | Paginación sin desempate (`ThenBy Id`): filas duplicadas u omitidas entre páginas al ordenar por importe o concepto. | `API/Controllers/ExtractosController.cs:104-120`; `AuditoriaController.cs:119` | S - **CORREGIDO** (LOTE 5, 2026-11-17) |
+| B-16 | Baja | «Hoy» en UTC: entre las 00:00 y las 02:00 de España el mes o el día actual es el anterior. El año `2026` está escrito a mano en el detector de resumen anual de la IA. | `API/Services/AtlasAiService.cs:1811`; `FE/components/extractos/ExtractoTable.tsx:230` | S - **CORREGIDO** (LOTE 4, 2026-11-16; parte frontend en LOTE 7, 2026-11-17) |
+| B-17 | ? | El saldo actual es el de la fila con mayor `FilaNumero`. Si un banco exporta en orden ascendente, el saldo «actual» sería el más antiguo. No hay validación de continuidad de saldos. | `API/Services/ImportacionService.cs:771-772`; `API/Services/DashboardService.cs:512-521` | ? - **NO CORREGIDO** (LOTE 5, 2026-11-17): el defecto es real pero su alcance depende del orden en que exportan los bancos, y esa pregunta se respondio por auto-seleccion de tiempo, sin confirmacion del usuario. Ver seccion 17. |
 
 ### 5.2 Jobs
 
@@ -129,15 +129,15 @@ Rutas abreviadas: `API/` = `Atlas Balance/backend/src/AtlasBalance.API/`, `FE/` 
 | ID | Sev. | Qué pasa | Dónde | Estado |
 |---|---|---|---|---|
 | F-1 | Media | Cualquier error al renovar el token (red, 5xx, 429) cierra la sesión y lo propaga a las demás pestañas. | V - **CORREGIDO** (LOTE 2, 2026-11-16) |
-| F-2 | Media | La papelera pide 500 filas y filtra en cliente: los eliminados más antiguos no aparecen ni se pueden restaurar. Muestra todos los importes en EUR. | `FE/pages/PapeleraPage.tsx:93-141`, `:228` | S |
+| F-2 | Media | La papelera pide 500 filas y filtra en cliente: los eliminados más antiguos no aparecen ni se pueden restaurar. Muestra todos los importes en EUR. | `FE/pages/PapeleraPage.tsx:93-141`, `:228` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
 | F-3 | Media | El backend omite los `null` (`WhenWritingNull`) y el frontend compara con `!== null`: en auditoría se pinta un importe vacío. Mismo tipo de fallo que el de permisos de octubre. | `FE/pages/AuditoriaPage.tsx:375,383`; `FE/components/extractos/AuditCellModal.tsx:50,57` | S - **CORREGIDO** (LOTE 1, 2026-11-16) |
-| F-4 | Media | El interceptor lanza un toast por cada error, también en los sondeos con la API caída a propósito (actualización, backup): un toast cada 2,5 s. Se suma a los 82 errores que ya pintan las páginas. | `FE/services/api.ts:172-186` | S |
-| F-5 | Media | El banner de alertas reaparece al cambiar de país; dos escritores sobre el mismo store. | `FE/hooks/queries/useAlertasActivasQuery.ts:37` | S |
-| F-6 | Media | Salir de la nota de alerta lanza un PATCH aunque no cambie nada. | `FE/components/extractos/ExtractoTable.tsx:828` | S |
-| F-7 | Baja | Borrado y marcado en lote con una petición por fila, sin transacción. | `FE/pages/CuentaDetailPage.tsx:458,601` | S |
-| F-8 | Baja | Los campos numéricos de Configuración no se pueden vaciar (`Number(x) \|\| 0`). | `FE/pages/ConfiguracionPage.tsx:908,1023` | S |
-| F-9 | Baja | Si falla el guardado de una celda, se descarta lo escrito. | `FE/components/extractos/EditableCell.tsx:53-54` | S |
-| F-10 | ? | La clave de idempotencia de «Confirmar importación» no se regenera al abrir otro lote desde el historial. | `FE/pages/ImportacionPage.tsx:202,517,856` | ? |
+| F-4 | Media | El interceptor lanza un toast por cada error, también en los sondeos con la API caída a propósito (actualización, backup): un toast cada 2,5 s. Se suma a los 82 errores que ya pintan las páginas. | `FE/services/api.ts:172-186` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| F-5 | Media | El banner de alertas reaparece al cambiar de país; dos escritores sobre el mismo store. | `FE/hooks/queries/useAlertasActivasQuery.ts:37` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| F-6 | Media | Salir de la nota de alerta lanza un PATCH aunque no cambie nada. | `FE/components/extractos/ExtractoTable.tsx:828` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| F-7 | Baja | Borrado y marcado en lote con una petición por fila, sin transacción. | `FE/pages/CuentaDetailPage.tsx:458,601` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| F-8 | Baja | Los campos numéricos de Configuración no se pueden vaciar (`Number(x) \|\| 0`). | `FE/pages/ConfiguracionPage.tsx:908,1023` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| F-9 | Baja | Si falla el guardado de una celda, se descarta lo escrito. | `FE/components/extractos/EditableCell.tsx:53-54` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| F-10 | ? | La clave de idempotencia de «Confirmar importación» no se regenera al abrir otro lote desde el historial. | `FE/pages/ImportacionPage.tsx:202,517,856` | ? - **SOSPECHA DESCARTADA, DEFECTO REAL CORREGIDO** (LOTE 7, 2026-11-17) |
 
 ## 6. Rendimiento
 
@@ -146,11 +146,11 @@ Rutas abreviadas: `API/` = `Atlas Balance/backend/src/AtlasBalance.API/`, `FE/` 
 | R-1 | Media | Exportación mensual: carga todos los extractos sin `AsNoTracking` y reutiliza el `DbContext` entre cuentas. `AdjustToContents` sobre 50.000 filas. | `API/Services/ExportacionService.cs:93-96`, `:163` | V - **CORREGIDO** (LOTE 3, 2026-11-16) |
 | R-2 | Media | Chat de IA: entre 12 y 20 consultas y dos llamadas facturables por pregunta; el mapa de seudónimos se construye dos veces. | `API/Services/AtlasAiService.cs:1685-1713`, `:2106` | S - **CORREGIDO** (LOTE 4, 2026-11-16) |
 | R-3 | Media | `GET lotes/{id}/filas` devuelve hasta 50.000 filas sin paginar. | `API/Controllers/ImportacionController.cs:113-130` | S |
-| R-4 | Media | `CuentaDetailPage` invalida las mismas consultas que tiene activas: petición duplicada en cada cambio de página o periodo. | `FE/pages/CuentaDetailPage.tsx:337` | S |
-| R-5 | Media | `ExtractoTable`: unas 1.600 evaluaciones de permisos por render; cada foco re-renderiza la tabla. | `FE/components/extractos/ExtractoTable.tsx:602` | S |
-| R-6 | Media | Búsquedas sin debounce (una petición por tecla) en Formatos, Países, Cuentas, Usuarios y en el campo «Modelo» de IA. | `FE/pages/FormatosImportacionPage.tsx:164`; `FE/pages/ConfiguracionPage.tsx:361` | S |
-| R-7 | Baja | Importación de 50.000 filas en un único `SaveChanges`; N+1 en resúmenes de titulares y en la evolución de OpenClaw. | `API/Services/ImportacionService.cs:332-344`; `ExtractosController.cs:722-744` | S |
-| R-8 | Baja | `/ia/config` se consulta cada 30 s en todas las pestañas, con tres fuentes de verdad. | `FE/hooks/queries/useIaConfigQuery.ts:20` | S |
+| R-4 | Media | `CuentaDetailPage` invalida las mismas consultas que tiene activas: petición duplicada en cada cambio de página o periodo. | `FE/pages/CuentaDetailPage.tsx:337` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| R-5 | Media | `ExtractoTable`: unas 1.600 evaluaciones de permisos por render; cada foco re-renderiza la tabla. | `FE/components/extractos/ExtractoTable.tsx:602` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| R-6 | Media | Búsquedas sin debounce (una petición por tecla) en Formatos, Países, Cuentas, Usuarios y en el campo «Modelo» de IA. | `FE/pages/FormatosImportacionPage.tsx:164`; `FE/pages/ConfiguracionPage.tsx:361` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
+| R-7 | Baja | Importación de 50.000 filas en un único `SaveChanges`; N+1 en resúmenes de titulares y en la evolución de OpenClaw. | `API/Services/ImportacionService.cs:332-344`; `ExtractosController.cs:722-744` | S - **CORREGIDO (parcial)** (LOTE 7, 2026-11-17): el N+1 de los resumenes de titulares y la insercion masiva por bloques estan corregidos; el N+1 asincrono de la evolucion de OpenClaw sigue pendiente. Ver seccion 18. |
+| R-8 | Baja | `/ia/config` se consulta cada 30 s en todas las pestañas, con tres fuentes de verdad. | `FE/hooks/queries/useIaConfigQuery.ts:20` | S - **CORREGIDO** (LOTE 7, 2026-11-17) |
 | R-9 | Baja | Todo el CSS (13.010 líneas) se carga en el arranque aunque las rutas sean `lazy`. | `FE/main.tsx:10-13` | S |
 | R-10 | ? | El índice trigram sobre `lower(concepto)` no casa con `lower(COALESCE(concepto,''))`, que es lo que consulta la IA: posible scan secuencial. Revisión de comisiones y seguros hace `LIKE '%…%'` con 12-14 términos. | `API/Services/AtlasAiService.cs:2046-2053`; `API/Services/RevisionService.cs:595-626` | ? |
 | R-11 | ? | `backdrop-filter` permanente en barra superior y sidebar sobre tablas con scroll. | `FE/styles/layout/shell.css:45,417` | ? |
@@ -204,7 +204,7 @@ Mejoras de diseño de mayor efecto, en orden:
 | M-6 | Unas 35 clases CSS y 239 tokens sin uso (ver sección 7). `canConciliarCuenta` sin consumidores. | `FE/styles`, `FE/stores/permisosStore.ts:111` | V (muestra) |
 | M-7 | Reglas del proyecto que no se cumplen: React Hook Form solo en 2 formularios (el resto usa `useState`); varios archivos con más de un componente; 14 `eslint-disable exhaustive-deps`; 105 errores de las reglas nuevas de react-hooks desactivados. | `FE/pages`, `FE/eslint.config.js` | S |
 | M-8 | Duplicados: `parseDecimalInput`, `InsertRowDraft` y `getTodayInputValue` en dos archivos cada uno. Páginas de más de 1.200 líneas: Configuración, CuentaDetail, Importación. | `FE/pages` | S |
-| M-9 | El snapshot de EF no tiene `xmin` en `PLAZOS_FIJOS` y `PendingModelChangesWarning` está silenciado (ya conocido). El test dependiente de la fecha ya está corregido en el código (fechas ancladas al día 1 del mes, `FinancialToolsServiceTests.cs:403-411`): falta cerrar la entrada en `REGISTRO_BUGS.md`. | `API/Data/AppDbContext.cs:19` | V (test) / S |
+| M-9 | El snapshot de EF no tiene `xmin` en `PLAZOS_FIJOS` y `PendingModelChangesWarning` está silenciado (ya conocido). El test dependiente de la fecha ya está corregido en el código (fechas ancladas al día 1 del mes, `FinancialToolsServiceTests.cs:403-411`): falta cerrar la entrada en `REGISTRO_BUGS.md`. | `API/Data/AppDbContext.cs:19` | V (test) / S - **PARCIAL** (LOTE 5, 2026-11-17): el `xmin` de `PLAZOS_FIJOS` ya esta en el snapshot y el test por fecha queda cerrado en `REGISTRO_BUGS.md`, pero la deriva restante no es solo del snapshot (27 diferencias y divergencias de esquema en la base real), asi que el `Ignore` se mantiene. Ver seccion 17. |
 | M-10 | `frontend/.test-dist-v2/` aparece sin seguimiento: `.gitignore` solo cubre `.test-dist/`. Tampoco está ignorada `frontend/playwright-report/`, creada hoy a las 14:42 (origen no identificado: pudo ser un subagente o una sesión anterior). | `.gitignore:33` | V |
 | M-11 | `Documentacion/Diseno/design-tokens.css` está marcado como obsoleto pero sigue en el árbol; hay una carpeta `Documentacion/Diseno/Diseño` anidada. | `Documentacion/Diseno` | V |
 
@@ -415,6 +415,7 @@ Metodo: el orquestador confirmo las diez premisas leyendo el codigo citado (los
 diez hallazgos existen tal como los describe el informe) y repartio el trabajo en
 siete subagentes implementadores con ficheros disjuntos. Cada subagente escribio
 el test que falla con el defecto presente, el arreglo minimo y el test en verde.
+
 El orquestador reviso cada diff linea a linea, corrigio por su cuenta un defecto
 que un subagente no vio (el recupero del backup tras una ejecucion interrumpida
 abandonaba tambien los backups MANUALES en curso) y termino el trabajo de un
@@ -538,3 +539,308 @@ marca `BackupSchedulerJob`, que corre cada 15 minutos y decide con `IsDue`.
 
 Verificacion tras la revision: las doce clases del LOTE 3 dan **105/105** y la
 suite completa del backend **1170/1170**, sin fallos.
+
+## 17. LOTE 5 - Correccion aplicada (2026-11-17)
+
+Alcance: los quince IDs del LOTE 5 (A-9, B-1, B-2, B-3, B-4, B-5, B-6, B-7,
+B-8, B-9, B-13, B-14, B-15 y M-9) mas la investigacion de B-17. Ningun otro
+ID tocado. Rama `V-03.02`. Sin commit ni push, sin cambio de version.
+
+**Las cuatro preguntas previas se respondieron por auto-seleccion de tiempo,
+no por el usuario.** El formulario se lanzo con 60 s por pregunta y, al no
+llegar respuesta, el runtime eligio la opcion recomendada de cada una. Esas
+opciones se aplicaron como supuesto de trabajo y quedan abiertas a cambio:
+
+| Pregunta | Respuesta aplicada | Consecuencia |
+|---|---|---|
+| B-1: cuenta sin tipo de cambio | Se excluye del total y se marca | El total no cambia; la respuesta lista las divisas sin tasa y la interfaz avisa. |
+| B-2: tasas MANUAL | No se pisan y se avisa | La sincronizacion omite las manuales y genera aviso de administrador. |
+| B-14: cambio de divisa | Se prohibe con extractos | 409 mientras la cuenta tenga extractos vivos. |
+| B-17: orden de exportacion de los bancos | Del mas reciente al mas antiguo | Coincide con la convencion de la app (la linea mas reciente arriba del todo): **el criterio del saldo actual no se cambia** y el detector queda como red de seguridad. Ver "B-17" mas abajo. |
+
+Las cuatro respuestas se obtuvieron por **auto-seleccion de tiempo** (el runtime
+elige la opcion recomendada al agotarse los 60 s de cada pregunta), asi que
+**ninguna esta confirmada por el usuario**. Se preguntaron dos veces: en la
+primera ronda la de B-17 salio con la variante contraria ("del mas antiguo al
+mas reciente"), incompatible con la convencion de la app, y por eso no se
+aplico; en la segunda ronda las cuatro coinciden con lo ya implementado, de
+modo que **el codigo es coherente con las cuatro**. Si el usuario quiere otra
+variante, el punto exacto a tocar esta en el bloque siguiente.
+
+Metodo: el orquestador confirmo las premisas leyendo el codigo citado y
+repartio el trabajo en once subagentes con ficheros disjuntos. Cada subagente
+escribio el test que falla con el defecto presente, el arreglo minimo y el
+test en verde. El orquestador reviso cada diff linea a linea y corrigio por su
+cuenta dos cosas que los subagentes dejaron mal (la matriz de transiciones de
+conciliacion y el desempate de la paginacion de lotes), corrigio una
+asercion que no encajaba con el indice nuevo y ajusto un comentario
+desactualizado.
+
+**Estado de esas decisiones y donde revertirlas.** Las tres primeras se
+ aplicaron como SUPUESTO de trabajo (la respuesta automatica coincide con lo
+ que ya estaba implementado, de modo que el codigo es coherente con lo
+ pedido), pero **ninguna esta confirmada por el usuario**. Si alguna se
+ cambia, el punto exacto a tocar es:
+
+- **B-1** (excluir y marcar): `DashboardService` (calculo de las divisas sin
+  tasa) y `IntegrationOpenClawController` (mismo calculo para la integracion),
+  mas el aviso del frontend (`frontend/src/utils/dashboardDivisasSinTipoCambio.ts`).
+  La alternativa descartada (bloquear el total) seria no devolver el total en
+  cuanto falte una tasa.
+- **B-2** (no pisar y avisar): `TiposCambioService.SincronizarTiposCambioAsync`
+  (bucle que salta las tasas `MANUAL`) y el helper `NotificarAdminAsync` (el
+  aviso). La alternativa descartada (bloquear las manuales hasta que alguien
+  las libere) seria no dejar que la sincronizacion las toque nunca, con su
+  aviso propio.
+- **B-14** (prohibir con extractos): `CuentasController.Actualizar` (la guarda
+  que devuelve 409) y la ayuda del frontend en `CuentasPage.tsx`. La
+  alternativa descartada (permitir con confirmacion) seria cambiar el 409 por
+  una confirmacion explicita con aviso.
+- **B-17**: el criterio del saldo actual **no se ha cambiado**; lo unico
+  anadido es la deteccion y el aviso, que funcionan igual con cualquier orden
+  de exportacion.
+
+**Trazabilidad del reparto entre subagentes.** Cada bloque se asigno a un
+subagente con ficheros disjuntos, y cada subagente dejo su test en el
+proyecto de pruebas (todos en `Atlas Balance/backend/tests/AtlasBalance.API.Tests/`
+o en `Atlas Balance/frontend/tests/`):
+
+| Subagente (alcance) | Ficheros de codigo | Tests que dejo |
+|---|---|---|
+| A-9 | `Services/PlazoFijoService.cs` | `PlazoFijoJsonbPostgresTests.cs` |
+| B-3, B-4, B-9, B-13 (backend) | `Services/ImportacionService.cs` | `ImportacionLote5Tests.cs`, `ImportacionLote5PostgresTests.cs` |
+| B-5, B-6 | `Services/ConciliacionService.cs` | `ConciliacionLote5Tests.cs`, `ConciliacionExtractoUnicoTests.cs` |
+| B-8 | `Services/AlertaService.cs` | `AlertaAdvisoryLockPostgresTests.cs` |
+| M-9 + indices de B-3 y B-6 (base de datos) | `Data/AppDbContext.cs`, `Migrations/AppDbContextModelSnapshot.cs`, `Migrations/20261117120000_IndicesParcialesHuellaYConciliacion.cs` | `IndicesParcialesLote5Tests.cs`, `SnapshotModelDriftTests.cs` |
+| B-1 | `Services/DashboardService.cs`, `Controllers/IntegrationOpenClawController.cs`, `DTOs/DashboardDtos.cs`, frontend | `DashboardDivisasSinTipoCambioTests.cs`, `tests/dashboardDivisasSinTipoCambio.test.ts` |
+| B-2 | `Services/TiposCambioService.cs`, `Controllers/TiposCambioController.cs` | `TiposCambioManualTests.cs` |
+| B-7, B-15 | `Controllers/ExtractosController.cs`, `Controllers/AuditoriaController.cs`, `Services/RevisionService.cs` | `ExtractosAlertaPostTests.cs`, `PaginacionDesempateTests.cs` |
+| B-13 (frontend) | `frontend/src/utils/formatters.ts` | `tests/parseEuropeanNumber.test.ts` |
+| B-14 | `Controllers/CuentasController.cs` | `CuentasDivisaConExtractosTests.cs` |
+
+El orquestador toco ademas, por su cuenta: la matriz de transiciones de
+conciliacion y `frontend/src/pages/ConciliacionPage.tsx`; el desempate de la
+paginacion de lotes (`Services/ImportacionService.cs`); el arreglo del advisory
+lock (`Services/ImportacionService.cs`); el detector del orden de las filas
+pegadas (`Services/ImportacionService.cs`, `DTOs/ImportacionDtos.cs`,
+`frontend/src/pages/ImportacionPage.tsx`, `frontend/src/types/index.ts`); el
+alta del test de B-1 en la lista explicita de `npm run test:unit`
+(`frontend/package.json`); y una asercion que no encajaba con el indice nuevo
+(`tests/ConciliacionExtractoUnicoTests.cs`).
+| ID | Estado | Que se cambio | Evidencia |
+
+|---|---|---|---|
+| A-9 | **Corregido** | La comprobacion de "ya existe la notificacion" pasa de `Contains` (que EF traducía a `jsonb ~~ jsonb`) a `EF.Functions.JsonContains`, que genera `detalles_json @> @duplicadoJson`. El provider InMemory de EF no traduce `JsonContains`, asi que hay una rama equivalente sobre el JSON materializado para los tests unitarios. El aviso no depende del cambio de estado (eso ya lo garantizo J-3): el test comprueba el caso "estado ya guardado y aviso nunca entregado". | `PlazoFijoJsonbPostgresTests` (nuevo) contra PostgreSQL real: en rojo `Npgsql.PostgresException : 42883: operator does not exist: jsonb ~~ jsonb`, en verde. SQL generado comprobado sin ninguna aparicion de `~~`. `PlazoFijoServiceTests` + test nuevo: 9/9. |
+| B-1 | **Corregido** | El total NO cambia. Lo que se anade: `divisas_sin_tipo_cambio` en las tres respuestas del dashboard y en la integracion OpenClaw (la integracion solo lista las divisas de las cuentas visibles para su token). En la interfaz, un aviso: "El total no incluye GBP y USD. No hay tipo de cambio para esas divisas." | `DashboardDivisasSinTipoCambioTests` (nuevo) 5/5 (rojo: la lista venia vacia), `DashboardServiceTests` 9/9, `IntegrationOpenClawControllerTests` 12/12, `IntegrationOpenClawScopeCoverageTests` 3/3, `IntegrationDefaultScopesTests` 4/4. Frontend: helper puro con test propio y suite 134/134. |
+| B-2 | **Corregido** | La sincronizacion no pisa las tasas con `Fuente = MANUAL`: las omite (no tocan tasa, fuente ni fecha) y deja aviso al administrador con las divisas afectadas. Un fallo de la sincronizacion (HTTP no exitoso, payload sin tasas o excepcion) tambien genera aviso en `NOTIFICACIONES_ADMIN`, no solo un `LogWarning`. Anti-spam por clave: si ya existe un aviso con la misma clave no se repite. La respuesta dice cuantas tasas manuales se omitieron (`manual_omitidas`) y la pantalla de Configuracion lo indica. | `TiposCambioManualTests` (nuevo): rojo con 5 fallos (la tasa manual se pisaba y no habia aviso) y verde 5/5. El subagente que lo started se quedo atascado a mitad y lo termino el orquestador reutilizando el test ya escrito en rojo. `TiposCambioServiceTests` sin regresiones. |
+| B-3 | **Corregido** | La deduplicacion por huella ya no ignora el filtro de soft delete, y el indice unico de huella pasa a ser parcial (`WHERE deleted_at IS NULL AND importacion_fingerprint IS NOT NULL`), con migracion escrita a mano e idempotente. Un lote revertido ya se puede reimportar. | `ImportacionLote5Tests` 9/9 y `ImportacionLote5PostgresTests` 2/2 contra PostgreSQL real (reimport tras revertir). El indice lo verifica `IndicesParcialesLote5Tests`. |
+| B-4 | **Corregido** | `RevertirLoteAsync`: borrado y guardado del lote en una transaccion con `pg_advisory_xact_lock` por cuenta; el estado del lote se relee con el lock tomado y solo se revierte un lote `confirmado` (si no, 409 de dominio); las conciliaciones de los extractos borrados pasan a `excepcion` y su movimiento esperado vuelve a `pendiente`. Las conciliaciones ya resueltas no se tocan. | `ImportacionLote5Tests` 9/9 (rojo: no habia 409 y la conciliacion se quedaba en `sugerida`) y `ImportacionLote5PostgresTests` 2/2 con atomicidad comprobada (rojo: el extracto quedaba borrado sin rollback). |
+| B-5 | **Corregido** | Si la diferencia de importe entre el movimiento y el extracto supera la tolerancia del movimiento, el score se pone a 0 y el extracto no se propone. La tolerancia sigue viniendo de `CONFIGURACION` y no se toca. | `ConciliacionLote5Tests` 7/7 (rojo: el movimiento de 50 € recibia el extracto de 900 €). `ConciliacionServiceToleranciaTests` sin regresiones. |
+| B-6 | **Corregido** | Al pasar a `conciliada` se rechaza (409) si el extracto ya esta conciliado; las transiciones de estado se validan contra un conjunto minimo coherente con el CHECK de la tabla; si el movimiento esperado no existe se devuelve 404 en vez de 500. En la base de datos, indice unico parcial sobre `CONCILIACIONES(extracto_id)`, con purga idempotente y no destructiva de duplicados preexistentes. | `ConciliacionLote5Tests` 7/7 (rojo: 6 fallos, incluido el `InvalidOperationException` que se traducía en 500) y `ConciliacionExtractoUnicoTests` 2/2 contra PostgreSQL real: el indice salta con 23505. |
+| B-7 | **Corregido** | `PUT /api/extractos/{id}` protege la evaluacion de alertas con el mismo try/catch que `Crear`: si falla, el cambio ya guardado no se convierte en un 500. | `ExtractosAlertaPostTests` (nuevo) en rojo (`InvalidOperationException` propagada) y en verde. |
+| B-8 | **Corregido** | La zona critica de la alerta de saldo (lock, lectura del cooldown, escritura del cooldown, commit) va dentro de una transaccion explicita; si el llamante ya tiene una transaccion (camino de importacion) se reutiliza la suya. El envio del email queda FUERA de la transaccion para que un SMTP lento no retenga el lock. | `AlertaAdvisoryLockPostgresTests` (nuevo) contra PostgreSQL real: rojo con 2 envios de email, verde con 1, tres ejecuciones seguidas sin intermitencia. `AlertaServiceTests` + test nuevo: 8/8. |
+| B-9 | **Corregido** | El saldo anterior del movimiento de plazo fijo se calcula solo sobre extractos vivos. El `maxFila` contiguo si incluye las filas borradas (para no reutilizar su numero de fila) y no se toco. | `ImportacionLote5Tests` (rojo: saldo 999 en vez de 100). |
+| B-13 | **Corregido** | Backend: si la parte entera vale 0, el numero no se trata como millar ("0,500" es 0,5). Frontend: **el defecto real era con punto** ("0.500" se leia como 500), porque en `parseEuropeanNumber` la coma siempre es decimal y la heuristica de millar esta en la rama del punto. Se aplico la misma regla en esa rama. | `ImportacionLote5Tests` (teoria de 5 casos) y `parseEuropeanNumber.test.ts` (nuevo, 2 casos) en rojo y en verde. Suite del frontend: 131/131 con la lista canonica y 221/221 con todos los ficheros compilados. |
+| B-14 | **Corregido** | Cambiar la divisa de una cuenta con extractos vivos devuelve 409 con un mensaje accionable: "La cuenta tiene extractos: no se puede cambiar su divisa. Crea una cuenta nueva o elimina los extractos de esta cuenta antes de cambiarla." Los extractos en papelera no bloquean (el filtro global de soft delete se respeta). La interfaz avisa de la restriccion al editar. | `CuentasDivisaConExtractosTests` (nuevo) 4/4 (rojo: devolvia 200 y cambiaba la divisa). `CuentasControllerTests` 20/20. Frontend: `tsc` y `eslint` limpios, build correcto. |
+| B-15 | **Corregido** | Desempate estable por clave primaria despues del campo pedido en los cuatro listados: extractos (`ThenBy(x => x.Id)`), auditoria (`ThenBy(x => x.Id)`), revision (`ThenBy(x => x.ExtractoId)`, que es la PK de la proyeccion) y lotes (`ThenBy(x => x.Id)` en `ImportacionService.ListarLotesAsync`, que esta fuera del controller). El contrato de la API no cambia. | `PaginacionDesempateTests` (nuevo) 4/4 en rojo y en verde. Regresion de las cuatro clases de controller: 54/54. |
+| M-9 | **Parcial** | El bloque de `xmin` de `PLAZOS_FIJOS` se escribio a mano en el snapshot, con el mismo estilo que las otras cuatro tablas. **El `Ignore` de `PendingModelChangesWarning` NO se quito**: la deriva restante no es solo del snapshot. | `SnapshotModelDriftTests` (nuevo) 1/1 con la comparacion modelo/snapshot que hace EF por dentro: **27 diferencias** pendientes, y la base real difiere del modelo en el esquema (`deleted_at` como `timestamp without time zone` en tres tablas donde el modelo pide `with time zone`, 3 indices `*_deleted_by_id` y 4 FK `deleted_by_id` que faltan, filtros de tres indices unicos y el nombre de una FK). |
+| B-17 | **Parcial: detectado y avisado; el criterio NO se cambia** | Se ha implementado la deteccion del orden real de las filas pegadas: la validacion comprueba las fechas del bloque y, si suben al bajar por el bloque (es decir, la linea mas antigua va ARRIBA del todo), avisa de que el saldo actual se calculara con la fila mas antigua. **El criterio del saldo actual no se toca**: sigue siendo la fila con mayor `FilaNumero`, porque cambiarlo es una decision de producto que depende del orden en que exportan los bancos. | `ImportacionLote5Tests`: rojo con el detector desactivado (1 de 12 fallos) y 12/12 en verde. El aviso sale por la respuesta de validacion (`advertencias`) y se ve en la pantalla de importacion antes de confirmar. |
+
+**B-17: el defecto es real, pero la pregunta de fondo no esta respondida.**
+Lo que se comprobo leyendo el codigo y la documentacion:
+
+- `ImportacionService` numera las filas **de abajo arriba** al confirmar, para que
+  "la linea superior quede como la ultima del lote" (`ImportacionService.cs:771-774`).
+  Es decir: la fila mas pegada arriba del fichero recibe el `fila_numero` mas alto.
+- El "saldo actual" es la fila con mayor `FilaNumero` (`DashboardService.cs:508-521`),
+  por diseño explicito (V-02-04) y distinto del snapshot a fecha de corte.
+- La documentacion de usuario dice lo mismo: "Al confirmar, Atlas Balance respeta
+  el orden del extracto pegado. La linea superior queda como la ultima del lote"
+  (`DOCUMENTACION_USUARIO.md:477`). La pantalla de importacion **no** dice nada
+  del orden de las filas.
+- Por tanto, la app **espera que la linea mas reciente del banco sea la linea
+  superior** del bloque pegado. Un banco que exporta de mas antiguo a mas
+  reciente haria que el sistema tomara la fila mas antigua como saldo actual.
+- No hay ninguna validacion de continuidad de saldos que delate el error.
+- **Evidencia del producto (2026-11-17):** los datos de demostracion del propio
+  frontend siguen la misma convencion. `frontend/e2e/visual/mockApi.ts:102-114`
+  genera los 60 extractos de la cuenta de ejemplo "Operativa BBVA" con
+  `fila_numero: 60 - i` y `fecha` que **baja** segun `i` (`14 - i/2`): el
+  `fila_numero` mas alto es la fecha mas reciente y el saldo es el acumulado en
+  ese sentido. Es decir, `fila_numero` ascendente = chronological, y la linea
+  superior del bloque pegado es la mas reciente.
+- **Evidencia externa (2026-11-17):** los formatos predefinidos del producto son
+  de BBVA, Sabadell (BS) y Banquinter (`SeedData.cs:824-874`), y ninguno de
+  ellos describe el orden de las filas. Las paginas publicas de estos bancos
+  describen COMO descargar los movimientos (BBVA: "Buscar movimientos" >
+  "Descargar movimientos", en Excel; Sabadell: "Saldos y extractos" >
+  descargar en Excel, PDF o Norma 43) pero **ninguna fija en que orden vienen
+  las filas del fichero**. No se ha encontrado ninguna fuente que lo declare, de
+  modo que la pregunta al usuario sigue siendo la unica fuente valida.
+
+La pregunta al usuario (en que orden exportan los bancos) se respondio por
+auto-seleccion, sin confirmacion. En la primera ronda salio la variante
+("del mas antiguo al mas reciente"), que **contradice** la convencion
+documentada de la aplicacion y los datos de demostracion del producto, y no se
+aplico. En la segunda ronda salio la variante que **coincide** con la
+convencion ("del mas reciente al mas antiguo"), con lo que el criterio del
+saldo actual **no se cambia**: la app ya hace lo correcto para ese orden de
+exportacion. Sigue siendo una respuesta no confirmada por el usuario, asi que
+B-17 queda **pendiente de una respuesta confirmada** (y supondria cambiar el
+significado de `fila_numero` en todos los datos existentes y en todas las
+instalaciones).
+
+Lo que si se ha hecho (y no cambia ninguna regla): la validacion **detecta** el
+orden real del fichero y **avisa** cuando no coincide con el que espera la app.
+La deteccion se apoya en las fechas, no en heuristicas de saldo, asi que no
+tiene falsos positivos: solo avisa cuando hay al menos dos fechas distintas y
+suben de forma estricta al bajar por el bloque (la linea mas antigua arriba del
+todo). Con una sola fecha, con fechas repetidas o con fechas mezcladas no se
+dice nada. El aviso sale en la pantalla de importacion, antes de confirmar, y
+dice exactamente que va a pasar y por que. Hay tres caminos posibles:
+
+1. Confirmar que los bancos exportan de mas reciente a mas antiguo (lo que la
+   app ya espera y lo que hacen sus datos de demostracion): B-17 se cierra como
+   "no aplica" y el aviso se queda como red de seguridad.
+2. Confirmar que exportan de mas antiguo a mas reciente: hay que invertir la
+   numeracion (migracion de datos incluida) o deducir el saldo actual por fecha
+   en lugar de por `FilaNumero`.
+3. Dejar el comportamiento actual y dejar solo el aviso, que en ambos casos
+   detecta el error de pegado.
+
+**Verificacion global del lote:** backend **1231/1231** en `AtlasBalance.API.Tests`
+(incluida la suite de PostgreSQL real con Testcontainers) y **15/15** en
+`AtlasBalance.Caching.Tests`, sin fallos. Frontend: `npx tsc --noEmit` sin
+errores, `npx eslint src tests --max-warnings 0` sin errores, **227/227** pruebas
+unitarias y build de Vite correcto. Los comandos canonicos `npm run test:unit`
+y `npm run build` siguen rotos por permisos heredados de `.test-dist/` y `dist/`
+(otra cuenta de sandbox): las mismas comprobaciones pasaron con carpetas de
+salida nuevas. Sin validacion visual en navegador ni sesion autenticada real.
+
+Observaciones que quedan abiertas y **no** se han tocado (fuera de LOTE 5):
+
+- **`ConfirmarLoteAsync` respondia siempre 409 contra PostgreSQL real. YA
+  CORREGIDO en este lote** (no es un ID del informe, pero bloqueaba B-3).
+  `TryAcquireAdvisoryXactLockAsync` leia con `SqlQueryRaw<int>` el boolean que
+  devuelve `pg_try_advisory_xact_lock`: Npgsql lanzaba `InvalidCastException` y
+  el fail-closed devolvia `false`, con lo que confirmar un lote (y por tanto
+  reimportar un lote revertido) era imposible. Se lee como `SqlQueryRaw<bool>`.
+  Verificado con una sonda contra PostgreSQL real y con un test de extremo a
+  extremo por el camino real de la API (`ImportacionLote5PostgresTests`): en
+  rojo sin el arreglo (1 de 3) y en verde con el (3/3).
+- El frontend y el backend no coinciden en como interpretan "1,500": el backend
+  lo trata como millar (1500) y el frontend como decimal (1,5). Es una
+  incoherencia anterior a B-13 y unificarla cambiaria el comportamiento de
+  casos que el encargo excluia expresamente.
+- La transicion `excepcion -> conciliada` se mantiene porque la pantalla ofrece
+  el boton "Conciliar" en toda fila que no este conciliada (el subagente la
+  habia bloqueado con un 409; el orquestador lo corrigio). En cambio, las filas
+  `resuelta` ya no ofrecen "Conciliar" ni "Excepcion": ese estado es terminal.
+- La purga de conciliaciones duplicadas que hace la migracion marca las
+  sobrantes con `deleted_at` sin reescribir su `estado`: su movimiento esperado
+  sigue en `conciliada` aunque su conciliacion este borrada.
+- `npm run lint`, `npm run test:unit` y `npm run build` siguen rotos en esta
+  maquina por permisos heredados de `.test-dist/`, `.test-dist-v2/` y `dist/`
+  (otra cuenta de sandbox). Las mismas comprobaciones pasan con carpetas de
+  salida nuevas.
+- En este mismo arbol trabaja en paralelo otra sesion (LOTE 7). **Incidente de
+  proceso:** durante el LOTE 5, un subagente capturo su fase roja con
+  `git checkout --` sobre `ImportacionService.cs`, lo que devolvio el fichero a
+  su estado en `HEAD` y se llevo por delante el trabajo en vuelo de la otra
+  sesion (R-7, escritura por bloques). **Comprobado el estado actual: ese
+  trabajo esta intacto** (marcas `TamanoBloqueInsercion`, `ChangeTracker.Clear`,
+  `BuildSummariesAsync` y `soloEliminados` presentes en el arbol), de modo que
+  no queda ninguna perdida pendiente de rehacer. El incidente queda aqui porque
+  es un aviso para los lotes siguientes: para capturar el rojo hay que usar una
+  copia del fichero o un `edit` puntual y su restauracion, **nunca** un
+  `git checkout --` sobre un arbol compartido. Todos los rojos de este lote se
+  capturaron ya asi.
+
+## 18. LOTE 7 - Correccion aplicada (2026-11-17)
+
+Alcance: solo los catorce IDs del LOTE 7 (F-2, F-4, F-5, F-6, F-7, F-8, F-9,
+F-10, R-4, R-5, R-6, R-7, R-8 y B-16). Ningun otro ID tocado. Rama `V-03.02`.
+Sin commit ni push.
+
+Decisiones de producto fijadas antes de implementar (el cuestionario se
+respondio por tiempo de espera con la opcion propuesta, y sigue siendo
+ajustable):
+
+- **F-7:** borrado y marcado en lote con **concurrencia limitada en el cliente**
+  (pool de 4), no con un endpoint de lote en el backend.
+- **F-8:** vaciar un campo numerico conserva el ultimo valor valido, porque los
+  DTO del backend usan `int` no nullable y "vacio" no es representable en la API.
+
+Metodo: diez subagentes con ficheros disjuntos (grupo por fichero), cada uno
+con la obligacion de abrir el codigo citado antes de arreglarlo, escribir un
+test que falla antes, aplicar el arreglo y dejar la suite en verde. Revision
+del orquestador sobre cada diff y verificacion final unificada.
+
+| ID | Estado | Que se cambio | Evidencia |
+|---|---|---|---|
+| F-2 | **Corregido** | (a) Los cuatro listados paginados aceptan `soloEliminados`, aplicado ANTES de contar y paginar (reutiliza el `IgnoreQueryFilters()` de `incluirEliminados` y la proteccion de ADMIN). La papelera pide 50 por pagina, pinta paginacion real, deja de filtrar en cliente y usa la divisa de la fila (`ExtractoListItemResponse.Divisa`, que ya venia). (b) **Respuestas fuera de orden**: la pagina descarta la respuesta de una peticion que ya no es la vigente (`utils/peticionSecuencial.ts`): si el usuario cambia de pestana o de pagina mientras la peticion esta en vuelo, la respuesta vieja no pisa la nueva, no muestra su error y no apaga el estado de carga de la peticion vigente. | `PapeleraSoloEliminadosTests` (backend, 5 tests): 5/5 en rojo antes -> 5/5. `papeleraSoloEliminados.test.ts` (frontend, 5 tests): 5/5 en rojo antes -> 5/5. `papeleraRespuestasFueraDeOrden.test.ts` (frontend, 6 tests): 3 de 6 en rojo antes (filas, error y estado de carga sin guarda de vigencia) -> 6/6. |
+| F-4 | **Corregido** | `utils/errorToast.ts` decide el toast de una peticion y admite `skipErrorToast` por peticion; `utils/pollLifecycle.ts` da a los bucles `active`/`wait`/`stop`, de modo que los sondeos de Configuracion y Backups no pintan toasts y se detienen al desmontar. Los toasts de 419/440, 429 y de red de una peticion normal no cambian. | `errorToast.test.ts` (9) + `sondeosSinToast.test.ts` (3): 9 de 21 tests nuevos en rojo antes -> 21/21. |
+| F-5 | **Corregido** | `alertasStore` pasa a ser el unico escritor del estado del banner: `syncAlertas` es la unica entrada del contenido y ancla el descarte a la huella del contenido (`alerta_id:cuenta_id`) guardada en `sessionStorage`. El hook solo proyecta la consulta: mientras no hay datos no se toca el descarte. | `alertasBannerDismissal.test.ts` (6, sobre el hook y el store reales): 4 de 6 en rojo antes -> 6/6. |
+| F-6 | **Corregido** | `utils/notaAlerta.ts` compara la nota editada con `row.flagged_nota`: si no cambia, no hay PATCH. La comparacion es contra el valor del servidor, asi que un cambio ajeno no se pierde. | `notaAlerta.test.ts` (4): 1 fallo antes -> 4/4. |
+| F-7 | **Corregido** | `utils/concurrencia.ts` (`ejecutarEnLote`, limite 4) ejecuta todas las operaciones, no corta el lote ante un fallo y devuelve el resultado por operacion; la pagina actualiza el estado solo con las filas que si se movieron y avisa de las que fallaron. | `loteConcurrencia.test.ts` (8): 11 de 15 en rojo antes -> 13/13 con el area. |
+| F-8 | **Corregido** | `utils/numberInput.ts` (`''` -> `null`, nunca 0; `'0'` -> 0 valido) y componente `NumberField`: once campos numericos se pueden vaciar sin convertir el valor en 0. Con el campo vacio se conserva el ultimo valor valido. | `configuracionCamposNumericos.test.ts` (5): 2 de 21 en rojo antes -> verde. |
+| F-9 | **Corregido** | `utils/editableCellSave.ts` resuelve el resultado del guardado: en `'failed'` NUNCA escribe el borrador, de modo que lo escrito se conserva, la celda sigue en edicion y el aviso de error se ve (antes nunca se renderizaba). Reintento con Enter o blur, descarte con Escape. | `editableCellSave.test.ts` (6): 4 de 6 en rojo antes -> 6/6. |
+| F-10 | **Sospecha descartada; defecto real corregido** | El backend acota el replay idempotente al propio lote (`lote.ConfirmacionIdempotencyKey`), asi que confirmar un lote distinto con la clave anterior NO daba 409: la sospecha, tal como estaba redactada, no se reproduce. Si habia un 409 real: en la CREACION, al recargar el contexto (cambio de pais o cuenta preseleccionada) se fijaba otra cuenta objetivo sin renovar la clave. Arreglo: la clave se regenera por lote (validar y abrir del historial) y al cambiar la cuenta objetivo. | `importacionIdempotencia.test.ts` (6): 5 de 6 en rojo antes -> 6/6. |
+| R-4 | **Corregido** | El efecto que llamaba a `loadCuentaData` (que invalidaba `cuentaResumen` y `extractos.list`, las dos consultas activas) se sustituye por uno que solo limpia los avisos. Las recargas explicitas (celda guardada, fila insertada, evento de importacion) siguen refrescando. | `cuentaDetailInvalidacion.test.ts` (3): en rojo antes -> 13/13 con el area. |
+| R-5 | **Corregido** | `utils/canEditCellCache.ts` cachea por fila y columna en un `useMemo` con dependencia `[canEditCell]`: tres evaluaciones por celda pasan a una, y la cache se invalida sola si cambian los permisos o la fila. | `canEditCellCache.test.ts` (5): 2 fallos antes -> 5/5. |
+| R-6 | **Corregido** | Se reutiliza el hook existente `useDebouncedValue` (300 ms) en Formatos, Usuarios y el campo "Modelo" de Configuracion. **Paises y Cuentas ya estaban corregidos** (commit `882f721`, anterior al informe): el defecto real era la mitad del hallazgo. | `busquedaDebounce.test.ts` (6, 5 en rojo antes) y `configuracionDebounceModelo.test.ts` (4, 4 en rojo antes) -> verde. |
+| R-7 | **Corregido (parcial)** | (a) `ExtractosController.BuildSummariesAsync` sustituye al N+1: un titular con 4 cuentas pasa de **23 a 9** SELECT (medido con PostgreSQL real e interceptor de comandos). (b) `ImportacionService` inserta por bloques de 1.000 (`TamanoBloqueInsercion`) las filas del lote, los extractos y sus columnas extra, y el estado de las filas, todo dentro de la misma transaccion: sin lote a medias y sin romper la idempotencia (el indice unico sigue decidiendo la carrera). | `ExtractosResumenConsultasTests` (2, PostgreSQL real): 1 fallo antes ("Expected consultasConCincoCuentas to be less than or equal to 11 ... but found 23") -> 2/2. `ImportacionR7Tests` (3, con contador de filas por `SaveChanges`): 2 fallos antes ("...but found 1: {5100}") -> 3/3. |
+| R-8 | **Corregido** | La cache de TanStack Query pasa a ser la fuente de verdad de la disponibilidad de la IA: `staleTime` de 5 min en vez de `refetchInterval` de 30 s, `refetchOnWindowFocus` y refresco INMEDIATO al guardar la configuracion global (un interceptor detecta el `PUT /configuracion` correcto). De 2 peticiones/min por pestana a 1 al montar y como mucho 1 cada 5 min. | `iaConfigSondeo.test.ts` (8): 4 de 8 en rojo antes -> 8/8. |
+| B-16 | **Corregido (parte frontend)** | El helper compartido **no existia**: "hoy" estaba duplicado como funcion local en `ConciliacionPage` e `ImportacionPage`, y `ExtractoTable` usaba `toISOString().slice(0, 10)` (UTC). Ahora hay un helper unico (`utils/hoy.ts`) usado por los cuatro sitios, y las dos copias locales se eliminan. | `hoy.test.ts` (5, con `TZ=Europe/Madrid`), `cuentaDetailHoy.test.ts` (2) y la parte de B-16 de `importacionIdempotencia.test.ts`. |
+
+Verificacion global: frontend con `tsc --noEmit` sin errores, `eslint . --max-warnings 0` sin errores, **227/227 pruebas unitarias** (37 ficheros de test) y build de Vite correcto (5,5 s). Backend con la suite completa: **1230/1231**, con un unico fallo que NO es de este lote (`AuthServiceTests.Login_Should_Not_Reveal_When_User_Is_Already_Locked`, introducido por el commit ajeno `01ffeb3` del LOTE 2: espera 401 y recibe 429 por el limite por IP; reproducido en aislamiento con 43 correctos y 1 fallo en esa clase). Sin validacion visual ni sesion autenticada.
+
+Pendientes que quedan abiertos y **no** se han tocado:
+
+- Los extractos de una cuenta **ya borrada** siguen sin salir en la papelera:
+  `ExtractosController.Listar` filtra por `GetAllowedAccountIds`, que excluye las
+  cuentas eliminadas. Es un filtro de alcance preexistente.
+- El N+1 de la evolucion de OpenClaw (`IntegrationOpenClawController.cs:520`)
+  queda pendiente: no es N+1 de SQL (el catalogo de tipos de cambio esta
+  cacheado) sino N llamadas async por extracto. Ademas `DashboardService`
+  arrastra un N+async residual ya anotado en `AUDITORIA_CONCURRENCIA_2026-07-10.md`.
+- `iaAvailabilityStore.load()` (sin llamante) y `aiChatStore.ensureConfig()`
+  siguen siendo copias de la configuracion de IA: no se han tocado por no meter
+  cambios de comportamiento ajenos al ID.
+- La atomicidad del troceado (rollback sin dejar rastro) no esta probada contra
+  PostgreSQL: el test usa InMemory y comprueba la estructura del troceado, no
+  el rollback. Docker si esta disponible en la maquina.
+- `npm run test:unit` y `npm run build` canonicos siguen rotos por permisos
+  heredados de `.test-dist/` y `dist/` (M-10 de este informe): las mismas
+  comprobaciones pasan con carpetas de salida nuevas. **Causa comprobada con
+  ACL**, no es codigo: `icacls .test-dist` y `icacls dist` conceden `(M)` solo
+  a dos SID y a `TRAKERIA\CodexSandboxUsers`, mientras que a
+  `BUILTIN\Usuarios` solo `(RX)`; el usuario que ejecuta (`trakeria\usuario`)
+  no esta en la ACL de escritura. Los comandos canonicos **si se ejecutaron** y
+  fallaron por `TS5033 EPERM` (22 ficheros de `.test-dist/`) y por
+  `EPERM ... copyfile public/fonts/Geist-Bold.woff2 -> dist/fonts/...`.
+- **El HEAD actual no compila por si solo** (queda fuera del alcance de este
+  lote, que no hace commit): el commit ajeno `01ffeb3` ("LOTE 2") se llevo por
+  delante codigo en vuelo de este LOTE 7 (`ConfiguracionPage.tsx` con F-8, R-6
+  y F-4, y `services/api.ts` con F-4), que importan `@/utils/numberInput`,
+  `@/utils/pollLifecycle` y `@/utils/errorToast`: esos tres ficheros son
+  **nuevos y no estan en HEAD** (`git cat-file -e HEAD:<fichero>` falla). Un
+  clon limpio de HEAD no compila hasta que se commitee el LOTE 7. La accion
+  pendiente es un commit propio del LOTE 7 (`git commit --only` con sus
+  ficheros), que no se ha hecho porque este lote no commitea sin que lo pidas.
+- El `BOM` de `DOCUMENTACION_CAMBIOS.md` no se ha perdido: el blob de HEAD y el
+  fichero de trabajo empiezan los dos por `23 23 20` (`## `), sin marca UTF-8.
+- Al compilar la suite de backend **fuera** del arbol (`--artifacts-path` en
+  `%TEMP%`) aparecen 14 fallos con `FileNotFoundException` y **ningun** de los
+  fallos reales: son exactamente los tests que leen ficheros de codigo o de
+  configuracion (`AppsettingsValidezTests` 6, `SerilogHttpClientLoggingTests`
+  3, `IaFechasOperativasTests` 3, `ControllerAuthorizationCoverageTests` 1 y
+  `WatchdogLogConfigurationTests` 1). El mecanismo es `TestSourceLocator.Find`
+  (`tests/AtlasBalance.API.Tests/TestSourceLocator.cs:5-28`): sube desde
+  `AppContext.BaseDirectory` buscando `src/...` o
+  `Atlas Balance/backend/src/...`, y con la carpeta de compilacion fuera del
+  repositorio el recorrido no encuentra nada y lanza `FileNotFoundException`.
+  Con `--artifacts-path` **dentro** del repo (`backend/artifacts-l7-orchestrator`)
+  el mismo recorrido encuentra la raiz y esos tests pasan. Es una limitacion
+  del localizador de fuentes, no una regresion del LOTE 7, y no se ha tocado
+  porque es infraestructura compartida de tests.

@@ -994,3 +994,31 @@ reproducir ni corregir.
 # Buscar titulares y cuentas (V-03.02)
 
 Pulsa Ctrl+K (⌘K en Mac) o usa el buscador superior y escribe el nombre de un titular o una cuenta. Selecciona el resultado para abrir su detalle. Se muestran hasta diez resultados por tipo, correspondientes al pais activo y a tus permisos. Escribe mas caracteres si necesitas concretar la busqueda.
+
+# Lo que cambia en el LOTE 7 (V-03.02, 2026-11-17)
+
+- **Papelera:** ahora muestra de 50 en 50 con paginacion, y aparecen tambien los elementos eliminados hace mas tiempo, que antes no cabian en la lista y no se podian restaurar. Los importes de los extractos se muestran en la divisa de su cuenta, no siempre en euros. Si cambias de pestana o de pagina mientras se esta cargando, ya no se cuela una respuesta antigua: solo se muestra la que pediste.
+- **Avisos de error repetidos:** durante una actualizacion del sistema o un backup, el servidor esta caido a proposito. Antes salia un aviso de error cada dos segundos y medio; ahora los sondeos no pintan avisos y se detienen al salir de la pagina.
+- **Banner de alertas:** si lo ocultas, sigue oculto al recargar o al cambiar de pais. Solo vuelve a salir cuando hay una alerta distinta de la que ocultaste.
+- **Nota de alerta:** entrar y salir del campo de la nota sin escribirla ya no guarda nada.
+- **Borrar o marcar en lote:** en el detalle de cuenta se procesan de cuatro en cuatro, todas las filas se intentan y, si alguna falla, te dicen cuantas se hicieron y cuantas no ("Se eliminaron 12 de 15 movimientos. Fallaron 3."). Antes se paraban en el primer error.
+- **Campos numericos de Configuracion:** ahora puedes vaciarlos. Si dejas el campo vacio, se conserva el ultimo valor que estaba bien, porque el servidor todavia no admite "sin valor" en estos campos.
+- **Celda editable:** si el guardado falla, lo que habias escrito se queda, aparece un aviso debajo ("No guardado. Revisa el dato e intentalo otra vez.") y el campo sigue abierto: puedes reintentar con Enter o salir con Escape para descartar.
+- **Detalle de cuenta:** al cambiar de pagina o de periodo ya no se hacen peticiones duplicadas. El dato se repide solo cuando toca (cada 10 segundos en los movimientos, cada 5 en el resumen) o al volver a la ventana.
+- **Buscadores:** los de Formatos, Usuarios y el campo "Modelo" de Configuracion esperan 300 ms antes de buscar, asi que ya no lanzan una peticion por cada tecla. El texto que ves en pantalla se filtra al instante.
+- **Configuracion de la IA:** el navegador ya no la consulta cada 30 segundos. Si otro usuario cambia la configuracion de la IA, tu navegador la recoge al volver a la pestana (si han pasado mas de 5 minutos) o al recargar la pagina.
+- **Importacion:** si cambias de pais o de cuenta mientras preparas una importacion, ya no falla con "la clave de idempotencia ya se uso con otro contenido".
+
+# Lo que cambia en el LOTE 5 (V-03.02, 2026-11-17)
+
+- **Totales en divisa:** si alguna cuenta esta en una divisa sin tipo de cambio, el total ya no parece mas bajo sin explicacion. El dashboard y la integracion OpenClaw dicen que divisas quedan fuera ("El total no incluye GBP y USD. No hay tipo de cambio para esas divisas.") y el total sigue siendo la suma de las cuentas convertibles.
+- **Tipos de cambio:** las tasas que has fijado a mano **no se sobrescriben** al sincronizar. Si alguna se ha quedado sin actualizar, el administrador recibe un aviso y la pantalla de Configuracion te dice cuantas se han omitido. Si la sincronizacion falla (la API no responde, devuelve error o no devuelve tasas), tambien deja aviso al administrador: antes solo quedaba en el registro del servidor.
+- **Cambiar la divisa de una cuenta:** si la cuenta ya tiene movimientos, no se puede cambiar su divisa. El mensaje es "La cuenta tiene extractos: no se puede cambiar su divisa. Crea una cuenta nueva o elimina los extractos de esta cuenta antes de cambiarla." Los movimientos que estan en la papelera no bloquean el cambio.
+- **Revertir una importacion:** al revertir un lote, todo se deshace o se aplica entero: si algo falla a mitad, no quedan movimientos borrados con el lote sin revertir. Ahora solo se pueden revertir los lotes ya confirmados (antes en un lote sin confirmar se aceptaba la peticion y se devolvia un error). Ademas, los movimientos de ese lote que estaban conciliados pasan a "excepcion" (se ven y se pueden revisar) y el movimiento esperado vuelve a quedar pendiente, para que se pueda volver a sugerir cuando se reimporte.
+- **Reimportar un lote revertido:** ya se puede. Antes el sistema daba los movimientos del lote revertido por duplicados y no dejaba volver a importarlos.
+- **Confirmar una importacion:** el boton de confirmar un lote ya no responde siempre con "El lote esta siendo procesado por otra operacion". Ese error hacia imposible confirmar cualquier importacion en una base de datos real.
+- **Conciliacion:** un extracto no se puede conciliar dos veces (te avisa con "El extracto ya esta conciliado"), y ya no se propone un extracto cuyo importe se aleja del movimiento mas alla de la tolerancia. Los estados tienen su recorrido: una conciliacion se puede pasar a "Excepcion" o a "Resuelta", y una excepcion se puede volver a conciliar o cerrar. Las conciliaciones resueltas quedan cerradas.
+- **Orden de las filas pegadas:** Atlas Balance toma como saldo actual la ultima fila del extracto pegado, que es la linea de ARRIBA del bloque. Si pegas un fichero del banco que va del mas antiguo al mas reciente, la pantalla de validacion te avisa antes de confirmar, porque el saldo actual se calcularia con la fila mas antigua. Si el aviso te aparece, pega el extracto al reves o consulta con el equipo: el criterio de que fila es la actual depende de como exporta tu banco.
+- **Avisos de saldo bajo:** con dos importaciones simultaneas ya no llegan dos correos de saldo bajo. El aviso se comprueba y se registra dentro de una transaccion, asi que las dos importaciones esperan su turno.
+- **Importes con coma:** "0,500" se lee como 0,5 y no como 500, tanto al importar como en la interfaz. Lo mismo con el punto: "0.500" es 0,5.
+- **Avisos de plazo fijo:** el aviso de "proximo a vencer" ya no falla por un error del servidor. Si el envio del correo falla, se vuelve a intentar en la siguiente pasada sin duplicar la notificacion.

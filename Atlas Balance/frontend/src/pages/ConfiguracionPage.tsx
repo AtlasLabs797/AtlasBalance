@@ -692,8 +692,15 @@ export default function ConfiguracionPage() {
     setError(null);
     setFeedback(null);
     try {
-      await api.post('/tipos-cambio/sincronizar');
-      setFeedback('Tipos de cambio sincronizados.');
+      const response = await api.post('/tipos-cambio/sincronizar');
+      // B-2 (LOTE 5): las tasas manuales no se sobrescriben; el servidor
+      // dice cuantas ha omitido y deja aviso al administrador.
+      const manualOmitidas = Number(response?.data?.manual_omitidas ?? 0);
+      setFeedback(
+        manualOmitidas > 0
+          ? `Tipos de cambio sincronizados. ${manualOmitidas} tasa(s) marcada(s) como manual no se han sobrescrito: se ha avisado al administrador.`
+          : 'Tipos de cambio sincronizados.'
+      );
       await loadTiposCambio();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo sincronizar tipos de cambio.'));

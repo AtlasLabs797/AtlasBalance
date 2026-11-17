@@ -117,6 +117,10 @@ public sealed class AuditoriaController : ControllerBase
         var total = await query.CountAsync(ct);
         var rawRows = await query
             .OrderByDescending(x => x.Timestamp)
+            // B-15: desempate estable por clave primaria. Sin el, dos filas con
+            // el mismo timestamp pueden caer en paginas distintas o desaparecer
+            // entre peticiones.
+            .ThenBy(x => x.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new RawAuditoriaRow

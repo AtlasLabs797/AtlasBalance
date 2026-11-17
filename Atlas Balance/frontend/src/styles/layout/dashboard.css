@@ -658,8 +658,9 @@
   font: var(--type-caption);
 }
 
-/* Aviso contextual de plazo fijo proximo (<= 7 dias). */
-.dashboard-plazo-aviso {
+/* Avisos contextuales del dashboard (plazo fijo proximo, divisas sin tipo de cambio). */
+.dashboard-plazo-aviso,
+.dashboard-aviso {
   margin: 0;
   padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--status-warning-text) 32%, transparent);

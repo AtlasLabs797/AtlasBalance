@@ -82,6 +82,10 @@ export function parseEuropeanNumber(value: string | number | null | undefined): 
       dotParts.length > 1 &&
       dotParts[0].length >= 1 &&
       dotParts[0].length <= 3 &&
+      // B-13 (LOTE 5): una parte entera a cero no es una agrupacion de miles.
+      // "0.500" es 0,5, no 500. Misma regla que el backend
+      // (ImportacionService.IsThousandsGrouped).
+      Number(dotParts[0]) !== 0 &&
       dotParts.slice(1).every((part) => part.length === 3);
     normalized = hasThousandsGrouping ? dotParts.join('') : normalized;
   }

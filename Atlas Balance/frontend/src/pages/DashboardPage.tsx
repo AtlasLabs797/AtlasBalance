@@ -18,6 +18,7 @@ import { ConcentracionDonutCharts } from '@/components/dashboard/ConcentracionDo
 import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { DashboardBlockError, DashboardBlockSkeleton, DashboardStaleNotice } from '@/components/dashboard/DashboardBlockStatus';
+import { DivisasSinTipoCambioAviso } from '@/components/dashboard/DivisasSinTipoCambioAviso';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { SignedAmount } from '@/components/common/SignedAmount';
@@ -320,6 +321,8 @@ export default function DashboardPage() {
                         </div>
                       </dl>
                     ) : null}
+
+                    <DivisasSinTipoCambioAviso divisas={principal.divisas_sin_tipo_cambio} />
                   </>
                 ) : null}
               </div>

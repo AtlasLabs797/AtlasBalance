@@ -17,6 +17,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { DashboardBlockError, DashboardBlockSkeleton, DashboardStaleNotice } from '@/components/dashboard/DashboardBlockStatus';
+import { DivisasSinTipoCambioAviso } from '@/components/dashboard/DivisasSinTipoCambioAviso';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { SignedAmount } from '@/components/common/SignedAmount';
@@ -255,6 +256,8 @@ export default function DashboardTitularPage() {
           )}
         </div>
       ) : null}
+
+      {titular ? <DivisasSinTipoCambioAviso divisas={titular.divisas_sin_tipo_cambio} /> : null}
 
       <div className="dashboard-grid">
         {saldosDivisaQuery.isLoading ? (

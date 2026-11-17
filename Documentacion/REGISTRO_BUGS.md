@@ -2,18 +2,28 @@
 
 ## Abiertos
 
-### 2026-10-05 - V-03.02 - Abierto - `PlazoFijoVencimientoJob` falla al consultar notificaciones JSONB
+### 2026-10-05 - V-03.02 - Cerrado - `PlazoFijoVencimientoJob` falla al consultar notificaciones JSONB
 
 - **Sintoma:** durante el arranque del backend de desarrollo, Hangfire reintenta
   `PlazoFijoVencimientoJob` tras recibir PostgreSQL `42883: operator does not
   exist: jsonb ~~ jsonb` desde `PlazoFijoService.TryAddAdminNotificationAsync`.
-- **Causa probable:** la consulta usa `Contains` sobre `DetallesJson`, mapeado
-  como `jsonb`; la operación LIKE (`~~`) no está definida para `jsonb`.
+- **Causa comprobada:** la consulta usaba `Contains` (de string) sobre
+  `DetallesJson`, mapeado como `jsonb`; EF lo traducía a la operación LIKE
+  (`jsonb ~~ jsonb`), que PostgreSQL no define. El job reventaba siempre que
+  llegaba a esa comprobación, antes incluso de intentar enviar el aviso.
 - **Impacto:** el job de vencimientos no pudo comprobar/crear notificaciones en
   los casos ejecutados. El health HTTP de la API sigue respondiendo 200.
-- **Pendiente:** cambiar la consulta a una operación compatible con JSONB o a
-  texto y verificarla con una prueba PostgreSQL. No se cambió código en esta
-  sesión.
+- **Solucion (LOTE 5, 2026-11-17):** la comprobación pasa a
+  `EF.Functions.JsonContains(x.DetallesJson, duplicadoJson)`, que traduce a
+  `detalles_json @> @duplicadoJson` (contencion jsonb por clave/valor: cuenta,
+  estado y fecha de vencimiento van en un solo objeto). El provider InMemory
+  de EF no puede traducir `JsonContains`, asi que hay una rama equivalente
+  sobre el JSON ya materializado para los tests unitarios.
+- **Verificacion:** test contra PostgreSQL real (Testcontainers) que falla con
+  el 42883 antes del arreglo y pasa despues; SQL generado comprobado sin
+  ninguna aparicion de `~~`. `PlazoFijoServiceTests` + test de PostgreSQL:
+  9/9. El reintento del aviso tras un fallo de SMTP (J-3) se conserva
+  intacto.
 
 
 ### 2026-10-05 - V-03.02 - Cerrado en codigo - Permisos globales o parciales bloqueados por ids omitidos en auth
@@ -24,20 +34,24 @@
 - **Pendiente de instalacion:** desplegar el frontend corregido y comprobar la sesion del gerente afectado. Sin cambios de permisos persistidos ni backend/RLS.
 - **Detalle:** `Documentacion/DIAGNOSTICO_PERMISOS_CUENTAS_2026-10-05.md`.
 
-### 2026-09-26 - V-03.01 - Abierto - `FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida` falla en fechas concretas
+### 2026-09-26 - V-03.01 - Cerrado - `FinancialToolsServiceTests.DetectAnomalies_Debe_Detectar_Saldo_En_Caida` falla en fechas concretas
 
 - **Contexto:** detectado al verificar la migracion a .NET 10 (no lo causa
   la migracion: falla igual en `main`, commit `ce020c5`, con el codigo sin
   tocar).
-- **Descripcion:** el test construye fechas con
-  `hoy.AddMonths(-k).AddDays(5)`; en dias como 2026-09-26 dos extractos caen
-  en el mismo mes y la logica de deteccion de anomalias (caida de saldo) dan
-  el resultado equivocado. Es un bug de aritmetica de fechas dependiente del
-  dia en que corre el test, no del codigo de produccion migrado.
-- **Por que sigue abierto:** fuera de alcance de la migracion a .NET 10;
-  reportado aqui para que se corrija por separado (fijar las fechas de
-  entrada del test en vez de derivarlas de `hoy`, o revisar la logica de
-  deteccion para que no dependa de en que mes caen los extractos).
+- **Causa comprobada:** el test construia fechas con
+  `hoy.AddMonths(-k).AddDays(5)`; en dias como 2026-09-26 dos extractos caian
+  en el mismo mes y la logica de deteccion de anomalias (caida de saldo) no
+  podia dispararse. Era aritmetica de fechas del propio test, no un fallo del
+  codigo de produccion migrado.
+- **Solucion (LOTE 5, 2026-11-17):** las fechas de entrada se anclan al dia 1
+  del mes en curso (`new DateOnly(hoy.Year, hoy.Month, 1)`) y los tres
+  extractos se siembran en `inicioMes.AddMonths(-3|-2|-1).AddDays(4)`, de modo
+  que cada uno cae siempre en un mes distinto
+  (`FinancialToolsServiceTests.cs:398-411`).
+- **Verificacion:** `FinancialToolsServiceTests` pasa 18/18 y el test aislado
+  `DetectAnomalies_Debe_Detectar_Saldo_En_Caida` pasa (1/1): el resultado ya no
+  depende del dia en que se ejecute.
 
 ### 2026-09-26 - V-03.01 - Abierto - Snapshot de EF desalineado con el modelo (falta `PLAZOS_FIJOS` con `xmin`)
 
@@ -56,10 +70,57 @@
   aplicarla contra un Postgres real fallo 24 de 25 tests de la suite
   Postgres (intentaba recrear columnas existentes y tocar indices con
   nombres que ya no existen).
-- **Por que sigue abierto:** requiere una migracion "solo snapshot" (sin
-  cambios de esquema real) escrita y probada con cuidado contra una base ya
-  migrada, para poder reactivar el chequeo de `PendingModelChangesWarning`;
-  no se hizo dentro de la migracion a .NET 10 para no mezclar riesgos.
+- **Avance (LOTE 5, 2026-11-17):** el bloque de `xmin` de `PLAZOS_FIJOS` se
+  escribio a mano en el snapshot, con el mismo estilo que las otras cuatro
+  tablas. Con ello la parte "solo snapshot" queda hecha.
+- **Lo que sigue abierto:** la deriva **no es solo del snapshot**. Con el
+  metodo de comparacion que usa EF por dentro (`IMigrationsAssembly.ModelSnapshot.Model`
+  + `IDesignTimeModel.Model` + `IModelRuntimeInitializer` +
+  `IMigrationsModelDiffer`) salen **27 diferencias** entre modelo y snapshot,
+  y ademas la base real difiere del modelo en el esquema:
+  `REVISION_EXTRACTO_ESTADOS`, `IMPORTACION_LOTE_FILAS` y
+  `EXTRACTOS_COLUMNAS_EXTRA` tienen `deleted_at` como `timestamp without time
+  zone` y el modelo pide `timestamp with time zone` (cambiarlo exige recrear
+  las policies RLS, como hizo `20260720090000` para CONCILIACIONES); faltan
+  3 indices `*_deleted_by_id` y 4 FK `deleted_by_id -> USUARIOS`; y hay
+  diferencias de filtro en tres indices unicos y de nombre en una FK.
+  Cerrarlo exige una migracion de esquema nueva y actualizar el snapshot al
+  mismo tiempo: es trabajo de un lote propio, no de este.
+- **Por que sigue abierto:** mientras haya esa deriva, el `Ignore` de
+  `RelationalEventId.PendingModelChangesWarning` en `AppDbContext.OnConfiguring`
+  es obligatorio; quitarlo haria fallar `Migrate()` contra toda base
+  existente. Se deja el `Ignore` con el comentario actualizado explicando que
+  la parte de `PLAZOS_FIJOS` ya esta resuelta y que lo que queda es deriva de
+  esquema.
+- **Verificacion:** `SnapshotModelDriftTests` (nuevo) fija la comparacion
+  modelo/snapshot con la receta validada y pasa 1/1.
+
+### 2026-11-17 - V-03.02 - Cerrado - `ConfirmarLoteAsync` responde siempre 409 contra PostgreSQL real (`pg_try_advisory_xact_lock` leido como entero)
+
+- **Contexto:** detectado de rebote al corregir el LOTE 5 (B-3/B-4), al probar
+  la reimportacion contra PostgreSQL con Testcontainers. No es un ID del
+  informe.
+- **Sintoma:** contra PostgreSQL real, `POST /api/importacion/lotes/{id}/confirmar`
+  respondia siempre `409 "El lote esta siendo procesado por otra operacion"`,
+  sin llegar nunca a importar. Con el provider InMemory de los tests
+  unitarios no se reproduce, y tampoco con el camino legacy
+  `POST /api/importacion/confirmar`, que no toma ese lock.
+- **Causa comprobada:** `ImportacionService.TryAcquireAdvisoryXactLockAsync`
+  (`ImportacionService.cs:1693`) leia `pg_try_advisory_xact_lock(...)` con
+  `SqlQueryRaw<int>`, pero la funcion devuelve un **boolean**: Npgsql lanza
+  `InvalidCastException: Reading as 'System.Int32' is not supported for fields
+  having DataTypeName 'boolean'` y el `catch` hace *fail-closed*, devolviendo
+  `false` como si otro proceso tuviera el lock. Verificado contra PostgreSQL
+  real con una sonda que ejecutaba la misma sentencia.
+- **Solucion (LOTE 5, 2026-11-17):** leer el resultado como `SqlQueryRaw<bool>`.
+  Sin este arreglo, el camino de reimportar un lote revertido (B-3) era
+  inservible: por muy bien que estuviera el indice de huella, el usuario no
+  podia confirmar el lote nuevo.
+- **Verificacion:** test de extremo a extremo contra PostgreSQL real
+  (`ImportacionLote5PostgresTests.Confirmar_Lote_Por_El_Camino_Real_No_Debe_Devolver_409_Y_La_Reimportacion_Debe_Funcionar`):
+  crea un lote, lo confirma por el camino real de la API, lo revierte y
+  confirma un lote nuevo con el mismo contenido. En rojo sin el arreglo
+  (1 de 3 fallos) y en verde con el (3/3).
 
 ### 2026-09-25 - V-03.01 - Cerrado - Revision 2026-09-24: escalada en actualizador elevado, actualizacion desde V-02.09 bloqueada y privacidad IA
 
@@ -959,18 +1020,28 @@
 
 ## Abiertos
 
-### 2026-10-05 - V-03.02 - Abierto - `PlazoFijoVencimientoJob` falla al consultar notificaciones JSONB
+### 2026-10-05 - V-03.02 - Cerrado - `PlazoFijoVencimientoJob` falla al consultar notificaciones JSONB
 
 - **Sintoma:** durante el arranque del backend de desarrollo, Hangfire reintenta
   `PlazoFijoVencimientoJob` tras recibir PostgreSQL `42883: operator does not
   exist: jsonb ~~ jsonb` desde `PlazoFijoService.TryAddAdminNotificationAsync`.
-- **Causa probable:** la consulta usa `Contains` sobre `DetallesJson`, mapeado
-  como `jsonb`; la operación LIKE (`~~`) no está definida para `jsonb`.
+- **Causa comprobada:** la consulta usaba `Contains` (de string) sobre
+  `DetallesJson`, mapeado como `jsonb`; EF lo traducía a la operación LIKE
+  (`jsonb ~~ jsonb`), que PostgreSQL no define. El job reventaba siempre que
+  llegaba a esa comprobación, antes incluso de intentar enviar el aviso.
 - **Impacto:** el job de vencimientos no pudo comprobar/crear notificaciones en
   los casos ejecutados. El health HTTP de la API sigue respondiendo 200.
-- **Pendiente:** cambiar la consulta a una operación compatible con JSONB o a
-  texto y verificarla con una prueba PostgreSQL. No se cambió código en esta
-  sesión.
+- **Solucion (LOTE 5, 2026-11-17):** la comprobación pasa a
+  `EF.Functions.JsonContains(x.DetallesJson, duplicadoJson)`, que traduce a
+  `detalles_json @> @duplicadoJson` (contencion jsonb por clave/valor: cuenta,
+  estado y fecha de vencimiento van en un solo objeto). El provider InMemory
+  de EF no puede traducir `JsonContains`, asi que hay una rama equivalente
+  sobre el JSON ya materializado para los tests unitarios.
+- **Verificacion:** test contra PostgreSQL real (Testcontainers) que falla con
+  el 42883 antes del arreglo y pasa despues; SQL generado comprobado sin
+  ninguna aparicion de `~~`. `PlazoFijoServiceTests` + test de PostgreSQL:
+  9/9. El reintento del aviso tras un fallo de SMTP (J-3) se conserva
+  intacto.
 
 
 ### 2026-07-28 - V-02.07 - Cerrado - Lista de contrasenas comunes 93% inefectiva (severidad BAJA)

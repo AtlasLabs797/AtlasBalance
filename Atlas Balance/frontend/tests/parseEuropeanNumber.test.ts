@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseEuropeanNumber, parseStrictDecimal } from '../src/utils/formatters.js';
+import { parseEuropeanNumber, parseStrictDecimal, toSafeNumber } from '../src/utils/formatters.js';
 
 test('parseEuropeanNumber: formato europeo con coma decimal', () => {
   assert.equal(parseEuropeanNumber('12,5'), 12.5);
@@ -43,4 +43,25 @@ test('parseEuropeanNumber: vacio e invalido devuelven null, negativos se respeta
   assert.equal(parseEuropeanNumber(''), null);
   assert.equal(parseEuropeanNumber('abc'), null);
   assert.equal(parseEuropeanNumber('-3,5'), -3.5);
+});
+
+// B-13 (LOTE 5): una parte entera a cero no es una agrupacion de miles.
+// "0,500" es 0,5 (coma decimal), no 500. Misma regla que el backend
+// (ImportacionService.IsThousandsGrouped).
+test('parseEuropeanNumber: parte entera a cero no se agrupa en miles (B-13)', () => {
+  assert.equal(parseEuropeanNumber('0.500'), 0.5);
+  assert.equal(parseEuropeanNumber('0,500'), 0.5);
+  assert.equal(parseEuropeanNumber('00.500'), 0.5);
+  assert.equal(parseEuropeanNumber('-0.500'), -0.5);
+  assert.equal(toSafeNumber('0.500'), 0.5);
+});
+
+test('parseEuropeanNumber: los millares reales no cambian (B-13)', () => {
+  assert.equal(parseEuropeanNumber('1.234'), 1234);
+  assert.equal(parseEuropeanNumber('12.345'), 12345);
+  assert.equal(parseEuropeanNumber('10.500'), 10500);
+  assert.equal(parseEuropeanNumber('1.234.567'), 1234567);
+  assert.equal(parseEuropeanNumber('1.234,56'), 1234.56);
+  assert.equal(parseEuropeanNumber('1234.56'), 1234.56);
+  assert.equal(parseEuropeanNumber('0'), 0);
 });

@@ -709,6 +709,7 @@ export interface DashboardPrincipal {
   divisa_principal: string;
   saldos_por_divisa: Record<string, number>;
   total_convertido: number;
+  divisas_sin_tipo_cambio: string[];
   ingresos_mes: number;
   egresos_mes: number;
   plazos_fijos: DashboardPlazosFijosResumen;
@@ -735,6 +736,7 @@ export interface DashboardTitular {
   ingresos_mes: number;
   egresos_mes: number;
   total_convertido: number;
+  divisas_sin_tipo_cambio: string[];
   saldos_por_cuenta: DashboardSaldoCuenta[];
   saldos_por_pais: DashboardSaldoPais[];
   chart_colors: DashboardChartColors;
@@ -815,12 +817,15 @@ export interface DashboardSaldosDivisa {
   divisa_principal: string;
   divisas: DashboardSaldoDivisa[];
   total_convertido: number;
+  divisas_sin_tipo_cambio: string[];
 }
 
 export interface ImportValidationResult {
   filas_ok: number;
   filas_error: number;
   separador_detectado: string;
+  // Avisos del fichero entero (por ejemplo, el orden de las filas pegadas).
+  advertencias: string[];
   filas: ImportRowResult[];
   errores: {
     fila_indice: number;

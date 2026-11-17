@@ -90,6 +90,7 @@ public sealed class DashboardService : IDashboardService
             IngresosMes = Decimal.Round(metrics.IngresosMes, 2),
             EgresosMes = Decimal.Round(metrics.EgresosMes, 2),
             TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
+            DivisasSinTipoCambio = metrics.DivisasSinTipoCambio,
             PlazosFijos = plazosFijos,
             SaldosPorTitular = titulares,
             SaldosPorCuenta = saldosPorCuenta,
@@ -138,6 +139,7 @@ public sealed class DashboardService : IDashboardService
             IngresosMes = Decimal.Round(metrics.IngresosMes, 2),
             EgresosMes = Decimal.Round(metrics.EgresosMes, 2),
             TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
+            DivisasSinTipoCambio = metrics.DivisasSinTipoCambio,
             SaldosPorCuenta = saldosPorCuenta,
             SaldosPorPais = saldosPorPais,
             ChartColors = chartColors
@@ -216,7 +218,8 @@ public sealed class DashboardService : IDashboardService
         {
             DivisaPrincipal = targetCurrency,
             Divisas = items,
-            TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2)
+            TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
+            DivisasSinTipoCambio = metrics.DivisasSinTipoCambio
         };
     }
 
@@ -542,6 +545,15 @@ public sealed class DashboardService : IDashboardService
             targetCurrency,
             cancellationToken);
 
+        // Lote 5 (B-1): una divisa sin tipo de cambio utilizable no aporta al
+        // total convertido (su cuenta vale 0 en la conversion). El total no
+        // cambia: se listan las divisas para que el usuario sepa que el total
+        // no las incluye, en vez de estimarlas con 0 en silencio.
+        var divisasSinTipoCambio = uniqueDivisasInvolucradas
+            .Where(divisa => !tasaPorDivisa.TryGetValue(divisa, out var tasa) || tasa <= 0m)
+            .OrderBy(divisa => divisa, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
 
         foreach (var cuenta in cuentas)
         {
@@ -618,7 +630,8 @@ public sealed class DashboardService : IDashboardService
             SaldoConvertidoByCuentaId = saldoConvertidoByCuenta,
             IngresosMes = ingresosMes,
             EgresosMes = egresosMes,
-            TotalConvertido = totalConvertido
+            TotalConvertido = totalConvertido,
+            DivisasSinTipoCambio = divisasSinTipoCambio
         };
     }
 
@@ -1054,6 +1067,7 @@ public sealed class DashboardService : IDashboardService
         public decimal IngresosMes { get; set; }
         public decimal EgresosMes { get; set; }
         public decimal TotalConvertido { get; set; }
+        public IReadOnlyList<string> DivisasSinTipoCambio { get; set; } = [];
     }
 
     private sealed class DashboardScope

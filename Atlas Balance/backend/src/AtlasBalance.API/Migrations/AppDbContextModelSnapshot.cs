@@ -665,7 +665,9 @@ namespace AtlasBalance.API.Migrations
                         .HasDatabaseName("ix_conciliaciones_deleted_by_id");
 
                     b.HasIndex("ExtractoId")
-                        .HasDatabaseName("ix_conciliaciones_extracto_id");
+                        .IsUnique()
+                        .HasDatabaseName("ix_conciliaciones_extracto_id_conciliada")
+                        .HasFilter("\"estado\" = 'conciliada' AND \"extracto_id\" IS NOT NULL AND \"deleted_at\" IS NULL");
 
                     b.HasIndex("MovimientoEsperadoId")
                         .HasDatabaseName("ix_conciliaciones_movimiento_esperado_id");
@@ -1090,7 +1092,7 @@ namespace AtlasBalance.API.Migrations
                     b.HasIndex("CuentaId", "ImportacionFingerprint")
                         .IsUnique()
                         .HasDatabaseName("ix_extractos_cuenta_id_importacion_fingerprint")
-                        .HasFilter("\"importacion_fingerprint\" IS NOT NULL");
+                        .HasFilter("\"deleted_at\" IS NULL AND \"importacion_fingerprint\" IS NOT NULL");
 
                     b.HasIndex("CuentaId", "Fecha", "Monto")
                         .HasDatabaseName("ix_extractos_cuenta_id_fecha_monto");
@@ -2145,6 +2147,12 @@ namespace AtlasBalance.API.Migrations
                     b.Property<bool>("Renovable")
                         .HasColumnType("boolean")
                         .HasColumnName("renovable");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id")
                         .HasName("pk_plazos_fijos");

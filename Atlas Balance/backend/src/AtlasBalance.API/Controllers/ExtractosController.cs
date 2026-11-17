@@ -44,6 +44,7 @@ public sealed class ExtractosController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] Guid? paisId = null,
         [FromQuery] bool incluirEliminados = false,
+        [FromQuery] bool soloEliminados = false,
         CancellationToken ct = default)
     {
         // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
@@ -61,6 +62,7 @@ public sealed class ExtractosController : ControllerBase
         if (!actor.IsAdmin)
         {
             incluirEliminados = false;
+            soloEliminados = false;
         }
 
         if (!DateRangeValidator.TryValidate(fechaDesde, fechaHasta, out var rangoError))
@@ -79,7 +81,15 @@ public sealed class ExtractosController : ControllerBase
 
         var desc = sortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
 
-        IQueryable<Extracto> q = incluirEliminados ? _db.Extractos.IgnoreQueryFilters() : _db.Extractos;
+        IQueryable<Extracto> q = incluirEliminados || soloEliminados ? _db.Extractos.IgnoreQueryFilters() : _db.Extractos;
+
+        // F-2: el filtro de solo eliminados se aplica ANTES de contar y paginar,
+        // de modo que "total" y las paginas cubren unicamente la papelera.
+        if (soloEliminados)
+        {
+            q = q.Where(x => x.DeletedAt != null);
+        }
+
         q = q.Where(x => allowed.Contains(x.CuentaId));
         if (cuentaId.HasValue) q = q.Where(x => x.CuentaId == cuentaId.Value);
         if (titularId.HasValue)
@@ -117,6 +127,12 @@ public sealed class ExtractosController : ControllerBase
             ("fecha", false) => q.OrderBy(x => x.Fecha).ThenBy(x => x.FilaNumero),
             _ => q.OrderByDescending(x => x.Fecha).ThenByDescending(x => x.FilaNumero)
         };
+
+        // B-15: desempate estable por clave primaria. Sin el, dos filas con el
+        // mismo valor de orden pueden caer en paginas distintas o desaparecer
+        // entre peticiones. Se aplica DESPUES del campo pedido, sin cambiar el
+        // criterio de ordenacion que pide el usuario.
+        q = ((IOrderedQueryable<Extracto>)q).ThenBy(x => x.Id);
 
         var total = await q.CountAsync(ct);
         var columnasDisponibles = await (
@@ -381,7 +397,23 @@ public sealed class ExtractosController : ControllerBase
         ex.FechaModificacion = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         await SaveCellAudits(ex, actor.Id, "extracto_celda_actualizada", changes, ct);
-        await _alertaService.EvaluateSaldoPostAsync(ex.CuentaId, actor.Id, ct);
+
+        // Mismo patron que Crear: la evaluacion de alertas es un side effect
+        // post-guardado. Un fallo (p.ej. email de alerta malformado) no debe
+        // convertir en 500 una actualizacion que SI se guardo.
+        try
+        {
+            await _alertaService.EvaluateSaldoPostAsync(ex.CuentaId, actor.Id, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception alertEx)
+        {
+            _logger.LogWarning(alertEx, "Evaluacion de alerta de saldo fallo tras actualizar extracto {ExtractoId} de cuenta {CuentaId}", ex.Id, ex.CuentaId);
+        }
+
         return Ok(new { message = "Extracto actualizado" });
     }
 
@@ -702,11 +734,12 @@ public sealed class ExtractosController : ControllerBase
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         if (!await CanView(actor, cuentaId, ct)) return Forbid();
-        var cuenta = await _db.Cuentas.Where(c => c.Id == cuentaId).Select(c => new { c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.PaisId, c.EsEfectivo, c.TipoCuenta, c.TitularId, c.Notas }).FirstOrDefaultAsync(ct);
+        var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == cuentaId, ct);
         if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
         if (paisId.HasValue && cuenta.PaisId != paisId.Value) return NotFound(new { error = "Cuenta no encontrada en el pais activo" });
         var titular = await _db.Titulares.Where(t => t.Id == cuenta.TitularId).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
-        return Ok(await BuildSummary(actor, cuenta.Id, cuenta.Nombre, cuenta.Iban, cuenta.BancoNombre, cuenta.Divisa, cuenta.EsEfectivo, cuenta.TipoCuenta, cuenta.TitularId, titular ?? string.Empty, cuenta.Notas, periodo, ct, cuenta.PaisId));
+        var resumen = await BuildSummariesAsync(actor, [new ResumenCuenta(cuenta, cuenta.TitularId, titular ?? string.Empty)], periodo, ct);
+        return Ok(resumen[0]);
     }
 
     [HttpGet("titulares/{titularId:guid}/cuentas")]
@@ -718,11 +751,9 @@ public sealed class ExtractosController : ControllerBase
         if (titular is null) return NotFound(new { error = "Titular no encontrado" });
         var allowed = await GetAllowedAccountIds(actor, ct, paisId);
         var cuentas = await _db.Cuentas.Where(c => c.TitularId == titularId && allowed.Contains(c.Id)).ToListAsync(ct);
-        var summary = new List<CuentaResumenKpiResponse>();
-        foreach (var c in cuentas)
-        {
-            summary.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, titular.Id, titular.Nombre, c.Notas, periodo, ct, c.PaisId));
-        }
+        // R-7: un solo resumen agrupado para todas las cuentas del titular, en
+        // vez de una consulta por cuenta dentro de un bucle.
+        var summary = await BuildSummariesAsync(actor, cuentas.Select(c => new ResumenCuenta(c, titular.Id, titular.Nombre)).ToList(), periodo, ct);
         return Ok(new TitularConCuentasResponse { TitularId = titular.Id, TitularNombre = titular.Nombre, Cuentas = summary });
     }
 
@@ -734,12 +765,23 @@ public sealed class ExtractosController : ControllerBase
         var cuentas = await _db.Cuentas.Where(c => allowed.Contains(c.Id)).ToListAsync(ct);
         var titularesIds = cuentas.Select(c => c.TitularId).Distinct().ToList();
         var titulares = await _db.Titulares.Where(t => titularesIds.Contains(t.Id)).OrderBy(t => t.Nombre).ToListAsync(ct);
+        var nombrePorTitular = titulares.ToDictionary(t => t.Id, t => t.Nombre);
+        // R-7: un unico resumen agrupado para todas las cuentas de todos los
+        // titulares, en vez de una consulta por cuenta dentro de un bucle.
+        var entradas = cuentas
+            .Where(c => nombrePorTitular.ContainsKey(c.TitularId))
+            .Select(c => new ResumenCuenta(c, c.TitularId, nombrePorTitular[c.TitularId]))
+            .ToList();
+        var resumenes = await BuildSummariesAsync(actor, entradas, periodo, ct);
+        var porCuenta = resumenes.ToDictionary(r => r.CuentaId);
         var outData = new List<TitularConCuentasResponse>();
         foreach (var t in titulares)
         {
-            var tc = cuentas.Where(c => c.TitularId == t.Id).ToList();
             var s = new List<CuentaResumenKpiResponse>();
-            foreach (var c in tc) s.Add(await BuildSummary(actor, c.Id, c.Nombre, c.Iban, c.BancoNombre, c.Divisa, c.EsEfectivo, c.TipoCuenta, t.Id, t.Nombre, c.Notas, periodo, ct, c.PaisId));
+            foreach (var c in cuentas.Where(c => c.TitularId == t.Id))
+            {
+                s.Add(porCuenta[c.Id]);
+            }
             outData.Add(new TitularConCuentasResponse { TitularId = t.Id, TitularNombre = t.Nombre, Cuentas = s });
         }
         return Ok(outData);
@@ -795,29 +837,129 @@ public sealed class ExtractosController : ControllerBase
         return Ok(new { message = "Preferencias guardadas" });
     }
 
-    private async Task<CuentaResumenKpiResponse> BuildSummary(Actor actor, Guid cuentaId, string cuentaNombre, string? iban, string? bancoNombre, string divisa, bool esEfectivo, TipoCuenta tipoCuenta, Guid titularId, string titularNombre, string? notas, string periodo, CancellationToken ct, Guid? paisId = null)
+    /// <summary>
+    /// R-7: resumen KPI de un conjunto de cuentas con un numero de consultas
+    /// que NO depende del numero de cuentas. Antes se llamaba a BuildSummary
+    /// dentro de un bucle por cuenta y cada iteracion lanzaba ~5 consultas
+    /// (N+1). Ahora se agregan todas las cuentas en un solo grupo de
+    /// consultas y se reparte el resultado en memoria.
+    ///
+    /// El resultado JSON es el mismo que el de la version por cuenta: mismos
+    /// importes, mismo orden y mismos KPIs.
+    /// </summary>
+    private async Task<List<CuentaResumenKpiResponse>> BuildSummariesAsync(Actor actor, IReadOnlyList<ResumenCuenta> entradas, string periodo, CancellationToken ct)
     {
-        var paisNombre = paisId.HasValue
-            ? await _db.Paises.IgnoreQueryFilters().Where(p => p.Id == paisId.Value).Select(p => p.Nombre).FirstOrDefaultAsync(ct)
-            : null;
-        var q = _db.Extractos.Where(e => e.CuentaId == cuentaId);
-        var latest = await q
-            .OrderByDescending(e => e.FilaNumero)
-            .ThenByDescending(e => e.Fecha)
-            .Select(e => new { e.Fecha, e.Saldo })
-            .FirstOrDefaultAsync(ct);
-        var periodEnd = latest?.Fecha ?? DateOnly.FromDateTime(DateTime.UtcNow.Date);
-        var periodStart = GetPeriodStart(NormalizePeriodo(periodo), periodEnd);
-        var periodRows = q.Where(e => e.Fecha >= periodStart && e.Fecha <= periodEnd);
-        var ingresos = await periodRows.Where(e => e.Monto > 0).SumAsync(e => (decimal?)e.Monto, ct) ?? 0m;
-        var egresos = await periodRows.Where(e => e.Monto < 0).SumAsync(e => (decimal?)e.Monto, ct) ?? 0m;
-        var last = await q.OrderByDescending(e => e.FechaModificacion ?? e.FechaCreacion).Select(e => (DateTime?)(e.FechaModificacion ?? e.FechaCreacion)).FirstOrDefaultAsync(ct);
-        var plazoFijo = tipoCuenta == TipoCuenta.PLAZO_FIJO
-            ? await (
+        var resultados = new List<CuentaResumenKpiResponse>(entradas.Count);
+        if (entradas.Count == 0)
+        {
+            return resultados;
+        }
+
+        var cuentaIds = entradas.Select(e => e.Cuenta.Id).ToList();
+        var meses = GetPeriodoMeses(NormalizePeriodo(periodo));
+
+        // 1) Ultimo movimiento de cada cuenta (mayor fila_numero).
+        var maxFilaPorCuenta = await _db.Extractos
+            .Where(e => cuentaIds.Contains(e.CuentaId))
+            .GroupBy(e => e.CuentaId)
+            .Select(g => new { CuentaId = g.Key, MaxFila = g.Max(e => e.FilaNumero) })
+            .ToDictionaryAsync(x => x.CuentaId, x => x.MaxFila, ct);
+
+        // 2) Fecha y saldo de ese ultimo movimiento. La consulta se resuelve
+        // en memoria porque el maximo de fila_numero es distinto por cuenta.
+        var filasUltimoMovimiento = new Dictionary<Guid, (DateOnly Fecha, decimal Saldo)>();
+        if (maxFilaPorCuenta.Count > 0)
+        {
+            var maxFilas = maxFilaPorCuenta.Values.Distinct().ToList();
+            var candidatas = await _db.Extractos
+                .Where(e => cuentaIds.Contains(e.CuentaId) && maxFilas.Contains(e.FilaNumero))
+                .Select(e => new { e.CuentaId, e.FilaNumero, e.Fecha, e.Saldo })
+                .ToListAsync(ct);
+            foreach (var fila in candidatas)
+            {
+                if (fila.FilaNumero != maxFilaPorCuenta[fila.CuentaId]) continue;
+                if (!filasUltimoMovimiento.TryGetValue(fila.CuentaId, out var actual) || fila.Fecha > actual.Fecha)
+                {
+                    filasUltimoMovimiento[fila.CuentaId] = (fila.Fecha, fila.Saldo);
+                }
+            }
+        }
+
+        // 3) Ventana de cada cuenta: [ultimo movimiento - N meses, ultimo
+        // movimiento]. Las cuentas sin extractos no tienen ventana: sus
+        // importes son 0, como en la version por cuenta.
+        var ventanas = new Dictionary<Guid, (DateOnly Desde, DateOnly Hasta)>();
+        foreach (var entrada in entradas)
+        {
+            if (!filasUltimoMovimiento.TryGetValue(entrada.Cuenta.Id, out var ultimo)) continue;
+            var hasta = ultimo.Fecha;
+            ventanas[entrada.Cuenta.Id] = (hasta.AddMonths(-meses), hasta);
+        }
+
+        var ingresosPorCuenta = new Dictionary<Guid, decimal>();
+        var egresosPorCuenta = new Dictionary<Guid, decimal>();
+        if (ventanas.Count > 0)
+        {
+            var minDesde = ventanas.Values.Min(v => v.Desde);
+            var maxHasta = ventanas.Values.Max(v => v.Hasta);
+
+            // 4) Importes del periodo, agrupados por cuenta y dia (una
+            // consulta por signo). El dia es la granularidad exacta: la
+            // ventana se define por fecha, no por hora.
+            var ingresosPorDia = await _db.Extractos
+                .Where(e => cuentaIds.Contains(e.CuentaId) && e.Fecha >= minDesde && e.Fecha <= maxHasta && e.Monto > 0)
+                .GroupBy(e => new { e.CuentaId, e.Fecha })
+                .Select(g => new { g.Key.CuentaId, g.Key.Fecha, Total = g.Sum(x => x.Monto) })
+                .ToListAsync(ct);
+            var egresosPorDia = await _db.Extractos
+                .Where(e => cuentaIds.Contains(e.CuentaId) && e.Fecha >= minDesde && e.Fecha <= maxHasta && e.Monto < 0)
+                .GroupBy(e => new { e.CuentaId, e.Fecha })
+                .Select(g => new { g.Key.CuentaId, g.Key.Fecha, Total = g.Sum(x => x.Monto) })
+                .ToListAsync(ct);
+
+            foreach (var cuentaId in ventanas.Keys)
+            {
+                var ventana = ventanas[cuentaId];
+                ingresosPorCuenta[cuentaId] = ingresosPorDia
+                    .Where(x => x.CuentaId == cuentaId && x.Fecha >= ventana.Desde && x.Fecha <= ventana.Hasta)
+                    .Sum(x => x.Total);
+                egresosPorCuenta[cuentaId] = egresosPorDia
+                    .Where(x => x.CuentaId == cuentaId && x.Fecha >= ventana.Desde && x.Fecha <= ventana.Hasta)
+                    .Sum(x => x.Total);
+            }
+        }
+
+        // 5) Ultima modificacion de cada cuenta.
+        var ultimaModificacion = await _db.Extractos
+            .Where(e => cuentaIds.Contains(e.CuentaId))
+            .GroupBy(e => e.CuentaId)
+            .Select(g => new { CuentaId = g.Key, Ultima = g.Max(e => (DateTime?)(e.FechaModificacion ?? e.FechaCreacion)) })
+            .ToDictionaryAsync(x => x.CuentaId, x => x.Ultima, ct);
+
+        // 6) Nombre del pais de cada cuenta (una sola consulta).
+        var paisIds = entradas
+            .Select(e => e.Cuenta.PaisId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        var paises = paisIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.Paises.IgnoreQueryFilters().Where(p => paisIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
+
+        // 7) Plazo fijo de las cuentas que lo tienen (una sola consulta).
+        var cuentasConPlazo = entradas
+            .Where(e => e.Cuenta.TipoCuenta == TipoCuenta.PLAZO_FIJO)
+            .Select(e => e.Cuenta.Id)
+            .ToList();
+        var plazos = new Dictionary<Guid, PlazoFijoResponse>();
+        if (cuentasConPlazo.Count > 0)
+        {
+            var filasPlazo = await (
                 from plazo in _db.PlazosFijos
                 join refCuenta in (actor.IsAdmin ? _db.Cuentas.IgnoreQueryFilters() : _db.Cuentas) on plazo.CuentaReferenciaId equals refCuenta.Id into refJoin
                 from cuentaReferencia in refJoin.DefaultIfEmpty()
-                where plazo.CuentaId == cuentaId
+                where cuentasConPlazo.Contains(plazo.CuentaId)
                 select new PlazoFijoResponse
                 {
                     Id = plazo.Id,
@@ -833,36 +975,58 @@ public sealed class ExtractosController : ControllerBase
                     FechaRenovacion = plazo.FechaRenovacion,
                     Notas = plazo.Notas
                 })
-                .FirstOrDefaultAsync(ct)
-            : null;
-
-        if (!actor.IsAdmin && plazoFijo?.CuentaReferenciaId is Guid referenceId && !await CanView(actor, referenceId, ct))
-        {
-            plazoFijo.CuentaReferenciaId = null;
-            plazoFijo.CuentaReferenciaNombre = null;
+                .ToListAsync(ct);
+            foreach (var fila in filasPlazo)
+            {
+                plazos[fila.CuentaId] = fila;
+            }
         }
 
-        return new CuentaResumenKpiResponse
+        // 8) Las cuentas de referencia que el usuario no puede ver se ocultan.
+        // El conjunto de cuentas visibles se calcula una sola vez para todo el
+        // lote, no una vez por cuenta.
+        HashSet<Guid>? cuentasVisibles = null;
+        if (!actor.IsAdmin && plazos.Values.Any(p => p.CuentaReferenciaId.HasValue))
         {
-            CuentaId = cuentaId,
-            CuentaNombre = cuentaNombre,
-            // V-02-07: enmascarado en KPI de cuenta/titular (respuesta agregada, no se usa para editar).
-            Iban = PiiMasking.MaskIban(iban),
-            BancoNombre = bancoNombre,
-            Divisa = divisa,
-            PaisId = paisId,
-            PaisNombre = paisNombre,
-            TitularId = titularId,
-            TitularNombre = titularNombre,
-            EsEfectivo = esEfectivo,
-            TipoCuenta = tipoCuenta.ToString(),
-            PlazoFijo = plazoFijo,
-            Notas = notas,
-            SaldoActual = latest?.Saldo ?? 0m,
-            IngresosMes = ingresos,
-            EgresosMes = Math.Abs(egresos),
-            UltimaActualizacion = last
-        };
+            cuentasVisibles = await GetAllowedAccountIds(actor, ct);
+        }
+
+        foreach (var entrada in entradas)
+        {
+            var cuenta = entrada.Cuenta;
+            filasUltimoMovimiento.TryGetValue(cuenta.Id, out var ultimo);
+            var plazoFijo = plazos.GetValueOrDefault(cuenta.Id);
+
+            if (plazoFijo?.CuentaReferenciaId is Guid referenceId && cuentasVisibles is not null && !cuentasVisibles.Contains(referenceId))
+            {
+                plazoFijo.CuentaReferenciaId = null;
+                plazoFijo.CuentaReferenciaNombre = null;
+            }
+
+            resultados.Add(new CuentaResumenKpiResponse
+            {
+                CuentaId = cuenta.Id,
+                CuentaNombre = cuenta.Nombre,
+                // V-02-07: enmascarado en KPI de cuenta/titular (respuesta agregada, no se usa para editar).
+                Iban = PiiMasking.MaskIban(cuenta.Iban),
+                BancoNombre = cuenta.BancoNombre,
+                Divisa = cuenta.Divisa,
+                PaisId = cuenta.PaisId,
+                PaisNombre = cuenta.PaisId.HasValue && paises.TryGetValue(cuenta.PaisId.Value, out var paisNombre) ? paisNombre : null,
+                TitularId = entrada.TitularId,
+                TitularNombre = entrada.TitularNombre,
+                EsEfectivo = cuenta.EsEfectivo,
+                TipoCuenta = cuenta.TipoCuenta.ToString(),
+                PlazoFijo = plazoFijo,
+                Notas = cuenta.Notas,
+                SaldoActual = ultimo.Saldo,
+                IngresosMes = ingresosPorCuenta.GetValueOrDefault(cuenta.Id),
+                EgresosMes = Math.Abs(egresosPorCuenta.GetValueOrDefault(cuenta.Id)),
+                UltimaActualizacion = ultimaModificacion.GetValueOrDefault(cuenta.Id)
+            });
+        }
+
+        return resultados;
     }
 
     private static string NormalizePeriodo(string? periodo)
@@ -883,7 +1047,14 @@ public sealed class ExtractosController : ControllerBase
 
     private static DateOnly GetPeriodStart(string periodo, DateOnly today)
     {
-        var months = periodo switch
+        return today.AddMonths(-GetPeriodoMeses(periodo));
+    }
+
+    // R-7: los meses del periodo se usan tanto para calcular el inicio de la
+    // ventana como para calcularla por cuenta en el resumen agrupado.
+    private static int GetPeriodoMeses(string periodo)
+    {
+        return periodo switch
         {
             "1m" => 1,
             "3m" => 3,
@@ -894,8 +1065,6 @@ public sealed class ExtractosController : ControllerBase
             "24m" => 24,
             _ => 1
         };
-
-        return today.AddMonths(-months);
     }
 
     private static ExtractoDesgloseResumenResponse BuildDesgloseResumen(Extracto ex, IReadOnlyList<ExtractoDesgloseResponse> lineas)
@@ -1298,4 +1467,8 @@ public sealed class ExtractosController : ControllerBase
         public static PreferenciaScope Forbid() => new(null, null, null, true, false);
         public static PreferenciaScope Missing() => new(null, null, null, false, true);
     }
+
+    // R-7: cuenta de la que se pide el resumen KPI, con el titular al que
+    // pertenece (el mismo titular puede tener varias cuentas).
+    private sealed record ResumenCuenta(Cuenta Cuenta, Guid TitularId, string TitularNombre);
 }

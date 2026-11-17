@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { hoy } from '@/utils/hoy';
 import {
   buildConfirmImportacionLoteRequest,
   buildCreateImportacionLoteRequest,
@@ -51,12 +52,6 @@ const importTabs: Array<{ key: ImportTab; label: string }> = [
 ];
 type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
 type ImportValidationRow = ImportValidationResult['filas'][number];
-
-function getTodayInputValue(): string {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
-}
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof AxiosError) {
@@ -204,7 +199,7 @@ export default function ImportacionPage() {
   const [closeAttempted, setCloseAttempted] = useState(false);
   const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
   const [plazoMonto, setPlazoMonto] = useState('');
-  const [plazoFecha, setPlazoFecha] = useState(getTodayInputValue);
+  const [plazoFecha, setPlazoFecha] = useState(() => hoy());
   const [plazoConcepto, setPlazoConcepto] = useState('');
 
   useEffect(() => {
@@ -233,6 +228,11 @@ export default function ImportacionPage() {
         if (initialCuenta) {
           setCuentaId(initialCuenta.id);
           setDivisaEsperada(initialCuenta.divisa);
+          // F-10: al recargar el contexto cambia la cuenta objetivo del POST de
+          // creacion, asi que la clave de idempotencia de creacion debe cambiar.
+          // Si no, el backend responde 409 ("la clave ya se uso con otro
+          // contenido") porque la clave ya identifica a un lote de otra cuenta.
+          createIdempotencyKeyRef.current = crypto.randomUUID();
         }
 
         // V-02.06 (HIGH-1, bug 18): cargar la lista de monedas activas para
@@ -514,6 +514,9 @@ export default function ImportacionPage() {
       });
       const { data } = await api.post<ImportacionLoteDetalle>(request.url, request.body, request.config);
 
+      // F-10: la clave de idempotencia de la confirmacion es por lote. Al
+      // validar cambia el lote al que se aplica, asi que se regenera.
+      confirmIdempotencyKeyRef.current = crypto.randomUUID();
       setCurrentLote(data.lote);
       setValidacion(data.validacion);
       setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
@@ -853,6 +856,10 @@ export default function ImportacionPage() {
                                 setError(`El lote esta ${estadoLote} y no se puede confirmar de nuevo.`);
                                 return;
                               }
+                              // F-10: la clave de idempotencia de la confirmacion es por
+                              // lote. Al abrir otro lote del historial se regenera, para
+                              // que cada confirmacion use la clave de su propio lote.
+                              confirmIdempotencyKeyRef.current = crypto.randomUUID();
                               setCurrentLote(data.lote);
                               setValidacion(data.validacion);
                               setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
@@ -1061,6 +1068,15 @@ export default function ImportacionPage() {
             <p className="import-muted">
               Cuenta: {selectedCuenta ? `${selectedCuenta.titular_nombre} / ${selectedCuenta.nombre}` : EMPTY_MARKER}. Separador: {validacion.separador_detectado}.
             </p>
+            {validacion.advertencias?.length > 0 && (
+              <div className="import-warning-accept" role="alert">
+                {validacion.advertencias.map((aviso) => (
+                  <p key={aviso} className="auth-error" style={{ margin: '0 0 var(--space-2) 0' }}>
+                    {aviso}
+                  </p>
+                ))}
+              </div>
+            )}
             {currentLote && (
               <p className="import-muted">
                 Lote: <code>{currentLote.lote_hash.slice(0, 12)}</code> · SHA-256 <code>{currentLote.sha256.slice(0, 12)}</code> · {currentLote.estado}

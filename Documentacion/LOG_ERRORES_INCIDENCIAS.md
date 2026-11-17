@@ -1,4 +1,119 @@
-﻿## 2026-11-16 - V-03.02 - LOTE 2 del informe de revision integral: A-2, S-10, S-11, S-13, S-14, S-15, S-16, S-17, S-18 y F-1 (CORREGIDO EN CODIGO)
+﻿## 2026-11-17 - V-03.02 - LOTE 7 del informe de revision integral: F-2, F-4, F-5, F-6, F-7, F-8, F-9, F-10, R-4, R-5, R-6, R-7, R-8 y B-16 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 7. Solo estos IDs; ningun otro tocado. Sin commit ni push. Trabajo por subagentes con ficheros disjuntos y revision del orquestador sobre cada diff. Decisiones de producto fijadas antes de implementar: F-7 se resuelve con concurrencia limitada en el cliente (no endpoint de lote) y el limite de F-8 es que el backend no admite null en esos campos, de modo que vaciar conserva el ultimo valor valido.
+
+### F-2 - La papelera pedia 500 filas y filtraba en cliente: los eliminados antiguos no se restauraban
+
+- **Sintoma:** la papelera noedia la cuenta y el backend contaba vivas y eliminadas a la vez, de modo que la ventana de 500 (200 en titulares, cuentas y usuarios) se llenaba con filas vivas y los eliminados mas antiguos nunca entraban: no aparecian y no se podian restaurar. Los importes de los extractos se pintaban siempre en EUR. Ademas, si el usuario cambiaba de pestana o de pagina mientras la peticion estaba en vuelo, la respuesta vieja podia llegar la primera y pisar la nueva (o al reves), dejando filas de otra pestana y un estado de carga incoherente.
+- **Causa:** `PapeleraPage.tsx` pedia `incluirEliminados=true, page:1, pageSize:500` y filtraba por `deleted_at` en cliente; el `CountAsync` del backend se hacia antes de cualquier filtro de eliminados. El listado de extractos ya devolvia la divisa (`ExtractoListItemResponse.Divisa`), pero la pagina no la usaba: `formatCurrency(row.monto, 'EUR')`. Para el orden, `load()` escribia el estado sin comprobar que su respuesta siguiera siendo la ultima.
+- **Solucion:** los cuatro listados paginados (`Titulares`, `Cuentas`, `Extractos`, `Usuarios`) aceptan `soloEliminados`, que se aplica ANTES de contar y paginar y reutiliza el `IgnoreQueryFilters()` de `incluirEliminados`, con la misma proteccion de ADMIN. La papelera pide la pagina real (50 por pagina), pinta la paginacion y usa la divisa de la fila. El filtro en cliente desaparece. Para el orden de respuestas, `utils/peticionSecuencial.ts` numera cada peticion: `load()` abre una secuencia y solo escribe filas, total, error y estado de carga si su respuesta sigue siendo la vigente; una respuesta vieja se descarta entera.
+- **Limite preexistente que NO se ha tocado:** `ExtractosController.Listar` filtra por `GetAllowedAccountIds`, que excluye las cuentas eliminadas: los extractos de una cuenta **ya borrada** no salen en la papelera.
+- **Regresion:** `PapeleraSoloEliminadosTests` (backend, 5 tests) y `papeleraSoloEliminados.test.ts` (frontend, 5 tests): 5/5 en rojo antes -> 5/5 en verde. `papeleraRespuestasFueraDeOrden.test.ts` (frontend, 6 tests): 3 de 6 en rojo antes (filas, error y estado de carga escribidos sin guarda de vigencia) -> 6/6 en verde.
+
+### F-4 - Un toast por cada error, tambien en los sondeos con la API caida a proposito
+
+- **Sintoma:** durante una actualizacion del sistema o un backup, el backend esta caido a proposito y el interceptor pintaba un toast de error cada 2,5 s, encima de los errores que ya pinta cada pagina. Ademas los bucles de sondeo seguian consultando despues de desmontar la pagina.
+- **Causa:** `services/api.ts` pintaba toast en toda rama con `status !== 401`; no existia forma de marcar una peticion como "no avises". `ConfiguracionPage.updateNow` y `BackupsPage.pollBackupOperation` hacian `GET` en bucle con `setTimeout(2500)` sin ningun control de montaje.
+- **Solucion:** `utils/errorToast.ts` decide el toast de una peticion (`none` | `network` | `server` | `rate-limit`) y admite la opcion por peticion `skipErrorToast`; los sondeos la usan. `utils/pollLifecycle.ts` da a los bucles un ciclo de vida con `active`, `wait(ms)` y `stop()`: al desmontar se limpian el timer y la espera pendiente, y no se actualiza estado de un componente desmontado. Los toasts de sesion caducada (419/440), de 429 y el de red de una peticion normal se mantienen intactos.
+- **Regresion:** `errorToast.test.ts` (9 tests de la decision de toast) y `sondeosSinToast.test.ts` (3 tests de source sobre los dos sondeos): 9 de 21 tests nuevos en rojo antes -> 21/21 en verde.
+
+### F-5 - El banner de alertas reaparecia al cambiar de pais
+
+- **Sintoma:** al cambiar de pais, el banner de alertas de saldo bajo volvia a aparecer aunque el usuario ya lo hubiera ocultado.
+- **Causa:** el hook `useAlertasActivasQuery` hacia `const alertas = query.data ?? []` y, con la lista vacia, llamaba a `resetBanner()`, que borraba el descarte. Al cambiar de pais la clave de consulta cambia y `query.data` pasa a `undefined` mientras carga: el descarte se borraba en cada recarga. Ademas habia cuatro escritores del estado del banner (el hook, `resetBanner`, `loadAlertasActivas` y `clear`).
+- **Solucion:** el store es el unico escritor. `syncAlertas(alertas, { loading, error })` es la unica entrada del contenido: mientras no hay datos no se toca el descarte; con datos, el descarte se ancla a la HUELLA del contenido (`alerta_id:cuenta_id` ordenados) que el usuario oculto, guardada en `sessionStorage`. El hook solo pasa lo que devuelve la consulta. El descarte se respeta hasta que el contenido cambie de verdad.
+- **Nota de alcance:** `setAlertasActivas` sigue existiendo como segundo camino latente (preexistente y sin uso) y se deja como estaba; `clear()` (logout, 401 o cambio de usuario) si limpia el descarte, que es lo correcto.
+- **Regresion:** `alertasBannerDismissal.test.ts` (6 tests sobre el hook y el store reales): 4 de 6 en rojo antes -> 6/6 en verde.
+
+### F-6 - Salir de la nota de alerta guardaba aunque no cambiara nada
+
+- **Sintoma:** entrar y salir del campo de nota de alerta sin escribir lanzaba un PATCH `/extractos/{id}/flag` con el mismo valor.
+- **Causa:** el `onBlur` del input llamaba siempre a `onToggleFlag(row, row.flagged, note)`, sin comparar la nota con el valor que traia el servidor (`row.flagged_nota`).
+- **Solucion:** helper `notaAlertaCambiada(valorServidor, notaEditada)`; el PATCH solo sale si el texto cambio. La comparacion es contra el valor conocido del servidor, de modo que no se pierde ningun cambio ajeno: si el guardado falla, `row.flagged_nota` sigue siendo el viejo y el siguiente blur reintenta.
+- **Regresion:** `notaAlerta.test.ts` (4 tests): 1 fallo antes -> 4/4.
+
+### F-7 - Borrado y marcado en lote: una peticion por fila, en serie y sin transaccion
+
+- **Sintoma:** al borrar o marcar en lote los movimientos de una cuenta se hacia una peticion por fila, en serie. El borrado se detenia en el primer error y el marcado abortaba el resto.
+- **Causa:** dos bucles `for` con `await api.delete(...)` y `await api.patch(...)` dentro, uno por fila.
+- **Solucion:** helper `utils/concurrencia.ts` (`ejecutarEnLote(operaciones, limite = 4)`): pool de cuatro peticiones simultaneas, ejecuta TODAS las operaciones, no corta el lote ante un fallo y devuelve por operacion indice, exito y error. La pagina actualiza el estado solo con las filas que si se movieron y avisa de las que fallaron ("Se eliminaron N de M movimientos. Fallaron K."). **Decision de producto:** concurrencia limitada en el cliente, sin endpoint de lote en el backend (la opcion se fijo antes de implementar; sigue siendo ajustable).
+- **Regresion:** `loteConcurrencia.test.ts` (8 tests: 6 del helper y 2 de source sobre la pagina): 11 de 15 en rojo antes -> 13/13 en verde.
+
+### F-8 - Los campos numericos de Configuracion no se podian vaciar
+
+- **Sintoma:** al borrar el contenido de un campo numerico de Configuracion, la pagina convertia el valor a 0 (`Number(x) || 0`) y acababa guardando un cero silencioso.
+- **Causa:** once inputs usaban `Number(valor) || valorPorDefecto`, con lo que un campo vacio se convertia en 0 (puerto SMTP, `requests_por_minuto`, `requests_por_hora`, `requests_por_dia`, `requests_globales_por_dia`, `porcentaje_aviso_presupuesto`, `max_input_tokens`, `max_output_tokens`, `max_context_rows`, horas de cooldown y hora UTC).
+- **Solucion:** helper `utils/numberInput.ts` (`parseOptionalNumberInput`: `''` -> `null`, nunca 0; `'0'` -> 0 valido) y componente `NumberField` en la pagina. El campo queda vacio y, si esta vacio, se conserva el ultimo valor valido de la configuracion, de modo que el `PUT /configuracion` no manda un 0 silencioso.
+- **Limite real (no resuelto, por diseno del contrato):** los DTO del backend usan `int` no nullable (`IaDtos.cs`, `ConfiguracionDtos.cs`), asi que mandar `null` daria 400 y "vacio" no es representable en la API. Por eso vaciar conserva el ultimo valor en vez de dejarlo sin definir.
+- **Regresion:** `configuracionCamposNumericos.test.ts` (5 tests): 2 de 21 en rojo antes -> verde.
+
+### F-9 - Si fallaba el guardado de una celda, se perdia lo escrito
+
+- **Sintoma:** al guardar una celda editable y fallar la peticion, el texto introducido desaparecia y el campo cerraba en modo lectura. El aviso de error existia en el componente, pero no se veia nunca, porque la celda seguia en modo edicion.
+- **Causa:** el `catch` hacia `setDraft(value)` (el valor del servidor) y dejaba `isEditing = true`; ademas el siguiente blur cerraba el editor sin guardar, sin dejar opcion de reintentar.
+- **Solucion:** helper `utils/editableCellSave.ts` (`applyEditableCellSaveResult(estado, 'saved' | 'failed')`): en `'failed'` NUNCA escribe el borrador, de modo que la invariante "el fallo no sustituye lo escrito" es estructural. La celda sigue abierta con lo escrito y muestra el aviso de error; se reintenta con Enter o blur y se descarta con Escape.
+- **Regresion:** `editableCellSave.test.ts` (6 tests): 4 de 6 en rojo antes -> 6/6 en verde.
+
+### F-10 - Sospecha descartada: la clave de idempotencia de la confirmacion no se regeneraba
+
+- **Sintoma sospechado:** abrir otro lote desde el historial y confirmar reutilizaba la clave de idempotencia de la confirmacion anterior.
+- **Analisis:** el backend acota el replay idempotente al propio lote (`lote.ConfirmacionIdempotencyKey` y `ConfirmacionResponseJson` de ese lote, `ImportacionService.cs`), y el indice unico de creacion es `(UsuarioCreadorId, IdempotencyKey)`. **La sospecha, tal como estaba redactada, no se reproduce**: confirmar un lote distinto con la misma clave NO da 409 ni rechaza la confirmacion legitima.
+- **Defecto real encontrado en el mismo camino:** al recargar el contexto de la pagina de importacion (cambio de pais o cuenta preseleccionada) se fijaba la cuenta objetivo del POST de creacion SIN regenerar la clave de creacion. Con la misma clave y otra cuenta, el backend responde 409 "La clave de idempotencia ya se uso con otro contenido" y la validacion del usuario falla.
+- **Solucion:** la clave de confirmacion se regenera al validar un lote y al abrir uno del historial (cada lote confirmado usa su propia clave; el reintento del mismo lote conserva la suya, asi que el replay idempotente sigue funcionando) y la clave de creacion se regenera cuando cambia la cuenta objetivo.
+- **Regresion:** `importacionIdempotencia.test.ts` (6 tests): 5 de 6 en rojo antes -> 6/6 en verde.
+
+### R-4 - El detalle de cuenta invalidaba las consultas que tenia activas
+
+- **Sintoma:** al cambiar de pagina o de periodo en el detalle de cuenta se hacia una peticion duplicada: la pagina invalidaba la consulta que ella misma estaba usando.
+- **Causa:** un efecto llamaba a `loadCuentaData()` y esa funcion invalidaba `queryKeys.extractos.cuentaResumen` y `queryKeys.extractos.list` con los mismos parametros que la consulta activa.
+- **Solucion:** el efecto automatico de recarga se elimina; en su lugar solo se limpian los avisos con las mismas dependencias. `loadCuentaData` se conserva para las recargas explicitas (celda guardada, fila insertada, evento de importacion), donde si debe refrescar.
+- **Efecto secundario asumido:** al cambiar de pagina o periodo ya no se refresca la consulta cuya clave no cambia; el dato se repide por `staleTime` o al enfocar la ventana. No medido en la app real.
+- **Regresion:** `cuentaDetailInvalidacion.test.ts` (3 tests de source): en rojo antes -> 13/13 en verde con el resto del area.
+
+### R-5 - Los permisos se evaluaban tres veces por celda y en cada render
+
+- **Sintoma:** unas 1.600 evaluaciones de permisos por render en la tabla de extractos, y cada cambio de foco re-renderiza la tabla entera.
+- **Causa:** tres llamadas `canEditCell(...)` por celda, y cada llamada recalcula `canEditCuenta()` y `getColumnasEditables()`.
+- **Solucion:** cache por fila y columna (`utils/canEditCellCache.ts`) creada en un `useMemo` con dependencia `[canEditCell]`: se recalcula si cambia la funcion de permisos o el objeto fila, de modo que no queda obsoleta.
+- **Limite:** la mejora es inferida del conteo de evaluaciones, no medida con un profiler.
+- **Regresion:** `canEditCellCache.test.ts` (5 tests): 2 fallos antes -> 5/5.
+
+### R-6 - Busquedas sin debounce: una peticion por tecla
+
+- **Sintoma:** al escribir en los buscadores de Formatos, Paises, Cuentas, Usuarios y en el campo "Modelo" de Configuracion se lanzaba una peticion por tecla.
+- **Causa:** el estado de busqueda alimentaba directamente los `params` de la consulta y las dependencias del efecto que la recarga.
+- **Realidad verificada:** Paises y Cuentas YA usaban `useDebouncedValue` (commit `882f721`, anterior al informe). El defecto existia en Formatos, Usuarios y el campo "Modelo" de Configuracion.
+- **Solucion:** se reutiliza el hook existente `hooks/useDebouncedValue.ts` (300 ms) en las tres paginas y en el campo "Modelo"; el input sigue atado al estado bruto, asi que el filtro visible es inmediato y solo la peticion se difiere. En Usuarios, la queryKey tambien pasa por el valor diferido, para no crear una entrada de cache por tecla.
+- **Regresion:** `busquedaDebounce.test.ts` (6 tests, 5 en rojo antes) y `configuracionDebounceModelo.test.ts` (4 tests, 4 en rojo antes) -> todo en verde.
+
+### R-7 - N+1 en los resumenes de titulares e insercion de 50.000 filas en un unico SaveChanges
+
+- **Sintoma (a):** `GetCuentasTitular` y `GetTitularesResumen` llamaban a `BuildSummary` dentro de un bucle por cuenta, y cada llamada lanzaba 5 consultas (pais, ultimo movimiento, suma de ingresos, suma de egresos, ultima modificacion), mas las de plazo fijo y de alcance.
+- **Sintoma (b):** la creacion del lote insertaba hasta 50.000 filas de `IMPORTACION_LOTE_FILAS` en un unico `SaveChangesAsync`, y la confirmacion insertaba hasta 50.000 `EXTRACTOS` (mas sus columnas extra) en otro unico `SaveChangesAsync`. Todo caia en una sola transaccion: 50.000 bloqueos de fila retenidos, WAL de 50.000 filas y, si una sola fila fallaba, rollback masivo. La ruta directa de confirmacion no tenia transaccion explicita.
+- **Solucion (a):** `BuildSummariesAsync` sustituye a `BuildSummary`: agrega en un solo grupo de consultas (maximo de `fila_numero` por cuenta, fecha y saldo de ese movimiento, importes del periodo agrupados por cuenta y dia, ultima modificacion por cuenta, paises y plazos fijos) y reparte por cuenta en memoria. El JSON es identico.
+- **Medicion (PostgreSQL real, con interceptor de comandos):** titular con 1 cuenta, de 8 SELECT a 9; titular con 4 cuentas, de 23 a 9. De ~5 por cuenta a constante.
+- **Solucion (b):** `TamanoBloqueInsercion = 1.000`. La cabecera del lote se guarda sola y las filas van en bloques de 1.000 con su propio `SaveChangesAsync` y desenganche del ChangeTracker; los extractos y sus columnas extra, y los estados de las filas del lote, se escriben tambien por bloques de 1.000. **Todos los bloques van dentro de la misma transaccion**: si uno falla se revierte todo, sin dejar un lote a medias. La idempotencia se mantiene (el indice unico sigue decidiendo la carrera y el perdedor recarga el lote del ganador) y los mensajes 409 al usuario son los mismos.
+- **Coste que conviene conocer:** los importes del periodo se calculan con cubos diarios (cuenta x dias de la ventana) que vuelven a la app, en vez de un `SUM` por cuenta en servidor: con periodo de 1 mes son unas cuenta x 31 filas y con 24 meses, cuenta x 730. A cambio, el numero de viajes es constante.
+- **Regresion:** `ExtractosResumenConsultasTests` (2 tests, con PostgreSQL real): 1 fallo antes ("Expected consultasConCincoCuentas to be less than or equal to 11 ... but found 23") -> 2/2. `ImportacionR7Tests` (3 tests, con interceptor que cuenta filas por `SaveChanges`): 2 fallos antes ("...but found 1: {5100}") -> 3/3.
+
+### R-8 - /ia/config se consultaba cada 30 s en todas las pestanas
+
+- **Sintoma:** cada pestana autenticada consultaba `/api/ia/config` cada 30 segundos aunque el resultado casi nunca cambiase (la configuracion global de IA solo se muta en `PUT /api/configuracion`), y la disponibilidad de la IA tenia tres fuentes de verdad.
+- **Causa:** `useIaConfigQuery` usaba `refetchInterval: 30_000`; `iaAvailabilityStore.load()` hacia su propio GET con su propio TTL (sin ningun llamante vivo) y `aiChatStore.ensureConfig()` hacia otro GET al montar el chat.
+- **Solucion:** la cache de TanStack Query pasa a ser la unica fuente de verdad para la disponibilidad: `staleTime` de 5 minutos en vez de sondeo, `refetchOnWindowFocus` para repreguntar al volver a la pestana, y refresco INMEDIATO cuando alguien guarda la configuracion global (un interceptor de respuesta detecta el `PUT /configuracion` correcto y dispara la invalidacion). La regla de disponibilidad vive en un sitio (`utils/iaConfigSource.ts`).
+- **Efecto (medido por calculo, no con navegador):** de 2 peticiones por minuto y pestana a 1 al montar y como mucho 1 cada 5 minutos; con 8 usuarios y 2 pestanas, de unas 32 por minuto a unas 3,2 en el peor caso.
+- **Consecuencia aceptada:** un cambio de configuracion hecho en otra sesion o navegador llega ahora al volver a la pestana con la cache caducada (hasta 5 minutos) o al recargar, no en 30 segundos.
+- **Pendiente que NO se ha tocado:** `iaAvailabilityStore.load()` (sin llamante) y `aiChatStore.ensureConfig()` (una peticion al montar el chat) siguen siendo copias de la configuracion. No se han tocado por no meter cambios de comportamiento ajenos al ID.
+- **Regresion:** `iaConfigSondeo.test.ts` (8 tests): 4 de 8 en rojo antes -> 8/8.
+
+### B-16 - "Hoy" calculado en UTC
+
+- **Sintoma:** entre las 00:00 y las 02:00 en Espana la fecha "de hoy" en UTC es la del dia anterior: la fila nueva de extractos y el calculo de dias hasta el vencimiento se quedaban un dia atras.
+- **Realidad verificada:** el helper compartido **no existia**: "hoy" estaba duplicado como funcion local en `ConciliacionPage.tsx` e `ImportacionPage.tsx`, y la fecha por defecto de `ExtractoTable` usaba `new Date().toISOString().slice(0, 10)` (UTC). El calculo de dias de `CuentaDetailPage` ya usaba componentes de fecha locales.
+- **Solucion:** helper unico `utils/hoy.ts` (`hoy()`), usado por `ExtractoTable`, `CuentaDetailPage`, `ConciliacionPage` e `ImportacionPage`; las dos copias locales se eliminan.
+- **Regresion:** `hoy.test.ts` (5 tests, con `TZ=Europe/Madrid`), `cuentaDetailHoy.test.ts` (2 tests) e `importacionIdempotencia.test.ts` (parte de B-16).
+
+## 2026-11-16 - V-03.02 - LOTE 2 del informe de revision integral: A-2, S-10, S-11, S-13, S-14, S-15, S-16, S-17, S-18 y F-1 (CORREGIDO EN CODIGO)
 
 Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 2. Solo estos IDs; ningun otro tocado. Sin commit ni push. Trabajo por subagentes con ficheros disjuntos, con revision del orquestador sobre cada diff. Decisiones de producto fijadas con el usuario antes de implementar: el bloqueo solo impide logins nuevos; vida maxima de sesion de 30 dias; el modo TLS del SMTP es explicito y admite envios sin cifrar; ventana de gracia con IP coincidente para el refresh concurrente.
 
@@ -6043,3 +6158,87 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 - Durante la validacion, el primer reinicio consulto `127.0.0.1:5002/api/health` y trato la API iniciada como no disponible. El servicio respondio por `localhost:5002`; tras corregir la comprobacion y reiniciar, API y proxy frontend devuelven HTTP 200. No se cambio el codigo de la aplicacion.
 - La suite completa de backend no termino en cinco minutos y se interrumpio; prueba PostgreSQL dirigida 1/1. El control de Chrome devolvio `GetCursorPos` acceso denegado tras el reinicio, por lo que la validacion autenticada completa sigue pendiente.
+
+## 2026-11-17 - V-03.02 - A-9: el job de vencimientos de plazo fijo falla con 42883 (`jsonb ~~ jsonb`)
+
+- **Sintoma:** el job de vencimientos reintentaba siempre con PostgreSQL `42883: operator does not exist: jsonb ~~ jsonb`, desde `PlazoFijoService.TryAddAdminNotificationAsync`. La comprobacion de "ya existe la notificacion" fallaba antes incluso de intentar enviar el aviso.
+- **Causa:** `DetallesJson` esta mapeado como `jsonb` y la consulta usaba `Contains` de string, que EF traduce a la operacion LIKE (`jsonb ~~ jsonb`), que PostgreSQL no define.
+- **Solucion:** `EF.Functions.JsonContains(x.DetallesJson, duplicadoJson)`, que traduce a `detalles_json @> @duplicadoJson` (contencion jsonb por clave/valor: cuenta, estado y fecha de vencimiento en un solo objeto). Como el provider InMemory de EF no traduce `JsonContains`, hay una rama equivalente sobre el JSON materializado para los tests unitarios.
+- **Verificacion:** test contra PostgreSQL real (Testcontainers) en rojo con el 42883 y en verde con el arreglo; SQL generado comprobado sin apariciones de `~~`. `PlazoFijoServiceTests` mas el test nuevo: 9/9. El reintento del aviso tras fallo de SMTP (J-3) queda intacto.
+
+## 2026-11-17 - V-03.02 - B-1: una cuenta sin tipo de cambio aporta 0 al total sin avisar
+
+- **Sintoma:** el dashboard y el `total_convertido` de la integracion OpenClaw sumaban 0 para las cuentas cuya divisa no tiene tipo de cambio, sin decir nada: el total salia mas bajo del real y el usuario no tenia forma de saber por que.
+- **Causa:** `DashboardService` hacia `saldo * tasa` con `tasa = 0` cuando no habia tasa, y `IntegrationOpenClawController` sumaba `monto ?? 0` sobre el resultado de `BulkConvertAsync`.
+- **Solucion:** el total no cambia; lo que se anade es la lista de divisas que se quedaron fuera (`divisas_sin_tipo_cambio` en la integracion, `divisas_sin_tipo_cambio` en las respuestas del dashboard) y el aviso en la interfaz: "El total no incluye GBP y USD. No hay tipo de cambio para esas divisas." La integracion solo lista las divisas de las cuentas visibles para su token.
+- **Verificacion:** `DashboardDivisasSinTipoCambioTests` 5/5 (rojo: la lista venia vacia), `DashboardServiceTests` 9/9, `IntegrationOpenClawControllerTests` 12/12, `IntegrationOpenClawScopeCoverageTests` 3/3, `IntegrationDefaultScopesTests` 4/4. Frontend: helper puro con test propio y suite completa 134/134.
+
+## 2026-11-17 - V-03.02 - B-3 y B-4: tras revertir un lote no se podia reimportar, y la reversion no era atomica
+
+- **Sintoma (B-3):** al reimportar un lote revertido, la deduplicacion por huella contaba las filas con soft delete y las daba por duplicadas; ademas el indice unico de huella no filtraba `deleted_at`, de modo que la base de datos rechazaba la insercion aunque el servicio lo intentara.
+- **Causa (B-3):** la consulta de huellas existentes usaba `IgnoreQueryFilters`, y el indice `ix_extractos_cuenta_id_importacion_fingerprint` era unico sin filtro de `deleted_at`.
+- **Sintoma (B-4):** `RevertirLoteAsync` borraba los extractos fuera de transaccion y guardaba el lote despues (a mitad de camino quedaban extractos borrados y el lote sin revertir), no tomaba ningun lock (dos reversiones concurrentes de la misma cuenta se pisaban), no validaba el estado del lote (se podia revertir un lote no confirmado) y dejaba las conciliaciones de los extractos borrados como estaban.
+- **Solucion (B-3):** la deduplicacion ya no ignora el filtro de soft delete y el indice de huella es unico parcial (`WHERE deleted_at IS NULL AND importacion_fingerprint IS NOT NULL`), con migracion escrita a mano e idempotente (`20261117120000_IndicesParcialesHuellaYConciliacion`).
+- **Solucion (B-4):** todo el borrado y el guardado del lote van en una transaccion con `pg_advisory_xact_lock` por cuenta, el estado del lote se relee con el lock tomado y solo se revierte un lote `confirmado` (si no, 409 de dominio), y las conciliaciones de los extractos borrados pasan a estado `excepcion` (visible y accionable) con su movimiento esperado de vuelta a `pendiente`. Las conciliaciones ya resueltas se dejan intactas.
+- **Verificacion:** `ImportacionLote5Tests` 9/9 (5 fallos en rojo con el codigo original) y `ImportacionLote5PostgresTests` 2/2 contra PostgreSQL real (2/2 en rojo antes): reimportacion tras revertir y atomicidad de la reversion con rollback. Regresion dirigida con `ImportacionServiceTests`: 63/63.
+
+## 2026-11-17 - V-03.02 - B-5 y B-6: la conciliacion proponia importes que no cuadran y se podia conciliar dos veces
+
+- **Sintoma (B-5):** el score de una sugerencia penalizaba el importe con un tope de 15 puntos, y como el filtro es `Score >= 70`, un movimiento esperado de 50 € se proponia contra un extracto de 900 € si el resto del score era bueno.
+- **Causa (B-5):** la tolerancia de importe ya se calculaba (`amountTolerance`) pero no se usaba como tope duro: solo como penalizacion.
+- **Sintoma (B-6):** un mismo extracto podia quedar conciliado dos veces, `SetEstadoAsync` aceptaba cualquier transicion de estado y `FirstAsync` sobre el movimiento esperado lanzaba `InvalidOperationException` (500) si el movimiento ya no existia.
+- **Solucion (B-5):** si la diferencia de importe supera la tolerancia del movimiento, el score se pone a 0 y el extracto no se propone. La tolerancia sigue viniendo de `CONFIGURACION` y no se toca.
+- **Solucion (B-6):** al pasar a `conciliada` se comprueba que el extracto no este ya conciliado (409 si lo esta), las transiciones se validan contra un conjunto minimo coherente con el CHECK de la tabla (`sugerida -> conciliada | excepcion | resuelta`, `excepcion -> conciliada | resuelta`, `conciliada -> excepcion | resuelta`, `resuelta` terminal) y el movimiento que no existe devuelve 404 en lugar de 500. El indice unico parcial sobre `CONCILIACIONES(extracto_id)` cierra la puerta en la base de datos; la migracion purga de forma idempotente y no destructiva las conciliaciones duplicadas que ya existieran.
+- **Verificacion:** `ConciliacionLote5Tests` 7/7 (6 fallos en rojo antes) y `ConciliacionExtractoUnicoTests` 2/2 contra PostgreSQL real: el indice salta con 23505. La transicion `excepcion -> conciliada` se mantiene porque la pantalla ofrece el boton "Conciliar" en toda fila que no este conciliada; la interfaz deja de ofrecer "Conciliar" y "Excepcion" en las filas resueltas.
+
+## 2026-11-17 - V-03.02 - B-8: el lock de alerta de saldo se liberaba antes de tiempo
+
+- **Sintoma:** dos importaciones simultaneas de la misma cuenta envian las dos el email de saldo bajo.
+- **Causa:** `pg_advisory_xact_lock` es un lock DE TRANSACCION, pero la sentencia se ejecutaba en autocommit (no habia transaccion explicita), asi que el lock se liberaba al terminar la sentencia y las dos evaluaciones pasaban el filtro de cooldown.
+- **Solucion:** la zona critica (lock, lectura del cooldown, escritura del cooldown, commit) va dentro de una transaccion explicita; si el llamante ya tiene una transaccion abierta (camino de importacion) se reutiliza la suya. El envio del email y la auditoria quedan FUERA de la transaccion, para que un SMTP lento no retenga el lock.
+- **Verificacion:** test de concurrencia contra PostgreSQL real (Testcontainers) que en rojo contaba 2 envios y en verde cuenta 1; tres ejecuciones seguidas sin intermitencias (el test usa un interceptor que bloquea la escritura hasta que las dos hilos han leido, sin esperas arbitrarias). `AlertaServiceTests` mas el test nuevo: 8/8.
+
+## 2026-11-17 - V-03.02 - B-9 y B-13: saldo anterior con filas borradas e importes "0,500" leidos como 500
+
+- **Sintoma (B-9):** el saldo anterior de un movimiento de plazo fijo se calculaba incluyendo extractos con soft delete, de modo que partia de un saldo que ya no era el vigente.
+- **Causa (B-9):** la consulta del ultimo extracto usaba `IgnoreQueryFilters`. El `maxFila` contiguo si debe incluir las filas borradas (para no reutilizar su numero de fila), y ese no se toco.
+- **Sintoma (B-13):** "0,500" se interpretaba como 500: la heuristica de miles miraba solo que la parte decimal tuviera tres digitos, sin mirar que la parte entera valiera 0.
+- **Solucion:** el saldo anterior se calcula solo sobre extractos vivos; y la heuristica descarta el tratarlo como miles cuando la parte entera es 0, de modo que "0,500" es 0,5 y "1,500" o "12,345" conservan el comportamiento anterior. El frontend aplica la misma regla en `utils/formatters.ts`.
+- **Verificacion:** `ImportacionLote5Tests` 9/9 (rojo: "0,500" devolvia 500 y el saldo anterior daba 999 en vez de 100). Frontend: test propio de formatters en rojo y en verde, con la suite del frontend completa en verde.
+
+## 2026-11-17 - V-03.02 - B-2: la sincronizacion pisaba las tasas manuales y sus fallos no dejaban aviso
+
+- **Sintoma:** cada sincronizacion (cada 12 h) sobreescribia las tasas que el usuario habia fijado a mano, y un fallo de la sincronizacion solo quedaba en un `LogWarning`: nadie se enteraba.
+- **Causa:** el bucle de actualizacion asignaba `entity.Tasa = rate` y `entity.Fuente = FuenteTipoCambio.API` sin mirar cual era la fuente anterior; y los caminos de error (respuesta HTTP no exitosa, payload sin tasas, excepcion) solo escribian en el log y devolvian un `SyncTiposCambioResult` con `Success = false`.
+- **Solucion:** las tasas con `Fuente = MANUAL` se omiten (no se tocan ni la tasa, ni la fuente, ni la fecha) y se deja aviso al administrador con las divisas afectadas. Los fallos de sincronizacion generan tambien aviso en `NOTIFICACIONES_ADMIN` (no solo log). El anti-spam es por clave: si ya existe un aviso con la misma clave no se repite, de modo que un fallo cada hora no llena la tabla. La respuesta de la sincronizacion dice cuantas tasas manuales se han omitido (`manual_omitidas`) y la pantalla de Configuracion lo indica.
+- **Verificacion:** `TiposCambioManualTests` (nuevo) 5/5: en rojo con 5 fallos (la tasa manual se pisaba y no habia aviso) y en verde con el arreglo. `TiposCambioServiceTests` sin regresiones.
+
+## 2026-11-17 - V-03.02 - B-17 (parcial): el orden de las filas pegadas no se avisa y el saldo actual puede ser el mas antiguo
+
+- **Sintoma:** Atlas Balance numera las filas de abajo arriba al confirmar, de modo que la linea superior del bloque pegado es la ultima del lote (el `fila_numero` mas alto) y de ahi sale el "saldo actual". Si el banco exporta del mas antiguo al mas reciente, el saldo actual que muestra el dashboard es el de la fila mas antigua, sin que nada avise.
+- **Causa:** el criterio del saldo actual (`DashboardService`: fila con mayor `FilaNumero`) es deliberado (V-02-04, "saldo ahora" frente al "snapshot a fecha de corte") y la importacion no comprobaba el orden real del fichero. La documentacion de la app lo dice ("La linea superior queda como la ultima del lote") pero la pantalla de importacion no dice nada al usuario.
+- **Solucion aplicada (LOTE 5, 2026-11-17):** la validacion **detecta** el orden por las **fechas** (no por heuristicas de saldo, para no tener falsos positivos) y avisa cuando el fichero viene del mas antiguo al mas reciente: el aviso sale en `ImportacionValidarResponse.Advertencias` y se ve en la pantalla de importacion antes de confirmar. Solo avisa si hay al menos dos fechas distintas y suben de forma estricta al bajar por el bloque; con una sola fecha, fechas repetidas o fechas mezcladas no dice nada. **El criterio del saldo actual NO se cambia**: invertira la numeracion de `fila_numero` alteraria el significado de esa columna en todos los datos existentes, y depende del orden en que exportan los bancos, que es una decision del usuario.
+- **Verificacion:** `ImportacionLote5Tests`: en rojo con el detector desactivado (1 de 12 fallos) y 12/12 en verde. La deteccion se comprueba con las tres formas de fichero: mas antiguo a mas reciente (avisa), mas reciente a mas antiguo (no avisa) y una sola fecha (no avisa).
+- **Pendiente:** el usuario tiene que confirmar en que orden exportan los bancos que usa. La base de demostracion esta vacia y las paginas publicas de BBVA, Sabadell y Banquinter describen COMO descargar los movimientos pero no fijan el orden de las filas.
+
+## 2026-11-17 - V-03.02 - La confirmacion de un lote de importacion devolvia siempre 409 contra PostgreSQL real
+
+- **Sintoma:** `POST /api/importacion/lotes/{id}/confirmar` (el camino que usa el frontend) respondia siempre `409 "El lote esta siendo procesado por otra operacion"` y no importaba nada. Con el proveedor InMemory de los tests no se reproducia, y el camino legacy `POST /api/importacion/confirmar` (que no toma ese lock) si funcionaba.
+- **Causa comprobada:** `TryAcquireAdvisoryXactLockAsync` leia `pg_try_advisory_xact_lock(...)` con `SqlQueryRaw<int>`, pero la funcion devuelve un **boolean**. Npgsql lanza `InvalidCastException: Reading as 'System.Int32' is not supported for fields having DataTypeName 'boolean'`, el `catch` hace fail-closed y devuelve `false` como si otro proceso tuviera el lock.
+- **Solucion:** leer el resultado como `SqlQueryRaw<bool>`. Era una linea, pero sin ella el camino de reimportar un lote revertido (B-3) era inservible: el indice de huella estaba bien, pero el usuario no podia confirmar el lote nuevo.
+- **Verificacion:** sonda contra PostgreSQL real que ejecutaba la sentencia y capturaba la excepcion (rojo: `InvalidCastException`), mas un test de extremo a extremo por el camino real de la API: crear lote, confirmar, revertir y confirmar un lote nuevo con el mismo contenido. En rojo sin el arreglo (1 de 3 fallos) y en verde con el (3/3).
+
+## 2026-11-17 - V-03.02 - B-7, B-14 y B-15: errores de contrato en extractos, cuentas y paginacion
+
+- **B-7:** `PUT /api/extractos/{id}` evaluaba las alertas de saldo sin proteccion, mientras `Crear` si la tenia: un fallo de la evaluacion convertia en 500 una actualizacion que ya se habia guardado. Ahora el `PUT` usa el mismo try/catch que `Crear` (re-lanza `OperationCanceledException` y registra el resto como warning).
+- **B-14:** `CuentasController.Actualizar` asignaba la nueva divisa sin mirar si la cuenta ya tenia extractos. Como los extractos no guardan divisa propia, el cambio reinterpretaba todos los importes en otra moneda. Ahora, si la divisa cambia y la cuenta tiene extractos vivos (los no borrados), se responde 409: "La cuenta tiene extractos: no se puede cambiar su divisa. Crea una cuenta nueva o elimina los extractos de esta cuenta antes de cambiarla." Los extractos en papelera no bloquean.
+- **B-15:** los listados paginados no tenian desempate por clave primaria, de modo que dos filas con el mismo valor de orden podian caer en paginas distintas o desaparecer entre peticiones. Se anade `ThenBy` por clave primaria en extractos, auditoria, revision y lotes, despues del campo pedido por el usuario, sin cambiar el contrato de la API.
+- **Verificacion:** `ExtractosAlertaPostTests` (nuevo) en rojo (la excepcion se propagaba) y en verde; `CuentasDivisaConExtractosTests` (nuevo) 4/4 (rojo: devolvia 200 y cambiaba la divisa) con `CuentasControllerTests` 20/20; `PaginacionDesempateTests` (nuevo) 4/4 en rojo y en verde, con la regresion de las cuatro clases de controller en 54/54.
+
+## 2026-11-17 - V-03.02 - M-9 (parcial): el snapshot de EF ya tiene `xmin` en `PLAZOS_FIJOS`, pero la deriva restante es de esquema
+
+- **Sintoma:** el snapshot de EF no tenia el mapeo de `xmin` de `PLAZOS_FIJOS` (4 de 5 tablas), y por eso `AppDbContext.OnConfiguring` ignora `RelationalEventId.PendingModelChangesWarning`.
+- **Causa:** las migraciones de V-02 se escribieron a mano con SQL `IF NOT EXISTS` y nunca actualizaron el snapshot.
+- **Solucion aplicada:** el bloque de `xmin` de `PLAZOS_FIJOS` se escribio a mano en el snapshot, con el mismo estilo que las otras cuatro tablas.
+- **Lo que NO se pudo cerrar:** la deriva no es solo del snapshot. Comparando el modelo con el snapshot con el metodo que usa EF por dentro (`IMigrationsAssembly.ModelSnapshot.Model` + `IDesignTimeModel.Model` + `IModelRuntimeInitializer` + `IMigrationsModelDiffer`) salen 27 diferencias, y la base real difiere del modelo en el esquema (`deleted_at` como `timestamp without time zone` en tres tablas donde el modelo pide `timestamp with time zone`, 3 indices `*_deleted_by_id` y 4 FK `deleted_by_id` que faltan, mas diferencias de filtro en tres indices unicos y de nombre en una FK). Cerrarlo exige una migracion de esquema nueva; hasta entonces el `Ignore` es obligatorio y se mantiene, con el comentario actualizado.
+- **Verificacion:** `SnapshotModelDriftTests` (nuevo) fija la comparacion modelo/snapshot con la receta validada y pasa 1/1.

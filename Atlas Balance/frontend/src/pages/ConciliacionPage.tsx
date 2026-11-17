@@ -11,13 +11,10 @@ import api from '@/services/api';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
+// B-16: "hoy" en la zona horaria del usuario, no en UTC. El helper es el
+// compartido: ExtractoTable, CuentaDetailPage e ImportacionPage usan el mismo.
+import { hoy } from '@/utils/hoy';
 import type { Conciliacion, ImportContextoResponse, ImportCuentaContexto, MovimientoEsperado } from '@/types';
-
-function today(): string {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
-}
 
 export default function ConciliacionPage() {
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
@@ -26,7 +23,7 @@ export default function ConciliacionPage() {
   const [cuentaId, setCuentaId] = useState('');
   const [movimientos, setMovimientos] = useState<MovimientoEsperado[]>([]);
   const [conciliaciones, setConciliaciones] = useState<Conciliacion[]>([]);
-  const [fecha, setFecha] = useState(today);
+  const [fecha, setFecha] = useState(() => hoy());
   const [monto, setMonto] = useState('');
   const [referencia, setReferencia] = useState('');
   const [concepto, setConcepto] = useState('');
@@ -321,14 +318,16 @@ export default function ConciliacionPage() {
                   <td>{item.diferencia_dias}</td>
                   <td>
                     <div className="conciliacion-row-actions">
-                      {item.estado !== 'conciliada' && (
+                      {item.estado !== 'conciliada' && item.estado !== 'resuelta' && (
                         <button type="button" onClick={() => void cambiarEstado(item.id, 'confirmar')} disabled={submitting || !item.extracto_id}>
                           Conciliar
                         </button>
                       )}
-                      <button type="button" onClick={() => void cambiarEstado(item.id, 'excepcion')} disabled={submitting}>
-                        Excepcion
-                      </button>
+                      {item.estado !== 'resuelta' && (
+                        <button type="button" onClick={() => void cambiarEstado(item.id, 'excepcion')} disabled={submitting}>
+                          Excepcion
+                        </button>
+                      )}
                       <button type="button" onClick={() => void cambiarEstado(item.id, 'resolver')} disabled={submitting}>
                         Resolver
                       </button>

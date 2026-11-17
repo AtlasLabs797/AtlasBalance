@@ -175,7 +175,10 @@ public sealed class RevisionService : IRevisionService
 
         query = query
             .OrderByDescending(x => x.Fecha)
-            .ThenByDescending(x => x.Monto < 0 ? -x.Monto : x.Monto);
+            .ThenByDescending(x => x.Monto < 0 ? -x.Monto : x.Monto)
+            // B-15: desempate estable por clave primaria, despues del criterio
+            // de ordenacion pedido.
+            .ThenBy(x => x.ExtractoId);
 
         var total = await query.CountAsync(cancellationToken);
         var rows = await query
@@ -241,7 +244,10 @@ public sealed class RevisionService : IRevisionService
 
         query = query
             .OrderByDescending(x => x.Fecha)
-            .ThenByDescending(x => x.Importe < 0 ? -x.Importe : x.Importe);
+            .ThenByDescending(x => x.Importe < 0 ? -x.Importe : x.Importe)
+            // B-15: desempate estable por clave primaria, despues del criterio
+            // de ordenacion pedido.
+            .ThenBy(x => x.ExtractoId);
 
         return await ToPaginatedResponseAsync(query, page, pageSize, cancellationToken);
     }

@@ -26,6 +26,26 @@ public sealed class ConciliacionService : IConciliacionService
     private const decimal DefaultToleranceAmount = 2m;
     private const decimal DefaultTolerancePercent = 0.01m;
 
+    // B-6 (LOTE 5): transiciones validas de estado de una conciliacion. El
+    // CHECK de BD (ck_conciliaciones_estado) solo admite 'sugerida',
+    // 'conciliada', 'excepcion' y 'resuelta'; 'pendiente' es estado de
+    // MOVIMIENTOS_ESPERADOS, no de una conciliacion.
+    // Ciclo: sugerida -> conciliada | excepcion | resuelta,
+    //        excepcion -> conciliada | resuelta (el usuario revisa una
+    //        excepcion y decide conciliarla o cerrarla),
+    //        resuelta es terminal. Mismo estado -> misma transicion (no-op).
+    // La transicion excepcion -> conciliada la usa el boton "Conciliar" de
+    // la pantalla de conciliacion, que aparece en toda fila que no esta
+    // conciliada: bloquearla cortaria un flujo real del usuario.
+    private static readonly IReadOnlyDictionary<string, string[]> TransicionesEstadoConciliacion =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["sugerida"] = ["sugerida", "conciliada", "excepcion", "resuelta"],
+            ["conciliada"] = ["conciliada", "excepcion", "resuelta"],
+            ["excepcion"] = ["excepcion", "conciliada", "resuelta"],
+            ["resuelta"] = ["resuelta"]
+        };
+
     internal static readonly JsonSerializerOptions SnakeCaseJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
@@ -329,7 +349,29 @@ public sealed class ConciliacionService : IConciliacionService
         }
 
         await EnsureCuentaPermitidaAsync(usuarioId, rol, conciliacion.CuentaId, cerrar, cancellationToken);
-        var movimiento = await _dbContext.MovimientosEsperados.FirstAsync(x => x.Id == conciliacion.MovimientoEsperadoId, cancellationToken);
+        EnsureTransicionValida(conciliacion.Estado, estado);
+
+        if (estado == "conciliada" && conciliacion.ExtractoId.HasValue)
+        {
+            // B-6 (LOTE 5): un extracto no puede quedar conciliado dos veces.
+            var extractoYaConciliado = await _dbContext.Conciliaciones.AnyAsync(
+                x => x.Id != conciliacion.Id
+                    && x.ExtractoId == conciliacion.ExtractoId
+                    && x.Estado == "conciliada",
+                cancellationToken);
+            if (extractoYaConciliado)
+            {
+                throw new ConciliacionException("El extracto ya esta conciliado", StatusCodes.Status409Conflict);
+            }
+        }
+
+        var movimiento = await _dbContext.MovimientosEsperados
+            .FirstOrDefaultAsync(x => x.Id == conciliacion.MovimientoEsperadoId, cancellationToken);
+        if (movimiento is null)
+        {
+            throw new ConciliacionException("Movimiento esperado no encontrado", StatusCodes.Status404NotFound);
+        }
+
         conciliacion.Estado = estado;
         conciliacion.Observacion = NormalizeOptionalText(request.Observacion);
         conciliacion.FechaModificacion = DateTime.UtcNow;
@@ -371,6 +413,19 @@ public sealed class ConciliacionService : IConciliacionService
             cancellationToken);
 
         return (await MapConciliacionesAsync([conciliacion], cancellationToken))[0];
+    }
+
+    // B-6 (LOTE 5): valida la transicion de estado contra el conjunto minimo
+    // permitido (TransicionesEstadoConciliacion).
+    private static void EnsureTransicionValida(string estadoActual, string estadoDestino)
+    {
+        if (!TransicionesEstadoConciliacion.TryGetValue(estadoActual, out var permitidas)
+            || !permitidas.Contains(estadoDestino, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new ConciliacionException(
+                $"No se puede pasar una conciliacion de '{estadoActual}' a '{estadoDestino}'",
+                StatusCodes.Status409Conflict);
+        }
     }
 
     private static MatchCandidate? FindBestMatchInMemory(
@@ -462,6 +517,17 @@ public sealed class ConciliacionService : IConciliacionService
         else if (!string.IsNullOrWhiteSpace(expectedConcept) && TextOverlaps(expectedConcept, extractConcept))
         {
             score += 10;
+        }
+
+        // B-5 (LOTE 5): tope de importe por movimiento. La diferencia de
+        // importe entre el movimiento esperado y el extracto no puede superar
+        // la tolerancia de importe del propio movimiento (amountTolerance). Si
+        // la supera, el extracto no es un candidato valido por alto que sea el
+        // resto del score (la penalizacion de importe esta topada en 15 puntos
+        // y por si sola no llegaba a descartar el candidato).
+        if (amountDiff > amountTolerance)
+        {
+            score = 0;
         }
 
         return new MatchCandidate(

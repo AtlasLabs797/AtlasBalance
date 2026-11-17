@@ -205,16 +205,7 @@ public sealed class PlazoFijoService : IPlazoFijoService
         EstadoPlazoFijo estado,
         CancellationToken cancellationToken)
     {
-        var cuentaToken = cuenta.Id.ToString();
-        var estadoToken = estado.ToString();
-        var vencimientoToken = plazo.FechaVencimiento.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        var alreadyExists = await _dbContext.NotificacionesAdmin.AnyAsync(
-            x => x.Tipo == "PLAZO_FIJO" &&
-                 x.DetallesJson != null &&
-                 x.DetallesJson.Contains(cuentaToken) &&
-                 x.DetallesJson.Contains(estadoToken) &&
-                 x.DetallesJson.Contains(vencimientoToken),
-            cancellationToken);
+        var alreadyExists = await YaExisteNotificacionAsync(cuenta, plazo, estado, cancellationToken);
 
         if (alreadyExists)
         {
@@ -240,6 +231,63 @@ public sealed class PlazoFijoService : IPlazoFijoService
         });
 
         return true;
+    }
+
+    /// <summary>
+    /// A-9: NOTIFICACIONES_ADMIN.detalles_json es jsonb. Un Contains de string
+    /// sobre jsonb lo traduce a "detalles_json ~~ @p" y PostgreSQL no define el
+    /// operador "jsonb ~~ jsonb" (42883), asi que el job de vencimientos
+    /// reventaba siempre que llegaba a esta consulta. JsonContains traduce a
+    /// "detalles_json @> @p", que compara el objeto jsonb por clave/valor: los
+    /// tres tokens (cuenta, estado y vencimiento) se comprueban de una vez
+    /// porque @> exige que el objeto contenido este entero en el almacenado.
+    /// </summary>
+    private async Task<bool> YaExisteNotificacionAsync(
+        Cuenta cuenta,
+        PlazoFijo plazo,
+        EstadoPlazoFijo estado,
+        CancellationToken cancellationToken)
+    {
+        var duplicado = new
+        {
+            cuenta_id = cuenta.Id,
+            estado = estado.ToString(),
+            fecha_vencimiento = plazo.FechaVencimiento
+        };
+
+        if (_dbContext.Database.IsRelational())
+        {
+            var duplicadoJson = JsonSerializer.Serialize(duplicado);
+            return await _dbContext.NotificacionesAdmin.AnyAsync(
+                x => x.Tipo == "PLAZO_FIJO" &&
+                     x.DetallesJson != null &&
+                     EF.Functions.JsonContains(x.DetallesJson, duplicadoJson),
+                cancellationToken);
+        }
+
+        // InMemory (tests unitarios): EF.Functions.JsonContains no se puede
+        // traducir a SQL y el provider no la evalua en memoria. Se replica la
+        // misma semantica de @> sobre el JSON ya materializado.
+        var duplicadoDoc = JsonSerializer.SerializeToElement(duplicado);
+        var detalles = await _dbContext.NotificacionesAdmin
+            .Where(x => x.Tipo == "PLAZO_FIJO" && x.DetallesJson != null)
+            .Select(x => x.DetallesJson!)
+            .ToListAsync(cancellationToken);
+
+        return detalles.Any(detallesJson =>
+        {
+            using var doc = JsonDocument.Parse(detallesJson);
+            foreach (var propiedad in duplicadoDoc.EnumerateObject())
+            {
+                if (!doc.RootElement.TryGetProperty(propiedad.Name, out var valor) ||
+                    !JsonElement.DeepEquals(valor, propiedad.Value))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        });
     }
 
     private static EstadoPlazoFijo? ResolveEstado(DateOnly fechaVencimiento, DateOnly hoy)

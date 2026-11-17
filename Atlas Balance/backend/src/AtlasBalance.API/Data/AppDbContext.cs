@@ -14,6 +14,14 @@ public class AppDbContext : DbContext
     // snapshot. La deriva es previa (migraciones SQL manuscritas con IF NOT EXISTS
     // que no actualizan el snapshot) y un scaffold la recrearia contra el esquema
     // real. Se ignora solo este warning, igual que se comportaba EF 8.
+    // LOTE 5 (M-9): la deriva se ha reducido (xmin de PLAZOS_FIJOS y los indices
+    // parciales de EXTRACTOS y CONCILIACIONES ya estan en el snapshot), pero no
+    // es solo de snapshot: en REVISION_EXTRACTO_ESTADOS, IMPORTACION_LOTE_FILAS
+    // y EXTRACTOS_COLUMNAS_EXTRA la base real tiene deleted_at como timestamp
+    // without time zone y el modelo pide timestamp with time zone. Cerrarla
+    // exige una migracion de esquema (ALTER COLUMN sobre columnas usadas por
+    // policies RLS), no solo tocar el snapshot. Mientras tanto, el Ignore sigue
+    // siendo necesario: si se quita, Migrate() falla.
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         optionsBuilder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
@@ -218,10 +226,14 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => new { e.CuentaId, e.FilaNumero })
                 .IsUnique()
                 .HasFilter("\"deleted_at\" IS NULL");
+            // B-3: el UNIQUE de huella no filtraba deleted_at, asi que tras
+            // revertir un lote (soft delete) no se podia reimportar la misma
+            // huella. Indice UNIQUE parcial: la unicidad se exige solo entre
+            // extractos activos.
             entity.HasIndex(e => new { e.CuentaId, e.ImportacionFingerprint })
                 .IsUnique()
                 .HasDatabaseName("ix_extractos_cuenta_id_importacion_fingerprint")
-                .HasFilter("\"importacion_fingerprint\" IS NOT NULL");
+                .HasFilter("\"deleted_at\" IS NULL AND \"importacion_fingerprint\" IS NOT NULL");
             entity.HasIndex(e => e.ImportacionLoteHash);
             entity.HasIndex(e => e.ImportacionLoteId);
             // V-02-03 (H5): indice cubriente para busqueda de conciliacion.
@@ -540,7 +552,14 @@ public class AppDbContext : DbContext
             // V-02-05 (MED-22): soft delete explicito en conciliacion.
             entity.HasIndex(e => new { e.CuentaId, e.Estado });
             entity.HasIndex(e => e.MovimientoEsperadoId);
-            entity.HasIndex(e => e.ExtractoId);
+            // B-6: un mismo extracto no puede quedar conciliado dos veces.
+            // UNIQUE parcial: solo afecta a las conciliaciones en estado
+            // 'conciliada' y no borradas logicamente. Sustituye al indice
+            // simple sobre extracto_id.
+            entity.HasIndex(e => e.ExtractoId)
+                .IsUnique()
+                .HasDatabaseName("ix_conciliaciones_extracto_id_conciliada")
+                .HasFilter("\"estado\" = 'conciliada' AND \"extracto_id\" IS NOT NULL AND \"deleted_at\" IS NULL");
             entity.HasIndex(e => new { e.MovimientoEsperadoId, e.ExtractoId }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.SetNull);
